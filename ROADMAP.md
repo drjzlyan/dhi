@@ -50,9 +50,9 @@ Feature specs: [F-003](docs/features/F-003-workspace.md) Workspace ·
 - [x] Multi-repo nav tree grouped by member repo; fuzzy find; ripgrep
       fan-out search (`surfaces/editor`, `internal/fuzzy`, `internal/search`;
       rg runs from the hermetic shim, no host fallback)
-- [~] Modal editor MVP: normal/insert/visual/command, motions, d/c/y,
-      `:w :q :wq :e` — core shipped (`internal/textbuf`, TUI-free +
-      fully unit-tested); surface wired; multi-buffer tabs next
+- [x] Modal editor MVP: normal/insert/visual/command, motions, d/c/y,
+      `:w :q :wq :e` (`internal/textbuf`, TUI-free) + multi-buffer tabs
+      with :bn/:bp/:b switching and a tab strip
 - [ ] PTY terminal drawer, one tab per member repo (+ open more tabs)
 - [ ] Markdown preview (GitHub-style rendering)
 - [ ] Git view MVP (go-git, ADR-0008): status/stage/commit/log/branches +

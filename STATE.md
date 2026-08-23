@@ -1,51 +1,46 @@
 # STATE — current position
 
-Updated: 2026-08-23 (session: M2 — modal buffer MVP)
+Updated: 2026-08-23 (session: M2 — multi-buffer tabs + :b commands)
 
 ## Where we are
 
-Ripgrep search committed (`1ae5ece`). **This session (uncommitted —
-commit next): modal editing core + surface integration.** `make verify`
-green; 15 packages under `-race`.
+Modal buffer MVP committed (`437d6a9`). **This session (uncommitted —
+commit next): multi-buffer tabs** with ex-command switching. `make
+verify` green; 15 packages under `-race`.
 
 ## Just finished
 
-- `internal/textbuf` (TUI-free editing core, ~full unit coverage):
-  - Buffer: lines storage, rune-offset columns, sticky wantCol,
-    operation-level undo/redo with **undo groups** (one insert session =
-    one `u`), dirty tracking, Open/Save (trailing-newline convention).
-  - Motions: h j k l 0 $ w b e gg G (+line wrap on w like vim), counts.
-  - Modal Editor: normal/insert/visual/command; operators d/c/y over
-    motions AND doubled forms (dd/cc/yy ×count); cw/cb ≡ ce special case;
-    x X D C J o O i a A I v p P u ctrl+r; unnamed register linewise-aware;
-    commands :w :q :q! :wq :x :e with dirty-refusal messages.
-  - EOF-sentinel ranges (z.Line == LineCount()) handled in yank/delete.
-- Editor surface: opening a file loads a buffer, main pane renders a
-  scrolled viewport with line-number gutter, inverted cursor block,
-  visual-selection highlight, mode chip + dirty dot in the panel title,
-  and a command/message line. Focus model: open→buffer focus; esc in
-  NORMAL → tree focus; `/`+`s` tree-only. :w/:wq write through to disk;
-  :q refuses when dirty.
+- textbuf.CommandDelegate seam: workspace-level ex commands handled by
+  the surface via ExecEx(requester, cmd); unknown commands fall through
+  to "not an editor command". Editor.SetMessage for delegate feedback.
+- Surface tab model: `bufs []*bufTab{ed,vp,path}` + activeTab index.
+  open() reuses an existing tab per path; :q closes the active tab and
+  activates a neighbor (tree when none left).
+- Commands: :bn/:bp cycle; :b <substring> matches vpath or abs path —
+  unique match activates, ambiguous reports "more than one match".
+- Tab strip above the buffer viewport: active tab bracketed+accent,
+  others dim, dirty dot per tab.
+- Fuzzy matcher fix: greedy first-match mis-scored "alpha/app.go" vs
+  ".../helper.go" (tie at 64) — Match now scores greedy alignment from
+  every start occurrence of the first rune; contiguous wins (94 vs 64).
 
 ## Gotchas learned (do not re-learn these)
 
-1. withCursor must slice r[col+1:] for the tail — r[col:] duplicated the
-   cursor rune into the render (goldens caught it).
-2. deleteRange: clamp cursor only AFTER restoring the empty-lines guard —
-   clamping against an empty slice panics [-1].
-3. Doubled operators need max(pendingCnt, count) — the second keystroke's
-   count() reads cleared digits and silently degrades 2dd → dd.
-4. vim semantics honored deliberately: yw includes trailing whitespace;
-   w wraps across lines; cw keeps trailing ws (≡ce); insert sessions are
-   one undo unit.
-5. feed()/typeKeys() helpers exist per test package — don't reference
-   textbuf's from surfaces/editor tests.
+1. Greedy subsequence scoring needs multi-start alignment; earliest
+   occurrence locks onto wrong words and ties beat true contiguity.
+2. Field/method name collisions (active int vs active()) cascade through
+   perl renames — pick distinct names up front.
+3. Blanket perl renames also rewrite func params (tabStrip active int);
+   verify with go build before trusting.
+4. Tree navigation sequences in tests must be derived from dirs-first
+   ordering per directory level; one extra `down` silently targets the
+   next repo header.
 
 ## Next up (rest of M2)
 
 1. Commit this session (user approves diff first).
-2. Multi-buffer tabs + :b-style switching; then PTY terminal drawer
-   (per-member tabs), markdown preview, git view via go-git, LSP
+2. PTY terminal drawer (per-member tabs, Manager.Env PATH) — biggest
+   remaining chunk; then markdown preview, git view (go-git), LSP
    foundation, settings skeleton.
 
 ## Open questions for user

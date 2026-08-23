@@ -24,6 +24,13 @@ func (m Mode) String() string {
 	}
 }
 
+// CommandDelegate handles ex commands the buffer core does not know
+// (workspace-level concerns like buffer switching). Return true when
+// the command was handled.
+type CommandDelegate interface {
+	ExecEx(requester *Editor, cmd string) bool
+}
+
 // Editor binds a Buffer to modal state: pending operator+count,
 // visual anchor, command line, and the unnamed register.
 type Editor struct {
@@ -44,6 +51,7 @@ type Editor struct {
 	closeReq    bool
 	closeForced bool
 	reloaded    bool
+	delegate    CommandDelegate
 }
 
 type op uint8
@@ -120,3 +128,9 @@ func (e *Editor) CommandLine() string {
 
 // VisualStart is the anchor position where visual mode began.
 func (e *Editor) VisualStart() Pos { return e.visualStart }
+
+// SetCommandDelegate registers the workspace-level ex handler.
+func (e *Editor) SetCommandDelegate(d CommandDelegate) { e.delegate = d }
+
+// SetMessage sets the status-line text (used by delegates).
+func (e *Editor) SetMessage(msg string) { e.message = msg }

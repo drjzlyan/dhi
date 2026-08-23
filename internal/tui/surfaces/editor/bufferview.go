@@ -29,9 +29,9 @@ func bufferTitle(e *textbuf.Editor) string {
 // bufferView renders a scrolled viewport of lines around the cursor with
 // a line-number gutter, cursor block, and visual-mode selection.
 func (m *Model) bufferView() string {
-	e := m.buf
+	e := m.active()
 	b := e.Buffer()
-	rows := maxInt(m.height-4, 1) // panel padding + command line
+	rows := maxInt(m.height-5, 1) // strip + panel padding + command line
 
 	top := 0
 	if b.LineCount() > rows {
@@ -116,4 +116,24 @@ func padLeft(s string, n int) string {
 		s = " " + s
 	}
 	return s
+}
+
+// tabStrip renders the open-buffer tab row.
+func tabStrip(bufs []*bufTab, active int) string {
+	var parts []string
+	for i, t := range bufs {
+		label := t.vp
+		if j := strings.LastIndex(label, "/"); j >= 0 {
+			label = label[j+1:]
+		}
+		if t.ed.Buffer().Dirty() {
+			label += " " + theme.WarningText().Render("●")
+		}
+		if i == active {
+			parts = append(parts, theme.TabActive().Render("["+label+"]"))
+		} else {
+			parts = append(parts, theme.Hint().Render(" "+label+" "))
+		}
+	}
+	return strings.Join(parts, " ")
 }

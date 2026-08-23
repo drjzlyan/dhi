@@ -65,8 +65,9 @@ type Model struct {
 	openPath  string // absolute path of opened file
 	openVPath string
 
-	buf      *textbuf.Editor
-	bufFocus bool
+	bufs      []*bufTab
+	activeTab int
+	bufFocus  bool
 
 	searcher      search.Searcher
 	searchQuery   []rune
@@ -176,14 +177,15 @@ func (m *Model) HandleKey(key string) bool {
 		return m.handleResultsKey(key)
 	}
 
-	if m.bufFocus && m.buf != nil {
+	if m.bufFocus && m.active() != nil {
+		e := m.active()
 		// esc in normal mode hands focus back to the tree
-		if key == "esc" && m.buf.Mode() == textbuf.ModeNormal {
+		if key == "esc" && e.Mode() == textbuf.ModeNormal {
 			m.bufFocus = false
 			return true
 		}
-		m.buf.Key(key)
-		if m.buf.CloseRequested() && m.buf.TakeClose() {
+		e.Key(key)
+		if e.CloseRequested() && e.TakeClose() {
 			m.closeBuffer()
 		}
 		return true
@@ -232,6 +234,21 @@ func (m *Model) cursorNode() *node {
 	return nil
 }
 
+// bufTab is one open buffer with its display identity.
+type bufTab struct {
+	ed   *textbuf.Editor
+	vp   string
+	path string
+}
+
+// active returns the focused tab's editor, or nil.
+func (m *Model) active() *textbuf.Editor {
+	if m.activeTab < len(m.bufs) {
+		return m.bufs[m.activeTab].ed
+	}
+	return nil
+}
+
 func (m *Model) open(n *node) {
 	m.openPath = n.path
 	vp, err := m.ws.VPathFor(n.path)
@@ -240,20 +257,41 @@ func (m *Model) open(n *node) {
 	} else {
 		m.openVPath = n.name
 	}
-	if be, err := textbuf.OpenFile(n.path); err == nil {
-		m.buf = be
-		m.bufFocus = true
-	} else {
-		m.buf = nil
-		m.bufFocus = false
-		m.searchErr = err.Error()
+
+	for i, t := range m.bufs {
+		if t.path == n.path {
+			m.activeTab = i // reuse existing buffer
+			m.bufFocus = true
+			return
+		}
 	}
+	be, err := textbuf.OpenFile(n.path)
+	if err != nil {
+		m.searchErr = err.Error()
+		m.bufFocus = false
+		return
+	}
+	be.SetCommandDelegate(m)
+	tab := &bufTab{ed: be, vp: m.openVPath, path: n.path}
+	m.bufs = append(m.bufs, tab)
+	m.activeTab = len(m.bufs) - 1
+	m.bufFocus = true
 }
 
-// closeBuffer drops the active buffer and returns focus to the tree.
+// closeBuffer drops the active tab; focus lands on the neighbor or the
+// tree when none remain.
 func (m *Model) closeBuffer() {
-	m.buf = nil
-	m.bufFocus = false
+	if m.activeTab >= len(m.bufs) {
+		m.bufFocus = false
+		return
+	}
+	m.bufs = append(m.bufs[:m.activeTab], m.bufs[m.activeTab+1:]...)
+	switch {
+	case len(m.bufs) == 0:
+		m.bufFocus = false
+	case m.activeTab >= len(m.bufs):
+		m.activeTab = len(m.bufs) - 1
+	}
 }
 
 // refreshRows re-flattens the tree into list items.
@@ -311,9 +349,9 @@ func (m *Model) navView() string {
 	var main string
 	title := mainTitle(m.openVPath)
 	switch {
-	case m.buf != nil:
+	case m.active() != nil:
 		main = m.bufferView()
-		title = bufferTitle(m.buf)
+		title = bufferTitle(m.active())
 	case m.mode == modeResults:
 		main = m.resultsBlock()
 		title = "results"
@@ -329,8 +367,11 @@ func (m *Model) navView() string {
 
 	mainW := maxInt(m.width-railWidth-1, 10)
 	centered := kit.Center(main, maxInt(mainW-2, 10), maxInt(m.height-2, 3))
-	if m.mode == modeResults || m.buf != nil {
+	if m.mode == modeResults || m.active() != nil {
 		centered = main // lists and buffers are left-aligned
+	}
+	if m.active() != nil {
+		centered = joinV(tabStrip(m.bufs, m.activeTab), centered)
 	}
 	mainPanel := kit.NewPanel(title, true)
 	mainPanel.SetContent(splitLines(centered)...)
@@ -338,6 +379,39 @@ func (m *Model) navView() string {
 	mainPanel.Height = m.height
 
 	return joinH(rail.View(), mainPanel.View())
+}
+
+// ExecEx implements textbuf.CommandDelegate: buffer-list ex commands.
+func (m *Model) ExecEx(requester *textbuf.Editor, cmd string) bool {
+	switch {
+	case cmd == "bn" && len(m.bufs) > 0:
+		m.activeTab = (m.activeTab + 1) % len(m.bufs)
+		requester.SetMessage("")
+		return true
+	case cmd == "bp" && len(m.bufs) > 0:
+		m.activeTab = (m.activeTab - 1 + len(m.bufs)) % len(m.bufs)
+		requester.SetMessage("")
+		return true
+	case strings.HasPrefix(cmd, "b "):
+		pat := strings.TrimSpace(strings.TrimPrefix(cmd, "b "))
+		var hits []int
+		for i, t := range m.bufs {
+			if strings.Contains(t.vp, pat) || strings.Contains(t.path, pat) {
+				hits = append(hits, i)
+			}
+		}
+		switch len(hits) {
+		case 0:
+			requester.SetMessage("no matching buffer: " + pat)
+		case 1:
+			m.activeTab = hits[0]
+			requester.SetMessage("")
+		default:
+			requester.SetMessage("more than one match for " + pat)
+		}
+		return true
+	}
+	return false
 }
 
 // Finder (file names).

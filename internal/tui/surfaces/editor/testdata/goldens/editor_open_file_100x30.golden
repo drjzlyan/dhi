@@ -1,9 +1,9 @@
 ╭─ › files ─────────────────────╮ ╭─ › main.go  NORMAL ──────────────────────────────────────────╮
-│   alpha/                       ││ 1 package main                                                │
-│     src/                       ││ 2                                                             │
-│       util/                    ││                                                               │
-│ ▌     main.go                  ││ i insert · : cmd · esc tree                                   │
-│     app.go                     ││                                                               │
+│   alpha/                       ││ [main.go]                                                     │
+│     src/                       ││ 1 package main                                                │
+│       util/                    ││ 2                                                             │
+│ ▌     main.go                  ││                                                               │
+│     app.go                     ││ i insert · : cmd · esc tree                                   │
 │   beta/ ▸                      ││                                                               │
 │                                ││                                                               │
 │ / find · s search · ⏎ open     ││                                                               │

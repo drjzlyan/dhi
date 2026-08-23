@@ -443,6 +443,9 @@ func (e *Editor) execCommand(cmd string) {
 		e.buf = b
 		e.reloaded = true
 	default:
+		if e.delegate != nil && e.delegate.ExecEx(e, cmd) {
+			return
+		}
 		e.message = "not an editor command: " + cmd
 	}
 }

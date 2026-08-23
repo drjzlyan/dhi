@@ -19,6 +19,9 @@ const (
 
 // Match reports whether pattern occurs in s as a case-insensitive
 // subsequence, with a heuristic quality score (higher = better).
+// Greedy matching alone mis-scores when an early partial word shadows a
+// fully-contiguous one ("alpha/app.go"), so every start position of the
+// first rune is tried and the best alignment wins.
 func Match(pattern, s string) (int, bool) {
 	p := strings.ToLower(pattern)
 	t := strings.ToLower(s)
@@ -26,29 +29,55 @@ func Match(pattern, s string) (int, bool) {
 		return 0, true
 	}
 	pr, tr := []rune(p), []rune(t)
-	pi := 0
+	if len(pr) > len(tr) {
+		return 0, false
+	}
+
+	best := -1
+	found := false
+	for start := 0; start < len(tr); start++ {
+		if tr[start] != pr[0] {
+			continue
+		}
+		sc, ok := greedyFrom(pr, tr, start)
+		if ok && (!found || sc > best) {
+			best, found = sc, true
+		}
+	}
+	if !found {
+		return 0, false
+	}
+	return best, true
+}
+
+// greedyFrom scores a left-to-right alignment beginning exactly at
+// tr[start].
+func greedyFrom(pr, tr []rune, start int) (int, bool) {
 	score := 0
 	prevMatch := -2
 	firstMatch := -1
-	for ti, r := range tr {
-		if pi < len(pr) && pr[pi] == r {
-			score += scoreBase
-			if ti == prevMatch+1 {
-				score += scoreConsec
-			}
-			if ti == 0 {
-				score += scoreBoundary
-			} else if isBoundary(t[ti-1]) {
-				score += scoreBoundary
-			} else if unicode.IsLower(rune(t[ti-1])) && unicode.IsUpper(rune(t[ti])) {
-				score += scoreCamel
-			}
-			if firstMatch < 0 {
-				firstMatch = ti
-			}
-			prevMatch = ti
-			pi++
+	pi := 0
+	for ti := start; ti < len(tr) && pi < len(pr); ti++ {
+		if tr[ti] != pr[pi] {
+			continue
 		}
+		score += scoreBase
+		if ti == prevMatch+1 {
+			score += scoreConsec
+		}
+		switch {
+		case ti == 0:
+			score += scoreBoundary
+		case isBoundary(byte(tr[ti-1])):
+			score += scoreBoundary
+		case unicode.IsLower(tr[ti-1]) && unicode.IsUpper(tr[ti]):
+			score += scoreCamel
+		}
+		if firstMatch < 0 {
+			firstMatch = ti
+		}
+		prevMatch = ti
+		pi++
 	}
 	if pi < len(pr) {
 		return 0, false

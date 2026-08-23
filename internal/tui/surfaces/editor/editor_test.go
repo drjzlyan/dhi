@@ -260,7 +260,7 @@ func TestBufferEditAndSaveRoundTrip(t *testing.T) {
 	feed(m, "down", "enter")
 	feed(m, "down", "down")
 	feed(m, "enter")
-	if m.buf == nil || !m.bufFocus {
+	if m.active() == nil || !m.bufFocus {
 		t.Fatal("buffer not focused after open")
 	}
 
@@ -268,12 +268,12 @@ func TestBufferEditAndSaveRoundTrip(t *testing.T) {
 	feed(m, "i")
 	typeKeys(m, "// hi")
 	feed(m, "esc")
-	if !m.buf.Buffer().Dirty() {
+	if !m.active().Buffer().Dirty() {
 		t.Fatal("edit did not dirty the buffer")
 	}
 
 	feed(m, ":")
-	if m.buf.Mode() != textbuf.ModeCommand {
+	if m.active().Mode() != textbuf.ModeCommand {
 		t.Fatal(": did not enter command mode")
 	}
 	typeKeys(m, "wq")
@@ -286,7 +286,7 @@ func TestBufferEditAndSaveRoundTrip(t *testing.T) {
 	if !strings.Contains(string(data), "// hi") {
 		t.Fatalf("save missing edit: %q", string(data))
 	}
-	if m.buf != nil {
+	if m.active() != nil {
 		t.Error(":wq did not close the buffer")
 	}
 	if m.bufFocus {
@@ -322,10 +322,128 @@ func TestQuitDirtyRefuses(t *testing.T) {
 	feed(m, ":")
 	typeKeys(m, "q")
 	feed(m, "enter")
-	if m.buf == nil {
+	if m.active() == nil {
 		t.Fatal("dirty :q closed the buffer")
 	}
 	if !strings.Contains(plainView(m), "no write") {
 		t.Errorf("refusal message missing:\n%s", plainView(m))
+	}
+}
+
+func TestMultiBuffersAndExSwitching(t *testing.T) {
+	ws, _ := setupWorkspace(t)
+	m := New("test", ws)
+	m.Resize(100, 30)
+
+	// open alpha/src/main.go
+	feed(m, "enter", "down", "enter", "down", "down", "enter")
+	// open app.go via finder for speed
+	feed(m, "esc") // tree focus
+	feed(m, "/")
+	typeKeys(m, "app.go")
+	feed(m, "enter")
+
+	if len(m.bufs) != 2 {
+		t.Fatalf("tabs = %d, want 2", len(m.bufs))
+	}
+	if m.bufs[m.activeTab].vp != "alpha/app.go" {
+		t.Fatalf("active = %q", m.bufs[m.activeTab].vp)
+	}
+
+	// :bn wraps to first buffer
+	feed(m, ":")
+	typeKeys(m, "bn")
+	feed(m, "enter")
+	if m.bufs[m.activeTab].vp != "alpha/src/main.go" {
+		t.Fatalf("after :bn active = %q", m.bufs[m.activeTab].vp)
+	}
+	if !strings.Contains(plainView(m), "[main.go]") {
+		t.Errorf("tab strip missing active marker:\n%s", plainView(m))
+	}
+
+	// :bp back
+	feed(m, ":")
+	typeKeys(m, "bp")
+	feed(m, "enter")
+	if m.bufs[m.activeTab].vp != "alpha/app.go" {
+		t.Fatalf("after :bp active = %q", m.bufs[m.activeTab].vp)
+	}
+}
+
+func TestBufferByPatternAndAmbiguity(t *testing.T) {
+	ws, _ := setupWorkspace(t)
+	m := New("test", ws)
+	m.Resize(100, 30)
+	feed(m, "enter", "down", "enter", "down", "down", "enter")
+	feed(m, "esc")
+	feed(m, "/")
+	typeKeys(m, "app.go")
+	feed(m, "enter")
+
+	feed(m, ":")
+	typeKeys(m, "b src/main.go")
+	feed(m, "enter")
+	if m.bufs[m.activeTab].vp != "alpha/src/main.go" {
+		t.Fatalf(":b pattern → %q", m.bufs[m.activeTab].vp)
+	}
+
+	feed(m, ":")
+	typeKeys(m, "b a")
+	feed(m, "enter")
+	if !strings.Contains(plainView(m), "more than one match") {
+		t.Errorf("ambiguity not reported:\n%s", plainView(m))
+	}
+}
+
+func TestOpenReusesExistingBuffer(t *testing.T) {
+	m := newEditor(t)
+	feed(m, "enter", "down", "down", "enter") // open app.go
+	first := len(m.bufs)
+	if first != 1 {
+		t.Fatalf("tabs = %d", first)
+	}
+	feed(m, "esc") // tree
+	// reopen the same file from the tree cursor position
+	feed(m, "enter")
+	if len(m.bufs) != first {
+		t.Errorf("reopen duplicated buffer: %d tabs", len(m.bufs))
+	}
+	if !m.bufFocus || m.active() == nil {
+		t.Error("reopen did not focus existing buffer")
+	}
+}
+
+func TestCloseMiddleActivatesNeighbor(t *testing.T) {
+	ws, _ := setupWorkspace(t)
+	m := New("test", ws)
+	m.Resize(100, 30)
+
+	// three distinct files
+	for _, q := range []string{"app.go", "main.go", "helper.go"} {
+		feed(m, "esc")
+		feed(m, "/")
+		typeKeys(m, q)
+		feed(m, "enter")
+	}
+	if len(m.bufs) != 3 {
+		t.Fatalf("tabs = %d", len(m.bufs))
+	}
+
+	// close middle tab (helper.go was last opened; switch to middle first)
+	feed(m, ":")
+	typeKeys(m, "b main.go")
+	feed(m, "enter")
+	feed(m, ":")
+	typeKeys(m, "q")
+	feed(m, "enter")
+
+	if len(m.bufs) != 2 {
+		t.Fatalf("after close tabs = %d", len(m.bufs))
+	}
+	if vp := m.bufs[m.activeTab].vp; vp != "beta/README.md" && vp != "alpha/src/util/helper.go" && vp != "alpha/app.go" {
+		t.Errorf("neighbor = %q", vp)
+	}
+	if m.activeTab >= len(m.bufs) {
+		t.Error("active index out of range after close")
 	}
 }
