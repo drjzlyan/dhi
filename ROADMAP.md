@@ -47,8 +47,9 @@ Feature specs: [F-003](docs/features/F-003-workspace.md) Workspace ·
 
 ## M2 — **Editor core** (F-002) + Settings skeleton (F-006)
 
-- [~] Multi-repo nav tree grouped by member repo + fuzzy find
-      (`surfaces/editor`, `internal/fuzzy`) — ripgrep fan-out search next
+- [x] Multi-repo nav tree grouped by member repo; fuzzy find; ripgrep
+      fan-out search (`surfaces/editor`, `internal/fuzzy`, `internal/search`;
+      rg runs from the hermetic shim, no host fallback)
 - [ ] Modal editor MVP: normal/insert/visual/command, motions, d/c/y, `:w :q :wq :e`
 - [ ] PTY terminal drawer, one tab per member repo (+ open more tabs)
 - [ ] Markdown preview (GitHub-style rendering)

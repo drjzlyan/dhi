@@ -1,19 +1,19 @@
-╭─ › files ─────────────────────╮ ╭─ › alpha/src/main.go ────────────────────────────────────────╮
-│   alpha/                       ││                                                               │
-│     src/                       ││                                                               │
-│       util/                    ││                                                               │
-│ ▌     main.go                  ││                                                               │
-│     app.go                     ││                                                               │
+╭─ › files ─────────────────────╮ ╭─ › results ──────────────────────────────────────────────────╮
+│ ▌ alpha/ ▸                     ││ results for "main"  2 hit(s)                                  │
 │   beta/ ▸                      ││                                                               │
+│                                ││ ▌ alpha/src/main.go:3  func main() {                          │
+│ / find · s search · ⏎ open     ││   alpha/app.go:7  // main entrypoint                          │
 │                                ││                                                               │
-│ / find · s search · ⏎ open     ││                                                               │
+│                                ││ ⏎ jump · esc back                                             │
 │                                ││                                                               │
 │                                ││                                                               │
 │                                ││                                                               │
 │                                ││                                                               │
-│                                ││            alpha/src/main.go                                  │
 │                                ││                                                               │
-│                                ││            modal editing lands in the next M2 chunk           │
+│                                ││                                                               │
+│                                ││                                                               │
+│                                ││                                                               │
+│                                ││                                                               │
 │                                ││                                                               │
 │                                ││                                                               │
 │                                ││                                                               │

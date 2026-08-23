@@ -15,6 +15,7 @@ import (
 	"charm.land/bubbletea/v2"
 
 	"github.com/drjzlyan/dhi/internal/doctor"
+	"github.com/drjzlyan/dhi/internal/search"
 	"github.com/drjzlyan/dhi/internal/toolchain"
 	"github.com/drjzlyan/dhi/internal/tui/app"
 	"github.com/drjzlyan/dhi/internal/tui/surfaces/bootstrap"
@@ -45,9 +46,21 @@ func runTUI() {
 		ws, _ = workspace.Load(cwd) // not a workspace → empty-state editor
 	}
 
+	var edOpts []editor.Option
+	if root, err := toolchain.DefaultRoot(); err == nil {
+		// Search runs DHI's own ripgrep from the shim dir; when the
+		// toolchain is not installed yet the capability stays off
+		// rather than falling back to a host rg (ADR-0005).
+		if _, err := os.Stat(filepath.Join(root, "bin", "rg")); err == nil {
+			edOpts = append(edOpts, editor.WithSearcher(search.Ripgrep{
+				Bin: filepath.Join(root, "bin", "rg"),
+			}))
+		}
+	}
+
 	a := app.New(version.Version,
 		wsview.New(version.Version),
-		editor.New(version.Version, ws),
+		editor.New(version.Version, ws, edOpts...),
 		placeholder.New("ideator", "Ideator", "M6",
 			"Ideation sessions: artifact navigation, preview, approval — no editing."),
 		placeholder.New("reviewer", "Reviewer", "M5",

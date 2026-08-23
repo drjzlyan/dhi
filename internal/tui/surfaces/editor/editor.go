@@ -1,16 +1,20 @@
 // Package editor is DHI's IDE surface (F-002): multi-repo file navigation,
 // modal buffers, terminal drawer, git view, chat sidebar, preview. This
-// chunk ships component 1 — the workspace nav tree grouped by member repo
-// with fuzzy find; buffers/terminal/git/chat land in later M2 chunks.
+// chunk ships component 1 — workspace nav tree grouped by member repo,
+// fuzzy find, and cross-repo ripgrep search; buffers/terminal/git/chat
+// land in later M2 chunks.
 package editor
 
 import (
+	"context"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"charm.land/bubbletea/v2"
 
 	"github.com/drjzlyan/dhi/internal/fuzzy"
+	"github.com/drjzlyan/dhi/internal/search"
 	"github.com/drjzlyan/dhi/internal/tui/kit"
 	"github.com/drjzlyan/dhi/internal/tui/surfaces"
 	"github.com/drjzlyan/dhi/internal/tui/theme"
@@ -28,7 +32,18 @@ type mode uint8
 const (
 	modeNav mode = iota
 	modeFind
+	modeSearchQuery
+	modeResults
 )
+
+// Option configures optional editor capabilities.
+type Option func(*Model)
+
+// WithSearcher enables cross-repo ripgrep search. Without it the `s`
+// key is inert (ADR-0005: no silent host-tool fallback).
+func WithSearcher(s search.Searcher) Option {
+	return func(m *Model) { m.searcher = s }
+}
 
 // Model is the Editor surface.
 type Model struct {
@@ -48,12 +63,28 @@ type Model struct {
 	findList  kit.List
 	openPath  string // absolute path of opened file
 	openVPath string
+
+	searcher      search.Searcher
+	searchQuery   []rune
+	hits          []hitRow
+	hitList       kit.List
+	hitsCh        <-chan search.Hit
+	searchCancel  context.CancelFunc
+	searching     bool
+	searchErr     string
+	lastQueryText string
+}
+
+type hitRow struct {
+	hit  search.Hit
+	vp   string // vpath label for display
+	text string // line content
 }
 
 var _ surfaces.Surface = (*Model)(nil)
 
 // New builds the editor for a workspace; nil ws renders the empty state.
-func New(version string, ws *workspace.Workspace) *Model {
+func New(version string, ws *workspace.Workspace, opts ...Option) *Model {
 	m := &Model{version: version, ws: ws}
 	if ws != nil {
 		for _, mem := range ws.Members {
@@ -62,7 +93,9 @@ func New(version string, ws *workspace.Workspace) *Model {
 		m.roots = buildRoots(m.members)
 		m.refreshRows()
 	}
-	m.list.Height = 0 // set on Resize
+	for _, opt := range opts {
+		opt(m)
+	}
 	return m
 }
 
@@ -72,12 +105,58 @@ func (m *Model) Init() tea.Cmd       { return nil }
 func (m *Model) Resize(w, h int) {
 	m.width, m.height = w, h
 	m.list.Width = railWidth - 4
-	m.list.Height = h - 2
+	m.list.Height = h - 3
 	m.findList.Width = 60 - 4
 	m.findList.Height = min(12, h-6)
+	m.hitList.Width = maxInt(m.width-railWidth-7, 10)
+	m.hitList.Height = h - 5
 }
 
-func (m *Model) Update(tea.Msg) tea.Cmd { return nil }
+// Messages.
+
+type hitMsg search.Hit
+
+type searchDoneMsg struct{}
+
+// Update handles streaming search results routed by the shell.
+func (m *Model) Update(msg tea.Msg) tea.Cmd {
+	switch msg := msg.(type) {
+	case hitMsg:
+		m.addHit(search.Hit(msg))
+		return m.listenHits()
+	case searchDoneMsg:
+		m.searching = false
+		m.hitsCh = nil
+		return nil
+	}
+	return nil
+}
+
+func (m *Model) addHit(h search.Hit) {
+	label := filepath.Base(h.Path)
+	if vp, err := m.ws.VPathFor(h.Path); err == nil {
+		label = vp.String()
+	}
+	m.hits = append(m.hits, hitRow{hit: h, vp: label, text: strings.TrimSpace(h.Text)})
+	path := theme.Hint().Render(label + ":" + itoa(h.Line))
+	m.hitList.Items = append(m.hitList.Items, kit.Item{
+		Title: path + "  " + theme.TextDim().Render(truncateRunes(strings.TrimSpace(h.Text), 80)),
+	})
+}
+
+func (m *Model) listenHits() tea.Cmd {
+	ch := m.hitsCh
+	if ch == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		h, ok := <-ch
+		if !ok {
+			return searchDoneMsg{}
+		}
+		return hitMsg(h)
+	}
+}
 
 // HandleKey implements surface key routing.
 func (m *Model) HandleKey(key string) bool {
@@ -87,6 +166,10 @@ func (m *Model) HandleKey(key string) bool {
 	switch m.mode {
 	case modeFind:
 		return m.handleFindKey(key)
+	case modeSearchQuery:
+		return m.handleSearchKey(key)
+	case modeResults:
+		return m.handleResultsKey(key)
 	default:
 		return m.handleNavKey(key)
 	}
@@ -97,6 +180,12 @@ func (m *Model) handleNavKey(key string) bool {
 	case "/":
 		m.openFind()
 		return true
+	case "s":
+		if m.searcher != nil && len(m.members) > 0 {
+			m.openSearch()
+			return true
+		}
+		return false
 	case "enter", "l":
 		n := m.cursorNode()
 		if n == nil {
@@ -171,29 +260,48 @@ func (m *Model) View() string {
 			m.width, m.height,
 		)
 	}
-	if m.mode == modeFind {
+	switch m.mode {
+	case modeFind:
 		return m.findView()
+	case modeSearchQuery:
+		return m.searchView()
+	default:
+		return m.navView()
 	}
-	return m.navView()
 }
 
 func (m *Model) navView() string {
 	rail := kit.NewPanel("files", false)
-	rail.SetContent(splitLines(m.list.View())...)
+	hint := theme.Hint().Render("/ find · s search · ⏎ open")
+	m.list.Height = m.height - 4 // reserve hint row + panel padding
+	rail.SetContent(append(splitLines(m.list.View()), "", hint)...)
 	rail.Width = railWidth
 	rail.Height = m.height
 
-	main := theme.TextDim().Render("(buffers arrive with modal editor — M2)")
-	if m.openPath != "" {
+	var main string
+	switch {
+	case m.mode == modeResults:
+		main = m.resultsBlock()
+	case m.openPath != "":
 		main = strings.Join([]string{
 			theme.TabActive().Render(m.openVPath),
 			"",
 			theme.Hint().Render("modal editing lands in the next M2 chunk"),
 		}, "\n")
+	default:
+		main = theme.TextDim().Render("(buffers arrive with modal editor — M2)")
 	}
+
 	mainW := maxInt(m.width-railWidth-1, 10)
+	title := mainTitle(m.openVPath)
+	if m.mode == modeResults {
+		title = "results"
+	}
 	centered := kit.Center(main, maxInt(mainW-2, 10), maxInt(m.height-2, 3))
-	mainPanel := kit.NewPanel(mainTitle(m.openVPath), true)
+	if m.mode == modeResults {
+		centered = main // results list is left-aligned, not centered
+	}
+	mainPanel := kit.NewPanel(title, true)
 	mainPanel.SetContent(splitLines(centered)...)
 	mainPanel.Width = mainW
 	mainPanel.Height = m.height
@@ -201,7 +309,7 @@ func (m *Model) navView() string {
 	return joinH(rail.View(), mainPanel.View())
 }
 
-// Finder.
+// Finder (file names).
 
 func (m *Model) openFind() {
 	if m.items == nil {
@@ -293,4 +401,157 @@ func (m *Model) findView() string {
 
 	dim := theme.Hint().Render("enter open · esc cancel · type to filter")
 	return kit.Center(joinV(overlay.View(), "", dim), m.width, m.height)
+}
+
+// Content search (ripgrep fan-out across members).
+
+func (m *Model) openSearch() {
+	m.searchQuery = nil
+	m.searchErr = ""
+	m.mode = modeSearchQuery
+}
+
+func (m *Model) handleSearchKey(key string) bool {
+	switch key {
+	case "esc":
+		m.mode = modeNav
+		return true
+	case "enter":
+		if q := strings.TrimSpace(string(m.searchQuery)); q != "" {
+			m.startSearch(q)
+			return true
+		}
+		return true
+	case "backspace":
+		if len(m.searchQuery) > 0 {
+			m.searchQuery = m.searchQuery[:len(m.searchQuery)-1]
+		}
+		return true
+	}
+	if r := []rune(key); len(r) == 1 && r[0] >= 32 {
+		m.searchQuery = append(m.searchQuery, r[0])
+		return true
+	}
+	return false
+}
+
+func (m *Model) startSearch(q string) {
+	m.cancelSearch()
+	ctx, cancel := context.WithCancel(context.Background())
+	m.searchCancel = cancel
+	m.hits = nil
+	m.hitList = kit.List{Width: m.hitList.Width, Height: m.hitList.Height}
+	m.lastQueryText = q
+	m.mode = modeResults
+
+	roots := make([]string, len(m.members))
+	for i, mem := range m.members {
+		roots[i] = mem.path
+	}
+	ch, err := m.searcher.Search(ctx, q, roots)
+	if err != nil {
+		m.searching = false
+		m.hitsCh = nil
+		m.searchErr = err.Error()
+		return
+	}
+	m.searchErr = ""
+	m.searching = true
+	m.hitsCh = ch
+}
+
+func (m *Model) cancelSearch() {
+	if m.searchCancel != nil {
+		m.searchCancel()
+		m.searchCancel = nil
+	}
+	m.hitsCh = nil
+	m.searching = false
+}
+
+func (m *Model) handleResultsKey(key string) bool {
+	switch key {
+	case "esc":
+		m.cancelSearch()
+		m.mode = modeNav
+		return true
+	case "enter", "l":
+		return m.jumpHit()
+	}
+	return m.hitList.HandleKey(key)
+}
+
+func (m *Model) jumpHit() bool {
+	if m.hitList.Cursor >= len(m.hits) {
+		return true
+	}
+	row := m.hits[m.hitList.Cursor]
+	vp, err := workspace.ParseVPath(row.vp)
+	if err != nil {
+		return true
+	}
+	abs, err := m.ws.Resolve(vp)
+	if err != nil {
+		return true
+	}
+	revealTo(m.roots, abs)
+	m.refreshRows()
+	if n := findByPath(m.roots, abs); n != nil {
+		if i, ok := rowIndex(m.rows, n); ok {
+			m.list.Cursor = clampIdx(i, len(m.rows)-1)
+		}
+	}
+	m.open(&node{kind: nodeFile, path: abs, name: filepath.Base(abs)})
+	return true
+}
+
+func (m *Model) resultsBlock() string {
+	head := theme.TabActive().Render("results for " + strconv.Quote(m.lastQueryText))
+	switch {
+	case m.searchErr != "":
+		return head + "\n\n" + theme.DangerText().Render(m.searchErr)
+	case len(m.hits) == 0 && m.searching:
+		return head + "\n\n" + theme.TextDim().Render("searching…")
+	case len(m.hits) == 0:
+		return head + "\n\n" + theme.TextDim().Render("no matches")
+	}
+	count := theme.Hint().Render(itoa(len(m.hits)) + " hit(s)" + searchStateSuffix(m.searching))
+	lines := append([]string{head + "  " + count, ""}, splitLines(m.hitList.View())...)
+	lines = append(lines, "", theme.Hint().Render("⏎ jump · esc back"))
+	return strings.Join(lines, "\n")
+}
+
+func searchStateSuffix(searching bool) string {
+	if searching {
+		return " · searching…"
+	}
+	return ""
+}
+
+func (m *Model) searchView() string {
+	head := "/ " + string(m.searchQuery) + "▌"
+	body := []string{
+		theme.Brand().Render(head),
+		"",
+		theme.TextDim().Render("fixed-string content search across all member repos"),
+	}
+	overlay := kit.NewPanel("search", true)
+	overlay.SetContent(body...)
+	overlay.Width = 64
+	overlay.Height = min(8, m.height)
+
+	dim := theme.Hint().Render("enter search · esc cancel")
+	return kit.Center(joinV(overlay.View(), "", dim), m.width, m.height)
+}
+
+// Small local helpers.
+
+func itoa(n int) string { return strconv.Itoa(n) }
+
+func truncateRunes(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n-1]) + "…"
 }

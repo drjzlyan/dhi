@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/drjzlyan/dhi/internal/ansi"
+	"github.com/drjzlyan/dhi/internal/search"
 	"github.com/drjzlyan/dhi/internal/testutil/golden"
 	"github.com/drjzlyan/dhi/internal/tui/theme"
 	"github.com/drjzlyan/dhi/internal/workspace"
@@ -188,6 +189,39 @@ func TestEditorGolden(t *testing.T) {
 		m.HandleKey(string(r))
 	}
 	golden.Snapshot(t, "editor_find_100x30", m.View())
+}
+
+func TestEditorSearchGolden(t *testing.T) {
+	theme.SwapForTest(t, theme.Dark())
+	ws, _ := setupWorkspace(t)
+	abs := func(vp string) string {
+		p, err := workspace.ParseVPath(vp)
+		if err != nil {
+			t.Fatal(err)
+		}
+		a, err := ws.Resolve(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return a
+	}
+	ss := &scriptedSearcher{hits: []search.Hit{
+		{Path: abs("alpha/src/main.go"), Line: 3, Column: 0, Text: "func main() {"},
+		{Path: abs("alpha/app.go"), Line: 7, Column: 2, Text: "// main entrypoint"},
+	}}
+	m := New("test", ws, WithSearcher(ss))
+	m.Resize(100, 30)
+
+	m.HandleKey("s")
+	for _, r := range "main" {
+		m.HandleKey(string(r))
+	}
+	m.HandleKey("enter")
+	for _, h := range ss.hits {
+		m.Update(hitMsg(h))
+	}
+	m.Update(searchDoneMsg{})
+	golden.Snapshot(t, "editor_search_results_100x30", m.View())
 }
 
 func TestHandleKeyNoWorkspaceIsNoop(t *testing.T) {
