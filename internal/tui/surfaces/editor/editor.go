@@ -15,6 +15,7 @@ import (
 
 	"github.com/drjzlyan/dhi/internal/fuzzy"
 	"github.com/drjzlyan/dhi/internal/gitcore"
+	"github.com/drjzlyan/dhi/internal/lsp"
 	"github.com/drjzlyan/dhi/internal/preview"
 	"github.com/drjzlyan/dhi/internal/search"
 	"github.com/drjzlyan/dhi/internal/textbuf"
@@ -52,6 +53,11 @@ func WithSearcher(s search.Searcher) Option {
 // (toolchain.Manager.Env output).
 func WithTermEnv(env []string) Option {
 	return func(m *Model) { m.termEnv = env }
+}
+
+// WithLSP enables language-server integration (nil disables).
+func WithLSP(mgr *lsp.Manager) Option {
+	return func(m *Model) { m.lspMgr = mgr }
 }
 
 // Model is the Editor surface.
@@ -110,6 +116,13 @@ type Model struct {
 	searching     bool
 	searchErr     string
 	lastQueryText string
+
+	lspMgr    *lsp.Manager
+	lspSent   map[string]string // vpath → last pushed text
+	lspDiags  map[string][]lsp.Diagnostic
+	compOpen  bool
+	compItems []lsp.CompletionItem
+	compCur   int
 }
 
 type hitRow struct {
@@ -126,6 +139,8 @@ func New(version string, ws *workspace.Workspace, opts ...Option) *Model {
 		version:  version,
 		ws:       ws,
 		termMsgs: make(chan teaMsg, 128),
+		lspSent:  map[string]string{},
+		lspDiags: map[string][]lsp.Diagnostic{},
 	}
 	if ws != nil {
 		for _, mem := range ws.Members {
@@ -172,16 +187,20 @@ func (m *Model) drainTerm() {
 	}
 }
 
-// teaMsg is the union of async drawer events.
+// teaMsg is the union of async drawer/LSP events.
 type teaMsg struct {
-	kind  uint8 // termMsgOut | termMsgClosed
-	tab   int
-	chunk []byte
+	kind      uint8 // termMsgOut | termMsgClosed | lspMsgDiag | lspMsgComp
+	tab       int
+	chunk     []byte
+	diags     []lsp.Diagnostic
+	compItems []lsp.CompletionItem
 }
 
 const (
 	termMsgOut uint8 = iota
 	termMsgClosed
+	lspMsgDiag
+	lspMsgComp
 )
 
 func (m *Model) Resize(w, h int) {
@@ -221,6 +240,8 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 			m.ingestTermChunk(msg.tab, msg.chunk)
 		case termMsgClosed:
 			m.termExited(msg.tab)
+		case lspMsgDiag, lspMsgComp:
+			m.applyLSPUpdate(msg)
 		}
 		return m.listenTerm()
 	}
@@ -297,15 +318,31 @@ func (m *Model) HandleKey(key string) bool {
 
 	if m.bufFocus && m.active() != nil {
 		e := m.active()
+
+		// completion popup intercepts navigation/accept keys
+		if m.compOpen {
+			if handled := m.handleCompletionKey(key); handled || key == "esc" {
+				return true
+			}
+		}
+
 		// esc in normal mode hands focus back to the tree
 		if key == "esc" && e.Mode() == textbuf.ModeNormal {
 			m.bufFocus = false
 			return true
 		}
+
+		// explicit completion request (ctrl+space arrives as either form)
+		if e.Mode() == textbuf.ModeInsert && (key == "ctrl+space" || key == "ctrl+@") {
+			m.requestCompletion()
+			return true
+		}
+
 		e.Key(key)
 		if e.CloseRequested() && e.TakeClose() {
 			m.closeBuffer()
 		}
+		m.lspSync()
 		return true
 	}
 	return m.handleNavKey(key)
@@ -484,6 +521,7 @@ func (m *Model) open(n *node) {
 	m.bufs = append(m.bufs, tab)
 	m.activeTab = len(m.bufs) - 1
 	m.bufFocus = true
+	m.lspOpenDoc(n.path, be.Buffer().Text())
 }
 
 // closeBuffer drops the active tab; focus lands on the neighbor or the
@@ -576,8 +614,9 @@ func (m *Model) navView() string {
 		main = m.previewView()
 		title = "preview — " + title
 	case m.active() != nil:
+		e := m.active()
+		title = bufferTitle(e) + m.diagChip(e)
 		main = m.bufferView()
-		title = bufferTitle(m.active())
 	case m.mode == modeResults:
 		main = m.resultsBlock()
 		title = "results"

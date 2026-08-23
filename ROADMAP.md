@@ -60,7 +60,10 @@ Feature specs: [F-003](docs/features/F-003-workspace.md) Workspace ·
       live re-render on edit)
 - [x] Git view MVP (go-git, ADR-0008): status/stage/unstage/commit +
       log in a ctrl+j bottom panel; per-buffer repo selection
-- [ ] LSP foundation: installable servers via DHI toolchain; wire diagnostics+completion
+- [~] LSP foundation: minimal stdio JSON-RPC client (`internal/lsp`),
+  servers resolved via toolchain shims; didOpen/didChange, diagnostics
+  in gutter + title chip, ctrl+space completion popup. gopls registry
+  pin + richer features track later milestones
 - [~] Settings skeleton: typed TOML schema, defaults<user<workspace
       precedence, unknown-key doctor warnings, live theme switch
       (`internal/settings`, real Settings view); keybinding overrides +

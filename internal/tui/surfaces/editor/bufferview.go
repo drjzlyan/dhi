@@ -26,6 +26,26 @@ func bufferTitle(e *textbuf.Editor) string {
 	return name + dot + "  " + theme.Brand().Render(e.Mode().String())
 }
 
+// diagChip renders the error/warning count for the active buffer.
+func (m *Model) diagChip(e *textbuf.Editor) string {
+	errs, warns := m.diagCount(e)
+	if errs == 0 && warns == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("  ")
+	if errs > 0 {
+		b.WriteString(theme.DangerText().Render("✗" + itoa(errs)))
+	}
+	if warns > 0 {
+		if errs > 0 {
+			b.WriteString(" ")
+		}
+		b.WriteString(theme.WarningText().Render("⚠" + itoa(warns)))
+	}
+	return b.String()
+}
+
 // bufferView renders a scrolled viewport of lines around the cursor with
 // a line-number gutter, cursor block, and visual-mode selection.
 func (m *Model) bufferView() string {
@@ -50,9 +70,11 @@ func (m *Model) bufferView() string {
 	}
 
 	var out []string
+	path := e.Path()
 	for l := top; l < end; l++ {
 		num := strconv.Itoa(l + 1)
-		gutter := theme.Hint().Render(padLeft(num, gutW-len(num)))
+		plain := padLeft(num, gutW-len(num))
+		gutter := m.gutterFor(path, l, plain)
 		text := b.Line(l)
 
 		if visual {
@@ -72,6 +94,11 @@ func (m *Model) bufferView() string {
 			text = withCursor(text, b.Cursor().Col)
 		}
 		out = append(out, gutter+" "+text)
+	}
+
+	if comp := m.completionView(); len(comp) > 0 {
+		out = append(out, "")
+		out = append(out, comp...)
 	}
 
 	cmd := e.CommandLine()
