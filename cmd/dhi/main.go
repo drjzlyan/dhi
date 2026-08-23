@@ -16,11 +16,13 @@ import (
 
 	"github.com/drjzlyan/dhi/internal/doctor"
 	"github.com/drjzlyan/dhi/internal/search"
+	"github.com/drjzlyan/dhi/internal/settings"
 	"github.com/drjzlyan/dhi/internal/toolchain"
 	"github.com/drjzlyan/dhi/internal/tui/app"
 	"github.com/drjzlyan/dhi/internal/tui/surfaces/bootstrap"
 	"github.com/drjzlyan/dhi/internal/tui/surfaces/editor"
 	"github.com/drjzlyan/dhi/internal/tui/surfaces/placeholder"
+	settingsview "github.com/drjzlyan/dhi/internal/tui/surfaces/settings"
 	wsview "github.com/drjzlyan/dhi/internal/tui/surfaces/workspace"
 	"github.com/drjzlyan/dhi/internal/version"
 	"github.com/drjzlyan/dhi/internal/workspace"
@@ -46,6 +48,23 @@ func runTUI() {
 		ws, _ = workspace.Load(cwd) // not a workspace → empty-state editor
 	}
 
+	// Settings: defaults < user config < workspace config; theme applies
+	// before any surface renders.
+	userCfg, _ := settings.DefaultUserPath()
+	wsCfg := ""
+	if ws != nil {
+		wsCfg = filepath.Join(ws.Root, workspace.DHIDir, "config.toml")
+	}
+	cfg, cfgErr := settings.Load(userCfg, wsCfg)
+	if cfgErr != nil {
+		fmt.Fprintln(os.Stderr, "dhi:", cfgErr)
+	}
+	cfg.Apply()
+	savePath := userCfg
+	if ws != nil {
+		savePath = wsCfg // nearest file wins for persistence
+	}
+
 	var edOpts []editor.Option
 	if root, err := toolchain.DefaultRoot(); err == nil {
 		mgr := toolchain.New(root)
@@ -67,12 +86,11 @@ func runTUI() {
 			"Ideation sessions: artifact navigation, preview, approval — no editing."),
 		placeholder.New("reviewer", "Reviewer", "M5",
 			"PR & worktree review: GitHub-style diffs, line comments, agent dispatch."),
-		placeholder.New("settings", "Settings", "M2+",
-			"Everything configurable: theme, keys, terminal, LSP, agents, sandbox."),
+		settingsview.New(cfg, savePath),
 	)
 
-	if root, err := toolchain.DefaultRoot(); err == nil && needsBootstrap(root) {
-		mgr := toolchain.New(root)
+	if cfgErr == nil && needsBootstrap(toolchainRoot()) {
+		mgr := toolchain.New(toolchainRoot())
 		// DHI_REGISTRY overrides the embedded manifest with a remote one
 		// (loopback http allowed) for testing the pipeline end-to-end.
 		a.SetGate(bootstrap.New(version.Version, mgr, os.Getenv("DHI_REGISTRY")))
@@ -83,6 +101,16 @@ func runTUI() {
 		fmt.Fprintln(os.Stderr, "dhi:", err)
 		os.Exit(1)
 	}
+}
+
+// toolchainRoot resolves the hermetic prefix, falling back to a
+// temp-dir-safe empty result when home cannot be located.
+func toolchainRoot() string {
+	root, err := toolchain.DefaultRoot()
+	if err != nil {
+		return filepath.Join(os.TempDir(), "dhi-unavailable")
+	}
+	return root
 }
 
 // needsBootstrap reports whether the hermetic prefix has never been

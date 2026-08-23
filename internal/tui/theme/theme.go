@@ -70,8 +70,37 @@ func Dark() Tokens {
 	}
 }
 
-// Current is the active theme. Swappable at boot once user config lands (M2);
-// everything must read styles through the helpers below rather than caching
+// Light is the daylight alternative: warm paper canvas with the same
+// cyan-to-violet accents darkened for contrast.
+func Light() Tokens {
+	c := lipgloss.Color
+	return Tokens{
+		Name: "light-paper",
+
+		Bg:            c("#F5F2EA"),
+		BgPanel:       c("#FBF9F3"),
+		BgElevated:    c("#FFFFFF"),
+		BgSelection:   c("#DCEFEF"),
+		Border:        c("#D8D2C4"),
+		BorderFocused: c("#0E7490"),
+		Text:          c("#1F2937"),
+		TextDim:       c("#5B6472"),
+		TextMuted:     c("#8B93A1"),
+		Accent:        c("#0E7490"),
+		Accent2:       c("#6D28D9"),
+		Success:       c("#047857"),
+		Warning:       c("#B45309"),
+		Danger:        c("#B91C1C"),
+
+		PadX:        1,
+		RadiusPad:   0,
+		HeightTab:   1,
+		HeightState: 1,
+	}
+}
+
+// Current is the active theme. Swappable at runtime from Settings; everything
+// must read styles through the helpers below rather than caching
 // colors directly.
 var Current = Dark()
 

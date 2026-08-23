@@ -61,7 +61,10 @@ Feature specs: [F-003](docs/features/F-003-workspace.md) Workspace ·
 - [x] Git view MVP (go-git, ADR-0008): status/stage/unstage/commit +
       log in a ctrl+j bottom panel; per-buffer repo selection
 - [ ] LSP foundation: installable servers via DHI toolchain; wire diagnostics+completion
-- [ ] Settings skeleton: schema, config precedence, live theme/key changes
+- [~] Settings skeleton: typed TOML schema, defaults<user<workspace
+      precedence, unknown-key doctor warnings, live theme switch
+      (`internal/settings`, real Settings view); keybinding overrides +
+      remaining sections track later milestones
 
 ## M3 — Agent runtime → chat sidebar in Editor
 

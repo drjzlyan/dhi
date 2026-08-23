@@ -9,7 +9,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
+	"github.com/drjzlyan/dhi/internal/settings"
 	"github.com/drjzlyan/dhi/internal/toolchain"
 	"github.com/drjzlyan/dhi/internal/workspace"
 )
@@ -42,6 +44,7 @@ func Run(toolRoot, wsRoot string) Report {
 	var r Report
 	r.Checks = append(r.Checks, Toolchain(toolRoot)...)
 	r.Checks = append(r.Checks, Workspace(wsRoot)...)
+	r.Checks = append(r.Checks, Config(wsRoot)...)
 	r.Healthy = true
 	for _, c := range r.Checks {
 		if c.Status == Fail {
@@ -139,4 +142,31 @@ func Workspace(root string) []Check {
 		}
 	}
 	return checks
+}
+
+// Config probes settings files for unknown keys (F-006: doctor reports
+// them). Only the workspace file is probed here; the user-level file is
+// covered by the same routine when callers have its path.
+func Config(wsRoot string) []Check {
+	if wsRoot == "" {
+		return nil
+	}
+	path := filepath.Join(wsRoot, ".dhi", "config.toml")
+	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return []Check{{Name: "settings/config", Status: Warn, Detail: err.Error()}}
+	}
+	unknown, uerr := settings.UnknownKeys(data)
+	if uerr != nil {
+		return []Check{{Name: "settings/config", Status: Warn,
+			Detail: path + ": " + uerr.Error()}}
+	}
+	if len(unknown) == 0 {
+		return []Check{{Name: "settings/config", Status: OK}}
+	}
+	return []Check{{Name: "settings/config", Status: Warn,
+		Detail: "unknown keys in " + path + ": " + strings.Join(unknown, ", ")}}
 }

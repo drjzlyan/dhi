@@ -1,47 +1,51 @@
 # STATE — current position
 
-Updated: 2026-08-23 (session: M2 — git view over go-git)
+Updated: 2026-08-23 (session: M2 — settings skeleton)
 
 ## Where we are
 
-Markdown preview committed (`9b8fdd2`). **This session (uncommitted —
-commit next): git view.** `make verify` green; 18 packages under
-`-race` (go-git v5 added per ADR-0008).
+Git view committed (`79183ae`). **This session (uncommitted — commit
+next): settings skeleton.** `make verify` green; 20 packages under
+`-race`. M2 remaining: LSP foundation only.
 
 ## Just finished
 
-- `internal/gitcore`: go-git service seam — Open/IsRepo, Status (index+
-  worktree codes, Staged flag), Stage (. and per-path with delete
-  fallback), Unstage (mixed reset w/ Files, keeps worktree), Commit
-  (explicit author required; refuses empty msg / nothing staged),
-  Log(n) subjects, CurrentBranch (unborn handled).
-- Editor ctrl+j panel: open→focused→blurred→closed cycle; repo picked
-  from active buffer's member else first member that IsRepo; tabs
-  status/log on `tab`; j/k cursor; s stage · S stage-all · u unstage ·
-  c commit → inline message input (esc cancels); errors + commit hash
-  feedback in-panel; esc blurs leaving sessions alive.
-- Goldens: status + log views. Buffer command line now renders vpath
-  instead of absolute path (`:w` message was leaking tempdirs into
-  goldens).
+- theme.Light(): full daylight token set (light-paper).
+- `internal/settings`: typed TOML schema (theme, editor.tab_width/
+  line_numbers, terminal.scrollback); defaults<user<workspace precedence
+  via pointer-diff layers (explicit false survives); sanitize clamps
+  out-of-range + unknown theme names; UnknownKeys() for doctor; Save
+  round-trip; Apply() swaps theme.Current live.
+- Real Settings surface (view 5): j/k rows, ←/→/enter cycle values,
+  auto-persist to nearest config path (workspace .dhi/config.toml when
+  in a workspace, else user config), saved/session-only flash.
+- cmd/dhi loads+applies config before first render; bootstrap gate
+  refactored onto toolchainRoot() helper.
+- doctor Config suite warns on unknown keys in .dhi/config.toml.
 
 ## Gotchas learned (do not re-learn these)
 
-1. Panel input modes must intercept keys BEFORE the panel's global
-   switch — top-level esc case ate the commit-input cancel.
-2. perl slurp edits can prepend garbage at position 0 when the pattern
-   partially matches quoted chars; prefer edit tool for tricky blocks.
-3. Status-line messages containing paths must be vpath-substituted for
-   portable goldens (second occurrence of this class of bug).
-4. go-git API notes: wt.AddWithOptions(All)/AddGlob; Log returns an
-   interface (no pointer type); unborn HEAD → zero hash sentinel.
+1. Bool config fields need pointer layers (*bool) to distinguish
+   "explicitly false" from unset — plain bools make defaults sticky.
+2. Settings persistence path = NEAREST scope that exists as a workspace;
+   session-only flash when no path is available.
+3. Carried: input-mode keys intercept before panel-global switch;
+   vpath-substitute status messages for portable goldens; nil-channel
+   pumps hang silently.
 
-## Next up (rest of M2)
+## Next up (close M2)
 
 1. Commit this session (user approves diff first).
-2. LSP foundation (installable servers via toolchain; diagnostics +
-   completion wiring) and settings skeleton — the last two M2 items.
-   Worktree create/switch/remove deferred out of the git MVP line into
-   M5-adjacent polish (Reviewer needs them first).
+2. LSP foundation — the last M2 item. Design sketch:
+   - `internal/lsp`: minimal JSON-RPC/LSP-over-stdio client
+     (initialize, didOpen/didChange, publishDiagnostics receive,
+     textDocument/completion, shutdown/exit) — no generic framework.
+   - Server acquisition: resolve `<toolchain>/bin/<server>` shim;
+     registry pins for gopls land with the next pinning run (same
+     workflow as rg/uv/node); tests use a scripted fake server.
+   - Surface: diagnostics count in buffer title/command line;
+     completion on explicit key (ctrl+space) into a small popup list.
+3. Then M3 agent runtime per ROADMAP.
 
 ## Open questions for user
 
