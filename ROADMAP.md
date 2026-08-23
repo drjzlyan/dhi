@@ -47,6 +47,9 @@ Feature specs: [F-003](docs/features/F-003-workspace.md) Workspace ·
 
 ## M2 — **Editor core** (F-002) + Settings skeleton (F-006)
 
+Status: complete (2026-08-23). Deferred to later milestones: syntax
+highlighting, multi-tab terminal extras, worktree ops (M5), rich LSP
+features (M7).
 - [x] Multi-repo nav tree grouped by member repo; fuzzy find; ripgrep
       fan-out search (`surfaces/editor`, `internal/fuzzy`, `internal/search`;
       rg runs from the hermetic shim, no host fallback)
@@ -62,8 +65,11 @@ Feature specs: [F-003](docs/features/F-003-workspace.md) Workspace ·
       log in a ctrl+j bottom panel; per-buffer repo selection
 - [~] LSP foundation: minimal stdio JSON-RPC client (`internal/lsp`),
   servers resolved via toolchain shims; didOpen/didChange, diagnostics
-  in gutter + title chip, ctrl+space completion popup. gopls registry
-  pin + richer features track later milestones
+  in gutter + title chip, ctrl+space completion popup. Go pinned in the
+  registry (go1.27.0, digests cross-checked vs go.dev/dl) and gopls
+  builds hermetically from source through it (`BuildInstall`, live
+  smoke `DHI_SMOKE_BUILD=1`) since upstream ships no binaries
+  (golang/go#79066); bootstrap auto-build + richer features track later
 - [~] Settings skeleton: typed TOML schema, defaults<user<workspace
       precedence, unknown-key doctor warnings, live theme switch
       (`internal/settings`, real Settings view); keybinding overrides +

@@ -1,6 +1,26 @@
 {
   "schema": 1,
   "tools": {
+    "go": {
+      "version": "1.27.0",
+      "platforms": {
+        "darwin/arm64": {
+          "url": "https://go.dev/dl/go1.27.0.darwin-arm64.tar.gz",
+          "sha256": "90493b3bbd5e10f91d12153198bf1994fd756399b4fec93b49b0c6e2acdeeb3e",
+          "format": "tar.gz",
+          "strip": 1,
+          "bin_dir": "bin"
+        },
+        "linux/amd64": {
+          "url": "https://go.dev/dl/go1.27.0.linux-amd64.tar.gz",
+          "sha256": "675c26c449cbb18fc24b74650de1eabbae6e16f64326fd85a283fb3b58280685",
+          "format": "tar.gz",
+          "strip": 1,
+          "bin_dir": "bin"
+        }
+      },
+      "shims": ["go", "gofmt"]
+    },
     "rg": {
       "version": "15.2.0",
       "platforms": {
