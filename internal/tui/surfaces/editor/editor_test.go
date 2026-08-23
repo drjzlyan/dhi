@@ -9,6 +9,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/ansi"
 	"github.com/drjzlyan/dhi/internal/search"
 	"github.com/drjzlyan/dhi/internal/testutil/golden"
+	"github.com/drjzlyan/dhi/internal/textbuf"
 	"github.com/drjzlyan/dhi/internal/tui/theme"
 	"github.com/drjzlyan/dhi/internal/workspace"
 )
@@ -58,6 +59,20 @@ func newEditor(t *testing.T) *Model {
 
 func plainView(m *Model) string { return ansi.Strip(m.View()) }
 
+// feed routes each keystroke through the surface.
+func feed(m *Model, keys ...string) {
+	for _, k := range keys {
+		m.HandleKey(k)
+	}
+}
+
+// typeKeys feeds each rune of s as its own keystroke.
+func typeKeys(m *Model, s string) {
+	for _, r := range s {
+		m.HandleKey(string(r))
+	}
+}
+
 func TestEmptyStateWithoutWorkspace(t *testing.T) {
 	theme.SwapForTest(t, theme.Dark())
 	m := New("test", nil)
@@ -103,8 +118,8 @@ func TestTreeGroupsByMemberAndExpands(t *testing.T) {
 		t.Errorf("openVPath = %q", m.openVPath)
 	}
 	v = plainView(m)
-	if !strings.Contains(v, "alpha/src/main.go") {
-		t.Errorf("opened file not shown:\n%s", v)
+	if !strings.Contains(v, "package main") || !strings.Contains(v, "NORMAL") {
+		t.Errorf("buffer not rendered:\n%s", v)
 	}
 }
 
@@ -181,14 +196,15 @@ func TestEditorGolden(t *testing.T) {
 	m.HandleKey("enter") // expand src
 	m.HandleKey("down")
 	m.HandleKey("down")  // main.go
-	m.HandleKey("enter") // open
+	m.HandleKey("enter") // open into a buffer
 	golden.Snapshot(t, "editor_open_file_100x30", m.View())
 
-	m.HandleKey("/") // finder over indexed files
-	for _, r := range "mn" {
-		m.HandleKey(string(r))
-	}
-	golden.Snapshot(t, "editor_find_100x30", m.View())
+	// insert-session editing with mode chip + dirty marker
+	feed(m, "$")
+	feed(m, "i")
+	typeKeys(m, "  // entrypoint")
+	feed(m, "esc")
+	golden.Snapshot(t, "editor_buffer_edited_100x30", m.View())
 }
 
 func TestEditorSearchGolden(t *testing.T) {
@@ -230,5 +246,86 @@ func TestHandleKeyNoWorkspaceIsNoop(t *testing.T) {
 	m.Resize(60, 20)
 	if m.HandleKey("j") || m.HandleKey("/") || m.HandleKey("enter") {
 		t.Error("keys consumed without a workspace")
+	}
+}
+
+func TestBufferEditAndSaveRoundTrip(t *testing.T) {
+	ws, root := setupWorkspace(t)
+	m := New("test", ws)
+	m.Resize(100, 30)
+	target := filepath.Join(root, "repos", "alpha", "src", "main.go")
+
+	// open via tree: expand alpha → src → open main.go
+	feed(m, "enter") // alpha
+	feed(m, "down", "enter")
+	feed(m, "down", "down")
+	feed(m, "enter")
+	if m.buf == nil || !m.bufFocus {
+		t.Fatal("buffer not focused after open")
+	}
+
+	feed(m, "$")
+	feed(m, "i")
+	typeKeys(m, "// hi")
+	feed(m, "esc")
+	if !m.buf.Buffer().Dirty() {
+		t.Fatal("edit did not dirty the buffer")
+	}
+
+	feed(m, ":")
+	if m.buf.Mode() != textbuf.ModeCommand {
+		t.Fatal(": did not enter command mode")
+	}
+	typeKeys(m, "wq")
+	feed(m, "enter")
+
+	data, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "// hi") {
+		t.Fatalf("save missing edit: %q", string(data))
+	}
+	if m.buf != nil {
+		t.Error(":wq did not close the buffer")
+	}
+	if m.bufFocus {
+		t.Error("focus not returned to tree")
+	}
+}
+
+func TestEscReturnsFocusToTree(t *testing.T) {
+	m := newEditor(t)
+	feed(m, "enter") // expand alpha (cursor stays on repo)
+	feed(m, "down")  // src/
+	feed(m, "down")  // app.go
+	feed(m, "enter") // open
+	if !m.bufFocus {
+		t.Fatal("expected buffer focus")
+	}
+	// esc in normal mode → tree; second esc does nothing harmful
+	feed(m, "esc")
+	if m.bufFocus {
+		t.Fatal("esc did not return focus to tree")
+	}
+	if !m.HandleKey("j") {
+		t.Error("tree keys dead after refocus")
+	}
+}
+
+func TestQuitDirtyRefuses(t *testing.T) {
+	m := newEditor(t)
+	feed(m, "enter", "down", "down", "enter") // open app.go
+	feed(m, "i")
+	typeKeys(m, "x")
+	feed(m, "esc")
+	feed(m, ":")
+	typeKeys(m, "q")
+	feed(m, "enter")
+	if m.buf == nil {
+		t.Fatal("dirty :q closed the buffer")
+	}
+	if !strings.Contains(plainView(m), "no write") {
+		t.Errorf("refusal message missing:\n%s", plainView(m))
 	}
 }

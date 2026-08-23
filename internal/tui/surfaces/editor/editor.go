@@ -15,6 +15,7 @@ import (
 
 	"github.com/drjzlyan/dhi/internal/fuzzy"
 	"github.com/drjzlyan/dhi/internal/search"
+	"github.com/drjzlyan/dhi/internal/textbuf"
 	"github.com/drjzlyan/dhi/internal/tui/kit"
 	"github.com/drjzlyan/dhi/internal/tui/surfaces"
 	"github.com/drjzlyan/dhi/internal/tui/theme"
@@ -63,6 +64,9 @@ type Model struct {
 	findList  kit.List
 	openPath  string // absolute path of opened file
 	openVPath string
+
+	buf      *textbuf.Editor
+	bufFocus bool
 
 	searcher      search.Searcher
 	searchQuery   []rune
@@ -170,9 +174,21 @@ func (m *Model) HandleKey(key string) bool {
 		return m.handleSearchKey(key)
 	case modeResults:
 		return m.handleResultsKey(key)
-	default:
-		return m.handleNavKey(key)
 	}
+
+	if m.bufFocus && m.buf != nil {
+		// esc in normal mode hands focus back to the tree
+		if key == "esc" && m.buf.Mode() == textbuf.ModeNormal {
+			m.bufFocus = false
+			return true
+		}
+		m.buf.Key(key)
+		if m.buf.CloseRequested() && m.buf.TakeClose() {
+			m.closeBuffer()
+		}
+		return true
+	}
+	return m.handleNavKey(key)
 }
 
 func (m *Model) handleNavKey(key string) bool {
@@ -224,6 +240,20 @@ func (m *Model) open(n *node) {
 	} else {
 		m.openVPath = n.name
 	}
+	if be, err := textbuf.OpenFile(n.path); err == nil {
+		m.buf = be
+		m.bufFocus = true
+	} else {
+		m.buf = nil
+		m.bufFocus = false
+		m.searchErr = err.Error()
+	}
+}
+
+// closeBuffer drops the active buffer and returns focus to the tree.
+func (m *Model) closeBuffer() {
+	m.buf = nil
+	m.bufFocus = false
 }
 
 // refreshRows re-flattens the tree into list items.
@@ -279,27 +309,28 @@ func (m *Model) navView() string {
 	rail.Height = m.height
 
 	var main string
+	title := mainTitle(m.openVPath)
 	switch {
+	case m.buf != nil:
+		main = m.bufferView()
+		title = bufferTitle(m.buf)
 	case m.mode == modeResults:
 		main = m.resultsBlock()
+		title = "results"
 	case m.openPath != "":
 		main = strings.Join([]string{
 			theme.TabActive().Render(m.openVPath),
 			"",
-			theme.Hint().Render("modal editing lands in the next M2 chunk"),
+			theme.Hint().Render("press enter on a file to edit"),
 		}, "\n")
 	default:
-		main = theme.TextDim().Render("(buffers arrive with modal editor — M2)")
+		main = theme.TextDim().Render("(select a file to begin editing)")
 	}
 
 	mainW := maxInt(m.width-railWidth-1, 10)
-	title := mainTitle(m.openVPath)
-	if m.mode == modeResults {
-		title = "results"
-	}
 	centered := kit.Center(main, maxInt(mainW-2, 10), maxInt(m.height-2, 3))
-	if m.mode == modeResults {
-		centered = main // results list is left-aligned, not centered
+	if m.mode == modeResults || m.buf != nil {
+		centered = main // lists and buffers are left-aligned
 	}
 	mainPanel := kit.NewPanel(title, true)
 	mainPanel.SetContent(splitLines(centered)...)
