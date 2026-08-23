@@ -92,6 +92,10 @@ func (m *Model) Init() tea.Cmd {
 
 func (m *Model) HandleKey(string) bool { return false }
 
+// Finished reports whether the gate may release the shell: success and
+// failure both proceed — missing pieces degrade visibly (ADR-0005).
+func (m *Model) Finished() bool { return m.phase != phaseRunning }
+
 type eventMsg toolchain.Event
 
 type installDoneMsg struct{ err error }
@@ -101,7 +105,13 @@ type tickMsg struct{}
 func (m *Model) startInstall() tea.Cmd {
 	url := m.manifestURL
 	return func() tea.Msg {
-		return installDoneMsg{err: m.mgr.Install(context.Background(), url, nil)}
+		var err error
+		if url == "" {
+			err = m.mgr.InstallEmbedded(context.Background())
+		} else {
+			err = m.mgr.Install(context.Background(), url, nil)
+		}
+		return installDoneMsg{err}
 	}
 }
 

@@ -156,15 +156,30 @@ func (m *Manager) FetchManifest(ctx context.Context, url string) (*Manifest, err
 	return mf, nil
 }
 
-// Install runs the full pipeline for names (all tools when empty).
-// Every artifact is checksum-verified before extraction; activation is
-// an atomic rename; the lockfile is written only after all requested
-// tools succeed.
+// Install runs the full pipeline for names (all tools when empty) using
+// a remotely fetched manifest. Every artifact is checksum-verified
+// before extraction; activation is an atomic rename; the lockfile is
+// written only after all requested tools succeed.
 func (m *Manager) Install(ctx context.Context, manifestURL string, names []string) error {
 	mf, err := m.FetchManifest(ctx, manifestURL)
 	if err != nil {
 		return err
 	}
+	return m.install(ctx, mf, names)
+}
+
+// InstallEmbedded runs the pipeline against the in-binary registry
+// manifest — the default production path (pins ship with releases).
+func (m *Manager) InstallEmbedded(ctx context.Context) error {
+	mf, err := Embedded()
+	if err != nil {
+		return err
+	}
+	m.emit(Event{Kind: EventManifestFetched, Detail: "embedded registry"})
+	return m.install(ctx, mf, nil)
+}
+
+func (m *Manager) install(ctx context.Context, mf *Manifest, names []string) error {
 	plan, err := m.Resolve(mf, names)
 	if err != nil {
 		return err

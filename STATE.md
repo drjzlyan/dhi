@@ -1,62 +1,55 @@
 # STATE — current position
 
-Updated: 2026-08-23 (session: M1 foundation packages)
+Updated: 2026-08-23 (session: M1 finish-out — embedded registry, PATH seam, shell gate)
 
 ## Where we are
 
-M0 committed. **M1 core packages implemented and verified** (uncommitted —
-commit next): `internal/toolchain`, `internal/sandbox`, `internal/workspace`,
-`internal/doctor`, `surfaces/bootstrap` component, and `dhi doctor [--json]`
-wired into `cmd/dhi`. `make verify` green; all new suites pass under `-race`.
-IA alignment commit from earlier today: `bb2c238`.
+M1 foundation committed (`83cfa87`). **This session (uncommitted — commit
+next):** embedded-in-binary registry distribution implemented, child-process
+PATH seam shipped, bootstrap gate wired into the app shell. `make verify`
+green; everything passes under `-race`. Only remaining M1 item is
+production registry pins.
 
 ## Just finished
 
-- `internal/toolchain`: versioned manifest schema (https-only pins, loopback
-  http allowed for fixtures), sha256 verify-before-extract, tar.gz/zip
-  extractor with strip + zip-slip/absolute-symlink rejection + size caps,
-  Manager pipeline (resolve→download→verify→extract→activate→lockfile),
-  atomic lockfile, shim symlink dir (`<root>/bin`), stage-level events.
-  httptest fixture server with tamper cases; re-install is a no-op.
-- `internal/sandbox`: path-jail with symlink-canonicalized roots,
-  deny-by-default policy engine (read/write/exec/net → allow/deny/ask,
-  first-match-wins, glob patterns incl. `dir/**`), `Sandbox` seam +
-  Noop adapter, `Guard` coupling jail+policy+sandbox.
-- `internal/workspace`: `.dhi/workspace.toml` (BurntSushi/toml added as the
-  only new dep), member validation (name regex, existing dirs, dup paths),
-  VPath resolver `<member>/<rel>` + reverse mapping, `.dhi/` reserved dirs.
-- `internal/doctor`: ok/warn/fail check suite over toolchain + workspace;
-  JSON report; exit codes 0/1/2 in CLI.
-- `cmd/dhi`: `dhi doctor [--json]` subcommand (ADR-0004 exception).
-- `surfaces/bootstrap`: event-driven first-run installer view reusing the
-  brand hero; spinner/stage rows fully message-driven (deterministic).
+- Decision recorded: production registry manifest is **embedded in every
+  DHI binary** (`internal/toolchain/registry/manifest.json`, go:embed).
+  Seed manifest has zero tools → bootstrap resolves to zero actions and
+  degrades visibly per ADR-0005.
+- `toolchain.Manager.InstallEmbedded(ctx)`; URL-based `Install` retained
+  for fixtures + `DHI_REGISTRY` override env var (loopback http allowed).
+- Manifest validation now permits empty tools map (seed state); embedded
+  registry guarded by test.
+- `Manager.Env(base)` — shim dir prepended to PATH for DHI's child
+  processes only. nil base inherits environ; explicitly empty base stays
+  host-free (shim-only PATH); idempotent.
+- Shell gate: `app.Gate` iface + `SetGate`; while active it owns body and
+  all keys except ctrl+c/ctrl+q; releases permanently once `Finished()`.
+  `bootstrap.Model.Finished()` = done OR failed (never traps the user).
+- `cmd/dhi` installs the gate on first run when `<prefix>/lock.json` is
+  absent.
 
 ## Gotchas learned (do not re-learn these)
 
-1. macOS `/var/folders` is itself a symlink: sandbox jail roots MUST be
-   `EvalSymlinks`-canonicalized at registration or every Contains() fails.
-2. Go cannot assign through map values (`m[k].Field = x` is a compile
-   error) — build/mutate locals then store back (hit it in manifest tests).
-3. Archive strip semantics: dir entry `"name/"` with strip=1 must be
-   skipped silently; files consumed entirely by strip are an error.
-4. Assertions on styled TUI output must run on `ansi.Strip`ped text —
-   glyphs and labels are separated by escape sequences in raw strings.
-5. `httptest.Server.URL` is loopback http, which manifest validation
-   deliberately allows — keep that exemption narrow (hostname check).
+1. Gate key routing must intercept BEFORE `handleGlobal` — number keys
+   ("2") are global bindings and would otherwise switch surfaces during
+   first-run bootstrap.
+2. macOS `/var/folders` is a symlink: jail roots need EvalSymlinks at
+   registration (carried from last session).
+3. Go map-value field assignment is a compile error; mutate locals then
+   store back.
+4. TUI assertions run on `ansi.Strip`ped output — glyphs/labels are split
+   by escape codes in raw strings.
 
-## Next up (finish M1)
+## Next up (close M1, then M2)
 
-1. Commit M1 packages (user approves diff first).
-2. Production registry manifest content: pinned URLs+sha256 for git,
-   ripgrep, node, uv per supported platform (security-sensitive — review
-   carefully); wire real download end-to-end once.
-3. Child-process PATH injection via `Manager.ShimDir()` (env seam for
-   terminals/LSP/git spawned by DHI only).
-4. Bootstrap gating: run bootstrap surface when doctor reports prefix
-   missing; then transition into Workspace.
-5. Then M2 Editor core (see ROADMAP).
+1. Commit this session's work (user approves diff first).
+2. Production pinning workflow: choose artifact sources/versions for git,
+   ripgrep, node, uv; fetch each per platform, compute sha256, fill
+   `registry/manifest.json` (security-sensitive — review pins like code);
+   real end-to-end bootstrap behind `DHI_REGISTRY` until then if needed.
+3. Start M2 Editor core per ROADMAP (nav tree + fuzzy find first).
 
 ## Open questions for user
 
-- Registry hosting: where should the production manifest live (GitHub
-  raw? dhi.dev)? Blocks item 2 above.
+- None blocking (manifest hosting resolved: embedded-in-binary).

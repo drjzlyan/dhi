@@ -136,6 +136,27 @@ func TestFailureMarksActiveRows(t *testing.T) {
 	}
 }
 
+func TestFinishedGatesRelease(t *testing.T) {
+	m := newTestModel()
+	if m.Finished() {
+		t.Fatal("fresh model reports finished before any event")
+	}
+	feed(m, toolchain.Event{Kind: toolchain.EventManifestFetched})
+	if m.Finished() {
+		t.Fatal("running install reports finished")
+	}
+	m.Update(installDoneMsg{})
+	if !m.Finished() {
+		t.Error("completed install must release the gate")
+	}
+
+	f := newTestModel()
+	f.Update(installDoneMsg{err: errors.New("no network")})
+	if !f.Finished() {
+		t.Error("failed install must also release the gate (degrade visibly)")
+	}
+}
+
 func TestLongErrorTruncated(t *testing.T) {
 	m := newTestModel()
 	long := strings.Repeat("x", 200)

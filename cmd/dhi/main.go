@@ -9,6 +9,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"charm.land/bubbletea/v2"
@@ -16,6 +17,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/doctor"
 	"github.com/drjzlyan/dhi/internal/toolchain"
 	"github.com/drjzlyan/dhi/internal/tui/app"
+	"github.com/drjzlyan/dhi/internal/tui/surfaces/bootstrap"
 	"github.com/drjzlyan/dhi/internal/tui/surfaces/placeholder"
 	"github.com/drjzlyan/dhi/internal/tui/surfaces/workspace"
 	"github.com/drjzlyan/dhi/internal/version"
@@ -48,11 +50,26 @@ func runTUI() {
 			"Everything configurable: theme, keys, terminal, LSP, agents, sandbox."),
 	)
 
+	if root, err := toolchain.DefaultRoot(); err == nil && needsBootstrap(root) {
+		mgr := toolchain.New(root)
+		// DHI_REGISTRY overrides the embedded manifest with a remote one
+		// (loopback http allowed) for testing the pipeline end-to-end.
+		a.SetGate(bootstrap.New(version.Version, mgr, os.Getenv("DHI_REGISTRY")))
+	}
+
 	p := tea.NewProgram(a)
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintln(os.Stderr, "dhi:", err)
 		os.Exit(1)
 	}
+}
+
+// needsBootstrap reports whether the hermetic prefix has never been
+// installed (no lockfile). A corrupt lockfile boots normally; doctor
+// surfaces it as a failure.
+func needsBootstrap(root string) bool {
+	_, err := os.Stat(filepath.Join(root, "lock.json"))
+	return os.IsNotExist(err)
 }
 
 // runDoctor executes the shared check suite and prints a report.

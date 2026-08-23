@@ -2,6 +2,7 @@ package app
 
 import (
 	"slices"
+	"strings"
 	"testing"
 
 	"charm.land/bubbletea/v2"
@@ -126,6 +127,66 @@ func TestViewCompositionGolden(t *testing.T) {
 	a.Update(keyPress("?")) // help overlay
 	golden.Snapshot(t, "shell_help_workspace_100x30", a.compose())
 }
+
+// stubGate satisfies Gate and records routing.
+type stubGate struct {
+	resized  int
+	updates  int
+	finished bool
+}
+
+func (g *stubGate) Init() tea.Cmd          { return nil }
+func (g *stubGate) Resize(w, h int)        { g.resized++ }
+func (g *stubGate) Update(tea.Msg) tea.Cmd { g.updates++; return nil }
+func (g *stubGate) View() string           { return "GATE" }
+func (g *stubGate) Finished() bool         { return g.finished }
+
+func TestGateOwnsBodyUntilFinished(t *testing.T) {
+	a, st := newTestApp(t)
+	gate := &stubGate{}
+	a.SetGate(gate)
+	a.Init()
+
+	a.Update(keyPress("2")) // swallowed: surfaces must not see keys
+	if a.active != 0 {
+		t.Fatalf("key press during gate changed surface to %d", a.active)
+	}
+	if len(st[1].keys) != 0 {
+		t.Fatalf("inactive surfaces received keys during gate: %v", st[1].keys)
+	}
+	if body := a.compose(); !strings.Contains(body, "GATE") || strings.Contains(body, "stub:") {
+		t.Fatalf("gate does not own the body:\n%s", body)
+	}
+
+	msg := testMsg{}
+	a.Update(msg)
+	if gate.updates != 1 {
+		t.Fatal("non-key message not routed to gate")
+	}
+
+	gate.finished = true
+	a.Update(testMsg{})
+	if body := a.compose(); !strings.Contains(body, "stub:home") {
+		t.Fatalf("shell did not resume after finish:\n%s", body)
+	}
+
+	a.Update(keyPress("3"))
+	if a.active != 2 {
+		t.Fatal("keys dead after gate finished")
+	}
+}
+
+func TestGateResizedWithShell(t *testing.T) {
+	a, _ := newTestApp(t)
+	gate := &stubGate{}
+	a.SetGate(gate)
+	a.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	if gate.resized == 0 {
+		t.Fatal("gate never resized")
+	}
+}
+
+type testMsg struct{}
 
 func keyPress(s string) tea.KeyPressMsg {
 	switch s {

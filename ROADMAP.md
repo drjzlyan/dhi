@@ -31,12 +31,13 @@ Feature specs: [F-003](docs/features/F-003-workspace.md) Workspace ·
 ## M1 — Hermetic toolchain & workspace domain *(foundation for every view)*
 
 - [x] `toolchain.Manager`: resolve → download → sha256 verify → extract → activate → lockfile
-- [~] Registry manifest: schema + validation shipped (`internal/toolchain`);
+- [~] Registry manifest: schema + validation shipped; **embedded-in-binary
+      distribution decided** (seed `registry/manifest.json` in place);
       production pins for git/ripgrep/node/uv still needed before first real bootstrap
-- [~] XDG-isolated prefix `~/.local/share/dhi`; shim links created — child-process
-      PATH injection still pending
-- [~] Animated Bootstrap surface component (event-driven, deterministic in tests,
-      reuses `branding`) — shell gating/wiring into first-run flow pending
+- [x] XDG-isolated prefix `~/.local/share/dhi`; shim links + `Manager.Env()`
+      PATH seam for child processes only
+- [x] Animated Bootstrap surface (event-driven, deterministic in tests,
+      reuses `branding`) + shell gate wiring on first run (`app.SetGate`)
 - [x] `dhi doctor [--json]` check suite shared with in-app health panel
       (`internal/doctor`; human + JSON output wired in `cmd/dhi`)
 - [x] Path-jail sandbox + permission policy engine (`internal/sandbox`) + OS-sandbox seam

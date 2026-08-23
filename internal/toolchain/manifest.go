@@ -85,13 +85,14 @@ func ParseManifest(data []byte) (*Manifest, error) {
 
 // Validate checks structural integrity and pin hygiene. Remote URLs must
 // be https; plaintext http is accepted only for loopback hosts so tests
-// can drive the pipeline against fixture servers.
+// can drive the pipeline against fixture servers. An empty tools map is
+// legal (the embedded seed manifest) and resolves to zero actions.
 func (mf *Manifest) Validate() error {
 	if mf.Schema != SchemaVersion {
 		return fmt.Errorf("toolchain: manifest schema %d, want %d", mf.Schema, SchemaVersion)
 	}
-	if len(mf.Tools) == 0 {
-		return fmt.Errorf("toolchain: manifest lists no tools")
+	if mf.Tools == nil {
+		mf.Tools = map[string]Tool{}
 	}
 	for name, tool := range mf.Tools {
 		if err := validToolName(name); err != nil {

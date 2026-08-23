@@ -67,7 +67,6 @@ func TestManifestValidateErrors(t *testing.T) {
 			Schema: 99,
 			Tools:  map[string]Tool{"rg": baseTool()},
 		},
-		"no tools":      {Schema: SchemaVersion},
 		"empty version": {Schema: SchemaVersion, Tools: map[string]Tool{"rg": {Platforms: baseTool().Platforms, Shims: []string{"rg"}}}},
 		"no platforms":  {Schema: SchemaVersion, Tools: map[string]Tool{"rg": {Version: "1.0", Shims: []string{"rg"}}}},
 		"no shims":      {Schema: SchemaVersion, Tools: map[string]Tool{"rg": {Version: "1.0", Platforms: baseTool().Platforms}}},
@@ -108,6 +107,36 @@ func TestManifestValidateErrors(t *testing.T) {
 	for label, mf := range tests {
 		if err := mf.Validate(); err == nil {
 			t.Errorf("%s: Validate passed, want error", label)
+		}
+	}
+}
+
+func TestEmptyManifestIsValid(t *testing.T) {
+	mf, err := ParseManifest([]byte(`{"schema":1,"tools":{}}`))
+	if err != nil {
+		t.Fatalf("seed manifest rejected: %v", err)
+	}
+	if len(mf.Tools) != 0 {
+		t.Errorf("tools = %v, want empty", mf.Tools)
+	}
+}
+
+// TestEmbeddedRegistryValid guards the in-binary supply-chain anchor:
+// it must always parse and validate, even while unpinned.
+func TestEmbeddedRegistryValid(t *testing.T) {
+	mf, err := Embedded()
+	if err != nil {
+		t.Fatalf("embedded registry invalid: %v", err)
+	}
+	if mf.Schema != SchemaVersion {
+		t.Errorf("embedded schema = %d", mf.Schema)
+	}
+	for name, tool := range mf.Tools {
+		if _, err := mf.Spec(name); err != nil {
+			t.Errorf("tool %s has no artifact for this platform: %v", name, err)
+		}
+		if tool.Version == "" || len(tool.Shims) == 0 {
+			t.Errorf("tool %s incompletely pinned: %+v", name, tool)
 		}
 	}
 }
