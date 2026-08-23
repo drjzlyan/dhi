@@ -122,7 +122,8 @@ func TestEmptyManifestIsValid(t *testing.T) {
 }
 
 // TestEmbeddedRegistryValid guards the in-binary supply-chain anchor:
-// it must always parse and validate, even while unpinned.
+// it must always parse, validate, and carry at least one fully pinned
+// tool (an empty seed must never ship).
 func TestEmbeddedRegistryValid(t *testing.T) {
 	mf, err := Embedded()
 	if err != nil {
@@ -131,12 +132,15 @@ func TestEmbeddedRegistryValid(t *testing.T) {
 	if mf.Schema != SchemaVersion {
 		t.Errorf("embedded schema = %d", mf.Schema)
 	}
+	if len(mf.Tools) == 0 {
+		t.Fatal("embedded registry ships no pins; refusing to release")
+	}
 	for name, tool := range mf.Tools {
-		if _, err := mf.Spec(name); err != nil {
-			t.Errorf("tool %s has no artifact for this platform: %v", name, err)
-		}
 		if tool.Version == "" || len(tool.Shims) == 0 {
 			t.Errorf("tool %s incompletely pinned: %+v", name, tool)
+		}
+		if _, err := mf.Spec(name); err != nil {
+			t.Errorf("tool %s has no artifact for this platform: %v", name, err)
 		}
 	}
 }

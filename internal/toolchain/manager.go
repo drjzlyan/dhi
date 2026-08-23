@@ -170,13 +170,14 @@ func (m *Manager) Install(ctx context.Context, manifestURL string, names []strin
 
 // InstallEmbedded runs the pipeline against the in-binary registry
 // manifest — the default production path (pins ship with releases).
-func (m *Manager) InstallEmbedded(ctx context.Context) error {
+// names selects tools (all when empty).
+func (m *Manager) InstallEmbedded(ctx context.Context, names []string) error {
 	mf, err := Embedded()
 	if err != nil {
 		return err
 	}
 	m.emit(Event{Kind: EventManifestFetched, Detail: "embedded registry"})
-	return m.install(ctx, mf, nil)
+	return m.install(ctx, mf, names)
 }
 
 func (m *Manager) install(ctx context.Context, mf *Manifest, names []string) error {

@@ -1,4 +1,61 @@
 {
   "schema": 1,
-  "tools": {}
+  "tools": {
+    "rg": {
+      "version": "15.2.0",
+      "platforms": {
+        "darwin/arm64": {
+          "url": "https://github.com/BurntSushi/ripgrep/releases/download/15.2.0/ripgrep-15.2.0-aarch64-apple-darwin.tar.gz",
+          "sha256": "3750b2e93f37e0c692657da574d7019a101c0084da05a790c83fd335bad973e4",
+          "format": "tar.gz",
+          "strip": 1
+        },
+        "linux/amd64": {
+          "url": "https://github.com/BurntSushi/ripgrep/releases/download/15.2.0/ripgrep-15.2.0-x86_64-unknown-linux-musl.tar.gz",
+          "sha256": "33e15bcf1624b25cdd2a55813a47a2f95dbe126268203e76aa6a585d1e7b149c",
+          "format": "tar.gz",
+          "strip": 1
+        }
+      },
+      "shims": ["rg"]
+    },
+    "uv": {
+      "version": "0.12.5",
+      "platforms": {
+        "darwin/arm64": {
+          "url": "https://github.com/astral-sh/uv/releases/download/0.12.5/uv-aarch64-apple-darwin.tar.gz",
+          "sha256": "5bb0e5fe008a773c3dbcb97ff79cd89e1241464fe9d2f986d52ad8f1b037bd62",
+          "format": "tar.gz",
+          "strip": 1
+        },
+        "linux/amd64": {
+          "url": "https://github.com/astral-sh/uv/releases/download/0.12.5/uv-x86_64-unknown-linux-gnu.tar.gz",
+          "sha256": "68a509da24b06b4223a1c0175fb5eb5bc79342b76cbeff0cfe51ac3f5b17b6b2",
+          "format": "tar.gz",
+          "strip": 1
+        }
+      },
+      "shims": ["uv", "uvx"]
+    },
+    "node": {
+      "version": "24.19.0",
+      "platforms": {
+        "darwin/arm64": {
+          "url": "https://nodejs.org/dist/v24.19.0/node-v24.19.0-darwin-arm64.tar.gz",
+          "sha256": "8294b7aa9b03997481c06babf1e8b270c859358f27da57a11509afe537ac381d",
+          "format": "tar.gz",
+          "strip": 1,
+          "bin_dir": "bin"
+        },
+        "linux/amd64": {
+          "url": "https://nodejs.org/dist/v24.19.0/node-v24.19.0-linux-x64.tar.gz",
+          "sha256": "f625d97cd707df4ff96254916fbc5ff014f09c09effe5a1e0ca8f6d41a8789d4",
+          "format": "tar.gz",
+          "strip": 1,
+          "bin_dir": "bin"
+        }
+      },
+      "shims": ["node", "npm", "npx", "corepack"]
+    }
+  }
 }

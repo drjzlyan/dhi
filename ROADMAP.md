@@ -31,9 +31,9 @@ Feature specs: [F-003](docs/features/F-003-workspace.md) Workspace ·
 ## M1 — Hermetic toolchain & workspace domain *(foundation for every view)*
 
 - [x] `toolchain.Manager`: resolve → download → sha256 verify → extract → activate → lockfile
-- [~] Registry manifest: schema + validation shipped; **embedded-in-binary
-      distribution decided** (seed `registry/manifest.json` in place);
-      production pins for git/ripgrep/node/uv still needed before first real bootstrap
+- [x] Registry manifest embedded in binary; production pins for ripgrep 15.2.0,
+      uv 0.12.5, node 24.19.0 LTS (darwin/arm64 + linux/amd64); git excluded
+      per ADR-0008 (go-git). Live-artifact smoke test behind DHI_SMOKE_NET=1
 - [x] XDG-isolated prefix `~/.local/share/dhi`; shim links + `Manager.Env()`
       PATH seam for child processes only
 - [x] Animated Bootstrap surface (event-driven, deterministic in tests,
@@ -51,7 +51,8 @@ Feature specs: [F-003](docs/features/F-003-workspace.md) Workspace ·
 - [ ] Modal editor MVP: normal/insert/visual/command, motions, d/c/y, `:w :q :wq :e`
 - [ ] PTY terminal drawer, one tab per member repo (+ open more tabs)
 - [ ] Markdown preview (GitHub-style rendering)
-- [ ] Git view MVP: status/stage/commit/log/branches + worktree create/switch/remove
+- [ ] Git view MVP (go-git, ADR-0008): status/stage/commit/log/branches +
+      worktree create/switch/remove
 - [ ] LSP foundation: installable servers via DHI toolchain; wire diagnostics+completion
 - [ ] Settings skeleton: schema, config precedence, live theme/key changes
 

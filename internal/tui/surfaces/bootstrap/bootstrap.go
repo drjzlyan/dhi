@@ -107,7 +107,7 @@ func (m *Model) startInstall() tea.Cmd {
 	return func() tea.Msg {
 		var err error
 		if url == "" {
-			err = m.mgr.InstallEmbedded(context.Background())
+			err = m.mgr.InstallEmbedded(context.Background(), nil)
 		} else {
 			err = m.mgr.Install(context.Background(), url, nil)
 		}
