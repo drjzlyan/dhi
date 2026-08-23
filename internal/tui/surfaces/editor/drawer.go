@@ -11,8 +11,9 @@ import (
 )
 
 const (
-	drawerHeight  = 10
-	scrollbackCap = 1000
+	gitPanelHeight = 12
+	drawerHeight   = 10
+	scrollbackCap  = 1000
 )
 
 // termTab is one drawer tab bound to a working directory.

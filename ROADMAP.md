@@ -58,8 +58,8 @@ Feature specs: [F-003](docs/features/F-003-workspace.md) Workspace ·
       scrollback MVP (full VT emulation deferred to M7 polish)
 - [~] Markdown preview (GitHub-style via glamour; ctrl+g on .md buffers,
       live re-render on edit)
-- [ ] Git view MVP (go-git, ADR-0008): status/stage/commit/log/branches +
-      worktree create/switch/remove
+- [x] Git view MVP (go-git, ADR-0008): status/stage/unstage/commit +
+      log in a ctrl+j bottom panel; per-buffer repo selection
 - [ ] LSP foundation: installable servers via DHI toolchain; wire diagnostics+completion
 - [ ] Settings skeleton: schema, config precedence, live theme/key changes
 

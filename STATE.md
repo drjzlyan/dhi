@@ -1,44 +1,47 @@
 # STATE — current position
 
-Updated: 2026-08-23 (session: M2 — markdown preview)
+Updated: 2026-08-23 (session: M2 — git view over go-git)
 
 ## Where we are
 
-PTY drawer committed (`2be7941`), workspace-mgmt spec committed
-(`d219511`). **This session (uncommitted — commit next): markdown
-preview.** `make verify` green; 17 packages under `-race` (glamour added;
-x/cellbuf bumped to v0.0.15 for x/ansi compat).
+Markdown preview committed (`9b8fdd2`). **This session (uncommitted —
+commit next): git view.** `make verify` green; 18 packages under
+`-race` (go-git v5 added per ADR-0008).
 
 ## Just finished
 
-- `internal/preview`: glamour wrapper — GFM (tables/tasks/strike),
-  dark style, per-width cached renderers, deterministic output,
-  IsMarkdown extension check.
-- Editor: ctrl+g toggles preview for the active buffer when the file is
-  markdown; non-md shows "not a markdown file" in the command line.
-  Content-hash cache re-renders only when buffer text or width changes
-  (edit → preview updates live, F-002 criterion).
-- Tests: render/GFM/determinism units; surface toggle + live-update +
-  non-md hint; editor_preview golden.
+- `internal/gitcore`: go-git service seam — Open/IsRepo, Status (index+
+  worktree codes, Staged flag), Stage (. and per-path with delete
+  fallback), Unstage (mixed reset w/ Files, keeps worktree), Commit
+  (explicit author required; refuses empty msg / nothing staged),
+  Log(n) subjects, CurrentBranch (unborn handled).
+- Editor ctrl+j panel: open→focused→blurred→closed cycle; repo picked
+  from active buffer's member else first member that IsRepo; tabs
+  status/log on `tab`; j/k cursor; s stage · S stage-all · u unstage ·
+  c commit → inline message input (esc cancels); errors + commit hash
+  feedback in-panel; esc blurs leaving sessions alive.
+- Goldens: status + log views. Buffer command line now renders vpath
+  instead of absolute path (`:w` message was leaking tempdirs into
+  goldens).
 
 ## Gotchas learned (do not re-learn these)
 
-1. glamour's old x/cellbuf pin breaks against newer x/ansi — after
-   adding charm deps run `go get github.com/charmbracelet/x/cellbuf@latest`
-   then `go mod tidy`.
-2. Test fixtures must resolve member files via ws.Resolve(ParseVPath)
-   — hardcoded repo-relative paths silently miss (beta lives outside
-   repos/ in fixtures).
-3. feed(m, "/", "e","n","t","e","r") types LETTERS into finders; enter
-   must be its own keystroke. Whole words need typeKeys.
-4. Carried: nil-channel pump hang (create chans in New); drainTerm in
-   poll loops; ANSI-strip before measuring.
+1. Panel input modes must intercept keys BEFORE the panel's global
+   switch — top-level esc case ate the commit-input cancel.
+2. perl slurp edits can prepend garbage at position 0 when the pattern
+   partially matches quoted chars; prefer edit tool for tricky blocks.
+3. Status-line messages containing paths must be vpath-substituted for
+   portable goldens (second occurrence of this class of bug).
+4. go-git API notes: wt.AddWithOptions(All)/AddGlob; Log returns an
+   interface (no pointer type); unborn HEAD → zero hash sentinel.
 
 ## Next up (rest of M2)
 
 1. Commit this session (user approves diff first).
-2. Git view over go-git (status/stage/commit/log/worktrees) behind a
-   gitcore service seam; then LSP foundation; settings skeleton.
+2. LSP foundation (installable servers via toolchain; diagnostics +
+   completion wiring) and settings skeleton — the last two M2 items.
+   Worktree create/switch/remove deferred out of the git MVP line into
+   M5-adjacent polish (Reviewer needs them first).
 
 ## Open questions for user
 

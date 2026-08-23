@@ -75,6 +75,10 @@ func (m *Model) bufferView() string {
 	}
 
 	cmd := e.CommandLine()
+	// hide machine-specific absolute paths from the status line
+	if p := e.Path(); p != "" && m.openVPath != "" {
+		cmd = strings.ReplaceAll(cmd, p, m.openVPath)
+	}
 	if cmd == "" {
 		cmd = theme.Hint().Render("i insert · : cmd · esc tree")
 	} else {

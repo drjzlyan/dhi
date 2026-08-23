@@ -14,6 +14,7 @@ import (
 	"charm.land/bubbletea/v2"
 
 	"github.com/drjzlyan/dhi/internal/fuzzy"
+	"github.com/drjzlyan/dhi/internal/gitcore"
 	"github.com/drjzlyan/dhi/internal/preview"
 	"github.com/drjzlyan/dhi/internal/search"
 	"github.com/drjzlyan/dhi/internal/textbuf"
@@ -87,6 +88,18 @@ type Model struct {
 	previewOn  bool
 	previewKey string // content hash of last rendered preview
 	previewDoc string
+
+	gitOpen      bool
+	gitFocus     bool
+	gitTab       int // 0 status, 1 log
+	gitCursor    int
+	gitRepo      *gitcore.Repo
+	gitEntries   []gitcore.FileStatus
+	gitLog       []gitcore.CommitEntry
+	gitErr       string
+	gitInput     []rune
+	gitInputMode bool
+	gitMessage   string
 
 	searcher      search.Searcher
 	searchQuery   []rune
@@ -250,8 +263,15 @@ func (m *Model) HandleKey(key string) bool {
 		m.ToggleDrawer()
 		return true
 	}
+	if key == "ctrl+j" {
+		m.ToggleGitPanel()
+		return true
+	}
 	if m.drawerOpen && m.termFocus {
 		return m.handleTermKey(key)
+	}
+	if m.gitOpen && m.gitFocus {
+		return m.handleGitKey(key)
 	}
 
 	// preview toggle works whenever a buffer is open
@@ -534,6 +554,12 @@ func (m *Model) navView() string {
 			bodyH = 4
 		}
 	}
+	if m.gitOpen {
+		bodyH = bodyH - min(gitPanelHeight, maxInt(m.height/3, 5))
+		if bodyH < 4 {
+			bodyH = 4
+		}
+	}
 	rail := kit.NewPanel("files", false)
 	hint := theme.Hint().Render("/ find · s search · ⏎ open · ^t term")
 	savedListH := m.list.Height
@@ -579,6 +605,9 @@ func (m *Model) navView() string {
 	mainPanel.Height = bodyH
 
 	out := joinH(rail.View(), mainPanel.View())
+	if m.gitOpen {
+		out += "\n" + m.gitPanelView()
+	}
 	if m.drawerOpen {
 		out += "\n" + m.drawerView()
 	}
