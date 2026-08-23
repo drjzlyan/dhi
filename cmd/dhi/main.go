@@ -1,6 +1,7 @@
-// Command dhi launches the DHI IDE. The binary intentionally exposes no
-// project-management subcommands; everything happens inside the TUI
-// (see ADR-0004). `dhi doctor` arrives with the toolchain milestone (M1).
+// Command dhi launches the DHI IDE. Per ADR-0004 the CLI surface is
+// minimal: no project-management subcommands — everything happens inside
+// the TUI. The one exception is `dhi doctor [--json]`, which audits the
+// hermetic install and workspace health.
 //
 // Five views: Workspace (boot) · Editor · Ideator · Reviewer · Settings.
 package main
@@ -8,9 +9,12 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"charm.land/bubbletea/v2"
 
+	"github.com/drjzlyan/dhi/internal/doctor"
+	"github.com/drjzlyan/dhi/internal/toolchain"
 	"github.com/drjzlyan/dhi/internal/tui/app"
 	"github.com/drjzlyan/dhi/internal/tui/surfaces/placeholder"
 	"github.com/drjzlyan/dhi/internal/tui/surfaces/workspace"
@@ -18,6 +22,20 @@ import (
 )
 
 func main() {
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "doctor":
+			os.Exit(runDoctor(os.Args[2:]))
+		default:
+			fmt.Fprintf(os.Stderr, "dhi: unknown command %q\n", os.Args[1])
+			fmt.Fprintln(os.Stderr, "usage: dhi [doctor [--json]]")
+			os.Exit(2)
+		}
+	}
+	runTUI()
+}
+
+func runTUI() {
 	a := app.New(version.Version,
 		workspace.New(version.Version),
 		placeholder.New("editor", "Editor", "M2",
@@ -35,4 +53,56 @@ func main() {
 		fmt.Fprintln(os.Stderr, "dhi:", err)
 		os.Exit(1)
 	}
+}
+
+// runDoctor executes the shared check suite and prints a report.
+// Exit codes: 0 healthy, 1 unhealthy, 2 usage error.
+func runDoctor(args []string) int {
+	asJSON := false
+	for _, arg := range args {
+		switch arg {
+		case "--json":
+			asJSON = true
+		default:
+			fmt.Fprintf(os.Stderr, "dhi doctor: unknown flag %q\n", arg)
+			return 2
+		}
+	}
+
+	toolRoot, err := toolchain.DefaultRoot()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "dhi doctor:", err)
+		return 1
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "dhi doctor:", err)
+		return 1
+	}
+
+	report := doctor.Run(toolRoot, cwd)
+	if asJSON {
+		data, err := report.JSON()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "dhi doctor:", err)
+			return 1
+		}
+		os.Stdout.Write(data)
+	} else {
+		fmt.Println("dhi doctor")
+		fmt.Println(strings.Repeat("─", 40))
+		for _, c := range report.Checks {
+			line := fmt.Sprintf("%-5s %-22s %s", string(c.Status), c.Name, c.Detail)
+			fmt.Println(strings.TrimRight(line, " "))
+		}
+		status := "unhealthy"
+		if report.Healthy {
+			status = "healthy"
+		}
+		fmt.Printf("\n%s (%d check(s))\n", status, len(report.Checks))
+	}
+	if !report.Healthy {
+		return 1
+	}
+	return 0
 }

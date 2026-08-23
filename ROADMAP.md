@@ -30,15 +30,19 @@ Feature specs: [F-003](docs/features/F-003-workspace.md) Workspace ·
 
 ## M1 — Hermetic toolchain & workspace domain *(foundation for every view)*
 
-- [ ] `toolchain.Manager`: resolve → download → sha256 verify → extract → activate → lockfile
-- [ ] Registry manifest (pinned URLs per platform: git, ripgrep, node, uv)
-- [ ] XDG-isolated prefix `~/.local/share/dhi`; shims PATH for child processes only
-- [ ] Animated Bootstrap surface (event-driven, deterministic in tests; reuse `branding`)
-- [ ] `dhi doctor [--json]` check suite shared with in-app health panel
-- [ ] Path-jail sandbox + permission policy engine (`internal/sandbox`) + OS-sandbox seam
-- [ ] Workspace domain: multi-repo model, `.dhi/workspace.toml`, VPath resolver;
+- [x] `toolchain.Manager`: resolve → download → sha256 verify → extract → activate → lockfile
+- [~] Registry manifest: schema + validation shipped (`internal/toolchain`);
+      production pins for git/ripgrep/node/uv still needed before first real bootstrap
+- [~] XDG-isolated prefix `~/.local/share/dhi`; shim links created — child-process
+      PATH injection still pending
+- [~] Animated Bootstrap surface component (event-driven, deterministic in tests,
+      reuses `branding`) — shell gating/wiring into first-run flow pending
+- [x] `dhi doctor [--json]` check suite shared with in-app health panel
+      (`internal/doctor`; human + JSON output wired in `cmd/dhi`)
+- [x] Path-jail sandbox + permission policy engine (`internal/sandbox`) + OS-sandbox seam
+- [x] Workspace domain: multi-repo model, `.dhi/workspace.toml`, VPath resolver;
       `.dhi/` dir-schema reservation for agents/memory/knowledge/channels/tasks
-- [ ] Tests: httptest fixture server, tamper cases, doctor JSON assertions
+- [x] Tests: httptest fixture server, tamper cases, doctor JSON assertions
 
 ## M2 — **Editor core** (F-002) + Settings skeleton (F-006)
 
