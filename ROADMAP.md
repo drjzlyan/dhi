@@ -72,6 +72,9 @@ Feature specs: [F-003](docs/features/F-003-workspace.md) Workspace ·
 
 ## M4 — **Workspace full** (F-003)
 
+- [ ] Workspace management: add/remove/rename member repos from the UI
+      (local path or git clone); atomic `.dhi/workspace.toml` rewrite;
+      live re-resolution without restart
 - [ ] Org: create/edit/archive agents, teams, leads; marketplace packs install (path/git)
 - [ ] Channels UI (#general, team channels, DMs) + threads + task cards
 - [ ] Task↔ChangeSet binding (per-repo worktrees); kanban statuses

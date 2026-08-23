@@ -25,6 +25,14 @@ memory, and knowledge.
    contributions to shared KB, skill/tool inventory.
 5. **Attach points** — any rostered agent is invitable into Editor chat
    sidebar, Ideator sessions, and Reviewer sessions (single source roster).
+6. **Workspace management** — add/remove/rename member repos from the UI
+   (ADR-0004: no PM subcommands in the shell). Add via local path or git
+   URL (clone into `repos/`, then register). Alias validation follows
+   `internal/workspace` rules; `.dhi/workspace.toml` is rewritten
+   atomically; removal unregisters the member but never deletes a working
+   tree without explicit confirmation. Live surfaces (editor tree,
+   ripgrep fan-out roots, terminal tabs) re-resolve members without an
+   app restart.
 
 ## Acceptance criteria
 
@@ -32,3 +40,5 @@ memory, and knowledge.
   progress visible as thread messages; completion flips task state.
 - Inspect agent memory after a session; entries exist and are readable.
 - Invite an agent from roster into an Editor chat session without leaving flow.
+- Add and remove a member repo entirely from the UI; editor tree, search,
+  and terminal tabs reflect the change without restarting DHI.

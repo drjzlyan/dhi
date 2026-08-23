@@ -4,11 +4,16 @@ Updated: 2026-08-23 (session: M2 — PTY terminal drawer)
 
 ## Where we are
 
-Multi-buffer tabs committed (`b2a61ed`). **This session (uncommitted —
-commit next): PTY terminal drawer.** `make verify` green; 16 packages
-under `-race` (creack/pty added as the only new dep — pure Go syscalls).
+PTY terminal drawer committed (`2be7941`). Working tree has one small
+docs change: **workspace-management-from-UI spec added** (F-003
+component 6 + ROADMAP M4 line) per user request. M2 remaining: markdown
+preview, git view (go-git), LSP foundation, settings skeleton.
 
 ## Just finished
+
+- Spec: F-003 component 6 "Workspace management" + M4 roadmap item —
+  add/remove/rename member repos from the UI, atomic workspace.toml
+  rewrite, live re-resolution without restart.
 
 - `internal/term`: PTY session service — Start(dir,label,env,argv) with
   user-shell default ($SHELL → bash → sh), streamed output channel,
