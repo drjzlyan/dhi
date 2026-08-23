@@ -1,45 +1,44 @@
 # STATE — current position
 
-Updated: 2026-08-23 (session: M0 foundation build)
+Updated: 2026-08-23 (session: five-view IA alignment)
 
 ## Where we are
 
-M0 **complete** (code + tests + goldens + docs). Not yet committed to git —
-repo initialized but first commit pending user review.
+M0 complete and committed (`b9c56fd`). **Five-view IA alignment implemented
+and verified** (uncommitted — commit next): Workspace is the boot view with
+the centered DHI brand hero; Home removed; registry = Workspace · Editor ·
+Ideator · Reviewer · Settings; keys `1-5`.
 
 ## Just finished
 
-- Scaffolded module `github.com/drjzlyan/dhi` on Go 1.26 with
-  `charm.land/bubbletea/v2 v2.0.9` + `charm.land/lipgloss/v2 v2.0.6`
-  (**v2 module paths are charm.land, NOT github.com/charmbracelet**).
-- Theme tokens + lint test enforcing no raw colors outside theme pkg.
-- Kit: Panel (cell-rendered, own border painter), Tabs, StatusLine, List.
-- App shell: registry router, keys 1-9/tab/shift+tab/?/ctrl+c, help overlay.
-- Surfaces: home (gradient logo) + 8 milestone placeholders.
-- Golden harness ANSI-stripped under `testdata/goldens/`, env
-  `DHI_UPDATE_GOLDENS=1`.
+- `internal/tui/branding`: shared gradient logo + `HeroBlock`/`Hero` (M1
+  bootstrap will reuse).
+- `kit.Center` exported; shell help overlay + workspace view use it.
+- `surfaces/workspace`: boot surface, hero centered on its own axis with a
+  column-aligned capability list beneath (all M4-tagged).
+- Help overlay text now "1-5 jump between views"; statusline hints updated.
+- Docs: F-002..F-006 specs complete; ROADMAP rewritten around views
+  (M1 foundation → M2 Editor core → M3 runtime+chat → M4 Workspace →
+  M5 Reviewer → M6 Ideator → M7 hardening); product.md IA section added.
 
 ## Gotchas learned (do not re-learn these)
 
-1. Bubble Tea v2: `Model.View() tea.View` (use `tea.NewView(s)`; set
-   `.AltScreen = true` on the View struct — there is NO WithAltScreen option).
-2. Keys are `tea.KeyPressMsg`; match via `.String()` → "tab", "shift+tab",
-   "ctrl+c", "esc". Construct in tests:
-   `tea.KeyPressMsg{Code: tea.KeyTab}`, `{Code:'c',Mod:tea.ModCtrl}`,
-   runes need `{Text:"j", Code:'j'}`.
-3. Never style single border chars with a style that has `.Border(...)` set —
-   it draws a box around each glyph (this broke Panel once already).
-4. Badge/alignment math must count the *rendered* width (`[badge]` incl.
-   brackets), not the raw value.
-5. `t.Fatalf` uses Goexit — cannot be recovered; golden harness exposes
-   pure `Compare()` for negative-path tests.
+1. Center styled text by **visible width** (`ansi.Strip` first) — raw rune
+   counts include escape bytes and broke two tests before we caught it.
+2. Center once at composition time, not per nested block (double-centering
+   misaligns groups); center *groups* on a shared axis instead.
+3. Bubble Tea v2 reminders still apply (see ADR-0001 notes): `tea.View`
+   struct, `.AltScreen = true`, `KeyPressMsg{Text:,Code:}` for runes.
 
-## Next up
+## Next up (M1 start)
 
-1. `git add -A && git commit` initial M0 (user asked to review first).
-2. Start M1 per ROADMAP: toolchain.Manager skeleton + registry manifest +
-   doctor check suite; then Bootstrap surface animations.
+1. Commit pending IA alignment (user approves diff first).
+2. `internal/toolchain`: Manager skeleton + registry manifest schema +
+   sha256 verifier against httptest fixtures.
+3. `internal/sandbox`: path-jail policy types.
+4. `internal/workspace`: multi-repo domain + `.dhi/workspace.toml` + VPath resolver.
+5. Doctor check suite + `dhi doctor --json`; animated Bootstrap surface last.
 
 ## Open questions for user
 
-- None blocking. (Marketplace hosting model deferred to M6 spec.)
+- None blocking.

@@ -21,6 +21,20 @@ across one repo or twenty microservices at once.
 | **The crew lead** | assign tasks to named agents; see progress; review their output with real diff tooling |
 | **The reviewer** | worktree-isolated review of any PR or feature branch; route questions to an agent mid-review |
 
+## Interface — five views
+
+```
+1 Workspace (boot) › 2 Editor › 3 Ideator › 4 Reviewer › 5 Settings
+```
+
+| View | Role | Spec |
+|---|---|---|
+| **Workspace** | the company of agents: channels, org/teams, tasks, inspection, marketplace; boots first under the brand hero | F-003 |
+| **Editor** | traditional IDE core: file nav, modal buffers, repo-tabbed terminal, git view, chat sidebar, preview, LSP | F-002 |
+| **Ideator** | think-with-the-crew sessions; artifact nav + preview + approve; no editing | F-004 |
+| **Reviewer** | GitHub-style PR/worktree review with line comments and agent participation | F-005 |
+| **Settings** | everything configurable across all views | F-006 |
+
 ## Core journeys (drive milestone scope)
 
 1. **Pair program** — open editor + chat pane; agent sees current buffer/diff;
@@ -30,9 +44,9 @@ across one repo or twenty microservices at once.
 3. **Review** — request review of PR-42 or current feature worktree; DHI spins
    up a review worktree; hunk-level comments; "ask agent" on any thread. *(M5)*
 4. **Ideate** — canvas pane with markdown preview; diagram-skilled and
-   planning-skilled agents contribute artifacts; export to issues later. *(M5)*
+   planning-skilled agents contribute artifacts; export to issues later. *(M6)*
 5. **Install expertise** — marketplace pack = skills + MCP servers + knowledge;
-   installed agents appear in roster and teams. *(M6)*
+   installed agents appear in roster and teams. *(M4)*
 
 ## Product principles
 

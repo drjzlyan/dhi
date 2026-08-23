@@ -139,43 +139,15 @@ func (a *App) compose() string {
 
 	out := bar + "\n" + body + "\n" + status
 	if a.showHelp {
-		out = a.tabs.View() + "\n" + centerBlock(a.helpView(), a.width, a.bodyHeight()) + "\n" + status
+		out = a.tabs.View() + "\n" + kit.Center(a.helpView(), a.width, a.bodyHeight()) + "\n" + status
 	}
 	return out
 }
 
-// centerBlock pads a rendered block into the middle of a width×height area.
-func centerBlock(block string, width, height int) string {
-	lines := strings.Split(block, "\n")
-	maxW := 0
-	for _, l := range lines {
-		if w := len([]rune(l)); w > maxW { // overlays are plain-styled blocks
-			maxW = w
-		}
-	}
-	if maxW > width {
-		maxW = width
-	}
-	padX := (width - maxW) / 2
-	if padX < 0 {
-		padX = 0
-	}
-	padY := (height - len(lines)) / 2
-	if padY < 0 {
-		padY = 0
-	}
-	side := strings.Repeat(" ", padX)
-	for i, l := range lines {
-		lines[i] = side + l
-	}
-	top := make([]string, padY)
-	return strings.Join(append(top, lines...), "\n")
-}
-
 func (a *App) helpView() string {
 	rows := [][2]string{
-		{"1-9", "jump to workspace"},
-		{"tab / shift+tab", "cycle workspaces"},
+		{"1-5", "jump between views"},
+		{"tab / shift+tab", "cycle views"},
 		{"?", "toggle this help"},
 		{"ctrl+c", "quit DHI"},
 	}

@@ -1,10 +1,10 @@
- ◆ DHI  1 Home › 2 Editor › 3 Market                                                                
+ ◆ DHI  1 Workspace › 2 Editor › 3 Settings                                                         
 
 ╭─ › Editor ────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                │
 │   PLANNED lands in M2                                                                          │
 │                                                                                                │
-│   Modal editing.                                                                               │
+│   Files · buffers · terminal · git · chat.                                                     │
 │                                                                                                │
 │                                                                                                │
 │                                                                                                │
@@ -24,4 +24,4 @@
 │                                                                                                │
 │                                                                                                │
 ╰────────────────────────────────────────────────────────────────────────────────────────────────╯
- NORMAL  Editor                                            1-9 switch • tab next • ? help • ^c quit 
+ NORMAL  Editor                                             1-5 views • tab next • ? help • ^c quit 

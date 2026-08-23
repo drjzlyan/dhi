@@ -34,7 +34,7 @@ func DefaultStatusLine(surfaceName string) *StatusLine {
 			{Text: " NORMAL ", Style: mode},
 			{Text: " " + surfaceName},
 		},
-		Hints: []string{"1-9 switch", "tab next", "? help", "^c quit"},
+		Hints: []string{"1-5 views", "tab next", "? help", "^c quit"},
 	}
 }
 

@@ -8,8 +8,8 @@ import (
 
 	"github.com/drjzlyan/dhi/internal/testutil/golden"
 	"github.com/drjzlyan/dhi/internal/tui/surfaces"
-	"github.com/drjzlyan/dhi/internal/tui/surfaces/home"
 	"github.com/drjzlyan/dhi/internal/tui/surfaces/placeholder"
+	"github.com/drjzlyan/dhi/internal/tui/surfaces/workspace"
 	"github.com/drjzlyan/dhi/internal/tui/theme"
 )
 
@@ -113,18 +113,18 @@ func TestViewCompositionGolden(t *testing.T) {
 	theme.SwapForTest(t, theme.Dark())
 
 	a := New("0.1.0",
-		home.New("0.1.0"),
-		placeholder.New("editor", "Editor", "M2", "Modal editing."),
-		placeholder.New("market", "Market", "M6", "Agent packs."))
+		workspace.New("0.1.0"),
+		placeholder.New("editor", "Editor", "M2", "Files · buffers · terminal · git · chat."),
+		placeholder.New("settings", "Settings", "M2+", "Everything configurable."))
 	a.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
-	golden.Snapshot(t, "shell_home_100x30", a.compose())
+	golden.Snapshot(t, "shell_workspace_100x30", a.compose())
 
-	a.Update(keyPress("3")) // marketplace placeholder
-	a.Update(keyPress("?")) // help overlay
-	golden.Snapshot(t, "shell_help_marketplace_100x30", a.compose())
-	a.Update(keyPress("?"))
 	a.Update(keyPress("2")) // editor placeholder
 	golden.Snapshot(t, "shell_editor_100x30", a.compose())
+
+	a.Update(keyPress("1"))
+	a.Update(keyPress("?")) // help overlay
+	golden.Snapshot(t, "shell_help_workspace_100x30", a.compose())
 }
 
 func keyPress(s string) tea.KeyPressMsg {

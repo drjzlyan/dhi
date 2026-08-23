@@ -3,64 +3,84 @@
 Status legend: `[ ]` planned · `[~]` in progress · `[x]` done.
 Update this file **and** [STATE.md](STATE.md) at the end of every session.
 
+## Product shape — five views
+
+```
+1 Workspace (boot) › 2 Editor › 3 Ideator › 4 Reviewer › 5 Settings
+```
+
+Feature specs: [F-003](docs/features/F-003-workspace.md) Workspace ·
+[F-002](docs/features/F-002-editor.md) Editor ·
+[F-004](docs/features/F-004-ideator.md) Ideator ·
+[F-005](docs/features/F-005-reviewer.md) Reviewer ·
+[F-006](docs/features/F-006-settings.md) Settings
+
 ---
 
 ## M0 — Skeleton & design system ✅ (2026-08-23)
 
 - [x] Repo scaffold `github.com/drjzlyan/dhi`, Go 1.26, Bubble Tea/Lip Gloss v2 (`charm.land`)
 - [x] Theme token system (`internal/tui/theme`) + raw-color lint enforcement test
-- [x] Kit primitives: Panel, Tabs, StatusLine, List (`internal/tui/kit`)
-- [x] App shell: surface registry, router, global keys, help overlay, focus seam (`internal/tui/app`)
-- [x] Surfaces: Home dashboard + placeholders for Editor/Files/Term/Trees/Agents/Tasks/Review/Market
-- [x] Golden-file snapshot harness (`internal/testutil/golden`, ANSI-stripped, `DHI_UPDATE_GOLDENS=1`)
-- [x] Unit + component tests green; goldens locked
-- [x] Docs: README, product/architecture/testing, ADRs 0001–0007, feature F-001
-- [x] CI (vet + race tests + golangci-lint), Makefile, `.gitignore`
+- [x] Kit primitives: Panel, Tabs, StatusLine, List, Center (`internal/tui/kit`)
+- [x] App shell: surface registry, router, global keys, help overlay
+- [x] Golden-file snapshot harness (`internal/testutil/golden`, ANSI-stripped)
+- [x] CI (vet + race tests + golangci-lint), Makefile, docs/ADRs 0001–0007
+- [x] Five-view IA alignment: Workspace boot view w/ centered brand hero
+      (`internal/tui/branding`), placeholders for all views; Home removed
 
-## M1 — Hermetic toolchain & bootstrap
+## M1 — Hermetic toolchain & workspace domain *(foundation for every view)*
 
 - [ ] `toolchain.Manager`: resolve → download → sha256 verify → extract → activate → lockfile
 - [ ] Registry manifest (pinned URLs per platform: git, ripgrep, node, uv)
-- [ ] XDG-isolated prefix `~/.local/share/dhi` (+ cache/config dirs); shims PATH for child processes only
-- [ ] Animated Bootstrap surface (event-driven; deterministic in tests; `animations=false` config)
+- [ ] XDG-isolated prefix `~/.local/share/dhi`; shims PATH for child processes only
+- [ ] Animated Bootstrap surface (event-driven, deterministic in tests; reuse `branding`)
 - [ ] `dhi doctor [--json]` check suite shared with in-app health panel
-- [ ] Path-jail sandbox + permission policy engine (`internal/sandbox`) with OS-sandbox adapter seam
-- [ ] Workspace domain: multi-repo model, `.dhi/workspace.toml`, VPath resolver, dir-schema reservation for `memory/` + `knowledge/`
-- [ ] Tests: httptest fixture server, tamper cases, doctor JSON assertions, bootstrap event-driven goldens
+- [ ] Path-jail sandbox + permission policy engine (`internal/sandbox`) + OS-sandbox seam
+- [ ] Workspace domain: multi-repo model, `.dhi/workspace.toml`, VPath resolver;
+      `.dhi/` dir-schema reservation for agents/memory/knowledge/channels/tasks
+- [ ] Tests: httptest fixture server, tamper cases, doctor JSON assertions
 
-## M2 — IDE core
+## M2 — **Editor core** (F-002) + Settings skeleton (F-006)
 
 - [ ] Multi-repo nav tree grouped by member repo; fuzzy find; ripgrep fan-out search
-- [ ] Modal editor MVP: normal/insert/visual/command, motions, d/c/y, registers(min), `:w :q :wq :e`
-- [ ] PTY terminal panel, per-repo tabs
-- [ ] Worktrees surface: list/create/switch/remove, per-worktree status, stage (space), commit (c)
-- [ ] Command palette incl. `:ws add <path>` flows (replaces any CLI subcommands)
-- [ ] E2E teatest scenario: edit across two repos, branch, worktree create/switch, stage/commit
+- [ ] Modal editor MVP: normal/insert/visual/command, motions, d/c/y, `:w :q :wq :e`
+- [ ] PTY terminal drawer, one tab per member repo (+ open more tabs)
+- [ ] Markdown preview (GitHub-style rendering)
+- [ ] Git view MVP: status/stage/commit/log/branches + worktree create/switch/remove
+- [ ] LSP foundation: installable servers via DHI toolchain; wire diagnostics+completion
+- [ ] Settings skeleton: schema, config precedence, live theme/key changes
 
-## M3 — Agent runtime & PairChat
+## M3 — Agent runtime → chat sidebar in Editor
 
-- [ ] `agentkit` manifest spec (skills/knowledge/mcp/tools/model) + validation
-- [ ] Provider interface: Anthropic adapter + scripted MockProvider (all tests offline)
-- [ ] Tool executors (namespaced VPath fs/shell/git ops) behind path-jail policies
-- [ ] MCP client (stdio/http) + server registry
-- [ ] Message bus: DMs/channels/threads, mention-triggered turns, JSONL persistence
-- [ ] Memory: per-agent journal + notes; shared KB store w/ rg-based retrieval behind `KnowledgeStore`
-- [ ] PairChat surface streaming; apply-suggestion→editor buffer
+- [ ] `agentkit` manifest spec + validation; Provider iface (Anthropic + scripted Mock)
+- [ ] Namespaced VPath tools behind path-jail policies; MCP client (stdio/http)
+- [ ] Message bus (DMs/channels/threads, mention-triggered turns, JSONL persistence)
+- [ ] Per-agent memory + shared KB w/ rg retrieval behind `KnowledgeStore` (ADR-0007)
+- [ ] Editor chat sidebar: pick/switch rostered agent mid-session; apply-suggestion→buffer
 
-## M4 — Workplace
+## M4 — **Workspace full** (F-003)
 
-- [ ] Teams roster CRUD; task assignment (team or agent)
-- [ ] TaskBoard channels/threads UI (Slack-like)
-- [ ] ChangeSet: task ↔ multi-worktree binding
-- [ ] Mention orchestration incl. agent↔agent handoff scripted e2e
+- [ ] Org: create/edit/archive agents, teams, leads; marketplace packs install (path/git)
+- [ ] Channels UI (#general, team channels, DMs) + threads + task cards
+- [ ] Task↔ChangeSet binding (per-repo worktrees); kanban statuses
+- [ ] Inspection dashboards: current work, activity, private memory, KB contributions
+- [ ] Attach-points: invite any rostered agent into Editor/Ideator/Reviewer sessions
 
-## M5 — Review & Ideation
+## M5 — **Reviewer full** (F-005)
 
-- [ ] Review flow: PR/worktree → auto review-worktree → diff viewer + hunk nav
-- [ ] Inline comment threads; comment→agent roundtrip ("ask reviewer-agent")
-- [ ] Ideation canvas: markdown preview + artifact blocks + agent contributions
+- [ ] PR/worktree input → auto review-worktree; diff UI (files, hunks, side-by-side)
+- [ ] Line/hunk comment threads; pending-review batching; viewed marks
+- [ ] Agent invites per-line/thread + complete-agent-review mode
+- [ ] Completion: post to PR via `gh` | dispatch fixing agent | open-in-editor handoff
 
-## M6 — Marketplace
+## M6 — **Ideator full** (F-004)
 
-- [ ] Packaging (`manifest` bundle), install from local path/git URL
-- [ ] Index/search UI; example agents repo (3 packs)
+- [ ] Sessions: invited agent set + thread + artifact folder
+- [ ] Read-only artifact tree + preview (markdown first); approve/reject flow
+- [ ] Rejection→revision loop back to authoring agent; export later via MCP
+
+## M7 — Hardening & polish
+
+- [ ] Rich LSP features (hover, rename, refactor, code actions)
+- [ ] Performance passes (large repos, many buffers), OS-sandbox adapters on by default
+- [ ] Animation polish across bootstrap/transitions; reduced-motion honored everywhere
