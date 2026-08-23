@@ -18,9 +18,11 @@ import (
 	"github.com/drjzlyan/dhi/internal/toolchain"
 	"github.com/drjzlyan/dhi/internal/tui/app"
 	"github.com/drjzlyan/dhi/internal/tui/surfaces/bootstrap"
+	"github.com/drjzlyan/dhi/internal/tui/surfaces/editor"
 	"github.com/drjzlyan/dhi/internal/tui/surfaces/placeholder"
-	"github.com/drjzlyan/dhi/internal/tui/surfaces/workspace"
+	wsview "github.com/drjzlyan/dhi/internal/tui/surfaces/workspace"
 	"github.com/drjzlyan/dhi/internal/version"
+	"github.com/drjzlyan/dhi/internal/workspace"
 )
 
 func main() {
@@ -38,10 +40,14 @@ func main() {
 }
 
 func runTUI() {
+	var ws *workspace.Workspace
+	if cwd, err := os.Getwd(); err == nil {
+		ws, _ = workspace.Load(cwd) // not a workspace → empty-state editor
+	}
+
 	a := app.New(version.Version,
-		workspace.New(version.Version),
-		placeholder.New("editor", "Editor", "M2",
-			"Files · modal buffers · repo-tabbed terminal · git view · chat sidebar · preview."),
+		wsview.New(version.Version),
+		editor.New(version.Version, ws),
 		placeholder.New("ideator", "Ideator", "M6",
 			"Ideation sessions: artifact navigation, preview, approval — no editing."),
 		placeholder.New("reviewer", "Reviewer", "M5",

@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 
 	"github.com/BurntSushi/toml"
 )
@@ -102,7 +103,16 @@ func Load(root string) (*Workspace, error) {
 
 	ws := &Workspace{Root: root}
 	seenPaths := map[string]bool{}
-	for name, m := range cfg.Members {
+	// Iterate names in sorted order: member order must be deterministic
+	// across runs (map iteration is randomized) for stable UI and VPath
+	// reverse-mapping semantics.
+	names := make([]string, 0, len(cfg.Members))
+	for name := range cfg.Members {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		m := cfg.Members[name]
 		if !validName(name) {
 			return nil, fmt.Errorf("workspace: bad member name %q (lowercase [a-z0-9._-])", name)
 		}
