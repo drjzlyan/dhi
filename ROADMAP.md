@@ -53,7 +53,9 @@ Feature specs: [F-003](docs/features/F-003-workspace.md) Workspace ·
 - [x] Modal editor MVP: normal/insert/visual/command, motions, d/c/y,
       `:w :q :wq :e` (`internal/textbuf`, TUI-free) + multi-buffer tabs
       with :bn/:bp/:b switching and a tab strip
-- [ ] PTY terminal drawer, one tab per member repo (+ open more tabs)
+- [x] PTY terminal drawer: one cwd-pinned tab per member repo (+ alt+n
+      extra tabs), DHI toolchain PATH via Manager.Env; ANSI-stripped
+      scrollback MVP (full VT emulation deferred to M7 polish)
 - [ ] Markdown preview (GitHub-style rendering)
 - [ ] Git view MVP (go-git, ADR-0008): status/stage/commit/log/branches +
       worktree create/switch/remove

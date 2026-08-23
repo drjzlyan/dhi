@@ -48,9 +48,11 @@ func runTUI() {
 
 	var edOpts []editor.Option
 	if root, err := toolchain.DefaultRoot(); err == nil {
-		// Search runs DHI's own ripgrep from the shim dir; when the
-		// toolchain is not installed yet the capability stays off
-		// rather than falling back to a host rg (ADR-0005).
+		mgr := toolchain.New(root)
+		// Terminal sessions run with DHI's hermetic PATH; search uses
+		// the shim rg. Capabilities stay off when the toolchain is not
+		// installed rather than falling back to host tools (ADR-0005).
+		edOpts = append(edOpts, editor.WithTermEnv(mgr.Env(nil)))
 		if _, err := os.Stat(filepath.Join(root, "bin", "rg")); err == nil {
 			edOpts = append(edOpts, editor.WithSearcher(search.Ripgrep{
 				Bin: filepath.Join(root, "bin", "rg"),

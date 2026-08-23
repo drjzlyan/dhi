@@ -6,7 +6,7 @@
 │     app.go                     ││ i insert · : cmd · esc tree                                   │
 │   beta/ ▸                      ││                                                               │
 │                                ││                                                               │
-│ / find · s search · ⏎ open     ││                                                               │
+│ / find · s search · ⏎ open · ^ ││                                                               │
 │                                ││                                                               │
 │                                ││                                                               │
 │                                ││                                                               │

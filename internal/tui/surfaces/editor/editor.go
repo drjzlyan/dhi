@@ -46,6 +46,12 @@ func WithSearcher(s search.Searcher) Option {
 	return func(m *Model) { m.searcher = s }
 }
 
+// WithTermEnv sets the environment for terminal drawer sessions
+// (toolchain.Manager.Env output).
+func WithTermEnv(env []string) Option {
+	return func(m *Model) { m.termEnv = env }
+}
+
 // Model is the Editor surface.
 type Model struct {
 	version string
@@ -69,6 +75,14 @@ type Model struct {
 	activeTab int
 	bufFocus  bool
 
+	drawerOpen  bool
+	termFocus   bool
+	terms       []*termTab
+	activeTerm  int
+	cancelTerms []context.CancelFunc
+	termMsgs    chan teaMsg
+	termEnv     []string
+
 	searcher      search.Searcher
 	searchQuery   []rune
 	hits          []hitRow
@@ -90,7 +104,11 @@ var _ surfaces.Surface = (*Model)(nil)
 
 // New builds the editor for a workspace; nil ws renders the empty state.
 func New(version string, ws *workspace.Workspace, opts ...Option) *Model {
-	m := &Model{version: version, ws: ws}
+	m := &Model{
+		version:  version,
+		ws:       ws,
+		termMsgs: make(chan teaMsg, 128),
+	}
 	if ws != nil {
 		for _, mem := range ws.Members {
 			m.members = append(m.members, memberRef{name: mem.Name, path: mem.Path})
@@ -105,7 +123,48 @@ func New(version string, ws *workspace.Workspace, opts ...Option) *Model {
 }
 
 func (m *Model) Meta() surfaces.Meta { return surfaces.Meta{ID: "editor", Title: "Editor"} }
-func (m *Model) Init() tea.Cmd       { return nil }
+
+// Init starts the terminal message pump.
+func (m *Model) Init() tea.Cmd {
+	return m.listenTerm()
+}
+
+func (m *Model) listenTerm() tea.Cmd {
+	ch := m.termMsgs
+	return func() tea.Msg {
+		msg, ok := <-ch
+		if !ok {
+			return nil
+		}
+		return msg
+	}
+}
+
+// drainTerm processes any pending drawer messages synchronously.
+// Production drains via listenTerm cmds; this keeps headless tests
+// deterministic without a running program loop.
+func (m *Model) drainTerm() {
+	for {
+		select {
+		case msg := <-m.termMsgs:
+			m.Update(msg)
+		default:
+			return
+		}
+	}
+}
+
+// teaMsg is the union of async drawer events.
+type teaMsg struct {
+	kind  uint8 // termMsgOut | termMsgClosed
+	tab   int
+	chunk []byte
+}
+
+const (
+	termMsgOut uint8 = iota
+	termMsgClosed
+)
 
 func (m *Model) Resize(w, h int) {
 	m.width, m.height = w, h
@@ -113,8 +172,13 @@ func (m *Model) Resize(w, h int) {
 	m.list.Height = h - 3
 	m.findList.Width = 60 - 4
 	m.findList.Height = min(12, h-6)
-	m.hitList.Width = maxInt(m.width-railWidth-7, 10)
+	m.hitList.Width = maxInt(w-railWidth-7, 10)
 	m.hitList.Height = h - 5
+
+	if t := m.activeTermTab(); t != nil && t.sess != nil && !t.exited {
+		rows := min(drawerHeight, maxInt(h/3, 4)) - 2
+		_ = t.sess.Resize(maxInt(w-railWidth-4, 20), rows)
+	}
 }
 
 // Messages.
@@ -123,7 +187,7 @@ type hitMsg search.Hit
 
 type searchDoneMsg struct{}
 
-// Update handles streaming search results routed by the shell.
+// Update handles streaming search and terminal messages routed by the shell.
 func (m *Model) Update(msg tea.Msg) tea.Cmd {
 	switch msg := msg.(type) {
 	case hitMsg:
@@ -133,6 +197,14 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 		m.searching = false
 		m.hitsCh = nil
 		return nil
+	case teaMsg:
+		switch msg.kind {
+		case termMsgOut:
+			m.ingestTermChunk(msg.tab, msg.chunk)
+		case termMsgClosed:
+			m.termExited(msg.tab)
+		}
+		return m.listenTerm()
 	}
 	return nil
 }
@@ -168,6 +240,15 @@ func (m *Model) HandleKey(key string) bool {
 	if m.ws == nil {
 		return false
 	}
+
+	if key == "ctrl+t" {
+		m.ToggleDrawer()
+		return true
+	}
+	if m.drawerOpen && m.termFocus {
+		return m.handleTermKey(key)
+	}
+
 	switch m.mode {
 	case modeFind:
 		return m.handleFindKey(key)
@@ -191,6 +272,96 @@ func (m *Model) HandleKey(key string) bool {
 		return true
 	}
 	return m.handleNavKey(key)
+}
+
+// handleTermKey routes keys to the focused terminal session.
+func (m *Model) handleTermKey(key string) bool {
+	if idx := altDigitIndex(key, len(m.terms)); idx >= 0 {
+		m.activeTerm = idx
+		return true
+	}
+	switch key {
+	case "alt+n":
+		dir, label := m.activeTermDir()
+		if dir != "" {
+			m.newTermTab(dir, label+"-"+itoa(len(m.terms)+1))
+			m.activeTerm = len(m.terms) - 1
+		}
+		return true
+	}
+	t := m.activeTermTab()
+	if t == nil || t.sess == nil || t.exited {
+		return true
+	}
+	if data, ok := termKeyBytes(key); ok {
+		_ = t.sess.Write(data)
+	}
+	return true
+}
+
+func (m *Model) activeTermTab() *termTab {
+	if m.activeTerm < len(m.terms) {
+		return m.terms[m.activeTerm]
+	}
+	return nil
+}
+
+func (m *Model) activeTermDir() (string, string) {
+	if t := m.activeTermTab(); t != nil {
+		return t.dir, t.sess.Label()
+	}
+	if len(m.members) > 0 {
+		return m.members[0].path, m.members[0].name
+	}
+	return "", ""
+}
+
+// altDigitIndex maps "alt+1".."alt+9" to a tab index.
+func altDigitIndex(key string, count int) int {
+	if !strings.HasPrefix(key, "alt+") || len(key) != 5 {
+		return -1
+	}
+	n := int(key[4] - '1')
+	if n < 0 || n >= count {
+		return -1
+	}
+	return n
+}
+
+// termKeyBytes converts keystroke strings into pty input bytes.
+func termKeyBytes(key string) ([]byte, bool) {
+	switch key {
+	case "enter":
+		return []byte{'\r'}, true
+	case "backspace":
+		return []byte{0x7f}, true
+	case "tab":
+		return []byte{'\t'}, true
+	case "esc":
+		return []byte{0x1b}, true
+	case "up":
+		return []byte("\x1b[A"), true
+	case "down":
+		return []byte("\x1b[B"), true
+	case "right":
+		return []byte("\x1b[C"), true
+	case "left":
+		return []byte("\x1b[D"), true
+	case "ctrl+c":
+		return []byte{0x03}, true
+	case "ctrl+d":
+		return []byte{0x04}, true
+	case "ctrl+l":
+		return []byte{0x0c}, true
+	case "ctrl+u":
+		return []byte{0x15}, true
+	case "space":
+		return []byte{' '}, true
+	}
+	if r := []rune(key); len(r) == 1 && r[0] >= 32 {
+		return []byte(key), true
+	}
+	return nil, false
 }
 
 func (m *Model) handleNavKey(key string) bool {
@@ -339,12 +510,21 @@ func (m *Model) View() string {
 }
 
 func (m *Model) navView() string {
+	bodyH := m.height
+	if m.drawerOpen {
+		bodyH = m.height - drawerHeight - 1 // hint line below drawer
+		if bodyH < 4 {
+			bodyH = 4
+		}
+	}
 	rail := kit.NewPanel("files", false)
-	hint := theme.Hint().Render("/ find · s search · ⏎ open")
-	m.list.Height = m.height - 4 // reserve hint row + panel padding
+	hint := theme.Hint().Render("/ find · s search · ⏎ open · ^t term")
+	savedListH := m.list.Height
+	m.list.Height = bodyH - 3 // reserve hint row + panel padding
 	rail.SetContent(append(splitLines(m.list.View()), "", hint)...)
 	rail.Width = railWidth
-	rail.Height = m.height
+	rail.Height = bodyH
+	m.list.Height = savedListH
 
 	var main string
 	title := mainTitle(m.openVPath)
@@ -366,7 +546,7 @@ func (m *Model) navView() string {
 	}
 
 	mainW := maxInt(m.width-railWidth-1, 10)
-	centered := kit.Center(main, maxInt(mainW-2, 10), maxInt(m.height-2, 3))
+	centered := kit.Center(main, maxInt(mainW-2, 10), maxInt(bodyH-2, 3))
 	if m.mode == modeResults || m.active() != nil {
 		centered = main // lists and buffers are left-aligned
 	}
@@ -376,9 +556,13 @@ func (m *Model) navView() string {
 	mainPanel := kit.NewPanel(title, true)
 	mainPanel.SetContent(splitLines(centered)...)
 	mainPanel.Width = mainW
-	mainPanel.Height = m.height
+	mainPanel.Height = bodyH
 
-	return joinH(rail.View(), mainPanel.View())
+	out := joinH(rail.View(), mainPanel.View())
+	if m.drawerOpen {
+		out += "\n" + m.drawerView()
+	}
+	return out
 }
 
 // ExecEx implements textbuf.CommandDelegate: buffer-list ex commands.

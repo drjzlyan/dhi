@@ -2,7 +2,7 @@
 │ ▌ alpha/ ▸                     ││ results for "main"  2 hit(s)                                  │
 │   beta/ ▸                      ││                                                               │
 │                                ││ ▌ alpha/src/main.go:3  func main() {                          │
-│ / find · s search · ⏎ open     ││   alpha/app.go:7  // main entrypoint                          │
+│ / find · s search · ⏎ open · ^ ││   alpha/app.go:7  // main entrypoint                          │
 │                                ││                                                               │
 │                                ││ ⏎ jump · esc back                                             │
 │                                ││                                                               │
