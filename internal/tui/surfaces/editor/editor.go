@@ -14,6 +14,7 @@ import (
 	"charm.land/bubbletea/v2"
 
 	"github.com/drjzlyan/dhi/internal/fuzzy"
+	"github.com/drjzlyan/dhi/internal/preview"
 	"github.com/drjzlyan/dhi/internal/search"
 	"github.com/drjzlyan/dhi/internal/textbuf"
 	"github.com/drjzlyan/dhi/internal/tui/kit"
@@ -82,6 +83,10 @@ type Model struct {
 	cancelTerms []context.CancelFunc
 	termMsgs    chan teaMsg
 	termEnv     []string
+
+	previewOn  bool
+	previewKey string // content hash of last rendered preview
+	previewDoc string
 
 	searcher      search.Searcher
 	searchQuery   []rune
@@ -247,6 +252,18 @@ func (m *Model) HandleKey(key string) bool {
 	}
 	if m.drawerOpen && m.termFocus {
 		return m.handleTermKey(key)
+	}
+
+	// preview toggle works whenever a buffer is open
+	if key == "ctrl+g" && m.active() != nil {
+		e := m.active()
+		if !preview.IsMarkdown(e.Path()) {
+			e.SetMessage("preview: not a markdown file")
+			return true
+		}
+		m.previewOn = !m.previewOn
+		m.previewKey = "" // force re-render on next View
+		return true
 	}
 
 	switch m.mode {
@@ -529,6 +546,9 @@ func (m *Model) navView() string {
 	var main string
 	title := mainTitle(m.openVPath)
 	switch {
+	case m.active() != nil && m.previewOn && preview.IsMarkdown(m.active().Path()):
+		main = m.previewView()
+		title = "preview — " + title
 	case m.active() != nil:
 		main = m.bufferView()
 		title = bufferTitle(m.active())

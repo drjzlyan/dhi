@@ -1,52 +1,44 @@
 # STATE — current position
 
-Updated: 2026-08-23 (session: M2 — PTY terminal drawer)
+Updated: 2026-08-23 (session: M2 — markdown preview)
 
 ## Where we are
 
-PTY terminal drawer committed (`2be7941`). Working tree has one small
-docs change: **workspace-management-from-UI spec added** (F-003
-component 6 + ROADMAP M4 line) per user request. M2 remaining: markdown
-preview, git view (go-git), LSP foundation, settings skeleton.
+PTY drawer committed (`2be7941`), workspace-mgmt spec committed
+(`d219511`). **This session (uncommitted — commit next): markdown
+preview.** `make verify` green; 17 packages under `-race` (glamour added;
+x/cellbuf bumped to v0.0.15 for x/ansi compat).
 
 ## Just finished
 
-- Spec: F-003 component 6 "Workspace management" + M4 roadmap item —
-  add/remove/rename member repos from the UI, atomic workspace.toml
-  rewrite, live re-resolution without restart.
-
-- `internal/term`: PTY session service — Start(dir,label,env,argv) with
-  user-shell default ($SHELL → bash → sh), streamed output channel,
-  Write/Resize(SIGWINCH)/Close(idempotent), ctx-cancel kills.
-- Editor drawer: ctrl+t cycle = closed→open+focus→blurred(kept
-  alive)→closed. One lazily-created cwd-pinned tab per member repo on
-  first open; alt+1..9 switches; alt+n spawns an extra tab in the same
-  dir. While focused every key goes to the pty via termKeyBytes
-  (enter=\r, backspace=0x7f, arrows=CSI, ctrl+c/d/l/u).
-- Scrollback MVP: ANSI-stripped tail (1000-line cap), partial-line
-  buffer, [process exited] marker. Full VT emulation deferred to M7.
-- cmd/dhi passes Manager.Env(nil) via WithTermEnv so drawer children get
-  DHI's shim PATH only.
-- Live test drives a real shell through the drawer: typed echo reaches
-  pty, output lands in scrollback ("dhi-live-42").
+- `internal/preview`: glamour wrapper — GFM (tables/tasks/strike),
+  dark style, per-width cached renderers, deterministic output,
+  IsMarkdown extension check.
+- Editor: ctrl+g toggles preview for the active buffer when the file is
+  markdown; non-md shows "not a markdown file" in the command line.
+  Content-hash cache re-renders only when buffer text or width changes
+  (edit → preview updates live, F-002 criterion).
+- Tests: render/GFM/determinism units; surface toggle + live-update +
+  non-md hint; editor_preview golden.
 
 ## Gotchas learned (do not re-learn these)
 
-1. Channels consumed by listen cmds must be created in New(), NOT Init()
-   — unit tests never run Init, and pump goroutines silently block on a
-   nil channel forever (output vanished; tests hung on poll timeouts).
-2. Headless tests need m.drainTerm() inside poll loops: listenTerm cmds
-   are only scheduled by a real Bubble Tea program loop.
-3. pty echo means the terminal shows its own input — no local echo in
-   the drawer; don't double-render keystrokes.
-4. Carried: multi-start fuzzy scoring; undo groups; sorted member order.
+1. glamour's old x/cellbuf pin breaks against newer x/ansi — after
+   adding charm deps run `go get github.com/charmbracelet/x/cellbuf@latest`
+   then `go mod tidy`.
+2. Test fixtures must resolve member files via ws.Resolve(ParseVPath)
+   — hardcoded repo-relative paths silently miss (beta lives outside
+   repos/ in fixtures).
+3. feed(m, "/", "e","n","t","e","r") types LETTERS into finders; enter
+   must be its own keystroke. Whole words need typeKeys.
+4. Carried: nil-channel pump hang (create chans in New); drainTerm in
+   poll loops; ANSI-strip before measuring.
 
 ## Next up (rest of M2)
 
 1. Commit this session (user approves diff first).
-2. Markdown preview (GitHub-style rendering; goldmark candidate dep),
-   then git view over go-git (status/stage/commit/log/worktrees), LSP
-   foundation, settings skeleton.
+2. Git view over go-git (status/stage/commit/log/worktrees) behind a
+   gitcore service seam; then LSP foundation; settings skeleton.
 
 ## Open questions for user
 
