@@ -1,31 +1,34 @@
 # STATE — current position
 
-Updated: 2026-08-24 (session: M4 P1 — member management)
+Updated: 2026-08-24 (session: M4 P2 — org/marketplace/standards services)
 
 ## Where we are
 
-**M4 PHASE 1 COMPLETE (`make verify` green; P0 committed a647b0e, P1
-pending commit).** Workspace roster is now live-manageable end-to-end:
-add (local dir or git URL→clone), rename, remove-with-confirm from the
-Workspace view; `.dhi/workspace.toml` rewrites atomically; editor tree/
-search/fuzzy/terminals/buffers reconcile without restart via workspace
-change subscriptions. Next: P2 org + marketplace + coding standards.
+**M4 P0+P1+P2-services COMPLETE and committed (a647b0e, 6c2f3ca,
+e1f6cc6, 8aa8e98; `make verify` green).** All of P2's domain work has
+landed: org registry, crew CRUD with archive dir, Runtime.Reload with
+sidebar refresh, marketplace packs per F-008, layered coding standards
+injected into every agent turn. Remaining in P2 is UI only (org panel,
+pack install flow, standards editors). After that: P3 channels UI.
 
 ## Just finished
 
-- `internal/workspace`: RWMutex-guarded roster (`Members()` snapshots;
-  field unexported — all readers migrated), atomic `Save` keeping
-  relative paths under root, AddMember/RemoveMember/RenameMember
-  persisting BEFORE memory commit, last-member invariant, `Subscribe`
-  change events (Added/Removed/Renamed).
-- Editor: roster watcher pump (`membersChangedMsg`), reloadMembers()
-  rebuilds roots/rows/index, closes removed members' buffers+terms,
-  resets openVPath identity.
-- Workspace view rewrite: members pane + modal forms (add incl. async
-  clone with half-clone cleanup, rename, remove confirm), dim roadmap
-  rows for P2–P5; nil-ws hero preserved.
-- `gitcore.Clone` (go-git, in-process); app-shell golden regenerated
-  deliberately (hero + "not inside a DHI workspace").
+- `internal/agentkit/org`: `.dhi/org.toml` (strict, atomic, Subscribe);
+  crew.go CreateAgent/UpdateAgent/ArchiveAgent(→.archived/)/RestoreAgent
+  over manifest.Marshal round-trip-checked writes.
+- `internal/agentkit/pack`: F-008 install path|git (go-git clone to temp,
+  half-clone cleanup), validate-all-then-install, same-pack update vs
+  cross-pack conflict refusal, `.dhi/marketplace.json` provenance,
+  Uninstall removes exactly recorded ids.
+- `internal/agentkit/standards`: builtins→workspace→teams(sorted)→agent
+  extend|replace; Resolve reads fresh per turn; Save validates slugs;
+  Inspect for tooling. runtime.Config{Org,Standards} injects block after
+  grounding; cmd/dhi loads org best-effort, Standards always on when a
+  roster exists.
+- Doctor `Standards()` suite: parse-failure warns (silent builtin
+  fallback at runtime), dangling team/agent refs warned by name.
+- Runtime.Reload(roster): buildEntry extracted from New; swap under mu;
+  Changes() ping drives chatModel.refreshRoster (channel selection kept).
 
 ## Gotchas learned
 
@@ -33,31 +36,24 @@ change subscriptions. Next: P2 org + marketplace + coding standards.
    from the live input buffer breaks as soon as the user types.
 2. Buffer identity lives in openVPath/openPath too; clearing bufs alone
    leaves ghost tab titles.
-3. macOS /var→/private/var still applies to any path comparison against
-   git output (carried).
-4. sed bulk-renames of `.Members` → `.Members()`: always re-grep after;
-   doctor slipped through the first pass (caught by vet).
-5. Carried: shim recursion guard; nil Events chan wiring; bounded
-   shutdown; RawMessage decode for duplicate JSON tags; net.Pipe read
-   pumps; deny-all policies without policy_json; quiet git swallows
-   stderr on exit 1.
+3. Async turn tests must waitReply before asserting provider.Calls().
+4. Replace-mode semantics tripped my own tests twice: replace keeps ONLY
+   built-ins + override entries; write assertions accordingly.
+5. os.CreateTemp needs its dir to pre-exist (standards Save mkdir).
+6. Carried: macOS /var→/private/var vs git output paths; quiet git eats
+   stderr on exit 1; sed bulk renames need re-grep; shim recursion
+   guard; RawMessage decode for dup JSON tags; deny-all policies.
 
-## Next up (P2 org + marketplace + standards)
+## Next up (P2c UI, then P3 channels)
 
-1. `internal/agentkit/org`: `.dhi/org.toml` sidecar (teams, leads,
-   archived flags); strict decode; LoadDir-style API + tests.
-2. Agent CRUD service: write `.dhi/agents/<id>.toml` through
-   manifest.Parse validation; archive flag honored by loaders;
-   `Runtime.Reload(roster)` under per-agent turnMu; chat sidebar
-   roster refresh event.
-3. Marketplace packs: pack.toml spec (agents [+mcp.json] [+kb seeds]);
-   install path|git → validate all manifests → copy into .dhi/agents/;
-   idempotent reinstall; uninstall. Doctor pack provenance checks.
-4. Coding standards: `.dhi/standards.toml` layers (workspace/team/
-   agent; extend|replace), pure resolver + table tests, injection at
-   runtime.prompt() grounding point (Config seam from cmd/dhi),
-   Settings section UI, doctor reference warnings.
+1. Workspace view: org panel (create/edit teams+leads, archive/restore
+   agents), pack install (a→URL/path modal) + uninstall listing,
+   standards editor rows + effective-rules preview.
+2. Settings surface: standards section sharing the same store seam.
+3. Then P3 channels UI on the workspace floor (rail/transcript/thread/
+   composer over bus; posting through Runtime.Handle).
+4. Goldens regenerate deliberately for every visual chunk.
 
 ## Open questions for user
 
-- None blocking. (P1 commit pending this session's final step.)
+- None blocking.
