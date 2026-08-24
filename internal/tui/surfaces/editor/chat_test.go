@@ -147,7 +147,7 @@ func TestChatApprovalFlow(t *testing.T) {
 	if err := <-done; err != nil {
 		t.Fatalf("turn errored: %v", err)
 	}
-	data, err := os.ReadFile(filepath.Join(h.ws.Members[0].Path, "docs", "n.md"))
+	data, err := os.ReadFile(filepath.Join(h.ws.Members()[0].Path, "docs", "n.md"))
 	if err != nil || string(data) != "ok" {
 		t.Errorf("approved write missing: %q %v", data, err)
 	}

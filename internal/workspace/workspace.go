@@ -3,14 +3,23 @@
 // the VPath resolver that names files across all members as
 // "<member>/<rel-path>". The `.dhi/` tree is reserved for agents, memory,
 // knowledge, channels, and tasks (dir-schema reservation).
+//
+// A Workspace is safe for concurrent use: members are guarded by an
+// internal RWMutex, mutations persist atomically before becoming visible,
+// and Subscribe fans out change events for live surfaces (P1 re-
+// resolution). Read the roster through Members/Member — never by reaching
+// into internals.
 package workspace
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strings"
+	"sync"
 
 	"github.com/BurntSushi/toml"
 )
@@ -37,11 +46,16 @@ type Member struct {
 
 // Workspace is the loaded multi-repo model.
 type Workspace struct {
-	Root    string
-	Members []Member
+	Root string
+
+	mu      sync.RWMutex
+	members []Member // sorted by name; guarded by mu
+
+	subs   map[int]chan Change
+	subSeq int
 }
 
-// Config is the on-disk TOML shape of .dhi/workspace.toml.
+// config is the on-disk TOML shape of .dhi/workspace.toml.
 type config struct {
 	Schema  int               `toml:"schema"`
 	Members map[string]member `toml:"members"`
@@ -135,17 +149,28 @@ func Load(root string) (*Workspace, error) {
 			return nil, fmt.Errorf("workspace: duplicate member path %s", abs)
 		}
 		seenPaths[abs] = true
-		ws.Members = append(ws.Members, Member{Name: name, Path: abs})
+		ws.members = append(ws.members, Member{Name: name, Path: abs})
 	}
-	if len(ws.Members) == 0 {
+	if len(ws.members) == 0 {
 		return nil, fmt.Errorf("workspace: no members configured")
 	}
 	return ws, nil
 }
 
+// Members returns a snapshot of the roster sorted by name.
+func (w *Workspace) Members() []Member {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	out := make([]Member, len(w.members))
+	copy(out, w.members)
+	return out
+}
+
 // Member returns the member with the given name.
 func (w *Workspace) Member(name string) (Member, bool) {
-	for _, m := range w.Members {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	for _, m := range w.members {
 		if m.Name == name {
 			return m, true
 		}
@@ -157,4 +182,249 @@ var memberNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]*$`)
 
 func validName(name string) bool {
 	return memberNameRe.MatchString(name)
+}
+
+// ValidateName reports whether alias satisfies the member naming rule
+// (lowercase [a-z0-9._-], starting alphanumeric).
+func ValidateName(name string) error {
+	if !validName(name) {
+		return fmt.Errorf("bad member name %q (lowercase [a-z0-9._-], start alphanumeric)", name)
+	}
+	return nil
+}
+
+// Save persists the current roster to .dhi/workspace.toml atomically.
+// Paths under the workspace root are written relative to it so configs
+// stay portable; anything outside is stored absolute.
+func (w *Workspace) Save() error {
+	w.mu.RLock()
+	snap := make([]Member, len(w.members))
+	copy(snap, w.members)
+	w.mu.RUnlock()
+	return saveMembers(w.Root, snap)
+}
+
+// saveMembers serializes the given roster atomically (temp file in the
+// target directory, then rename).
+func saveMembers(root string, members []Member) error {
+	cfg := config{Schema: SchemaVersion, Members: map[string]member{}}
+	for _, m := range members {
+		p := m.Path
+		if rel, err := filepath.Rel(root, p); err == nil && !strings.HasPrefix(rel, "..") {
+			p = rel
+		}
+		cfg.Members[m.Name] = member{Path: p}
+	}
+
+	cfgPath := filepath.Join(root, ConfigFile)
+	tmp, err := os.CreateTemp(filepath.Dir(cfgPath), ".workspace-*.toml")
+	if err != nil {
+		return fmt.Errorf("workspace: write config: %w", err)
+	}
+	name := tmp.Name()
+	if err := toml.NewEncoder(tmp).Encode(cfg); err != nil {
+		tmp.Close()
+		os.Remove(name)
+		return fmt.Errorf("workspace: encode config: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(name)
+		return fmt.Errorf("workspace: write config: %w", err)
+	}
+	if err := os.Rename(name, cfgPath); err != nil {
+		os.Remove(name)
+		return fmt.Errorf("workspace: write config: %w", err)
+	}
+	return nil
+}
+
+// resolveMemberPath validates and absolutizes a candidate member path:
+// relative inputs join the workspace root; the target must exist as a
+// directory.
+func (w *Workspace) resolveMemberPath(path string) (string, error) {
+	if strings.TrimSpace(path) == "" {
+		return "", errors.New("path is empty")
+	}
+	abs := path
+	if !filepath.IsAbs(abs) {
+		abs = filepath.Join(w.Root, abs)
+	}
+	abs = filepath.Clean(abs)
+	info, err := os.Stat(abs)
+	if err != nil {
+		return "", fmt.Errorf("path %s: %w", abs, err)
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("path %s is not a directory", abs)
+	}
+	return abs, nil
+}
+
+// AddMember registers name → path (relative paths resolve against the
+// workspace root). The roster is persisted first; memory changes only on
+// success. Duplicate names or paths are rejected.
+func (w *Workspace) AddMember(name, path string) error {
+	if err := ValidateName(name); err != nil {
+		return fmt.Errorf("workspace: %w", err)
+	}
+	abs, err := w.resolveMemberPath(path)
+	if err != nil {
+		return fmt.Errorf("workspace: add %q: %w", name, err)
+	}
+
+	w.mu.Lock()
+	for _, m := range w.members {
+		if m.Name == name {
+			w.mu.Unlock()
+			return fmt.Errorf("workspace: member %q already exists", name)
+		}
+		if m.Path == abs {
+			w.mu.Unlock()
+			return fmt.Errorf("workspace: path %s already registered as %q", abs, m.Name)
+		}
+	}
+	next := make([]Member, len(w.members), len(w.members)+1)
+	copy(next, w.members)
+	next = append(next, Member{Name: name, Path: abs})
+	sort.Slice(next, func(i, j int) bool { return next[i].Name < next[j].Name })
+	w.mu.Unlock()
+
+	if err := saveMembers(w.Root, next); err != nil {
+		return err
+	}
+	w.mu.Lock()
+	w.members = next
+	w.mu.Unlock()
+	w.notify(Change{Kind: Added, Name: name})
+	return nil
+}
+
+// RemoveMember unregisters name without touching its working tree
+// (deleting checkouts always requires explicit user confirmation at the
+// UI layer). The last member cannot be removed — a workspace with zero
+// members is not loadable, so the invariant holds everywhere.
+func (w *Workspace) RemoveMember(name string) error {
+	w.mu.Lock()
+	idx := -1
+	for i, m := range w.members {
+		if m.Name == name {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		w.mu.Unlock()
+		return fmt.Errorf("workspace: unknown member %q", name)
+	}
+	if len(w.members) == 1 {
+		w.mu.Unlock()
+		return fmt.Errorf("workspace: cannot remove the last member %q", name)
+	}
+	next := make([]Member, 0, len(w.members)-1)
+	next = append(next, w.members[:idx]...)
+	next = append(next, w.members[idx+1:]...)
+	w.mu.Unlock()
+
+	if err := saveMembers(w.Root, next); err != nil {
+		return err
+	}
+	w.mu.Lock()
+	w.members = next
+	w.mu.Unlock()
+	w.notify(Change{Kind: Removed, Name: name})
+	return nil
+}
+
+// RenameMember re-aliases old to new. VPaths recorded elsewhere (open
+// buffers, tasks) keep resolving through the new alias after surfaces
+// reload; history on disk is not rewritten.
+func (w *Workspace) RenameMember(oldName, newName string) error {
+	if err := ValidateName(newName); err != nil {
+		return fmt.Errorf("workspace: rename %q: %w", oldName, err)
+	}
+	w.mu.Lock()
+	idx := -1
+	for i, m := range w.members {
+		if m.Name == oldName {
+			idx = i
+			break
+		}
+		if m.Name == newName {
+			w.mu.Unlock()
+			return fmt.Errorf("workspace: member %q already exists", newName)
+		}
+	}
+	if idx < 0 {
+		w.mu.Unlock()
+		return fmt.Errorf("workspace: unknown member %q", oldName)
+	}
+	next := make([]Member, len(w.members))
+	copy(next, w.members)
+	next[idx].Name = newName
+	sort.Slice(next, func(i, j int) bool { return next[i].Name < next[j].Name })
+	w.mu.Unlock()
+
+	if err := saveMembers(w.Root, next); err != nil {
+		return err
+	}
+	w.mu.Lock()
+	w.members = next
+	w.mu.Unlock()
+	w.notify(Change{Kind: Renamed, Name: newName, From: oldName, To: newName})
+	return nil
+}
+
+// ChangeKind names a roster mutation.
+type ChangeKind string
+
+// Change kinds.
+const (
+	Added   ChangeKind = "added"
+	Removed ChangeKind = "removed"
+	Renamed ChangeKind = "renamed"
+)
+
+// Change announces one committed roster mutation.
+type Change struct {
+	Kind ChangeKind
+	Name string // affected member (new name when renamed)
+	From string // previous alias (renamed only)
+	To   string // new alias (renamed only)
+	Path string // member path (added only)
+}
+
+// Subscribe receives every subsequent roster change until cancel runs.
+// Delivery is best-effort (a full buffer drops events; surfaces refresh
+// from snapshots anyway).
+func (w *Workspace) Subscribe() (<-chan Change, func()) {
+	ch := make(chan Change, 8)
+	w.mu.Lock()
+	w.subSeq++
+	id := w.subSeq
+	if w.subs == nil {
+		w.subs = map[int]chan Change{}
+	}
+	w.subs[id] = ch
+	w.mu.Unlock()
+	return ch, func() {
+		w.mu.Lock()
+		delete(w.subs, id)
+		w.mu.Unlock()
+	}
+}
+
+// notify fans out one change without blocking on slow subscribers.
+func (w *Workspace) notify(c Change) {
+	w.mu.Lock()
+	targets := make([]chan Change, 0, len(w.subs))
+	for _, sub := range w.subs {
+		targets = append(targets, sub)
+	}
+	w.mu.Unlock()
+	for _, sub := range targets {
+		select {
+		case sub <- c:
+		default:
+		}
+	}
 }

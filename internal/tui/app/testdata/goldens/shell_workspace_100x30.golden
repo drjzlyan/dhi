@@ -5,20 +5,17 @@
 
 
 
-                                        ██████╗ ██╗  ██╗██╗
-                                        ██╔══██╗██║  ██║██║
-                                        ██║  ██║███████║██║
-                                        ██║  ██║██╔══██║██║
-                                        ██████╔╝██║  ██║██║
-                                        ╚═════╝ ╚═╝  ╚═╝╚═╝
-                                                 
+
+
+                                     ██████╗ ██╗  ██╗██╗
+                                     ██╔══██╗██║  ██║██║
+                                     ██║  ██║███████║██║
+                                     ██║  ██║██╔══██║██║
+                                     ██████╔╝██║  ██║██║
+                                     ╚═════╝ ╚═╝  ╚═╝╚═╝
+                                     
                                      the agentic workspace IDE
-                                       v0.1.0  •  foundation
-                          
-                          
-                            #general    team channels & threads  M4
-                            org         form teams of agents  M4
-                            tasks       assign · watch · review  M4
-                            inspection  memory · knowledge · activity  M4
-                            marketplace install agent packs  M4
+                                     v0.1.0  •  foundation
+                                     
+                                     not inside a DHI workspace
  NORMAL  Workspace                                          1-5 views • tab next • ? help • ^c quit 

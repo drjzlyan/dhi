@@ -447,3 +447,64 @@ func TestCloseMiddleActivatesNeighbor(t *testing.T) {
 		t.Error("active index out of range after close")
 	}
 }
+
+func TestReloadMembersReconcilesTreeAndBuffers(t *testing.T) {
+	m := newEditor(t)
+	ws := m.ws
+
+	// Open a beta buffer, then remove beta from the roster.
+	var betaPath string
+	for _, mem := range ws.Members() {
+		if mem.Name == "beta" {
+			betaPath = filepath.Join(mem.Path, "README.md")
+		}
+	}
+	m.roots[1].toggle()
+	m.open(&node{kind: nodeFile, name: "README.md", path: betaPath, member: "beta"})
+	if len(m.bufs) != 1 {
+		t.Fatalf("buffer not opened: %d", len(m.bufs))
+	}
+	if err := ws.RemoveMember("beta"); err != nil {
+		t.Fatal(err)
+	}
+
+	m.reloadMembers()
+
+	if got := len(m.members); got != 1 || m.members[0].name != "alpha" {
+		t.Fatalf("members = %+v", m.members)
+	}
+	if len(m.roots) != 1 || m.roots[0].member != "alpha" {
+		t.Fatalf("roots = %+v", m.roots)
+	}
+	if len(m.bufs) != 0 || m.bufFocus {
+		t.Fatalf("removed-member buffer kept: bufs=%d focus=%v", len(m.bufs), m.bufFocus)
+	}
+	v := plainView(m)
+	if strings.Contains(v, "beta/") {
+		t.Fatalf("stale member still rendered:\n%s", v)
+	}
+
+	// Re-adding refreshes roots without a restart.
+	gamma := filepath.Join(ws.Root, "gamma")
+	if err := os.MkdirAll(gamma, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := ws.AddMember("gamma", gamma); err != nil {
+		t.Fatal(err)
+	}
+	m.reloadMembers()
+	if len(m.roots) != 2 {
+		t.Fatalf("roots after re-add = %d", len(m.roots))
+	}
+}
+
+func TestReloadMembersMessageRoundTrips(t *testing.T) {
+	m := newEditor(t)
+	m.memEvents <- struct{}{}
+	cmd := m.listenMembers()
+	msg := cmd()
+	if _, ok := msg.(membersChangedMsg); !ok {
+		t.Fatalf("cmd produced %T", msg)
+	}
+	m.Update(msg) // must not panic without pending changes
+}

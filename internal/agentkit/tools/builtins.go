@@ -206,8 +206,8 @@ func (t searchTool) Exec(ctx context.Context, input json.RawMessage) (string, er
 	if strings.TrimSpace(in.Query) == "" {
 		return "", fmt.Errorf("search: empty query")
 	}
-	roots := make([]string, 0, len(t.WS.Members))
-	for _, m := range t.WS.Members {
+	roots := make([]string, 0, len(t.WS.Members()))
+	for _, m := range t.WS.Members() {
 		if in.Member != "" && m.Name != in.Member {
 			continue
 		}

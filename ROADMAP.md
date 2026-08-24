@@ -128,15 +128,20 @@ prompt assembly).
       `git` entry into `registry/manifest.json` (supply-chain review)
       — until then doctor degrades visibly per ADR-0005
 
-### P1 — Member management *(next)*
+### P1 — Member management ✅ (2026-08-24)
 
-- [ ] `internal/workspace`: atomic Save + AddMember/RemoveMember/
-      RenameMember (alias rules, dup guards, confirm-before-delete)
-- [ ] `gitcore` local clone seam for "add repo from URL"
-- [ ] Live re-resolution: guarded member mutation + change notification;
-      editor tree/search roots/terminal tabs rebuild without restart
-- [ ] Workspace view members pane (`a` add / `r` rename / `d` delete) +
-      form modals; goldens regenerated deliberately
+- [x] `internal/workspace`: roster guarded by RWMutex (`Members()`
+      snapshot), atomic `Save` (relative paths preserved under root),
+      `AddMember`/`RemoveMember`/`RenameMember` persisting before
+      visibility; last-member invariant; change events via `Subscribe`
+- [x] Live re-resolution: editor watches roster changes — tree roots,
+      search roots, fuzzy index rebuild; buffers/terminal sessions of
+      removed members close; no restart
+- [x] Workspace view: members pane (`a` add local-path-or-git-URL,
+      `r` rename, `d` remove-with-confirm; working trees never deleted);
+      add-by-URL clones async via go-git into `<root>/<name>` with
+      half-clone cleanup; remaining sections render as dim roadmap rows
+- [x] `gitcore.Clone` (in-process, ADR-0008/0009: network stays go-git)
 
 ### P2 — Org + marketplace + coding standards
 

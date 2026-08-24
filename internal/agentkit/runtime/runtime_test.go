@@ -181,7 +181,7 @@ policy_json = """{"rules":[{"op":"read","path":"**","effect":"allow"}]}"""
 	if !res.IsError || !contains(res.Content, "denied") {
 		t.Errorf("deny not surfaced to model: %+v", res)
 	}
-	if _, err := os.Stat(filepath.Join(h.ws.Members[0].Path, "x.txt")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(h.ws.Members()[0].Path, "x.txt")); !os.IsNotExist(err) {
 		t.Error("denied write touched disk")
 	}
 }
@@ -216,7 +216,7 @@ policy_json = """{"rules":[{"op":"read","path":"**","effect":"allow"},{"op":"wri
 		t.Fatalf("turn: %v", err)
 	}
 	waitReply(t, replies)
-	data, err := os.ReadFile(filepath.Join(h.ws.Members[0].Path, "docs", "n.md"))
+	data, err := os.ReadFile(filepath.Join(h.ws.Members()[0].Path, "docs", "n.md"))
 	if err != nil || string(data) != "ok" {
 		t.Errorf("approved write missing: %q %v", data, err)
 	}

@@ -94,7 +94,7 @@ func runTUI() {
 	}
 
 	a := app.New(version.Version,
-		wsview.New(version.Version),
+		wsview.New(version.Version, ws),
 		editor.New(version.Version, ws, edOpts...),
 		placeholder.New("ideator", "Ideator", "M6",
 			"Ideation sessions: artifact navigation, preview, approval — no editing."),

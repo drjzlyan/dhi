@@ -197,7 +197,7 @@ func Workspace(root string) []Check {
 		return []Check{{Name: "workspace/config", Status: Warn, Detail: err.Error()}}
 	}
 	checks := []Check{{Name: "workspace/config", Status: OK,
-		Detail: fmt.Sprintf("%d member(s)", len(ws.Members))}}
+		Detail: fmt.Sprintf("%d member(s)", len(ws.Members()))}}
 	for _, dir := range []string{
 		workspace.DirAgents, workspace.DirMemory, workspace.DirKnowledge,
 		workspace.DirChannels, workspace.DirTasks,

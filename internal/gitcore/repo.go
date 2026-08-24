@@ -5,6 +5,7 @@
 package gitcore
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -258,4 +259,23 @@ func (rp *Repo) CurrentBranch() (string, error) {
 		return ref.Name().Short(), nil
 	}
 	return "", nil // detached HEAD
+}
+
+// Clone clones url (https or a local path) into dst and returns the
+// opened repository. Network transports run in-process via go-git
+// (ADR-0008/0009): public HTTPS repos work anonymously; credential
+// prompts are never attempted — private repos surface an auth error
+// visibly instead of hanging.
+func Clone(ctx context.Context, url, dst string) (*Repo, error) {
+	if strings.TrimSpace(url) == "" {
+		return nil, fmt.Errorf("gitcore: clone: empty url")
+	}
+	r, err := git.PlainCloneContext(ctx, dst, false, &git.CloneOptions{
+		URL:      url,
+		Progress: nil,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("gitcore: clone %s: %w", url, err)
+	}
+	return &Repo{path: dst, r: r}, nil
 }

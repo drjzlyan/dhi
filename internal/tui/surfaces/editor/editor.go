@@ -98,6 +98,9 @@ type Model struct {
 	termMsgs    chan teaMsg
 	termEnv     []string
 
+	memEvents chan struct{} // workspace roster pings (P1 re-resolution)
+	memCancel func()
+
 	previewOn  bool
 	previewKey string // content hash of last rendered preview
 	previewDoc string
@@ -145,14 +148,15 @@ var _ surfaces.Surface = (*Model)(nil)
 // New builds the editor for a workspace; nil ws renders the empty state.
 func New(version string, ws *workspace.Workspace, opts ...Option) *Model {
 	m := &Model{
-		version:  version,
-		ws:       ws,
-		termMsgs: make(chan teaMsg, 128),
-		lspSent:  map[string]string{},
-		lspDiags: map[string][]lsp.Diagnostic{},
+		version:   version,
+		ws:        ws,
+		termMsgs:  make(chan teaMsg, 128),
+		memEvents: make(chan struct{}, 8),
+		lspSent:   map[string]string{},
+		lspDiags:  map[string][]lsp.Diagnostic{},
 	}
 	if ws != nil {
-		for _, mem := range ws.Members {
+		for _, mem := range ws.Members() {
 			m.members = append(m.members, memberRef{name: mem.Name, path: mem.Path})
 		}
 		m.roots = buildRoots(m.members)
@@ -166,13 +170,104 @@ func New(version string, ws *workspace.Workspace, opts ...Option) *Model {
 
 func (m *Model) Meta() surfaces.Meta { return surfaces.Meta{ID: "editor", Title: "Editor"} }
 
-// Init starts the terminal and chat message pumps.
+// Init starts the terminal and chat message pumps plus the workspace
+// roster watcher (live re-resolution without restart, P1).
 func (m *Model) Init() tea.Cmd {
 	cmds := []tea.Cmd{m.listenTerm()}
+	if m.ws != nil {
+		ch, cancel := m.ws.Subscribe()
+		m.memCancel = cancel
+		go func() {
+			for range ch {
+				select {
+				case m.memEvents <- struct{}{}:
+				default:
+				}
+			}
+		}()
+		cmds = append(cmds, m.listenMembers())
+	}
 	if m.chat != nil {
 		cmds = append(cmds, m.chat.start())
 	}
 	return tea.Batch(cmds...)
+}
+
+type membersChangedMsg struct{}
+
+func (m *Model) listenMembers() tea.Cmd {
+	ch := m.memEvents
+	return func() tea.Msg {
+		_, ok := <-ch
+		if !ok {
+			return nil
+		}
+		return membersChangedMsg{}
+	}
+}
+
+// reloadMembers rebuilds the tree/search roots/fuzzy index from the
+// current roster, closing buffers and terminal sessions that belonged
+// to removed members. New members appear lazily (tree roots now;
+// terminal tabs on next drawer open).
+func (m *Model) reloadMembers() {
+	if m.ws == nil {
+		return
+	}
+	snap := m.ws.Members()
+	aliveName := map[string]bool{}
+	alivePath := map[string]bool{}
+	m.members = nil
+	for _, mem := range snap {
+		aliveName[mem.Name] = true
+		alivePath[mem.Path] = true
+		m.members = append(m.members, memberRef{name: mem.Name, path: mem.Path})
+	}
+	m.roots = buildRoots(m.members)
+	m.refreshRows()
+	m.items = nil // fuzzy find reindexes lazily
+
+	// Close terminals pinned to removed member dirs.
+	var terms []*termTab
+	var cancels []context.CancelFunc
+	for i, t := range m.terms {
+		if alivePath[t.dir] || t.exited {
+			terms = append(terms, t)
+			cancels = append(cancels, m.cancelTerms[i])
+			continue
+		}
+		if m.cancelTerms[i] != nil {
+			m.cancelTerms[i]()
+		}
+	}
+	m.terms, m.cancelTerms = terms, cancels
+	if m.activeTerm >= len(m.terms) {
+		m.activeTerm = maxInt(len(m.terms)-1, 0)
+	}
+
+	// Close buffers whose vpath member vanished.
+	var bufs []*bufTab
+	for _, b := range m.bufs {
+		member, _, _ := strings.Cut(b.vp, "/")
+		if member == "" || aliveName[member] {
+			bufs = append(bufs, b)
+		} else if b.ed != nil {
+			b.ed.SetCommandDelegate(nil)
+		}
+	}
+	m.bufs = bufs
+	if m.activeTab >= len(m.bufs) {
+		m.activeTab = maxInt(len(m.bufs)-1, 0)
+	}
+	if len(m.bufs) == 0 {
+		m.bufFocus = false
+		// Drop stale identity so the tab strip stops rendering the
+		// removed member's file.
+		m.openPath, m.openVPath = "", ""
+	}
+	if m.list.Cursor > len(m.rows)-1 {
+		m.list.Cursor = maxInt(len(m.rows)-1, 0)
+	}
 }
 
 func (m *Model) listenTerm() tea.Cmd {
@@ -247,6 +342,9 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 		m.searching = false
 		m.hitsCh = nil
 		return nil
+	case membersChangedMsg:
+		m.reloadMembers()
+		return m.listenMembers()
 	case teaMsg:
 		switch msg.kind {
 		case termMsgOut:

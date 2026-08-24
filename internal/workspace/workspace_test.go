@@ -34,7 +34,7 @@ func setupWorkspace(t *testing.T) (*Workspace, string, string) {
 
 func TestLoadResolvesMembers(t *testing.T) {
 	ws, repoA, _ := setupWorkspace(t)
-	if ws.Root == "" || len(ws.Members) != 2 {
+	if ws.Root == "" || len(ws.Members()) != 2 {
 		t.Fatalf("ws = %+v", ws)
 	}
 	m, ok := ws.Member("alpha")

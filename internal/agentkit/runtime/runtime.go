@@ -69,8 +69,8 @@ func New(cfg Config, roster []*manifest.Agent) (*Runtime, error) {
 	if len(roster) == 0 {
 		return nil, fmt.Errorf("runtime: empty roster")
 	}
-	jailRoots := make([]string, 0, len(cfg.WS.Members)+1)
-	for _, m := range cfg.WS.Members {
+	jailRoots := make([]string, 0, len(cfg.WS.Members())+1)
+	for _, m := range cfg.WS.Members() {
 		jailRoots = append(jailRoots, m.Path)
 	}
 	for _, m := range roster {
@@ -265,7 +265,7 @@ func (r *Runtime) Turn(ctx context.Context, agentID string, trigger bus.Message)
 func (r *Runtime) prompt(e *entry, trigger bus.Message) provider.Request {
 	system := strings.TrimSpace(e.m.System)
 	var members []string
-	for _, m := range r.cfg.WS.Members {
+	for _, m := range r.cfg.WS.Members() {
 		members = append(members, m.Name)
 	}
 	grounding := "\n\nFiles are addressed as <member>/<rel-path>. Members: " + strings.Join(members, ", ")

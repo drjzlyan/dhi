@@ -72,7 +72,7 @@ func TestReadAllowAndDeny(t *testing.T) {
 	if !res.IsError {
 		t.Errorf("write should be denied by default: %+v", res)
 	}
-	if _, err := os.Stat(filepath.Join(ws.Members[0].Path, "evil.txt")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(ws.Members()[0].Path, "evil.txt")); !os.IsNotExist(err) {
 		t.Error("denied write touched disk")
 	}
 }
@@ -132,7 +132,7 @@ func TestWriteAskApproval(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("write did not complete")
 	}
-	data, err := os.ReadFile(filepath.Join(ws.Members[0].Path, "docs", "notes.md"))
+	data, err := os.ReadFile(filepath.Join(ws.Members()[0].Path, "docs", "notes.md"))
 	if err != nil || string(data) != "hello" {
 		t.Errorf("file = %q, err %v; want \"hello\"", data, err)
 	}
@@ -153,7 +153,7 @@ func TestWriteAskApproval(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("write did not return")
 	}
-	if _, err := os.Stat(filepath.Join(ws.Members[0].Path, "docs", "nope.md")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(ws.Members()[0].Path, "docs", "nope.md")); !os.IsNotExist(err) {
 		t.Error("denied write touched disk")
 	}
 }
@@ -174,7 +174,7 @@ func (f fakeSearcher) Search(_ context.Context, query string, roots []string) (<
 func TestSearchTool(t *testing.T) {
 	ws, guard := fixture(t)
 	guard.Policy = pol(sandbox.Rule{Op: sandbox.OpRead, Effect: sandbox.Allow})
-	memberPath := ws.Members[0].Path
+	memberPath := ws.Members()[0].Path
 	s := fakeSearcher{hits: []search.Hit{
 		{Path: filepath.Join(memberPath, "main.go"), Line: 1, Text: "package main"},
 	}}

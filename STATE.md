@@ -1,70 +1,63 @@
 # STATE — current position
 
-Updated: 2026-08-24 (session: M4 P0 — hermetic git spike)
+Updated: 2026-08-24 (session: M4 P1 — member management)
 
 ## Where we are
 
-**M4 PHASE 0 COMPLETE (`make verify` green; not yet committed).**
-Hermetic git decision landed as ADR-0009: DHI-built transport-free git
-(NO_CURL/EXPAT/GETTEXT/PERL/TCLTK) from pinned upstream source, published
-by our release workflow, pinned in the registry like rg/uv/node. go-git
-keeps network + object ops; the CLI owns the worktree lifecycle. Spike
-validated live on darwin/arm64: real git 2.55.0 built via
-scripts/build-hermetic-git.sh (4.2 MB, OS libs only) passed init→commit→
-worktree add/list/remove/prune→local clone round-trip.
-Next: P1 member management.
+**M4 PHASE 1 COMPLETE (`make verify` green; P0 committed a647b0e, P1
+pending commit).** Workspace roster is now live-manageable end-to-end:
+add (local dir or git URL→clone), rename, remove-with-confirm from the
+Workspace view; `.dhi/workspace.toml` rewrites atomically; editor tree/
+search/fuzzy/terminals/buffers reconcile without restart via workspace
+change subscriptions. Next: P2 org + marketplace + coding standards.
 
 ## Just finished
 
-- `docs/adr/0009-hermetic-git-binary.md` (supersedes ADR-0008 exclusion).
-- `internal/toolchain/gitenv.go`: `GitEnv` (shim-first PATH +
-  GIT_CONFIG_NOSYSTEM=1, GIT_TERMINAL_PROMPT=0, GIT_CONFIG_GLOBAL under
-  prefix), `EnsureGitConfig` (defaultBranch=main, empty hooksPath dir),
-  `GitBin`. User terminals untouched — hardening is GitEnv-only.
-- `internal/gitcore/exec.go`: Runner seam (Run/Version/WorktreeAdd/
-  WorktreeList-porcelain/WorktreeRemove/Prune), ResolveRunner refuses
-  missing shim, 2-min per-invocation timeout, stderr in errors.
-- Doctor `Git()` suite: silent while registry has no pin; else
-  lockfile/shim/version agreement (warn stale lock, fail mismatch).
-- `.github/workflows/release-git.yml` + build script emitting ready-
-  to-paste manifest snippets per platform.
-- ROADMAP M4 restructured into P0–P5 phases (P0 checked off).
+- `internal/workspace`: RWMutex-guarded roster (`Members()` snapshots;
+  field unexported — all readers migrated), atomic `Save` keeping
+  relative paths under root, AddMember/RemoveMember/RenameMember
+  persisting BEFORE memory commit, last-member invariant, `Subscribe`
+  change events (Added/Removed/Renamed).
+- Editor: roster watcher pump (`membersChangedMsg`), reloadMembers()
+  rebuilds roots/rows/index, closes removed members' buffers+terms,
+  resets openVPath identity.
+- Workspace view rewrite: members pane + modal forms (add incl. async
+  clone with half-clone cleanup, rename, remove confirm), dim roadmap
+  rows for P2–P5; nil-ws hero preserved.
+- `gitcore.Clone` (go-git, in-process); app-shell golden regenerated
+  deliberately (hero + "not inside a DHI workspace").
 
 ## Gotchas learned
 
-1. macOS /var → /private/var: git reports resolved paths from
-   `worktree list --porcelain`; compare with filepath.EvalSymlinks.
-2. `git commit -am` never stages NEW files — smoke flows need explicit
-   `add -A`; quiet mode can also swallow stderr on exit 1.
-3. cmd.Dir must exist for exec even when a stub ignores it — fake-git
-   tests need real temp dirs as the "repo".
-4. nil cmd.Env inherits the parent environment; only explicit slices
-   isolate. Runner always sets env explicitly in production paths.
+1. Rename-modal targets must be captured at open time — deriving them
+   from the live input buffer breaks as soon as the user types.
+2. Buffer identity lives in openVPath/openPath too; clearing bufs alone
+   leaves ghost tab titles.
+3. macOS /var→/private/var still applies to any path comparison against
+   git output (carried).
+4. sed bulk-renames of `.Members` → `.Members()`: always re-grep after;
+   doctor slipped through the first pass (caught by vet).
 5. Carried: shim recursion guard; nil Events chan wiring; bounded
-   shutdown; duplicate JSON tags → RawMessage decode; net.Pipe needs
-   read pumps; deny-all policies without policy_json.
+   shutdown; RawMessage decode for duplicate JSON tags; net.Pipe read
+   pumps; deny-all policies without policy_json; quiet git swallows
+   stderr on exit 1.
 
-## Next up (P1 member management)
+## Next up (P2 org + marketplace + standards)
 
-1. `internal/workspace`: Save (atomic tmp+rename), AddMember/
-   RemoveMember/RenameMember with existing alias rules + dup guards;
-   removal requires explicit confirm, never deletes trees silently.
-2. gitcore local clone helper (hermetic git or go-git — either seam)
-   behind the same API used by packs later.
-3. Live re-resolution: guarded mutation of shared *Workspace +
-   notification channel; editor tree/search/terminal tabs rebuild.
-4. Workspace view members pane UI (a/r/d keys, form modals, goldens).
-
-## Release checklist blocking the registry flip
-
-Dispatch release-git workflow (or tag hermetic-git-v2.55.0), publish
-artifacts as GitHub release, cross-check source digest
-457fdb04dc8728e007d4688695e6912e6f680727920f2a40bf11eacc17505357
-(git-2.55.0.tar.xz @ kernel.org) against kernel.org's published value,
-then paste script-emitted platform blocks into registry/manifest.json.
-Until flipped: doctor shows nothing (no pin = feature absent), smoke
-test runs via DHI_SMOKE_GIT_BIN override.
+1. `internal/agentkit/org`: `.dhi/org.toml` sidecar (teams, leads,
+   archived flags); strict decode; LoadDir-style API + tests.
+2. Agent CRUD service: write `.dhi/agents/<id>.toml` through
+   manifest.Parse validation; archive flag honored by loaders;
+   `Runtime.Reload(roster)` under per-agent turnMu; chat sidebar
+   roster refresh event.
+3. Marketplace packs: pack.toml spec (agents [+mcp.json] [+kb seeds]);
+   install path|git → validate all manifests → copy into .dhi/agents/;
+   idempotent reinstall; uninstall. Doctor pack provenance checks.
+4. Coding standards: `.dhi/standards.toml` layers (workspace/team/
+   agent; extend|replace), pure resolver + table tests, injection at
+   runtime.prompt() grounding point (Config seam from cmd/dhi),
+   Settings section UI, doctor reference warnings.
 
 ## Open questions for user
 
-- None blocking. (Commit of P0 pending user request.)
+- None blocking. (P1 commit pending this session's final step.)

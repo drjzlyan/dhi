@@ -63,7 +63,7 @@ func (w *Workspace) Resolve(v VPath) (string, error) {
 // every member are rejected.
 func (w *Workspace) VPathFor(abs string) (VPath, error) {
 	abs = filepath.Clean(abs)
-	for _, m := range w.Members {
+	for _, m := range w.Members() {
 		if abs == m.Path {
 			return VPath{Member: m.Name}, nil
 		}

@@ -1,6 +1,7 @@
 package gitcore
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -160,5 +161,48 @@ func TestBranchAndNotARepo(t *testing.T) {
 	}
 	if _, err := Open(""); err == nil {
 		t.Error("empty path accepted")
+	}
+}
+
+func TestCloneLocalPath(t *testing.T) {
+	srcDir := t.TempDir()
+	src, err := git.PlainInit(srcDir, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wt, err := src.Worktree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(srcDir, "hello.txt"), []byte("hi"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := wt.Add("."); err != nil {
+		t.Fatal(err)
+	}
+	sig := &object.Signature{Name: "t", Email: "t@local", When: time.Now()}
+	if _, err := wt.Commit("seed", &git.CommitOptions{Author: sig}); err != nil {
+		t.Fatal(err)
+	}
+
+	dst := filepath.Join(t.TempDir(), "clone")
+	repo, err := Clone(context.Background(), srcDir, dst)
+	if err != nil {
+		t.Fatalf("Clone: %v", err)
+	}
+	if repo.Path() != dst {
+		t.Errorf("path = %q, want %q", repo.Path(), dst)
+	}
+	if _, err := os.Stat(filepath.Join(dst, "hello.txt")); err != nil {
+		t.Errorf("cloned tree missing file: %v", err)
+	}
+
+	// Empty URL and bad target surface as errors.
+	if _, err := Clone(context.Background(), "", dst); err == nil {
+		t.Error("empty url accepted")
+	}
+	bad := filepath.Join(t.TempDir(), "nope")
+	if _, err := Clone(context.Background(), bad, filepath.Join(t.TempDir(), "x")); err == nil {
+		t.Error("missing source accepted")
 	}
 }
