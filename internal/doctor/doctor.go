@@ -5,13 +5,16 @@
 package doctor
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
+	"github.com/drjzlyan/dhi/internal/gitcore"
 	"github.com/drjzlyan/dhi/internal/settings"
 	"github.com/drjzlyan/dhi/internal/toolchain"
 	"github.com/drjzlyan/dhi/internal/workspace"
@@ -44,6 +47,7 @@ type Report struct {
 func Run(toolRoot, wsRoot string) Report {
 	var r Report
 	r.Checks = append(r.Checks, Toolchain(toolRoot)...)
+	r.Checks = append(r.Checks, Git(toolRoot)...)
 	r.Checks = append(r.Checks, Workspace(wsRoot)...)
 	r.Checks = append(r.Checks, Config(wsRoot)...)
 	r.Checks = append(r.Checks, Agents(wsRoot)...)
@@ -119,6 +123,67 @@ func Toolchain(root string) []Check {
 			Detail: fmt.Sprintf("%d leftover staging dir(s)", len(entries))})
 	}
 	return checks
+}
+
+// Git probes hermetic git readiness (ADR-0009): silent while the
+// embedded registry carries no git pin (pre-release), otherwise the
+// lockfile entry, shim link, and `git --version` must all agree with
+// the pinned version.
+func Git(toolRoot string) []Check {
+	mf, err := toolchain.Embedded()
+	if err != nil {
+		return []Check{{Name: "git/shim", Status: Warn,
+			Detail: "embedded registry unreadable: " + err.Error()}}
+	}
+	pin, ok := mf.Tools["git"]
+	if !ok {
+		return nil // pin not flipped yet; feature absent by design
+	}
+	return gitChecks(pin.Version, toolRoot)
+}
+
+func gitChecks(version, root string) []Check {
+	if _, err := os.Stat(root); os.IsNotExist(err) {
+		return []Check{{Name: "git/shim", Status: Warn,
+			Detail: fmt.Sprintf("git %s pending first bootstrap", version)}}
+	}
+	m := toolchain.New(root)
+
+	lf, err := m.ReadLockfile()
+	if err != nil {
+		return []Check{{Name: "git/shim", Status: Fail, Detail: err.Error()}}
+	}
+	locked, isLocked := lf.Tools["git"]
+	switch {
+	case !isLocked:
+		return []Check{{Name: "git/shim", Status: Warn,
+			Detail: fmt.Sprintf("not installed yet (bootstrap will fetch git %s)", version)}}
+	case locked.Version != version:
+		return []Check{{Name: "git/shim", Status: Warn,
+			Detail: fmt.Sprintf("locked %s, registry pins %s (bootstrap will upgrade)",
+				locked.Version, version)}}
+	}
+
+	shim := m.GitBin()
+	if _, err := os.Stat(shim); err != nil {
+		return []Check{{Name: "git/shim", Status: Fail,
+			Detail: fmt.Sprintf("locked %s but shim missing: %s", locked.Version, shim)}}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	r := gitcore.NewRunner(shim, m.GitEnv(nil))
+	got, err := r.Version(ctx)
+	if err != nil {
+		return []Check{{Name: "git/version", Status: Fail,
+			Detail: strings.TrimSpace(err.Error())}}
+	}
+	if got != version {
+		return []Check{{Name: "git/version", Status: Fail,
+			Detail: fmt.Sprintf("shim reports %s, registry pins %s", got, version)}}
+	}
+	return []Check{{Name: "git/version", Status: OK,
+		Detail: fmt.Sprintf("hermetic git %s", got)}}
 }
 
 // Workspace probes the DHI workspace at root (skipped with a warning

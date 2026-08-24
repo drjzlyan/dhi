@@ -102,14 +102,74 @@ streaming render in sidebar (M7 polish).
 
 ## M4 — **Workspace full** (F-003)
 
-- [ ] Workspace management: add/remove/rename member repos from the UI
-      (local path or git clone); atomic `.dhi/workspace.toml` rewrite;
-      live re-resolution without restart
-- [ ] Org: create/edit/archive agents, teams, leads; marketplace packs install (path/git)
-- [ ] Channels UI (#general, team channels, DMs) + threads + task cards
-- [ ] Task↔ChangeSet binding (per-repo worktrees); kanban statuses
-- [ ] Inspection dashboards: current work, activity, private memory, KB contributions
-- [ ] Attach-points: invite any rostered agent into Editor/Ideator/Reviewer sessions
+Phased delivery; each phase lands on green `make verify`. Design
+decisions: ADR-0009 (hermetic minimal git for worktrees), layered
+coding standards (guidance-only, defaults→team→agent, injected at
+prompt assembly).
+
+### P0 — Hermetic git spike ✅ (2026-08-24)
+
+- [x] ADR-0009: supersedes ADR-0008's git exclusion for worktree ops;
+      go-git keeps clone/fetch/status/commit; CLI owns worktree lifecycle
+- [x] `toolchain.Manager.GitEnv/GitBin/EnsureGitConfig`: shim-first PATH +
+      hardening (`GIT_CONFIG_NOSYSTEM=1`, `GIT_TERMINAL_PROMPT=0`, managed
+      global config w/ empty hooks dir); user terminals unaffected
+- [x] `gitcore.Runner`: exec seam — Version, WorktreeAdd/List/Remove/
+      Prune over porcelain; 2-min per-invocation timeout; no host fallback
+- [x] Live smoke `DHI_SMOKE_GIT=1` round-trip validated on darwin/arm64
+      against real git 2.55.0 built via `scripts/build-hermetic-git.sh`
+      (4.2 MB binary, OS-provided libs only)
+- [x] Doctor git suite (shim/version-pin agreement) wired into `Run()`
+- [x] `.github/workflows/release-git.yml`: builds artifacts from pinned
+      upstream source (NO_CURL NO_EXPAT NO_GETTEXT NO_PERL NO_TCLTK)
+- [ ] **Release checklist:** dispatch release-git, publish artifacts as
+      GitHub release `hermetic-git-v2.55.0`, cross-check source digest
+      (kernel.org tarball sha256 recorded in session notes), flip the
+      `git` entry into `registry/manifest.json` (supply-chain review)
+      — until then doctor degrades visibly per ADR-0005
+
+### P1 — Member management *(next)*
+
+- [ ] `internal/workspace`: atomic Save + AddMember/RemoveMember/
+      RenameMember (alias rules, dup guards, confirm-before-delete)
+- [ ] `gitcore` local clone seam for "add repo from URL"
+- [ ] Live re-resolution: guarded member mutation + change notification;
+      editor tree/search roots/terminal tabs rebuild without restart
+- [ ] Workspace view members pane (`a` add / `r` rename / `d` delete) +
+      form modals; goldens regenerated deliberately
+
+### P2 — Org + marketplace + coding standards
+
+- [ ] `.dhi/org.toml` sidecar registry (teams, leads, archived flags);
+      manifests untouched (strict decode stays v1)
+- [ ] Agent CRUD → validate via manifest.Parse → write roster files;
+      `Runtime.Reload` safe under per-agent turnMu; sidebar refresh
+- [ ] Marketplace packs (path + git install): pack.toml spec, validate-
+      all-before-copy, idempotent reinstall, uninstall
+- [ ] Coding standards service: `.dhi/standards.toml` layers
+      (workspace/team/agent, extend|replace), pure resolver,
+      injection in `runtime.prompt()`, Settings UI section, doctor suite
+
+### P3 — Channels UI (Slack floor)
+
+- [ ] Channel rail (#general seeded, team channels from org, DMs),
+      transcript, thread pane, composer reusing editor-sidebar pump
+      patterns; posting routes through Runtime.Handle; inline task-card refs
+
+### P4 — Tasks ↔ ChangeSets + kanban
+
+- [ ] Task store under reserved `.dhi/tasks/` (per-task TOML; worktrees
+      under `.dhi/tasks/<id>/`), statuses backlog/active/in-review/done
+- [ ] Kanban UI + card detail (thread link, dirty-state, assignee);
+      conversational assignment via @mention on a card's thread
+
+### P5 — Inspection + attach-points
+
+- [ ] Per-agent profile: manifest inventory, current task/worktree
+      state, activity timeline (bus + journal), read-only memory, KB
+      contributions, pending approvals, effective standards preview
+- [ ] Narrow Roster/invite interface replacing editor's concrete
+      `*runtime.Runtime` dependency so M5/M6 attach-points plug in
 
 ## M5 — **Reviewer full** (F-005)
 

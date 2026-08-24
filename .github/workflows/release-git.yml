@@ -1,0 +1,49 @@
+name: release-git
+
+# Builds DHI's hermetic git artifacts (ADR-0009) from the upstream
+# source tarball. Dispatch manually (or push a hermetic-git-v* tag),
+# then attach the artifacts + .sha256 files to the GitHub release and
+# flip registry/manifest.json — a supply-chain review like any pin.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "upstream git version to build"
+        default: "2.55.0"
+  push:
+    tags: ["hermetic-git-v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest # arm64 runner
+          - os: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: ver
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            echo "version=${{ github.event.inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${GITHUB_REF_NAME#hermetic-git-v}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build artifact
+        run: scripts/build-hermetic-git.sh "${{ steps.ver.outputs.version }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hermetic-git-${{ matrix.os }}
+          path: |
+            dhi-git-*.tar.gz
+            dhi-git-*.sha256
+          if-no-files-found: error
