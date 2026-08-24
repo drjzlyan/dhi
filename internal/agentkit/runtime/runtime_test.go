@@ -264,3 +264,79 @@ func mustPost(t *testing.T, h *harness, m bus.Message) bus.Message {
 }
 
 func contains(s, sub string) bool { return strings.Contains(s, sub) }
+
+// mustAgent parses a minimal manifest with the given id/name/tools.
+func mustAgent(t *testing.T, id, name string, tools ...string) *manifest.Agent {
+	t.Helper()
+	doc := "schema = 1\nname = \"" + name + "\"\nmodel = \"mock-1\"\ntools = ["
+	for i, tl := range tools {
+		if i > 0 {
+			doc += ", "
+		}
+		doc += "\"" + tl + "\""
+	}
+	doc += "]\n"
+	m, err := manifest.Parse(id, []byte(doc))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return m
+}
+
+func TestReloadSwapsRosterAndPings(t *testing.T) {
+	h := newHarness(t, baseDoc)
+	if err := h.rt.Reload([]*manifest.Agent{mustAgent(t, "bob", "Bob", "read")}); err != nil {
+		t.Fatalf("Reload: %v", err)
+	}
+	ids := h.rt.AgentIDs()
+	if len(ids) != 1 || ids[0] != "bob" {
+		t.Fatalf("ids after reload = %v", ids)
+	}
+	select {
+	case <-h.rt.Changes():
+	default:
+		t.Fatal("no reload ping")
+	}
+
+	// Empty roster clears the crew without error.
+	if err := h.rt.Reload(nil); err != nil {
+		t.Fatalf("Reload(nil): %v", err)
+	}
+	if ids = h.rt.AgentIDs(); len(ids) != 0 {
+		t.Fatalf("ids after clear = %v", ids)
+	}
+
+	// A broken entry aborts and keeps the previous roster: an explicit
+	// nil provider override makes buildEntry fail for that agent.
+	h.rt.agents = map[string]*entry{"scout": {m: mustAgent(t, "scout", "Scout")}}
+	h.rt.cfg.Providers = map[string]provider.Provider{"bad": nil}
+	if err := h.rt.Reload([]*manifest.Agent{mustAgent(t, "bad", "Bad")}); err == nil {
+		t.Fatal("reload without provider accepted")
+	}
+	if ids := h.rt.AgentIDs(); len(ids) != 1 || ids[0] != "scout" {
+		t.Fatalf("previous roster not kept: %v", ids)
+	}
+}
+
+func TestTurnsContinueAcrossReload(t *testing.T) {
+	h := newHarness(t, baseDoc)
+	replies, cancel := h.bus.Subscribe("#general")
+	defer cancel()
+
+	h.mock.Add(provider.ScriptText("first"))
+	trig, _ := h.bus.Post(bus.Message{Channel: "#general", Author: bus.Human, Text: "@scout one"})
+	h.rt.Handle(context.Background(), trig)
+	waitReply(t, replies)
+
+	fresh := mustAgent(t, "scout", "Scout", "read", "write", "list")
+	h.mock.Add(provider.ScriptText("second"))
+	if err := h.rt.Reload([]*manifest.Agent{fresh}); err != nil {
+		t.Fatal(err)
+	}
+	trig2, _ := h.bus.Post(bus.Message{Channel: "#general", Author: bus.Human, Text: "@scout two"})
+	h.rt.Handle(context.Background(), trig2)
+	got := waitReply(t, replies)
+	if got.Text != "second" {
+		t.Fatalf("post-reload reply = %+v", got)
+	}
+}

@@ -16,11 +16,12 @@ const (
 	chatTranscriptN = 200 // messages kept rendered per channel
 )
 
-// chatEvent is one async sidebar update: a bus message or a generic
-// approval-queue change ping.
+// chatEvent is one async sidebar update: a bus message, an approval-
+// queue ping, or a roster-change ping (P2 reloads).
 type chatEvent struct {
-	msg  bus.Message
-	ping bool
+	msg    bus.Message
+	ping   bool
+	roster bool
 }
 
 // chatModel is the crew sidebar (F-007 component 7): transcript of the
@@ -57,10 +58,12 @@ func newChat(rt *runtime.Runtime) *chatModel {
 	return c
 }
 
-// start pumps bus + approval events into c.events; safe to call once.
+// start pumps bus + approval + roster events into c.events; safe to call
+// once.
 func (c *chatModel) start() tea.Cmd {
 	if c.cancel == nil {
 		go c.pumpApprovals()
+		go c.pumpRoster()
 	}
 	return c.listen()
 }
@@ -98,6 +101,42 @@ func (c *chatModel) pumpApprovals() {
 		select {
 		case c.events <- chatEvent{ping: true}:
 		default:
+		}
+	}
+}
+
+// pumpRoster forwards runtime reload pings so the channel rail tracks
+// crew changes without reopening the sidebar.
+func (c *chatModel) pumpRoster() {
+	if c.rt == nil {
+		return
+	}
+	for range c.rt.Changes() {
+		select {
+		case c.events <- chatEvent{roster: true}:
+		default:
+		}
+	}
+}
+
+// refreshRoster rebuilds agents + channels from the runtime, keeping the
+// active channel selected when it still exists.
+func (c *chatModel) refreshRoster() {
+	if c.rt == nil {
+		return
+	}
+	c.agents = c.rt.AgentIDs()
+	channels := []string{"#general"}
+	for _, id := range c.agents {
+		channels = append(channels, "dm:"+id)
+	}
+	active := c.channelName()
+	c.channels = channels
+	c.active = 0
+	for i, ch := range channels {
+		if ch == active {
+			c.active = i
+			break
 		}
 	}
 }

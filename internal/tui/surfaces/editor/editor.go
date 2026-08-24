@@ -356,6 +356,9 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 		}
 		return m.listenTerm()
 	case chatEvent:
+		if msg.roster && m.chat != nil && !m.chat.closed() {
+			m.chat.refreshRoster()
+		}
 		// Transcript renders straight from bus history; just re-arm.
 		if m.chat != nil && !m.chat.closed() {
 			return m.chat.listen()

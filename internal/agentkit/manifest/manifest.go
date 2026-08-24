@@ -7,6 +7,8 @@
 package manifest
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -169,4 +171,137 @@ func LoadDir(dir string) ([]*Agent, error) {
 	}
 	sort.Slice(roster, func(i, j int) bool { return roster[i].ID < roster[j].ID })
 	return roster, nil
+}
+
+// Marshal renders a validated agent back to strict manifest TOML. The
+// round trip through Parse guarantees what we write is what we would
+// accept, so a future reader can never disagree with the writer.
+func Marshal(a *Agent) ([]byte, error) {
+	if a == nil {
+		return nil, fmt.Errorf("agentkit/manifest: marshal nil agent")
+	}
+	var f file
+	f.Schema = SchemaVersion
+	f.Name = a.Name
+	f.Model = a.Model
+	f.System = a.System
+	f.Tools = append([]string(nil), a.Tools...)
+	f.EnvVar = a.EnvVar
+	if a.policy != nil {
+		raw, err := json.Marshal(a.policy)
+		if err != nil {
+			return nil, fmt.Errorf("agentkit/manifest: %s: policy: %w", a.ID, err)
+		}
+		f.PolicyRaw = string(raw)
+	}
+	data := new(bytes.Buffer)
+	if err := toml.NewEncoder(data).Encode(f); err != nil {
+		return nil, fmt.Errorf("agentkit/manifest: %s: encode: %w", a.ID, err)
+	}
+	back, err := Parse(a.ID, data.Bytes())
+	if err != nil {
+		return nil, fmt.Errorf("agentkit/manifest: %s: marshal self-check: %w", a.ID, err)
+	}
+	if back.Name != a.Name || back.Model != a.Model || back.System != a.System ||
+		back.EnvVar != a.EnvVar || strings.Join(back.Tools, ",") != strings.Join(a.Tools, ",") {
+		return nil, fmt.Errorf("agentkit/manifest: %s: marshal round-trip mismatch", a.ID)
+	}
+	return data.Bytes(), nil
+}
+
+// WriteFile validates-then-writes <dir>/<id>.toml atomically. The file
+// stem is the identity; renames are Delete+Write at the caller level.
+func WriteFile(dir string, a *Agent) error {
+	data, err := Marshal(a)
+	if err != nil {
+		return err
+	}
+	path := filepath.Join(dir, a.ID+".toml")
+	tmp, err := os.CreateTemp(dir, "."+a.ID+"-*.toml")
+	if err != nil {
+		return fmt.Errorf("agentkit/manifest: write %s: %w", a.ID, err)
+	}
+	name := tmp.Name()
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		os.Remove(name)
+		return fmt.Errorf("agentkit/manifest: write %s: %w", a.ID, err)
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(name)
+		return fmt.Errorf("agentkit/manifest: write %s: %w", a.ID, err)
+	}
+	if err := os.Rename(name, path); err != nil {
+		os.Remove(name)
+		return fmt.Errorf("agentkit/manifest: write %s: %w", a.ID, err)
+	}
+	return nil
+}
+
+// ArchiveDirName is where archived manifests live inside the roster
+// directory. LoadDir skips directories, so archived agents drop out of
+// every roster read while staying on disk for restoration.
+const ArchiveDirName = ".archived"
+
+// Archive moves <dir>/<id>.toml to <dir>/.archived/<id>.toml.
+func Archive(dir, id string) error {
+	src := filepath.Join(dir, id+".toml")
+	dstDir := filepath.Join(dir, ArchiveDirName)
+	dst := filepath.Join(dstDir, id+".toml")
+	if _, err := os.Stat(src); err != nil {
+		return fmt.Errorf("agentkit/manifest: archive %s: %w", id, err)
+	}
+	if err := os.MkdirAll(dstDir, 0o755); err != nil {
+		return fmt.Errorf("agentkit/manifest: archive: %w", err)
+	}
+	if err := os.Rename(src, dst); err != nil {
+		return fmt.Errorf("agentkit/manifest: archive %s: %w", id, err)
+	}
+	return nil
+}
+
+// Restore moves an archived manifest back into the active roster.
+func Restore(dir, id string) error {
+	src := filepath.Join(dir, ArchiveDirName, id+".toml")
+	dst := filepath.Join(dir, id+".toml")
+	if _, err := os.Stat(dst); err == nil {
+		return fmt.Errorf("agentkit/manifest: restore %s: %q already active", id, id)
+	}
+	if _, err := os.Stat(src); err != nil {
+		return fmt.Errorf("agentkit/manifest: restore %s: %w", id, err)
+	}
+	if err := os.Rename(src, dst); err != nil {
+		return fmt.Errorf("agentkit/manifest: restore %s: %w", id, err)
+	}
+	return nil
+}
+
+// ArchivedIDs lists archived agent ids sorted (filename stems that parse
+// cleanly; broken entries surface in doctor instead).
+func ArchivedIDs(dir string) []string {
+	entries, err := os.ReadDir(filepath.Join(dir, ArchiveDirName))
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".toml") {
+			continue
+		}
+		out = append(out, strings.TrimSuffix(e.Name(), ".toml"))
+	}
+	sort.Strings(out)
+	return out
+}
+
+// ReadArchived parses one archived manifest by id (for inspection UIs).
+func ReadArchived(dir, id string) (*Agent, error) {
+	if !idRe.MatchString(id) {
+		return nil, fmt.Errorf("agentkit/manifest: bad agent id %q", id)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, ArchiveDirName, id+".toml"))
+	if err != nil {
+		return nil, fmt.Errorf("agentkit/manifest: read archived %s: %w", id, err)
+	}
+	return Parse(id, data)
 }

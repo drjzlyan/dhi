@@ -53,6 +53,7 @@ type Runtime struct {
 	cfg    Config
 	mu     sync.Mutex
 	agents map[string]*entry
+	roster chan struct{} // pinged after every Reload
 }
 
 type entry struct {
@@ -65,7 +66,7 @@ type entry struct {
 // New builds per-agent registries from the roster. Agents whose manifest
 // fails are skipped with an error return only if none load.
 func New(cfg Config, roster []*manifest.Agent) (*Runtime, error) {
-	r := &Runtime{cfg: cfg, agents: map[string]*entry{}}
+	r := &Runtime{cfg: cfg, agents: map[string]*entry{}, roster: make(chan struct{}, 1)}
 	if len(roster) == 0 {
 		return nil, fmt.Errorf("runtime: empty roster")
 	}
@@ -74,60 +75,100 @@ func New(cfg Config, roster []*manifest.Agent) (*Runtime, error) {
 		jailRoots = append(jailRoots, m.Path)
 	}
 	for _, m := range roster {
-		e := &entry{m: m}
-		if p, ok := cfg.Providers[m.ID]; ok {
-			e.p = p
-		} else {
-			e.p = cfg.Provider
-		}
-		if e.p == nil {
-			return nil, fmt.Errorf("runtime: %s has no provider", m.ID)
-		}
-		var policy *sandbox.Policy
-		if m.Policy() != nil {
-			policy = m.Policy()
-		} else {
-			policy = &sandbox.Policy{} // deny-all default
-		}
-		jail, err := sandbox.NewJail(jailRoots...)
+		e, err := r.buildEntry(m, jailRoots)
 		if err != nil {
-			return nil, fmt.Errorf("runtime: jail: %w", err)
-		}
-		deps := tools.Deps{
-			WS:        cfg.WS,
-			Guard:     sandbox.NewGuard(jail, policy),
-			Approvals: cfg.Approvals,
-			Searcher:  cfg.Searcher,
-			AgentID:   m.ID,
-		}
-		e.reg = tools.New()
-		for _, t := range tools.Builtins(deps) {
-			if err := e.reg.Register(t); err != nil {
-				return nil, fmt.Errorf("runtime: %s: %w", m.ID, err)
-			}
-		}
-		gate := tools.PolicyGate(policy, cfg.Approvals, m.ID)
-		for server, client := range cfg.MCPClients {
-			infos, err := client.Tools(context.Background())
-			if err != nil {
-				return nil, fmt.Errorf("runtime: mcp server %q: %w", server, err)
-			}
-			remotes := make([]tools.RemoteInfo, 0, len(infos))
-			for _, i := range infos {
-				remotes = append(remotes, tools.RemoteInfo{Name: i.Name, Description: i.Description, Schema: i.InputSchema})
-			}
-			for _, t := range tools.RemoteTools(server, gate, client, remotes) {
-				if !allowed(m.Tools, t.Def().Name) {
-					continue
-				}
-				if err := e.reg.Register(t); err != nil {
-					return nil, fmt.Errorf("runtime: %s: %w", m.ID, err)
-				}
-			}
+			return nil, err
 		}
 		r.agents[m.ID] = e
 	}
 	return r, nil
+}
+
+// buildEntry wires one agent's provider, jail, and tool registry.
+func (r *Runtime) buildEntry(m *manifest.Agent, jailRoots []string) (*entry, error) {
+	e := &entry{m: m}
+	if p, ok := r.cfg.Providers[m.ID]; ok {
+		e.p = p
+	} else {
+		e.p = r.cfg.Provider
+	}
+	if e.p == nil {
+		return nil, fmt.Errorf("runtime: %s has no provider", m.ID)
+	}
+	var policy *sandbox.Policy
+	if m.Policy() != nil {
+		policy = m.Policy()
+	} else {
+		policy = &sandbox.Policy{} // deny-all default
+	}
+	jail, err := sandbox.NewJail(jailRoots...)
+	if err != nil {
+		return nil, fmt.Errorf("runtime: jail: %w", err)
+	}
+	deps := tools.Deps{
+		WS:        r.cfg.WS,
+		Guard:     sandbox.NewGuard(jail, policy),
+		Approvals: r.cfg.Approvals,
+		Searcher:  r.cfg.Searcher,
+		AgentID:   m.ID,
+	}
+	e.reg = tools.New()
+	for _, t := range tools.Builtins(deps) {
+		if err := e.reg.Register(t); err != nil {
+			return nil, fmt.Errorf("runtime: %s: %w", m.ID, err)
+		}
+	}
+	gate := tools.PolicyGate(policy, r.cfg.Approvals, m.ID)
+	for server, client := range r.cfg.MCPClients {
+		infos, err := client.Tools(context.Background())
+		if err != nil {
+			return nil, fmt.Errorf("runtime: mcp server %q: %w", server, err)
+		}
+		remotes := make([]tools.RemoteInfo, 0, len(infos))
+		for _, i := range infos {
+			remotes = append(remotes, tools.RemoteInfo{Name: i.Name, Description: i.Description, Schema: i.InputSchema})
+		}
+		for _, t := range tools.RemoteTools(server, gate, client, remotes) {
+			if !allowed(m.Tools, t.Def().Name) {
+				continue
+			}
+			if err := e.reg.Register(t); err != nil {
+				return nil, fmt.Errorf("runtime: %s: %w", m.ID, err)
+			}
+		}
+	}
+	return e, nil
+}
+
+// Changes pings once after every successful Reload so UIs can refresh
+// rosters (best-effort delivery).
+func (r *Runtime) Changes() <-chan struct{} { return r.roster }
+
+// Reload swaps the active roster atomically: entries are rebuilt first,
+// then the map is replaced under lock. Turns already running against old
+// entries finish untouched (they hold their own turnMu); new turns bind
+// to the new entries. An empty roster clears the crew.
+func (r *Runtime) Reload(roster []*manifest.Agent) error {
+	jailRoots := make([]string, 0, len(r.cfg.WS.Members())+1)
+	for _, m := range r.cfg.WS.Members() {
+		jailRoots = append(jailRoots, m.Path)
+	}
+	next := make(map[string]*entry, len(roster))
+	for _, m := range roster {
+		e, err := r.buildEntry(m, jailRoots)
+		if err != nil {
+			return fmt.Errorf("runtime: reload aborted; previous roster kept: %w", err)
+		}
+		next[m.ID] = e
+	}
+	r.mu.Lock()
+	r.agents = next
+	r.mu.Unlock()
+	select {
+	case r.roster <- struct{}{}:
+	default:
+	}
+	return nil
 }
 
 func allowed(allow []string, name string) bool {
@@ -141,6 +182,8 @@ func allowed(allow []string, name string) bool {
 
 // AgentIDs lists rostered agents sorted.
 func (r *Runtime) AgentIDs() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	out := make([]string, 0, len(r.agents))
 	for id := range r.agents {
 		out = append(out, id)
