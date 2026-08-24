@@ -10,10 +10,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
+	agentkitStandards "github.com/drjzlyan/dhi/internal/agentkit/standards"
+
 	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
+	"github.com/drjzlyan/dhi/internal/agentkit/org"
 	"github.com/drjzlyan/dhi/internal/gitcore"
 	"github.com/drjzlyan/dhi/internal/settings"
 	"github.com/drjzlyan/dhi/internal/toolchain"
@@ -51,6 +55,7 @@ func Run(toolRoot, wsRoot string) Report {
 	r.Checks = append(r.Checks, Workspace(wsRoot)...)
 	r.Checks = append(r.Checks, Config(wsRoot)...)
 	r.Checks = append(r.Checks, Agents(wsRoot)...)
+	r.Checks = append(r.Checks, Standards(wsRoot)...)
 	r.Healthy = true
 	for _, c := range r.Checks {
 		if c.Status == Fail {
@@ -272,4 +277,61 @@ func joinIDs(roster []*manifest.Agent) string {
 		ids = append(ids, a.ID)
 	}
 	return strings.Join(ids, ", ")
+}
+
+// Standards probes .dhi/standards.toml (F-003 layered instructions):
+// parse failures warn (the runtime silently degrades to built-ins), and
+// references to unknown teams or agents warn so typos surface.
+func Standards(wsRoot string) []Check {
+	if wsRoot == "" {
+		return nil
+	}
+	snap, err := agentkitStandards.Inspect(wsRoot)
+	if err != nil {
+		return []Check{{Name: "standards/config", Status: Warn,
+			Detail: err.Error() + " (runtime falls back to built-ins)"}}
+	}
+	total := len(snap.Workspace) + len(snap.Teams) + len(snap.Agents)
+	if total == 0 {
+		return []Check{{Name: "standards/config", Status: OK,
+			Detail: "no custom layers; built-in defaults apply"}}
+	}
+
+	var warnings []string
+	o, oerr := org.Load(wsRoot)
+	validTeams := map[string]bool{}
+	if oerr == nil {
+		for _, t := range o.Teams() {
+			validTeams[t.Name] = true
+		}
+	}
+	for slug := range snap.Teams {
+		if oerr != nil || !validTeams[slug] {
+			warnings = append(warnings, "team "+slug+" not in org.toml")
+		}
+	}
+	roster, rerr := manifest.LoadDir(filepath.Join(wsRoot, workspace.DirAgents))
+	validIDs := map[string]bool{}
+	if rerr == nil {
+		for _, a := range roster {
+			validIDs[a.ID] = true
+		}
+		for _, id := range manifest.ArchivedIDs(filepath.Join(wsRoot, workspace.DirAgents)) {
+			validIDs[id] = true
+		}
+	}
+	for id := range snap.Agents {
+		if rerr != nil || !validIDs[id] {
+			warnings = append(warnings, "agent "+id+" not on roster")
+		}
+	}
+	sort.Strings(warnings)
+
+	detail := fmt.Sprintf("%d workspace, %d team, %d agent rule(s)",
+		len(snap.Workspace), len(snap.Teams), len(snap.Agents))
+	if len(warnings) > 0 {
+		return []Check{{Name: "standards/config", Status: Warn,
+			Detail: detail + "; " + strings.Join(warnings, "; ")}}
+	}
+	return []Check{{Name: "standards/config", Status: OK, Detail: detail}}
 }

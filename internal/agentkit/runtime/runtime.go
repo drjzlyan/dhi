@@ -14,7 +14,9 @@ import (
 
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
+	"github.com/drjzlyan/dhi/internal/agentkit/org"
 	"github.com/drjzlyan/dhi/internal/agentkit/provider"
+	"github.com/drjzlyan/dhi/internal/agentkit/standards"
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
 	"github.com/drjzlyan/dhi/internal/mcp"
 	"github.com/drjzlyan/dhi/internal/sandbox"
@@ -46,6 +48,12 @@ type Config struct {
 	Provider   provider.Provider
 	Providers  map[string]provider.Provider // agent id → override
 	MCPClients map[string]MCPClient         // server name → connected client
+	// Org supplies team membership for layered coding standards; nil
+	// disables team layers.
+	Org *org.Org
+	// Standards injects layered coding instructions into every turn's
+	// system prompt (built-ins apply even without a document).
+	Standards bool
 }
 
 // Runtime manages rostered agents and executes their turns.
@@ -312,9 +320,13 @@ func (r *Runtime) prompt(e *entry, trigger bus.Message) provider.Request {
 		members = append(members, m.Name)
 	}
 	grounding := "\n\nFiles are addressed as <member>/<rel-path>. Members: " + strings.Join(members, ", ")
+	system += grounding
+	if r.cfg.Standards {
+		system += "\n\n" + standards.Resolve(r.cfg.WS.Root, e.m.ID, r.teamLookup())
+	}
 	req := provider.Request{
 		Model:     e.m.Model,
-		System:    system + grounding,
+		System:    system,
 		MaxTokens: 4096,
 	}
 	for _, d := range e.reg.Defs(e.m.Tools) {
@@ -343,6 +355,15 @@ func (r *Runtime) prompt(e *entry, trigger bus.Message) provider.Request {
 		})
 	}
 	return req
+}
+
+// teamLookup adapts the org registry for standards resolution; nil org
+// yields a lookup that matches nothing.
+func (r *Runtime) teamLookup() standards.TeamLookup {
+	if r.cfg.Org == nil {
+		return nil
+	}
+	return func(agentID string) []string { return r.cfg.Org.TeamsOf(agentID) }
 }
 
 // stripMention removes this agent's own @token from the trigger text.

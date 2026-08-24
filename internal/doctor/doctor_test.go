@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	agentkitStandards "github.com/drjzlyan/dhi/internal/agentkit/standards"
 )
 
 func statusOf(checks []Check, name string) (Check, bool) {
@@ -174,5 +176,53 @@ func TestRunAggregatesHealth(t *testing.T) {
 	var back Report
 	if err := json.Unmarshal(data, &back); err != nil {
 		t.Fatalf("JSON invalid: %v\n%s", err, data)
+	}
+}
+
+func TestStandardsSuite(t *testing.T) {
+	ws := setupWorkspaceRoot(t, true)
+
+	// Absent document: healthy defaults-only.
+	checks := Standards(ws)
+	if c, ok := statusOf(checks, "standards/config"); !ok || c.Status != OK {
+		t.Fatalf("absent = %+v (found=%v)", c, ok)
+	}
+
+	// Custom layers referencing real roster + org entries pass.
+	os.WriteFile(filepath.Join(ws, ".dhi", "agents", "alice.toml"),
+		[]byte("schema = 1\nname = \"Alice\"\nmodel = \"m\"\n"), 0o644)
+	os.WriteFile(filepath.Join(ws, ".dhi", "org.toml"),
+		[]byte("schema = 1\n\n[teams.frontend]\nmembers = [\"alice\"]\n"), 0o644)
+	if err := agentkitStandards.Save(ws,
+		[]string{"use conventional commits"},
+		map[string][]string{"frontend": {"prefer table-driven tests"}},
+		map[string]agentkitStandards.AgentOverride{"alice": {Mode: "extend", Entries: []string{"be terse"}}},
+	); err != nil {
+		t.Fatal(err)
+	}
+	checks = Standards(ws)
+	c, ok := statusOf(checks, "standards/config")
+	if !ok || c.Status != OK || !strings.Contains(c.Detail, "1 workspace") {
+		t.Fatalf("healthy layers = %+v (found=%v)", c, ok)
+	}
+
+	// Typos warn with specifics.
+	agentkitStandards.Save(ws, nil,
+		map[string][]string{"frontened": nil}, // typo'd team
+		map[string]agentkitStandards.AgentOverride{"ghost": {Mode: "extend"}})
+	checks = Standards(ws)
+	c, _ = statusOf(checks, "standards/config")
+	if c.Status != Warn ||
+		!strings.Contains(c.Detail, "team frontened") ||
+		!strings.Contains(c.Detail, "agent ghost") {
+		t.Fatalf("typo warnings = %+v", c)
+	}
+
+	// Malformed doc warns about fallback.
+	os.WriteFile(filepath.Join(ws, ".dhi", "standards.toml"), []byte("schema = 7\n"), 0o644)
+	checks = Standards(ws)
+	c, _ = statusOf(checks, "standards/config")
+	if c.Status != Warn || !strings.Contains(c.Detail, "built-ins") {
+		t.Fatalf("malformed = %+v", c)
 	}
 }

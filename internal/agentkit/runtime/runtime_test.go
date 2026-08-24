@@ -11,6 +11,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
 	"github.com/drjzlyan/dhi/internal/agentkit/provider"
+	"github.com/drjzlyan/dhi/internal/agentkit/standards"
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
 	"github.com/drjzlyan/dhi/internal/workspace"
 )
@@ -338,5 +339,51 @@ func TestTurnsContinueAcrossReload(t *testing.T) {
 	got := waitReply(t, replies)
 	if got.Text != "second" {
 		t.Fatalf("post-reload reply = %+v", got)
+	}
+}
+
+func TestStandardsInjectedIntoPrompt(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "api"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(root, "api", "main.go"), []byte("package main\n"), 0o644)
+	workspace.Create(root, "api")
+	ws, err := workspace.Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stdDoc := "schema = 1\nworkspace = [\"use conventional commits\"]\n"
+	if err := standards.Save(root, []string{"use conventional commits"}, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	_ = stdDoc
+
+	b, err := bus.Open(ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mock := provider.NewMock()
+	mock.Add(provider.ScriptText("ok"))
+	rt, err := New(Config{WS: ws, Bus: b, Approvals: tools.NewApprovals(),
+		Provider: mock, Standards: true}, []*manifest.Agent{mustAgent(t, "scout", "Scout")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	replies, cancel := b.Subscribe("#general")
+	defer cancel()
+	trig, _ := b.Post(bus.Message{Channel: "#general", Author: bus.Human, Text: "@scout go"})
+	rt.Handle(context.Background(), trig)
+	waitReply(t, replies)
+
+	calls := mock.Calls()
+	if len(calls) != 1 {
+		t.Fatalf("calls = %d", len(calls))
+	}
+	sys := calls[0].System
+	for _, want := range []string{"Standing instructions", "conventional commits", "force-push"} {
+		if !strings.Contains(sys, want) {
+			t.Errorf("system missing %q:\n%s", want, sys)
+		}
 	}
 }

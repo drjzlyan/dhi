@@ -16,6 +16,7 @@ import (
 
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
+	agentkitOrg "github.com/drjzlyan/dhi/internal/agentkit/org"
 	"github.com/drjzlyan/dhi/internal/agentkit/provider"
 	"github.com/drjzlyan/dhi/internal/agentkit/runtime"
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
@@ -137,7 +138,8 @@ func needsBootstrap(root string) bool {
 
 // newAgentRuntime loads the roster and wires the turn engine; nil means
 // no chat sidebar (no roster, or a broken one — errors are reported but
-// never block boot).
+// never block boot). Org + layered coding standards ride along when
+// their sidecar files parse; broken ones degrade to defaults.
 func newAgentRuntime(ws *workspace.Workspace, srch search.Searcher) *runtime.Runtime {
 	roster, err := manifest.LoadDir(filepath.Join(ws.Root, workspace.DirAgents))
 	if err != nil {
@@ -159,12 +161,18 @@ func newAgentRuntime(ws *workspace.Workspace, srch search.Searcher) *runtime.Run
 		fmt.Fprintln(os.Stderr, "dhi: message bus:", err)
 		return nil
 	}
+	company, err := agentkitOrg.Load(ws.Root)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "dhi: org registry:", err)
+	}
 	rt, err := runtime.New(runtime.Config{
 		WS:        ws,
 		Bus:       bus,
 		Approvals: tools.NewApprovals(),
 		Searcher:  srch,
 		Provider:  provider.NewAnthropic("", os.Getenv(envVar)),
+		Org:       company,
+		Standards: true,
 	}, roster)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "dhi: agent runtime:", err)

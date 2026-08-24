@@ -143,17 +143,31 @@ prompt assembly).
       half-clone cleanup; remaining sections render as dim roadmap rows
 - [x] `gitcore.Clone` (in-process, ADR-0008/0009: network stays go-git)
 
-### P2 — Org + marketplace + coding standards
+### P2 — Org + marketplace + coding standards *(services landed; UI next)*
 
-- [ ] `.dhi/org.toml` sidecar registry (teams, leads, archived flags);
-      manifests untouched (strict decode stays v1)
-- [ ] Agent CRUD → validate via manifest.Parse → write roster files;
-      `Runtime.Reload` safe under per-agent turnMu; sidebar refresh
-- [ ] Marketplace packs (path + git install): pack.toml spec, validate-
-      all-before-copy, idempotent reinstall, uninstall
-- [ ] Coding standards service: `.dhi/standards.toml` layers
-      (workspace/team/agent, extend|replace), pure resolver,
-      injection in `runtime.prompt()`, Settings UI section, doctor suite
+- [x] F-008 spec (`docs/features/F-008-marketplace.md`)
+- [x] `.dhi/org.toml` sidecar registry (teams, leads; strict decode;
+      atomic persist-before-commit; change subscriptions)
+      — `internal/agentkit/org`
+- [x] Agent CRUD: manifest Marshal/WriteFile validate-on-write round-trip;
+      archive = move to `.dhi/agents/.archived/` (LoadDir skips dirs);
+      restore; `internal/agentkit/org` crew ops + tests
+- [x] `Runtime.Reload(roster)` — rebuild entries then swap under lock,
+      in-flight turns finish on old entries; `Changes()` ping; editor
+      chat sidebar refreshes channels on reload
+- [x] Marketplace packs: pack.toml v1 (strict), local-path + git installs
+      (go-git clone → temp → validate-all-then-install), same-pack
+      idempotent update, cross-pack conflict refusal, provenance in
+      `.dhi/marketplace.json`, uninstall-exactly-recorded
+      — `internal/agentkit/pack`
+- [x] Coding standards: built-ins → workspace → team(s) → agent layers
+      (extend|replace), fresh-per-turn resolution, injected after
+      grounding in `runtime.prompt()` behind Config.Standards+Org,
+      write API validates slugs, doctor suite warns on parse failures +
+      dangling team/agent refs — `internal/agentkit/standards`
+- [ ] UI: org panel (teams/leads/archive) + pack install/uninstall +
+      standards editors on Workspace view; effective-rules preview in
+      Settings section
 
 ### P3 — Channels UI (Slack floor)
 
