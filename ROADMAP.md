@@ -77,11 +77,28 @@ features (M7).
 
 ## M3 — Agent runtime → chat sidebar in Editor
 
-- [ ] `agentkit` manifest spec + validation; Provider iface (Anthropic + scripted Mock)
-- [ ] Namespaced VPath tools behind path-jail policies; MCP client (stdio/http)
-- [ ] Message bus (DMs/channels/threads, mention-triggered turns, JSONL persistence)
-- [ ] Per-agent memory + shared KB w/ rg retrieval behind `KnowledgeStore` (ADR-0007)
-- [ ] Editor chat sidebar: pick/switch rostered agent mid-session; apply-suggestion→buffer
+Status: complete (2026-08-24). Deferred to later milestones: marketplace
+pack installs + org UI (M4), embedding retrieval (ADR-0007 seam), richer
+streaming render in sidebar (M7 polish).
+
+- [x] `agentkit` manifest spec + validation; Provider iface (Anthropic
+      SSE adapter, hand-rolled, httptest-verified + scripted Mock sharing
+      one conformance suite) (`internal/agentkit/manifest`,
+      `internal/agentkit/provider`)
+- [x] Namespaced VPath tools behind path-jail policies (read/write/list/
+      search; Ask decisions park in an approvals queue consumed by the
+      sidebar); MCP client stdio+http bridged into the same guarded
+      registry as `mcp__<server>__<tool>` (`internal/agentkit/tools`,
+      `internal/mcp`)
+- [x] Message bus (channels/DMs/threads, mention-triggered turns via the
+      turn engine, JSONL persistence + replay) (`internal/agentkit/bus`,
+      `internal/jsonl`, `internal/agentkit/runtime`)
+- [x] Per-agent memory (journal.jsonl + notes.md) + shared KB w/ rg
+      retrieval behind `KnowledgeStore`, review/auto contribution policy
+      (`internal/agentkit/memory`, `internal/agentkit/knowledge`)
+- [x] Editor chat sidebar: ctrl+a right panel, roster channels (#general +
+      per-agent DMs), apply-suggestion→buffer (^f), keyboard approvals
+      y/n (`surfaces/editor/chat.go`); doctor roster/env checks
 
 ## M4 — **Workspace full** (F-003)
 

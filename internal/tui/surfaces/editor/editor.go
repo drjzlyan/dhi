@@ -13,6 +13,7 @@ import (
 
 	"charm.land/bubbletea/v2"
 
+	"github.com/drjzlyan/dhi/internal/agentkit/runtime"
 	"github.com/drjzlyan/dhi/internal/fuzzy"
 	"github.com/drjzlyan/dhi/internal/gitcore"
 	"github.com/drjzlyan/dhi/internal/lsp"
@@ -58,6 +59,12 @@ func WithTermEnv(env []string) Option {
 // WithLSP enables language-server integration (nil disables).
 func WithLSP(mgr *lsp.Manager) Option {
 	return func(m *Model) { m.lspMgr = mgr }
+}
+
+// WithChat attaches the agent runtime powering the crew sidebar (F-007).
+// nil leaves ctrl+a inert.
+func WithChat(rt *runtime.Runtime) Option {
+	return func(m *Model) { m.chat = newChat(rt) }
 }
 
 // Model is the Editor surface.
@@ -123,6 +130,8 @@ type Model struct {
 	compOpen  bool
 	compItems []lsp.CompletionItem
 	compCur   int
+
+	chat *chatModel
 }
 
 type hitRow struct {
@@ -157,9 +166,13 @@ func New(version string, ws *workspace.Workspace, opts ...Option) *Model {
 
 func (m *Model) Meta() surfaces.Meta { return surfaces.Meta{ID: "editor", Title: "Editor"} }
 
-// Init starts the terminal message pump.
+// Init starts the terminal and chat message pumps.
 func (m *Model) Init() tea.Cmd {
-	return m.listenTerm()
+	cmds := []tea.Cmd{m.listenTerm()}
+	if m.chat != nil {
+		cmds = append(cmds, m.chat.start())
+	}
+	return tea.Batch(cmds...)
 }
 
 func (m *Model) listenTerm() tea.Cmd {
@@ -244,6 +257,12 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 			m.applyLSPUpdate(msg)
 		}
 		return m.listenTerm()
+	case chatEvent:
+		// Transcript renders straight from bus history; just re-arm.
+		if m.chat != nil && !m.chat.closed() {
+			return m.chat.listen()
+		}
+		return nil
 	}
 	return nil
 }
@@ -287,6 +306,15 @@ func (m *Model) HandleKey(key string) bool {
 	if key == "ctrl+j" {
 		m.ToggleGitPanel()
 		return true
+	}
+	if key == "ctrl+a" && m.chat != nil {
+		m.chat.Toggle()
+		return true
+	}
+	if m.chat != nil && m.chat.open && m.chat.focus {
+		if handled := m.chat.handleKey(key, m.applySuggestion); handled {
+			return true
+		}
 	}
 	if m.drawerOpen && m.termFocus {
 		return m.handleTermKey(key)
@@ -644,6 +672,14 @@ func (m *Model) navView() string {
 	mainPanel.Height = bodyH
 
 	out := joinH(rail.View(), mainPanel.View())
+	if m.chat != nil && m.chat.open {
+		chatPanel := kit.NewPanel("crew", true)
+		body := m.chat.view(bodyH)
+		chatPanel.SetContent(splitLines(body)...)
+		chatPanel.Width = chatWidth
+		chatPanel.Height = bodyH
+		out = joinH(out, chatPanel.View())
+	}
 	if m.gitOpen {
 		out += "\n" + m.gitPanelView()
 	}
@@ -919,6 +955,22 @@ func (m *Model) searchView() string {
 
 	dim := theme.Hint().Render("enter search · esc cancel")
 	return kit.Center(joinV(overlay.View(), "", dim), m.width, m.height)
+}
+
+// applySuggestion inserts text at the cursor of the active buffer, if any.
+func (m *Model) applySuggestion(text string) {
+	e := m.active()
+	if e == nil || text == "" {
+		return
+	}
+	b := e.Buffer()
+	b.BeginUndoGroup()
+	for _, line := range strings.Split(text, "\n") {
+		b.InsertString(line)
+		b.InsertString("\n")
+	}
+	b.EndUndoGroup()
+	m.lspSync()
 }
 
 // Small local helpers.

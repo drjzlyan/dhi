@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
 	"github.com/drjzlyan/dhi/internal/settings"
 	"github.com/drjzlyan/dhi/internal/toolchain"
 	"github.com/drjzlyan/dhi/internal/workspace"
@@ -45,6 +46,7 @@ func Run(toolRoot, wsRoot string) Report {
 	r.Checks = append(r.Checks, Toolchain(toolRoot)...)
 	r.Checks = append(r.Checks, Workspace(wsRoot)...)
 	r.Checks = append(r.Checks, Config(wsRoot)...)
+	r.Checks = append(r.Checks, Agents(wsRoot)...)
 	r.Healthy = true
 	for _, c := range r.Checks {
 		if c.Status == Fail {
@@ -169,4 +171,40 @@ func Config(wsRoot string) []Check {
 	}
 	return []Check{{Name: "settings/config", Status: Warn,
 		Detail: "unknown keys in " + path + ": " + strings.Join(unknown, ", ")}}
+}
+
+// Agents validates the roster under .dhi/agents (F-007): every manifest
+// must parse, and each declared provider env var should be set (missing
+// keys warn — turns fail later otherwise).
+func Agents(wsRoot string) []Check {
+	if wsRoot == "" {
+		return nil
+	}
+	roster, err := manifest.LoadDir(filepath.Join(wsRoot, workspace.DirAgents))
+	if err != nil {
+		return []Check{{Name: "agents/roster", Status: Fail, Detail: err.Error()}}
+	}
+	if len(roster) == 0 {
+		return nil // no crew is a valid configuration
+	}
+	checks := []Check{{Name: "agents/roster", Status: OK,
+		Detail: fmt.Sprintf("%d agent(s): %s", len(roster), joinIDs(roster))}}
+	for _, a := range roster {
+		if a.EnvVar == "" {
+			continue
+		}
+		if os.Getenv(a.EnvVar) == "" {
+			checks = append(checks, Check{Name: "agents/" + a.ID, Status: Warn,
+				Detail: fmt.Sprintf("%s not set; %s cannot reach its provider", a.EnvVar, a.ID)})
+		}
+	}
+	return checks
+}
+
+func joinIDs(roster []*manifest.Agent) string {
+	ids := make([]string, 0, len(roster))
+	for _, a := range roster {
+		ids = append(ids, a.ID)
+	}
+	return strings.Join(ids, ", ")
 }

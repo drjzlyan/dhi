@@ -14,6 +14,11 @@ import (
 
 	"charm.land/bubbletea/v2"
 
+	"github.com/drjzlyan/dhi/internal/agentkit/bus"
+	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
+	"github.com/drjzlyan/dhi/internal/agentkit/provider"
+	"github.com/drjzlyan/dhi/internal/agentkit/runtime"
+	"github.com/drjzlyan/dhi/internal/agentkit/tools"
 	"github.com/drjzlyan/dhi/internal/doctor"
 	"github.com/drjzlyan/dhi/internal/search"
 	"github.com/drjzlyan/dhi/internal/settings"
@@ -66,6 +71,7 @@ func runTUI() {
 	}
 
 	var edOpts []editor.Option
+	var rgSearcher search.Searcher
 	if root, err := toolchain.DefaultRoot(); err == nil {
 		mgr := toolchain.New(root)
 		// Terminal sessions run with DHI's hermetic PATH; search uses
@@ -73,9 +79,17 @@ func runTUI() {
 		// installed rather than falling back to host tools (ADR-0005).
 		edOpts = append(edOpts, editor.WithTermEnv(mgr.Env(nil)))
 		if _, err := os.Stat(filepath.Join(root, "bin", "rg")); err == nil {
-			edOpts = append(edOpts, editor.WithSearcher(search.Ripgrep{
-				Bin: filepath.Join(root, "bin", "rg"),
-			}))
+			rgSearcher = search.Ripgrep{Bin: filepath.Join(root, "bin", "rg")}
+			edOpts = append(edOpts, editor.WithSearcher(rgSearcher))
+		}
+	}
+
+	// Agent runtime (F-007): the crew sidebar lights up only when a
+	// roster exists under .dhi/agents/. A missing API key surfaces at
+	// first turn, not boot; doctor warns about it.
+	if ws != nil {
+		if rt := newAgentRuntime(ws, rgSearcher); rt != nil {
+			edOpts = append(edOpts, editor.WithChat(rt))
 		}
 	}
 
@@ -119,6 +133,44 @@ func toolchainRoot() string {
 func needsBootstrap(root string) bool {
 	_, err := os.Stat(filepath.Join(root, "lock.json"))
 	return os.IsNotExist(err)
+}
+
+// newAgentRuntime loads the roster and wires the turn engine; nil means
+// no chat sidebar (no roster, or a broken one — errors are reported but
+// never block boot).
+func newAgentRuntime(ws *workspace.Workspace, srch search.Searcher) *runtime.Runtime {
+	roster, err := manifest.LoadDir(filepath.Join(ws.Root, workspace.DirAgents))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "dhi: agent roster:", err)
+		return nil
+	}
+	if len(roster) == 0 {
+		return nil
+	}
+	envVar := "ANTHROPIC_API_KEY"
+	for _, a := range roster {
+		if a.EnvVar != "" {
+			envVar = a.EnvVar
+			break
+		}
+	}
+	bus, err := bus.Open(ws)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "dhi: message bus:", err)
+		return nil
+	}
+	rt, err := runtime.New(runtime.Config{
+		WS:        ws,
+		Bus:       bus,
+		Approvals: tools.NewApprovals(),
+		Searcher:  srch,
+		Provider:  provider.NewAnthropic("", os.Getenv(envVar)),
+	}, roster)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "dhi: agent runtime:", err)
+		return nil
+	}
+	return rt
 }
 
 // runDoctor executes the shared check suite and prints a report.
