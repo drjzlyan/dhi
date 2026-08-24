@@ -165,9 +165,15 @@ prompt assembly).
       grounding in `runtime.prompt()` behind Config.Standards+Org,
       write API validates slugs, doctor suite warns on parse failures +
       dangling team/agent refs — `internal/agentkit/standards`
-- [ ] UI: org panel (teams/leads/archive) + pack install/uninstall +
-      standards editors on Workspace view; effective-rules preview in
-      Settings section
+- [x] UI (Workspace view): `[`/`]` section switcher over MEMBERS · ORG ·
+      PACKS · STANDARDS; team create/edit/delete modals (lead, CSV
+      membership); agent create form + archive confirm + restore;
+      pack install modal (async, path|git) with uninstall confirm and
+      provenance listing; standards editors per layer (CSV rules,
+      extend/replace toggle via ←/→) with effective-block preview
+      (`v`) resolving builtins+layers for any agent id
+      — Settings-section integration deferred (single-host surface is
+      the Workspace view; revisit if a second consumer appears)
 
 ### P3 — Channels UI (Slack floor)
 

@@ -298,3 +298,17 @@ func isURL(s string) bool {
 	}
 	return false
 }
+
+// Records returns a copy of the installed pack records keyed by name,
+// for UI listing.
+func (in *Installer) Records() (map[string]PackRec, error) {
+	prov, err := in.readProvenance()
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]PackRec, len(prov.Packs))
+	for k, v := range prov.Packs {
+		out[k] = v
+	}
+	return out, nil
+}
