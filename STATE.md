@@ -44,16 +44,39 @@ pack install flow, standards editors). After that: P3 channels UI.
    stderr on exit 1; sed bulk renames need re-grep; shim recursion
    guard; RawMessage decode for dup JSON tags; deny-all policies.
 
-## Next up (P2c UI, then P3 channels)
+## Just finished (P2c)
 
-1. Workspace view: org panel (create/edit teams+leads, archive/restore
-   agents), pack install (a→URL/path modal) + uninstall listing,
-   standards editor rows + effective-rules preview.
-2. Settings surface: standards section sharing the same store seam.
-3. Then P3 channels UI on the workspace floor (rail/transcript/thread/
-   composer over bus; posting through Runtime.Handle).
-4. Goldens regenerate deliberately for every visual chunk.
+- surfaces/workspace split into workspace.go (state machine) + view.go
+  (render): sectionID enum + per-section cursors; formState generalized
+  to []field (text + toggle fields — ←/→ flips extend|replace).
+- Modals: team edit/delete, agent new/archive, pack install(async event
+  evInstallDone → flash)/uninstall, standards layer editors (@workspace/
+  @team/@agent targets), preview prompt→show rendering standards.Resolve.
+- standardRows lists ALL rostered agents so first overrides are
+  reachable; read-modify-write helpers preserve untouched layers.
+
+## Gotchas learned
+
+1. Toggle fields must gate their left/right handling or they eat spaces
+   from text fields ("use conventional commits" became one word).
+2. typeInto-style test helpers should REPLACE field contents, not append
+   to prefills (rename "you"+"alice" = "youalice").
+3. Sparse listings create dead ends: list every rostered agent in the
+   standards section even at 0 rules, else first override is unreachable.
+4. Carried: rename targets captured at open; openVPath ghost titles;
+   waitReply before provider.Calls(); macOS /var symlink vs git paths;
+   CreateTemp needs existing dir; quiet git eats stderr.
 
 ## Open questions for user
 
 - None blocking.
+
+## Next up (P3 channels UI)
+
+1. Workspace view gains a CHANNELS section: rail (#general seeded,
+   team channels from org, DMs), transcript pane, thread pane,
+   composer — reusing the editor sidebar's bus pump patterns.
+2. Posting routes through Runtime.Handle so mentions trigger turns.
+3. Task-card message refs render inline (real cards land P4).
+4. Goldens regenerate deliberately for every visual chunk; keep the
+   section model (channels likely becomes a fifth section).
