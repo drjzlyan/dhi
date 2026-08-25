@@ -1,24 +1,30 @@
  ◆ DHI  1 Workspace › 2 Editor › 3 Settings                                                         
-
-
-
-
-
-
-                 ██████╗ ██╗  ██╗██╗
-                 ██╔══██╗██║  ██║██║
-                 ██║  ██║███████║██║
-                 ██║  ██║██╔══██║██║
-                 ██████╔╝██║  ██║██║
-                 ╚═════╝ ╚═╝  ╚═╝╚═╝
-                 
-                 the agentic workspace IDE
-                 v0.1.0  •  foundation
-                 
-                 Editor
-                 Files · buffers · terminal · git · chat.
-                 
-                 PLANNED  lands in M2
-                 
-                 this surface ships in a later milestone — nothing to configure yet
+╭─ › Editor ──────────────────────────────────────────────────────────────────────────────────────╮
+│ Editor                                                                                           │
+│                                                                                                  │
+│ Files · buffers · terminal · git · chat.                                                         │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│ PLANNED  lands in M2                                                                             │
+│                                                                                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
  NORMAL  Editor                                             1-5 views • tab next • ? help • ^c quit 

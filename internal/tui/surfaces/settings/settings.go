@@ -4,12 +4,7 @@
 package settings
 
 import (
-	"strings"
-
 	"charm.land/bubbletea/v2"
-
-	"github.com/drjzlyan/dhi/internal/tui/branding"
-	"github.com/drjzlyan/dhi/internal/version"
 
 	"github.com/drjzlyan/dhi/internal/settings"
 	"github.com/drjzlyan/dhi/internal/tui/kit"
@@ -21,7 +16,6 @@ import (
 type Model struct {
 	cfg      settings.Config
 	savePath string
-	version  string
 	cursor   int
 	width    int
 	height   int
@@ -32,7 +26,7 @@ var _ surfaces.Surface = (*Model)(nil)
 
 // New wires the surface to a loaded config and its persistence target.
 func New(cfg settings.Config, savePath string) *Model {
-	return &Model{cfg: cfg, savePath: savePath, version: version.Version}
+	return &Model{cfg: cfg, savePath: savePath}
 }
 
 func (m *Model) Meta() surfaces.Meta    { return surfaces.Meta{ID: "settings", Title: "Settings"} }
@@ -121,10 +115,19 @@ func (m *Model) applyAndPersist() {
 	m.flash = "saved"
 }
 
+// View renders the docked settings panel: rows at the top, status or
+// keymap hints pinned to the foot — the same full-height panel language
+// as the workspace and editor surfaces.
 func (m *Model) View() string {
-	body := []string{
-		theme.Brand().Render("settings"),
-		"",
+	w := maxInt(m.width, 40)
+	h := maxInt(m.height, 10)
+
+	foot := theme.Hint().Render("←/→ change · ctrl+s write · esc nothing")
+	if m.flash != "" {
+		foot = theme.SuccessText().Render(m.flash)
+	}
+
+	content := []string{
 		settingRow(m.cursor == rowTheme, "theme",
 			valueText(m.cfg.Theme)),
 		settingRow(m.cursor == rowTabWidth, "editor.tab_width",
@@ -133,21 +136,16 @@ func (m *Model) View() string {
 			valueText(boolStr(m.cfg.Editor.LineNumbers))),
 		settingRow(m.cursor == rowScrollback, "terminal.scrollback",
 			valueText(itoa(m.cfg.Terminal.Scrollback))),
-		"",
 	}
-	if m.flash != "" {
-		body = append(body, theme.SuccessText().Render(m.flash))
-	} else {
-		body = append(body, theme.Hint().Render("←/→ change · ctrl+s write · esc nothing"))
+	for len(content) < h-4 {
+		content = append(content, "")
 	}
+	content = append(content, "", foot)
 
-	// Brand hero tops the composition when the terminal is tall enough
-	// to keep every setting on screen without scrolling pressure.
-	if m.height >= len(body)+10 {
-		hero := strings.Split(branding.HeroBlock(m.version), "\n")
-		body = append(append(hero, ""), body...)
-	}
-	return kit.Center(strings.Join(body, "\n"), maxInt(m.width, 40), maxInt(m.height, 10))
+	p := kit.NewPanel("settings", true)
+	p.SetContent(content...)
+	p.Width, p.Height = w, h
+	return p.View()
 }
 
 func settingRow(selected bool, name, value string) string {
