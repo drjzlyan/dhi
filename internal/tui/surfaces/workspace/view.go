@@ -131,7 +131,7 @@ func taskDetail(tk tasks.Task) string {
 	if len(parts) > 0 {
 		thread = strings.TrimSpace(strings.Join([]string{thread, "·"}, " "))
 	}
-	all := append(parts)
+	all := parts
 	if thread != "" {
 		all = append(all, thread)
 	}
