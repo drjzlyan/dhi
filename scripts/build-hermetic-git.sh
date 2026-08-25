@@ -18,16 +18,33 @@
 set -eu
 
 VERSION="${1:-${DHI_GIT_VERSION:-2.55.0}}"
-BASE="https://www.kernel.org/pub/software/scm/git"
 DEFAULT_KEY_FP="96E07AF2577195598DA0D6825D8D4F9305F6963A"  # git release key
+
+# kernel.org edges have been flaky per-region; try canonical CDN first,
+# then mirrors. Signature and tarball MUST come from the same host.
+fetch_pair() {
+    base="$1"
+    for f in src.tar.gz src.tar.sign; do
+        url="$base/git-${VERSION}.${f#src.tar.}"
+        curl -fSL --retry 5 --retry-delay 3 --retry-all-errors \
+             --connect-timeout 15 -o "$work/$f" "$url" || return 1
+    done
+}
 
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 mkdir -p "$work/dist"
 
-echo "==> downloading $BASE/git-${VERSION}.tar.gz (+ detached signature)"
-curl -fsSL "$BASE/git-${VERSION}.tar.gz" -o "$work/src.tar.gz"
-curl -fsSL "$BASE/git-${VERSION}.tar.sign" -o "$work/src.tar.sign"
+ok=""
+for host in \
+    "https://cdn.kernel.org/pub/software/scm/git" \
+    "https://www.kernel.org/pub/software/scm/git" \
+    "https://mirrors.edge.kernel.org/pub/software/scm/git"; do
+    echo "==> downloading $host/git-${VERSION}.tar.gz (+ detached signature)"
+    if fetch_pair "$host"; then ok="$host"; break; fi
+    echo "    host failed, trying next…" >&2
+done
+[ -n "$ok" ] || { echo "all kernel.org hosts failed" >&2; exit 1; }
 
 if [ "${DHI_GIT_SKIP_VERIFY:-0}" != "1" ]; then
     command -v gpg >/dev/null || { echo "gpg required (apt/brew install gnupg)" >&2; exit 1; }
