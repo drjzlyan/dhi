@@ -5,33 +5,51 @@
 #
 # Usage:
 #   scripts/build-hermetic-git.sh [version]        # default 2.55.0
-#   DHI_GIT_SRC_SHA256=<hex> enforce upstream digest check
+#   GIT_RELEASE_KEY_FP=<fpr> override release-signer fingerprint
+#   DHI_GIT_SKIP_VERIFY=1 skip GPG (local experiments ONLY; CI never sets it)
 #
-# Maintainer tooling only (network + C compiler); never invoked by the
-# shipped product, which downloads verified registry artifacts instead.
+# Source integrity: kernel.org publishes a detached signature over the
+# gzip tarball, signed by the git release key. We verify against the
+# fingerprint below (cross-check per pin against the release announce),
+# then build from the very file we verified.
+#
+# Maintainer/CI tooling only (network + C compiler); never invoked by
+# the shipped product, which downloads verified registry artifacts.
 set -eu
 
 VERSION="${1:-${DHI_GIT_VERSION:-2.55.0}}"
-SRC_URL="https://www.kernel.org/pub/software/scm/git/git-${VERSION}.tar.xz"
+BASE="https://www.kernel.org/pub/software/scm/git"
+DEFAULT_KEY_FP="96E07AF2577195598DA0D6825D8D4F9305F6963A"  # git release key
 
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 mkdir -p "$work/dist"
 
-echo "==> downloading $SRC_URL"
-curl -fsSL "$SRC_URL" -o "$work/src.tar.xz"
+echo "==> downloading $BASE/git-${VERSION}.tar.gz (+ detached signature)"
+curl -fsSL "$BASE/git-${VERSION}.tar.gz" -o "$work/src.tar.gz"
+curl -fsSL "$BASE/git-${VERSION}.tar.sign" -o "$work/src.tar.sign"
 
-if [ -n "${DHI_GIT_SRC_SHA256:-}" ]; then
-    echo "$DHI_GIT_SRC_SHA256  $work/src.tar.xz" | shasum -a 256 -c -
+if [ "${DHI_GIT_SKIP_VERIFY:-0}" != "1" ]; then
+    command -v gpg >/dev/null || { echo "gpg required (apt/brew install gnupg)" >&2; exit 1; }
+    KEY_FP="${GIT_RELEASE_KEY_FP:-$DEFAULT_KEY_FP}"
+    GNUPGHOME="$work/gnupg" mkdir -p "$work/gnupg"
+    curl -fsSL "https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x${KEY_FP}" \
+        -o "$work/key.asc"
+    GNUPGHOME="$work/gnupg" gpg --quiet --import "$work/key.asc"
+    STATUS="$work/status.txt"
+    GNUPGHOME="$work/gnupg" gpg --status-fd 1 --verify \
+        "$work/src.tar.sign" "$work/src.tar.gz" >"$STATUS" 2>&1 ||
+        { cat "$STATUS"; echo "signature FAILED" >&2; exit 1; }
+    grep -q "^\[GNUPG:\] VALIDSIG $KEY_FP " "$STATUS" ||
+        { echo "signature valid but signed by unexpected key:" >&2; grep VALIDSIG "$STATUS"; exit 1; }
+    echo "==> signature OK (key $KEY_FP)"
 else
-    echo "!! no DHI_GIT_SRC_SHA256 set — cross-check this digest against" \
-         "the kernel.org release before pinning:"
-    shasum -a 256 "$work/src.tar.xz"
+    echo "!! GPG verification SKIPPED (DHI_GIT_SKIP_VERIFY=1) — never ship pins from unverified builds" >&2
 fi
 
 echo "==> extracting"
 mkdir "$work/src"
-tar -xJf "$work/src.tar.xz" -C "$work/src" --strip-components=1
+tar -xzf "$work/src.tar.gz" -C "$work/src" --strip-components=1
 
 echo "==> building (transport-free: NO_CURL NO_EXPAT NO_GETTEXT NO_PERL NO_TCLTK)"
 make -C "$work/src" -j "$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)" \

@@ -39,7 +39,9 @@ The realistic alternatives:
 
 Add a `git` tool to the registry manifest whose artifacts are produced
 by **DHI's own release workflow** from the upstream kernel.org source
-tarball at a pinned version, built **transport-free**:
+tarball (`.tar.gz`, detached-signature verified in CI against the
+pinned git release-key fingerprint) at a pinned version, built
+**transport-free**:
 `NO_CURL NO_EXPAT NO_GETTEXT NO_PERL NO_TCLTK`. One ~5 MB `bin/git`
 per platform (darwin/arm64, linux/amd64), sha256-pinned like every other
 registry artifact; the trust anchor chain is upstream source URL +

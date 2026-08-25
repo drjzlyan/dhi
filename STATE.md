@@ -28,14 +28,25 @@ now exist.
   views must stitch root+replies themselves; toggle fields must gate
   ←/→ or they eat spaces; typeInto-style helpers must REPLACE prefills.
 
-## Release checklist blocking the git registry flip
+## Release checklist blocking the git registry flip (fully automated now)
 
-Dispatch `.github/workflows/release-git.yml`, publish artifacts as GH
-release `hermetic-git-v2.55.0`, cross-check source digest
-457fdb04dc8728e007d4688695e6912e6f680727920f2a40bf11eacc17505357
-(git-2.55.0.tar.xz @ kernel.org), paste script-emitted platform blocks
-into `internal/toolchain/registry/manifest.json`. Until flipped:
-doctor stays silent about git; smoke runs via DHI_SMOKE_GIT_BIN.
+1. `gh workflow run release-git -f version=2.55.0` (or push tag
+   `hermetic-git-v2.55.0`).
+2. CI verifies the kernel.org detached GPG signature against the pinned
+   release-key fingerprint (`scripts/build-hermetic-git.sh`, key
+   `96E07AF2577195598DA0D6825D8D4F9305F6963A`), builds both platforms,
+   publishes release + sha256 sidecars.
+3. The workflow's `pin-pr` job re-hashes the uploaded artifacts and
+   opens a "pin hermetic git v2.55.0" PR touching only the git entry in
+   `registry/manifest.json`.
+4. Human: skim release page + merge the PR (the one irreducible trust
+   step). Next bootstrap activates the shim; doctor reports
+   git/shim + git/version.
+
+Note: builds consume the `.tar.gz` (that is what kernel.org signs);
+the earlier `.tar.xz` digest recorded here (457fdb04…) is superseded —
+its .gz counterpart hashed 0842dc384a23ac33ba3e570c4f3a8ded85963ee4713b1cd21153c3db41813d1e
+at pin-prep time, and CI recomputes everything it publishes anyway.
 
 ## Gotchas learned (carried)
 

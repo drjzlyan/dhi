@@ -123,11 +123,14 @@ rendering, Settings-section integration of standards editing.
 - [x] Doctor git suite (shim/version-pin agreement) wired into `Run()`
 - [x] `.github/workflows/release-git.yml`: builds artifacts from pinned
       upstream source (NO_CURL NO_EXPAT NO_GETTEXT NO_PERL NO_TCLTK)
-- [ ] **Release checklist:** dispatch release-git, publish artifacts as
-      GitHub release `hermetic-git-v2.55.0`, cross-check source digest
-      (kernel.org tarball sha256 recorded in session notes), flip the
-      `git` entry into `registry/manifest.json` (supply-chain review)
-      — until then doctor degrades visibly per ADR-0005
+- [x] Fully automated pin pipeline: GPG-verified build (kernel.org
+      detached sig vs pinned release-key fingerprint) → release publish
+      → auto-PR re-hashing uploads into `registry/manifest.json`
+      (`scripts/pin-git-manifest.py`, sidecar-checked, other tools
+      untouched) — human work reduced to dispatch + merge
+- [ ] **On you:** dispatch `release-git` for v2.55.0 and merge its PR
+      (the irreducible trust step); until merged doctor degrades
+      visibly per ADR-0005
 
 ### P1 — Member management ✅ (2026-08-24)
 

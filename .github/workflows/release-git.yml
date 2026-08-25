@@ -1,9 +1,14 @@
 name: release-git
 
 # Builds DHI's hermetic git artifacts (ADR-0009) from the upstream
-# source tarball. Dispatch manually (or push a hermetic-git-v* tag),
-# then attach the artifacts + .sha256 files to the GitHub release and
-# flip registry/manifest.json — a supply-chain review like any pin.
+# kernel.org tarball — GPG-verified in-build against the git release
+# key — publishes them as a GitHub release, then opens a ready-to-merge
+# PR flipping internal/toolchain/registry/manifest.json. Human work:
+# dispatch (or push the tag), skim the release page, merge the PR.
+#
+# Trust chain: kernel.org HTTPS + detached signature (fingerprint
+# pinned in scripts/build-hermetic-git.sh) → CI-built artifact →
+# sha256 sidecar checked by scripts/pin-git-manifest.py → reviewed PR.
 
 on:
   workflow_dispatch:
@@ -18,7 +23,21 @@ permissions:
   contents: read
 
 jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+    steps:
+      - id: ver
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            echo "version=${{ github.event.inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${GITHUB_REF_NAME#hermetic-git-v}" >> "$GITHUB_OUTPUT"
+          fi
+
   build:
+    needs: resolve
     strategy:
       matrix:
         include:
@@ -28,17 +47,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Resolve version
-        id: ver
-        run: |
-          if [ -n "${{ github.event.inputs.version }}" ]; then
-            echo "version=${{ github.event.inputs.version }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "version=${GITHUB_REF_NAME#hermetic-git-v}" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Build artifact
-        run: scripts/build-hermetic-git.sh "${{ steps.ver.outputs.version }}"
+      - name: Build verified artifact (GPG check inside script)
+        run: scripts/build-hermetic-git.sh "${{ needs.resolve.outputs.version }}"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -47,3 +57,102 @@ jobs:
             dhi-git-*.tar.gz
             dhi-git-*.sha256
           if-no-files-found: error
+
+  publish:
+    needs: [resolve, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the release and upload assets
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: hermetic-git-*
+          merge-multiple: true
+          path: dist
+
+      - name: Digests
+        run: |
+          cd dist
+          sha256sum *.tar.gz
+          cat *.sha256
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: hermetic-git-v${{ needs.resolve.outputs.version }}
+          name: hermetic git v${{ needs.resolve.outputs.version }}
+          body: |
+            Transport-free git built from the upstream kernel.org source
+            tarball (GPG-verified in CI against the pinned release key).
+
+            Source: https://www.kernel.org/pub/software/scm/git/git-${{ needs.resolve.outputs.version }}.tar.gz
+            Registry pins are proposed by the automated `pin-pr` job that
+            follows this release.
+          files: |
+            dist/dhi-git-*.tar.gz
+            dist/dhi-git-*.sha256
+          fail_on_unmatched_files: true
+
+  pin-pr:
+    needs: [resolve, publish]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # push the pin branch
+      pull-requests: write # open the PR
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: hermetic-git-*
+          merge-multiple: true
+          path: dist
+
+      - name: Update registry manifest
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          python3 scripts/pin-git-manifest.py \
+            --dist dist \
+            --version "${{ needs.resolve.outputs.version }}"
+
+      - name: Manifest still validates
+        run: go test ./internal/toolchain/
+
+      - name: Open or update pin PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          if git diff --quiet internal/toolchain/registry/manifest.json; then
+            echo "registry already carries these digests; nothing to do"
+            exit 0
+          fi
+          BRANCH="pin/hermetic-git-v${VERSION}"
+          git config user.name "dhi-pin-bot"
+          git config user.email "bot@drjzlyan.dhi"
+          git checkout -B "$BRANCH"
+          git add internal/toolchain/registry/manifest.json
+          git commit -m "pin hermetic git v${VERSION} (supply-chain review)" \
+            -m "Artifacts published as hermetic-git-v${VERSION}; digests
+            cross-checked by CI from the release upload itself. Review
+            like any registry change (ADR-0005/0009)."
+          git push -f origin "$BRANCH"
+          gh pr create \
+            --title "pin hermetic git v${VERSION}" \
+            --body "Automated follow-up to release hermetic-git-v${VERSION}.
+
+            - artifacts built by this repo's CI from the GPG-verified
+              kernel.org source tarball (\`scripts/build-hermetic-git.sh\`)
+            - \`scripts/pin-git-manifest.py\` re-hashed the uploaded files
+              and updated \`registry/manifest.json\` only for the \`git\`
+              tool
+            - toolchain tests green
+
+            Merge activates the shim at next bootstrap; doctor gains
+            git/shim + git/version checks (ADR-0009)." || {
+              echo "PR may already exist; updating is a force-push above"
+            }
