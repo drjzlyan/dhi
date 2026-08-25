@@ -114,7 +114,7 @@ func TestViewCompositionGolden(t *testing.T) {
 	theme.SwapForTest(t, theme.Dark())
 
 	a := New("0.1.0",
-		workspace.New("0.1.0", nil, nil, nil),
+		workspace.New("0.1.0", nil, workspace.Deps{}),
 		placeholder.New("editor", "Editor", "M2", "Files · buffers · terminal · git · chat."),
 		placeholder.New("settings", "Settings", "M2+", "Everything configurable."))
 	a.Update(tea.WindowSizeMsg{Width: 100, Height: 30})

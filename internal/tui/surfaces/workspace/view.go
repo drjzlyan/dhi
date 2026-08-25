@@ -7,6 +7,7 @@ import (
 
 	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
 	"github.com/drjzlyan/dhi/internal/agentkit/standards"
+	"github.com/drjzlyan/dhi/internal/tasks"
 	"github.com/drjzlyan/dhi/internal/tui/branding"
 	"github.com/drjzlyan/dhi/internal/tui/kit"
 	"github.com/drjzlyan/dhi/internal/tui/theme"
@@ -63,9 +64,85 @@ func (m *Model) activeSection() string {
 	case secChannels:
 		return strings.Join(m.pane.render(maxInt(m.width-8, 40),
 			maxInt(m.height-10, 12)), "\n")
+	case secTasks:
+		return m.tasksBody()
 	default:
 		return m.standardsBody()
 	}
+}
+
+const statusCol = 11
+
+func (m *Model) tasksBody() string {
+	rows := m.taskRows()
+	c := m.cursors[secTasks]
+	clampCursor(&c, len(rows))
+
+	var out []string
+	out = append(out, theme.Hint().Render("tasks")+
+		theme.TextDim().Render("                    n new · s status · a assign · w worktree · x remove"))
+	if m.taskStore == nil {
+		out = append(out, theme.TextDim().Render("(task store unavailable)"))
+		return strings.Join(out, "\n")
+	}
+	if w := m.taskStore.Warnings(); len(w) > 0 {
+		out = append(out, theme.DangerText().Render(
+			fmt.Sprintf("%d malformed card(s) skipped", len(w))))
+	}
+	if len(rows) == 0 {
+		out = append(out, theme.TextDim().Render("(empty — press n)"))
+	}
+	for i, tk := range rows {
+		style := theme.TextDim()
+		if i == c {
+			style = theme.TabActive()
+		}
+		line := cursorGlyph(i == c) +
+			style.Render(padTo(tk.Slug, nameCol)) +
+			theme.Hint().Render(padTo(string(tk.Status), statusCol)) +
+			theme.TextDim().Render(assignLabel(tk.Assignee))
+		out = append(out, line)
+		if i == c { // detail line for the selected card
+			detail := taskDetail(tk)
+			if detail != "" {
+				out = append(out, "      "+theme.Hint().Render(detail))
+			}
+		}
+	}
+	return strings.Join(out, "\n")
+}
+
+func assignLabel(a string) string {
+	if a == "" {
+		return "unassigned"
+	}
+	return a
+}
+
+func taskDetail(tk tasks.Task) string {
+	var parts []string
+	for _, cs := range tk.ChangeSets {
+		parts = append(parts, cs.Member+"@"+cs.Branch)
+	}
+	thread := ""
+	if tk.ThreadChannel != "" {
+		thread = fmt.Sprintf("thread %s", threadRef(tk.ThreadChannel, tk.ThreadID))
+	}
+	if len(parts) > 0 {
+		thread = strings.TrimSpace(strings.Join([]string{thread, "·"}, " "))
+	}
+	all := append(parts)
+	if thread != "" {
+		all = append(all, thread)
+	}
+	return strings.Join(all, "  ")
+}
+
+func threadRef(channel string, id int64) string {
+	if id == 0 {
+		return channel
+	}
+	return fmt.Sprintf("%s#%d", channel, id)
 }
 
 const nameCol = 14
@@ -268,6 +345,18 @@ func (m *Model) modalView(body string) string {
 func (m *Model) modalLines() []string {
 	f := &m.form
 	switch f.kind {
+	case fTaskRemoveConfirm:
+		return confirmLines("remove task "+f.target()+"?",
+			"the card is deleted; recorded worktrees",
+			"stay on disk — detach them first to clean up.", f)
+	case fTaskAttach:
+		hint := "creates .dhi/tasks/<slug>/<member> via hermetic git"
+		lines := []string{}
+		for i, fl := range f.fields {
+			lines = append(lines, m.fieldLine(fl, i == f.cur && !f.busy))
+		}
+		lines = append(lines, "", hintOrErr(f, hint))
+		return lines
 	case fRemoveConfirm:
 		return confirmLines("remove member "+f.target()+"?",
 			"unregisters the repo; the working tree",
@@ -382,6 +471,16 @@ func modalTitle(k modalKind) string {
 		return "preview rules"
 	case fStdPreviewShow:
 		return "effective rules"
+	case fTaskNew:
+		return "new task"
+	case fTaskAssign:
+		return "assign task"
+	case fTaskAttach:
+		return "attach worktree"
+	case fTaskThread:
+		return "bind thread"
+	case fTaskRemoveConfirm:
+		return "remove task"
 	}
 	return ""
 }

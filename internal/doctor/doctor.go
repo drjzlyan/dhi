@@ -14,6 +14,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/drjzlyan/dhi/internal/tasks"
+
 	agentkitStandards "github.com/drjzlyan/dhi/internal/agentkit/standards"
 
 	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
@@ -56,6 +58,7 @@ func Run(toolRoot, wsRoot string) Report {
 	r.Checks = append(r.Checks, Config(wsRoot)...)
 	r.Checks = append(r.Checks, Agents(wsRoot)...)
 	r.Checks = append(r.Checks, Standards(wsRoot)...)
+	r.Checks = append(r.Checks, Tasks(wsRoot)...)
 	r.Healthy = true
 	for _, c := range r.Checks {
 		if c.Status == Fail {
@@ -334,4 +337,67 @@ func Standards(wsRoot string) []Check {
 			Detail: detail + "; " + strings.Join(warnings, "; ")}}
 	}
 	return []Check{{Name: "standards/config", Status: OK, Detail: detail}}
+}
+
+// Tasks probes .dhi/tasks/ (F-003 kanban): malformed cards warn (they
+// are skipped at load), dangling assignee/team references warn.
+func Tasks(wsRoot string) []Check {
+	if wsRoot == "" {
+		return nil
+	}
+	ws, err := workspace.Load(wsRoot)
+	if err != nil {
+		return nil // not a workspace; workspace/config already reported
+	}
+	store, err := tasks.Open(ws)
+	if err != nil {
+		return []Check{{Name: "tasks/store", Status: Warn, Detail: err.Error()}}
+	}
+	all := store.List()
+	if w := store.Warnings(); len(w) > 0 {
+		return []Check{{Name: "tasks/store", Status: Warn,
+			Detail: fmt.Sprintf("%d malformed card(s): %s", len(w), strings.Join(w, "; "))}}
+	}
+	if len(all) == 0 {
+		return nil // no cards is healthy
+	}
+
+	var warnings []string
+	validTeams := map[string]bool{}
+	if o, oerr := org.Load(wsRoot); oerr == nil {
+		for _, tm := range o.Teams() {
+			validTeams[tm.Name] = true
+		}
+	}
+	roster, rerr := manifest.LoadDir(filepath.Join(wsRoot, workspace.DirAgents))
+	validIDs := map[string]bool{"you": true}
+	if rerr == nil {
+		for _, a := range roster {
+			validIDs[a.ID] = true
+		}
+	}
+	members := map[string]bool{}
+	for _, m := range ws.Members() {
+		members[m.Name] = true
+	}
+	for _, t := range all {
+		if t.Assignee != "" && !validIDs[t.Assignee] {
+			warnings = append(warnings, t.Slug+": assignee "+t.Assignee+" not on roster")
+		}
+		if t.Team != "" && !validTeams[t.Team] {
+			warnings = append(warnings, t.Slug+": team "+t.Team+" not in org.toml")
+		}
+		for _, cs := range t.ChangeSets {
+			if !members[cs.Member] {
+				warnings = append(warnings, t.Slug+": changeset member "+cs.Member+" not registered")
+			}
+		}
+	}
+	sort.Strings(warnings)
+	detail := fmt.Sprintf("%d task(s)", len(all))
+	if len(warnings) > 0 {
+		return []Check{{Name: "tasks/store", Status: Warn,
+			Detail: detail + "; " + strings.Join(warnings, "; ")}}
+	}
+	return []Check{{Name: "tasks/store", Status: OK, Detail: detail}}
 }

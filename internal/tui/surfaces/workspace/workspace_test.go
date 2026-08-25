@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/drjzlyan/dhi/internal/ansi"
+	"github.com/drjzlyan/dhi/internal/tasks"
 	"github.com/drjzlyan/dhi/internal/tui/surfaces"
 	"github.com/drjzlyan/dhi/internal/tui/theme"
 	"github.com/drjzlyan/dhi/internal/workspace"
@@ -35,7 +36,7 @@ func newSurface(t *testing.T) (*Model, *workspace.Workspace) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m := New("0.1.0", ws, nil, nil)
+	m := New("0.1.0", ws, Deps{})
 	m.Resize(110, 34)
 	return m, ws
 }
@@ -50,7 +51,7 @@ func TestMetaIsBootSurface(t *testing.T) {
 
 func TestNilWorkspaceRendersHeroAndSwallowsKeys(t *testing.T) {
 	theme.SwapForTest(t, theme.Dark())
-	m := New("0.1.0", nil, nil, nil)
+	m := New("0.1.0", nil, Deps{})
 	m.Resize(100, 30)
 	out := m.View()
 	if !strings.Contains(out, "███████") || !strings.Contains(out, "not inside a DHI workspace") {
@@ -69,8 +70,8 @@ func TestSectionCyclingWraps(t *testing.T) {
 		t.Fatalf("initial section = %v", m.sec)
 	}
 	m.HandleKey("[")
-	if m.sec != secChannels {
-		t.Fatalf("[ from first should wrap to channels, got %v", m.sec)
+	if m.sec != secTasks {
+		t.Fatalf("[ from first should wrap to tasks, got %v", m.sec)
 	}
 	m.HandleKey("]")
 	if m.sec != secMembers {
@@ -88,6 +89,10 @@ func TestSectionCyclingWraps(t *testing.T) {
 	m.HandleKey("]")
 	if m.sec != secChannels {
 		t.Fatalf("fourth ] should reach channels, got %v", m.sec)
+	}
+	m.HandleKey("]")
+	if m.sec != secTasks {
+		t.Fatalf("fifth ] should reach tasks, got %v", m.sec)
 	}
 }
 
@@ -427,5 +432,121 @@ func TestFormEscSwallowWhileBusy(t *testing.T) {
 	m.HandleKey("esc")
 	if m.form.kind != fNone {
 		t.Fatal("esc did not close idle form")
+	}
+}
+
+func TestTasksSectionFlows(t *testing.T) {
+	m, ws := newSurface(t)
+	store, err := tasks.Open(ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var detached []string
+	store.SetAttach(
+		func(slug, member, branch, sp string) (string, error) {
+			rel := ".dhi/tasks/" + slug + "/" + member
+			os.MkdirAll(filepath.Join(ws.Root, rel), 0o755)
+			return rel, nil
+		},
+		func(slug, rel string) error {
+			detached = append(detached, rel)
+			return nil
+		},
+	)
+	m.taskStore = store
+
+	// Navigate to the last section.
+	for i := secMembers; i < secTasks; i++ {
+		m.HandleKey("]")
+	}
+	if m.sec != secTasks {
+		t.Fatalf("section = %v", m.sec)
+	}
+
+	// Create via modal (slug+title).
+	m.HandleKey("n")
+	typeInto(t, m, 0, "fix-login")
+	typeInto(t, m, 1, "Fix login race")
+	m.HandleKey("enter")
+	if tk, ok := store.Get("fix-login"); !ok || tk.Status != tasks.Backlog {
+		t.Fatalf("card after create = %+v err=%q", tk, m.form.err)
+	}
+
+	// Status cycles backlog → active.
+	m.HandleKey("s")
+	tk, _ := store.Get("fix-login")
+	if tk.Status != tasks.Active {
+		t.Fatalf("status = %v", tk.Status)
+	}
+
+	// Assign via modal.
+	m.HandleKey("a")
+	typeInto(t, m, 0, "alice")
+	m.HandleKey("enter")
+	tk, _ = store.Get("fix-login")
+	if tk.Assignee != "alice" {
+		t.Fatalf("assignee = %q", tk.Assignee)
+	}
+
+	// Attach worktree through the fake seam.
+	m.HandleKey("w")
+	typeInto(t, m, 0, "alpha") // member from fixture workspace
+	m.HandleKey("enter")
+	tk, _ = store.Get("fix-login")
+	if len(tk.ChangeSets) != 1 || tk.ChangeSets[0].Member != "alpha" ||
+		tk.ChangeSets[0].Branch != "task/fix-login" {
+		t.Fatalf("changesets = %+v err=%q", tk.ChangeSets, m.form.err)
+	}
+	if info, err2 := os.Stat(filepath.Join(ws.Root, tk.ChangeSets[0].Path)); err2 != nil || !info.IsDir() {
+		t.Fatalf("fake worktree missing: %v", err2)
+	}
+
+	// Bind thread.
+	m.HandleKey("t")
+	typeInto(t, m, 0, "#general")
+	m.form.fields[1].runes = []rune("42")
+	m.HandleKey("enter")
+	tk, _ = store.Get("fix-login")
+	if tk.ThreadChannel != "#general" || tk.ThreadID != 42 {
+		t.Fatalf("thread binding = %+v", tk)
+	}
+
+	// Detail line renders changeset + thread for the selected row.
+	out := ansi.Strip(m.View())
+	for _, want := range []string{"alpha@task/fix-login", "thread #general#42", "active"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("view missing %q:\n%s", want, out)
+		}
+	}
+
+	// Remove confirm deletes the card but leaves the worktree dir.
+	m.HandleKey("x")
+	if m.form.kind != fTaskRemoveConfirm {
+		t.Fatalf("expected remove confirm, got %v", m.form.kind)
+	}
+	m.HandleKey("enter")
+	if _, ok := store.Get("fix-login"); ok {
+		t.Fatal("card survived removal")
+	}
+	if len(detached) != 0 {
+		t.Fatalf("remove must not detach silently: %v", detached)
+	}
+	if _, err2 := os.Stat(filepath.Join(ws.Root, ".dhi/tasks/fix-login")); err2 != nil {
+		t.Error("worktree dir was removed by card delete")
+	}
+}
+
+func TestTasksSectionWithoutStoreRendersUnavailable(t *testing.T) {
+	m, _ := newSurface(t)
+	for i := secMembers; i < secTasks; i++ {
+		m.HandleKey("]")
+	}
+	m.HandleKey("n") // must not open a modal without a store
+	if m.form.kind == fTaskNew {
+		t.Fatal("modal opened without task store")
+	}
+	out := ansi.Strip(m.View())
+	if !strings.Contains(out, "task store unavailable") {
+		t.Fatalf("unavailable note missing:\n%s", out)
 	}
 }

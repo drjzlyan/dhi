@@ -190,12 +190,22 @@ prompt assembly).
 - [x] Task-card refs: deferred to P4 where cards exist; transcript tags
       threaded replies with ↳ today
 
-### P4 — Tasks ↔ ChangeSets + kanban
+### P4 — Tasks ↔ ChangeSets + kanban ✅ (2026-08-25)
 
-- [ ] Task store under reserved `.dhi/tasks/` (per-task TOML; worktrees
-      under `.dhi/tasks/<id>/`), statuses backlog/active/in-review/done
-- [ ] Kanban UI + card detail (thread link, dirty-state, assignee);
-      conversational assignment via @mention on a card's thread
+- [x] `internal/tasks`: per-card TOML under reserved `.dhi/tasks/<slug>.toml`
+      (title/status backlog|active|in-review|done/assignee/team/thread
+      binding/[[changeset]] records); strict decode, atomic persist-
+      before-commit, Subscribe pings, malformed cards → store warnings
+- [x] Worktree binding behind an injectable AttachFn/DetachFn seam:
+      cmd/dhi wires gitcore.Runner (worktree add at
+      `.dhi/tasks/<slug>/<member>` on `task/<slug>` branches, safe
+      remove + prune); pre-registry-flip installs degrade with a visible
+      "seam unavailable" error; card removal never deletes worktrees
+- [x] TASKS section UI (sixth pane): grouped flow-order list with
+      selected-card detail line (changesets, thread ref), n new / s
+      cycle status / a assign / w attach / t bind-thread / x remove
+- [x] Doctor tasks suite: malformed cards + dangling assignee/team/
+      member refs warned by name
 
 ### P5 — Inspection + attach-points
 

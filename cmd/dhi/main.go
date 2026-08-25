@@ -7,10 +7,12 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"charm.land/bubbletea/v2"
 
@@ -21,8 +23,10 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/runtime"
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
 	"github.com/drjzlyan/dhi/internal/doctor"
+	"github.com/drjzlyan/dhi/internal/gitcore"
 	"github.com/drjzlyan/dhi/internal/search"
 	"github.com/drjzlyan/dhi/internal/settings"
+	"github.com/drjzlyan/dhi/internal/tasks"
 	"github.com/drjzlyan/dhi/internal/toolchain"
 	"github.com/drjzlyan/dhi/internal/tui/app"
 	"github.com/drjzlyan/dhi/internal/tui/surfaces/bootstrap"
@@ -85,12 +89,17 @@ func runTUI() {
 		}
 	}
 
-	// Message bus: created for every workspace so the CHANNELS floor
-	// works even before a crew is installed (posting is human-only then).
+	// Message bus + tasks store exist for every workspace; the worktree
+	// seam lights up only when the hermetic git shim is installed.
 	var messageBus *bus.Bus
 	var agentRT *runtime.Runtime
+	var taskStore *tasks.Store
 	if ws != nil {
 		messageBus = openBus(ws)
+		if ts, err := tasks.Open(ws); err == nil {
+			taskStore = ts
+			wireTaskSeam(ws, ts)
+		}
 		// Agent runtime (F-007): lights up only when a roster exists
 		// under .dhi/agents/. A missing API key surfaces at first turn,
 		// not boot; doctor warns about it.
@@ -103,7 +112,11 @@ func runTUI() {
 	}
 
 	a := app.New(version.Version,
-		wsview.New(version.Version, ws, messageBus, agentRT),
+		wsview.New(version.Version, ws, wsview.Deps{
+			Bus:     messageBus,
+			Runtime: agentRT,
+			Tasks:   taskStore,
+		}),
 		editor.New(version.Version, ws, edOpts...),
 		placeholder.New("ideator", "Ideator", "M6",
 			"Ideation sessions: artifact navigation, preview, approval — no editing."),
@@ -142,6 +155,52 @@ func toolchainRoot() string {
 func needsBootstrap(root string) bool {
 	_, err := os.Stat(filepath.Join(root, "lock.json"))
 	return os.IsNotExist(err)
+}
+
+// wireTaskSeam connects task ChangeSets to hermetic-git worktrees when
+// the shim exists; without it, attaching reports a visible error.
+func wireTaskSeam(ws *workspace.Workspace, ts *tasks.Store) {
+	root, err := toolchain.DefaultRoot()
+	if err != nil {
+		return
+	}
+	runner, err := gitcore.ResolveRunner(toolchain.New(root))
+	if err != nil {
+		return // pre-release: shim absent; doctor explains
+	}
+	ts.SetAttach(
+		func(slug, member, branch, startpoint string) (string, error) {
+			mem, ok := ws.Member(member)
+			if !ok {
+				return "", fmt.Errorf("unknown member %q", member)
+			}
+			if branch == "" {
+				branch = "task/" + slug
+			}
+			rel := filepath.Join(tasks.Dir, slug, member)
+			dst := filepath.Join(ws.Root, rel)
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			defer cancel()
+			if err := runner.WorktreeAdd(ctx, mem.Path, dst, branch, startpoint); err != nil {
+				return "", err
+			}
+			return rel, nil
+		},
+		func(slug, relPath string) error {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+			defer cancel()
+			member := filepath.Base(relPath)
+			if mem, ok := ws.Member(member); ok {
+				if err := runner.WorktreeRemove(ctx, mem.Path,
+					filepath.Join(ws.Root, relPath), false); err != nil {
+					// Dirty trees refuse removal; surface and keep both.
+					return err
+				}
+				return runner.Prune(ctx, mem.Path)
+			}
+			return fmt.Errorf("member %q no longer registered", member)
+		},
+	)
 }
 
 // openBus loads the workspace message store; nil disables CHANNELS

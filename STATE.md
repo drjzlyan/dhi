@@ -1,15 +1,16 @@
 # STATE — current position
 
-Updated: 2026-08-25 (session: M4 P3 — channels floor shipped)
+Updated: 2026-08-25 (session: M4 P4 — tasks & ChangeSets shipped)
 
 ## Where we are
 
-**M4 P0–P3 COMPLETE and committed (a647b0e → 7987f70; `make verify`
-green).** The Workspace view is a five-section operations floor
-(`[`/`]` switcher): MEMBERS · ORG · PACKS · STANDARDS · CHANNELS.
-Hermetic git spike validated live (registry flip still pending first
-artifact release — see release checklist below). Next: **P4 tasks ↔
-ChangeSets + kanban**, then P5 inspection/attach-points.
+**M4 P0–P4 COMPLETE and committed (a647b0e onward; verify green).**
+The Workspace view is a six-section operations floor: MEMBERS · ORG ·
+PACKS · STANDARDS · CHANNELS · TASKS. Task cards persist as TOML,
+bind ChangeSets through an injectable worktree seam (live once the git
+registry pin flips), and carry thread bindings so progress lands in
+the right conversation. Remaining in M4: P5 inspection dashboards +
+Roster/invite seam for M5/M6.
 
 ## Just finished (P3)
 
@@ -47,21 +48,23 @@ doctor stays silent about git; smoke runs via DHI_SMOKE_GIT_BIN.
 5. os.CreateTemp needs its dir pre-created; sed bulk renames need
    re-grep; fixture member dirs must match registered member paths.
 
-## Next up (P4 tasks ↔ ChangeSets + kanban)
+## Gotchas added this session
 
-1. `internal/tasks`: per-task TOML under reserved `.dhi/tasks/<slug>.toml`
-   (title/status backlog|active|in-review|done/assignee/team/thread
-   binding/[[changesets]]); atomic writes; Subscribe pings; malformed
-   files surface as store warnings for doctor.
-2. Worktree binding behind an injectable AttachFn seam (gitcore.Runner
-   in production once the registry pin flips; hermetic fake in tests):
-   attach creates `.dhi/tasks/<slug>/<member>` linked worktree on branch
-   `<branch-prefix>/<slug>`, records changeset; detach removes metadata,
-   tree deletion only with explicit confirm.
-3. TASKS section UI on the workspace view: grouped list, n new task,
-   enter detail, s cycle status, a assign, w attach/detach, x remove.
-4. Doctor tasks suite: parse warnings, dangling assignee/team refs.
-5. Then P5 inspection dashboards + Roster/invite seam for M5/M6.
+- bus.History(ch,0) excludes threaded rows — thread views stitch
+  root+History(ch,id) themselves (chatpane.visibleHistory).
+- New confirm-modal kinds must be added to formKey's confirm branch or
+  enter routes to submitForm instead of submitConfirm.
+- Guard modal-opening keys behind their service being present (tasks n/a/w/t).
+
+## Next up (P5 inspection + attach-points)
+
+1. Per-agent profile section: manifest inventory, current task/worktree
+   state, activity timeline (bus history + memory journal), read-only
+   notes, KB contributions, effective standards summary.
+2. Narrow Roster/invite interface extracted from *runtime.Runtime use
+   in editor chat + wsview turnHandler so M5 Reviewer/M6 Ideator plug
+   in without churn.
+3. Goldens deliberate; ROADMAP/STATE each session.
 
 ## Open questions for user
 

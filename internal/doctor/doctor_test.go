@@ -226,3 +226,46 @@ func TestStandardsSuite(t *testing.T) {
 		t.Fatalf("malformed = %+v", c)
 	}
 }
+
+func TestTasksSuite(t *testing.T) {
+	ws := setupWorkspaceRoot(t, true)
+
+	// No cards: silent.
+	if checks := Tasks(ws); checks != nil {
+		t.Fatalf("empty store emitted %+v", checks)
+	}
+
+	os.WriteFile(filepath.Join(ws, ".dhi", "org.toml"),
+		[]byte("schema = 1\n\n[teams.frontend]\nmembers = [\"alice\"]\n"), 0o644)
+	os.WriteFile(filepath.Join(ws, ".dhi", "agents", "alice.toml"),
+		[]byte("schema = 1\nname = \"Alice\"\nmodel = \"m\"\n"), 0o644)
+	os.MkdirAll(filepath.Join(ws, ".dhi", "tasks"), 0o755)
+	card := "schema = 1\ntitle = \"Fix it\"\nstatus = \"active\"\nassignee = \"alice\"\nteam = \"frontend\"\n\n[[changeset]]\nmember = \"main\"\nbranch = \"task/x\"\npath = \".dhi/tasks/x/main\"\n"
+	os.WriteFile(filepath.Join(ws, ".dhi", "tasks", "fix.toml"), []byte(card), 0o644)
+
+	checks := Tasks(ws)
+	c, ok := statusOf(checks, "tasks/store")
+	if !ok || c.Status != OK || !strings.Contains(c.Detail, "1 task") {
+		t.Fatalf("healthy card = %+v (found=%v)", c, ok)
+	}
+
+	// Dangling refs warn by name.
+	bad := strings.Replace(card, "assignee = \"alice\"", "assignee = \"ghost\"", 1)
+	bad = strings.Replace(bad, "team = \"frontend\"", "team = \"nope\"", 1)
+	os.WriteFile(filepath.Join(ws, ".dhi", "tasks", "bad.toml"), []byte(bad), 0o644)
+	checks = Tasks(ws)
+	c, _ = statusOf(checks, "tasks/store")
+	if c.Status != Warn ||
+		!strings.Contains(c.Detail, "assignee ghost") ||
+		!strings.Contains(c.Detail, "team nope") {
+		t.Fatalf("dangling refs = %+v", c)
+	}
+
+	// Malformed file warns with fallback note.
+	os.WriteFile(filepath.Join(ws, ".dhi", "tasks", "junk.toml"), []byte("schema = 3\n"), 0o644)
+	checks = Tasks(ws)
+	c, _ = statusOf(checks, "tasks/store")
+	if c.Status != Warn || !strings.Contains(c.Detail, "malformed") {
+		t.Fatalf("malformed = %+v", c)
+	}
+}

@@ -8,6 +8,7 @@ package workspace
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,6 +21,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/pack"
 	"github.com/drjzlyan/dhi/internal/agentkit/standards"
 	"github.com/drjzlyan/dhi/internal/gitcore"
+	"github.com/drjzlyan/dhi/internal/tasks"
 	"github.com/drjzlyan/dhi/internal/tui/surfaces"
 	"github.com/drjzlyan/dhi/internal/workspace"
 )
@@ -39,6 +41,7 @@ const (
 	secPacks
 	secStandards
 	secChannels
+	secTasks
 	secCount
 )
 
@@ -52,6 +55,8 @@ func (s sectionID) label() string {
 		return "PACKS"
 	case secChannels:
 		return "CHANNELS"
+	case secTasks:
+		return "TASKS"
 	default:
 		return "STANDARDS"
 	}
@@ -75,6 +80,8 @@ type Model struct {
 	form formState
 	pane *chatPane
 
+	taskStore *tasks.Store
+
 	events    chan wsEvent
 	cancelSub func()
 	cancelOrg func()
@@ -95,10 +102,17 @@ const (
 	evInstallDone
 )
 
+// Deps carries the services this surface operates. Zero fields degrade
+// their sections to visible "unavailable" rows rather than errors.
+type Deps struct {
+	Bus     *bus.Bus
+	Runtime turnHandler
+	Tasks   *tasks.Store
+}
+
 // New returns the workspace model. A nil ws renders the not-a-workspace
-// empty state (all keys inert). The message bus powers CHANNELS; rt may
-// be nil (posting works, mentions just have no crew to trigger).
-func New(version string, ws *workspace.Workspace, b *bus.Bus, rt turnHandler) *Model {
+// empty state (all keys inert).
+func New(version string, ws *workspace.Workspace, d Deps) *Model {
 	m := &Model{
 		version: version,
 		ws:      ws,
@@ -114,8 +128,9 @@ func New(version string, ws *workspace.Workspace, b *bus.Bus, rt turnHandler) *M
 		if _, err := standards.Inspect(ws.Root); err == nil {
 			m.stdRootOK = true
 		}
-		if b != nil {
-			m.pane = newChatPane(b, rt, m.org)
+		m.taskStore = d.Tasks
+		if d.Bus != nil {
+			m.pane = newChatPane(d.Bus, d.Runtime, m.org)
 		}
 	}
 	return m
@@ -261,6 +276,11 @@ const (
 	fStdLayerEdit
 	fStdPreviewPrompt
 	fStdPreviewShow
+	fTaskNew
+	fTaskAssign
+	fTaskAttach
+	fTaskThread
+	fTaskRemoveConfirm
 )
 
 type field struct {
@@ -358,6 +378,8 @@ func (m *Model) sectionKey(key string) bool {
 		return m.packsKey(key)
 	case secChannels:
 		return m.pane.handleKey(key)
+	case secTasks:
+		return m.tasksKey(key)
 	default:
 		return m.standardsKey(key)
 	}
@@ -516,6 +538,94 @@ func (m *Model) orgKey(key string) bool {
 		}
 	}
 	return false
+}
+
+// ---- TASKS section ----
+
+func (m *Model) taskRows() []tasks.Task {
+	if m.taskStore == nil {
+		return nil
+	}
+	return m.taskStore.List()
+}
+
+func (m *Model) tasksKey(key string) bool {
+	rows := m.taskRows()
+	c := &m.cursors[secTasks]
+	clampCursor(c, len(rows))
+	sel := func() *tasks.Task {
+		if *c < len(rows) {
+			return &rows[*c]
+		}
+		return nil
+	}
+	switch key {
+	case "j", "down":
+		if *c < len(rows)-1 {
+			*c++
+		}
+		return true
+	case "k", "up":
+		if *c > 0 {
+			*c--
+		}
+		return true
+	case "n":
+		if m.taskStore == nil {
+			return false
+		}
+		m.form = formState{kind: fTaskNew, fields: []field{
+			textField("slug  ", ""), textField("title ", ""),
+		}}
+		return true
+	case "s":
+		if tk := sel(); tk != nil && m.taskStore != nil {
+			next := nextStatus(tk.Status)
+			if err := m.taskStore.SetStatus(tk.Slug, next); err != nil {
+				m.flashErr(err.Error())
+			}
+			return true
+		}
+	case "a":
+		if tk := sel(); tk != nil {
+			m.form = formState{kind: fTaskAssign, orig: tk.Slug,
+				fields: []field{textField("assignee ", tk.Assignee)}}
+			return true
+		}
+	case "w":
+		if tk := sel(); tk != nil {
+			m.form = formState{kind: fTaskAttach, orig: tk.Slug,
+				fields: []field{
+					textField("member ", ""),
+					textField("branch ", "task/"+tk.Slug),
+				}}
+			return true
+		}
+	case "t":
+		if tk := sel(); tk != nil {
+			m.form = formState{kind: fTaskThread, orig: tk.Slug,
+				fields: []field{
+					textField("channel ", tk.ThreadChannel),
+					textField("thread# ", itoa(int(tk.ThreadID))),
+				}}
+			return true
+		}
+	case "x", "d":
+		if tk := sel(); tk != nil {
+			m.form = formState{kind: fTaskRemoveConfirm, orig: tk.Slug}
+			return true
+		}
+	}
+	return false
+}
+
+func nextStatus(st tasks.Status) tasks.Status {
+	for i, s := range tasks.Statuses {
+		if s == st {
+			return tasks.Statuses[(i+1)%len(tasks.Statuses)]
+		}
+	}
+	return tasks.Backlog
 }
 
 func (m *Model) flashErr(msg string) {
@@ -682,7 +792,8 @@ func (m *Model) formKey(key string) bool {
 		return true // swallow while async work runs
 	}
 	switch f.kind {
-	case fRemoveConfirm, fTeamDeleteConfirm, fAgentArchiveConfirm, fPackUninstallConfirm:
+	case fRemoveConfirm, fTeamDeleteConfirm, fAgentArchiveConfirm,
+		fPackUninstallConfirm, fTaskRemoveConfirm:
 		switch key {
 		case "enter":
 			m.submitConfirm()
@@ -862,6 +973,53 @@ func (m *Model) submitForm() {
 			}
 		}
 		m.closeForm()
+	case fTaskNew:
+		slug := strings.TrimSpace(f.fields[0].text())
+		title := strings.TrimSpace(f.fields[1].text())
+		if m.taskStore == nil {
+			f.err = "task store unavailable"
+			return
+		}
+		if err := m.taskStore.Create(slug, title, "", ""); err != nil {
+			f.err = err.Error()
+			return
+		}
+		m.closeForm()
+	case fTaskAssign:
+		if m.taskStore == nil {
+			f.err = "task store unavailable"
+			return
+		}
+		if err := m.taskStore.Assign(f.orig, strings.TrimSpace(f.fields[0].text())); err != nil {
+			f.err = err.Error()
+			return
+		}
+		m.closeForm()
+	case fTaskAttach:
+		if m.taskStore == nil {
+			f.err = "task store unavailable"
+			return
+		}
+		member := strings.TrimSpace(f.fields[0].text())
+		branch := strings.TrimSpace(f.fields[1].text())
+		if err := m.taskStore.Attach(f.orig, member, branch, ""); err != nil {
+			f.err = err.Error()
+			return
+		}
+		m.closeForm()
+	case fTaskThread:
+		if m.taskStore == nil {
+			f.err = "task store unavailable"
+			return
+		}
+		channel := strings.TrimSpace(f.fields[0].text())
+		tid := int64(0)
+		fmt.Sscanf(strings.TrimSpace(f.fields[1].text()), "%d", &tid)
+		if err := m.taskStore.BindThread(f.orig, channel, tid); err != nil {
+			f.err = err.Error()
+			return
+		}
+		m.closeForm()
 	case fStdPreviewPrompt:
 		id := strings.TrimSpace(f.fields[0].text())
 		block := standards.Resolve(m.ws.Root, id, m.teamLookup())
@@ -894,6 +1052,18 @@ func (m *Model) submitConfirm() {
 			return
 		}
 		clampCursor(&m.cursors[secOrg], m.orgItemCount())
+		m.closeForm()
+	case fTaskRemoveConfirm:
+		if m.taskStore == nil {
+			f.err = "task store unavailable"
+			return
+		}
+		if err := m.taskStore.Remove(f.target()); err != nil {
+			f.err = err.Error()
+			return
+		}
+		names := m.taskRows()
+		clampCursor(&m.cursors[secTasks], len(names))
 		m.closeForm()
 	case fPackUninstallConfirm:
 		if err := m.packs.Uninstall(f.target()); err != nil {
