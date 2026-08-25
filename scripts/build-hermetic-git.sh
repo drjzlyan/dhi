@@ -54,7 +54,9 @@ if [ "${DHI_GIT_SKIP_VERIFY:-0}" != "1" ]; then
     if ! git -C "$work/src" verify-tag --raw "v${VERSION}" >"$STATUS" 2>&1; then
         cat "$STATUS"; echo "signature FAILED" >&2; exit 1
     fi
-    grep -q "VALIDSIG $KEY_FP " "$STATUS" ||
+    # VALIDSIG's LAST field is the primary-key fingerprint; the first
+    # is whichever subkey did the signing.
+    grep "VALIDSIG" "$STATUS" | awk '{print $NF}' | grep -qx "$KEY_FP" ||
         { echo "signature valid but signed by unexpected key:" >&2
           grep -E "VALIDSIG|Good signature" "$STATUS" >&2; exit 1; }
     echo "==> tag signature OK (key $KEY_FP)"
