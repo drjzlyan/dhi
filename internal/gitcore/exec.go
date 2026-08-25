@@ -60,6 +60,9 @@ func (r *Runner) Run(ctx context.Context, dir string, args ...string) (string, s
 	cmd := exec.CommandContext(ctx, r.bin, args...)
 	cmd.Dir = dir
 	cmd.Env = r.env
+	// A killed shell leaves grandchildren holding our pipes; WaitDelay
+	// forces Wait to return promptly once the context is done.
+	cmd.WaitDelay = 500 * time.Millisecond
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	err := cmd.Run()

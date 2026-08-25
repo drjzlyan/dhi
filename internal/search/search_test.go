@@ -77,7 +77,9 @@ func TestRipgrepRejectsBadInput(t *testing.T) {
 	if _, err := r.Search(context.Background(), "q", nil); err == nil {
 		t.Error("no roots accepted")
 	}
-	if _, err := r.Search(context.Background(), "q", []string{"/missing-root-xyz"}); err == nil {
+	// Missing BINARY must fail at Start regardless of host tooling.
+	r2 := Ripgrep{Bin: "/nonexistent/dhi-rg-probe"}
+	if _, err := r2.Search(context.Background(), "q", []string{"/ws"}); err == nil {
 		t.Error("missing binary accepted")
 	}
 }
