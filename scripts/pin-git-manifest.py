@@ -64,7 +64,10 @@ def main():
         if plat is None:
             sys.exit(f"{fname}: unknown platform slug {slug!r}")
 
-        sidecar = path + ".sha256"
+        # build script writes "<name>.sha256", not "<name>.tar.gz.sha256"
+        if not fname.endswith(".tar.gz"):
+            sys.exit(f"{fname}: unexpected extension")
+        sidecar = path[: -len(".tar.gz")] + ".sha256"
         if os.path.exists(sidecar):
             expected = open(sidecar).read().split()[0].strip().lower()
             if expected != actual:
