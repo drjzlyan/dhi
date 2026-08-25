@@ -8,6 +8,9 @@ import (
 
 	"charm.land/bubbletea/v2"
 
+	"github.com/drjzlyan/dhi/internal/tui/branding"
+	"github.com/drjzlyan/dhi/internal/version"
+
 	"github.com/drjzlyan/dhi/internal/settings"
 	"github.com/drjzlyan/dhi/internal/tui/kit"
 	"github.com/drjzlyan/dhi/internal/tui/surfaces"
@@ -18,6 +21,7 @@ import (
 type Model struct {
 	cfg      settings.Config
 	savePath string
+	version  string
 	cursor   int
 	width    int
 	height   int
@@ -28,7 +32,7 @@ var _ surfaces.Surface = (*Model)(nil)
 
 // New wires the surface to a loaded config and its persistence target.
 func New(cfg settings.Config, savePath string) *Model {
-	return &Model{cfg: cfg, savePath: savePath}
+	return &Model{cfg: cfg, savePath: savePath, version: version.Version}
 }
 
 func (m *Model) Meta() surfaces.Meta    { return surfaces.Meta{ID: "settings", Title: "Settings"} }
@@ -118,8 +122,8 @@ func (m *Model) applyAndPersist() {
 }
 
 func (m *Model) View() string {
-	rows := []string{
-		theme.Brand().Render("DHI settings"),
+	body := []string{
+		theme.Brand().Render("settings"),
 		"",
 		settingRow(m.cursor == rowTheme, "theme",
 			valueText(m.cfg.Theme)),
@@ -132,12 +136,18 @@ func (m *Model) View() string {
 		"",
 	}
 	if m.flash != "" {
-		rows = append(rows, theme.SuccessText().Render(m.flash))
+		body = append(body, theme.SuccessText().Render(m.flash))
 	} else {
-		rows = append(rows, theme.Hint().Render("←/→ change · ctrl+s write · esc nothing"))
+		body = append(body, theme.Hint().Render("←/→ change · ctrl+s write · esc nothing"))
 	}
-	body := kit.Center(strings.Join(rows, "\n"), maxInt(m.width, 40), maxInt(m.height, 10))
-	return body
+
+	// Brand hero tops the composition when the terminal is tall enough
+	// to keep every setting on screen without scrolling pressure.
+	if m.height >= len(body)+10 {
+		hero := strings.Split(branding.HeroBlock(m.version), "\n")
+		body = append(append(hero, ""), body...)
+	}
+	return kit.Center(strings.Join(body, "\n"), maxInt(m.width, 40), maxInt(m.height, 10))
 }
 
 func settingRow(selected bool, name, value string) string {
