@@ -111,6 +111,11 @@ jobs:
           merge-multiple: true
           path: dist
 
+      - name: Show downloaded files
+        run: |
+          find . -name "dhi-git-*" -not -path "./.git/*" | sort
+          ls -la dist
+
       - name: Update registry manifest
         env:
           GITHUB_REPOSITORY: ${{ github.repository }}
