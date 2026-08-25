@@ -49,12 +49,14 @@ if [ "${DHI_GIT_SKIP_VERIFY:-0}" != "1" ]; then
     gpg --quiet --import "$work/key.asc"
 
     STATUS="$work/status.txt"
-    git -C "$work/src" cat-file tag "v${VERSION}" > "$work/tagobj"
-    # Embedded signature: payload+sig as one stream verifies directly.
-    gpg --status-fd 1 --verify "$work/tagobj" >"$STATUS" 2>&1 ||
-        { cat "$STATUS"; echo "signature FAILED" >&2; exit 1; }
-    grep -q "^\[GNUPG:\] VALIDSIG $KEY_FP " "$STATUS" ||
-        { echo "signature valid but signed by unexpected key:" >&2; grep VALIDSIG "$STATUS"; exit 1; }
+    # git verify-tag splits the embedded signature correctly; --raw
+    # surfaces gpg's status lines for fingerprint matching.
+    if ! git -C "$work/src" verify-tag --raw "v${VERSION}" >"$STATUS" 2>&1; then
+        cat "$STATUS"; echo "signature FAILED" >&2; exit 1
+    fi
+    grep -q "VALIDSIG $KEY_FP " "$STATUS" ||
+        { echo "signature valid but signed by unexpected key:" >&2
+          grep -E "VALIDSIG|Good signature" "$STATUS" >&2; exit 1; }
     echo "==> tag signature OK (key $KEY_FP)"
 else
     echo "!! GPG verification SKIPPED (DHI_GIT_SKIP_VERIFY=1) — never ship pins from unverified builds" >&2
