@@ -1,16 +1,17 @@
 # STATE — current position
 
-Updated: 2026-08-25 (session: M4 P4 — tasks & ChangeSets shipped)
+Updated: 2026-08-25 (session: M4 CLOSED — P5 shipped)
 
 ## Where we are
 
-**M4 P0–P4 COMPLETE and committed (a647b0e onward; verify green).**
-The Workspace view is a six-section operations floor: MEMBERS · ORG ·
-PACKS · STANDARDS · CHANNELS · TASKS. Task cards persist as TOML,
-bind ChangeSets through an injectable worktree seam (live once the git
-registry pin flips), and carry thread bindings so progress lands in
-the right conversation. Remaining in M4: P5 inspection dashboards +
-Roster/invite seam for M5/M6.
+**M4 COMPLETE (all six phases, a647b0e → c6aa2c8; `make verify` green,
+not yet committed as a closure tag).** The Workspace view is the full
+seven-section operations floor: MEMBERS · ORG · PACKS · STANDARDS ·
+CHANNELS · TASKS · INSPECT. F-003 acceptance criteria are met in code;
+the one external dependency is the git registry flip (release checklist
+below) which activates task worktrees. Next milestone: **M5 Reviewer
+full (F-005)** — its inputs consume the Roster/turnHandler seams that
+now exist.
 
 ## Just finished (P3)
 
@@ -56,16 +57,34 @@ doctor stays silent about git; smoke runs via DHI_SMOKE_GIT_BIN.
   enter routes to submitForm instead of submitConfirm.
 - Guard modal-opening keys behind their service being present (tasks n/a/w/t).
 
-## Next up (P5 inspection + attach-points)
+## Just finished (P5)
 
-1. Per-agent profile section: manifest inventory, current task/worktree
-   state, activity timeline (bus history + memory journal), read-only
-   notes, KB contributions, effective standards summary.
-2. Narrow Roster/invite interface extracted from *runtime.Runtime use
-   in editor chat + wsview turnHandler so M5 Reviewer/M6 Ideator plug
-   in without churn.
-3. Goldens deliberate; ROADMAP/STATE each session.
+- `internal/agentkit/profile`: Build() aggregates roster manifest, org
+  teams, tasks (open/done split), bus activity (per-channel scan,
+  newest-first, capped), memory journal+notes, KB contributions (new
+  Store.ContributionsBy), standards block; independent degradation.
+- INSPECT pane: list + expandable profile with activity/memory/KB/
+  standards sections; per-workspace store caches.
+- Seams: profile.Roster (AgentIDs+Manifest) on Runtime; turnHandler
+  already narrow. M5/M6 can be built against interfaces only.
+
+## Gotchas added
+
+- knowledge.ContributionsBy reads the in-memory index first (Store.mu)
+  then falls back to disk — inspection UIs may run long after Open.
+
+## Next up (M5 Reviewer per F-005)
+
+1. Spec check F-005 → implementation plan before code (inputs:
+   PR via gh | local worktree/branch → auto review worktree).
+2. Diff engine over gitcore (hermetic git diff --no-index or go-git
+   patches), GitHub-style file/hunk model shared with future side-by-side.
+3. Review surface skeleton replacing placeholder; line/hunk comments
+   persisted under .dhi/reviews/; pending-review batching + viewed marks.
+4. Agent invites per-thread + complete-agent-review mode via existing seams.
+5. Completion flow: gh post | dispatch fixing agent (task card!) |
+   open-in-editor handoff.
 
 ## Open questions for user
 
-- None blocking.
+- None blocking. M4 closure commit/tag pending user request.
