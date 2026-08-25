@@ -18,56 +18,50 @@
 set -eu
 
 VERSION="${1:-${DHI_GIT_VERSION:-2.55.0}}"
-DEFAULT_KEY_FP="96E07AF2577195598DA0D6825D8D4F9305F6963A"  # git release key
+DEFAULT_KEY_FP="96E07AF25771955980DAD10020D04E5A713660A7"  # Junio C Hamano <gitster@pobox.com>
+GIT_REPO="${GIT_REPO:-https://github.com/git/git}"
 
-# kernel.org edges have been flaky per-region; try canonical CDN first,
-# then mirrors. Signature and tarball MUST come from the same host.
-# kernel.org edges sometimes serve CACHED 404s (their standard not-found
-# page is 1807 bytes) from cold POPs; a unique query string forces each
-# attempt to origin. Same-host tarball+signature is still guaranteed.
-fetch_pair() {
-    base="$1"
-    n=0
-    for f in src.tar.gz src.tar.sign; do
-        n=$((n + 1))
-        url="$base/git-${VERSION}.${f#src.tar.}?dhi=$$-$n-$(date +%s)"
-        curl -fSL --retry 5 --retry-delay 3 --retry-all-errors \
-             --connect-timeout 15 -o "$work/$f" "$url" || return 1
-    done
-}
+# Source integrity: we clone the upstream tag itself (shallow) and
+# verify ITS GPG signature against the pinned release-key fingerprint —
+# stronger than tarball+detached-sig, immune to kernel.org's blanket
+# 404s for CI-provider ranges on /pub. The tag pins exact commit content.
+#
+# Maintainer/CI tooling only (network + C compiler); never invoked by
+# the shipped product, which downloads verified registry artifacts.
+set -eu
 
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 mkdir -p "$work/dist"
 
-ok=""
-for host in \
-    "https://cdn.kernel.org/pub/software/scm/git" \
-    "https://www.kernel.org/pub/software/scm/git" \
-    "https://mirrors.edge.kernel.org/pub/software/scm/git"; do
-    echo "==> downloading $host/git-${VERSION}.tar.gz (+ detached signature)"
-    if fetch_pair "$host"; then ok="$host"; break; fi
-    echo "    host failed, trying next…" >&2
-done
-[ -n "$ok" ] || { echo "all kernel.org hosts failed" >&2; exit 1; }
+echo "==> fetching signed tag v${VERSION} from $GIT_REPO (depth 1)"
+git init -q "$work/src"
+git -C "$work/src" fetch -q --depth 1 "$GIT_REPO" \
+    "refs/tags/v${VERSION}:refs/tags/v${VERSION}"
 
 if [ "${DHI_GIT_SKIP_VERIFY:-0}" != "1" ]; then
     command -v gpg >/dev/null || { echo "gpg required (apt/brew install gnupg)" >&2; exit 1; }
     KEY_FP="${GIT_RELEASE_KEY_FP:-$DEFAULT_KEY_FP}"
-    GNUPGHOME="$work/gnupg" mkdir -p "$work/gnupg"
     curl -fsSL "https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x${KEY_FP}" \
         -o "$work/key.asc"
-    GNUPGHOME="$work/gnupg" gpg --quiet --import "$work/key.asc"
+    export GNUPGHOME="$work/gnupg"
+    mkdir -m 700 -p "$GNUPGHOME"
+    gpg --quiet --import "$work/key.asc"
+
     STATUS="$work/status.txt"
-    GNUPGHOME="$work/gnupg" gpg --status-fd 1 --verify \
-        "$work/src.tar.sign" "$work/src.tar.gz" >"$STATUS" 2>&1 ||
+    git -C "$work/src" cat-file tag "v${VERSION}" > "$work/tagobj"
+    # Embedded signature: payload+sig as one stream verifies directly.
+    gpg --status-fd 1 --verify "$work/tagobj" >"$STATUS" 2>&1 ||
         { cat "$STATUS"; echo "signature FAILED" >&2; exit 1; }
     grep -q "^\[GNUPG:\] VALIDSIG $KEY_FP " "$STATUS" ||
         { echo "signature valid but signed by unexpected key:" >&2; grep VALIDSIG "$STATUS"; exit 1; }
-    echo "==> signature OK (key $KEY_FP)"
+    echo "==> tag signature OK (key $KEY_FP)"
 else
     echo "!! GPG verification SKIPPED (DHI_GIT_SKIP_VERIFY=1) — never ship pins from unverified builds" >&2
 fi
+
+echo "==> checking out verified tree"
+git -C "$work/src" checkout -q "tags/v${VERSION}"
 
 echo "==> extracting"
 mkdir "$work/src"
@@ -76,6 +70,7 @@ tar -xzf "$work/src.tar.gz" -C "$work/src" --strip-components=1
 echo "==> building (transport-free: NO_CURL NO_EXPAT NO_GETTEXT NO_PERL NO_TCLTK)"
 make -C "$work/src" -j "$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)" \
     git \
+    GIT_VERSION="v${VERSION}" \
     NO_CURL=1 NO_EXPAT=1 NO_GETTEXT=1 NO_PERL=1 NO_TCLTK=1 \
     NO_INSTALL_HARDLINKS=1 \
     >/dev/null
