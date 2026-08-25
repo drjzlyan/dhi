@@ -71,9 +71,6 @@ func (m *Model) dockedView() string {
 func (m *Model) railView(h int) string {
 	counts := m.sectionCounts()
 	lines := make([]string, 0, h)
-	lines = append(lines, theme.Brand().Render(padTo("◆ DHI", railWidth-2)))
-	lines = append(lines, theme.TextDim().Render(padTo(m.version, railWidth-2)))
-	lines = append(lines, "")
 	for s := sectionID(0); s < secCount; s++ {
 		label := padTo(s.label(), 11)
 		count := fmt.Sprintf("%d", counts[s])

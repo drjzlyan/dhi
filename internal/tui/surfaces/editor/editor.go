@@ -728,10 +728,14 @@ func (m *Model) navView() string {
 		}
 	}
 	rail := kit.NewPanel("files", false)
-	hint := theme.Hint().Render("/ find · s search · ⏎ open · ^t term")
+	hint := theme.Hint().Render("⏎ open · / find · s search")
 	savedListH := m.list.Height
-	m.list.Height = bodyH - 3 // reserve hint row + panel padding
-	rail.SetContent(append(splitLines(m.list.View()), "", hint)...)
+	m.list.Height = bodyH - 4 // hint row, spacer, panel padding
+	content := splitLines(m.list.View())
+	for len(content) < bodyH-4 {
+		content = append(content, "") // push hints to the rail's foot
+	}
+	rail.SetContent(append(content, "", hint)...)
 	rail.Width = railWidth
 	rail.Height = bodyH
 	m.list.Height = savedListH
@@ -756,7 +760,11 @@ func (m *Model) navView() string {
 			theme.Hint().Render("press enter on a file to edit"),
 		}, "\n")
 	default:
-		main = theme.TextDim().Render("(select a file to begin editing)")
+		main = strings.Join([]string{
+			theme.Brand().Render("no file open"),
+			"",
+			theme.Hint().Render("⏎ open  ·  / find file  ·  s search"),
+		}, "\n")
 	}
 
 	mainW := maxInt(m.width-railWidth-1, 10)
