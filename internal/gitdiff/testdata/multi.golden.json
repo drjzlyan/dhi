@@ -1,0 +1,171 @@
+[
+ {
+  "OldPath": "cmd/dhi/main.go",
+  "NewPath": "cmd/dhi/main.go",
+  "OldMode": "",
+  "NewMode": "",
+  "IsNew": false,
+  "IsDeleted": false,
+  "IsRename": false,
+  "IsBinary": false,
+  "Hunks": [
+   {
+    "OldStart": 14,
+    "OldLines": 7,
+    "NewStart": 14,
+    "NewLines": 8,
+    "Header": "func main() {",
+    "Lines": [
+     {
+      "Kind": 0,
+      "OldNo": 14,
+      "NewNo": 14,
+      "Text": "\tflag.Parse()"
+     },
+     {
+      "Kind": 2,
+      "OldNo": 15,
+      "NewNo": 0,
+      "Text": "\troot := os.Getenv(\"DHI_ROOT\")"
+     },
+     {
+      "Kind": 1,
+      "OldNo": 0,
+      "NewNo": 15,
+      "Text": "\troot := os.Getenv(\"DHI_WORKSPACE\")"
+     },
+     {
+      "Kind": 1,
+      "OldNo": 0,
+      "NewNo": 16,
+      "Text": "\tif root == \"\" {"
+     },
+     {
+      "Kind": 1,
+      "OldNo": 0,
+      "NewNo": 17,
+      "Text": "\t\troot = \".\""
+     },
+     {
+      "Kind": 1,
+      "OldNo": 0,
+      "NewNo": 18,
+      "Text": "\t}"
+     },
+     {
+      "Kind": 0,
+      "OldNo": 16,
+      "NewNo": 19,
+      "Text": "\tws, err := workspace.Load(root)"
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "OldPath": "",
+  "NewPath": "docs/new-feature.md",
+  "OldMode": "",
+  "NewMode": "100644",
+  "IsNew": true,
+  "IsDeleted": false,
+  "IsRename": false,
+  "IsBinary": false,
+  "Hunks": [
+   {
+    "OldStart": 0,
+    "OldLines": 0,
+    "NewStart": 1,
+    "NewLines": 3,
+    "Header": "",
+    "Lines": [
+     {
+      "Kind": 1,
+      "OldNo": 0,
+      "NewNo": 1,
+      "Text": "# New feature"
+     },
+     {
+      "Kind": 1,
+      "OldNo": 0,
+      "NewNo": 2,
+      "Text": ""
+     },
+     {
+      "Kind": 1,
+      "OldNo": 0,
+      "NewNo": 3,
+      "Text": "Work in progress."
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "OldPath": "internal/legacy.go",
+  "NewPath": "",
+  "OldMode": "100644",
+  "NewMode": "",
+  "IsNew": false,
+  "IsDeleted": true,
+  "IsRename": false,
+  "IsBinary": false,
+  "Hunks": [
+   {
+    "OldStart": 1,
+    "OldLines": 4,
+    "NewStart": 0,
+    "NewLines": 0,
+    "Header": "",
+    "Lines": [
+     {
+      "Kind": 2,
+      "OldNo": 1,
+      "NewNo": 0,
+      "Text": "package internal"
+     },
+     {
+      "Kind": 2,
+      "OldNo": 2,
+      "NewNo": 0,
+      "Text": ""
+     },
+     {
+      "Kind": 2,
+      "OldNo": 3,
+      "NewNo": 0,
+      "Text": "func Legacy() {}"
+     },
+     {
+      "Kind": 2,
+      "OldNo": 4,
+      "NewNo": 0,
+      "Text": ""
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "OldPath": "scripts/old-name.sh",
+  "NewPath": "scripts/new-name.sh",
+  "OldMode": "",
+  "NewMode": "",
+  "IsNew": false,
+  "IsDeleted": false,
+  "IsRename": true,
+  "IsBinary": false,
+  "Hunks": null
+ },
+ {
+  "OldPath": "assets/logo.png",
+  "NewPath": "assets/logo.png",
+  "OldMode": "",
+  "NewMode": "",
+  "IsNew": false,
+  "IsDeleted": false,
+  "IsRename": false,
+  "IsBinary": true,
+  "Hunks": null
+ }
+]

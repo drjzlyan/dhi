@@ -1,0 +1,38 @@
+diff --git a/cmd/dhi/main.go b/cmd/dhi/main.go
+index 3e0f8b2..a1b2c3d 100644
+--- a/cmd/dhi/main.go
++++ b/cmd/dhi/main.go
+@@ -14,7 +14,8 @@ func main() {
+ 	flag.Parse()
+-	root := os.Getenv("DHI_ROOT")
++	root := os.Getenv("DHI_WORKSPACE")
++	if root == "" {
++		root = "."
++	}
+ 	ws, err := workspace.Load(root)
+diff --git a/docs/new-feature.md b/docs/new-feature.md
+new file mode 100644
+index 0000000..9f2c1aa
+--- /dev/null
++++ b/docs/new-feature.md
+@@ -0,0 +1,3 @@
++# New feature
++
++Work in progress.
+diff --git a/internal/legacy.go b/internal/legacy.go
+deleted file mode 100644
+index 5c1fd02..0000000
+--- a/internal/legacy.go
++++ /dev/null
+@@ -1,4 +0,0 @@
+-package internal
+-
+-func Legacy() {}
+-
+diff --git a/scripts/old-name.sh b/scripts/new-name.sh
+similarity index 100%
+rename from scripts/old-name.sh
+rename to scripts/new-name.sh
+diff --git a/assets/logo.png b/assets/logo.png
+index aa12bb3..cc34dd5 100644
+Binary files a/assets/logo.png and b/assets/logo.png differ
