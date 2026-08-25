@@ -44,8 +44,17 @@ func NewService(ws *workspace.Workspace, store *Store, runner *gitcore.Runner, g
 // Store exposes the persistence layer for surfaces.
 func (s *Service) Store() *Store { return s.store }
 
+// SetDiffForTest swaps the diff execution seam (tests only; mirrors the
+// cardPathForTest convention).
+func (s *Service) SetDiffForTest(fn func(ctx context.Context, dir string, args ...string) (string, error)) {
+	s.diffFn = fn
+}
+
 // HasRunner reports whether diff production can work.
 func (s *Service) HasRunner() bool { return s.runner != nil }
+
+// CanDiff reports whether Diff can execute (runner or injected test seam).
+func (s *Service) CanDiff() bool { return s.diffFn != nil }
 
 // HasGH reports whether PR inputs and posting can work.
 func (s *Service) HasGH() bool { return s.gh != nil && s.gh.Available() }

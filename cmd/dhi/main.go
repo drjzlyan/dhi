@@ -24,6 +24,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
 	"github.com/drjzlyan/dhi/internal/doctor"
 	"github.com/drjzlyan/dhi/internal/gitcore"
+	"github.com/drjzlyan/dhi/internal/review"
 	"github.com/drjzlyan/dhi/internal/search"
 	"github.com/drjzlyan/dhi/internal/settings"
 	"github.com/drjzlyan/dhi/internal/tasks"
@@ -32,6 +33,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/tui/surfaces/bootstrap"
 	"github.com/drjzlyan/dhi/internal/tui/surfaces/editor"
 	"github.com/drjzlyan/dhi/internal/tui/surfaces/placeholder"
+	reviewer "github.com/drjzlyan/dhi/internal/tui/surfaces/reviewer"
 	settingsview "github.com/drjzlyan/dhi/internal/tui/surfaces/settings"
 	wsview "github.com/drjzlyan/dhi/internal/tui/surfaces/workspace"
 	"github.com/drjzlyan/dhi/internal/version"
@@ -94,12 +96,14 @@ func runTUI() {
 	var messageBus *bus.Bus
 	var agentRT *runtime.Runtime
 	var taskStore *tasks.Store
+	var reviewSvc *review.Service
 	if ws != nil {
 		messageBus = openBus(ws)
 		if ts, err := tasks.Open(ws); err == nil {
 			taskStore = ts
 			wireTaskSeam(ws, ts)
 		}
+		reviewSvc = openReviewService(ws)
 		// Agent runtime (F-007): lights up only when a roster exists
 		// under .dhi/agents/. A missing API key surfaces at first turn,
 		// not boot; doctor warns about it.
@@ -121,8 +125,7 @@ func runTUI() {
 		editor.New(version.Version, ws, edOpts...),
 		placeholder.New("ideator", "Ideator", "M6",
 			"Ideation sessions: artifact navigation, preview, approval — no editing."),
-		placeholder.New("reviewer", "Reviewer", "M5",
-			"PR & worktree review: GitHub-style diffs, line comments, agent dispatch."),
+		reviewer.New(version.Version, ws, reviewer.Deps{Service: reviewSvc}),
 		settingsview.New(cfg, savePath),
 	)
 
@@ -156,6 +159,55 @@ func toolchainRoot() string {
 func needsBootstrap(root string) bool {
 	_, err := os.Stat(filepath.Join(root, "lock.json"))
 	return os.IsNotExist(err)
+}
+
+// openReviewService builds the review orchestration layer: TOML store
+// always; worktree seam + diff runner light up with the hermetic git
+// shim; PR inputs additionally need the host gh CLI.
+func openReviewService(ws *workspace.Workspace) *review.Service {
+	st, err := review.Open(ws)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "dhi: review store:", err)
+		return nil
+	}
+	root, err := toolchain.DefaultRoot()
+	if err != nil {
+		return review.NewService(ws, st, nil, review.NewGHCLI())
+	}
+	runner, rerr := gitcore.ResolveRunner(toolchain.New(root))
+	if rerr == nil {
+		st.SetWorktreeSeam(
+			func(id, member, startpoint string) (string, error) {
+				mem, ok := ws.Member(member)
+				if !ok {
+					return "", fmt.Errorf("unknown member %q", member)
+				}
+				rel := filepath.Join(review.Dir, id, member)
+				dst := filepath.Join(ws.Root, rel)
+				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+				defer cancel()
+				branch := "review/" + id
+				if err := runner.WorktreeAdd(ctx, mem.Path, dst, branch, startpoint); err != nil {
+					return "", err
+				}
+				return rel, nil
+			},
+			func(id, relPath string) error {
+				mem, ok := ws.Member(filepath.Base(relPath))
+				if !ok {
+					return fmt.Errorf("member %q no longer registered", filepath.Base(relPath))
+				}
+				ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+				defer cancel()
+				if err := runner.WorktreeRemove(ctx, mem.Path,
+					filepath.Join(ws.Root, relPath), false); err != nil {
+					return err
+				}
+				return runner.Prune(ctx, mem.Path)
+			},
+		)
+	}
+	return review.NewService(ws, st, runner, review.NewGHCLI())
 }
 
 // wireTaskSeam connects task ChangeSets to hermetic-git worktrees when

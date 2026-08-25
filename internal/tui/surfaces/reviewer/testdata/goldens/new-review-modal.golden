@@ -1,0 +1,30 @@
+▌ REVIEWS          ╭─ › reviews ─────────────────────────────────────────────────────────────────╮ 
+ FILES             │ review sessions        n new · enter open · x discard wt · d remove          │
+ DIFF              │ (none — press n to start one)                                                │
+                   │                                                                              │
+                   │                                                                              │
+                   │                                                                              │
+                   │                                                                              │
+                   │                                                                              │
+                   │                                                                              │
+                   │                                                                              │
+                       ╭─ › new review ──────────────────────────────────────────────────╮         
+                       │ ▌ member  api▏                                                   │        
+                       │   kind    < branch >                                             │        
+                       │       ←/→ switches kind                                          │        
+                       │   base    main                                                   │        
+                       │   head/#                                                         │        
+                       │                                                                  │        
+                       │ member repo · kind ←/→ · base ref · head branch/sha or PR number │        
+                       ╰──────────────────────────────────────────────────────────────────╯        
+                   │                                                                              │
+                   │                                                                              │
+                   │                                                                              │
+                   │                                                                              │
+                   │                                                                              │
+                   │                                                                              │
+                   │                                                                              │
+                   │                                                                              │
+                   │                                                                              │
+[ ] sections       │                                                                              │
+                   ╰──────────────────────────────────────────────────────────────────────────────╯
