@@ -22,10 +22,13 @@ DEFAULT_KEY_FP="96E07AF2577195598DA0D6825D8D4F9305F6963A"  # git release key
 
 # kernel.org edges have been flaky per-region; try canonical CDN first,
 # then mirrors. Signature and tarball MUST come from the same host.
+# kernel.org edges sometimes serve CACHED 404s (their standard not-found
+# page is 1807 bytes) from cold POPs; a unique query string forces each
+# attempt to origin. Same-host tarball+signature is still guaranteed.
 fetch_pair() {
     base="$1"
     for f in src.tar.gz src.tar.sign; do
-        url="$base/git-${VERSION}.${f#src.tar.}"
+        url="$base/git-${VERSION}.${f#src.tar.}?dhi=$$-$RANDOM-$RANDOM"
         curl -fSL --retry 5 --retry-delay 3 --retry-all-errors \
              --connect-timeout 15 -o "$work/$f" "$url" || return 1
     done
