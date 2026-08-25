@@ -631,3 +631,42 @@ func TestInspectSectionWithoutRoster(t *testing.T) {
 		t.Fatalf("guidance missing:\n%s", out)
 	}
 }
+
+func TestDockedLayoutUsesFullWidth(t *testing.T) {
+	m, _ := newSurface(t)
+	m.Resize(200, 50)
+	out := m.View()
+	lines := strings.Split(out, "\n")
+	if len(lines) < 45 {
+		t.Fatalf("docked view should fill height, got %d lines", len(lines))
+	}
+	maxW := 0
+	for _, l := range lines {
+		if w := len([]rune(ansi.Strip(l))); w > maxW {
+			maxW = w
+		}
+	}
+	if maxW < 170 {
+		t.Fatalf("docked layout wastes width: widest line %d < 170", maxW)
+	}
+	// Rail lists every section with counts.
+	plain := ansi.Strip(out)
+	for _, want := range []string{"MEMBERS", "ORG", "PACKS", "STANDARDS", "CHANNELS", "TASKS", "INSPECT"} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("rail missing %q", want)
+		}
+	}
+}
+
+func TestModalOverlayKeepsRailVisible(t *testing.T) {
+	m, _ := newSurface(t)
+	m.Resize(200, 50)
+	m.HandleKey("a") // add-member modal
+	out := ansi.Strip(m.View())
+	if !strings.Contains(out, "MEMBERS") || !strings.Contains(out, "INSPECT") {
+		t.Fatal("rail hidden while modal open")
+	}
+	if !strings.Contains(out, "add member") {
+		t.Fatalf("modal missing:\n%s", out[:400])
+	}
+}

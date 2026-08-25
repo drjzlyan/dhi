@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"strings"
 
+	"charm.land/lipgloss/v2"
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/agentkit/knowledge"
+
 	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
 	"github.com/drjzlyan/dhi/internal/agentkit/memory"
 	"github.com/drjzlyan/dhi/internal/agentkit/profile"
@@ -24,19 +26,145 @@ func manifestAgent(id, name, model, system string) *manifest.Agent {
 
 func fmtErr(msg string) error { return errors.New(msg) }
 
-// View renders the operations floor or the brand hero when not inside
-// a DHI workspace.
+// View renders the operations floor. Wide terminals get a docked
+// layout — persistent section rail on the left, active section filling
+// the remaining width and full height. Narrow terminals fall back to a
+// centered stack. Not-inside-a-workspace keeps the brand hero.
 func (m *Model) View() string {
 	if m.ws == nil {
 		lines := strings.Split(branding.HeroBlock(m.version), "\n")
 		lines = append(lines, "", theme.Hint().Render("not inside a DHI workspace"))
 		return kit.Center(strings.Join(lines, "\n"), maxInt(m.width, 40), maxInt(m.height, 10))
 	}
+	if m.width < dockMinWidth {
+		return kit.Center(m.compactBody(), maxInt(m.width, 40), maxInt(m.height, 10))
+	}
+	return m.dockedView()
+}
+
+// dockMinWidth is the narrowest terminal that still fits rail + a
+// usable pane.
+const dockMinWidth = 84
+
+const railWidth = 26
+
+func (m *Model) compactBody() string {
 	body := m.sectionStrip() + "\n" + m.activeSection()
 	if m.form.kind != fNone {
 		body = m.modalView(body)
 	}
-	return kit.Center(body, maxInt(m.width, 40), maxInt(m.height, 10))
+	return body
+}
+
+func (m *Model) dockedView() string {
+	paneW := m.width - railWidth
+	if paneW < 40 {
+		paneW = 40
+	}
+	rail := m.railView(m.height)
+	pane := m.mainPane(paneW, m.height)
+	return lipgloss.JoinHorizontal(lipgloss.Top, rail, pane)
+}
+
+// railView renders the always-visible section switcher with live item
+// counts, padded to the full body height.
+func (m *Model) railView(h int) string {
+	counts := m.sectionCounts()
+	lines := make([]string, 0, h)
+	lines = append(lines, theme.Brand().Render(padTo("◆ DHI", railWidth-2)))
+	lines = append(lines, "")
+	for s := sectionID(0); s < secCount; s++ {
+		label := padTo(s.label(), 11)
+		count := fmt.Sprintf("%d", counts[s])
+		if s == m.sec {
+			lines = append(lines, theme.TabActive().Render(
+				padTo(theme.GlyphCursor+" "+label, railWidth-6))+
+				theme.Hint().Render(count))
+		} else {
+			lines = append(lines, "  "+
+				theme.TextDim().Render(padTo(label, railWidth-8))+
+				theme.TextDim().Render(count))
+		}
+	}
+	for len(lines) < h {
+		lines = append(lines, "")
+	}
+	if m.form.flash != "" && h >= 3 {
+		lines[h-3] = theme.SuccessText().Render("✓ " + m.form.flash)
+	}
+	if h >= 2 {
+		lines[h-2] = theme.Hint().Render(padTo("[ ] sections", railWidth-2))
+	}
+	lines = lines[:h]
+	return strings.Join(lines, "\n")
+}
+
+func (m *Model) sectionCounts() [secCount]int {
+	var c [secCount]int
+	c[secMembers] = len(m.ws.Members())
+	c[secOrg] = m.orgItemCount()
+	if names, _ := m.installedNames(); c[secPacks] == 0 {
+		c[secPacks] = len(names)
+	}
+	c[secStandards] = len(m.standardRows())
+	if m.pane != nil {
+		c[secChannels] = len(m.pane.channels)
+	}
+	c[secTasks] = len(m.taskRows())
+	c[secInspect] = len(m.agentIDs())
+	return c
+}
+
+// mainPane wraps the active section in a full-height panel; modals
+// overlay its center while the rail stays put.
+func (m *Model) mainPane(w, h int) string {
+	p := kit.NewPanel(strings.ToLower(m.sec.label()), true)
+	body := m.activeSectionFor(w, h)
+	p.SetContent(strings.Split(body, "\n")...)
+	p.Width, p.Height = w, h
+	pane := p.View()
+	if m.form.kind == fNone {
+		return pane
+	}
+	return m.overlayCentered(pane, m.modalView(strings.Repeat(" ", w)))
+}
+
+// overlayCentered places overlay (already panel-rendered) in the middle
+// of the pane block, replacing covered lines.
+func (m *Model) overlayCentered(pane string, overlay string) string {
+	pl := strings.Split(pane, "\n")
+	ol := strings.Split(overlay, "\n")
+	vOff := (len(pl) - len(ol)) / 2
+	if vOff < 0 {
+		vOff = 0
+	}
+	for i, line := range ol {
+		y := vOff + i
+		if y >= len(pl) {
+			break
+		}
+		indent := (m.width - railWidth - lipgloss.Width(line)) / 2
+		if indent < 0 {
+			indent = 0
+		}
+		pl[y] = strings.Repeat(" ", indent) + line
+	}
+	return strings.Join(pl, "\n")
+}
+
+// activeSectionFor renders the active section body with pane-aware
+// geometry (channels needs real width/height).
+func (m *Model) activeSectionFor(w, h int) string {
+	switch m.sec {
+	case secChannels:
+		inner := w - 6
+		if inner < 40 {
+			inner = 40
+		}
+		return strings.Join(m.pane.render(inner, maxInt(h-6, 12)), "\n")
+	default:
+		return m.activeSection()
+	}
 }
 
 // sectionStrip renders the switchable pane tabs with the active one lit.
