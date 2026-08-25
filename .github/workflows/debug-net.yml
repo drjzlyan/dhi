@@ -1,5 +1,8 @@
 name: debug-net
-on: workflow_dispatch
+on:
+  push:
+    paths: [".github/workflows/debug-net.yml"]
+  workflow_dispatch:
 permissions: contents: read
 jobs:
   probe:
