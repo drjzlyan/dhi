@@ -67,10 +67,6 @@ fi
 echo "==> checking out verified tree"
 git -C "$work/src" checkout -q "tags/v${VERSION}"
 
-echo "==> extracting"
-mkdir "$work/src"
-tar -xzf "$work/src.tar.gz" -C "$work/src" --strip-components=1
-
 echo "==> building (transport-free: NO_CURL NO_EXPAT NO_GETTEXT NO_PERL NO_TCLTK)"
 make -C "$work/src" -j "$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)" \
     git \
