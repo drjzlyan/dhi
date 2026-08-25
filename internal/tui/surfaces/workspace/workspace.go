@@ -15,6 +15,7 @@ import (
 
 	"charm.land/bubbletea/v2"
 
+	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/agentkit/org"
 	"github.com/drjzlyan/dhi/internal/agentkit/pack"
 	"github.com/drjzlyan/dhi/internal/agentkit/standards"
@@ -37,6 +38,7 @@ const (
 	secOrg
 	secPacks
 	secStandards
+	secChannels
 	secCount
 )
 
@@ -48,6 +50,8 @@ func (s sectionID) label() string {
 		return "ORG"
 	case secPacks:
 		return "PACKS"
+	case secChannels:
+		return "CHANNELS"
 	default:
 		return "STANDARDS"
 	}
@@ -69,6 +73,7 @@ type Model struct {
 	stdRootOK bool
 
 	form formState
+	pane *chatPane
 
 	events    chan wsEvent
 	cancelSub func()
@@ -91,8 +96,9 @@ const (
 )
 
 // New returns the workspace model. A nil ws renders the not-a-workspace
-// empty state (all keys inert).
-func New(version string, ws *workspace.Workspace) *Model {
+// empty state (all keys inert). The message bus powers CHANNELS; rt may
+// be nil (posting works, mentions just have no crew to trigger).
+func New(version string, ws *workspace.Workspace, b *bus.Bus, rt turnHandler) *Model {
 	m := &Model{
 		version: version,
 		ws:      ws,
@@ -107,6 +113,9 @@ func New(version string, ws *workspace.Workspace) *Model {
 		m.packs = &pack.Installer{WS: ws}
 		if _, err := standards.Inspect(ws.Root); err == nil {
 			m.stdRootOK = true
+		}
+		if b != nil {
+			m.pane = newChatPane(b, rt, m.org)
 		}
 	}
 	return m
@@ -135,7 +144,44 @@ func (m *Model) Init() tea.Cmd {
 			}
 		}()
 	}
-	return m.listen()
+	cmds := []tea.Cmd{m.listen()}
+	if m.pane != nil {
+		m.refreshPaneRail()
+		m.pane.resubscribe()
+		cmds = append(cmds, m.listenPane())
+	}
+	return tea.Batch(cmds...)
+}
+
+// refreshPaneRail rebuilds channel sources from live org+roster state.
+func (m *Model) refreshPaneRail() {
+	if m.pane == nil {
+		return
+	}
+	var teams []org.Team
+	if m.org != nil {
+		teams = m.org.Teams()
+	}
+	agents := []string{}
+	if roster, err := org.LoadRoster(m.ws); err == nil {
+		for _, a := range roster {
+			agents = append(agents, a.ID)
+		}
+	}
+	m.pane.buildChannels(agents, teams)
+}
+
+type paneMsg struct{}
+
+func (m *Model) listenPane() tea.Cmd {
+	ch := m.pane.events
+	return func() tea.Msg {
+		_, ok := <-ch
+		if !ok {
+			return nil
+		}
+		return paneMsg{}
+	}
 }
 
 func (m *Model) send(ev wsEvent) {
@@ -162,7 +208,12 @@ func (m *Model) Resize(w, h int) { m.width, m.height = w, h }
 // resolve the busy modal or surface the error inline.
 func (m *Model) Update(msg tea.Msg) tea.Cmd {
 	switch msg := msg.(type) {
+	case paneMsg:
+		return m.listenPane()
 	case wsEvent:
+		if msg.kind == evPing && m.pane != nil {
+			m.refreshPaneRail()
+		}
 		switch msg.kind {
 		case evCloneDone:
 			if m.form.kind == fAdd && m.form.busy {
@@ -305,6 +356,8 @@ func (m *Model) sectionKey(key string) bool {
 		return m.orgKey(key)
 	case secPacks:
 		return m.packsKey(key)
+	case secChannels:
+		return m.pane.handleKey(key)
 	default:
 		return m.standardsKey(key)
 	}

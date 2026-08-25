@@ -35,7 +35,7 @@ func newSurface(t *testing.T) (*Model, *workspace.Workspace) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m := New("0.1.0", ws)
+	m := New("0.1.0", ws, nil, nil)
 	m.Resize(110, 34)
 	return m, ws
 }
@@ -50,7 +50,7 @@ func TestMetaIsBootSurface(t *testing.T) {
 
 func TestNilWorkspaceRendersHeroAndSwallowsKeys(t *testing.T) {
 	theme.SwapForTest(t, theme.Dark())
-	m := New("0.1.0", nil)
+	m := New("0.1.0", nil, nil, nil)
 	m.Resize(100, 30)
 	out := m.View()
 	if !strings.Contains(out, "███████") || !strings.Contains(out, "not inside a DHI workspace") {
@@ -69,8 +69,8 @@ func TestSectionCyclingWraps(t *testing.T) {
 		t.Fatalf("initial section = %v", m.sec)
 	}
 	m.HandleKey("[")
-	if m.sec != secStandards {
-		t.Fatalf("[ from first should wrap to standards, got %v", m.sec)
+	if m.sec != secChannels {
+		t.Fatalf("[ from first should wrap to channels, got %v", m.sec)
 	}
 	m.HandleKey("]")
 	if m.sec != secMembers {
@@ -80,6 +80,14 @@ func TestSectionCyclingWraps(t *testing.T) {
 	m.HandleKey("]")
 	if m.sec != secPacks {
 		t.Fatalf("two ] from members should reach packs, got %v", m.sec)
+	}
+	m.HandleKey("]")
+	if m.sec != secStandards {
+		t.Fatalf("third ] should reach standards, got %v", m.sec)
+	}
+	m.HandleKey("]")
+	if m.sec != secChannels {
+		t.Fatalf("fourth ] should reach channels, got %v", m.sec)
 	}
 }
 

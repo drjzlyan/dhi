@@ -60,6 +60,9 @@ func (m *Model) activeSection() string {
 		return m.orgBody()
 	case secPacks:
 		return m.packsBody()
+	case secChannels:
+		return strings.Join(m.pane.render(maxInt(m.width-8, 40),
+			maxInt(m.height-10, 12)), "\n")
 	default:
 		return m.standardsBody()
 	}

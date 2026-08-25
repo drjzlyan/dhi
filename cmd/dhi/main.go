@@ -85,17 +85,25 @@ func runTUI() {
 		}
 	}
 
-	// Agent runtime (F-007): the crew sidebar lights up only when a
-	// roster exists under .dhi/agents/. A missing API key surfaces at
-	// first turn, not boot; doctor warns about it.
+	// Message bus: created for every workspace so the CHANNELS floor
+	// works even before a crew is installed (posting is human-only then).
+	var messageBus *bus.Bus
+	var agentRT *runtime.Runtime
 	if ws != nil {
-		if rt := newAgentRuntime(ws, rgSearcher); rt != nil {
-			edOpts = append(edOpts, editor.WithChat(rt))
+		messageBus = openBus(ws)
+		// Agent runtime (F-007): lights up only when a roster exists
+		// under .dhi/agents/. A missing API key surfaces at first turn,
+		// not boot; doctor warns about it.
+		if messageBus != nil {
+			agentRT = newAgentRuntime(ws, messageBus, rgSearcher)
+			if agentRT != nil {
+				edOpts = append(edOpts, editor.WithChat(agentRT))
+			}
 		}
 	}
 
 	a := app.New(version.Version,
-		wsview.New(version.Version, ws),
+		wsview.New(version.Version, ws, messageBus, agentRT),
 		editor.New(version.Version, ws, edOpts...),
 		placeholder.New("ideator", "Ideator", "M6",
 			"Ideation sessions: artifact navigation, preview, approval — no editing."),
@@ -136,11 +144,21 @@ func needsBootstrap(root string) bool {
 	return os.IsNotExist(err)
 }
 
-// newAgentRuntime loads the roster and wires the turn engine; nil means
-// no chat sidebar (no roster, or a broken one — errors are reported but
-// never block boot). Org + layered coding standards ride along when
-// their sidecar files parse; broken ones degrade to defaults.
-func newAgentRuntime(ws *workspace.Workspace, srch search.Searcher) *runtime.Runtime {
+// openBus loads the workspace message store; nil disables CHANNELS
+// (errors are reported but never block boot).
+func openBus(ws *workspace.Workspace) *bus.Bus {
+	b, err := bus.Open(ws)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "dhi: message bus:", err)
+		return nil
+	}
+	return b
+}
+
+// newAgentRuntime wires the turn engine onto an existing bus; nil means
+// no crew (no roster, or a broken one). Org + layered coding standards
+// ride along when their sidecar files parse; broken ones degrade.
+func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, srch search.Searcher) *runtime.Runtime {
 	roster, err := manifest.LoadDir(filepath.Join(ws.Root, workspace.DirAgents))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "dhi: agent roster:", err)
@@ -156,18 +174,13 @@ func newAgentRuntime(ws *workspace.Workspace, srch search.Searcher) *runtime.Run
 			break
 		}
 	}
-	bus, err := bus.Open(ws)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "dhi: message bus:", err)
-		return nil
-	}
 	company, err := agentkitOrg.Load(ws.Root)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "dhi: org registry:", err)
 	}
 	rt, err := runtime.New(runtime.Config{
 		WS:        ws,
-		Bus:       bus,
+		Bus:       b,
 		Approvals: tools.NewApprovals(),
 		Searcher:  srch,
 		Provider:  provider.NewAnthropic("", os.Getenv(envVar)),

@@ -175,11 +175,20 @@ prompt assembly).
       — Settings-section integration deferred (single-host surface is
       the Workspace view; revisit if a second consumer appears)
 
-### P3 — Channels UI (Slack floor)
+### P3 — Channels UI (Slack floor) ✅ (2026-08-25)
 
-- [ ] Channel rail (#general seeded, team channels from org, DMs),
-      transcript, thread pane, composer reusing editor-sidebar pump
-      patterns; posting routes through Runtime.Handle; inline task-card refs
+- [x] CHANNELS section on the Workspace view (fifth `[`/`]` pane):
+      rail = #general seeded + `#<team>` channels from the org registry
+      + sorted DMs per rostered agent; selection survives rail rebuilds
+- [x] Transcript with message cursor, word-wrap, thread drill-down
+      (`t` opens root+replies view, `c` back; bus keeps threaded rows
+      out of the top-level channel by design)
+- [x] Composer (`i` focus, esc blur) posting as "you"; mentions/DMs
+      route through a narrow `turnHandler` seam satisfied by
+      *runtime.Runtime — posting works crew-less too (bus now created
+      for every workspace in cmd/dhi, shared with the runtime)
+- [x] Task-card refs: deferred to P4 where cards exist; transcript tags
+      threaded replies with ↳ today
 
 ### P4 — Tasks ↔ ChangeSets + kanban
 
