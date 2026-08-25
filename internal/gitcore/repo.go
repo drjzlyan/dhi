@@ -7,10 +7,12 @@ package gitcore
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
 	git "github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 )
@@ -259,6 +261,61 @@ func (rp *Repo) CurrentBranch() (string, error) {
 		return ref.Name().Short(), nil
 	}
 	return "", nil // detached HEAD
+}
+
+// Branches returns local branch names sorted.
+func (rp *Repo) Branches() ([]string, error) {
+	refs, err := rp.r.References()
+	if err != nil {
+		return nil, fmt.Errorf("gitcore: references: %w", err)
+	}
+	var out []string
+	if err := refs.ForEach(func(ref *plumbing.Reference) error {
+		if ref.Name().IsBranch() {
+			out = append(out, ref.Name().Short())
+		}
+		return nil
+	}); err != nil {
+		return nil, fmt.Errorf("gitcore: branches: %w", err)
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+// Fetch pulls objects for refspec (e.g. "+refs/pull/7/head:refs/dhi/pr/7")
+// from the named remote and returns the local ref's resolved hash. Network
+// transports run in-process via go-git (ADR-0008/0009); failures surface
+// visibly instead of prompting for credentials.
+func (rp *Repo) Fetch(ctx context.Context, remote, refspec string) (string, error) {
+	if remote == "" {
+		remote = "origin"
+	}
+	err := rp.r.FetchContext(ctx, &git.FetchOptions{
+		RemoteName: remote,
+		RefSpecs:   []config.RefSpec{config.RefSpec(refspec)},
+		Tags:       git.NoTags,
+	})
+	if err != nil && err != git.NoErrAlreadyUpToDate {
+		return "", fmt.Errorf("gitcore: fetch %s %s: %w", remote, refspec, err)
+	}
+	local := refspec[strings.Index(refspec, ":")+1:]
+	ref, err := rp.r.Reference(plumbing.ReferenceName(local), true)
+	if err != nil {
+		return "", fmt.Errorf("gitcore: fetched ref %s missing: %w", local, err)
+	}
+	return ref.Hash().String(), nil
+}
+
+// RemoteURL returns the fetch URL of the named remote ("" when unset).
+func (rp *Repo) RemoteURL(remote string) string {
+	if remote == "" {
+		remote = "origin"
+	}
+	rs, err := rp.r.Remote(remote)
+	if err != nil || len(rs.Config().URLs) == 0 {
+		return ""
+	}
+	return rs.Config().URLs[0]
 }
 
 // Clone clones url (https or a local path) into dst and returns the
