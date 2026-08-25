@@ -27,8 +27,10 @@ DEFAULT_KEY_FP="96E07AF2577195598DA0D6825D8D4F9305F6963A"  # git release key
 # attempt to origin. Same-host tarball+signature is still guaranteed.
 fetch_pair() {
     base="$1"
+    n=0
     for f in src.tar.gz src.tar.sign; do
-        url="$base/git-${VERSION}.${f#src.tar.}?dhi=$$-$RANDOM-$RANDOM"
+        n=$((n + 1))
+        url="$base/git-${VERSION}.${f#src.tar.}?dhi=$$-$n-$(date +%s)"
         curl -fSL --retry 5 --retry-delay 3 --retry-all-errors \
              --connect-timeout 15 -o "$work/$f" "$url" || return 1
     done
