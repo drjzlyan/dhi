@@ -28,7 +28,16 @@ now exist.
   views must stitch root+replies themselves; toggle fields must gate
   ←/→ or they eat spaces; typeInto-style helpers must REPLACE prefills.
 
-## Release checklist blocking the git registry flip (fully automated now)
+## ADR-0009 FULLY LIVE (2026-08-25)
+
+Pin merged (PR #2, dd25f96). Validated end-to-end on darwin/arm64:
+InstallEmbedded(git) from live release → shim → worktree round-trip
+smoke PASS → doctor `toolchain/git ok` + `git/version ok`. Task
+ChangeSet attaching is now functional for real. Gotchas: pin needs
+`"bin_dir": "bin"`; our build stamps `v2.55.0` so doctor trims leading
+`v` when comparing; registry smoke test TestGitPinEndToEnd added.
+
+## Original release checklist (superseded — done)
 
 1. `gh workflow run release-git -f version=2.55.0` (or push tag
    `hermetic-git-v2.55.0`).

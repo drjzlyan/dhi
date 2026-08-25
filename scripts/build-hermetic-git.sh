@@ -70,7 +70,7 @@ git -C "$work/src" checkout -q "tags/v${VERSION}"
 echo "==> building (transport-free: NO_CURL NO_EXPAT NO_GETTEXT NO_PERL NO_TCLTK)"
 make -C "$work/src" -j "$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)" \
     git \
-    GIT_VERSION="v${VERSION}" \
+    GIT_VERSION="${VERSION}" \
     NO_CURL=1 NO_EXPAT=1 NO_GETTEXT=1 NO_PERL=1 NO_TCLTK=1 \
     NO_INSTALL_HARDLINKS=1 \
     >/dev/null

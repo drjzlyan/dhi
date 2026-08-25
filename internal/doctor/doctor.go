@@ -186,7 +186,9 @@ func gitChecks(version, root string) []Check {
 		return []Check{{Name: "git/version", Status: Fail,
 			Detail: strings.TrimSpace(err.Error())}}
 	}
-	if got != version {
+	// Build stamps may prefix 'v' (ours do); compare semantically.
+	trim := func(s string) string { return strings.TrimPrefix(s, "v") }
+	if trim(got) != trim(version) {
 		return []Check{{Name: "git/version", Status: Fail,
 			Detail: fmt.Sprintf("shim reports %s, registry pins %s", got, version)}}
 	}
