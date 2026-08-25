@@ -112,7 +112,7 @@ func Build(ws *workspace.Workspace, d Deps, id string) *Profile {
 		p.StandardsBlock = standards.Resolve(ws.Root, id, teamLookup(d.Org))
 	}
 	if d.Bus != nil && ws != nil {
-		p.RecentActivity = recentActivity(ws, d.Bus, id)
+		p.RecentActivity = recentActivity(d.Bus, id)
 	}
 	return p
 }
@@ -127,7 +127,7 @@ func teamLookup(o *org.Org) func(string) []string {
 // recentActivity scans every channel for messages authored by id,
 // newest first. Channels are cheap JSONL reads here; volume is bounded
 // by activityCap per channel before the global cap.
-func recentActivity(ws *workspace.Workspace, b *bus.Bus, id string) []bus.Message {
+func recentActivity(b *bus.Bus, id string) []bus.Message {
 	channels := b.Channels()
 	var out []bus.Message
 	for _, ch := range channels {

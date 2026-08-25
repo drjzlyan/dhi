@@ -56,7 +56,7 @@ func (h *HTTP) write(payload []byte) error {
 	if err != nil {
 		return fmt.Errorf("mcp/http: post: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if sid := resp.Header.Get("mcp-session-id"); sid != "" {
 		h.mu.Lock()

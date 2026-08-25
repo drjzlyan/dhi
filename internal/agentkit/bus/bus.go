@@ -76,7 +76,7 @@ type Bus struct {
 func Open(ws *workspace.Workspace) (*Bus, error) {
 	b := &Bus{root: ws.Root, subs: map[string]map[int]chan Message{}}
 	base := filepath.Join(ws.Root, workspace.DirChannels)
-	load := func(dir, prefix string) error {
+	load := func(dir string) error {
 		entries, err := os.ReadDir(dir)
 		if os.IsNotExist(err) {
 			return nil
@@ -102,10 +102,10 @@ func Open(ws *workspace.Workspace) (*Bus, error) {
 		}
 		return nil
 	}
-	if err := load(filepath.Join(base, "channels"), "#"); err != nil {
+	if err := load(filepath.Join(base, "channels")); err != nil {
 		return nil, err
 	}
-	return b, load(filepath.Join(base, "dm"), "dm:")
+	return b, load(filepath.Join(base, "dm"))
 }
 
 // History returns a snapshot of one channel (thread==0) or one thread,

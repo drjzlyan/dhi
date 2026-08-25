@@ -16,7 +16,6 @@ type scriptedSearcher struct {
 	hits []search.Hit
 	err  error
 
-	muCtx    any
 	lastCtx  context.Context
 	blocking bool
 	release  chan struct{}
@@ -44,12 +43,12 @@ func (s *scriptedSearcher) Search(ctx context.Context, q string, roots []string)
 	return ch, nil
 }
 
-func newSearchEditor(t *testing.T, ss *scriptedSearcher) (*Model, *workspace.Workspace) {
+func newSearchEditor(t *testing.T, ss *scriptedSearcher) *Model {
 	t.Helper()
 	base := newEditor(t)
 	e := New("test", base.ws, WithSearcher(ss))
 	e.Resize(100, 30)
-	return e, base.ws
+	return e
 }
 
 func vpathAbs(t *testing.T, ws *workspace.Workspace, vp string) string {
@@ -114,7 +113,7 @@ func TestSearchFlow(t *testing.T) {
 
 func TestSearchEscReturnsAndCancels(t *testing.T) {
 	ss := &scriptedSearcher{blocking: true}
-	m, _ := newSearchEditor(t, ss)
+	m := newSearchEditor(t, ss)
 	m.HandleKey("s")
 	for _, r := range "q" {
 		m.HandleKey(string(r))
@@ -136,7 +135,7 @@ func TestSearchEscReturnsAndCancels(t *testing.T) {
 
 func TestSearchErrorSurfaces(t *testing.T) {
 	ss := &scriptedSearcher{err: errors.New("rg missing")}
-	m, _ := newSearchEditor(t, ss)
+	m := newSearchEditor(t, ss)
 	m.HandleKey("s")
 	m.HandleKey("q")
 	m.HandleKey("enter")
@@ -154,7 +153,7 @@ func TestSearchInertWithoutSearcher(t *testing.T) {
 
 func TestEmptyQueryNoop(t *testing.T) {
 	ss := &scriptedSearcher{}
-	m, _ := newSearchEditor(t, ss)
+	m := newSearchEditor(t, ss)
 	m.HandleKey("s")
 	m.HandleKey("enter")
 	if m.mode == modeResults || m.searching {

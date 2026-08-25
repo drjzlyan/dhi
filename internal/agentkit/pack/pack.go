@@ -145,16 +145,16 @@ func (in *Installer) writeProvenance(p *provenance) error {
 	}
 	name := tmp.Name()
 	if _, err := tmp.Write(append(data, '\n')); err != nil {
-		tmp.Close()
-		os.Remove(name)
+		_ = tmp.Close()
+		_ = os.Remove(name)
 		return err
 	}
 	if err := tmp.Close(); err != nil {
-		os.Remove(name)
+		_ = os.Remove(name)
 		return err
 	}
 	if err := os.Rename(name, path); err != nil {
-		os.Remove(name)
+		_ = os.Remove(name)
 		return err
 	}
 	return nil
@@ -172,7 +172,7 @@ func (in *Installer) Install(ctx context.Context, source string) (*Result, error
 		}
 		dst := filepath.Join(c, "pack")
 		if _, err := gitcore.Clone(ctx, source, dst); err != nil {
-			os.RemoveAll(c)
+			_ = os.RemoveAll(c)
 			return nil, err
 		}
 		tmpClone = c
@@ -184,7 +184,7 @@ func (in *Installer) Install(ctx context.Context, source string) (*Result, error
 		}
 	}
 	if tmpClone != "" {
-		defer os.RemoveAll(tmpClone)
+		defer func() { _ = os.RemoveAll(tmpClone) }()
 	}
 
 	spec, err := ReadSpec(dir)

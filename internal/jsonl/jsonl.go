@@ -27,7 +27,7 @@ func Append(path string, v any) error {
 	if err != nil {
 		return fmt.Errorf("jsonl: open %s: %w", path, err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	if _, err := f.Write(append(b, '\n')); err != nil {
 		return fmt.Errorf("jsonl: append %s: %w", path, err)
 	}
@@ -44,7 +44,7 @@ func Read(path string, into func(line []byte) error) error {
 	if err != nil {
 		return fmt.Errorf("jsonl: open %s: %w", path, err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 64*1024), 4<<20)
 	for sc.Scan() {

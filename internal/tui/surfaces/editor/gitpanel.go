@@ -297,7 +297,7 @@ func (m *Model) gitBody(h int) []string {
 			for _, f := range files {
 				marker := " "
 				if idx == m.gitCursor {
-					marker = string(theme.GlyphCursor)
+					marker = theme.GlyphCursor
 				}
 				letter := theme.WarningText().Render(f.Letter + " ")
 				if isStaged {

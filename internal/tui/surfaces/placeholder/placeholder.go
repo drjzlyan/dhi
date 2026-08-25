@@ -20,7 +20,6 @@ type Model struct {
 	summary   string
 
 	width, height int
-	panel         *kit.Panel
 }
 
 var _ surfaces.Surface = (*Model)(nil)

@@ -333,7 +333,7 @@ const nameCol = 14
 
 func cursorGlyph(active bool) string {
 	if active {
-		return string(theme.GlyphCursor) + " "
+		return theme.GlyphCursor + " "
 	}
 	return "  "
 }
@@ -612,7 +612,7 @@ func (m *Model) fieldLine(fl field, focused bool) string {
 	}
 	style := theme.Hint()
 	if focused {
-		cursor = string(theme.GlyphCursor)
+		cursor = theme.GlyphCursor
 		style = theme.SuccessText()
 	}
 	return cursor + " " + style.Render(padTo(fl.label, 15)) + value

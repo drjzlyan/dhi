@@ -137,7 +137,7 @@ func (m *Manager) FetchManifest(ctx context.Context, url string) (*Manifest, err
 	if err != nil {
 		return nil, fmt.Errorf("toolchain: fetch manifest: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("toolchain: fetch manifest: status %s", resp.Status)
 	}
@@ -208,7 +208,7 @@ func (m *Manager) install(ctx context.Context, mf *Manifest, names []string) err
 			return fmt.Errorf("toolchain: staging: %w", err)
 		}
 		err = m.installOne(ctx, entry, tool, spec, stageDir)
-		os.RemoveAll(stageDir)
+		_ = os.RemoveAll(stageDir)
 		if err != nil {
 			return err
 		}
@@ -273,7 +273,7 @@ func (m *Manager) download(ctx context.Context, url, dst string) error {
 	if err != nil {
 		return fmt.Errorf("toolchain: download: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("toolchain: download %s: status %s", filepath.Base(dst), resp.Status)
 	}
@@ -282,7 +282,7 @@ func (m *Manager) download(ctx context.Context, url, dst string) error {
 		return fmt.Errorf("toolchain: download: %w", err)
 	}
 	if _, err := io.Copy(f, resp.Body); err != nil {
-		f.Close()
+		_ = f.Close()
 		return fmt.Errorf("toolchain: download: %w", err)
 	}
 	return f.Close()

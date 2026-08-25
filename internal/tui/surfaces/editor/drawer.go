@@ -25,15 +25,6 @@ type termTab struct {
 	exited  bool
 }
 
-type termOutMsg struct {
-	tab   int
-	chunk []byte
-}
-
-type termClosedMsg struct {
-	tab int
-}
-
 // ToggleDrawer opens/closes/focus-blurs the terminal drawer (ctrl+t):
 // closed -> open+focus -> blurred (session kept alive) -> closed.
 func (m *Model) ToggleDrawer() {

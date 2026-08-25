@@ -11,8 +11,8 @@ func mustLines(t *testing.T, b *Buffer) []string {
 
 func TestNewTrailingNewline(t *testing.T) {
 	b := New("a\nb\n")
-	if got := b.Text(); got != "a\nb\n"[:len("a\nb")-1] && got != "a\nb" {
-		// New strips the final empty line? No: split gives [a,b,""].
+	if got := b.Text(); got != "a\nb\n" {
+		t.Fatalf("New must preserve trailing newline, got %q", got)
 	}
 	lines := mustLines(t, b)
 	if len(lines) != 3 || lines[2] != "" {

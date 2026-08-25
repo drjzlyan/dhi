@@ -41,12 +41,12 @@ func extractTarGz(path string, strip int, destDir string) error {
 	if err != nil {
 		return fmt.Errorf("toolchain: extract: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	gz, err := gzip.NewReader(f)
 	if err != nil {
 		return fmt.Errorf("toolchain: extract %s: %w", filepath.Base(path), err)
 	}
-	defer gz.Close()
+	defer func() { _ = gz.Close() }()
 
 	tr := tar.NewReader(gz)
 	for {
@@ -85,7 +85,7 @@ func extractZip(path string, strip int, destDir string) error {
 	if err != nil {
 		return fmt.Errorf("toolchain: extract %s: %w", filepath.Base(path), err)
 	}
-	defer zr.Close()
+	defer func() { _ = zr.Close() }()
 	for _, zf := range zr.File {
 		isDir := zf.FileInfo().IsDir()
 		err := func() error {
@@ -93,7 +93,7 @@ func extractZip(path string, strip int, destDir string) error {
 			if err != nil {
 				return err
 			}
-			defer rc.Close()
+			defer func() { _ = rc.Close() }()
 			return writeEntry(zf.Name, isDir, strip, destDir,
 				func(w io.Writer) error {
 					n, err := io.Copy(w, io.LimitReader(rc, maxArchiveSize+1))
@@ -135,7 +135,7 @@ func readAllString(zf *zip.File) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("toolchain: symlink %q: %w", zf.Name, err)
 	}
-	defer rc.Close()
+	defer func() { _ = rc.Close() }()
 	b, err := io.ReadAll(io.LimitReader(rc, 4096))
 	if err != nil {
 		return "", fmt.Errorf("toolchain: symlink %q: %w", zf.Name, err)
@@ -194,7 +194,7 @@ func writeEntry(name string, isDir bool, strip int, destDir string, copy func(io
 		return fmt.Errorf("toolchain: extract: %w", err)
 	}
 	if err := copy(f); err != nil {
-		f.Close()
+		_ = f.Close()
 		return err
 	}
 	if err := f.Close(); err != nil {

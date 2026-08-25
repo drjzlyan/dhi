@@ -110,11 +110,11 @@ func TestLoadDir(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	minimal := func(id, name string) string {
+	minimal := func(name string) string {
 		return "schema = 1\nname = \"" + name + "\"\nmodel = \"m\"\n"
 	}
-	write("zeta.toml", minimal("zeta", "Z"))
-	write("alpha.toml", minimal("alpha", "A"))
+	write("zeta.toml", minimal("Z"))
+	write("alpha.toml", minimal("A"))
 	write("notes.md", "# not an agent")
 	if err := os.Mkdir(filepath.Join(dir, "subdir.toml"), 0o755); err != nil {
 		t.Fatal(err)

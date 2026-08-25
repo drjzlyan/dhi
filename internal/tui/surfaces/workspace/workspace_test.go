@@ -231,7 +231,7 @@ func TestTeamCreateEditDeleteFlow(t *testing.T) {
 
 func writeAgentManifest(t *testing.T, dir, id string) {
 	t.Helper()
-	doc := "schema = 1\nname = \"" + strings.Title(id) + "\"\nmodel = \"mock-1\"\n"
+	doc := "schema = 1\nname = \"" + id[:1] + strings.ToUpper(id[1:]) + "\"\nmodel = \"mock-1\"\n"
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}

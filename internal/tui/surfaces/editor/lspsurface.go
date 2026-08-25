@@ -80,10 +80,10 @@ func (m *Model) applyLSPUpdate(msg teaMsg) {
 			m.lspDiags[d.Path] = msg.diags // whole-file set per publish
 			break
 		}
+		// NOTE: an empty publish clears diagnostics, but the path is
+		// unknown here — clearing-all is an acceptable MVP gap (M7).
 		if len(msg.diags) > 0 {
 			m.lspDiags[msg.diags[0].Path] = msg.diags
-		} else {
-			// empty publish clears; path unknown here — acceptable MVP gap
 		}
 	case lspMsgComp:
 		m.compItems = msg.compItems
@@ -178,7 +178,7 @@ func (m *Model) completionView() []string {
 	for i := start; i < end; i++ {
 		label := m.compItems[i].Label + "  " + m.compItems[i].Detail
 		if i == m.compCur {
-			rows = append(rows, string(theme.GlyphCursor)+" "+theme.TabActive().Render(label))
+			rows = append(rows, theme.GlyphCursor+" "+theme.TabActive().Render(label))
 		} else {
 			rows = append(rows, "  "+theme.TextDim().Render(label))
 		}

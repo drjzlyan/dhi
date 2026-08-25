@@ -458,16 +458,16 @@ func writeCard(path string, t Task) error {
 	}
 	name := tmp.Name()
 	if err := toml.NewEncoder(tmp).Encode(f); err != nil {
-		tmp.Close()
-		os.Remove(name)
+		_ = tmp.Close()
+		_ = os.Remove(name)
 		return fmt.Errorf("tasks: encode: %w", err)
 	}
 	if err := tmp.Close(); err != nil {
-		os.Remove(name)
+		_ = os.Remove(name)
 		return fmt.Errorf("tasks: write: %w", err)
 	}
 	if err := os.Rename(name, path); err != nil {
-		os.Remove(name)
+		_ = os.Remove(name)
 		return fmt.Errorf("tasks: write: %w", err)
 	}
 	return nil

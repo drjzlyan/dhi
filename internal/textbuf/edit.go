@@ -126,14 +126,14 @@ func (b *Buffer) yankRange(a, z Pos) string {
 	return sb.String()
 }
 
-// deleteRange removes the span a..z (exclusive of z), returning the
-// removed text and leaving the cursor at a (clamped). EOF-sentinel z
-// (Line == LineCount()) deletes through the last line.
-func (b *Buffer) deleteRange(a, z Pos) string {
+// deleteRange removes the span a..z (exclusive of z), leaving the
+// cursor at a (clamped). EOF-sentinel z (Line == LineCount()) deletes
+// through the last line.
+func (b *Buffer) deleteRange(a, z Pos) {
 	a, z = order(a, z)
-	text := b.yankRange(a, z)
+	_ = b.yankRange(a, z)
 	if a == z {
-		return ""
+		return
 	}
 	b.snapshotBefore()
 	eof := z.Line >= b.LineCount()
@@ -166,7 +166,6 @@ func (b *Buffer) deleteRange(a, z Pos) string {
 	}
 	b.cursor = b.clampPos(a)
 	b.wantCol = b.cursor.Col
-	return text
 }
 
 // insertAt inserts s at pos; used for paste and change-completions.

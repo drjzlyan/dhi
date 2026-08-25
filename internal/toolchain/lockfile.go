@@ -66,16 +66,16 @@ func (m *Manager) writeLockfile(lf *Lockfile) error {
 	}
 	name := tmp.Name()
 	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		os.Remove(name)
+		_ = tmp.Close()
+		_ = os.Remove(name)
 		return fmt.Errorf("toolchain: lockfile: %w", err)
 	}
 	if err := tmp.Close(); err != nil {
-		os.Remove(name)
+		_ = os.Remove(name)
 		return fmt.Errorf("toolchain: lockfile: %w", err)
 	}
 	if err := os.Rename(name, m.lockfilePath()); err != nil {
-		os.Remove(name)
+		_ = os.Remove(name)
 		return fmt.Errorf("toolchain: lockfile: %w", err)
 	}
 	return nil

@@ -295,16 +295,16 @@ func (o *Org) save(candidate map[string]Team) error {
 	}
 	name := tmp.Name()
 	if err := toml.NewEncoder(tmp).Encode(f); err != nil {
-		tmp.Close()
-		os.Remove(name)
+		_ = tmp.Close()
+		_ = os.Remove(name)
 		return fmt.Errorf("org: encode %s: %w", File, err)
 	}
 	if err := tmp.Close(); err != nil {
-		os.Remove(name)
+		_ = os.Remove(name)
 		return fmt.Errorf("org: write %s: %w", File, err)
 	}
 	if err := os.Rename(name, path); err != nil {
-		os.Remove(name)
+		_ = os.Remove(name)
 		return fmt.Errorf("org: write %s: %w", File, err)
 	}
 	return nil

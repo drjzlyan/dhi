@@ -78,16 +78,16 @@ func (m *Manager) EnsureGitConfig() error {
 	}
 	name := tmp.Name()
 	if _, err := tmp.WriteString(cfg); err != nil {
-		tmp.Close()
-		os.Remove(name)
+		_ = tmp.Close()
+		_ = os.Remove(name)
 		return fmt.Errorf("toolchain: git config: %w", err)
 	}
 	if err := tmp.Close(); err != nil {
-		os.Remove(name)
+		_ = os.Remove(name)
 		return fmt.Errorf("toolchain: git config: %w", err)
 	}
 	if err := os.Rename(name, cfgPath); err != nil {
-		os.Remove(name)
+		_ = os.Remove(name)
 		return fmt.Errorf("toolchain: git config: %w", err)
 	}
 	return nil

@@ -56,7 +56,7 @@ func DialStdio(ctx context.Context, env []string, argv ...string) (*Stdio, error
 	s := &Stdio{cmd: cmd, conn: newConn(lineWriter{stdin}), stdin: stdin}
 	go s.readLoop(stdout)
 	if err := s.conn.handshake(ctx); err != nil {
-		s.Close()
+		_ = s.Close()
 		return nil, err
 	}
 	return s, nil

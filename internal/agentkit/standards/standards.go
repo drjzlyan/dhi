@@ -163,16 +163,16 @@ func Save(root string, workspaceEntries []string, teams map[string][]string,
 	}
 	name := tmp.Name()
 	if err := toml.NewEncoder(tmp).Encode(d); err != nil {
-		tmp.Close()
-		os.Remove(name)
+		_ = tmp.Close()
+		_ = os.Remove(name)
 		return fmt.Errorf("standards: encode: %w", err)
 	}
 	if err := tmp.Close(); err != nil {
-		os.Remove(name)
+		_ = os.Remove(name)
 		return fmt.Errorf("standards: write: %w", err)
 	}
 	if err := os.Rename(name, path); err != nil {
-		os.Remove(name)
+		_ = os.Remove(name)
 		return fmt.Errorf("standards: write: %w", err)
 	}
 	return nil
@@ -231,7 +231,7 @@ func Inspect(root string) (*Snapshot, error) {
 		snap.Teams[slug] = append([]string(nil), t.Extend...)
 	}
 	for id, a := range d.Agents {
-		snap.Agents[id] = AgentOverride{Mode: a.Mode, Entries: a.Entries}
+		snap.Agents[id] = AgentOverride(a)
 	}
 	return snap, nil
 }

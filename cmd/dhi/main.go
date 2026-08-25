@@ -286,7 +286,7 @@ func runDoctor(args []string) int {
 			fmt.Fprintln(os.Stderr, "dhi doctor:", err)
 			return 1
 		}
-		os.Stdout.Write(data)
+		_, _ = os.Stdout.Write(data)
 	} else {
 		fmt.Println("dhi doctor")
 		fmt.Println(strings.Repeat("─", 40))

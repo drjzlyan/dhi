@@ -396,8 +396,6 @@ func (m *Model) sectionKey(key string) bool {
 	}
 }
 
-func (m *Model) moveCursor(n int) *int { return &m.cursors[m.sec] }
-
 func clampCursor(c *int, n int) {
 	if *c >= n {
 		*c = maxInt(n-1, 0)
@@ -1063,7 +1061,7 @@ func (m *Model) submitForm() {
 		}
 		channel := strings.TrimSpace(f.fields[0].text())
 		tid := int64(0)
-		fmt.Sscanf(strings.TrimSpace(f.fields[1].text()), "%d", &tid)
+		_, _ = fmt.Sscanf(strings.TrimSpace(f.fields[1].text()), "%d", &tid)
 		if err := m.taskStore.BindThread(f.orig, channel, tid); err != nil {
 			f.err = err.Error()
 			return
@@ -1182,7 +1180,7 @@ func (m *Model) cloneAndRegister(name, url, dst string) {
 	ctx, cancel := context.WithTimeout(context.Background(), cloneTimeout)
 	defer cancel()
 	if _, err := gitcore.Clone(ctx, url, dst); err != nil {
-		os.RemoveAll(dst)
+		_ = os.RemoveAll(dst)
 		m.send(wsEvent{kind: evCloneDone, err: err.Error()})
 		return
 	}

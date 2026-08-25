@@ -10,7 +10,7 @@ import (
 )
 
 func TestAddMemberPersistsAndNotifies(t *testing.T) {
-	ws, _, _ := setupWorkspace(t)
+	ws, _ := setupWorkspace(t)
 	gamma := filepath.Join(ws.Root, "gamma")
 	if err := os.MkdirAll(gamma, 0o755); err != nil {
 		t.Fatal(err)
@@ -51,7 +51,7 @@ func TestAddMemberPersistsAndNotifies(t *testing.T) {
 }
 
 func TestAddMemberValidation(t *testing.T) {
-	ws, repoA, _ := setupWorkspace(t)
+	ws, repoA := setupWorkspace(t)
 	outside := filepath.Join(t.TempDir(), "outside")
 	if err := os.MkdirAll(outside, 0o755); err != nil {
 		t.Fatal(err)
@@ -86,7 +86,7 @@ func TestAddMemberValidation(t *testing.T) {
 }
 
 func TestRemoveMemberKeepsTreeAndInvariant(t *testing.T) {
-	ws, repoA, _ := setupWorkspace(t)
+	ws, repoA := setupWorkspace(t)
 	if err := ws.RemoveMember("beta"); err != nil {
 		t.Fatalf("RemoveMember: %v", err)
 	}
@@ -109,7 +109,7 @@ func TestRemoveMemberKeepsTreeAndInvariant(t *testing.T) {
 }
 
 func TestRenameMemberReordersAndPersists(t *testing.T) {
-	ws, _, _ := setupWorkspace(t)
+	ws, _ := setupWorkspace(t)
 	if err := ws.RenameMember("beta", "aab"); err != nil {
 		t.Fatalf("RenameMember: %v", err)
 	}
@@ -136,7 +136,7 @@ func TestRenameMemberReordersAndPersists(t *testing.T) {
 }
 
 func TestSaveWritesRelativePathsUnderRoot(t *testing.T) {
-	ws, _, _ := setupWorkspace(t)
+	ws, _ := setupWorkspace(t)
 	if err := ws.Save(); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
@@ -161,7 +161,7 @@ func repoPath(t *testing.T, ws *Workspace) string {
 }
 
 func TestConcurrentReadersDuringMutations(t *testing.T) {
-	ws, _, _ := setupWorkspace(t)
+	ws, _ := setupWorkspace(t)
 	names := []string{"c1", "c2", "c3", "c4", "c5"}
 	for _, n := range names {
 		dir := filepath.Join(ws.Root, n)

@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func setupWorkspace(t *testing.T) (*Workspace, string, string) {
+func setupWorkspace(t *testing.T) (*Workspace, string) {
 	t.Helper()
 	root := t.TempDir()
 	repoA := filepath.Join(root, "repos", "alpha")
@@ -29,11 +29,11 @@ func setupWorkspace(t *testing.T) (*Workspace, string, string) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	return ws, repoA, repoB
+	return ws, repoA
 }
 
 func TestLoadResolvesMembers(t *testing.T) {
-	ws, repoA, _ := setupWorkspace(t)
+	ws, repoA := setupWorkspace(t)
 	if ws.Root == "" || len(ws.Members()) != 2 {
 		t.Fatalf("ws = %+v", ws)
 	}
@@ -102,7 +102,7 @@ func TestLoadErrors(t *testing.T) {
 }
 
 func TestVPathRoundTrip(t *testing.T) {
-	ws, repoA, _ := setupWorkspace(t)
+	ws, repoA := setupWorkspace(t)
 
 	vp, err := ParseVPath("alpha/internal/theme/theme.go")
 	if err != nil {
@@ -126,7 +126,7 @@ func TestVPathRoundTrip(t *testing.T) {
 }
 
 func TestVPathMemberRoot(t *testing.T) {
-	ws, repoA, _ := setupWorkspace(t)
+	ws, repoA := setupWorkspace(t)
 	vp, err := ParseVPath("@alpha/")
 	if err != nil {
 		t.Fatal(err)
@@ -142,7 +142,7 @@ func TestVPathMemberRoot(t *testing.T) {
 }
 
 func TestVPathRejectsEscapeAttempts(t *testing.T) {
-	ws, _, _ := setupWorkspace(t)
+	ws, _ := setupWorkspace(t)
 	for _, bad := range []string{"../outside/x", "alpha/../../../etc/passwd", "", "/"} {
 		if _, err := ParseVPath(bad); err == nil {
 			t.Errorf("ParseVPath(%q) accepted", bad)
@@ -158,7 +158,7 @@ func TestVPathRejectsEscapeAttempts(t *testing.T) {
 }
 
 func TestVPathForOutsideMembersFails(t *testing.T) {
-	ws, _, _ := setupWorkspace(t)
+	ws, _ := setupWorkspace(t)
 	if _, err := ws.VPathFor(filepath.Join(ws.Root, ".dhi", "memory")); err == nil {
 		t.Error(".dhi path mapped to a member")
 	}

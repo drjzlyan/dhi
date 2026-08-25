@@ -86,7 +86,7 @@ func Create(root string, names ...string) error {
 	if err != nil {
 		return fmt.Errorf("workspace: write config: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	enc := toml.NewEncoder(f)
 	if err := enc.Encode(cfg); err != nil {
 		return fmt.Errorf("workspace: encode config: %w", err)
@@ -223,16 +223,16 @@ func saveMembers(root string, members []Member) error {
 	}
 	name := tmp.Name()
 	if err := toml.NewEncoder(tmp).Encode(cfg); err != nil {
-		tmp.Close()
-		os.Remove(name)
+		_ = tmp.Close()
+		_ = os.Remove(name)
 		return fmt.Errorf("workspace: encode config: %w", err)
 	}
 	if err := tmp.Close(); err != nil {
-		os.Remove(name)
+		_ = os.Remove(name)
 		return fmt.Errorf("workspace: write config: %w", err)
 	}
 	if err := os.Rename(name, cfgPath); err != nil {
-		os.Remove(name)
+		_ = os.Remove(name)
 		return fmt.Errorf("workspace: write config: %w", err)
 	}
 	return nil

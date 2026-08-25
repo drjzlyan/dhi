@@ -64,7 +64,7 @@ func (r Ripgrep) Search(ctx context.Context, query string, roots []string) (<-ch
 	hits := make(chan Hit, 64)
 	go func() {
 		defer close(hits)
-		defer cmd.Wait()
+		defer func() { _ = cmd.Wait() }()
 		sc := bufio.NewScanner(stdout)
 		sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 		sent := 0

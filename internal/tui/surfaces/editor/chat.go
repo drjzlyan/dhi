@@ -28,13 +28,12 @@ type chatEvent struct {
 // active channel, mention input, roster switching, approval prompts, and
 // apply-suggestion into the focused buffer.
 type chatModel struct {
-	rt      *runtime.Runtime
-	bus     *bus.Bus
-	apprs   *tools.Approvals
-	agents  []string
-	events  chan chatEvent
-	cancel  func()
-	onApply func(string)
+	rt     *runtime.Runtime
+	bus    *bus.Bus
+	apprs  *tools.Approvals
+	agents []string
+	events chan chatEvent
+	cancel func()
 
 	open     bool
 	focus    bool

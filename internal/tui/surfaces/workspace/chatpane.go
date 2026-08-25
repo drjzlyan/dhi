@@ -29,10 +29,8 @@ type chatPane struct {
 	channels   []string
 	active     int
 	events     chan struct{}
-	cancel     func() // stops the org/ws ping forwarder
 	subCancel  func() // cancels the current channel subscription
 	subscribed string // channel currently subscribed
-	lastSeen   int    // highest msg id rendered (future unread work)
 
 	focus    bool // composer focused
 	input    []rune
@@ -126,17 +124,7 @@ func (p *chatPane) resubscribe() {
 	}()
 }
 
-// stop tears down pumps (surface teardown symmetry).
-func (p *chatPane) stop() {
-	if p.subCancel != nil {
-		p.subCancel()
-		p.subCancel = nil
-	}
-}
-
 // ---- keys ----
-
-const maxTranscriptRows = 14
 
 // handleKey consumes one key while the CHANNELS section is active.
 func (p *chatPane) handleKey(key string) bool {
@@ -278,8 +266,6 @@ func (p *chatPane) render(width, height int) []string {
 		wrap = 20
 	}
 
-	type row struct{ first bool }
-	var rendered []string // flattened display lines with row ownership
 	type owned struct {
 		line  string
 		msgIx int
@@ -312,10 +298,11 @@ func (p *chatPane) render(width, height int) []string {
 	if p.cursor >= len(history) {
 		p.cursor = maxInt(len(history)-1, 0)
 	}
+	var rendered []string
 	for _, fl := range flat {
 		marker := "  "
 		if !p.focus && fl.msgIx == p.cursor {
-			marker = string(theme.GlyphCursor) + " "
+			marker = theme.GlyphCursor + " "
 		}
 		rendered = append(rendered, marker+fl.line)
 	}

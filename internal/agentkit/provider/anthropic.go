@@ -137,14 +137,14 @@ func (a *Anthropic) Stream(ctx context.Context, req Request) (<-chan Event, erro
 		return nil, errf("anthropic: post: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		snippet, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		return nil, errf("anthropic: status %d: %s", resp.StatusCode, strings.TrimSpace(string(snippet)))
 	}
 	out := make(chan Event, 16)
 	go func() {
 		defer close(out)
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		streamSSE(ctx, resp.Body, func(ev Event) bool {
 			select {
 			case out <- ev:

@@ -117,12 +117,12 @@ func SwapForTest(t interface{ Cleanup(func()) }, tk Tokens) {
 // component code.
 // ---------------------------------------------------------------------------
 
-func base(bg color.Color) lipgloss.Style {
+func base() lipgloss.Style {
 	return lipgloss.NewStyle().Background(Current.Bg).Foreground(Current.Text)
 }
 
 // AppFrame styles the outermost background layer.
-func AppFrame() lipgloss.Style { return base(Current.Bg) }
+func AppFrame() lipgloss.Style { return base() }
 
 // PanelBorder returns the rounded border used by every panel.
 func PanelBorder(focused bool) lipgloss.Border {

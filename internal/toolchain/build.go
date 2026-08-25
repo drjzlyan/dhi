@@ -63,7 +63,7 @@ func (m *Manager) BuildInstall(ctx context.Context, spec BuildSpec) error {
 		return fmt.Errorf("toolchain: staging: %w", err)
 	}
 	// Closure so writable() runs at teardown, not at defer-registration.
-	defer func() { os.RemoveAll(writable(stageDir)) }() // module caches are read-only
+	defer func() { _ = os.RemoveAll(writable(stageDir)) }() // module caches are read-only
 
 	gopath := filepath.Join(stageDir, "gopath")
 	gobin := filepath.Join(stageDir, "out")

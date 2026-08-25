@@ -102,8 +102,8 @@ func Toolchain(root string) []Check {
 		return checks
 	}
 	tmpName := f.Name()
-	f.Close()
-	os.Remove(tmpName)
+	_ = f.Close()
+	_ = os.Remove(tmpName)
 	checks = append(checks, Check{Name: "toolchain/prefix", Status: OK, Detail: root})
 
 	lf, err := m.ReadLockfile()

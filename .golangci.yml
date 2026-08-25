@@ -5,6 +5,11 @@ run:
 
 linters:
   default: standard
+  exclusions:
+    rules:
+      # Tests routinely ignore setup/teardown errors on purpose.
+      - path: _test\.go
+        linters: [errcheck]
   enable:
     - govet
     - staticcheck

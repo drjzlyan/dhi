@@ -186,14 +186,11 @@ func findByPath(roots []*node, path string) *node {
 }
 
 // revealTo expands ancestors so the node at path becomes visible.
-func revealTo(roots []*node, path string) bool {
+func revealTo(roots []*node, path string) {
 	target := filepath.Dir(path)
 	for _, r := range roots {
-		if expandTowards(r, target, path) {
-			return true
-		}
+		expandTowards(r, target, path)
 	}
-	return false
 }
 
 // expandTowards expands the chain from n towards target (the directory

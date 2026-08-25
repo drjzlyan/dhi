@@ -74,19 +74,6 @@ const (
 	rowCount
 )
 
-func (m *Model) rowName(i int) string {
-	switch i {
-	case rowTheme:
-		return "theme"
-	case rowTabWidth:
-		return "editor.tab_width"
-	case rowLineNumbers:
-		return "editor.line_numbers"
-	default:
-		return "terminal.scrollback"
-	}
-}
-
 // cycle applies one modification step and persists + applies live.
 func (m *Model) cycle(dir int) {
 	switch m.cursor {
@@ -156,7 +143,7 @@ func (m *Model) View() string {
 func settingRow(selected bool, name, value string) string {
 	namePart := padTo(name, 24)
 	if selected {
-		return string(theme.GlyphCursor) + " " + theme.TabActive().Render(namePart) + value
+		return theme.GlyphCursor + " " + theme.TabActive().Render(namePart) + value
 	}
 	return "  " + theme.TextDim().Render(namePart) + value
 }
