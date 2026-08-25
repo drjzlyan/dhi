@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/drjzlyan/dhi/internal/toolchain"
 )
 
 // fakeGitShim installs a stub git at root/bin/git printing the given
@@ -22,8 +24,16 @@ func fakeGitShim(t *testing.T, root, version string) {
 }
 
 func TestGitChecksSilentWithoutPin(t *testing.T) {
-	// The embedded registry has no git entry until the first artifact
-	// release (ADR-0009); the suite must stay silent rather than nag.
+	// Pre-pin the registry has no git entry and the suite stays silent;
+	// once the pin flips (ADR-0009 release), warn-until-installed takes
+	// over and this absence-case is obsolete.
+	mf, err := toolchain.Embedded()
+	if err != nil {
+		t.Fatalf("embedded registry: %v", err)
+	}
+	if _, pinned := mf.Tools["git"]; pinned {
+		t.Skip("git pin flipped; silence-case no longer applicable")
+	}
 	if checks := Git(t.TempDir()); checks != nil {
 		t.Errorf("expected no checks pre-pin, got %+v", checks)
 	}
