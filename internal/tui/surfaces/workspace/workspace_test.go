@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
 	"github.com/drjzlyan/dhi/internal/ansi"
 	"github.com/drjzlyan/dhi/internal/tasks"
 	"github.com/drjzlyan/dhi/internal/tui/surfaces"
@@ -70,8 +71,8 @@ func TestSectionCyclingWraps(t *testing.T) {
 		t.Fatalf("initial section = %v", m.sec)
 	}
 	m.HandleKey("[")
-	if m.sec != secTasks {
-		t.Fatalf("[ from first should wrap to tasks, got %v", m.sec)
+	if m.sec != secInspect {
+		t.Fatalf("[ from first should wrap to inspect, got %v", m.sec)
 	}
 	m.HandleKey("]")
 	if m.sec != secMembers {
@@ -93,6 +94,10 @@ func TestSectionCyclingWraps(t *testing.T) {
 	m.HandleKey("]")
 	if m.sec != secTasks {
 		t.Fatalf("fifth ] should reach tasks, got %v", m.sec)
+	}
+	m.HandleKey("]")
+	if m.sec != secInspect {
+		t.Fatalf("sixth ] should reach inspect, got %v", m.sec)
 	}
 }
 
@@ -548,5 +553,81 @@ func TestTasksSectionWithoutStoreRendersUnavailable(t *testing.T) {
 	out := ansi.Strip(m.View())
 	if !strings.Contains(out, "task store unavailable") {
 		t.Fatalf("unavailable note missing:\n%s", out)
+	}
+}
+
+// stubRoster satisfies profile.Roster for section tests.
+type stubRoster struct{ ids []string }
+
+func (s *stubRoster) AgentIDs() []string { return s.ids }
+
+func (s *stubRoster) Manifest(id string) (*manifest.Agent, bool) {
+	for _, i := range s.ids {
+		if i == id {
+			return &manifest.Agent{ID: id, Name: strings.ToUpper(id),
+				Model: "mock-1", Tools: []string{"read"}}, true
+		}
+	}
+	return nil, false
+}
+
+func TestInspectSectionFlows(t *testing.T) {
+	m, _ := newSurface(t)
+	m.roster = &stubRoster{ids: []string{"alice", "bob"}}
+
+	for i := secMembers; i < secInspect; i++ {
+		m.HandleKey("]")
+	}
+	if m.sec != secInspect {
+		t.Fatalf("section = %v", m.sec)
+	}
+
+	out := ansi.Strip(m.View())
+	for _, want := range []string{"agent inspection", "alice", "bob", "mock-1"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("list missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "recent activity") && m.inspectOpen == false {
+		t.Fatal("profile expanded before enter")
+	}
+
+	// Open the profile for alice.
+	m.HandleKey("enter")
+	if !m.inspectOpen {
+		t.Fatal("profile did not open")
+	}
+	out = ansi.Strip(m.View())
+	for _, want := range []string{"alice", "idle", "recent activity", "private memory",
+		"knowledge contributions", "Standing instructions"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("profile missing %q:\n%s", want, out)
+		}
+	}
+
+	// Toggle closed; cursor move also closes a stale pane.
+	m.HandleKey("enter")
+	if m.inspectOpen {
+		t.Fatal("toggle did not close")
+	}
+	m.HandleKey("j")
+	if m.inspectOpen {
+		t.Fatal("cursor move kept stale pane open")
+	}
+
+	// Empty roster renders guidance and stays inert-ish.
+	m2, _ := newSurface(t)
+	out = ansi.Strip(m2.View())
+	_ = out
+}
+
+func TestInspectSectionWithoutRoster(t *testing.T) {
+	m, _ := newSurface(t)
+	for i := secMembers; i < secInspect; i++ {
+		m.HandleKey("]")
+	}
+	out := ansi.Strip(m.View())
+	if !strings.Contains(out, "no crew") {
+		t.Fatalf("guidance missing:\n%s", out)
 	}
 }

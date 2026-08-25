@@ -100,12 +100,13 @@ streaming render in sidebar (M7 polish).
       per-agent DMs), apply-suggestion→buffer (^f), keyboard approvals
       y/n (`surfaces/editor/chat.go`); doctor roster/env checks
 
-## M4 — **Workspace full** (F-003)
+## M4 — **Workspace full** (F-003) ✅ (2026-08-25)
 
-Phased delivery; each phase lands on green `make verify`. Design
+Phased delivery; each phase landed on green `make verify`. Design
 decisions: ADR-0009 (hermetic minimal git for worktrees), layered
 coding standards (guidance-only, defaults→team→agent, injected at
-prompt assembly).
+prompt assembly). Deferred to M7: unread markers, richer transcript
+rendering, Settings-section integration of standards editing.
 
 ### P0 — Hermetic git spike ✅ (2026-08-24)
 
@@ -207,13 +208,20 @@ prompt assembly).
 - [x] Doctor tasks suite: malformed cards + dangling assignee/team/
       member refs warned by name
 
-### P5 — Inspection + attach-points
+### P5 — Inspection + attach-points ✅ (2026-08-25)
 
-- [ ] Per-agent profile: manifest inventory, current task/worktree
-      state, activity timeline (bus + journal), read-only memory, KB
-      contributions, pending approvals, effective standards preview
-- [ ] Narrow Roster/invite interface replacing editor's concrete
-      `*runtime.Runtime` dependency so M5/M6 attach-points plug in
+- [x] `internal/agentkit/profile`: per-agent aggregation over
+      independent sources (roster manifest, org teams, task store,
+      bus activity timeline newest-first, memory journal+notes,
+      KB contributions via new Store.ContributionsBy, layered
+      standards block); every source degrades independently
+- [x] INSPECT section (seventh pane): roster list with one-line
+      summaries; enter/v expands the profile — identity+current work,
+      model/tools/system, teams, activity, memory, KB, standards
+- [x] Attach-point seams: `profile.Roster` (AgentIDs+Manifest) and
+      wsview `turnHandler` both satisfied by *runtime.Runtime;
+      editor chat + channels floor consume only these narrow
+      interfaces, so M5 Reviewer / M6 Ideator plug in without churn
 
 ## M5 — **Reviewer full** (F-005)
 

@@ -5,12 +5,17 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/drjzlyan/dhi/internal/agentkit/bus"
+	"github.com/drjzlyan/dhi/internal/agentkit/knowledge"
 	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
+	"github.com/drjzlyan/dhi/internal/agentkit/memory"
+	"github.com/drjzlyan/dhi/internal/agentkit/profile"
 	"github.com/drjzlyan/dhi/internal/agentkit/standards"
 	"github.com/drjzlyan/dhi/internal/tasks"
 	"github.com/drjzlyan/dhi/internal/tui/branding"
 	"github.com/drjzlyan/dhi/internal/tui/kit"
 	"github.com/drjzlyan/dhi/internal/tui/theme"
+	"github.com/drjzlyan/dhi/internal/workspace"
 )
 
 func manifestAgent(id, name, model, system string) *manifest.Agent {
@@ -66,9 +71,188 @@ func (m *Model) activeSection() string {
 			maxInt(m.height-10, 12)), "\n")
 	case secTasks:
 		return m.tasksBody()
+	case secInspect:
+		return m.inspectBody()
 	default:
 		return m.standardsBody()
 	}
+}
+
+func (m *Model) inspectBody() string {
+	ids := m.agentIDs()
+	c := m.cursors[secInspect]
+	clampCursor(&c, len(ids))
+
+	var out []string
+	out = append(out, theme.Hint().Render("agent inspection")+
+		theme.TextDim().Render("      enter/v open profile"))
+	if len(ids) == 0 {
+		out = append(out, theme.TextDim().Render(
+			"(no crew — create agents under ORG)"))
+		return strings.Join(out, "\n")
+	}
+	for i, id := range ids {
+		style := theme.TextDim()
+		if i == c {
+			style = theme.TabActive()
+		}
+		sum := "(unavailable)"
+		if p := m.profileFor(id); p != nil {
+			sum = p.Summary()
+		}
+		out = append(out, cursorGlyph(i == c)+
+			style.Render(padTo(id, nameCol))+theme.Hint().Render(sum))
+	}
+	if m.inspectOpen && c < len(ids) {
+		if p := m.profileFor(ids[c]); p != nil {
+			out = append(out, "", theme.TextDim().Render(strings.Repeat("─", 52)))
+			out = append(out, m.profileLines(p)...)
+		}
+	}
+	return strings.Join(out, "\n")
+}
+
+func (m *Model) profileFor(id string) *profile.Profile {
+	deps := profile.Deps{
+		Roster: m.roster, Bus: m.paneBus(), Org: m.org,
+		Tasks:  m.taskStore,
+		Memory: memoryStoreFor(m.ws), KB: kbStoreFor(m.ws),
+		Standards: true,
+	}
+	return profile.Build(m.ws, deps, id)
+}
+
+var (
+	memCache *memory.Store
+	kbCache  *knowledge.Store
+	cacheWS  string
+)
+
+// store caches built once per workspace root (inspection reads only).
+func memoryStoreFor(ws *workspace.Workspace) *memory.Store {
+	if ws == nil || cacheWS == ws.Root && memCache != nil {
+		return memCache
+	}
+	memCache = memory.Open(ws)
+	kb, err := knowledge.Open(ws, knowledge.Auto, nil)
+	if err == nil {
+		kbCache = kb
+	}
+	cacheWS = ws.Root
+	return memCache
+}
+
+func kbStoreFor(ws *workspace.Workspace) profile.KBSearch {
+	memoryStoreFor(ws)
+	return kbCache
+}
+
+func (m *Model) paneBus() *bus.Bus {
+	if m.pane == nil {
+		return nil
+	}
+	return m.pane.bus
+}
+
+const profileCapLines = 26
+
+func (m *Model) profileLines(p *profile.Profile) []string {
+	var out []string
+	add := func(s string) {
+		if len(out) < profileCapLines {
+			out = append(out, s)
+		}
+	}
+	add(theme.Brand().Render("▍ " + p.ID + " — " + p.TaskLine()))
+	if p.Manifest != nil {
+		sys := p.Manifest.System
+		if len(sys) > 60 {
+			sys = sys[:57] + "…"
+		}
+		add("model " + p.Manifest.Model +
+			theme.Hint().Render("  tools: "+orDash(strings.Join(p.Manifest.Tools, ","))))
+		if sys != "" {
+			add(theme.TextDim().Render("system: " + sys))
+		}
+	}
+	if len(p.Teams) > 0 {
+		add("teams " + theme.TabActive().Render(strings.Join(p.Teams, ", ")))
+	} else {
+		add(theme.TextDim().Render("no teams"))
+	}
+
+	add("")
+	add(theme.Hint().Render("recent activity"))
+	if len(p.RecentActivity) == 0 {
+		add(theme.TextDim().Render("(none captured)"))
+	}
+	for i, msg := range p.RecentActivity {
+		if i >= 4 {
+			break
+		}
+		text := msg.Text
+		if len(text) > 44 {
+			text = text[:41] + "…"
+		}
+		add("  " + theme.Hint().Render(msg.At.Format("01-02 15:04")) +
+			" " + msg.Channel + " · " + text)
+	}
+
+	add("")
+	add(theme.Hint().Render("private memory"))
+	if len(p.Journal) == 0 && p.Notes == "" {
+		add(theme.TextDim().Render("(empty)"))
+	}
+	for i, e := range p.Journal {
+		if i >= 3 {
+			break
+		}
+		text := e.Text
+		if len(text) > 48 {
+			text = text[:45] + "…"
+		}
+		add("  " + theme.TextDim().Render(e.Kind) + " · " + text)
+	}
+	if p.Notes != "" {
+		first := strings.SplitN(strings.TrimSpace(p.Notes), "\n", 2)[0]
+		if len(first) > 50 {
+			first = first[:47] + "…"
+		}
+		add("  notes: " + first)
+	}
+
+	add("")
+	add(theme.Hint().Render("knowledge contributions"))
+	if len(p.KBAuthor) == 0 {
+		add(theme.TextDim().Render("(none)"))
+	}
+	for i, e := range p.KBAuthor {
+		if i >= 3 {
+			break
+		}
+		add("  " + e.Title + theme.TextDim().Render(" ("+e.File+")"))
+	}
+
+	if p.StandardsBlock != "" {
+		add("")
+		lines := strings.Split(p.StandardsBlock, "\n")
+		add(theme.Hint().Render(lines[0]))
+		for i, l := range lines[1:] {
+			if i >= 3 {
+				add(theme.TextDim().Render(fmt.Sprintf("  … +%d more rules", len(lines)-4)))
+				break
+			}
+			add(theme.TextDim().Render("  " + l))
+		}
+	}
+	return out
+}
+
+func orDash(s string) string {
+	if s == "" {
+		return "-"
+	}
+	return s
 }
 
 const statusCol = 11

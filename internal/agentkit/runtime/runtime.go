@@ -378,3 +378,16 @@ func sortStrings(s []string) {
 		}
 	}
 }
+
+// Manifest returns the parsed manifest for id (false when not rostered).
+// Satisfies the profile.Roster seam so inspection UIs never need the
+// concrete runtime.
+func (r *Runtime) Manifest(id string) (*manifest.Agent, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	e, ok := r.agents[id]
+	if !ok {
+		return nil, false
+	}
+	return e.m, true
+}

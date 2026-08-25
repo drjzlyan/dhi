@@ -19,6 +19,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/agentkit/org"
 	"github.com/drjzlyan/dhi/internal/agentkit/pack"
+	profiface "github.com/drjzlyan/dhi/internal/agentkit/profile"
 	"github.com/drjzlyan/dhi/internal/agentkit/standards"
 	"github.com/drjzlyan/dhi/internal/gitcore"
 	"github.com/drjzlyan/dhi/internal/tasks"
@@ -42,6 +43,7 @@ const (
 	secStandards
 	secChannels
 	secTasks
+	secInspect
 	secCount
 )
 
@@ -57,6 +59,8 @@ func (s sectionID) label() string {
 		return "CHANNELS"
 	case secTasks:
 		return "TASKS"
+	case secInspect:
+		return "INSPECT"
 	default:
 		return "STANDARDS"
 	}
@@ -81,6 +85,9 @@ type Model struct {
 	pane *chatPane
 
 	taskStore *tasks.Store
+	roster    profiface.Roster
+
+	inspectOpen bool
 
 	events    chan wsEvent
 	cancelSub func()
@@ -108,6 +115,7 @@ type Deps struct {
 	Bus     *bus.Bus
 	Runtime turnHandler
 	Tasks   *tasks.Store
+	Roster  profiface.Roster
 }
 
 // New returns the workspace model. A nil ws renders the not-a-workspace
@@ -129,6 +137,7 @@ func New(version string, ws *workspace.Workspace, d Deps) *Model {
 			m.stdRootOK = true
 		}
 		m.taskStore = d.Tasks
+		m.roster = d.Roster
 		if d.Bus != nil {
 			m.pane = newChatPane(d.Bus, d.Runtime, m.org)
 		}
@@ -380,6 +389,8 @@ func (m *Model) sectionKey(key string) bool {
 		return m.pane.handleKey(key)
 	case secTasks:
 		return m.tasksKey(key)
+	case secInspect:
+		return m.inspectKey(key)
 	default:
 		return m.standardsKey(key)
 	}
@@ -626,6 +637,44 @@ func nextStatus(st tasks.Status) tasks.Status {
 		}
 	}
 	return tasks.Backlog
+}
+
+// ---- INSPECT section ----
+
+func (m *Model) agentIDs() []string {
+	if m.roster == nil {
+		return nil
+	}
+	return m.roster.AgentIDs()
+}
+
+func (m *Model) inspectKey(key string) bool {
+	ids := m.agentIDs()
+	c := &m.cursors[secInspect]
+	clampCursor(c, len(ids))
+	switch key {
+	case "j", "down":
+		if *c < len(ids)-1 {
+			*c++
+			m.inspectOpen = false
+		}
+		return true
+	case "k", "up":
+		if *c > 0 {
+			*c--
+			m.inspectOpen = false
+		}
+		return true
+	case "enter", "v":
+		if len(ids) > 0 {
+			m.inspectOpen = !m.inspectOpen
+		}
+		return true
+	case "esc":
+		m.inspectOpen = false
+		return true
+	}
+	return false
 }
 
 func (m *Model) flashErr(msg string) {

@@ -360,3 +360,29 @@ func atomicWrite(path string, data []byte) error {
 	}
 	return nil
 }
+
+// ContributionsBy returns the entries authored by authorID, newest
+// first. It reads the in-memory index when loaded, falling back to disk
+// — safe for inspection UIs that run long after Open.
+func (s *Store) ContributionsBy(authorID string) []Entry {
+	s.mu.Lock()
+	entries := append([]Entry(nil), s.index.Entries...)
+	s.mu.Unlock()
+	if len(entries) == 0 {
+		data, err := os.ReadFile(s.indexPath())
+		if err == nil {
+			var idx index
+			if json.Unmarshal(data, &idx) == nil {
+				entries = idx.Entries
+			}
+		}
+	}
+	var out []Entry
+	for _, e := range entries {
+		if e.Author == authorID {
+			out = append(out, e)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Created.After(out[j].Created) })
+	return out
+}

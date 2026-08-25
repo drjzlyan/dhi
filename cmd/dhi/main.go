@@ -116,6 +116,7 @@ func runTUI() {
 			Bus:     messageBus,
 			Runtime: agentRT,
 			Tasks:   taskStore,
+			Roster:  agentRT,
 		}),
 		editor.New(version.Version, ws, edOpts...),
 		placeholder.New("ideator", "Ideator", "M6",
