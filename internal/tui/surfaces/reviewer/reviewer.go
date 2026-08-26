@@ -72,6 +72,11 @@ type Model struct {
 
 	form formState
 
+	composer   *composer // active comment input (nil = none)
+	threadOpen bool      // DIFF replaced by the thread view
+	threadFile string
+	threadCur  int
+
 	events chan revEvent
 }
 
@@ -249,8 +254,14 @@ func (m *Model) HandleKey(key string) bool {
 	if m.ws == nil {
 		return false
 	}
+	if m.composer != nil {
+		return m.composerKey(key)
+	}
 	if m.form.kind != fNone {
 		return m.formKey(key)
+	}
+	if m.threadOpen && m.sec == secDiff {
+		return m.threadsKey(key)
 	}
 	return m.sectionKey(key)
 }
@@ -266,6 +277,7 @@ func (m *Model) sectionKey(key string) bool {
 	case "esc":
 		if m.sec != secReviews {
 			m.sec = secReviews
+			m.threadOpen = false
 			return true
 		}
 		return false
@@ -331,6 +343,16 @@ func (m *Model) reviewsKey(key string) bool {
 	case "d":
 		if sel := selReview(rows, *c); sel != nil {
 			m.form = formState{kind: fRemoveConfirm, orig: sel.ID}
+			return true
+		}
+	case "s":
+		if sel := selReview(rows, *c); sel != nil && sel.PendingCount() > 0 {
+			if err := m.svc.Store().Submit(sel.ID); err != nil {
+				m.opErr = err.Error()
+				return true
+			}
+			m.closeFormWithFlash("submitted " + sel.ID +
+				" (" + itoaInt(sel.PendingCount()) + " comments)")
 			return true
 		}
 	}
@@ -419,6 +441,23 @@ func (m *Model) diffKey(key string) bool {
 				}
 				return true
 			}
+		}
+	case "c":
+		file, line, side, ok := m.anchorAtCursor()
+		if !ok {
+			return false
+		}
+		m.threadFile = file
+		_ = line
+		_ = side
+		m.openComposer(0, 0, 0)
+		return true
+	case "t":
+		if path := m.pathAtRow(m.cursor); path != "" {
+			m.threadFile = path
+			m.threadCur = 0
+			m.threadOpen = true
+			return true
 		}
 	case "\t", "h":
 		m.sec = secFiles

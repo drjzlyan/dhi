@@ -46,3 +46,11 @@ func TestGoldenDiffSideBySide(t *testing.T) {
 	m.HandleKey("\\")
 	goldenCompare(t, "diff-side-by-side", m.View())
 }
+
+func TestGoldenThreadsView(t *testing.T) {
+	m, _, _, _ := newSurface(t)
+	startBranchReview(t, m, m.svc.Store())
+	commentOnFirstLine(t, m, "why here?")
+	m.HandleKey("t")
+	goldenCompare(t, "threads-view", m.View())
+}

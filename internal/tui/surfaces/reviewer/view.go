@@ -2,6 +2,7 @@ package reviewer
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -87,12 +88,41 @@ func (m *Model) mainPane(w, h int) string {
 	p.SetContent(strings.Split(body, "\n")...)
 	p.Width, p.Height = w, h
 	pane := p.View()
+	if m.composer != nil {
+		return m.overlayCentered(pane, composerPanel(m.composer).View())
+	}
 	if m.form.kind == fNone {
 		return pane
 	}
 	modal := kit.NewPanel(modalTitle(m.form.kind), true)
 	modal.SetContent(m.modalLines()...)
 	return m.overlayCentered(pane, modal.View())
+}
+
+// composerPanel renders the comment input as its own small panel.
+func composerPanel(c *composer) *kit.Panel {
+	p := kit.NewPanel("comment", true)
+	head := theme.TextDim().Render(c.file)
+	if c.line > 0 {
+		head += theme.TextDim().Render(" :" + strconv.Itoa(c.line) + " " + string(c.side))
+	} else {
+		head += theme.TextDim().Render("  (file-level)")
+	}
+	lines := []string{head, ""}
+	if c.editIdx >= 0 {
+		lines[0] += theme.WarningText().Render("  editing draft")
+	}
+	if c.replyTo > 0 && c.editIdx < 0 {
+		lines = append(lines, theme.TextDim().Render("replying to #"+strconv.FormatInt(c.replyTo, 10)))
+	}
+	lines = append(lines,
+		theme.SuccessText().Render(string(c.runes))+"▏",
+		"",
+		theme.Hint().Render("enter save (pending) · esc cancel"))
+	p.SetContent(lines...)
+	p.Width = 56
+	p.Height = len(lines) + 2
+	return p
 }
 
 func (m *Model) overlayCentered(pane string, overlay string) string {
@@ -120,6 +150,9 @@ func (m *Model) overlayCentered(pane string, overlay string) string {
 func (m *Model) activeSectionFor(w, h int) string {
 	switch m.sec {
 	case secDiff:
+		if m.threadOpen {
+			return m.renderThreads(w-4, maxInt(h-4, 6))
+		}
 		r, _ := m.openReview()
 		viewed := map[string]bool{}
 		if r.ID != "" {
@@ -131,6 +164,10 @@ func (m *Model) activeSectionFor(w, h int) string {
 	default:
 		return m.reviewsBody(w - 4)
 	}
+}
+
+func itoaInt(n int) string {
+	return strconv.Itoa(n)
 }
 
 func (m *Model) sectionStrip() string {

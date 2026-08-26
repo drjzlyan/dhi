@@ -421,6 +421,68 @@ func (s *Store) SetResolved(id string, threadID int64, resolved bool) error {
 	})
 }
 
+// DeleteComment removes one pending comment by index within its thread.
+func (s *Store) DeleteComment(id string, threadID int64, idx int) error {
+	s.mu.RLock()
+	r, ok := s.items[id]
+	s.mu.RUnlock()
+	if !ok {
+		return fmt.Errorf("review: unknown review %q", id)
+	}
+	if err := checkPending(r, threadID, idx); err != nil {
+		return err
+	}
+	return s.mutate(id, func(r *Review) {
+		for i := range r.Threads {
+			if r.Threads[i].ID != threadID {
+				continue
+			}
+			c := r.Threads[i].Comments
+			r.Threads[i].Comments = append(c[:idx:idx], c[idx+1:]...)
+			return
+		}
+	})
+}
+
+// EditComment rewrites one pending comment's text.
+func (s *Store) EditComment(id string, threadID int64, idx int, text string) error {
+	s.mu.RLock()
+	r, ok := s.items[id]
+	s.mu.RUnlock()
+	if !ok {
+		return fmt.Errorf("review: unknown review %q", id)
+	}
+	if err := checkPending(r, threadID, idx); err != nil {
+		return err
+	}
+	return s.mutate(id, func(r *Review) {
+		for i := range r.Threads {
+			if r.Threads[i].ID == threadID {
+				r.Threads[i].Comments[idx].Text = strings.TrimSpace(text)
+				return
+			}
+		}
+	})
+}
+
+// checkPending validates thread/comment indexes and that the target is
+// still an unsubmitted draft.
+func checkPending(r Review, threadID int64, idx int) error {
+	for _, t := range r.Threads {
+		if t.ID != threadID {
+			continue
+		}
+		if idx < 0 || idx >= len(t.Comments) {
+			return fmt.Errorf("review: %s: comment %d missing in thread %d", r.ID, idx, threadID)
+		}
+		if !t.Comments[idx].Pending {
+			return fmt.Errorf("review: %s: comment %d in thread %d already submitted", r.ID, idx, threadID)
+		}
+		return nil
+	}
+	return fmt.Errorf("review: %s: unknown thread %d", r.ID, threadID)
+}
+
 // ToggleViewed flips a file's viewed mark.
 func (s *Store) ToggleViewed(id, path string) error {
 	return s.mutate(id, func(r *Review) {

@@ -171,3 +171,45 @@ func TestNextThreadIDIncrements(t *testing.T) {
 		t.Errorf("next = %d", r.nextThreadID())
 	}
 }
+
+func TestDeleteAndEditPendingComments(t *testing.T) {
+	s, _ := setupStore(t)
+	r := sampleReview()
+	if err := s.Create(r); err != nil {
+		t.Fatal(err)
+	}
+	id, _ := s.AddThread(r.ID, Thread{File: "a.go", Line: 1,
+		Comments: []Comment{{Author: "you", Text: "draft", Pending: true}}})
+	if err := s.AppendComment(r.ID, id, Comment{Author: "you", Text: "second", Pending: true}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.DeleteComment(r.ID, id, 0); err != nil {
+		t.Fatalf("DeleteComment: %v", err)
+	}
+	got, _ := s.Get(r.ID)
+	if got.Threads[0].Comments[0].Text != "second" {
+		t.Fatalf("comments = %+v", got.Threads[0].Comments)
+	}
+	if err := s.EditComment(r.ID, id, 0, "rewritten"); err != nil {
+		t.Fatalf("EditComment: %v", err)
+	}
+	got, _ = s.Get(r.ID)
+	if got.Threads[0].Comments[0].Text != "rewritten" {
+		t.Errorf("edit lost: %+v", got.Threads[0].Comments[0])
+	}
+
+	// submitted comments are immutable
+	if err := s.Submit(r.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.EditComment(r.ID, id, 0, "nope"); err == nil {
+		t.Error("edited a submitted comment")
+	}
+	if err := s.DeleteComment(r.ID, id, 0); err == nil {
+		t.Error("deleted a submitted comment")
+	}
+	if err := s.DeleteComment(r.ID, id, 99); err == nil {
+		t.Error("deleted a nonexistent comment")
+	}
+}
