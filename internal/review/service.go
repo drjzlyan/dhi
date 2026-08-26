@@ -147,19 +147,27 @@ func (s *Service) Start(ctx context.Context, memberName string, kind Kind, base,
 	return r, nil
 }
 
-// Diff produces the parsed file model for a started review by running
-// the hermetic git diff inside its review worktree.
-func (s *Service) Diff(ctx context.Context, r Review) ([]gitdiff.FileDiff, error) {
+// Patch produces the raw unified patch text for a started review.
+func (s *Service) Patch(ctx context.Context, r Review) (string, error) {
 	if r.WorkRel == "" || r.Done {
-		return nil, fmt.Errorf("review: %s has no live worktree", r.ID)
+		return "", fmt.Errorf("review: %s has no live worktree", r.ID)
 	}
 	if s.diffFn == nil {
-		return nil, fmt.Errorf("review: hermetic git unavailable — cannot diff %s", r.ID)
+		return "", fmt.Errorf("review: hermetic git unavailable — cannot diff %s", r.ID)
 	}
 	dir := filepath.Join(s.ws.Root, filepath.FromSlash(r.WorkRel))
 	patch, err := s.diffFn(ctx, dir, "diff", "--no-color", r.Target.Base+"..."+r.Target.Head)
 	if err != nil {
-		return nil, fmt.Errorf("review: diff %s: %w", r.ID, err)
+		return "", fmt.Errorf("review: diff %s: %w", r.ID, err)
+	}
+	return patch, nil
+}
+
+// Diff produces the parsed file model for a started review.
+func (s *Service) Diff(ctx context.Context, r Review) ([]gitdiff.FileDiff, error) {
+	patch, err := s.Patch(ctx, r)
+	if err != nil {
+		return nil, err
 	}
 	return gitdiff.Parse(patch), nil
 }

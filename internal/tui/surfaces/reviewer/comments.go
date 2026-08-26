@@ -102,14 +102,17 @@ func (m *Model) composerKey(key string) bool {
 		}
 		st := m.svc.Store()
 		var err error
+		var threadID int64
 		switch {
 		case c.editIdx >= 0:
 			err = st.EditComment(m.openID, c.replyTo, c.editIdx, txt)
+			threadID = c.replyTo
 		case c.replyTo > 0:
 			err = st.AppendComment(m.openID, c.replyTo,
 				review.Comment{Author: busHuman(), Text: txt, Pending: true})
+			threadID = c.replyTo
 		default:
-			_, err = st.AddThread(m.openID, review.Thread{
+			threadID, err = st.AddThread(m.openID, review.Thread{
 				File: c.file, Line: c.line, Side: c.side,
 				Comments: []review.Comment{{Author: busHuman(), Text: txt, Pending: true}},
 			})
@@ -118,6 +121,10 @@ func (m *Model) composerKey(key string) bool {
 			m.opErr = err.Error()
 		}
 		m.composer = nil
+		// @mentions dispatch the comment to the agent crew in-thread.
+		if err == nil && m.mentionedAgent(txt) != "" {
+			m.invite(threadID, txt)
+		}
 		return true
 	case "backspace":
 		if len(c.runes) > 0 {

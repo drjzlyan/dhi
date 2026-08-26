@@ -86,13 +86,16 @@ type Comment struct {
 }
 
 // Thread is a discussion rooted at one file line (Line 0 = file level).
+// BusThread links the thread to its conversation root on the message bus
+// so agent replies can be mirrored back (0 = not yet invited).
 type Thread struct {
-	ID       int64
-	File     string // display path (new side)
-	Line     int    // new-side 1-based line; 0 = whole file
-	Side     Side
-	Resolved bool
-	Comments []Comment
+	ID        int64
+	File      string // display path (new side)
+	Line      int    // new-side 1-based line; 0 = whole file
+	Side      Side
+	Resolved  bool
+	BusThread int64
+	Comments  []Comment
 }
 
 // Review is one session card.
@@ -145,12 +148,13 @@ type file struct {
 }
 
 type threadFile struct {
-	ID       int64         `toml:"id"`
-	File     string        `toml:"file"`
-	Line     int           `toml:"line"`
-	Side     Side          `toml:"side"`
-	Resolved bool          `toml:"resolved"`
-	Comments []commentFile `toml:"comment"`
+	ID        int64         `toml:"id"`
+	File      string        `toml:"file"`
+	Line      int           `toml:"line"`
+	Side      Side          `toml:"side"`
+	Resolved  bool          `toml:"resolved"`
+	BusThread int64         `toml:"bus_thread,omitempty"`
+	Comments  []commentFile `toml:"comment"`
 }
 
 type commentFile struct {
@@ -278,7 +282,8 @@ func parseCard(path, id string) (Review, error) {
 		r.Viewed[vf] = true
 	}
 	for _, tf := range f.Threads {
-		t := Thread{ID: tf.ID, File: tf.File, Line: tf.Line, Side: tf.Side, Resolved: tf.Resolved}
+		t := Thread{ID: tf.ID, File: tf.File, Line: tf.Line, Side: tf.Side,
+			Resolved: tf.Resolved, BusThread: tf.BusThread}
 		for _, cf := range tf.Comments {
 			t.Comments = append(t.Comments, Comment{Author: cf.Author, Text: cf.Text, At: cf.At, Pending: cf.Pending})
 		}
@@ -415,6 +420,28 @@ func (s *Store) SetResolved(id string, threadID int64, resolved bool) error {
 		for i := range r.Threads {
 			if r.Threads[i].ID == threadID {
 				r.Threads[i].Resolved = resolved
+				return
+			}
+		}
+	})
+}
+
+// SetBusThread records the bus conversation root for a thread so agent
+// replies can be mirrored into it later.
+func (s *Store) SetBusThread(id string, threadID, busRoot int64) error {
+	s.mu.RLock()
+	r, ok := s.items[id]
+	s.mu.RUnlock()
+	if !ok {
+		return fmt.Errorf("review: unknown review %q", id)
+	}
+	if !hasThread(r, threadID) {
+		return fmt.Errorf("review: %s: unknown thread %d", id, threadID)
+	}
+	return s.mutate(id, func(r *Review) {
+		for i := range r.Threads {
+			if r.Threads[i].ID == threadID {
+				r.Threads[i].BusThread = busRoot
 				return
 			}
 		}
@@ -574,7 +601,8 @@ func writeCard(path string, r Review) error {
 	}
 	sort.Strings(f.Viewed)
 	for _, t := range r.Threads {
-		tf := threadFile{ID: t.ID, File: t.File, Line: t.Line, Side: t.Side, Resolved: t.Resolved}
+		tf := threadFile{ID: t.ID, File: t.File, Line: t.Line, Side: t.Side,
+			Resolved: t.Resolved, BusThread: t.BusThread}
 		for _, c := range t.Comments {
 			tf.Comments = append(tf.Comments, commentFile{Author: c.Author, Text: c.Text, At: c.At, Pending: c.Pending})
 		}

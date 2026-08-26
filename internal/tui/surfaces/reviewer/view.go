@@ -320,6 +320,17 @@ func (m *Model) modalView(body string) string {
 func (m *Model) modalLines() []string {
 	f := &m.form
 	switch f.kind {
+	case fAgentReview:
+		lines := []string{
+			fieldLine(f.fields[0], f.cur == 0),
+			fieldLine(f.fields[1], f.cur == 1),
+			"",
+		}
+		if f.err != "" {
+			lines = append(lines, theme.DangerText().Render(f.err), "")
+		}
+		return append(lines, theme.Hint().Render(
+			"posts the diff to #review and dispatches a turn · tab field · enter send"))
 	case fDiscardConfirm:
 		return confirmLines("discard review worktree "+f.target()+"?",
 			[]string{"the review worktree under .dhi/reviews/",
@@ -389,6 +400,8 @@ func modalTitle(k modalKind) string {
 		return "discard worktree"
 	case fRemoveConfirm:
 		return "remove review"
+	case fAgentReview:
+		return "agent review"
 	}
 	return ""
 }

@@ -125,7 +125,11 @@ func runTUI() {
 		editor.New(version.Version, ws, edOpts...),
 		placeholder.New("ideator", "Ideator", "M6",
 			"Ideation sessions: artifact navigation, preview, approval — no editing."),
-		reviewer.New(version.Version, ws, reviewer.Deps{Service: reviewSvc}),
+		reviewer.New(version.Version, ws, reviewer.Deps{
+			Service: reviewSvc,
+			Bus:     messageBus,
+			Crew:    agentRT,
+		}),
 		settingsview.New(cfg, savePath),
 	)
 

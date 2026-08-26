@@ -11,6 +11,7 @@ import (
 
 	"charm.land/bubbletea/v2"
 
+	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/gitdiff"
 	"github.com/drjzlyan/dhi/internal/review"
 	"github.com/drjzlyan/dhi/internal/tui/surfaces"
@@ -19,6 +20,16 @@ import (
 
 // opTimeout bounds every async service call.
 const opTimeout = 5 * time.Minute
+
+// maxPromptPatch caps the diff excerpt sent to reviewing agents.
+const maxPromptPatch = 48_000
+
+// crew is the narrow runtime seam: dispatch turns + roster ids.
+// *runtime.Runtime satisfies it; tests use scripted fakes.
+type crew interface {
+	Handle(ctx context.Context, msg bus.Message)
+	AgentIDs() []string
+}
 
 // sectionID enumerates the switchable panes.
 type sectionID uint8
@@ -77,15 +88,20 @@ type Model struct {
 	threadFile string
 	threadCur  int
 
+	bus       *bus.Bus
+	crew      crew
+	cancelBus func()
+
 	events chan revEvent
 }
 
 var _ surfaces.Surface = (*Model)(nil)
 
 type revEvent struct {
-	kind uint8 // evPing | evStartDone | evDiffDone | evDiscardDone
+	kind uint8 // evPing | evStartDone | evDiffDone | evDiscardDone | evBus | evAgentDone
 	err  string
 	id   string
+	msg  bus.Message
 }
 
 const (
@@ -93,12 +109,17 @@ const (
 	evStartDone
 	evDiffDone
 	evDiscardDone
+	evBus
+	evAgentDone
 )
 
 // Deps carries the services this surface operates. A nil Service degrades
-// every section to visible "unavailable" rows rather than errors.
+// every section to visible "unavailable" rows; nil Bus/Crew disable the
+// agent-participation keys with visible messages.
 type Deps struct {
 	Service *review.Service
+	Bus     *bus.Bus
+	Crew    crew
 }
 
 // New returns the reviewer model. A nil ws renders the empty state with
@@ -108,6 +129,8 @@ func New(version string, ws *workspace.Workspace, d Deps) *Model {
 		version: version,
 		ws:      ws,
 		svc:     d.Service,
+		bus:     d.Bus,
+		crew:    d.Crew,
 		events:  make(chan revEvent, 16),
 	}
 }
@@ -192,6 +215,14 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 				m.files = nil
 				m.diffFor = ""
 			}
+		case evBus:
+			m.mirrorBus(ev.msg)
+		case evAgentDone:
+			m.busy = false
+			m.form = formState{flash: "agent review requested"}
+			if ev.err != "" {
+				m.opErr = ev.err
+			}
 		}
 		return m.listen()
 	}
@@ -214,12 +245,36 @@ func (m *Model) openReview() (review.Review, bool) {
 	return m.svc.Store().Get(m.openID)
 }
 
-// open selects a review and (re)loads its diff asynchronously.
+// open selects a review and (re)loads its diff asynchronously, then
+// subscribes to its review channel so agent replies mirror live.
 func (m *Model) open(id string) {
 	m.openID = id
 	m.fileCur = 0
 	m.cursor, m.scroll = 0, 0
 	m.loadDiff()
+	m.subscribeBus(id)
+}
+
+// subscribeBus pumps the review's bus channel into the event loop.
+func (m *Model) subscribeBus(id string) {
+	if m.cancelBus != nil {
+		m.cancelBus()
+		m.cancelBus = nil
+	}
+	if m.bus == nil || m.svc == nil {
+		return
+	}
+	r, ok := m.svc.Store().Get(id)
+	if !ok || r.Channel == "" {
+		return
+	}
+	ch, cancel := m.bus.Subscribe(r.Channel)
+	m.cancelBus = cancel
+	go func() {
+		for msg := range ch {
+			m.send(revEvent{kind: evBus, msg: msg})
+		}
+	}()
 }
 
 // loadDiff fetches and parses the review patch asynchronously.
@@ -373,6 +428,16 @@ func firstMember(m *Model) string {
 	return ""
 }
 
+func firstAgent(m *Model) string {
+	if m.crew == nil {
+		return ""
+	}
+	if ids := m.crew.AgentIDs(); len(ids) > 0 {
+		return ids[0]
+	}
+	return ""
+}
+
 func (m *Model) filesKey(key string) bool {
 	r, ok := m.openReview()
 	c := &m.cursors[secFiles]
@@ -400,6 +465,18 @@ func (m *Model) filesKey(key string) bool {
 			if err := m.svc.Store().ToggleViewed(r.ID, m.files[*c].DisplayPath()); err != nil {
 				m.opErr = err.Error()
 			}
+			return true
+		}
+	case "A":
+		if ok && len(m.files) > 0 {
+			if !m.canAgent() {
+				m.opErr = "agent crew unavailable — no bus or runtime"
+				return true
+			}
+			m.form = formState{kind: fAgentReview, fields: []field{
+				textField("agent ", firstAgent(m)),
+				textField("files ", ". (comma-separated, . = all)"),
+			}}
 			return true
 		}
 	}

@@ -15,6 +15,7 @@ const (
 	fNewReview
 	fDiscardConfirm
 	fRemoveConfirm
+	fAgentReview
 )
 
 // field is one modal input: free text or a cycling toggle.
@@ -126,38 +127,71 @@ func (m *Model) formKey(key string) bool {
 
 func (m *Model) submitForm() {
 	f := &m.form
-	if f.kind != fNewReview {
+	switch f.kind {
+	case fAgentReview:
+		agent := strings.TrimSpace(strings.TrimPrefix(f.fields[0].text(), "@"))
+		files := csvList(f.fields[1].text())
+		if agent == "" {
+			f.err = "agent id required"
+			return
+		}
+		known := false
+		for _, id := range m.crew.AgentIDs() {
+			if id == agent {
+				known = true
+				break
+			}
+		}
+		if !known {
+			f.err = "unknown agent " + agent
+			return
+		}
+		m.closeForm()
+		m.requestAgentReview(agent, files)
 		return
-	}
-	member := strings.TrimSpace(f.fields[0].text())
-	kind := review.Kind(f.fields[1].toggleValue())
-	base := strings.TrimSpace(f.fields[2].text())
-	ref := strings.TrimSpace(f.fields[3].text())
+	case fNewReview:
+		member := strings.TrimSpace(f.fields[0].text())
+		kind := review.Kind(f.fields[1].toggleValue())
+		base := strings.TrimSpace(f.fields[2].text())
+		ref := strings.TrimSpace(f.fields[3].text())
 
-	if member == "" {
-		f.err = "member required"
-		return
-	}
-	pr := 0
-	switch kind {
-	case review.KindPR:
-		n, err := strconv.Atoi(strings.TrimPrefix(ref, "#"))
-		if err != nil || n <= 0 {
-			f.err = "PR number required in head/# field"
+		if member == "" {
+			f.err = "member required"
 			return
 		}
-		pr = n
-	default:
-		if ref == "" {
-			f.err = "head branch or sha required"
+		pr := 0
+		switch kind {
+		case review.KindPR:
+			n, err := strconv.Atoi(strings.TrimPrefix(ref, "#"))
+			if err != nil || n <= 0 {
+				f.err = "PR number required in head/# field"
+				return
+			}
+			pr = n
+		default:
+			if ref == "" {
+				f.err = "head branch or sha required"
+				return
+			}
+		}
+		if !review.ValidKind(kind) {
+			f.err = "bad kind"
 			return
 		}
+		m.startReview(member, kind, base, ref, pr)
 	}
-	if !review.ValidKind(kind) {
-		f.err = "bad kind"
-		return
+}
+
+// csvList splits a comma-separated field into trimmed entries; the "."
+// sentinel passes through untouched (means "all files").
+func csvList(s string) []string {
+	var out []string
+	for _, part := range strings.Split(s, ",") {
+		if p := strings.TrimSpace(part); p != "" {
+			out = append(out, p)
+		}
 	}
-	m.startReview(member, kind, base, ref, pr)
+	return out
 }
 
 func (m *Model) submitConfirm() {
