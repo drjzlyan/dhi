@@ -1,21 +1,28 @@
 # STATE — current position
 
-Updated: 2026-08-26 (session: M5 CLOSED — Reviewer shipped P1–P6)
+Updated: 2026-08-26 (session 2: M5 CLOSED + M5.x PR round-trip shipped)
 
 ## Where we are
 
-**M5 COMPLETE (all six phases, e0f49ee → 47cc9ba; `make verify` green).**
-The Reviewer is the full GitHub-grade floor per F-005: REVIEWS · FILES ·
-DIFF with both unified and side-by-side rendering, line-anchored comment
-threads (draft/submit lifecycle), agent invites + complete-agent-review
-through the bus/runtime seams, and all three completion flows (gh post,
-fixer dispatch, editor handoff). Acceptance criteria covered by tests:
-MockProvider invite→reply-in-thread e2e, fixer card binding the same
-worktree, scripted-key flows over fixture repos.
+**M5 COMPLETE plus the M5.x PR round-trip addendum (e0f49ee → f6f2ff9;
+`make verify` green).** On top of the full Reviewer floor you can now:
+create a PR straight from a review/task worktree (`C` in Reviewer, `p`
+on TASKS cards; dirty trees refused visibly; push rides go-git with
+`gh auth token` BasicAuth), and pull GitHub review/issue comments into
+review threads (reply-chain mapping, RemoteID-deduped, auto-import on
+open + `R`). Next milestone: **M6 Ideator full (F-004)**.
 
-Next milestone: **M6 Ideator full (F-004)** — sessions, artifact tree,
-approve/reject loop. Its inputs (roster, bus, runtime) all exist as
-narrow interfaces already consumed by editor chat + reviewer crew seam.
+## Gotchas added this session
+
+1. go-git Push needs a REGISTERED remote (CreateRemote first in tests;
+   member clones always have origin).
+2. Test fakes must fully implement seams — an interface-satisfying stub
+   returning zero-value PRMeta silently broke link-back assertions.
+3. Surface fixtures now use real git repos w/ bare local origins so
+   push flows run hermetically offline.
+4. gh accepts full remote URLs as --repo scope (no OWNER/REPO parse).
+5. When swapping m.svc in surface tests mid-flow, remember dependent
+   state (diffFn/tokenFn) lives per-service instance.
 
 ## Just finished (P1–P3)
 
@@ -52,7 +59,7 @@ narrow interfaces already consumed by editor chat + reviewer crew seam.
   editor.OpenPaths (new exported buffer opener) + app.OpenInEditor
   (interface assertion + focus switch).
 
-## Gotchas added this session
+## Gotchas from the M5 build (carried)
 
 1. Go closure aliasing: read form fields BEFORE closeForm() resets them
    (submitForm fAgentReview panic).

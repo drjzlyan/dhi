@@ -261,6 +261,23 @@ never dirties working copies.
       tasks.RecordChangeSet (`F`), open-in-editor handoff
       (`editor.OpenPaths` + `app.OpenInEditor`, key `e`); doctor gh check
 
+### M5.x — PR round-trip addendum ✅ (2026-08-26)
+
+- [x] Push + PR creation (`gitcore.Push/IsDirty`, `GH.CreatePR`,
+      `Service.CreatePRForBranch/CreatePR`): pushes the worktree branch
+      (go-git network path; `gh auth token` → BasicAuth) and opens a PR,
+      refusing visibly on dirty trees; review cards link back
+      (`Kind=pr`, `PRNumber`, `PRURL`) which lights up diff view, invites
+      and posting. Reviewer key `C`; task cards gain `p` with additive
+      `pr_number`/`pr_url` fields shown in card detail
+- [x] Comment import + sync (`GH.ReviewComments/IssueComments`,
+      `Service.ImportComments`): reply-chains map to threads anchored by
+      file/line/side (outdated positions → `(remote)` file-level);
+      append-only merge keyed by new `Comment.RemoteID` /
+      `Thread.RemoteRoot` — local drafts never touched. Auto-import on
+      opening a PR-backed review + manual `R`; FILES header badge shows
+      `N remote · synced HH:MM`
+
 ## M6 — **Ideator full** (F-004)
 
 - [ ] Sessions: invited agent set + thread + artifact folder
