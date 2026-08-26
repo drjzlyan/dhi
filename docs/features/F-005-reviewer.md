@@ -1,6 +1,6 @@
 # F-005: Reviewer surface — GitHub-grade review with agent crew
 
-Status: planned · Milestone: M5
+Status: complete (M5, 2026-08-26) · Milestone: M5
 
 ## Summary
 

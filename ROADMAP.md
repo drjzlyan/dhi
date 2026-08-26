@@ -226,12 +226,40 @@ rendering, Settings-section integration of standards editing.
       editor chat + channels floor consume only these narrow
       interfaces, so M5 Reviewer / M6 Ideator plug in without churn
 
-## M5 — **Reviewer full** (F-005)
+## M5 — **Reviewer full** (F-005) ✅ (2026-08-26)
 
-- [ ] PR/worktree input → auto review-worktree; diff UI (files, hunks, side-by-side)
-- [ ] Line/hunk comment threads; pending-review batching; viewed marks
-- [ ] Agent invites per-line/thread + complete-agent-review mode
-- [ ] Completion: post to PR via `gh` | dispatch fixing agent | open-in-editor handoff
+Phased delivery P1–P6; each phase landed on green `make verify`.
+Design decisions: PR objects fetched via go-git (`refs/pull/N/head` →
+`refs/dhi/pr/N`) while metadata/diff/posting ride the host `gh` CLI
+(doctor warns when absent); every review gets a dedicated worktree at
+`.dhi/reviews/<id>/<member>` on a `review/<id>` branch so reviewing
+never dirties working copies.
+
+- [x] Diff engine (`internal/gitdiff`): unified-diff parser →
+      GitHub-style file/hunk/line model + side-by-side pairing;
+      golden fixtures; live-git round-trip validated
+- [x] Review domain (`internal/review`): targets branch|worktree|pr,
+      injectable worktree seam (gitcore wiring in cmd), gh seam,
+      go-git Fetch/RemoteURL/Branches additions, TOML cards under
+      `.dhi/reviews/` (threads, comments, viewed marks, pending batch,
+      bus-thread correlation), orchestration service with raw-patch +
+      parsed-diff production
+- [x] Reviewer surface replacing the placeholder: REVIEWS · FILES ·
+      DIFF panes, BOTH layouts (unified/side-by-side toggle `\`,
+      auto-stacked columns, tab-expanded width math), hunk/file jumps,
+      viewed marks, new-review modal (branch/worktree/PR)
+- [x] Comments UI: line/hunk/file-level composer (`c`), thread
+      drill-down (`t`) with reply/edit/delete/resolve, pending batch
+      submit (`s`); drafts mutable, submitted immutable
+- [x] Agent participation: @mentions dispatch through bus+runtime and
+      replies mirror into threads live (MockProvider e2e per F-005);
+      complete-agent-review mode (`A`) posts the diff to the review
+      channel for a full pass; unmatched replies become file-level
+      threads authored by the agent
+- [x] Completion flows: post to PR via gh with agent attribution (`P`),
+      dispatch fixer task bound to the SAME review worktree via new
+      tasks.RecordChangeSet (`F`), open-in-editor handoff
+      (`editor.OpenPaths` + `app.OpenInEditor`, key `e`); doctor gh check
 
 ## M6 — **Ideator full** (F-004)
 
