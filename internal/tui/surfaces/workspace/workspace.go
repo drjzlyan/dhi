@@ -22,6 +22,7 @@ import (
 	profiface "github.com/drjzlyan/dhi/internal/agentkit/profile"
 	"github.com/drjzlyan/dhi/internal/agentkit/standards"
 	"github.com/drjzlyan/dhi/internal/gitcore"
+	"github.com/drjzlyan/dhi/internal/review"
 	"github.com/drjzlyan/dhi/internal/tasks"
 	"github.com/drjzlyan/dhi/internal/tui/surfaces"
 	"github.com/drjzlyan/dhi/internal/workspace"
@@ -31,6 +32,7 @@ import (
 const (
 	cloneTimeout   = 5 * time.Minute
 	installTimeout = 5 * time.Minute
+	taskPRTimeout  = 5 * time.Minute
 )
 
 // sectionID enumerates the switchable panes.
@@ -86,6 +88,7 @@ type Model struct {
 
 	taskStore *tasks.Store
 	roster    profiface.Roster
+	reviewSvc *review.Service
 
 	inspectOpen bool
 
@@ -97,25 +100,28 @@ type Model struct {
 var _ surfaces.Surface = (*Model)(nil)
 
 type wsEvent struct {
-	kind       uint8 // evPing | evCloneDone | evInstallDone
+	kind       uint8 // evPing | evCloneDone | evInstallDone | evTaskPRDone
 	err        string
 	packName   string
 	packAgents []string
+	prNum      int
 }
 
 const (
 	evPing uint8 = iota
 	evCloneDone
 	evInstallDone
+	evTaskPRDone
 )
 
 // Deps carries the services this surface operates. Zero fields degrade
 // their sections to visible "unavailable" rows rather than errors.
 type Deps struct {
-	Bus     *bus.Bus
-	Runtime turnHandler
-	Tasks   *tasks.Store
-	Roster  profiface.Roster
+	Bus       *bus.Bus
+	Runtime   turnHandler
+	Tasks     *tasks.Store
+	Roster    profiface.Roster
+	ReviewSvc *review.Service // nil = task PR creation unavailable
 }
 
 // New returns the workspace model. A nil ws renders the not-a-workspace
@@ -138,6 +144,7 @@ func New(version string, ws *workspace.Workspace, d Deps) *Model {
 		}
 		m.taskStore = d.Tasks
 		m.roster = d.Roster
+		m.reviewSvc = d.ReviewSvc
 		if d.Bus != nil {
 			m.pane = newChatPane(d.Bus, d.Runtime, m.org)
 		}
@@ -260,6 +267,13 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 					m.sec = secPacks
 				}
 			}
+		case evTaskPRDone:
+			if msg.err != "" {
+				m.flashErr(msg.err)
+			} else {
+				m.form = formState{flash: "PR #" + itoa(msg.prNum) +
+					" created for " + msg.packName}
+			}
 		}
 		return m.listen()
 	}
@@ -290,6 +304,7 @@ const (
 	fTaskAttach
 	fTaskThread
 	fTaskRemoveConfirm
+	fTaskPR
 )
 
 type field struct {
@@ -622,6 +637,23 @@ func (m *Model) tasksKey(key string) bool {
 	case "x", "d":
 		if tk := sel(); tk != nil {
 			m.form = formState{kind: fTaskRemoveConfirm, orig: tk.Slug}
+			return true
+		}
+	case "p":
+		if tk := sel(); tk != nil {
+			switch {
+			case m.reviewSvc == nil:
+				m.flashErr("review service unavailable — cannot create PRs")
+			case len(tk.ChangeSets) == 0:
+				m.flashErr("card has no worktree — attach one first (w)")
+			default:
+				base := "main"
+				m.form = formState{kind: fTaskPR, orig: tk.Slug,
+					fields: []field{
+						textField("title ", tk.Title),
+						textField("base  ", base),
+					}}
+			}
 			return true
 		}
 	}
@@ -1067,6 +1099,37 @@ func (m *Model) submitForm() {
 			return
 		}
 		m.closeForm()
+	case fTaskPR:
+		title := strings.TrimSpace(f.fields[0].text())
+		base := strings.TrimSpace(f.fields[1].text())
+		if title == "" || base == "" {
+			f.err = "title and base required"
+			return
+		}
+		slug := f.orig
+		tk, ok := m.taskStore.Get(slug)
+		if !ok || len(tk.ChangeSets) == 0 {
+			f.err = "card lost its worktree"
+			return
+		}
+		m.closeForm()
+		m.form = formState{kind: fNone, flash: "creating PR…"}
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), taskPRTimeout)
+			defer cancel()
+			cs := tk.ChangeSets[0]
+			meta, err := m.reviewSvc.CreatePRForBranch(ctx,
+				cs.Member, cs.Branch, title, base)
+			ev := wsEvent{kind: evTaskPRDone, packName: slug}
+			if err != nil {
+				ev.err = err.Error()
+			} else {
+				ev.prNum = meta.Number
+				_ = m.taskStore.SetPR(slug, meta.Number, meta.URL)
+			}
+			m.send(ev)
+		}()
+		return
 	case fStdPreviewPrompt:
 		id := strings.TrimSpace(f.fields[0].text())
 		block := standards.Resolve(m.ws.Root, id, m.teamLookup())

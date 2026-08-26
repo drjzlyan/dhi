@@ -274,3 +274,18 @@ func TestConcurrentMutations(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+func TestSetPRPersistence(t *testing.T) {
+	s, ws := setupStore(t)
+	if err := s.Create("feat-1", "Do it", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetPR("feat-1", 9, "https://github.com/acme/api/pull/9"); err != nil {
+		t.Fatalf("SetPR: %v", err)
+	}
+	reloaded, _ := Open(ws)
+	got, ok := reloaded.Get("feat-1")
+	if !ok || got.PRNumber != 9 || got.PRURL == "" {
+		t.Fatalf("reloaded = %+v", got)
+	}
+}

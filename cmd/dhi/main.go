@@ -118,10 +118,11 @@ func runTUI() {
 	var appRef *app.App
 	a := app.New(version.Version,
 		wsview.New(version.Version, ws, wsview.Deps{
-			Bus:     messageBus,
-			Runtime: agentRT,
-			Tasks:   taskStore,
-			Roster:  agentRT,
+			Bus:       messageBus,
+			Runtime:   agentRT,
+			Tasks:     taskStore,
+			Roster:    agentRT,
+			ReviewSvc: reviewSvc,
 		}),
 		editor.New(version.Version, ws, edOpts...),
 		placeholder.New("ideator", "Ideator", "M6",

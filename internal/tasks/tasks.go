@@ -75,6 +75,9 @@ type Task struct {
 
 	ChangeSets []ChangeSet
 
+	PRNumber int    // GitHub PR created from this card's branch (0 = none)
+	PRURL    string // PR URL once created
+
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
@@ -89,6 +92,8 @@ type file struct {
 	ThreadChannel string      `toml:"thread_channel"`
 	ThreadID      int64       `toml:"thread_id"`
 	ChangeSets    []ChangeSet `toml:"changeset"`
+	PRNumber      int         `toml:"pr_number,omitempty"`
+	PRURL         string      `toml:"pr_url,omitempty"`
 	CreatedAt     time.Time   `toml:"created_at"`
 	UpdatedAt     time.Time   `toml:"updated_at"`
 }
@@ -204,6 +209,8 @@ func parseCard(path, slug string) (Task, error) {
 		ThreadChannel: f.ThreadChannel,
 		ThreadID:      f.ThreadID,
 		ChangeSets:    f.ChangeSets,
+		PRNumber:      f.PRNumber,
+		PRURL:         f.PRURL,
 		CreatedAt:     f.CreatedAt,
 		UpdatedAt:     f.UpdatedAt,
 	}, nil
@@ -360,6 +367,14 @@ func (s *Store) Attach(slug, member, branch, startpoint string) error {
 	})
 }
 
+// SetPR records the GitHub PR created from this card's branch.
+func (s *Store) SetPR(slug string, number int, url string) error {
+	if slug == "" {
+		return fmt.Errorf("tasks: slug required")
+	}
+	return s.mutate(slug, func(t *Task) { t.PRNumber, t.PRURL = number, url })
+}
+
 // RecordChangeSet persists a changeset record for an externally-created
 // worktree (e.g. the Reviewer binding its own worktree to a fix task).
 // Re-recording the same member replaces the entry, like Attach.
@@ -464,6 +479,7 @@ func writeCard(path string, t Task) error {
 		Schema: SchemaVersion, Title: t.Title, Status: t.Status,
 		Assignee: t.Assignee, Team: t.Team,
 		ThreadChannel: t.ThreadChannel, ThreadID: t.ThreadID,
+		PRNumber: t.PRNumber, PRURL: t.PRURL,
 		ChangeSets: t.ChangeSets,
 		CreatedAt:  t.CreatedAt, UpdatedAt: t.UpdatedAt,
 	}

@@ -438,6 +438,13 @@ func taskDetail(tk tasks.Task) string {
 	if tk.ThreadChannel != "" {
 		thread = fmt.Sprintf("thread %s", threadRef(tk.ThreadChannel, tk.ThreadID))
 	}
+	if tk.PRNumber > 0 {
+		pr := fmt.Sprintf("PR #%d", tk.PRNumber)
+		if thread != "" {
+			pr += " "
+		}
+		thread = strings.TrimSpace(pr + thread)
+	}
 	if len(parts) > 0 {
 		thread = strings.TrimSpace(strings.Join([]string{thread, "·"}, " "))
 	}
@@ -714,6 +721,8 @@ func defaultHint(k modalKind) string {
 		return "id slug · model required · enter create"
 	case fTeamEdit:
 		return "lead: you or agent id · enter save"
+	case fTaskPR:
+		return "pushes the card's branch and opens a PR · enter create"
 	}
 	return "tab next field · enter save · esc cancel"
 }
@@ -791,6 +800,8 @@ func modalTitle(k modalKind) string {
 		return "bind thread"
 	case fTaskRemoveConfirm:
 		return "remove task"
+	case fTaskPR:
+		return "create PR"
 	}
 	return ""
 }
