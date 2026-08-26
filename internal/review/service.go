@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -70,6 +71,101 @@ func (s *Service) CanDiff() bool { return s.diffFn != nil }
 
 // HasGH reports whether PR inputs and posting can work.
 func (s *Service) HasGH() bool { return s.gh != nil && s.gh.Available() }
+
+// ImportComments pulls the PR's review + issue comments through gh and
+// merges them into the review's threads append-only: existing RemoteIDs
+// are skipped, local drafts are never touched. Returns how many comments
+// were newly mirrored.
+func (s *Service) ImportComments(ctx context.Context, r Review) (int, error) {
+	if !s.HasGH() {
+		return 0, fmt.Errorf("review: gh unavailable — cannot import comments")
+	}
+	if r.Target.PRNumber <= 0 {
+		return 0, fmt.Errorf("review: %s does not back a PR", r.ID)
+	}
+	mem, ok := s.ws.Member(r.Target.Member)
+	if !ok {
+		return 0, fmt.Errorf("review: unknown member %q", r.Target.Member)
+	}
+	repo := s.remoteURL(mem.Path)
+	if repo == "" {
+		return 0, fmt.Errorf("review: member %q has no origin remote", r.Target.Member)
+	}
+	num := fmt.Sprint(r.Target.PRNumber)
+	rcs, err := s.gh.ReviewComments(ctx, repo, num)
+	if err != nil {
+		return 0, err
+	}
+	ics, err := s.gh.IssueComments(ctx, repo, num)
+	if err != nil {
+		return 0, err
+	}
+	all := append(append([]RemoteComment{}, rcs...), ics...)
+	sort.Slice(all, func(i, j int) bool { return all[i].CreatedAt.Before(all[j].CreatedAt) })
+
+	cur, ok := s.store.Get(r.ID)
+	if !ok {
+		return 0, fmt.Errorf("review: unknown review %q", r.ID)
+	}
+	seen := map[int64]bool{}
+	threadByRoot := map[int64]int64{} // remote root → local thread id
+	for _, t := range cur.Threads {
+		if t.RemoteRoot != 0 {
+			threadByRoot[t.RemoteRoot] = t.ID
+		}
+		for _, c := range t.Comments {
+			if c.RemoteID != 0 {
+				seen[c.RemoteID] = true
+			}
+		}
+	}
+
+	added := 0
+	ensureThread := func(root int64, rc RemoteComment) (int64, error) {
+		if id, okT := threadByRoot[root]; okT {
+			return id, nil
+		}
+		file, line, side := "(remote)", 0, SideNew
+		if rc.Path != "" {
+			file = rc.Path
+			side = SideNew
+			line = rc.Line
+			if rc.Side == "LEFT" && rc.OrigLine > 0 {
+				line, side = rc.OrigLine, SideOld
+			}
+			if line == 0 && rc.OrigLine > 0 {
+				line, side = rc.OrigLine, SideOld
+			}
+		}
+		id, err := s.store.AddThread(r.ID, Thread{
+			File: file, Line: line, Side: side, RemoteRoot: root,
+		})
+		if err != nil {
+			return 0, err
+		}
+		threadByRoot[root] = id
+		return id, nil
+	}
+
+	for _, rc := range all {
+		if seen[rc.ID] || rc.Author == "" || strings.TrimSpace(rc.Body) == "" {
+			continue
+		}
+		tid, terr := ensureThread(rc.RootID, rc)
+		if terr != nil {
+			return added, terr
+		}
+		if aerr := s.store.AppendComment(r.ID, tid, Comment{
+			Author: rc.Author, Text: rc.Body,
+			At: rc.CreatedAt, RemoteID: rc.ID,
+		}); aerr != nil {
+			return added, aerr
+		}
+		seen[rc.ID] = true
+		added++
+	}
+	return added, nil
+}
 
 // PostComment publishes body on the PR backing this review through gh.
 func (s *Service) PostComment(ctx context.Context, r Review, body string) error {

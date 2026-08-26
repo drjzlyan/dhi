@@ -77,25 +77,28 @@ const (
 )
 
 // Comment is one authored note in a thread. Pending comments form the
-// unsubmitted batch; Submit flips them all at once.
+// unsubmitted batch; Submit flips them all at once. RemoteID links an
+// inbound GitHub comment to its source (0 = authored locally).
 type Comment struct {
-	Author  string
-	Text    string
-	At      time.Time
-	Pending bool
+	Author   string
+	Text     string
+	At       time.Time
+	Pending  bool
+	RemoteID int64
 }
 
 // Thread is a discussion rooted at one file line (Line 0 = file level).
-// BusThread links the thread to its conversation root on the message bus
-// so agent replies can be mirrored back (0 = not yet invited).
+// BusThread links the thread to its conversation root on the message bus;
+// RemoteRoot to the GitHub review-comment thread it mirrors (0 = none).
 type Thread struct {
-	ID        int64
-	File      string // display path (new side)
-	Line      int    // new-side 1-based line; 0 = whole file
-	Side      Side
-	Resolved  bool
-	BusThread int64
-	Comments  []Comment
+	ID         int64
+	File       string // display path (new side)
+	Line       int    // new-side 1-based line; 0 = whole file
+	Side       Side
+	Resolved   bool
+	BusThread  int64
+	RemoteRoot int64
+	Comments   []Comment
 }
 
 // Review is one session card.
@@ -152,20 +155,22 @@ type file struct {
 }
 
 type threadFile struct {
-	ID        int64         `toml:"id"`
-	File      string        `toml:"file"`
-	Line      int           `toml:"line"`
-	Side      Side          `toml:"side"`
-	Resolved  bool          `toml:"resolved"`
-	BusThread int64         `toml:"bus_thread,omitempty"`
-	Comments  []commentFile `toml:"comment"`
+	ID         int64         `toml:"id"`
+	File       string        `toml:"file"`
+	Line       int           `toml:"line"`
+	Side       Side          `toml:"side"`
+	Resolved   bool          `toml:"resolved"`
+	BusThread  int64         `toml:"bus_thread,omitempty"`
+	RemoteRoot int64         `toml:"remote_root,omitempty"`
+	Comments   []commentFile `toml:"comment"`
 }
 
 type commentFile struct {
-	Author  string    `toml:"author"`
-	Text    string    `toml:"text"`
-	At      time.Time `toml:"at"`
-	Pending bool      `toml:"pending"`
+	Author   string    `toml:"author"`
+	Text     string    `toml:"text"`
+	At       time.Time `toml:"at"`
+	Pending  bool      `toml:"pending"`
+	RemoteID int64     `toml:"remote_id,omitempty"`
 }
 
 // WorktreeFn creates the dedicated review worktree for one member and
@@ -288,9 +293,9 @@ func parseCard(path, id string) (Review, error) {
 	}
 	for _, tf := range f.Threads {
 		t := Thread{ID: tf.ID, File: tf.File, Line: tf.Line, Side: tf.Side,
-			Resolved: tf.Resolved, BusThread: tf.BusThread}
+			Resolved: tf.Resolved, BusThread: tf.BusThread, RemoteRoot: tf.RemoteRoot}
 		for _, cf := range tf.Comments {
-			t.Comments = append(t.Comments, Comment{Author: cf.Author, Text: cf.Text, At: cf.At, Pending: cf.Pending})
+			t.Comments = append(t.Comments, Comment{Author: cf.Author, Text: cf.Text, At: cf.At, Pending: cf.Pending, RemoteID: cf.RemoteID})
 		}
 		r.Threads = append(r.Threads, t)
 	}
@@ -612,9 +617,9 @@ func writeCard(path string, r Review) error {
 	sort.Strings(f.Viewed)
 	for _, t := range r.Threads {
 		tf := threadFile{ID: t.ID, File: t.File, Line: t.Line, Side: t.Side,
-			Resolved: t.Resolved, BusThread: t.BusThread}
+			Resolved: t.Resolved, BusThread: t.BusThread, RemoteRoot: t.RemoteRoot}
 		for _, c := range t.Comments {
-			tf.Comments = append(tf.Comments, commentFile{Author: c.Author, Text: c.Text, At: c.At, Pending: c.Pending})
+			tf.Comments = append(tf.Comments, commentFile{Author: c.Author, Text: c.Text, At: c.At, Pending: c.Pending, RemoteID: c.RemoteID})
 		}
 		f.Threads = append(f.Threads, tf)
 	}

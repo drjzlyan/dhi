@@ -7,6 +7,7 @@ import (
 
 	"charm.land/lipgloss/v2"
 
+	"github.com/drjzlyan/dhi/internal/review"
 	"github.com/drjzlyan/dhi/internal/tui/branding"
 	"github.com/drjzlyan/dhi/internal/tui/kit"
 	"github.com/drjzlyan/dhi/internal/tui/theme"
@@ -257,6 +258,12 @@ func (m *Model) filesBody(w int) string {
 	head := fmt.Sprintf("%s  %s...%s", r.ID, r.Target.Base, shortSHA(r.Target.Head))
 	if r.Target.PRNumber > 0 {
 		head += fmt.Sprintf(" · PR #%d", r.Target.PRNumber)
+		if n := remoteCount(r); n > 0 {
+			head += fmt.Sprintf(" · %d remote", n)
+		}
+		if !m.syncedAt.IsZero() {
+			head += " · synced " + m.syncedAt.Format("15:04")
+		}
 	}
 	out = append(out, theme.TextDim().Render(head))
 	if m.busy && m.diffFor == "" {
@@ -298,6 +305,19 @@ func cursorGlyph(active bool) string {
 		return theme.GlyphCursor + " "
 	}
 	return "  "
+}
+
+// remoteCount counts comments mirrored from GitHub.
+func remoteCount(r review.Review) int {
+	n := 0
+	for _, t := range r.Threads {
+		for _, c := range t.Comments {
+			if c.RemoteID != 0 {
+				n++
+			}
+		}
+	}
+	return n
 }
 
 func shortSHA(s string) string {

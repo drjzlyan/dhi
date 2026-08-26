@@ -19,9 +19,11 @@ func timeNow() time.Time { return time.Now() }
 
 // ghFake records the posted comment; implements review.GH.
 type ghFake struct {
-	body    string
-	err     error
-	created []string
+	body           string
+	err            error
+	created        []string
+	reviewComments []review.RemoteComment
+	issueComments  []review.RemoteComment
 }
 
 func (g *ghFake) Available() bool                           { return true }
@@ -43,10 +45,10 @@ func (g *ghFake) CreatePR(_ context.Context, _, title, _, base, head string) (re
 		URL: "https://github.com/acme/api/pull/7", BaseRef: base}, nil
 }
 func (g *ghFake) ReviewComments(context.Context, string, string) ([]review.RemoteComment, error) {
-	return nil, nil
+	return g.reviewComments, nil
 }
 func (g *ghFake) IssueComments(context.Context, string, string) ([]review.RemoteComment, error) {
-	return nil, nil
+	return g.issueComments, nil
 }
 
 // prFixture builds an open submitted PR review with cached files and an
@@ -260,4 +262,62 @@ func seedBranch(t *testing.T, ws *workspace.Workspace, branch string) string {
 		t.Fatal(err)
 	}
 	return h.Hash().String()
+}
+
+func TestRemoteSyncFlow(t *testing.T) {
+	m, ws, st, _ := newSurface(t)
+	fgh := &ghFake{}
+	fgh.reviewComments = []review.RemoteComment{
+		{ID: 30, RootID: 30, Path: "main.go", Line: 1, Side: "RIGHT",
+			Body: "upstream note", Author: "amy"},
+	}
+	m.svc = review.NewService(ws, st, nil, fgh)
+
+	r := review.Review{
+		ID: "api-pr-42", Title: "Add feature",
+		Target:    review.Target{Kind: review.KindPR, Member: "api", Base: "main", Head: "abc1234", PRNumber: 42},
+		Status:    review.Pending,
+		Viewed:    map[string]bool{},
+		Channel:   "#api-pr-42",
+		WorkRel:   ".dhi/reviews/api-pr-42/api",
+		CreatedAt: timeNow(), UpdatedAt: timeNow(),
+	}
+	if err := st.Create(r); err != nil {
+		t.Fatal(err)
+	}
+
+	// opening a PR-backed review auto-imports in the background
+	m.open(r.ID)
+	msg := pumpCmd(t, m.listen())
+	ev, ok := msg.(revEvent)
+	if !ok || ev.kind != evImported || ev.err != "" || ev.n != 1 {
+		t.Fatalf("event = %+v", msg)
+	}
+	_ = m.Update(msg)
+
+	got, _ := st.Get(r.ID)
+	if len(got.Threads) != 1 || got.Threads[0].Comments[0].Text != "upstream note" ||
+		got.Threads[0].Comments[0].RemoteID != 30 {
+		t.Fatalf("threads = %+v", got.Threads)
+	}
+	if m.syncedAt.IsZero() {
+		t.Error("sync timestamp not set")
+	}
+
+	// FILES header shows the remote badge
+	m.HandleKey("]")
+	out := ansiStrip(m.View())
+	if !strings.Contains(out, "1 remote") || !strings.Contains(out, "synced ") {
+		t.Errorf("badge missing:\n%s", out)
+	}
+
+	// R re-imports (no-op now) without error
+	if !m.HandleKey("R") {
+		t.Fatal("R not consumed")
+	}
+	msg2 := pumpCmd(t, m.listen())
+	_ = m.Update(msg2)
+	if m.opErr != "" {
+		t.Fatalf("opErr = %q", m.opErr)
+	}
 }

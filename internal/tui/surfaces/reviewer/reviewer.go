@@ -89,6 +89,7 @@ type Model struct {
 	threadOpen bool      // DIFF replaced by the thread view
 	threadFile string
 	threadCur  int
+	syncedAt   time.Time // last successful remote-comment import
 
 	bus       *bus.Bus
 	crew      crew
@@ -103,11 +104,11 @@ type Model struct {
 var _ surfaces.Surface = (*Model)(nil)
 
 type revEvent struct {
-	kind uint8 // evPing|evStartDone|evDiffDone|evDiscardDone|evBus|evAgentDone|evPosted
+	kind uint8 // ...|evImported
 	err  string
 	id   string
 	msg  bus.Message
-	n    int // PR number for evPosted
+	n    int // PR number for evPosted, added-comment count for evImported
 }
 
 func itoa(n int) string { return strconv.Itoa(n) }
@@ -121,6 +122,7 @@ const (
 	evAgentDone
 	evPosted
 	evPRCreated
+	evImported
 )
 
 // Deps carries the services this surface operates. A nil Service degrades
@@ -253,7 +255,17 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 				m.closeFormWithFlash("PR #" + itoa(ev.n) + " created")
 				if ev.id == m.openID {
 					m.loadDiff() // target flipped to PR: refresh view model
+					m.refreshRemote()
 				}
+			}
+		case evImported:
+			if ev.err != "" {
+				m.opErr = ev.err
+			} else if ev.n > 0 && ev.id == m.openID {
+				m.closeFormWithFlash("+" + itoa(ev.n) + " remote comment(s)")
+				m.syncedAt = time.Now()
+			} else if ev.id == m.openID {
+				m.syncedAt = time.Now()
 			}
 		}
 		return m.listen()
@@ -278,13 +290,29 @@ func (m *Model) openReview() (review.Review, bool) {
 }
 
 // open selects a review and (re)loads its diff asynchronously, then
-// subscribes to its review channel so agent replies mirror live.
+// subscribes to its review channel so agent replies mirror live. PR-backed
+// reviews also pull remote GitHub comments in the background.
 func (m *Model) open(id string) {
 	m.openID = id
 	m.fileCur = 0
 	m.cursor, m.scroll = 0, 0
 	m.loadDiff()
 	m.subscribeBus(id)
+	m.refreshRemote()
+}
+
+// refreshRemote re-imports PR comments through gh asynchronously.
+func (m *Model) refreshRemote() {
+	r, ok := m.openReview()
+	if !ok || m.svc == nil || !m.svc.HasGH() || r.Target.PRNumber <= 0 {
+		return
+	}
+	go func(id string) {
+		ctx, cancel := context.WithTimeout(context.Background(), opTimeout)
+		defer cancel()
+		n, err := m.svc.ImportComments(ctx, r)
+		m.send(revEvent{kind: evImported, id: id, n: n, err: errString(err)})
+	}(r.ID)
 }
 
 // subscribeBus pumps the review's bus channel into the event loop.
@@ -361,6 +389,12 @@ func (m *Model) sectionKey(key string) bool {
 	case "]":
 		m.sec = (m.sec + 1) % secCount
 		return true
+	case "R":
+		if r, ok := m.openReview(); ok && r.Target.PRNumber > 0 {
+			m.refreshRemote()
+			return true
+		}
+		return false
 	case "esc":
 		if m.sec != secReviews {
 			m.sec = secReviews

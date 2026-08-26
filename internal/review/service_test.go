@@ -20,10 +20,12 @@ import (
 
 // fakeGH records calls and returns canned data.
 type fakeGH struct {
-	meta    PRMeta
-	diff    string
-	prCalls int
-	created []string // repo|title|base|head
+	meta           PRMeta
+	diff           string
+	prCalls        int
+	created        []string // repo|title|base|head
+	reviewComments []RemoteComment
+	issueComments  []RemoteComment
 }
 
 func (f *fakeGH) Available() bool { return true }
@@ -43,10 +45,10 @@ func (f *fakeGH) CreatePR(_ context.Context, repo, title, _, base, head string) 
 	return PRMeta{Number: 7, Title: title, URL: "https://github.com/acme/api/pull/7", BaseRef: base}, nil
 }
 func (f *fakeGH) ReviewComments(context.Context, string, string) ([]RemoteComment, error) {
-	return nil, nil
+	return f.reviewComments, nil
 }
 func (f *fakeGH) IssueComments(context.Context, string, string) ([]RemoteComment, error) {
-	return nil, nil
+	return f.issueComments, nil
 }
 
 // fixture builds a workspace whose member "api" is a clone of a source
@@ -460,5 +462,76 @@ func TestParseReviewCommentThreads(t *testing.T) {
 	}
 	if rcs[3].Line != 0 && rcs[3].OrigLine != 0 {
 		t.Errorf("outdated should carry no lines: %+v", rcs[3])
+	}
+}
+
+func TestImportCommentsMergeAndDedupe(t *testing.T) {
+	w, st, fg, _, headSha, _ := bareFixture(t)
+	base := time.Now().Add(-time.Hour)
+	fg.reviewComments = []RemoteComment{
+		{ID: 10, RootID: 10, Path: "main.go", Line: 3, Side: "RIGHT",
+			Body: "root note", Author: "amy", CreatedAt: base},
+		{ID: 11, RootID: 10, Path: "main.go", Line: 3, Side: "RIGHT",
+			Body: "reply", Author: "bob", CreatedAt: base.Add(time.Minute)},
+		{ID: 12, RootID: 12, Path: "old.go", OrigLine: 9, Line: 0, Side: "LEFT",
+			Body: "old side", Author: "cy", CreatedAt: base.Add(2 * time.Minute)},
+		{ID: 13, RootID: 13,
+			Body: "outdated", Author: "dy", CreatedAt: base.Add(3 * time.Minute)},
+	}
+	fg.issueComments = []RemoteComment{
+		{ID: 20, RootID: 20, Body: "general remark",
+			Author: "eve", CreatedAt: base.Add(4 * time.Minute)},
+	}
+	svc := NewService(w, st, nil, fg)
+
+	card := Review{ID: "api-pr-1", Title: "T",
+		Target: Target{Kind: KindPR, Member: "api", Base: "master",
+			Head: headSha, PRNumber: 5},
+		Status: Pending, Viewed: map[string]bool{}, Channel: "#api-pr-1",
+		CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	if err := st.Create(card); err != nil {
+		t.Fatal(err)
+	}
+
+	n, err := svc.ImportComments(context.Background(), card)
+	if err != nil {
+		t.Fatalf("ImportComments: %v", err)
+	}
+	if n != 5 {
+		t.Fatalf("added = %d, want 5", n)
+	}
+	got, _ := st.Get("api-pr-1")
+	if len(got.Threads) != 4 {
+		t.Fatalf("threads = %d (%+v)", len(got.Threads), got.Threads)
+	}
+	byRoot := map[int64]Thread{}
+	for _, t := range got.Threads {
+		byRoot[t.RemoteRoot] = t
+	}
+	root := byRoot[10]
+	if root.File != "main.go" || root.Line != 3 || root.Side != SideNew ||
+		len(root.Comments) != 2 || root.Comments[0].Author != "amy" ||
+		root.Comments[0].Pending || root.Comments[0].RemoteID != 10 {
+		t.Fatalf("thread 10 = %+v", root)
+	}
+	old := byRoot[12]
+	if old.File != "old.go" || old.Line != 9 || old.Side != SideOld {
+		t.Fatalf("old-side thread = %+v", old)
+	}
+	if byRoot[13].File != "(remote)" || byRoot[13].Line != 0 {
+		t.Fatalf("outdated thread = %+v", byRoot[13])
+	}
+	if byRoot[20].File != "(remote)" || byRoot[20].Comments[0].Author != "eve" {
+		t.Fatalf("issue-comment thread = %+v", byRoot[20])
+	}
+
+	// re-import is a no-op
+	n2, err := svc.ImportComments(context.Background(), card)
+	if err != nil || n2 != 0 {
+		t.Fatalf("second import added %d err=%v", n2, err)
+	}
+	got2, _ := st.Get("api-pr-1")
+	if len(got2.Threads) != 4 {
+		t.Errorf("threads grew on re-import")
 	}
 }
