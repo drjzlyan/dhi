@@ -19,7 +19,8 @@ type ghFake struct {
 	err  error
 }
 
-func (g *ghFake) Available() bool { return true }
+func (g *ghFake) Available() bool                           { return true }
+func (g *ghFake) AuthToken(context.Context) (string, error) { return "tok", nil }
 func (g *ghFake) PR(context.Context, string, string) (review.PRMeta, error) {
 	return review.PRMeta{}, nil
 }
@@ -30,6 +31,15 @@ func (g *ghFake) PostComment(_ context.Context, repo, number, body string) error
 	}
 	g.body = repo + "#" + number + "\n" + body
 	return nil
+}
+func (g *ghFake) CreatePR(context.Context, string, string, string, string, string) (review.PRMeta, error) {
+	return review.PRMeta{}, nil
+}
+func (g *ghFake) ReviewComments(context.Context, string, string) ([]review.RemoteComment, error) {
+	return nil, nil
+}
+func (g *ghFake) IssueComments(context.Context, string, string) ([]review.RemoteComment, error) {
+	return nil, nil
 }
 
 // prFixture builds an open submitted PR review with cached files and an

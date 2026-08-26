@@ -110,6 +110,7 @@ type Review struct {
 	WorkRel string // review worktree path relative to workspace root ("")
 	Done    bool   // worktree discarded
 	Posted  bool   // comments posted to the PR via gh
+	PRURL   string // GitHub PR URL once one is created/linked
 
 	CreatedAt time.Time
 	UpdatedAt time.Time
@@ -141,6 +142,7 @@ type file struct {
 	Channel   string    `toml:"channel"`
 	WorkRel   string    `toml:"worktree"`
 	Posted    bool      `toml:"posted"`
+	PRURL     string    `toml:"pr_url,omitempty"`
 	Viewed    []string  `toml:"viewed"`
 	Done      bool      `toml:"done"`
 	CreatedAt time.Time `toml:"created_at"`
@@ -278,7 +280,7 @@ func parseCard(path, id string) (Review, error) {
 		ID: id, Title: strings.TrimSpace(f.Title),
 		Target: Target{Kind: f.Kind, Member: f.Member, Base: f.Base, Head: f.Head, PRNumber: f.PRNumber},
 		Status: st, Viewed: map[string]bool{}, Channel: f.Channel, WorkRel: f.WorkRel, Done: f.Done,
-		Posted:    f.Posted,
+		Posted: f.Posted, PRURL: f.PRURL,
 		CreatedAt: f.CreatedAt, UpdatedAt: f.UpdatedAt,
 	}
 	for _, vf := range f.Viewed {
@@ -599,7 +601,7 @@ func writeCard(path string, r Review) error {
 		Schema: SchemaVersion, Title: r.Title, Status: r.Status,
 		Kind: r.Target.Kind, Member: r.Target.Member, Base: r.Target.Base,
 		Head: r.Target.Head, PRNumber: r.Target.PRNumber,
-		Channel: r.Channel, WorkRel: r.WorkRel, Done: r.Done, Posted: r.Posted,
+		Channel: r.Channel, WorkRel: r.WorkRel, Done: r.Done, Posted: r.Posted, PRURL: r.PRURL,
 		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 	}
 	for p := range r.Viewed {

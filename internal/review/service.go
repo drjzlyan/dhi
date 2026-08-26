@@ -3,10 +3,14 @@ package review
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/go-git/go-git/v5/plumbing/transport"
+	httptransport "github.com/go-git/go-git/v5/plumbing/transport/http"
 
 	"github.com/drjzlyan/dhi/internal/gitcore"
 	"github.com/drjzlyan/dhi/internal/gitdiff"
@@ -26,6 +30,8 @@ type Service struct {
 
 	// diffFn is injectable for tests; production wraps runner.Run.
 	diffFn func(ctx context.Context, dir string, args ...string) (string, error)
+	// tokenFn mints push credentials (gh auth token in production).
+	tokenFn func(ctx context.Context) (string, error)
 }
 
 // NewService wires the orchestration layer. runner and gh may be nil;
@@ -48,6 +54,12 @@ func (s *Service) Store() *Store { return s.store }
 // cardPathForTest convention).
 func (s *Service) SetDiffForTest(fn func(ctx context.Context, dir string, args ...string) (string, error)) {
 	s.diffFn = fn
+}
+
+// SetTokenFn installs the credential source for pushes (production:
+// gh auth token; tests: nil keeps local remotes auth-free).
+func (s *Service) SetTokenFn(fn func(ctx context.Context) (string, error)) {
+	s.tokenFn = fn
 }
 
 // HasRunner reports whether diff production can work.
@@ -76,6 +88,139 @@ func (s *Service) PostComment(ctx context.Context, r Review, body string) error 
 		return fmt.Errorf("review: post comment: %w", err)
 	}
 	return s.store.MarkPosted(r.ID)
+}
+
+// pushAuth builds go-git credentials from the injected token source.
+// HTTPS origins get BasicAuth; anything else pushes anonymously (local
+// test remotes) or fails visibly upstream.
+func (s *Service) pushAuth(ctx context.Context) (transport.AuthMethod, error) {
+	if s.tokenFn == nil {
+		return nil, nil
+	}
+	tok, err := s.tokenFn(ctx)
+	if err != nil || tok == "" {
+		return nil, err
+	}
+	return &httptransport.BasicAuth{Username: "x-access-token", Password: tok}, nil
+}
+
+// pushBranch pushes refs/heads/<branch> from the member repo to origin.
+func (s *Service) pushBranch(ctx context.Context, memberPath, branch string) error {
+	repo, err := gitcore.Open(memberPath)
+	if err != nil {
+		return err
+	}
+	auth, err := s.pushAuth(ctx)
+	if err != nil {
+		return fmt.Errorf("review: push credentials: %w", err)
+	}
+	spec := "refs/heads/" + branch + ":refs/heads/" + branch
+	if err := repo.Push(ctx, "", spec, auth); err != nil {
+		return err
+	}
+	return nil
+}
+
+var prCreateTimeout = 5 * time.Minute
+
+// CreatePRForBranch pushes an existing branch of a member repo and opens
+// a PR against base. Used by both the Reviewer (review/<id> branches)
+// and task cards (task/<slug> branches).
+func (s *Service) CreatePRForBranch(ctx context.Context, memberName, branch, title, base string) (PRMeta, error) {
+	if !s.HasGH() {
+		return PRMeta{}, fmt.Errorf("review: gh unavailable — install the GitHub CLI to create PRs")
+	}
+	mem, ok := s.ws.Member(memberName)
+	if !ok {
+		return PRMeta{}, fmt.Errorf("review: unknown member %q", memberName)
+	}
+	if branch == "" || base == "" {
+		return PRMeta{}, fmt.Errorf("review: branch and base required")
+	}
+	worktreeDir := s.worktreeFor(memberName, branch)
+	if worktreeDir != "" {
+		wt, err := gitcore.Open(worktreeDir)
+		if err == nil && wt.IsDirty() {
+			return PRMeta{}, fmt.Errorf(
+				"review: %s has uncommitted changes — commit them first (editor git panel)", branch)
+		}
+	}
+	repoURL := s.remoteURL(mem.Path)
+	if repoURL == "" {
+		return PRMeta{}, fmt.Errorf("review: member %q has no origin remote", memberName)
+	}
+	if err := s.pushBranch(ctx, mem.Path, branch); err != nil {
+		return PRMeta{}, err
+	}
+	body := fmt.Sprintf("Created from DHI worktree `%s`.\n\n_Reviewed with DHI's Reviewer floor._", branch)
+	meta, err := s.gh.CreatePR(ctx, repoURL, title, body, base, branch)
+	if err != nil {
+		return PRMeta{}, err
+	}
+	return meta, nil
+}
+
+// worktreeFor finds a checked-out worktree dir for branch within this
+// workspace (member dirs + .dhi trees); "" when none matches.
+func (s *Service) worktreeFor(memberName, branch string) string {
+	mem, ok := s.ws.Member(memberName)
+	if !ok {
+		return ""
+	}
+	candidates := []string{mem.Path,
+		filepath.Join(s.ws.Root, Dir)}
+	var found string
+	for _, root := range candidates {
+		_ = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+			if err != nil || !d.IsDir() {
+				return nil
+			}
+			r, oerr := gitcore.Open(p)
+			if oerr != nil {
+				return nil
+			}
+			if b, berr := r.CurrentBranch(); berr == nil && b == branch {
+				found = p
+				return filepath.SkipAll
+			}
+			return nil
+		})
+		if found != "" {
+			return found
+		}
+	}
+	return found
+}
+
+// CreatePR turns a started review into a full PR-backed review: pushes
+// its review/<id> branch, opens the PR and links it back onto the card
+// so diffs, invites, posting and comment-sync light up.
+func (s *Service) CreatePR(ctx context.Context, id, title, base string) (Review, error) {
+	r, ok := s.store.Get(id)
+	if !ok {
+		return Review{}, fmt.Errorf("review: unknown review %q", id)
+	}
+	if r.Done || r.WorkRel == "" {
+		return Review{}, fmt.Errorf("review: %s has no live worktree", id)
+	}
+	if r.Target.PRNumber > 0 {
+		return Review{}, fmt.Errorf("review: %s already backs PR #%d", id, r.Target.PRNumber)
+	}
+	meta, err := s.CreatePRForBranch(ctx, r.Target.Member, "review/"+id, title, base)
+	if err != nil {
+		return Review{}, err
+	}
+	err = s.store.mutate(id, func(r *Review) {
+		r.Target.Kind = KindPR
+		r.Target.PRNumber = meta.Number
+		r.Target.Base = meta.BaseRef
+		r.PRURL = meta.URL
+	})
+	if err != nil {
+		return Review{}, err
+	}
+	out, _ := s.store.Get(id)
+	return out, nil
 }
 
 var idCleanup = regexp.MustCompile(`[^a-z0-9._-]+`)

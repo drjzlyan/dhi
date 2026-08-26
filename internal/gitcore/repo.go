@@ -15,6 +15,7 @@ import (
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-git/go-git/v5/plumbing/transport"
 )
 
 // FileStatus is one changed path. X is the index (staged) code, Y the
@@ -280,6 +281,42 @@ func (rp *Repo) Branches() ([]string, error) {
 	}
 	sort.Strings(out)
 	return out, nil
+}
+
+// IsDirty reports whether the working tree or index carries any change.
+func (rp *Repo) IsDirty() bool {
+	st, err := rp.Status()
+	if err != nil {
+		return false // unreadable state must not block reads elsewhere
+	}
+	for _, fs := range st {
+		if fs.X != ' ' && fs.X != '?' && fs.X != 0 {
+			return true
+		}
+		if fs.WorktreeDirty() || fs.Y == '?' {
+			return true
+		}
+	}
+	return false
+}
+
+// Push updates remote with the given refspec (e.g.
+// "refs/heads/feature:refs/heads/feature"). Network runs in-process via
+// go-git (ADR-0008/0009). auth may be nil for local/anonymous remotes;
+// HTTPS origins typically need BasicAuth minted from `gh auth token`.
+func (rp *Repo) Push(ctx context.Context, remote, refspec string, auth transport.AuthMethod) error {
+	if remote == "" {
+		remote = "origin"
+	}
+	err := rp.r.PushContext(ctx, &git.PushOptions{
+		RemoteName: remote,
+		RefSpecs:   []config.RefSpec{config.RefSpec(refspec)},
+		Auth:       auth,
+	})
+	if err != nil && err != git.NoErrAlreadyUpToDate {
+		return fmt.Errorf("gitcore: push %s %s: %w", remote, refspec, err)
+	}
+	return nil
 }
 
 // Fetch pulls objects for refspec (e.g. "+refs/pull/7/head:refs/dhi/pr/7")

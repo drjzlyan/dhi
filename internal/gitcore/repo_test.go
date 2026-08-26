@@ -9,6 +9,7 @@ import (
 	"time"
 
 	git "github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing/object"
 )
 
@@ -205,4 +206,61 @@ func TestCloneLocalPath(t *testing.T) {
 	if _, err := Clone(context.Background(), bad, filepath.Join(t.TempDir(), "x")); err == nil {
 		t.Error("missing source accepted")
 	}
+}
+
+func TestPushRoundTripToBare(t *testing.T) {
+	// src -> commit; bare origin <- push master; fresh clone sees it.
+	src := filepath.Join(t.TempDir(), "src")
+	r, err := git.PlainInit(src, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wt, _ := r.Worktree()
+	os.WriteFile(filepath.Join(src, "f.txt"), []byte("hi"), 0o644)
+	wt.Add(".")
+	h, err := wt.Commit("base", &git.CommitOptions{Author: sig()})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	bare := filepath.Join(t.TempDir(), "origin.git")
+	if _, err := git.PlainInit(bare, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.CreateRemote(&config.RemoteConfig{
+		Name: "origin",
+		URLs: []string{bare},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	sr, err := Open(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sr.Push(context.Background(), "",
+		"refs/heads/master:refs/heads/master", nil); err != nil {
+		t.Fatalf("push: %v", err)
+	}
+
+	dst := filepath.Join(t.TempDir(), "clone")
+	cr, err := Clone(context.Background(), bare, dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	brs, _ := cr.Branches()
+	if len(brs) == 0 {
+		t.Fatal("clone missing branches")
+	}
+	if cr.IsDirty() {
+		t.Error("fresh clone reported dirty")
+	}
+	os.WriteFile(filepath.Join(dst, "g.txt"), []byte("x"), 0o644)
+	if !cr.IsDirty() {
+		t.Error("dirty state not detected")
+	}
+	_ = h
+}
+
+func sig() *object.Signature {
+	return &object.Signature{Name: "t", Email: "t@t", When: time.Now()}
 }
