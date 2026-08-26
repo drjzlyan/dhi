@@ -130,7 +130,7 @@ func TestSubmitBatchFromReviews(t *testing.T) {
 	// submitted comments are immutable through the composer too
 	m.HandleKey("]")
 	m.HandleKey("t")
-	m.threadCur = 1 // first comment row
+	m.threadCur = 1  // first comment row
 	m.HandleKey("e") // submitted draft must not reopen
 	if m.composer != nil {
 		t.Fatal("edit opened on a submitted comment")
