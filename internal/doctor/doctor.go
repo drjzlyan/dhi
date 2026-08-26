@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -59,6 +60,7 @@ func Run(toolRoot, wsRoot string) Report {
 	r.Checks = append(r.Checks, Agents(wsRoot)...)
 	r.Checks = append(r.Checks, Standards(wsRoot)...)
 	r.Checks = append(r.Checks, Tasks(wsRoot)...)
+	r.Checks = append(r.Checks, GH()...)
 	r.Healthy = true
 	for _, c := range r.Checks {
 		if c.Status == Fail {
@@ -402,4 +404,15 @@ func Tasks(wsRoot string) []Check {
 			Detail: detail + "; " + strings.Join(warnings, "; ")}}
 	}
 	return []Check{{Name: "tasks/store", Status: OK, Detail: detail}}
+}
+
+// GH probes the optional host gh CLI (F-005): PR reviews and posting
+// need it; everything else in the reviewer works without it, so absence
+// is a warning rather than a failure.
+func GH() []Check {
+	if _, err := exec.LookPath("gh"); err != nil {
+		return []Check{{Name: "gh/cli", Status: Warn,
+			Detail: "not on PATH — PR review input and posting disabled"}}
+	}
+	return []Check{{Name: "gh/cli", Status: OK, Detail: "found on PATH"}}
 }

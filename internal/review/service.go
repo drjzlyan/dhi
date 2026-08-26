@@ -59,6 +59,25 @@ func (s *Service) CanDiff() bool { return s.diffFn != nil }
 // HasGH reports whether PR inputs and posting can work.
 func (s *Service) HasGH() bool { return s.gh != nil && s.gh.Available() }
 
+// PostComment publishes body on the PR backing this review through gh.
+func (s *Service) PostComment(ctx context.Context, r Review, body string) error {
+	if !s.HasGH() {
+		return fmt.Errorf("review: gh unavailable — install the GitHub CLI to post")
+	}
+	mem, ok := s.ws.Member(r.Target.Member)
+	if !ok {
+		return fmt.Errorf("review: unknown member %q", r.Target.Member)
+	}
+	repo := s.remoteURL(mem.Path)
+	if repo == "" {
+		return fmt.Errorf("review: member %q has no origin remote", r.Target.Member)
+	}
+	if err := s.gh.PostComment(ctx, repo, fmt.Sprint(r.Target.PRNumber), body); err != nil {
+		return fmt.Errorf("review: post comment: %w", err)
+	}
+	return s.store.MarkPosted(r.ID)
+}
+
 var idCleanup = regexp.MustCompile(`[^a-z0-9._-]+`)
 
 // makeID builds a slug id like "api-pr-42" or "api-branch-fix-auth".

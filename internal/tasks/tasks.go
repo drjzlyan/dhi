@@ -360,6 +360,24 @@ func (s *Store) Attach(slug, member, branch, startpoint string) error {
 	})
 }
 
+// RecordChangeSet persists a changeset record for an externally-created
+// worktree (e.g. the Reviewer binding its own worktree to a fix task).
+// Re-recording the same member replaces the entry, like Attach.
+func (s *Store) RecordChangeSet(slug string, cs ChangeSet) error {
+	if cs.Member == "" || cs.Path == "" {
+		return fmt.Errorf("tasks: changeset needs member and path")
+	}
+	return s.mutate(slug, func(t *Task) {
+		for i := range t.ChangeSets {
+			if t.ChangeSets[i].Member == cs.Member {
+				t.ChangeSets[i] = cs
+				return
+			}
+		}
+		t.ChangeSets = append(t.ChangeSets, cs)
+	})
+}
+
 // Detach drops the changeset record and removes the worktree through
 // the seam. The working-tree copy goes too — callers confirm first.
 func (s *Store) Detach(slug, member string) error {

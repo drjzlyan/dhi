@@ -154,6 +154,29 @@ func (a *App) selectSurface(i int) {
 	}
 }
 
+// OpenInEditor hands file paths to the editor surface: buffers open
+// preloaded and focus switches across. It is the F-005 "open in editor"
+// completion seam; returns false when no editor surface accepts them.
+func (a *App) OpenInEditor(paths []string) bool {
+	for i, s := range a.surfaces {
+		if s.Meta().ID != "editor" {
+			continue
+		}
+		op, ok := s.(interface {
+			OpenPaths(...string) int
+		})
+		if !ok {
+			return false
+		}
+		opened := op.OpenPaths(paths...)
+		if opened > 0 {
+			a.selectSurface(i)
+		}
+		return opened > 0
+	}
+	return false
+}
+
 func (a *App) bodyWidth() int { return a.width }
 func (a *App) bodyHeight() int {
 	h := a.height - theme.Current.HeightTab - theme.Current.HeightState

@@ -7,6 +7,7 @@ package reviewer
 
 import (
 	"context"
+	"strconv"
 	"time"
 
 	"charm.land/bubbletea/v2"
@@ -14,6 +15,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/gitdiff"
 	"github.com/drjzlyan/dhi/internal/review"
+	"github.com/drjzlyan/dhi/internal/tasks"
 	"github.com/drjzlyan/dhi/internal/tui/surfaces"
 	"github.com/drjzlyan/dhi/internal/workspace"
 )
@@ -92,17 +94,23 @@ type Model struct {
 	crew      crew
 	cancelBus func()
 
+	taskStore    *tasks.Store
+	openInEditor func(paths []string) bool
+
 	events chan revEvent
 }
 
 var _ surfaces.Surface = (*Model)(nil)
 
 type revEvent struct {
-	kind uint8 // evPing | evStartDone | evDiffDone | evDiscardDone | evBus | evAgentDone
+	kind uint8 // evPing|evStartDone|evDiffDone|evDiscardDone|evBus|evAgentDone|evPosted
 	err  string
 	id   string
 	msg  bus.Message
+	n    int // PR number for evPosted
 }
+
+func itoa(n int) string { return strconv.Itoa(n) }
 
 const (
 	evPing uint8 = iota
@@ -111,27 +119,33 @@ const (
 	evDiscardDone
 	evBus
 	evAgentDone
+	evPosted
 )
 
 // Deps carries the services this surface operates. A nil Service degrades
 // every section to visible "unavailable" rows; nil Bus/Crew disable the
-// agent-participation keys with visible messages.
+// agent-participation keys with visible messages; nil Tasks/OpenInEditor
+// disable the matching completion flows.
 type Deps struct {
-	Service *review.Service
-	Bus     *bus.Bus
-	Crew    crew
+	Service      *review.Service
+	Bus          *bus.Bus
+	Crew         crew
+	Tasks        *tasks.Store
+	OpenInEditor func(paths []string) bool
 }
 
 // New returns the reviewer model. A nil ws renders the empty state with
 // all keys inert.
 func New(version string, ws *workspace.Workspace, d Deps) *Model {
 	return &Model{
-		version: version,
-		ws:      ws,
-		svc:     d.Service,
-		bus:     d.Bus,
-		crew:    d.Crew,
-		events:  make(chan revEvent, 16),
+		version:      version,
+		ws:           ws,
+		svc:          d.Service,
+		bus:          d.Bus,
+		crew:         d.Crew,
+		taskStore:    d.Tasks,
+		openInEditor: d.OpenInEditor,
+		events:       make(chan revEvent, 16),
 	}
 }
 
@@ -222,6 +236,13 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 			m.form = formState{flash: "agent review requested"}
 			if ev.err != "" {
 				m.opErr = ev.err
+			}
+		case evPosted:
+			m.busy = false
+			if ev.err != "" {
+				m.opErr = ev.err
+			} else {
+				m.closeFormWithFlash("posted to PR #" + itoa(ev.n))
 			}
 		}
 		return m.listen()
@@ -407,7 +428,22 @@ func (m *Model) reviewsKey(key string) bool {
 				return true
 			}
 			m.closeFormWithFlash("submitted " + sel.ID +
-				" (" + itoaInt(sel.PendingCount()) + " comments)")
+				" (" + itoa(sel.PendingCount()) + " comments)")
+			return true
+		}
+	case "P":
+		if sel := selReview(rows, *c); sel != nil && sel.Status == review.Submitted {
+			m.postToPR()
+			return true
+		}
+	case "F":
+		if sel := selReview(rows, *c); sel != nil {
+			m.dispatchFixer()
+			return true
+		}
+	case "e":
+		if sel := selReview(rows, *c); sel != nil && sel.ID == m.openID {
+			m.handoffToEditor()
 			return true
 		}
 	}

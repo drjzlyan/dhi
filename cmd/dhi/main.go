@@ -115,6 +115,7 @@ func runTUI() {
 		}
 	}
 
+	var appRef *app.App
 	a := app.New(version.Version,
 		wsview.New(version.Version, ws, wsview.Deps{
 			Bus:     messageBus,
@@ -129,9 +130,17 @@ func runTUI() {
 			Service: reviewSvc,
 			Bus:     messageBus,
 			Crew:    agentRT,
+			Tasks:   taskStore,
+			OpenInEditor: func(paths []string) bool {
+				if appRef == nil {
+					return false
+				}
+				return appRef.OpenInEditor(paths)
+			},
 		}),
 		settingsview.New(cfg, savePath),
 	)
+	appRef = a
 
 	if cfgErr == nil && needsBootstrap(toolchainRoot()) {
 		mgr := toolchain.New(toolchainRoot())

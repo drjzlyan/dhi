@@ -109,6 +109,7 @@ type Review struct {
 	Channel string // bus channel carrying this review's conversation
 	WorkRel string // review worktree path relative to workspace root ("")
 	Done    bool   // worktree discarded
+	Posted  bool   // comments posted to the PR via gh
 
 	CreatedAt time.Time
 	UpdatedAt time.Time
@@ -139,6 +140,7 @@ type file struct {
 	PRNumber  int       `toml:"pr_number,omitempty"`
 	Channel   string    `toml:"channel"`
 	WorkRel   string    `toml:"worktree"`
+	Posted    bool      `toml:"posted"`
 	Viewed    []string  `toml:"viewed"`
 	Done      bool      `toml:"done"`
 	CreatedAt time.Time `toml:"created_at"`
@@ -276,6 +278,7 @@ func parseCard(path, id string) (Review, error) {
 		ID: id, Title: strings.TrimSpace(f.Title),
 		Target: Target{Kind: f.Kind, Member: f.Member, Base: f.Base, Head: f.Head, PRNumber: f.PRNumber},
 		Status: st, Viewed: map[string]bool{}, Channel: f.Channel, WorkRel: f.WorkRel, Done: f.Done,
+		Posted:    f.Posted,
 		CreatedAt: f.CreatedAt, UpdatedAt: f.UpdatedAt,
 	}
 	for _, vf := range f.Viewed {
@@ -532,6 +535,11 @@ func (s *Store) Submit(id string) error {
 	})
 }
 
+// MarkPosted records that the review's comments were posted to the PR.
+func (s *Store) MarkPosted(id string) error {
+	return s.mutate(id, func(r *Review) { r.Posted = true })
+}
+
 // Remove deletes the card entirely. The recorded worktree is left on disk
 // unless the caller discards it first — visible over silent deletion.
 func (s *Store) Remove(id string) error {
@@ -591,7 +599,7 @@ func writeCard(path string, r Review) error {
 		Schema: SchemaVersion, Title: r.Title, Status: r.Status,
 		Kind: r.Target.Kind, Member: r.Target.Member, Base: r.Target.Base,
 		Head: r.Target.Head, PRNumber: r.Target.PRNumber,
-		Channel: r.Channel, WorkRel: r.WorkRel, Done: r.Done,
+		Channel: r.Channel, WorkRel: r.WorkRel, Done: r.Done, Posted: r.Posted,
 		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 	}
 	for p := range r.Viewed {

@@ -166,10 +166,6 @@ func (m *Model) activeSectionFor(w, h int) string {
 	}
 }
 
-func itoaInt(n int) string {
-	return strconv.Itoa(n)
-}
-
 func (m *Model) sectionStrip() string {
 	var parts []string
 	for s := sectionID(0); s < secCount; s++ {
@@ -207,7 +203,7 @@ func (m *Model) reviewsBody(w int) string {
 	clampCursor(&c, len(rows))
 
 	out := []string{theme.Hint().Render("review sessions") +
-		theme.TextDim().Render("        n new · enter open · x discard wt · d remove")}
+		theme.TextDim().Render(" n new · enter open · s submit · P post · F fixer · e editor")}
 	if m.svc == nil {
 		out = append(out, theme.DangerText().Render("(review service unavailable)"))
 		return strings.Join(out, "\n")
@@ -225,6 +221,9 @@ func (m *Model) reviewsBody(w int) string {
 			style = theme.TabActive()
 		}
 		state := string(r.Status)
+		if r.Posted {
+			state += " · posted"
+		}
 		if r.Done {
 			state += " · discarded"
 		}

@@ -8,6 +8,9 @@ import (
 	"testing"
 	"time"
 
+	git "github.com/go-git/go-git/v5"
+	gitconfig "github.com/go-git/go-git/v5/config"
+
 	"charm.land/bubbletea/v2"
 
 	"github.com/drjzlyan/dhi/internal/review"
@@ -64,6 +67,13 @@ func newSurface(t *testing.T) (*Model, *workspace.Workspace, *review.Store, *sea
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, "api"), 0o755); err != nil {
 		t.Fatal(err)
+	}
+	// origin remote lets gh-scoped flows resolve their repo slug.
+	if r, err := git.PlainInit(filepath.Join(root, "api"), false); err == nil {
+		_, _ = r.CreateRemote(&gitconfig.RemoteConfig{
+			Name: "origin",
+			URLs: []string{"https://github.com/acme/api.git"},
+		})
 	}
 	cfg := "schema = 1\n\n[members.api]\npath = \"api\"\n"
 	if err := os.MkdirAll(filepath.Join(root, ".dhi"), 0o755); err != nil {

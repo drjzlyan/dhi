@@ -878,6 +878,28 @@ func (m *Model) handleFindKey(key string) bool {
 	return m.findList.HandleKey(key)
 }
 
+// OpenPaths opens each absolute path in its own buffer, revealing it in
+// the nav tree, and reports how many buffers opened. It is the
+// cross-surface handoff seam used by the Reviewer's "open in editor"
+// completion flow (F-005).
+func (m *Model) OpenPaths(paths ...string) int {
+	opened := 0
+	for _, p := range paths {
+		if p == "" {
+			continue
+		}
+		abs, err := filepath.Abs(p)
+		if err != nil {
+			continue
+		}
+		revealTo(m.roots, abs)
+		m.refreshRows()
+		m.open(&node{kind: nodeFile, path: abs, name: filepath.Base(abs)})
+		opened++
+	}
+	return opened
+}
+
 func (m *Model) pickResult() bool {
 	sel, ok := m.findList.Selected()
 	if !ok || sel.Title == "" {
