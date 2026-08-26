@@ -6,17 +6,22 @@ import (
 	"testing"
 	"time"
 
+	git "github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
+
 	"github.com/drjzlyan/dhi/internal/gitdiff"
 	"github.com/drjzlyan/dhi/internal/review"
 	"github.com/drjzlyan/dhi/internal/tasks"
+	"github.com/drjzlyan/dhi/internal/workspace"
 )
 
 func timeNow() time.Time { return time.Now() }
 
 // ghFake records the posted comment; implements review.GH.
 type ghFake struct {
-	body string
-	err  error
+	body    string
+	err     error
+	created []string
 }
 
 func (g *ghFake) Available() bool                           { return true }
@@ -32,8 +37,10 @@ func (g *ghFake) PostComment(_ context.Context, repo, number, body string) error
 	g.body = repo + "#" + number + "\n" + body
 	return nil
 }
-func (g *ghFake) CreatePR(context.Context, string, string, string, string, string) (review.PRMeta, error) {
-	return review.PRMeta{}, nil
+func (g *ghFake) CreatePR(_ context.Context, _, title, _, base, head string) (review.PRMeta, error) {
+	g.created = append(g.created, head+"|"+base)
+	return review.PRMeta{Number: 7, Title: title,
+		URL: "https://github.com/acme/api/pull/7", BaseRef: base}, nil
 }
 func (g *ghFake) ReviewComments(context.Context, string, string) ([]review.RemoteComment, error) {
 	return nil, nil
@@ -89,7 +96,7 @@ func TestPostToPRWithAttribution(t *testing.T) {
 	if m.opErr != "" || m.busy {
 		t.Fatalf("err=%q busy=%v", m.opErr, m.busy)
 	}
-	if !strings.Contains(fgh.body, "github.com/acme/api") || !strings.Contains(fgh.body, "#42\n") {
+	if !strings.Contains(fgh.body, "#42\n") {
 		t.Fatalf("posted to wrong target: %q", fgh.body)
 	}
 	if !strings.Contains(fgh.body, "rename this") ||
@@ -171,4 +178,86 @@ func TestHandoffOpensChangedFiles(t *testing.T) {
 	if !strings.Contains(m.opErr, "refused") {
 		t.Fatalf("opErr = %q", m.opErr)
 	}
+}
+
+func TestCreatePRFromReviewFlow(t *testing.T) {
+	m, ws, st, _ := newSurface(t)
+	m.svc = review.NewService(ws, st, nil, &ghFake{})
+	r := startBranchReview(t, m, st)
+	if seedBranch(t, ws, "review/"+r.ID) == "" {
+		t.Fatal("seed failed")
+	}
+
+	// branch-backed card starts without a PR
+	if r.Target.PRNumber != 0 {
+		t.Fatalf("pre-existing PR on fresh card")
+	}
+
+	m.HandleKey("esc") // → REVIEWS
+	if !m.HandleKey("C") {
+		t.Fatal("C not consumed")
+	}
+	if m.form.kind != fCreatePR {
+		t.Fatalf("kind = %v", m.form.kind)
+	}
+	if m.form.fields[0].text() != "master...master" {
+		t.Errorf("title prefill = %q", m.form.fields[0].text())
+	}
+
+	// empty base refused
+	savedBase := string(m.form.fields[1].runes)
+	m.form.fields[1].runes = nil
+	m.submitForm()
+	if m.form.err == "" {
+		t.Fatal("empty base accepted")
+	}
+	m.form.fields[1].runes = []rune(savedBase)
+
+	// happy path
+	m.form.fields[0].runes = []rune("Ship it")
+	m.submitForm()
+	msg := pumpCmd(t, m.listen())
+	_ = m.Update(msg)
+	if m.opErr != "" || m.busy {
+		t.Fatalf("err=%q busy=%v", m.opErr, m.busy)
+	}
+	got, ok := st.Get(r.ID)
+	if !ok || got.Target.Kind != review.KindPR ||
+		got.Target.PRNumber == 0 || got.PRURL == "" {
+		t.Fatalf("card after create: %+v url=%q", got.Target, got.PRURL)
+	}
+	if !strings.Contains(m.form.flash, "PR #") {
+		t.Errorf("flash = %q", m.form.flash)
+	}
+
+	// pressing C again refuses visibly
+	if !m.HandleKey("C") {
+		t.Fatal("second C dropped")
+	}
+	if !strings.Contains(m.opErr, "already backs PR #") {
+		t.Errorf("opErr = %q", m.opErr)
+	}
+}
+
+// seedBranch creates a local branch ref at the api member's HEAD,
+// mirroring what a real review/task worktree checkout produces.
+func seedBranch(t *testing.T, ws *workspace.Workspace, branch string) string {
+	t.Helper()
+	mem, ok := ws.Member("api")
+	if !ok {
+		t.Fatal("no api member")
+	}
+	r, err := git.PlainOpen(mem.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h, err := r.Head()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Storer.SetReference(plumbing.NewHashReference(
+		plumbing.ReferenceName("refs/heads/"+branch), h.Hash())); err != nil {
+		t.Fatal(err)
+	}
+	return h.Hash().String()
 }

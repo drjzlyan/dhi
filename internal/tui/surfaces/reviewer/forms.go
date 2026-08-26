@@ -1,11 +1,16 @@
 package reviewer
 
 import (
+	"context"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/drjzlyan/dhi/internal/review"
 )
+
+// prCreateTimeout bounds the push+gh PR creation round-trip.
+const prCreateTimeout = 5 * time.Minute
 
 // modalKind enumerates overlay states.
 type modalKind uint8
@@ -16,6 +21,7 @@ const (
 	fDiscardConfirm
 	fRemoveConfirm
 	fAgentReview
+	fCreatePR
 )
 
 // field is one modal input: free text or a cycling toggle.
@@ -128,6 +134,32 @@ func (m *Model) formKey(key string) bool {
 func (m *Model) submitForm() {
 	f := &m.form
 	switch f.kind {
+	case fCreatePR:
+		title := strings.TrimSpace(f.fields[0].text())
+		base := strings.TrimSpace(f.fields[1].text())
+		id := f.orig
+		if title == "" || base == "" {
+			f.err = "title and base required"
+			return
+		}
+		if m.svc == nil {
+			return
+		}
+		m.closeForm()
+		m.busy = true
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), prCreateTimeout)
+			defer cancel()
+			r, err := m.svc.CreatePR(ctx, id, title, base)
+			ev := revEvent{kind: evPRCreated, id: id}
+			if err != nil {
+				ev.err = err.Error()
+			} else {
+				ev.n = r.Target.PRNumber
+			}
+			m.send(ev)
+		}()
+		return
 	case fAgentReview:
 		agent := strings.TrimSpace(strings.TrimPrefix(f.fields[0].text(), "@"))
 		files := csvList(f.fields[1].text())

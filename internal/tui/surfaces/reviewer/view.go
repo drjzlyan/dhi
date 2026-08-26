@@ -319,6 +319,18 @@ func (m *Model) modalView(body string) string {
 func (m *Model) modalLines() []string {
 	f := &m.form
 	switch f.kind {
+	case fCreatePR:
+		lines := []string{
+			theme.TextDim().Render("pushes " + f.orig + " and opens a PR"),
+			fieldLine(f.fields[0], f.cur == 0),
+			fieldLine(f.fields[1], f.cur == 1),
+			"",
+		}
+		if f.err != "" {
+			lines = append(lines, theme.DangerText().Render(f.err), "")
+		}
+		return append(lines, theme.Hint().Render(
+			"dirty worktrees are refused · tab field · enter create"))
 	case fAgentReview:
 		lines := []string{
 			fieldLine(f.fields[0], f.cur == 0),
@@ -401,6 +413,8 @@ func modalTitle(k modalKind) string {
 		return "remove review"
 	case fAgentReview:
 		return "agent review"
+	case fCreatePR:
+		return "create PR"
 	}
 	return ""
 }

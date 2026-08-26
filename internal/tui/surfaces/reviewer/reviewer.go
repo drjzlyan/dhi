@@ -120,6 +120,7 @@ const (
 	evBus
 	evAgentDone
 	evPosted
+	evPRCreated
 )
 
 // Deps carries the services this surface operates. A nil Service degrades
@@ -243,6 +244,16 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 				m.opErr = ev.err
 			} else {
 				m.closeFormWithFlash("posted to PR #" + itoa(ev.n))
+			}
+		case evPRCreated:
+			m.busy = false
+			if ev.err != "" {
+				m.opErr = ev.err
+			} else {
+				m.closeFormWithFlash("PR #" + itoa(ev.n) + " created")
+				if ev.id == m.openID {
+					m.loadDiff() // target flipped to PR: refresh view model
+				}
 			}
 		}
 		return m.listen()
@@ -434,6 +445,26 @@ func (m *Model) reviewsKey(key string) bool {
 	case "P":
 		if sel := selReview(rows, *c); sel != nil && sel.Status == review.Submitted {
 			m.postToPR()
+			return true
+		}
+	case "C":
+		if sel := selReview(rows, *c); sel != nil {
+			switch {
+			case m.svc == nil:
+				m.opErr = "review service unavailable"
+			case sel.Target.PRNumber > 0:
+				m.opErr = "already backs PR #" + itoa(sel.Target.PRNumber)
+			default:
+				base := sel.Target.Base
+				if base == "" {
+					base = "main"
+				}
+				m.form = formState{kind: fCreatePR, orig: sel.ID,
+					fields: []field{
+						textField("title ", sel.Title),
+						textField("base  ", base),
+					}}
+			}
 			return true
 		}
 	case "F":

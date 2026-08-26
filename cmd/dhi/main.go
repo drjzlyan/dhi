@@ -183,44 +183,54 @@ func openReviewService(ws *workspace.Workspace) *review.Service {
 		fmt.Fprintln(os.Stderr, "dhi: review store:", err)
 		return nil
 	}
+	gh := review.NewGHCLI()
+	svc := review.NewService(ws, st, nil, gh)
+	svc.SetTokenFn(func(ctx context.Context) (string, error) {
+		return gh.AuthToken(ctx)
+	})
 	root, err := toolchain.DefaultRoot()
 	if err != nil {
-		return review.NewService(ws, st, nil, review.NewGHCLI())
+		return svc
 	}
 	runner, rerr := gitcore.ResolveRunner(toolchain.New(root))
-	if rerr == nil {
-		st.SetWorktreeSeam(
-			func(id, member, startpoint string) (string, error) {
-				mem, ok := ws.Member(member)
-				if !ok {
-					return "", fmt.Errorf("unknown member %q", member)
-				}
-				rel := filepath.Join(review.Dir, id, member)
-				dst := filepath.Join(ws.Root, rel)
-				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-				defer cancel()
-				branch := "review/" + id
-				if err := runner.WorktreeAdd(ctx, mem.Path, dst, branch, startpoint); err != nil {
-					return "", err
-				}
-				return rel, nil
-			},
-			func(id, relPath string) error {
-				mem, ok := ws.Member(filepath.Base(relPath))
-				if !ok {
-					return fmt.Errorf("member %q no longer registered", filepath.Base(relPath))
-				}
-				ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-				defer cancel()
-				if err := runner.WorktreeRemove(ctx, mem.Path,
-					filepath.Join(ws.Root, relPath), false); err != nil {
-					return err
-				}
-				return runner.Prune(ctx, mem.Path)
-			},
-		)
+	if rerr != nil {
+		return svc // pre-release: shim absent; diffs degrade visibly
 	}
-	return review.NewService(ws, st, runner, review.NewGHCLI())
+	svc = review.NewService(ws, st, runner, gh)
+	svc.SetTokenFn(func(ctx context.Context) (string, error) {
+		return gh.AuthToken(ctx)
+	})
+	st.SetWorktreeSeam(
+		func(id, member, startpoint string) (string, error) {
+			mem, ok := ws.Member(member)
+			if !ok {
+				return "", fmt.Errorf("unknown member %q", member)
+			}
+			rel := filepath.Join(review.Dir, id, member)
+			dst := filepath.Join(ws.Root, rel)
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			defer cancel()
+			branch := "review/" + id
+			if err := runner.WorktreeAdd(ctx, mem.Path, dst, branch, startpoint); err != nil {
+				return "", err
+			}
+			return rel, nil
+		},
+		func(id, relPath string) error {
+			mem, ok := ws.Member(filepath.Base(relPath))
+			if !ok {
+				return fmt.Errorf("member %q no longer registered", filepath.Base(relPath))
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+			defer cancel()
+			if err := runner.WorktreeRemove(ctx, mem.Path,
+				filepath.Join(ws.Root, relPath), false); err != nil {
+				return err
+			}
+			return runner.Prune(ctx, mem.Path)
+		},
+	)
+	return svc
 }
 
 // wireTaskSeam connects task ChangeSets to hermetic-git worktrees when
