@@ -18,6 +18,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/provider"
 	"github.com/drjzlyan/dhi/internal/agentkit/standards"
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
+	"github.com/drjzlyan/dhi/internal/gitcore"
 	"github.com/drjzlyan/dhi/internal/mcp"
 	"github.com/drjzlyan/dhi/internal/sandbox"
 	"github.com/drjzlyan/dhi/internal/search"
@@ -62,6 +63,8 @@ type Runtime struct {
 	mu     sync.Mutex
 	agents map[string]*entry
 	roster chan struct{} // pinged after every Reload
+
+	gitRunner *gitRunner
 }
 
 type entry struct {
@@ -82,6 +85,7 @@ func New(cfg Config, roster []*manifest.Agent) (*Runtime, error) {
 	for _, m := range cfg.WS.Members() {
 		jailRoots = append(jailRoots, m.Path)
 	}
+	r.gitRunner = newGitRunner(cfg.WS)
 	for _, m := range roster {
 		e, err := r.buildEntry(m, jailRoots)
 		if err != nil {
@@ -118,6 +122,7 @@ func (r *Runtime) buildEntry(m *manifest.Agent, jailRoots []string) (*entry, err
 		Guard:     sandbox.NewGuard(jail, policy),
 		Approvals: r.cfg.Approvals,
 		Searcher:  r.cfg.Searcher,
+		GitRunner: r.gitRunner,
 		AgentID:   m.ID,
 	}
 	e.reg = tools.New()
@@ -377,6 +382,53 @@ func sortStrings(s []string) {
 			s[j], s[j-1] = s[j-1], s[j]
 		}
 	}
+}
+
+// gitRunner implements the tools.GitRunner interface using the hermetic
+// git core. It uses the managed git shim for all operations.
+type gitRunner struct {
+	ws *workspace.Workspace
+}
+
+func newGitRunner(ws *workspace.Workspace) *gitRunner {
+	return &gitRunner{ws: ws}
+}
+
+// Commit stages all changes in the given working directory and creates
+// a commit with the provided message. Returns the new commit SHA.
+func (g *gitRunner) Commit(ctx context.Context, workdir, message, authorName, authorEmail string) (string, error) {
+	repo, err := gitcore.Open(workdir)
+	if err != nil {
+		return "", fmt.Errorf("git commit: open repo: %w", err)
+	}
+	// Stage all changes
+	if err := repo.Stage("."); err != nil {
+		return "", fmt.Errorf("git commit: stage: %w", err)
+	}
+	sha, err := repo.Commit(gitcore.CommitOptions{
+		Message: message,
+		Author:  authorName,
+		Email:   authorEmail,
+	})
+	if err != nil {
+		return "", fmt.Errorf("git commit: commit: %w", err)
+	}
+	return sha, nil
+}
+
+// Push pushes the given branch to origin with the provided auth.
+// The auth parameter is currently unused (local remotes only); in
+// production the runtime wires the gh auth token via the git core.
+func (g *gitRunner) Push(ctx context.Context, workdir, branch string, auth interface{}) error {
+	repo, err := gitcore.Open(workdir)
+	if err != nil {
+		return fmt.Errorf("git push: open repo: %w", err)
+	}
+	refspec := "refs/heads/" + branch + ":refs/heads/" + branch
+	if err := repo.Push(ctx, "", refspec, nil); err != nil {
+		return fmt.Errorf("git push: %w", err)
+	}
+	return nil
 }
 
 // Manifest returns the parsed manifest for id (false when not rostered).

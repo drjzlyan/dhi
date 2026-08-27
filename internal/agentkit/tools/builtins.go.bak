@@ -109,7 +109,7 @@ func (t readTool) Exec(ctx context.Context, input json.RawMessage) (string, erro
 		limit = maxReadBytes
 	}
 	if len(data) > limit {
-		return string(data[:limit]) + fmt.Sprintf("\n... [truncated %d of %d bytes]", len(data)-limit, len(data)), nil
+		return string(data[:limit]) + fmt.Sprintf("\n… [truncated %d of %d bytes]", len(data)-limit, len(data)), nil
 	}
 	return string(data), nil
 }
@@ -228,7 +228,7 @@ func (t searchTool) Exec(ctx context.Context, input json.RawMessage) (string, er
 	n := 0
 	for hit := range ch {
 		if n >= maxHits {
-			fmt.Fprintf(&sb, "... [capped at %d hits]\n", maxHits)
+			fmt.Fprintf(&sb, "… [capped at %d hits]\n", maxHits)
 			break
 		}
 		loc := hit.Path
@@ -242,88 +242,4 @@ func (t searchTool) Exec(ctx context.Context, input json.RawMessage) (string, er
 		return "no matches", nil
 	}
 	return strings.TrimSuffix(sb.String(), "\n"), nil
-}
-
-type commitTool struct{ Deps }
-
-func (commitTool) Def() Def {
-	return Def{
-		Name:        "git_commit",
-		Description: "Stage all changes and create a commit in the current working tree. Returns the new commit SHA.",
-		InputSchema: `{"type":"object","properties":{"message":{"type":"string","description":"commit message"},"author_name":{"type":"string","description":"author name (defaults to agent ID)"},"author_email":{"type":"string","description":"author email (defaults to agent ID @dhi)"}},"required":["message"]}`,
-	}
-}
-
-func (t commitTool) Exec(ctx context.Context, input json.RawMessage) (string, error) {
-	var in struct {
-		Message     string `json:"message"`
-		AuthorName  string `json:"author_name"`
-		AuthorEmail string `json:"author_email"`
-	}
-	if err := json.Unmarshal(input, &in); err != nil {
-		return "", fmt.Errorf("git_commit: bad input: %w", err)
-	}
-	if in.Message == "" {
-		return "", fmt.Errorf("git_commit: message required")
-	}
-	if t.GitRunner == nil {
-		return "", fmt.Errorf("git_commit: GitRunner not available")
-	}
-	authorName := in.AuthorName
-	if authorName == "" {
-		authorName = t.AgentID
-	}
-	authorEmail := in.AuthorEmail
-	if authorEmail == "" {
-		authorEmail = t.AgentID + "@dhi"
-	}
-	if len(t.WS.Members()) == 0 {
-		return "", fmt.Errorf("git_commit: no members in workspace")
-	}
-	workdir := t.WS.Members()[0].Path
-	if err := gate(ctx, t.Deps, sandbox.OpWrite, workdir, "git commit"); err != nil {
-		return "", fmt.Errorf("git_commit: %w", err)
-	}
-	sha, err := t.GitRunner.Commit(ctx, workdir, in.Message, authorName, authorEmail)
-	if err != nil {
-		return "", fmt.Errorf("git_commit: %w", err)
-	}
-	return fmt.Sprintf("committed %s", sha[:7]), nil
-}
-
-type pushTool struct{ Deps }
-
-func (pushTool) Def() Def {
-	return Def{
-		Name:        "git_push",
-		Description: "Push the current branch to origin. Returns the new remote HEAD SHA.",
-		InputSchema: `{"type":"object","properties":{"branch":{"type":"string","description":"branch to push (defaults to current branch)"}},"required":[]}`,
-	}
-}
-
-func (t pushTool) Exec(ctx context.Context, input json.RawMessage) (string, error) {
-	var in struct {
-		Branch string `json:"branch"`
-	}
-	if err := json.Unmarshal(input, &in); err != nil {
-		return "", fmt.Errorf("git_push: bad input: %w", err)
-	}
-	if t.GitRunner == nil {
-		return "", fmt.Errorf("git_push: GitRunner not available")
-	}
-	if len(t.WS.Members()) == 0 {
-		return "", fmt.Errorf("git_push: no members in workspace")
-	}
-	workdir := t.WS.Members()[0].Path
-	branch := in.Branch
-	if branch == "" {
-		branch = "HEAD"
-	}
-	if err := gate(ctx, t.Deps, sandbox.OpWrite, workdir, "git push"); err != nil {
-		return "", fmt.Errorf("git_push: %w", err)
-	}
-	if err := t.GitRunner.Push(ctx, workdir, branch, nil); err != nil {
-		return "", fmt.Errorf("git_push: %w", err)
-	}
-	return fmt.Sprintf("pushed %s", branch), nil
 }

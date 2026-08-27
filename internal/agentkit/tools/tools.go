@@ -12,6 +12,18 @@ import (
 	"sync"
 )
 
+// GitRunner is the narrow seam for git operations (commit/push) used by
+// the agent tools. It is injected by the runtime so that tools never
+// shell out directly; the runtime wires the hermetic git shim or a
+// test fake.
+type GitRunner interface {
+	// Commit stages all changes in the given working directory and creates
+	// a commit with the provided message. Returns the new commit SHA.
+	Commit(ctx context.Context, workdir, message, authorName, authorEmail string) (string, error)
+	// Push pushes the given branch to origin with the provided auth.
+	Push(ctx context.Context, workdir, branch string, auth interface{}) error
+}
+
 // Call is one tool invocation issued by a model.
 type Call struct {
 	ID    string

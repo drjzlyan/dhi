@@ -33,7 +33,7 @@ var (
 // BuiltinTools are the native tool names a manifest may allowlist.
 // Any other entry must be an mcp__<server>__<tool> reference resolved
 // against connected MCP servers at runtime.
-var BuiltinTools = []string{"read", "write", "list", "search"}
+var BuiltinTools = []string{"read", "write", "list", "search", "git_commit", "git_push"}
 
 // IsBuiltinTool reports whether name is one of the native tools.
 func IsBuiltinTool(name string) bool {
