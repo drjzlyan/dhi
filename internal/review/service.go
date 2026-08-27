@@ -310,6 +310,7 @@ func (s *Service) CreatePR(ctx context.Context, id, title, base string) (Review,
 		r.Target.Kind = KindPR
 		r.Target.PRNumber = meta.Number
 		r.Target.Base = meta.BaseRef
+		r.Target.HeadBranch = meta.HeadRef
 		r.PRURL = meta.URL
 	})
 	if err != nil {

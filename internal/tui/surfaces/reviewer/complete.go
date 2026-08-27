@@ -88,10 +88,15 @@ func (m *Model) dispatchFixer() {
 		m.opErr = err.Error()
 		return
 	}
+	// Use the PR head branch for PR-backed reviews, otherwise use the review branch
+	branch := "review/" + r.ID
+	if r.Target.Kind == review.KindPR && r.Target.HeadBranch != "" {
+		branch = r.Target.HeadBranch
+	}
 	if r.WorkRel != "" {
 		cs := tasks.ChangeSet{
 			Member: r.Target.Member,
-			Branch: "review/" + r.ID,
+			Branch: branch,
 			Path:   r.WorkRel,
 		}
 		if err := m.taskStore.RecordChangeSet(slug, cs); err != nil {

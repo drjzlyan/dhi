@@ -60,11 +60,12 @@ const (
 
 // Target identifies what is being reviewed.
 type Target struct {
-	Kind     Kind
-	Member   string
-	Base     string // merge-base side: branch name or sha
-	Head     string // branch name or resolved sha ("" until started for PRs)
-	PRNumber int    // set when Kind == pr
+	Kind       Kind
+	Member     string
+	Base       string // merge-base side: branch name or sha
+	Head       string // branch name or resolved sha ("" until started for PRs)
+	HeadBranch string // PR head branch name (for PR-backed reviews)
+	PRNumber   int    // set when Kind == pr
 }
 
 // Side anchors a thread to one parent of the diff.
@@ -134,22 +135,23 @@ func (r Review) PendingCount() int {
 
 // file is the on-disk TOML shape.
 type file struct {
-	Schema    int       `toml:"schema"`
-	Title     string    `toml:"title"`
-	Status    Status    `toml:"status"`
-	Kind      Kind      `toml:"kind"`
-	Member    string    `toml:"member"`
-	Base      string    `toml:"base"`
-	Head      string    `toml:"head"`
-	PRNumber  int       `toml:"pr_number,omitempty"`
-	Channel   string    `toml:"channel"`
-	WorkRel   string    `toml:"worktree"`
-	Posted    bool      `toml:"posted"`
-	PRURL     string    `toml:"pr_url,omitempty"`
-	Viewed    []string  `toml:"viewed"`
-	Done      bool      `toml:"done"`
-	CreatedAt time.Time `toml:"created_at"`
-	UpdatedAt time.Time `toml:"updated_at"`
+	Schema     int       `toml:"schema"`
+	Title      string    `toml:"title"`
+	Status     Status    `toml:"status"`
+	Kind       Kind      `toml:"kind"`
+	Member     string    `toml:"member"`
+	Base       string    `toml:"base"`
+	Head       string    `toml:"head"`
+	HeadBranch string    `toml:"head_branch,omitempty"`
+	PRNumber   int       `toml:"pr_number,omitempty"`
+	Channel    string    `toml:"channel"`
+	WorkRel    string    `toml:"worktree"`
+	Posted     bool      `toml:"posted"`
+	PRURL      string    `toml:"pr_url,omitempty"`
+	Viewed     []string  `toml:"viewed"`
+	Done       bool      `toml:"done"`
+	CreatedAt  time.Time `toml:"created_at"`
+	UpdatedAt  time.Time `toml:"updated_at"`
 
 	Threads []threadFile `toml:"thread"`
 }
@@ -283,7 +285,7 @@ func parseCard(path, id string) (Review, error) {
 	}
 	r := Review{
 		ID: id, Title: strings.TrimSpace(f.Title),
-		Target: Target{Kind: f.Kind, Member: f.Member, Base: f.Base, Head: f.Head, PRNumber: f.PRNumber},
+		Target: Target{Kind: f.Kind, Member: f.Member, Base: f.Base, Head: f.Head, HeadBranch: f.HeadBranch, PRNumber: f.PRNumber},
 		Status: st, Viewed: map[string]bool{}, Channel: f.Channel, WorkRel: f.WorkRel, Done: f.Done,
 		Posted: f.Posted, PRURL: f.PRURL,
 		CreatedAt: f.CreatedAt, UpdatedAt: f.UpdatedAt,
@@ -605,7 +607,7 @@ func writeCard(path string, r Review) error {
 	f := file{
 		Schema: SchemaVersion, Title: r.Title, Status: r.Status,
 		Kind: r.Target.Kind, Member: r.Target.Member, Base: r.Target.Base,
-		Head: r.Target.Head, PRNumber: r.Target.PRNumber,
+		Head: r.Target.Head, HeadBranch: r.Target.HeadBranch, PRNumber: r.Target.PRNumber,
 		Channel: r.Channel, WorkRel: r.WorkRel, Done: r.Done, Posted: r.Posted, PRURL: r.PRURL,
 		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 	}
