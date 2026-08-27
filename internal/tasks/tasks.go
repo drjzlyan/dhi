@@ -7,6 +7,7 @@
 package tasks
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -19,6 +20,7 @@ import (
 	"github.com/BurntSushi/toml"
 
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
+	"github.com/drjzlyan/dhi/internal/gitcore"
 	"github.com/drjzlyan/dhi/internal/workspace"
 )
 
@@ -546,6 +548,64 @@ func (s *Store) Subscribe() (<-chan Change, func()) {
 		delete(s.subs, id)
 		s.mu.Unlock()
 	}
+}
+
+// Commit stages all changes and creates a commit in the task's first
+// changeset worktree. Returns the new commit SHA.
+func (s *Store) Commit(slug, message string) error {
+	if message == "" {
+		return fmt.Errorf("tasks: commit message required")
+	}
+	s.mu.RLock()
+	t, ok := s.tasks[slug]
+	attach := s.attach
+	s.mu.RUnlock()
+	if !ok {
+		return fmt.Errorf("tasks: unknown task %q", slug)
+	}
+	if len(t.ChangeSets) == 0 {
+		return fmt.Errorf("tasks: %s has no worktrees", slug)
+	}
+	cs := t.ChangeSets[0]
+	absWorkdir := filepath.Join(s.ws.Root, cs.Path)
+	if attach == nil {
+		return fmt.Errorf("tasks: worktree seam unavailable")
+	}
+	repo, err := gitcore.Open(absWorkdir)
+	if err != nil {
+		return fmt.Errorf("tasks: commit: open repo: %w", err)
+	}
+	if err := repo.Stage("."); err != nil {
+		return fmt.Errorf("tasks: commit: stage: %w", err)
+	}
+	if _, err := repo.Commit(gitcore.CommitOptions{Message: message, Author: "you", Email: "you@dhi"}); err != nil {
+		return fmt.Errorf("tasks: commit: %w", err)
+	}
+	return nil
+}
+
+// PushBranch pushes the first changeset's branch to origin.
+func (s *Store) PushBranch(slug string) error {
+	s.mu.RLock()
+	t, ok := s.tasks[slug]
+	s.mu.RUnlock()
+	if !ok {
+		return fmt.Errorf("tasks: unknown task %q", slug)
+	}
+	if len(t.ChangeSets) == 0 {
+		return fmt.Errorf("tasks: %s has no worktrees", slug)
+	}
+	cs := t.ChangeSets[0]
+	absWorkdir := filepath.Join(s.ws.Root, cs.Path)
+	repo, err := gitcore.Open(absWorkdir)
+	if err != nil {
+		return fmt.Errorf("tasks: push: open repo: %w", err)
+	}
+	refspec := "refs/heads/" + cs.Branch + ":refs/heads/" + cs.Branch
+	if err := repo.Push(context.Background(), "", refspec, nil); err != nil {
+		return fmt.Errorf("tasks: push: %w", err)
+	}
+	return nil
 }
 
 // cardPathForTest exposes the on-disk path for tests only.

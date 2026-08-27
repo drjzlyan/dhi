@@ -674,6 +674,17 @@ func (m *Model) modalLines() []string {
 		}
 		lines = append(lines, "", hintOrErr(f, hint))
 		return lines
+	case fTaskCommit:
+		lines := []string{}
+		for i, fl := range f.fields {
+			lines = append(lines, m.fieldLine(fl, i == f.cur && !f.busy))
+		}
+		lines = append(lines, "", hintOrErr(f, "commit message · enter save"))
+		return lines
+	case fTaskPush:
+		return confirmLines("push branch for "+f.target()+"?",
+			"pushes the worktree branch to origin",
+			"and updates the remote.", f)
 	case fRemoveConfirm:
 		return confirmLines("remove member "+f.target()+"?",
 			"unregisters the repo; the working tree",
@@ -723,6 +734,10 @@ func defaultHint(k modalKind) string {
 		return "lead: you or agent id · enter save"
 	case fTaskPR:
 		return "pushes the card's branch and opens a PR · enter create"
+	case fTaskCommit:
+		return "commit message · enter save"
+	case fTaskPush:
+		return "enter confirms push · esc cancel"
 	}
 	return "tab next field · enter save · esc cancel"
 }
@@ -802,6 +817,10 @@ func modalTitle(k modalKind) string {
 		return "remove task"
 	case fTaskPR:
 		return "create PR"
+	case fTaskCommit:
+		return "commit changes"
+	case fTaskPush:
+		return "push branch"
 	}
 	return ""
 }

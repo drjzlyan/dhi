@@ -105,6 +105,7 @@ type wsEvent struct {
 	packName   string
 	packAgents []string
 	prNum      int
+	flash      string
 }
 
 const (
@@ -112,7 +113,19 @@ const (
 	evCloneDone
 	evInstallDone
 	evTaskPRDone
+	evPingFlash // ping with flash message
 )
+
+// opTimeout bounds async operations.
+const opTimeout = 5 * time.Minute
+
+// errString converts error to string, empty string if nil.
+func errString(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
+}
 
 // Deps carries the services this surface operates. Zero fields degrade
 // their sections to visible "unavailable" rows rather than errors.
@@ -274,6 +287,8 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 				m.form = formState{flash: "PR #" + itoa(msg.prNum) +
 					" created for " + msg.packName}
 			}
+		case evPingFlash:
+			m.form = formState{flash: msg.flash}
 		}
 		return m.listen()
 	}
@@ -305,6 +320,8 @@ const (
 	fTaskThread
 	fTaskRemoveConfirm
 	fTaskPR
+	fTaskCommit
+	fTaskPush
 )
 
 type field struct {
@@ -654,6 +671,25 @@ func (m *Model) tasksKey(key string) bool {
 						textField("base  ", base),
 					}}
 			}
+			return true
+		}
+	case "c":
+		if tk := sel(); tk != nil {
+			if m.taskStore == nil || len(tk.ChangeSets) == 0 {
+				m.flashErr("card has no worktree — attach one first (w)")
+				return true
+			}
+			m.form = formState{kind: fTaskCommit, orig: tk.Slug,
+				fields: []field{textField("message ", "")}}
+			return true
+		}
+	case "u":
+		if tk := sel(); tk != nil {
+			if m.taskStore == nil || len(tk.ChangeSets) == 0 {
+				m.flashErr("card has no worktree — attach one first (w)")
+				return true
+			}
+			m.form = formState{kind: fTaskPush, orig: tk.Slug, fields: nil}
 			return true
 		}
 	}
@@ -1126,6 +1162,50 @@ func (m *Model) submitForm() {
 			} else {
 				ev.prNum = meta.Number
 				_ = m.taskStore.SetPR(slug, meta.Number, meta.URL)
+			}
+			m.send(ev)
+		}()
+		return
+	case fTaskCommit:
+		if m.taskStore == nil {
+			f.err = "task store unavailable"
+			return
+		}
+		message := strings.TrimSpace(f.fields[0].text())
+		if message == "" {
+			f.err = "commit message required"
+			return
+		}
+		slug := f.orig
+		tk, ok := m.taskStore.Get(slug)
+		if !ok || len(tk.ChangeSets) == 0 {
+			f.err = "card has no worktree"
+			return
+		}
+		m.closeForm()
+		m.form = formState{kind: fNone, flash: "committing..."}
+		go func() {
+			err := m.taskStore.Commit(slug, message)
+			ev := wsEvent{kind: evPingFlash, err: errString(err)}
+			if err == nil {
+				ev.flash = "committed"
+			}
+			m.send(ev)
+		}()
+		return
+	case fTaskPush:
+		if m.taskStore == nil {
+			f.err = "task store unavailable"
+			return
+		}
+		slug := f.orig
+		m.closeForm()
+		m.form = formState{kind: fNone, flash: "pushing..."}
+		go func() {
+			err := m.taskStore.PushBranch(slug)
+			ev := wsEvent{kind: evPingFlash, err: errString(err)}
+			if err == nil {
+				ev.flash = "pushed"
 			}
 			m.send(ev)
 		}()
