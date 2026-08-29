@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -488,4 +489,193 @@ func (s *Service) fetchPRHead(ctx context.Context, memberPath string, prNum int)
 		return "", fmt.Errorf("review: fetch pull/%d: %w", prNum, err)
 	}
 	return sha, nil
+}
+
+func shortSHA(s string) string {
+	if len(s) > 7 {
+		return s[:7]
+	}
+	return s
+}
+
+// isOwnPR reports whether the review's PR head branch exists locally,
+// meaning we own the PR and can push to it.
+func (s *Service) isOwnPR(r Review) bool {
+	if r.Target.Kind != KindPR || r.Target.PRNumber <= 0 {
+		return false
+	}
+	if r.Target.HeadBranch == "" {
+		return false
+	}
+	mem, ok := s.ws.Member(r.Target.Member)
+	if !ok {
+		return false
+	}
+	repo, err := gitcore.Open(mem.Path)
+	if err != nil {
+		return false
+	}
+	branches, err := repo.Branches()
+	if err != nil {
+		return false
+	}
+	for _, b := range branches {
+		if b == r.Target.HeadBranch {
+			return true
+		}
+	}
+	return false
+}
+
+// PublishThreads posts the review's threads to the PR as GitHub review comments.
+// For own PRs (head branch exists locally): posts each thread as a real review comment
+// with proper line anchoring and threading (in_reply_to).
+// For external PRs: posts a single consolidated comment as the reviewing user,
+// containing only threads that represent actionable findings (unresolved, actionable).
+// Local drafts are never posted. Agent attribution markers are stripped for external PRs.
+func (s *Service) PublishThreads(ctx context.Context, r Review) error {
+	if !s.HasGH() {
+		return fmt.Errorf("review: gh unavailable — cannot publish comments")
+	}
+	if r.Target.PRNumber <= 0 {
+		return fmt.Errorf("review: %s does not back a PR", r.ID)
+	}
+	mem, ok := s.ws.Member(r.Target.Member)
+	if !ok {
+		return fmt.Errorf("review: unknown member %q", r.Target.Member)
+	}
+	repo := s.remoteURL(mem.Path)
+	if repo == "" {
+		return fmt.Errorf("review: member %q has no origin remote", r.Target.Member)
+	}
+	num := fmt.Sprint(r.Target.PRNumber)
+	commitSHA := r.Target.Head
+	if commitSHA == "" {
+		meta, err := s.gh.PR(ctx, repo, fmt.Sprint(r.Target.PRNumber))
+		if err != nil {
+			return fmt.Errorf("review: fetch PR metadata: %w", err)
+		}
+		commitSHA = meta.HeadSHA
+	}
+	if commitSHA == "" {
+		return fmt.Errorf("review: cannot determine PR head commit SHA")
+	}
+
+	isOwn := s.isOwnPR(r)
+
+	cur, ok := s.store.Get(r.ID)
+	if !ok {
+		return fmt.Errorf("review: unknown review %q", r.ID)
+	}
+
+	if isOwn {
+		if err := s.publishThreaded(ctx, repo, num, commitSHA, cur); err != nil {
+			return err
+		}
+	} else if err := s.publishConsolidated(ctx, repo, num, cur); err != nil {
+		return err
+	}
+	return s.store.MarkPosted(r.ID)
+}
+
+// publishThreaded posts each thread as a real GitHub review comment with proper
+// line anchoring and threading (in_reply_to). Returns error if any posting fails.
+func (s *Service) publishThreaded(ctx context.Context, repo, num, commitSHA string, r Review) error {
+	for _, t := range r.Threads {
+		if len(t.Comments) == 0 {
+			continue
+		}
+		// Find the first non-pending comment as the root
+		var rootComment *Comment
+		for i := range t.Comments {
+			if !t.Comments[i].Pending {
+				rootComment = &t.Comments[i]
+				break
+			}
+		}
+		if rootComment == nil {
+			continue // all pending, skip
+		}
+		// Anchor: thread fields are authoritative; comment-level Side/Line
+		// override only when set. Old-side threads anchor LEFT.
+		line := t.Line
+		if rootComment.Line != 0 {
+			line = rootComment.Line
+		}
+		if line == 0 {
+			line = 1
+		}
+		anchorSide := t.Side
+		if rootComment.Side != "" {
+			anchorSide = rootComment.Side
+		}
+		side := "RIGHT"
+		if anchorSide == SideOld {
+			side = "LEFT"
+		}
+		if err := s.gh.PostReviewComment(ctx, repo, num, commitSHA, t.File, line, side, rootComment.Text, 0); err != nil {
+			return fmt.Errorf("post root comment: %w", err)
+		}
+		// Post replies
+		for i := 1; i < len(t.Comments); i++ {
+			if t.Comments[i].Pending {
+				continue
+			}
+			if err := s.gh.PostReviewComment(ctx, repo, num, commitSHA, t.File, line, side, t.Comments[i].Text, rootComment.RemoteID); err != nil {
+				return fmt.Errorf("post reply: %w", err)
+			}
+		}
+	}
+	return nil
+}
+
+// publishConsolidated creates a single consolidated comment for external PRs.
+// Only includes threads that represent actionable findings (unresolved with content).
+// Strips agent attribution markers. Posts as a single issue comment.
+func (s *Service) publishConsolidated(ctx context.Context, repo, num string, r Review) error {
+	var b strings.Builder
+	fmt.Fprintf(&b, "## DHI Review Summary for PR #%s\n\n", num)
+	fmt.Fprintf(&b, "Base: %s → Head: %s\n\n", r.Target.Base, shortSHA(r.Target.Head))
+	hasContent := false
+	for _, t := range r.Threads {
+		if len(t.Comments) == 0 || t.Resolved {
+			continue
+		}
+		// Only include threads with actionable content (unresolved)
+		hasActionable := false
+		for _, c := range t.Comments {
+			if !c.Pending && strings.TrimSpace(c.Text) != "" {
+				hasActionable = true
+				break
+			}
+		}
+		if !hasActionable {
+			continue
+		}
+		hasContent = true
+		loc := t.File
+		if t.Line > 0 {
+			loc += ":" + strconv.Itoa(t.Line)
+			if t.Side == SideOld {
+				loc += " (old side)"
+			}
+		}
+		fmt.Fprintf(&b, "\n### %s\n", loc)
+		for _, c := range t.Comments {
+			if c.Pending || strings.TrimSpace(c.Text) == "" {
+				continue
+			}
+			author := c.Author
+			text := c.Text
+			// Strip agent attribution markers
+			text = strings.ReplaceAll(text, "_DHI agent @", "")
+			text = strings.TrimSuffix(text, "_")
+			text = strings.TrimSpace(text)
+			fmt.Fprintf(&b, "- **%s**: %s\n", author, text)
+		}
+	}
+	if !hasContent {
+		return nil // nothing actionable to post
+	}
+	return s.gh.PostComment(ctx, repo, fmt.Sprint(r.Target.PRNumber), b.String())
 }

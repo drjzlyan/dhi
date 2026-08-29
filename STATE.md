@@ -1,16 +1,17 @@
 # STATE — current position
 
-Updated: 2026-08-26 (session 2: M5 CLOSED + M5.x PR round-trip shipped)
+Updated: 2026-08-28 (session 3: M5.x agent-work-on-PR R1–R4 shipped)
 
 ## Where we are
 
-**M5 COMPLETE plus the M5.x PR round-trip addendum (e0f49ee → f6f2ff9;
-`make verify` green).** On top of the full Reviewer floor you can now:
-create a PR straight from a review/task worktree (`C` in Reviewer, `p`
-on TASKS cards; dirty trees refused visibly; push rides go-git with
-`gh auth token` BasicAuth), and pull GitHub review/issue comments into
-review threads (reply-chain mapping, RemoteID-deduped, auto-import on
-open + `R`). Next milestone: **M6 Ideator full (F-004)**.
+**M5 COMPLETE plus both M5.x addenda (R1–R4 = 4ddcda8 → working tree;
+`make verify` green).** Agents can now close the PR loop end-to-end:
+git_commit/git_push tools (R1), manual `c`/`u` on task cards (R2),
+fixer tasks bind the PR head branch (R3), and posting splits by
+ownership (R4): own PRs get real threaded review comments; external
+PRs get one consolidated summary with agent attribution stripped —
+other people's PRs never see DHI's agents. Next milestone: **M6
+Ideator full (F-004)**.
 
 ## Gotchas added this session
 
@@ -58,6 +59,24 @@ open + `R`). Next milestone: **M6 Ideator full (F-004)**.
   (new) + BindThread(review channel); `e` handoff through
   editor.OpenPaths (new exported buffer opener) + app.OpenInEditor
   (interface assertion + focus switch).
+
+## Just finished (R1–R4: agent-work-on-PR)
+
+- R1 (`4ddcda8`): `tools.GitRunner` seam; git_commit/git_push agent tools
+  gated via gate(…, sandbox.OpWrite, workdir); manifest BuiltinTools
+  extended; runtime wires newGitRunner(ws) over gitcore.
+- R2 (`3cea066`): TASKS `c` commit (message modal) / `u` push confirm;
+  tasks.Store.Commit/PushBranch; fTaskCommit/fTaskPush modal kinds.
+- R3 (`a4bbe0a`): Target.HeadBranch persisted (TOML `head_branch`); gh
+  CreatePR stores meta.HeadRef; dispatchFixer binds PR head branch.
+- R4: `GH.PostReviewComment` (gh api pulls/comments with commit_id, path,
+  line, side, optional in_reply_to); `Service.PublishThreads` routes by
+  isOwnPR (head branch exists locally) → publishThreaded (root = first
+  non-pending comment; thread anchor authoritative, comment Side/Line
+  override) or publishConsolidated (unresolved-only, attribution markers
+  stripped, single PostComment); both paths MarkPosted. Comment gained
+  Side/Line (TOML round-trip). Reviewer `P` now calls PublishThreads;
+  old prCommentBody deleted.
 
 ## Gotchas from the M5 build (carried)
 

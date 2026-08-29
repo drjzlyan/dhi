@@ -44,6 +44,9 @@ func (f *fakeGH) CreatePR(_ context.Context, repo, title, _, base, head string) 
 	f.created = append(f.created, strings.Join([]string{repo, title, base, head}, "|"))
 	return PRMeta{Number: 7, Title: title, URL: "https://github.com/acme/api/pull/7", BaseRef: base}, nil
 }
+func (f *fakeGH) PostReviewComment(context.Context, string, string, string, string, int, string, string, int64) error {
+	return nil
+}
 func (f *fakeGH) ReviewComments(context.Context, string, string) ([]RemoteComment, error) {
 	return f.reviewComments, nil
 }

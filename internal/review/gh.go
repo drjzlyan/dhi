@@ -31,6 +31,7 @@ type GH interface {
 	PR(ctx context.Context, repo, number string) (PRMeta, error)
 	Diff(ctx context.Context, repo, number string) (string, error)
 	PostComment(ctx context.Context, repo, number, body string) error
+	PostReviewComment(ctx context.Context, repo, number, commitSHA, path string, line int, side string, body string, inReplyTo int64) error
 	CreatePR(ctx context.Context, repo, title, body, base, head string) (PRMeta, error)
 	ReviewComments(ctx context.Context, repo, number string) ([]RemoteComment, error)
 	IssueComments(ctx context.Context, repo, number string) ([]RemoteComment, error)
@@ -133,6 +134,24 @@ func (g *GHCLI) Diff(ctx context.Context, repo, number string) (string, error) {
 // PostComment posts body as an issue comment on the PR.
 func (g *GHCLI) PostComment(ctx context.Context, repo, number, body string) error {
 	_, err := g.run(ctx, "pr", "comment", number, "--repo", repo, "--body", body)
+	return err
+}
+
+// PostReviewComment posts a review comment on a PR at a specific file/line.
+// If inReplyTo > 0, posts as a reply to that comment.
+func (g *GHCLI) PostReviewComment(ctx context.Context, repo, number, commitSHA, path string, line int, side string, body string, inReplyTo int64) error {
+	args := []string{"api", "--method", "POST",
+		fmt.Sprintf("repos/%s/pulls/%s/comments", repo, number),
+		"-f", "body=" + body,
+		"-f", "commit_id=" + commitSHA,
+		"-f", "path=" + path,
+		"-f", fmt.Sprintf("line=%d", line),
+		"-f", "side=" + strings.ToUpper(side),
+	}
+	if inReplyTo > 0 {
+		args = append(args, "-f", fmt.Sprintf("in_reply_to=%d", inReplyTo))
+	}
+	_, err := g.run(ctx, args...)
 	return err
 }
 

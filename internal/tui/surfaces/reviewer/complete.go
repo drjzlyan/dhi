@@ -2,9 +2,7 @@ package reviewer
 
 import (
 	"context"
-	"fmt"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/drjzlyan/dhi/internal/review"
@@ -14,38 +12,9 @@ import (
 // fixerTimeout bounds the synchronous task-store work in dispatchFixer.
 const fixerTimeout = 30 * time.Second
 
-// prCommentBody renders the consolidated markdown comment posted to the
-// PR. Agent-authored comments carry explicit attribution.
-func prCommentBody(r review.Review) string {
-	var b strings.Builder
-	fmt.Fprintf(&b, "## DHI review `%s`\n\n%s → %s\n",
-		r.ID, r.Target.Base, shortSHA(r.Target.Head))
-	for _, t := range r.Threads {
-		if len(t.Comments) == 0 {
-			continue
-		}
-		loc := t.File
-		if t.Line > 0 {
-			loc += ":" + fmt.Sprint(t.Line)
-		}
-		state := ""
-		if t.Resolved {
-			state = " ✓ resolved"
-		}
-		fmt.Fprintf(&b, "\n**%s**%s\n", loc, state)
-		for _, c := range t.Comments {
-			if c.Author == busHuman() {
-				fmt.Fprintf(&b, "- %s\n", c.Text)
-				continue
-			}
-			fmt.Fprintf(&b, "- %s — _DHI agent @%s_\n", c.Text, c.Author)
-		}
-	}
-	return b.String()
-}
-
-// postToPR publishes the review's threads to the PR as one consolidated
-// comment via gh (PR-backed reviews only).
+// postToPR publishes the review's threads to the PR: threaded review
+// comments on own PRs, a consolidated summary on external PRs.
+// (PR-backed reviews only.)
 func (m *Model) postToPR() {
 	r, ok := m.requireReview()
 	if !ok {
@@ -55,14 +24,12 @@ func (m *Model) postToPR() {
 		m.opErr = "not a PR review — nothing to post to"
 		return
 	}
-	body := prCommentBody(r)
-	id := r.ID
 	m.busy = true
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), opTimeout)
 		defer cancel()
-		err := m.svc.PostComment(ctx, r, body)
-		m.send(revEvent{kind: evPosted, id: id, err: errString(err), n: r.Target.PRNumber})
+		err := m.svc.PublishThreads(ctx, r)
+		m.send(revEvent{kind: evPosted, id: r.ID, err: errString(err), n: r.Target.PRNumber})
 	}()
 }
 

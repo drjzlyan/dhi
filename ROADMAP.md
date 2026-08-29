@@ -278,6 +278,24 @@ never dirties working copies.
       opening a PR-backed review + manual `R`; FILES header badge shows
       `N remote · synced HH:MM`
 
+### M5.x — agent-work-on-PR addendum (R1–R4) ✅ (2026-08-28)
+
+- [x] R1 — git tools for agents (`git_commit`/`git_push` with GitRunner
+      seam, write-gated approvals, manifest BuiltinTools allowlist)
+- [x] R2 — manual commit/push on task cards (`c` message prompt, `u` push
+      confirm; `tasks.Store.Commit/PushBranch`; fTaskCommit/fTaskPush modals)
+- [x] R3 — fixer binds PR head branch (`Target.HeadBranch` persisted;
+      dispatchFixer uses the PR head branch for PR-backed reviews so the
+      fixing agent edits the branch that feeds the PR)
+- [x] R4 — ownership-split posting (`GH.PostReviewComment`;
+      `Service.PublishThreads`): own PRs (head branch exists locally) →
+      real threaded review comments, line-anchored (`side`/`line`) with
+      `in_reply_to` replies; external PRs → one consolidated issue
+      comment containing only unresolved/actionable threads, pending
+      drafts skipped and `_DHI agent @_` attribution stripped — nothing
+      reveals agent identity on others' PRs (gh posts as the user).
+      `Comment` gained `Side`/`Line`; `Posted` marked after publish
+
 ## M6 — **Ideator full** (F-004)
 
 - [ ] Sessions: invited agent set + thread + artifact folder

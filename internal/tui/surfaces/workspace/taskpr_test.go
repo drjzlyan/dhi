@@ -42,6 +42,9 @@ func (g *ghStub) CreatePR(_ context.Context, _, title, _, base, head string) (re
 	return review.PRMeta{Number: 21, URL: "https://github.com/acme/api/pull/21",
 		BaseRef: base}, nil
 }
+func (g *ghStub) PostReviewComment(context.Context, string, string, string, string, int, string, string, int64) error {
+	return nil
+}
 func (g *ghStub) ReviewComments(context.Context, string, string) ([]review.RemoteComment, error) {
 	return nil, nil
 }

@@ -86,6 +86,8 @@ type Comment struct {
 	At       time.Time
 	Pending  bool
 	RemoteID int64
+	Side     Side // SideNew or SideOld (for line-anchored comments)
+	Line     int  // 1-based line number on the given side; 0 = file-level
 }
 
 // Thread is a discussion rooted at one file line (Line 0 = file level).
@@ -173,6 +175,8 @@ type commentFile struct {
 	At       time.Time `toml:"at"`
 	Pending  bool      `toml:"pending"`
 	RemoteID int64     `toml:"remote_id,omitempty"`
+	Side     Side      `toml:"side,omitempty"`
+	Line     int       `toml:"line,omitempty"`
 }
 
 // WorktreeFn creates the dedicated review worktree for one member and
@@ -297,7 +301,7 @@ func parseCard(path, id string) (Review, error) {
 		t := Thread{ID: tf.ID, File: tf.File, Line: tf.Line, Side: tf.Side,
 			Resolved: tf.Resolved, BusThread: tf.BusThread, RemoteRoot: tf.RemoteRoot}
 		for _, cf := range tf.Comments {
-			t.Comments = append(t.Comments, Comment{Author: cf.Author, Text: cf.Text, At: cf.At, Pending: cf.Pending, RemoteID: cf.RemoteID})
+			t.Comments = append(t.Comments, Comment{Author: cf.Author, Text: cf.Text, At: cf.At, Pending: cf.Pending, RemoteID: cf.RemoteID, Side: cf.Side, Line: cf.Line})
 		}
 		r.Threads = append(r.Threads, t)
 	}
@@ -621,7 +625,7 @@ func writeCard(path string, r Review) error {
 		tf := threadFile{ID: t.ID, File: t.File, Line: t.Line, Side: t.Side,
 			Resolved: t.Resolved, BusThread: t.BusThread, RemoteRoot: t.RemoteRoot}
 		for _, c := range t.Comments {
-			tf.Comments = append(tf.Comments, commentFile{Author: c.Author, Text: c.Text, At: c.At, Pending: c.Pending, RemoteID: c.RemoteID})
+			tf.Comments = append(tf.Comments, commentFile{Author: c.Author, Text: c.Text, At: c.At, Pending: c.Pending, RemoteID: c.RemoteID, Side: c.Side, Line: c.Line})
 		}
 		f.Threads = append(f.Threads, tf)
 	}
