@@ -4,7 +4,7 @@ Updated: 2026-09-01 (session 4: M6 Ideator full shipped)
 
 ## Where we are
 
-**M6 COMPLETE (F-004, ADR-0010; `make verify` green).** The Ideator
+**M6 COMPLETE (F-004, ADR-0010; commit a30d5af; `make verify` green).** The Ideator
 replaced the placeholder (view 3): sessions with invited agents + implicit
 bus channels + artifact folders, read-only artifact tree with
 draft→reviewed→approved/rejected statuses, glamour markdown preview,
