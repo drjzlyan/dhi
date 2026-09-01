@@ -24,6 +24,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
 	"github.com/drjzlyan/dhi/internal/doctor"
 	"github.com/drjzlyan/dhi/internal/gitcore"
+	"github.com/drjzlyan/dhi/internal/ideation"
 	"github.com/drjzlyan/dhi/internal/review"
 	"github.com/drjzlyan/dhi/internal/search"
 	"github.com/drjzlyan/dhi/internal/settings"
@@ -32,7 +33,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/tui/app"
 	"github.com/drjzlyan/dhi/internal/tui/surfaces/bootstrap"
 	"github.com/drjzlyan/dhi/internal/tui/surfaces/editor"
-	"github.com/drjzlyan/dhi/internal/tui/surfaces/placeholder"
+	ideator "github.com/drjzlyan/dhi/internal/tui/surfaces/ideator"
 	reviewer "github.com/drjzlyan/dhi/internal/tui/surfaces/reviewer"
 	settingsview "github.com/drjzlyan/dhi/internal/tui/surfaces/settings"
 	wsview "github.com/drjzlyan/dhi/internal/tui/surfaces/workspace"
@@ -97,6 +98,7 @@ func runTUI() {
 	var agentRT *runtime.Runtime
 	var taskStore *tasks.Store
 	var reviewSvc *review.Service
+	var sessionStore *ideation.Store
 	if ws != nil {
 		messageBus = openBus(ws)
 		if ts, err := tasks.Open(ws); err == nil {
@@ -104,6 +106,11 @@ func runTUI() {
 			wireTaskSeam(ws, ts)
 		}
 		reviewSvc = openReviewService(ws)
+		if ss, err := ideation.Open(ws); err == nil {
+			sessionStore = ss
+		} else {
+			fmt.Fprintln(os.Stderr, "dhi: session store:", err)
+		}
 		// Agent runtime (F-007): lights up only when a roster exists
 		// under .dhi/agents/. A missing API key surfaces at first turn,
 		// not boot; doctor warns about it.
@@ -125,8 +132,11 @@ func runTUI() {
 			ReviewSvc: reviewSvc,
 		}),
 		editor.New(version.Version, ws, edOpts...),
-		placeholder.New("ideator", "Ideator", "M6",
-			"Ideation sessions: artifact navigation, preview, approval — no editing."),
+		ideator.New(version.Version, ws, ideator.Deps{
+			Store: sessionStore,
+			Bus:   messageBus,
+			Crew:  agentRT,
+		}),
 		reviewer.New(version.Version, ws, reviewer.Deps{
 			Service: reviewSvc,
 			Bus:     messageBus,

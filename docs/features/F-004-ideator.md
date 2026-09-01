@@ -1,6 +1,6 @@
 # F-004: Ideator surface — think with the crew, don't touch the code
 
-Status: planned · Milestone: M6
+Status: done (M6, ADR-0010) · Milestone: M6
 
 ## Summary
 
@@ -33,3 +33,23 @@ approves what was ideated.
   chat and produce artifacts visible in the tree.
 - Preview renders markdown; approve/reject states persist per artifact.
 - Rejection routes back to chat as revision instructions to the authoring agent.
+
+## Delivery notes (M6)
+
+- Store: `internal/ideation` — TOML card per session at
+  `.dhi/sessions/<slug>.toml` (tasks/review blueprint), artifact files at
+  `.dhi/sessions/<slug>/`, bus channel `#ideation-<slug>`. Artifact
+  statuses persist per file with a content hash; a rewritten file flips
+  back to draft (revision loop detection).
+- Agent production: reserved `.dhi` vpath pseudo-member (ADR-0010) lets
+  agents `write` artifacts under the session folder through the normal
+  path-jail + manifest policies.
+- Surface: `surfaces/ideator` — SESSIONS · ARTIFACTS · PREVIEW · CHAT
+  (`[`/`]`), read-only; glamour markdown preview (memoized, shared with
+  the editor's `internal/preview`); session chat with @mention dispatch
+  through the narrow `crew` seam (same pattern as the reviewer).
+- Review loop: `r` records rejection notes and posts a revision request
+  mentioning the artifact's claimed author on the session channel;
+  authorship is claimed automatically when agent chatter references
+  artifact vpaths. Approve is terminal and human-only.
+- Doctor: `sessions/store` suite (malformed cards, dangling invites).

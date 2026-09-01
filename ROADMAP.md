@@ -296,11 +296,26 @@ never dirties working copies.
       reveals agent identity on others' PRs (gh posts as the user).
       `Comment` gained `Side`/`Line`; `Posted` marked after publish
 
-## M6 — **Ideator full** (F-004)
+## M6 — **Ideator full** (F-004) ✅ (2026-09-01)
 
-- [ ] Sessions: invited agent set + thread + artifact folder
-- [ ] Read-only artifact tree + preview (markdown first); approve/reject flow
-- [ ] Rejection→revision loop back to authoring agent; export later via MCP
+Design decisions: ADR-0010 (reserved `.dhi` vpath pseudo-member jailed
+like member roots so agents `write` artifacts under
+`.dhi/sessions/<slug>/` through manifest policies; per-session implicit
+bus channels; content-hash-keyed artifact statuses so a fresh revision
+flips back to draft). Deferred to M7: diagram/SVG preview, export to
+repo paths / MCP issue trackers.
+
+- [x] Sessions: invited agent set + implicit session channel +
+      artifact folder — `internal/ideation` TOML cards under
+      `.dhi/sessions/` (strict decode, malformed-card warnings,
+      Subscribe pings; `.dhi/sessions` reserved in the workspace schema)
+- [x] Read-only artifact tree + preview (markdown first via
+      `internal/preview`, raw fallback; memoized renders) with
+      draft→reviewed→approved/rejected statuses persisted per artifact
+- [x] Rejection→revision loop back to the authoring agent (notes modal
+      → session channel post @author → crew dispatch; authorship
+      claimed from agent chatter); CHAT section with @mention dispatch;
+      doctor `sessions/store` suite
 
 ## M7 — Hardening & polish
 

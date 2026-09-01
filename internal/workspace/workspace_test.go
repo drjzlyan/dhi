@@ -159,10 +159,75 @@ func TestVPathRejectsEscapeAttempts(t *testing.T) {
 
 func TestVPathForOutsideMembersFails(t *testing.T) {
 	ws, _ := setupWorkspace(t)
-	if _, err := ws.VPathFor(filepath.Join(ws.Root, ".dhi", "memory")); err == nil {
-		t.Error(".dhi path mapped to a member")
-	}
 	if _, err := ws.VPathFor(t.TempDir()); err == nil {
 		t.Error("foreign path mapped to a member")
+	}
+}
+
+func TestVPathReservedDhiAlias(t *testing.T) {
+	ws, repoA := setupWorkspace(t)
+
+	// Forward: .dhi/<rel> resolves under the workspace dotdir.
+	vp, err := ParseVPath(".dhi/sessions/ideas/design.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if vp.Member != ReservedMember || vp.Rel != "sessions/ideas/design.md" {
+		t.Fatalf("ParseVPath = %+v", vp)
+	}
+	abs, err := ws.Resolve(vp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(ws.Root, ".dhi", "sessions", "ideas", "design.md")
+	if abs != want {
+		t.Fatalf("Resolve = %q, want %q", abs, want)
+	}
+
+	// Reverse: the same file maps back to the reserved member.
+	back, err := ws.VPathFor(abs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if back.Member != ReservedMember || back.Rel != "sessions/ideas/design.md" {
+		t.Fatalf("VPathFor = %+v", back)
+	}
+
+	// A real member named "dhi" (no dot) never collides with the alias.
+	if absA, err := ws.Resolve(VPath{Member: "alpha", Rel: "x"}); err != nil || absA == "" {
+		t.Fatalf("member resolve broke: %q %v", absA, err)
+	}
+	_ = repoA
+}
+
+func TestVPathReservedDhiValidation(t *testing.T) {
+	ws, _ := setupWorkspace(t)
+	// Bare ".dhi" has no meaning — the tree itself is not a file.
+	if _, err := ParseVPath(".dhi"); err == nil {
+		t.Error("bare .dhi vpath accepted")
+	}
+	if _, err := ParseVPath(".dhi/"); err == nil {
+		t.Error("trailing-slash-only .dhi vpath accepted")
+	}
+	// Traversal inside the reserved tree is rejected.
+	for _, bad := range []string{".dhi/../workspace.toml", ".dhi/../../outside"} {
+		vp, err := ParseVPath(bad)
+		if err == nil {
+			if _, err = ws.Resolve(vp); err == nil {
+				t.Errorf("Resolve(%q) accepted traversal", bad)
+			}
+			continue
+		}
+		// parse-level rejection is fine too
+	}
+	// The .dhi root itself resolves for listing.
+	abs, err := ws.Resolve(VPath{Member: ReservedMember, Rel: "sessions"})
+	if err != nil || abs != filepath.Join(ws.Root, ".dhi", "sessions") {
+		t.Fatalf("Resolve sessions dir = %q, %v", abs, err)
+	}
+	// VPathFor of the .dhi dir itself maps to the member root.
+	root, err := ws.VPathFor(filepath.Join(ws.Root, ".dhi"))
+	if err != nil || root.Member != ReservedMember || root.Rel != "" {
+		t.Fatalf("VPathFor(.dhi root) = %+v, %v", root, err)
 	}
 }

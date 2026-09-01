@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/drjzlyan/dhi/internal/ideation"
 	"github.com/drjzlyan/dhi/internal/tasks"
 
 	agentkitStandards "github.com/drjzlyan/dhi/internal/agentkit/standards"
@@ -60,6 +61,7 @@ func Run(toolRoot, wsRoot string) Report {
 	r.Checks = append(r.Checks, Agents(wsRoot)...)
 	r.Checks = append(r.Checks, Standards(wsRoot)...)
 	r.Checks = append(r.Checks, Tasks(wsRoot)...)
+	r.Checks = append(r.Checks, Sessions(wsRoot)...)
 	r.Checks = append(r.Checks, GH()...)
 	r.Healthy = true
 	for _, c := range r.Checks {
@@ -212,7 +214,7 @@ func Workspace(root string) []Check {
 		Detail: fmt.Sprintf("%d member(s)", len(ws.Members()))}}
 	for _, dir := range []string{
 		workspace.DirAgents, workspace.DirMemory, workspace.DirKnowledge,
-		workspace.DirChannels, workspace.DirTasks,
+		workspace.DirChannels, workspace.DirTasks, workspace.DirSessions,
 	} {
 		info, err := os.Stat(filepath.Join(root, dir))
 		if err != nil || !info.IsDir() {
@@ -404,6 +406,53 @@ func Tasks(wsRoot string) []Check {
 			Detail: detail + "; " + strings.Join(warnings, "; ")}}
 	}
 	return []Check{{Name: "tasks/store", Status: OK, Detail: detail}}
+}
+
+// Sessions probes .dhi/sessions/ (F-004 ideator): malformed cards warn
+// (they are skipped at load), invited agents not on the roster warn.
+func Sessions(wsRoot string) []Check {
+	if wsRoot == "" {
+		return nil
+	}
+	ws, err := workspace.Load(wsRoot)
+	if err != nil {
+		return nil // not a workspace; workspace/config already reported
+	}
+	store, err := ideation.Open(ws)
+	if err != nil {
+		return []Check{{Name: "sessions/store", Status: Warn, Detail: err.Error()}}
+	}
+	all := store.Sessions()
+	if w := store.Warnings(); len(w) > 0 {
+		return []Check{{Name: "sessions/store", Status: Warn,
+			Detail: fmt.Sprintf("%d malformed card(s): %s", len(w), strings.Join(w, "; "))}}
+	}
+	if len(all) == 0 {
+		return nil // no sessions is healthy
+	}
+
+	var warnings []string
+	roster, rerr := manifest.LoadDir(filepath.Join(wsRoot, workspace.DirAgents))
+	validIDs := map[string]bool{}
+	if rerr == nil {
+		for _, a := range roster {
+			validIDs[a.ID] = true
+		}
+	}
+	for _, s := range all {
+		for _, a := range s.Agents {
+			if !validIDs[a] {
+				warnings = append(warnings, s.ID+": invited agent "+a+" not on roster")
+			}
+		}
+	}
+	sort.Strings(warnings)
+	detail := fmt.Sprintf("%d session(s)", len(all))
+	if len(warnings) > 0 {
+		return []Check{{Name: "sessions/store", Status: Warn,
+			Detail: detail + "; " + strings.Join(warnings, "; ")}}
+	}
+	return []Check{{Name: "sessions/store", Status: OK, Detail: detail}}
 }
 
 // GH probes the optional host gh CLI (F-005): PR reviews and posting

@@ -122,7 +122,7 @@ func setupWorkspaceRoot(t *testing.T, reserveAll bool) string {
 		t.Fatal(err)
 	}
 	if reserveAll {
-		for _, dir := range []string{".dhi/agents", ".dhi/memory", ".dhi/knowledge", ".dhi/channels", ".dhi/tasks"} {
+		for _, dir := range []string{".dhi/agents", ".dhi/memory", ".dhi/knowledge", ".dhi/channels", ".dhi/tasks", ".dhi/sessions"} {
 			if err := os.MkdirAll(filepath.Join(root, dir), 0o755); err != nil {
 				t.Fatal(err)
 			}
@@ -265,6 +265,44 @@ func TestTasksSuite(t *testing.T) {
 	os.WriteFile(filepath.Join(ws, ".dhi", "tasks", "junk.toml"), []byte("schema = 3\n"), 0o644)
 	checks = Tasks(ws)
 	c, _ = statusOf(checks, "tasks/store")
+	if c.Status != Warn || !strings.Contains(c.Detail, "malformed") {
+		t.Fatalf("malformed = %+v", c)
+	}
+}
+
+func TestSessionsSuite(t *testing.T) {
+	ws := setupWorkspaceRoot(t, true)
+
+	// No sessions: silent.
+	if checks := Sessions(ws); checks != nil {
+		t.Fatalf("empty store emitted %+v", checks)
+	}
+
+	os.WriteFile(filepath.Join(ws, ".dhi", "agents", "scout.toml"),
+		[]byte("schema = 1\nname = \"Scout\"\nmodel = \"m\"\n"), 0o644)
+	os.MkdirAll(filepath.Join(ws, ".dhi", "sessions"), 0o755)
+	card := "schema = 1\nname = \"Storage\"\ntopic = \"engines\"\nagents = [\"scout\"]\nchannel = \"#ideation-storage\"\n"
+	os.WriteFile(filepath.Join(ws, ".dhi", "sessions", "storage.toml"), []byte(card), 0o644)
+
+	checks := Sessions(ws)
+	c, ok := statusOf(checks, "sessions/store")
+	if !ok || c.Status != OK || !strings.Contains(c.Detail, "1 session") {
+		t.Fatalf("healthy card = %+v (found=%v)", c, ok)
+	}
+
+	// Dangling invite warns by name.
+	bad := strings.Replace(card, "agents = [\"scout\"]", "agents = [\"ghost\"]", 1)
+	os.WriteFile(filepath.Join(ws, ".dhi", "sessions", "bad.toml"), []byte(bad), 0o644)
+	checks = Sessions(ws)
+	c, _ = statusOf(checks, "sessions/store")
+	if c.Status != Warn || !strings.Contains(c.Detail, "invited agent ghost") {
+		t.Fatalf("dangling invite = %+v", c)
+	}
+
+	// Malformed file warns.
+	os.WriteFile(filepath.Join(ws, ".dhi", "sessions", "junk.toml"), []byte("schema = 3\n"), 0o644)
+	checks = Sessions(ws)
+	c, _ = statusOf(checks, "sessions/store")
 	if c.Status != Warn || !strings.Contains(c.Detail, "malformed") {
 		t.Fatalf("malformed = %+v", c)
 	}

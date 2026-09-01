@@ -1,0 +1,30 @@
+ SESSIONS          ╭─ › artifacts ───────────────────────────────────────────────────────────────╮ 
+▌ ARTIFACTS        │ artifacts (read-only)  enter preview · v reviewed · a approve · r reject · s │
+ PREVIEW           │ ▌ design.md                                             ○ draft              │
+ CHAT              │                                                                              │
+                   │                                                                              │
+                   │                                                                              │
+                   │                                                                              │
+                   │                                                                              │
+                   │                                                                              │
+                   │                                                                              │
+                   │                                                                              │
+                   │                                                                              │
+                               ╭─ › reject artifact ─────────────────────────────╮                 
+                               │ routes back to the authoring agent               │                
+                               │ ▌ notes   ▏                                      │                
+                               │                                                  │                
+                               │ notes post to the session channel · enter reject │                
+                               ╰──────────────────────────────────────────────────╯                
+                   │                                                                              │
+                   │                                                                              │
+                   │                                                                              │
+                   │                                                                              │
+                   │                                                                              │
+                   │                                                                              │
+                   │                                                                              │
+                   │                                                                              │
+                   │                                                                              │
+                   │                                                                              │
+[ ] sections       │                                                                              │
+                   ╰──────────────────────────────────────────────────────────────────────────────╯

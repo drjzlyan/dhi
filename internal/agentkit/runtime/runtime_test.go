@@ -187,6 +187,68 @@ policy_json = """{"rules":[{"op":"read","path":"**","effect":"allow"}]}"""
 	}
 }
 
+func TestReservedDhiArtifactWrite(t *testing.T) {
+	// F-004: an ideation agent with a sessions-write policy produces
+	// artifacts under the reserved .dhi tree, addressed as
+	// .dhi/sessions/<session>/<file>.
+	doc := `schema = 1
+name = "Scout"
+model = "mock-1"
+system = "You ideate."
+tools = ["read", "write"]
+policy_json = """{"rules":[{"op":"read","path":"**","effect":"allow"},{"op":"write","path":"sessions/**","effect":"allow"}]}"""
+`
+	h := newHarness(t, doc)
+	h.mock.Add(
+		provider.ScriptToolCall("w1", "write", []byte(`{"path":".dhi/sessions/ideas/design.md","content":"# design"}`)),
+		provider.ScriptText("Artifact written."),
+	)
+	replies, cancel := h.bus.Subscribe("#general")
+	defer cancel()
+
+	trig, _ := h.bus.Post(bus.Message{Channel: "#general", Author: bus.Human, Text: "@scout draft the design"})
+	h.rt.Turn(context.Background(), "scout", trig)
+
+	got := waitReply(t, replies)
+	if got.Text != "Artifact written." {
+		t.Fatalf("reply = %q", got.Text)
+	}
+	data, err := os.ReadFile(filepath.Join(h.ws.Root, ".dhi", "sessions", "ideas", "design.md"))
+	if err != nil || string(data) != "# design" {
+		t.Fatalf("artifact missing/mangled: %q %v", data, err)
+	}
+
+	// Reverse mapping keeps agents' outputs nameable in chat.
+	vp, err := h.ws.VPathFor(filepath.Join(h.ws.Root, ".dhi", "sessions", "ideas", "design.md"))
+	if err != nil || vp.String() != ".dhi/sessions/ideas/design.md" {
+		t.Fatalf("VPathFor = %+v, %v", vp, err)
+	}
+}
+
+func TestReservedDhiWriteDeniedWithoutPolicy(t *testing.T) {
+	// No sessions rule: writes into the reserved tree default-deny like
+	// everything else (ADR-0006).
+	h := newHarness(t, baseDoc)
+	h.mock.Add(
+		provider.ScriptToolCall("w1", "write", []byte(`{"path":".dhi/sessions/ideas/design.md","content":"no"}`)),
+		provider.ScriptText("Could not write."),
+	)
+	replies, cancel := h.bus.Subscribe("#general")
+	defer cancel()
+
+	trig, _ := h.bus.Post(bus.Message{Channel: "#general", Author: bus.Human, Text: "@scout write it"})
+	h.rt.Turn(context.Background(), "scout", trig)
+
+	waitReply(t, replies)
+	res := h.mock.Calls()[1].Messages[len(h.mock.Calls()[1].Messages)-1].Blocks[0].(provider.ToolResult)
+	if !res.IsError || !contains(res.Content, "denied") {
+		t.Errorf("deny not surfaced to model: %+v", res)
+	}
+	if _, err := os.Stat(filepath.Join(h.ws.Root, ".dhi", "sessions", "ideas", "design.md")); !os.IsNotExist(err) {
+		t.Error("denied .dhi write touched disk")
+	}
+}
+
 func TestAskWriteRequiresApproval(t *testing.T) {
 	doc := `schema = 1
 name = "Scout"

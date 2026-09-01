@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -81,10 +82,14 @@ func New(cfg Config, roster []*manifest.Agent) (*Runtime, error) {
 	if len(roster) == 0 {
 		return nil, fmt.Errorf("runtime: empty roster")
 	}
-	jailRoots := make([]string, 0, len(cfg.WS.Members())+1)
+	jailRoots := make([]string, 0, len(cfg.WS.Members())+2)
 	for _, m := range cfg.WS.Members() {
 		jailRoots = append(jailRoots, m.Path)
 	}
+	// The reserved .dhi tree is jailed separately so agents can write
+	// ideation artifacts under .dhi/sessions/ (F-004) while policies
+	// stay deny-by-default (ADR-0006/0010).
+	jailRoots = append(jailRoots, filepath.Join(cfg.WS.Root, workspace.DHIDir))
 	r.gitRunner = newGitRunner(cfg.WS)
 	for _, m := range roster {
 		e, err := r.buildEntry(m, jailRoots)
@@ -162,10 +167,11 @@ func (r *Runtime) Changes() <-chan struct{} { return r.roster }
 // entries finish untouched (they hold their own turnMu); new turns bind
 // to the new entries. An empty roster clears the crew.
 func (r *Runtime) Reload(roster []*manifest.Agent) error {
-	jailRoots := make([]string, 0, len(r.cfg.WS.Members())+1)
+	jailRoots := make([]string, 0, len(r.cfg.WS.Members())+2)
 	for _, m := range r.cfg.WS.Members() {
 		jailRoots = append(jailRoots, m.Path)
 	}
+	jailRoots = append(jailRoots, filepath.Join(r.cfg.WS.Root, workspace.DHIDir))
 	next := make(map[string]*entry, len(roster))
 	for _, m := range roster {
 		e, err := r.buildEntry(m, jailRoots)
@@ -325,6 +331,7 @@ func (r *Runtime) prompt(e *entry, trigger bus.Message) provider.Request {
 		members = append(members, m.Name)
 	}
 	grounding := "\n\nFiles are addressed as <member>/<rel-path>. Members: " + strings.Join(members, ", ")
+	grounding += "\nThe reserved workspace dotdir is addressed as .dhi/<rel-path>; ideation artifacts belong under .dhi/sessions/<session>/<file>."
 	system += grounding
 	if r.cfg.Standards {
 		system += "\n\n" + standards.Resolve(r.cfg.WS.Root, e.m.ID, r.teamLookup())

@@ -2,7 +2,8 @@
 // holding `.dhi/workspace.toml` (member registry), the member repos, and
 // the VPath resolver that names files across all members as
 // "<member>/<rel-path>". The `.dhi/` tree is reserved for agents, memory,
-// knowledge, channels, and tasks (dir-schema reservation).
+// knowledge, channels, tasks, and ideation sessions (dir-schema
+// reservation); the pseudo-member ".dhi" addresses it from agent tools.
 //
 // A Workspace is safe for concurrent use: members are guarded by an
 // internal RWMutex, mutations persist atomically before becoming visible,
@@ -36,6 +37,7 @@ const (
 	DirKnowledge = ".dhi/knowledge"
 	DirChannels  = ".dhi/channels"
 	DirTasks     = ".dhi/tasks"
+	DirSessions  = ".dhi/sessions"
 )
 
 // Member is one repo registered in the workspace.
@@ -73,7 +75,7 @@ func Create(root string, names ...string) error {
 	if _, err := os.Stat(cfgPath); err == nil {
 		return fmt.Errorf("workspace: %s already exists", cfgPath)
 	}
-	for _, dir := range []string{DirAgents, DirMemory, DirKnowledge, DirChannels, DirTasks} {
+	for _, dir := range []string{DirAgents, DirMemory, DirKnowledge, DirChannels, DirTasks, DirSessions} {
 		if err := os.MkdirAll(filepath.Join(root, dir), 0o755); err != nil {
 			return fmt.Errorf("workspace: reserve %s: %w", dir, err)
 		}
