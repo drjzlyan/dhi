@@ -4,7 +4,7 @@ Updated: 2026-08-28 (session 3: M5.x agent-work-on-PR R1–R4 shipped)
 
 ## Where we are
 
-**M5 COMPLETE plus both M5.x addenda (R1–R4 = 4ddcda8 → working tree;
+**M5 COMPLETE plus both M5.x addenda (R1–R4 = 4ddcda8 → 36cd5fe;
 `make verify` green).** Agents can now close the PR loop end-to-end:
 git_commit/git_push tools (R1), manual `c`/`u` on task cards (R2),
 fixer tasks bind the PR head branch (R3), and posting splits by
