@@ -1,9 +1,10 @@
 // Package lsp is DHI's minimal Language Server Protocol client
-// (F-002 §7): JSON-RPC 2.0 over stdio with just the flows the editor
+// (F-002 §7, F-009): JSON-RPC 2.0 over stdio with the flows the editor
 // needs — initialize handshake, full-text didOpen/didChange, streamed
-// publishDiagnostics, and completion requests. Servers resolve through
-// the hermetic toolchain shim dir (ADR-0005); tests drive an in-process
-// fake server over net.Pipe.
+// publishDiagnostics, completion, hover, rename, code actions, and
+// workspace/applyEdit routing. Servers resolve through the hermetic
+// toolchain shim dir (ADR-0005); tests drive an in-process fake server
+// over net.Pipe.
 package lsp
 
 import (

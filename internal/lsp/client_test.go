@@ -36,6 +36,22 @@ func startFake(t *testing.T, onRequest func(string, json.RawMessage) (any, bool)
 	return c
 }
 
+// startFakePair exposes the server side for tests that push requests.
+func startFakePair(t *testing.T) (*Client, *fakeServer) {
+	t.Helper()
+	clientConn, serverConn := net.Pipe()
+	fs := &fakeServer{conn: serverConn, reader: bufio.NewReader(serverConn), t: t}
+	go fs.serve()
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	c, err := New(ctx, clientConn, "/ws")
+	if err != nil {
+		t.Fatalf("client init: %v", err)
+	}
+	t.Cleanup(func() { c.Shutdown() })
+	return c, fs
+}
+
 func (f *fakeServer) serve() {
 	for {
 		payload, err := readFrame(f.reader)
@@ -177,6 +193,148 @@ func TestShutdownClosesEvents(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("events not closed after shutdown")
+	}
+}
+
+// pushRequest sends a server→client request (with an id).
+func (f *fakeServer) pushRequest(id int64, method string, params any) {
+	p, _ := json.Marshal(params)
+	data, _ := json.Marshal(rpcMessage{JSONRPC: "2.0", ID: &id, Method: method, Params: p})
+	writeFrame(f.conn, data)
+}
+
+func TestHoverFlattensContents(t *testing.T) {
+	c := startFake(t, func(method string, params json.RawMessage) (any, bool) {
+		if method != "textDocument/hover" {
+			return nil, false
+		}
+		if strings.Contains(string(params), `"line":7`) {
+			return nil, true // null hover → nil, nil
+		}
+		return map[string]any{"contents": map[string]any{
+			"kind": "markdown", "value": "```go\nfunc Printf(format string, a ...any)\n```\nprints",
+		}}, true
+	})
+	h, err := c.Hover("/ws/a.go", 0, 3)
+	if err != nil || h == nil {
+		t.Fatalf("hover = %+v err = %v", h, err)
+	}
+	if h.Contents != "func Printf(format string, a ...any)\nprints" {
+		t.Errorf("contents = %q", h.Contents)
+	}
+	h, err = c.Hover("/ws/a.go", 7, 0)
+	if err != nil || h != nil {
+		t.Errorf("null hover = %+v err = %v", h, err)
+	}
+}
+
+func TestHoverArrayAndStringShapes(t *testing.T) {
+	c := startFake(t, func(method string, _ json.RawMessage) (any, bool) {
+		if method != "textDocument/hover" {
+			return nil, false
+		}
+		return map[string]any{"contents": []any{"line one", map[string]any{"value": "line two"}}}, true
+	})
+	h, err := c.Hover("/ws/a.go", 0, 0)
+	if err != nil || h.Contents != "line one\nline two" {
+		t.Errorf("hover = %+v err = %v", h, err)
+	}
+}
+
+func TestRenameReturnsWorkspaceEdit(t *testing.T) {
+	c := startFake(t, func(method string, params json.RawMessage) (any, bool) {
+		if method != "textDocument/rename" {
+			return nil, false
+		}
+		if !strings.Contains(string(params), `"newName":"foo"`) {
+			t.Errorf("params missing newName: %s", params)
+		}
+		return map[string]any{"changes": map[string]any{
+			"file:///ws/a.go": []map[string]any{
+				{"range": map[string]any{"start": map[string]any{"line": 0, "character": 6}, "end": map[string]any{"line": 0, "character": 9}}, "newText": "foo"},
+			},
+		}}, true
+	})
+	edit, err := c.Rename("/ws/a.go", 0, 7, "foo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if edit == nil || len(edit.Files) != 1 || len(edit.Files[0].Edits) != 1 {
+		t.Fatalf("edit = %+v", edit)
+	}
+	if edit.Files[0].PathFor() != "/ws/a.go" || edit.Files[0].Edits[0].NewText != "foo" {
+		t.Errorf("file = %+v", edit.Files[0])
+	}
+}
+
+func TestRenameNullResult(t *testing.T) {
+	c := startFake(t, func(string, json.RawMessage) (any, bool) { return nil, true })
+	edit, err := c.Rename("/ws/a.go", 0, 0, "x")
+	if err != nil || edit != nil {
+		t.Errorf("edit = %+v err = %v", edit, err)
+	}
+}
+
+func TestCodeActionRoundTrip(t *testing.T) {
+	c := startFake(t, func(method string, params json.RawMessage) (any, bool) {
+		if method != "textDocument/codeAction" {
+			return nil, false
+		}
+		if !strings.Contains(string(params), `"message":"undefined: x"`) {
+			t.Errorf("context diagnostics missing: %s", params)
+		}
+		return []map[string]any{
+			{"title": "extract to var", "kind": "refactor.extract", "edit": map[string]any{
+				"documentChanges": []map[string]any{
+					{"textDocument": map[string]any{"uri": "file:///ws/a.go"}, "edits": []map[string]any{
+						{"range": map[string]any{"start": map[string]any{"line": 1, "character": 0}, "end": map[string]any{"line": 1, "character": 0}}, "newText": "x := 1\n"},
+					}},
+				},
+			}},
+			{"title": "run govet", "command": map[string]any{"title": "govet", "command": "gopls.govet", "arguments": []any{"uri"}}},
+		}, true
+	})
+	actions, err := c.CodeAction("/ws/a.go", Range{}, []Diagnostic{{Line: 0, Col: 6, Severity: 1, Message: "undefined: x"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(actions) != 2 {
+		t.Fatalf("actions = %+v", actions)
+	}
+	if actions[0].Edit == nil || len(actions[0].Edit.Files) != 1 || actions[0].Edit.Files[0].URI != "file:///ws/a.go" {
+		t.Errorf("action0 edit = %+v", actions[0].Edit)
+	}
+	if actions[1].Command == nil || actions[1].Command.Command != "gopls.govet" {
+		t.Errorf("action1 command = %+v", actions[1].Command)
+	}
+}
+
+func TestApplyEditRequestRoutesEvent(t *testing.T) {
+	c, srv := startFakePair(t)
+	srv.pushRequest(42, "workspace/applyEdit", map[string]any{
+		"edit": map[string]any{"changes": map[string]any{
+			"file:///ws/a.go": []map[string]any{
+				{"range": map[string]any{"start": map[string]any{"line": 0, "character": 0}, "end": map[string]any{"line": 0, "character": 0}}, "newText": "hi"},
+			},
+		}},
+	})
+	ev := waitEvent(t, c)
+	if ev.Kind != EvApplyEdit || ev.Edit == nil || len(ev.Edit.Files) != 1 {
+		t.Fatalf("event = %+v", ev)
+	}
+	if ev.Edit.Files[0].PathFor() != "/ws/a.go" || ev.Edit.Files[0].Edits[0].NewText != "hi" {
+		t.Errorf("edit = %+v", ev.Edit.Files[0])
+	}
+}
+
+func TestDiagnosticsClearCarriesPath(t *testing.T) {
+	c, srv := startFakePair(t)
+	srv.push("textDocument/publishDiagnostics", map[string]any{
+		"uri": "file:///ws/a.go", "diagnostics": []map[string]any{},
+	})
+	ev := waitEvent(t, c)
+	if ev.Kind != EvDiagnostics || ev.Path != "/ws/a.go" || len(ev.Diags) != 0 {
+		t.Fatalf("event = %+v", ev)
 	}
 }
 

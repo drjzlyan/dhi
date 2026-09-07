@@ -144,3 +144,43 @@ func TestStickyColumn(t *testing.T) {
 		t.Fatalf("sticky restore = %+v", c)
 	}
 }
+
+func TestApplyEditShapes(t *testing.T) {
+	b := New("hello world\nsecond line")
+	// mid-line replace
+	b.ApplyEdit(Pos{0, 6}, Pos{0, 11}, "there")
+	if got := b.Line(0); got != "hello there" {
+		t.Fatalf("replace: %q", got)
+	}
+	// insert-only at a position
+	b.ApplyEdit(Pos{0, 5}, Pos{0, 5}, ",")
+	if got := b.Line(0); got != "hello, there" {
+		t.Fatalf("insert: %q", got)
+	}
+	// delete-only
+	b.ApplyEdit(Pos{0, 5}, Pos{0, 6}, "")
+	if got := b.Line(0); got != "hello there" {
+		t.Fatalf("delete: %q", got)
+	}
+	// multi-line replace collapses lines
+	b.ApplyEdit(Pos{0, 6}, Pos{1, 6}, "stuff\nmore")
+	if got := b.Text(); got != "hello stuff\nmore line" {
+		t.Fatalf("multiline: %q", got)
+	}
+	// one undo step per edit when ungrouped
+	if !b.Undo() || b.Text() != "hello  line" {
+		t.Fatalf("single undo: %q", b.Text())
+	}
+	// grouped edits collapse into one undo step
+	b = New("alpha beta\ngamma delta")
+	b.BeginUndoGroup()
+	b.ApplyEdit(Pos{0, 6}, Pos{0, 10}, "omega")
+	b.ApplyEdit(Pos{1, 0}, Pos{1, 5}, "GAMMA")
+	b.EndUndoGroup()
+	if got := b.Text(); got != "alpha omega\nGAMMA delta" {
+		t.Fatalf("grouped edits: %q", got)
+	}
+	if !b.Undo() || b.Text() != "alpha beta\ngamma delta" {
+		t.Fatalf("grouped undo: %q", b.Text())
+	}
+}

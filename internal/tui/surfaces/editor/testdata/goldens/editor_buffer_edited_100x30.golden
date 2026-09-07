@@ -3,7 +3,7 @@
 │     src/                       ││ 1 package main  // entrypoint                                 │
 │       util/                    ││ 2                                                             │
 │ ▌     main.go                  ││                                                               │
-│     app.go                     ││ i insert · : cmd · esc tree                                   │
+│     app.go                     ││ i insert · : cmd · esc tree · K/gr/ga lsp                     │
 │   beta/ ▸                      ││                                                               │
 │                                ││                                                               │
 │                                ││                                                               │

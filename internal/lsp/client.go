@@ -35,12 +35,15 @@ type EventKind uint8
 
 const (
 	EvDiagnostics EventKind = iota
+	EvApplyEdit
 )
 
 // Event is one server→client notification routed to the UI.
 type Event struct {
 	Kind  EventKind
-	Diags []Diagnostic // populated for EvDiagnostics (whole-file set)
+	Path  string         // EvDiagnostics: publishing file (even when empty)
+	Diags []Diagnostic   // populated for EvDiagnostics (whole-file set)
+	Edit  *WorkspaceEdit // populated for EvApplyEdit
 }
 
 // Client talks to one language server over a duplex connection.
@@ -89,6 +92,12 @@ func (c *Client) initialize(rootDir string) error {
 		"capabilities": map[string]any{
 			"textDocument": map[string]any{
 				"completion": map[string]any{"completionItem": map[string]any{}},
+				"hover":      map[string]any{"contentFormat": []string{"plaintext", "markdown"}},
+				"rename":     map[string]any{},
+				"codeAction": map[string]any{},
+			},
+			"workspace": map[string]any{
+				"applyEdit": true,
 			},
 		},
 	}
@@ -192,6 +201,17 @@ func (c *Client) readLoop() {
 			if ch != nil {
 				ch <- msg
 			}
+		case msg.ID != nil && msg.Method == "workspace/applyEdit":
+			// Auto-accept (the UI applies asynchronously) and route the
+			// edit to the consumer; the reader never blocks on it.
+			resp, _ := json.Marshal(rpcMessage{JSONRPC: "2.0", ID: msg.ID, Result: json.RawMessage(`{"applied":true}`)})
+			_ = c.write(resp)
+			if edit, ok := decodeApplyEdit(msg.Params); ok {
+				select {
+				case c.events <- Event{Kind: EvApplyEdit, Edit: edit}:
+				default:
+				}
+			}
 		case msg.ID != nil && msg.Method != "":
 			// server→client request we don't implement; reply empty so
 			// the server never stalls waiting on us.
@@ -227,7 +247,7 @@ func decodeDiagnostics(params json.RawMessage) (Event, bool) {
 	if err := json.Unmarshal(params, &p); err != nil {
 		return Event{}, false
 	}
-	ev := Event{Kind: EvDiagnostics, Diags: make([]Diagnostic, 0, len(p.Diag))}
+	ev := Event{Kind: EvDiagnostics, Path: uriToPath(p.URI), Diags: make([]Diagnostic, 0, len(p.Diag))}
 	path := uriToPath(p.URI)
 	for _, d := range p.Diag {
 		ev.Diags = append(ev.Diags, Diagnostic{

@@ -177,6 +177,19 @@ func (b *Buffer) insertAt(pos Pos, s string) {
 	b.clampCursor()
 }
 
+// ApplyEdit replaces the span start..end (exclusive) with text — the
+// server-edit primitive behind F-009 (rename/code actions). The cursor
+// ends after the inserted text; the edit marks the buffer dirty and
+// participates in any open undo group.
+func (b *Buffer) ApplyEdit(start, end Pos, text string) {
+	if start == end {
+		b.cursor = b.clampPos(start)
+	} else {
+		b.deleteRange(start, end)
+	}
+	b.InsertString(text)
+}
+
 // paste inserts register text after (or before) the cursor position.
 // Linewise text inserts whole lines below/above the current one.
 func (b *Buffer) paste(text string, linewise bool, after bool) Pos {
