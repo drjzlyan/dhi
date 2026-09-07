@@ -1,6 +1,7 @@
 package editor
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -100,19 +101,63 @@ func (m *Model) bufferView() string {
 		out = append(out, "")
 		out = append(out, comp...)
 	}
+	if acts := m.actionView(); len(acts) > 0 {
+		out = append(out, "")
+		out = append(out, acts...)
+	}
+	if hov := m.hoverView(); len(hov) > 0 {
+		out = append(out, "")
+		out = append(out, hov...)
+	}
 
 	cmd := e.CommandLine()
 	// hide machine-specific absolute paths from the status line
 	if p := e.Path(); p != "" && m.openVPath != "" {
 		cmd = strings.ReplaceAll(cmd, p, m.openVPath)
 	}
-	if cmd == "" {
-		cmd = theme.Hint().Render("i insert · : cmd · esc tree")
-	} else {
+	switch {
+	case m.renameMode:
+		cmd = theme.Brand().Render("rename: " + m.renameOld + " → " + string(m.renameInput) + "▌")
+	case cmd == "":
+		cmd = theme.Hint().Render("i insert · : cmd · esc tree · K/gr/ga lsp")
+	default:
 		cmd = theme.TabActive().Render(cmd)
 	}
 	out = append(out, "", cmd)
 	return strings.Join(out, "\n")
+}
+
+// actionView renders the code-action popup rows (same slot as completions).
+func (m *Model) actionView() []string {
+	if !m.actionOpen || len(m.actionItems) == 0 {
+		return nil
+	}
+	rows := make([]string, 0, min(len(m.actionItems), 8)+1)
+	rows = append(rows, theme.Hint().Render("code actions:"))
+	end := min(m.actionCur+8, len(m.actionItems))
+	start := maxInt(0, end-8)
+	for i := start; i < end; i++ {
+		label := m.actionItems[i].Title
+		if i == m.actionCur {
+			rows = append(rows, theme.GlyphCursor+" "+theme.TabActive().Render(label))
+		} else {
+			rows = append(rows, "  "+theme.TextDim().Render(label))
+		}
+	}
+	return rows
+}
+
+// hoverView renders the hover popup above the command line.
+func (m *Model) hoverView() []string {
+	if !m.hoverOpen || len(m.hoverLines) == 0 {
+		return nil
+	}
+	rows := make([]string, 0, min(len(m.hoverLines), 6)+1)
+	rows = append(rows, theme.Hint().Render("hover:"))
+	for _, ln := range m.hoverLines[:min(len(m.hoverLines), 6)] {
+		rows = append(rows, "  "+theme.TextDim().Render(truncateRunes(ln, maxInt(m.width-railWidth-6, 20))))
+	}
+	return rows
 }
 
 // withCursor renders col as an inverted block on line.
@@ -149,10 +194,17 @@ func padLeft(s string, n int) string {
 	return s
 }
 
-// tabStrip renders the open-buffer tab row.
-func tabStrip(bufs []*bufTab, active int) string {
-	var parts []string
-	for i, t := range bufs {
+// tabStrip renders the open-buffer tab row. When tabs exceed avail
+// columns the strip keeps the active tab anchored and elides the rest
+// with `…+N` / `+N` markers instead of overflowing the panel (F-010:
+// many buffers stay on one row).
+func tabStrip(bufs []*bufTab, active, avail int) string {
+	if avail <= 0 {
+		avail = 40
+	}
+	sep := " "
+	render := func(i int) string {
+		t := bufs[i]
 		label := t.vp
 		if j := strings.LastIndex(label, "/"); j >= 0 {
 			label = label[j+1:]
@@ -161,10 +213,76 @@ func tabStrip(bufs []*bufTab, active int) string {
 			label += " " + theme.WarningText().Render("●")
 		}
 		if i == active {
-			parts = append(parts, theme.TabActive().Render("["+label+"]"))
-		} else {
-			parts = append(parts, theme.Hint().Render(" "+label+" "))
+			return theme.TabActive().Render("[" + label + "]")
+		}
+		return theme.Hint().Render(" " + label + " ")
+	}
+
+	// Grow a contiguous window around the active tab while it fits.
+	l, r := 0, 0
+	width := lipgloss.Width(render(active))
+	for {
+		grew := false
+		if li := active - 1 - l; li >= 0 {
+			if need := lipgloss.Width(render(li)) + len(sep); width+need <= avail {
+				width += need
+				l++
+				grew = true
+			}
+		}
+		if ri := active + 1 + r; ri < len(bufs) {
+			if need := lipgloss.Width(render(ri)) + len(sep); width+need <= avail {
+				width += need
+				r++
+				grew = true
+			}
+		}
+		if !grew {
+			break
 		}
 	}
-	return strings.Join(parts, " ")
+
+	// Elide everything outside the window; markers cost columns too, so
+	// shrink the window (from the wider outer tab first) until the row
+	// fits with the final marker text.
+	for {
+		omL := active - l
+		omR := len(bufs) - 1 - active - r
+		var extra int
+		var mkL, mkR string
+		if omL > 0 {
+			mkL = theme.Hint().Render(fmt.Sprintf("…+%d", omL))
+			extra += lipgloss.Width(mkL) + len(sep)
+		}
+		if omR > 0 {
+			mkR = theme.Hint().Render(fmt.Sprintf("+%d", omR))
+			extra += lipgloss.Width(mkR) + len(sep)
+		}
+		if width+extra <= avail || (l == 0 && r == 0) {
+			var out []string
+			if mkL != "" {
+				out = append(out, mkL)
+			}
+			for i := active - l; i <= active+r; i++ {
+				out = append(out, render(i))
+			}
+			if mkR != "" {
+				out = append(out, mkR)
+			}
+			return strings.Join(out, sep)
+		}
+		// Drop one window tab: prefer the wider outer tab.
+		dropR := r > 0 && (l == 0 ||
+			lipgloss.Width(render(active+r)) >= lipgloss.Width(render(active-l)))
+		if dropR {
+			width -= lipgloss.Width(render(active+r)) + len(sep)
+			r--
+		} else if l > 0 {
+			width -= lipgloss.Width(render(active-l)) + len(sep)
+			l--
+		} else {
+			width -= lipgloss.Width(render(active+r)) + len(sep)
+			r--
+		}
+	}
 }

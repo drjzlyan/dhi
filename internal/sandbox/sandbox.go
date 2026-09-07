@@ -38,7 +38,9 @@ type Guard struct {
 	Sandbox Sandbox
 }
 
-// NewGuard wires a guard, defaulting to a Noop sandbox.
+// NewGuard wires a guard. The Noop default is for tests and explicit
+// opt-outs only; production injects the platform adapter via
+// runtime.Config.Sandbox (ADR-0011: no silent fallbacks).
 func NewGuard(jail *Jail, policy *Policy) *Guard {
 	return &Guard{Jail: jail, Policy: policy, Sandbox: Noop{}}
 }
