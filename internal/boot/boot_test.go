@@ -149,7 +149,7 @@ func TestPartialInstallOffersMissing(t *testing.T) {
 		t.Fatalf("partial install must not block: %s", d.Block)
 	}
 	joined := strings.Join(d.Offer, ",")
-	for _, want := range []string{"rg", "uv", "node", "git", "gopls"} {
+	for _, want := range []string{"rg", "uv", "node", "git", "gh", "gopls"} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("offer missing %q: %v", want, d.Offer)
 		}
@@ -163,7 +163,7 @@ func TestFullInstallOffersNothing(t *testing.T) {
 	root := mkWorkspace(t, wsCfg)
 	toolRoot := t.TempDir()
 	writeFile(t, filepath.Join(toolRoot, "lock.json"),
-		`{"schema":1,"updated_at":"2026-09-02T00:00:00Z","tools":{"go":{"version":"1.27.0","sha256":"x","path":"t"},"rg":{"version":"15.2.0","sha256":"x","path":"t"},"uv":{"version":"0.12.5","sha256":"x","path":"t"},"node":{"version":"24.19.0","sha256":"x","path":"t"},"git":{"version":"2.55.0","sha256":"x","path":"t"}}}`)
+		`{"schema":1,"updated_at":"2026-09-02T00:00:00Z","tools":{"go":{"version":"1.27.0","sha256":"x","path":"t"},"rg":{"version":"15.2.0","sha256":"x","path":"t"},"uv":{"version":"0.12.5","sha256":"x","path":"t"},"node":{"version":"24.19.0","sha256":"x","path":"t"},"git":{"version":"2.55.0","sha256":"x","path":"t"},"gh":{"version":"2.100.0","sha256":"x","path":"t"}}}`)
 	writeFile(t, filepath.Join(toolRoot, "bin", "gopls"), "x")
 	d := Audit(Input{CWD: root, ToolRoot: toolRoot, GOOS: "darwin", LookPath: lookHit})
 	if d.Block != "" {
