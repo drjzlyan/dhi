@@ -1,6 +1,36 @@
 # STATE — current position
 
-Updated: 2026-09-02 (session 7: F-011 no-silent-fallbacks shipped)
+Updated: 2026-09-07 (session 8: commits pushed, pins merged, all shims live)
+
+## Where we are
+
+**M7 essentially COMPLETE — `dhi doctor` fully healthy (11 checks).**
+The tree is committed as three milestone commits (bd052cd F-009 LSP,
+d488580 F-010 sandbox+perf, bfdc7de F-011 no-silent-fallbacks) and
+pushed to main. `pin-gh` was dispatched for gh v2.100.0: CI digests
+cross-checked locally before merge (darwin/arm64 45f9a62d…42), PR #3
+merged, and the gh shim was installed through the real pipeline
+(verify → extract → atomic activate → lockfile). `release-git` had
+already been dispatched earlier (hermetic git v2.55.0 locked).
+Everything now reports OK: toolchain (git/node/rg/uv/gh), git/version,
+gh/cli, sandbox/adapter (seatbelt). Only open M7 line: animation
+polish + reduced-motion.
+
+## Session 8 gotchas
+
+1. `gh workflow run pin-gh.yml` pushed `pin/hermetic-gh-v2.100.0` but
+   the repo FORBIDS Actions from creating PRs (GitHub Actions not
+   permitted to create or approve pull requests) — the workflow
+   force-push fallback printed "PR may already exist" instead. Fix was
+   opening PR #3 with the maintainer token and merging; the
+   release-git pin-pr job needs the same setting or workaround next
+   dispatch.
+2. `go run` of internal packages from /tmp fails ("use of internal
+   package not allowed"); drive toolchain.Manager via a transient file
+   INSIDE the repo, delete after.
+3. Embedded manifest pins ARE the install contract: InstallEmbedded
+   fetched the just-merged gh v2.100.0 entry and produced the shim
+   without any manifest-side edit.
 
 ## Where we are
 

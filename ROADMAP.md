@@ -128,9 +128,8 @@ rendering, Settings-section integration of standards editing.
       → auto-PR re-hashing uploads into `registry/manifest.json`
       (`scripts/pin-git-manifest.py`, sidecar-checked, other tools
       untouched) — human work reduced to dispatch + merge
-- [ ] **On you:** dispatch `release-git` for v2.55.0 and merge its PR
-      (the irreducible trust step); until merged doctor degrades
-      visibly per ADR-0005
+- [x] **Done:** `release-git` for v2.55.0 dispatched, pin PR merged,
+      shim locked (`dhi doctor` reports hermetic git v2.55.0)
 
 ### P1 — Member management ✅ (2026-08-24)
 
@@ -345,8 +344,8 @@ repo paths / MCP issue trackers.
       file+key), `term.Start` never leaks the host env, refused
       capabilities surface at use (search.Refused, drawer refusal,
       one-time LSP notice), standards refuse turns on malformed docs,
-      tasks/sessions malformed cards + gh shim + sandbox doctor rows
+      tasks/sessions   malformed cards + gh shim + sandbox doctor rows
       now Fail. gh hermetic: `review.GHCLI` shim-bound + pin-gh.yml /
-      pin-gh-manifest.py pipeline — **dispatch pending (user step,
-      same trust step as release-git)**; PR flows refuse until merged.
+      pin-gh-manifest.py pipeline — **done (PR #3, gh v2.100.0,
+      shim locked)**: digests CI-computed and cross-checked locally.
 - [ ] Animation polish across bootstrap/transitions; reduced-motion honored everywhere
