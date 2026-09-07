@@ -7,6 +7,7 @@ Read this before changing anything. It keeps multi-session work coherent.
 | Path | Purpose |
 |---|---|
 | `cmd/dhi/` | entrypoint only (no logic; minimal CLI per ADR-0004) |
+| `internal/boot/` | launch decision policy (ADR-0011); table-tested, no fallbacks anywhere else |
 | `internal/tui/theme/` | ALL colors/metrics/glyphs. Raw `lipgloss.Color(` outside this package fails tests |
 | `internal/tui/kit/` | reusable primitives; deterministic render; no app knowledge |
 | `internal/tui/app/` | shell: routing, global keys, help overlay |

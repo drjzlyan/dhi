@@ -319,6 +319,34 @@ repo paths / MCP issue trackers.
 
 ## M7 — Hardening & polish
 
-- [ ] Rich LSP features (hover, rename, refactor, code actions)
-- [ ] Performance passes (large repos, many buffers), OS-sandbox adapters on by default
+- [x] Rich LSP features (F-009, 2026-09-02): hover (`K`), rename (`gr`
+      prompt → server WorkspaceEdit), code actions (`ga`, quickfix
+      popup off cursor-line diagnostics), `workspace/applyEdit`
+      routing into open buffers (bottom-up, one undo group), and the
+      M2 diagnostics-clear gap fixed (publishes carry their path).
+      Deferred: prepareRename validation, references/definition nav,
+      auto-open-and-apply for closed files, hover markdown styling
+- [x] Hardening + perf (F-010, 2026-09-02): OS-sandbox adapters on by
+      default (seatbelt on darwin, bubblewrap on linux)
+      behind `sandbox.Select`, injected into every agent guard from
+      cmd/dhi via `runtime.Config.Sandbox`; `security.sandbox`
+      setting (auto|off) is the escape hatch; doctor `sandbox/adapter`
+      check. Perf: pre-lowered fuzzy index (20 017 → 16 allocs per
+      keystroke at 20k paths), early-exit scoring, benchmarks for the
+      editor hot paths, tab-strip overflow elision. Deferred: MCP
+      stdio spawn wrapping (awaits first MCP consumer), ro-root
+      policy differentiation
+- [x] No silent fallbacks (F-011, 2026-09-02; ADR-0011): strict boot
+      audit (`internal/boot` decision matrix: sandbox helper /
+      workspace config / settings / lockfile are hard requirements),
+      bootgate surface (block screen never releases; confirm-first
+      install delegates to bootstrap + gopls source-build), settings
+      strict (sanitize deleted; unknown keys/values refuse naming
+      file+key), `term.Start` never leaks the host env, refused
+      capabilities surface at use (search.Refused, drawer refusal,
+      one-time LSP notice), standards refuse turns on malformed docs,
+      tasks/sessions malformed cards + gh shim + sandbox doctor rows
+      now Fail. gh hermetic: `review.GHCLI` shim-bound + pin-gh.yml /
+      pin-gh-manifest.py pipeline — **dispatch pending (user step,
+      same trust step as release-git)**; PR flows refuse until merged.
 - [ ] Animation polish across bootstrap/transitions; reduced-motion honored everywhere

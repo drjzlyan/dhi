@@ -2,10 +2,21 @@ package term
 
 import (
 	"context"
+	"os"
 	"strings"
 	"testing"
 	"time"
 )
+
+// TestNilEnvRefused pins the ADR-0011 strictness: DHI child processes
+// never silently inherit the host environment.
+func TestNilEnvRefused(t *testing.T) {
+	if _, err := Start(context.Background(), Options{Dir: t.TempDir()}); err == nil {
+		t.Fatal("nil Env must refuse")
+	} else if !strings.Contains(err.Error(), "ADR-0011") {
+		t.Errorf("refusal should cite ADR-0011: %v", err)
+	}
+}
 
 func TestSessionEchoesOutput(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -13,6 +24,7 @@ func TestSessionEchoesOutput(t *testing.T) {
 	s, err := Start(ctx, Options{
 		Dir:     t.TempDir(),
 		Command: []string{"/bin/sh", "-c", "echo hello-dhi; sleep 5"},
+		Env:     os.Environ(),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -43,12 +55,13 @@ func TestSessionWriteAndRead(t *testing.T) {
 	s, err := Start(ctx, Options{
 		Dir:     t.TempDir(),
 		Command: []string{"/bin/sh", "-i"},
+		Env:     os.Environ(),
 	})
 	if err == nil {
 		s.Write([]byte("echo ping-$((20+3))\n"))
 	} else {
 		// interactive sh unavailable in sandboxed envs — use -c variant
-		s2, err2 := Start(ctx, Options{Dir: t.TempDir(), Command: []string{"/bin/sh", "-c", `echo ping-$((20+3))`}})
+		s2, err2 := Start(ctx, Options{Dir: t.TempDir(), Command: []string{"/bin/sh", "-c", `echo ping-$((20+3))`}, Env: os.Environ()})
 		if err2 != nil {
 			t.Skip("no shell available:", err2)
 		}
@@ -84,7 +97,7 @@ func TestSessionBadDir(t *testing.T) {
 func TestSessionCloseIdempotent(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	s, err := Start(ctx, Options{Dir: t.TempDir(), Command: []string{"/bin/sh", "-c", "sleep 5"}})
+	s, err := Start(ctx, Options{Dir: t.TempDir(), Command: []string{"/bin/sh", "-c", "sleep 5"}, Env: os.Environ()})
 	if err != nil {
 		t.Fatal(err)
 	}

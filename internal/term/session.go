@@ -40,6 +40,10 @@ type Options struct {
 }
 
 // Start launches a session; output flows on s.Out until exit.
+// Strict (ADR-0011): an empty Env refuses — a DHI child process must
+// never silently inherit the host environment. Callers without a
+// toolchain pass os.Environ() explicitly (opt-out), production passes
+// toolchain.Manager.Env.
 func Start(ctx context.Context, opt Options) (*Session, error) {
 	if opt.Dir == "" {
 		return nil, fmt.Errorf("term: no working directory")
@@ -47,17 +51,16 @@ func Start(ctx context.Context, opt Options) (*Session, error) {
 	if info, err := os.Stat(opt.Dir); err != nil || !info.IsDir() {
 		return nil, fmt.Errorf("term: bad dir %s", opt.Dir)
 	}
+	if len(opt.Env) == 0 {
+		return nil, fmt.Errorf("term: hermetic environment unavailable (toolchain not installed — run bootstrap); refusing to leak the host PATH (ADR-0011)")
+	}
 	argv := opt.Command
 	if len(argv) == 0 {
 		argv = []string{defaultShell()}
 	}
 	cmd := exec.Command(argv[0], argv[1:]...)
 	cmd.Dir = opt.Dir
-	if len(opt.Env) > 0 {
-		cmd.Env = opt.Env
-	} else {
-		cmd.Env = os.Environ()
-	}
+	cmd.Env = opt.Env
 
 	tty, err := pty.Start(cmd)
 	if err != nil {

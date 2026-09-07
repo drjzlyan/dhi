@@ -13,6 +13,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/provider"
 	"github.com/drjzlyan/dhi/internal/agentkit/standards"
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
+	"github.com/drjzlyan/dhi/internal/sandbox"
 	"github.com/drjzlyan/dhi/internal/workspace"
 )
 
@@ -66,6 +67,7 @@ func newHarness(t *testing.T, agentDoc string) *harness {
 		Bus:       b,
 		Approvals: ap,
 		Provider:  h.mock,
+		Sandbox:   sandbox.Noop{},
 	}, []*manifest.Agent{m})
 	if err != nil {
 		t.Fatal(err)
@@ -428,7 +430,8 @@ func TestStandardsInjectedIntoPrompt(t *testing.T) {
 	mock := provider.NewMock()
 	mock.Add(provider.ScriptText("ok"))
 	rt, err := New(Config{WS: ws, Bus: b, Approvals: tools.NewApprovals(),
-		Provider: mock, Standards: true}, []*manifest.Agent{mustAgent(t, "scout", "Scout")})
+		Provider: mock, Standards: true, Sandbox: sandbox.Noop{}},
+		[]*manifest.Agent{mustAgent(t, "scout", "Scout")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -447,5 +450,108 @@ func TestStandardsInjectedIntoPrompt(t *testing.T) {
 		if !strings.Contains(sys, want) {
 			t.Errorf("system missing %q:\n%s", want, sys)
 		}
+	}
+}
+
+// recordingSandbox observes Wrap calls; it never rewrites argv.
+type recordingSandbox struct{ wraps int }
+
+func (r *recordingSandbox) Name() string { return "recording" }
+func (r *recordingSandbox) Wrap(argv []string) ([]string, error) {
+	r.wraps++
+	return argv, nil
+}
+
+func TestSandboxInjectedIntoEveryGuard(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "api"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	workspace.Create(root, "api")
+	ws, err := workspace.Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := &recordingSandbox{}
+	doc := `schema = 1
+name = "Scout"
+model = "mock-1"
+system = "You scout."
+tools = ["read"]
+policy_json = """{"rules":[{"op":"exec","effect":"allow"}]}"""
+`
+	m, err := manifest.Parse("scout", []byte(doc))
+	if err != nil {
+		t.Fatalf("manifest: %v", err)
+	}
+	rt, err := New(Config{WS: ws, Bus: nil, Approvals: tools.NewApprovals(),
+		Provider: provider.NewMock(), Sandbox: rec},
+		[]*manifest.Agent{m})
+	if err != nil {
+		t.Fatal(err)
+	}
+	g, ok := rt.Guard("scout")
+	if !ok {
+		t.Fatal("no guard for scout")
+	}
+	if g.Sandbox.Name() != "recording" {
+		t.Fatalf("guard sandbox = %q, want recording", g.Sandbox.Name())
+	}
+	// Guard.Exec routes through the injected adapter.
+	if _, _, err := g.Exec([]string{"true"}); err != nil {
+		t.Fatalf("Exec: %v", err)
+	}
+	if rec.wraps != 1 {
+		t.Fatalf("wraps = %d, want 1", rec.wraps)
+	}
+	// Unknown agent has no guard.
+	if _, ok := rt.Guard("ghost"); ok {
+		t.Fatal("ghost should have no guard")
+	}
+}
+
+func TestNilSandboxRefused(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "api"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	workspace.Create(root, "api")
+	ws, err := workspace.Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// ADR-0011: production must inject an adapter explicitly; nil is a
+	// silent Noop fallback and is rejected.
+	if _, err := New(Config{WS: ws, Provider: provider.NewMock(), Bus: nil},
+		[]*manifest.Agent{mustAgent(t, "scout", "Scout")}); err == nil {
+		t.Fatal("nil Sandbox must be refused")
+	} else if !strings.Contains(err.Error(), "sandbox") {
+		t.Errorf("error should name the seam: %v", err)
+	}
+}
+
+func TestMalformedStandardsRefuseTurn(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "api"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	workspace.Create(root, "api")
+	ws, err := workspace.Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".dhi", "standards.toml"),
+		[]byte("not toml {{"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rt, err := New(Config{WS: ws, Bus: nil, Approvals: tools.NewApprovals(),
+		Provider: provider.NewMock(), Standards: true, Sandbox: sandbox.Noop{}},
+		[]*manifest.Agent{mustAgent(t, "scout", "Scout")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = rt.Turn(context.Background(), "scout", bus.Message{Channel: "#general"})
+	if err == nil || !strings.Contains(err.Error(), "standards.toml") {
+		t.Fatalf("turn must refuse with the path, got: %v", err)
 	}
 }

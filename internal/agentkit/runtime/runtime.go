@@ -50,6 +50,9 @@ type Config struct {
 	Provider   provider.Provider
 	Providers  map[string]provider.Provider // agent id → override
 	MCPClients map[string]MCPClient         // server name → connected client
+	// Sandbox is the OS-isolation adapter applied to every Guard built
+	// for agents (F-010). Nil means Noop: path-jail + policy only.
+	Sandbox sandbox.Sandbox
 	// Org supplies team membership for layered coding standards; nil
 	// disables team layers.
 	Org *org.Org
@@ -72,16 +75,22 @@ type entry struct {
 	m      *manifest.Agent
 	p      provider.Provider
 	reg    *tools.Registry
-	turnMu sync.Mutex // one turn at a time per agent
+	guard  *sandbox.Guard // isolation seam (doctor/diagnostics surface)
+	turnMu sync.Mutex     // one turn at a time per agent
 }
 
 // New builds per-agent registries from the roster. Agents whose manifest
 // fails are skipped with an error return only if none load.
 func New(cfg Config, roster []*manifest.Agent) (*Runtime, error) {
-	r := &Runtime{cfg: cfg, agents: map[string]*entry{}, roster: make(chan struct{}, 1)}
 	if len(roster) == 0 {
 		return nil, fmt.Errorf("runtime: empty roster")
 	}
+	// Strict (ADR-0011): production must name an OS sandbox adapter.
+	// sandbox.Noop{} is the explicit opt-out; nil is not a fallback.
+	if cfg.Sandbox == nil {
+		return nil, fmt.Errorf("runtime: config.Sandbox is required (pass sandbox.Noop{} to opt out explicitly)")
+	}
+	r := &Runtime{cfg: cfg, agents: map[string]*entry{}, roster: make(chan struct{}, 1)}
 	jailRoots := make([]string, 0, len(cfg.WS.Members())+2)
 	for _, m := range cfg.WS.Members() {
 		jailRoots = append(jailRoots, m.Path)
@@ -130,6 +139,10 @@ func (r *Runtime) buildEntry(m *manifest.Agent, jailRoots []string) (*entry, err
 		GitRunner: r.gitRunner,
 		AgentID:   m.ID,
 	}
+	if r.cfg.Sandbox != nil {
+		deps.Guard.Sandbox = r.cfg.Sandbox
+	}
+	e.guard = deps.Guard
 	e.reg = tools.New()
 	for _, t := range tools.Builtins(deps) {
 		if err := e.reg.Register(t); err != nil {
@@ -258,6 +271,14 @@ func (r *Runtime) Turn(ctx context.Context, agentID string, trigger bus.Message)
 	}
 	e.turnMu.Lock()
 	defer e.turnMu.Unlock()
+
+	// Strict (F-011): malformed standards refuse the turn with the
+	// named path instead of silently degrading to built-ins.
+	if r.cfg.Standards {
+		if err := standards.Check(r.cfg.WS.Root); err != nil {
+			return fmt.Errorf("runtime: %s: %w", agentID, err)
+		}
+	}
 
 	req := r.prompt(e, trigger)
 
@@ -449,4 +470,17 @@ func (r *Runtime) Manifest(id string) (*manifest.Agent, bool) {
 		return nil, false
 	}
 	return e.m, true
+}
+
+// Guard exposes the isolation seam for agent id (false when not
+// rostered): doctor and diagnostics read the active OS-sandbox adapter
+// from it; tool code never bypasses it.
+func (r *Runtime) Guard(id string) (*sandbox.Guard, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	e, ok := r.agents[id]
+	if !ok {
+		return nil, false
+	}
+	return e.guard, true
 }

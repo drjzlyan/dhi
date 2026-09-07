@@ -81,7 +81,7 @@ type Model struct {
 	mode      mode
 	query     []rune
 	results   []fuzzy.Result
-	items     []string // indexed vpaths for fuzzy find
+	items     *fuzzy.Index // pre-lowered vpaths for fuzzy find
 	findList  kit.List
 	openPath  string // absolute path of opened file
 	openVPath string
@@ -127,12 +127,22 @@ type Model struct {
 	searchErr     string
 	lastQueryText string
 
-	lspMgr    *lsp.Manager
-	lspSent   map[string]string // vpath → last pushed text
-	lspDiags  map[string][]lsp.Diagnostic
-	compOpen  bool
-	compItems []lsp.CompletionItem
-	compCur   int
+	lspMgr      *lsp.Manager
+	lspNoted    bool              // one-time visible LSP-unavailable notice (F-011)
+	lspSent     map[string]string // vpath → last pushed text
+	lspDiags    map[string][]lsp.Diagnostic
+	compOpen    bool
+	compItems   []lsp.CompletionItem
+	compCur     int
+	lspPendingG bool // `g` prefix armed (F-009 sequences)
+	hoverOpen   bool
+	hoverLines  []string
+	renameMode  bool
+	renameOld   string
+	renameInput []rune
+	actionOpen  bool
+	actionItems []lsp.CodeAction
+	actionCur   int
 
 	chat *chatModel
 }
@@ -226,7 +236,6 @@ func (m *Model) reloadMembers() {
 	m.roots = buildRoots(m.members)
 	m.refreshRows()
 	m.items = nil // fuzzy find reindexes lazily
-
 	// Close terminals pinned to removed member dirs.
 	var terms []*termTab
 	var cancels []context.CancelFunc
@@ -297,11 +306,16 @@ func (m *Model) drainTerm() {
 
 // teaMsg is the union of async drawer/LSP events.
 type teaMsg struct {
-	kind      uint8 // termMsgOut | termMsgClosed | lspMsgDiag | lspMsgComp
+	kind      uint8 // termMsgOut | termMsgClosed | lspMsgDiag | lspMsgComp | lspMsgHover | lspMsgEdit | lspMsgAction
 	tab       int
 	chunk     []byte
 	diags     []lsp.Diagnostic
+	diagPath  string
 	compItems []lsp.CompletionItem
+	hoverText string
+	hoverOK   bool
+	edit      *lsp.WorkspaceEdit
+	actions   []lsp.CodeAction
 }
 
 const (
@@ -309,6 +323,9 @@ const (
 	termMsgClosed
 	lspMsgDiag
 	lspMsgComp
+	lspMsgHover
+	lspMsgEdit
+	lspMsgAction
 )
 
 func (m *Model) Resize(w, h int) {
@@ -351,7 +368,7 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 			m.ingestTermChunk(msg.tab, msg.chunk)
 		case termMsgClosed:
 			m.termExited(msg.tab)
-		case lspMsgDiag, lspMsgComp:
+		case lspMsgDiag, lspMsgComp, lspMsgHover, lspMsgEdit, lspMsgAction:
 			m.applyLSPUpdate(msg)
 		}
 		return m.listenTerm()
@@ -453,6 +470,54 @@ func (m *Model) HandleKey(key string) bool {
 			if handled := m.handleCompletionKey(key); handled || key == "esc" {
 				return true
 			}
+		}
+
+		// F-009 LSP flows intercept before the modal editor sees keys.
+		if m.renameMode {
+			return m.handleRenameKey(key)
+		}
+		if m.actionOpen {
+			if handled := m.handleActionKey(key); handled || key == "esc" {
+				return true
+			}
+		}
+		if m.hoverOpen {
+			m.hoverOpen = false
+			m.hoverLines = nil
+			if key != "esc" {
+				e.Key(key) // close-and-process (movement etc.)
+				m.lspSync()
+			}
+			return true
+		}
+
+		// `gr`/`ga` sequences and `K` hover (normal mode only; `g` is
+		// dead in textbuf so the surface owns the two-key chords).
+		if m.lspPendingG {
+			if e.Mode() == textbuf.ModeNormal {
+				m.lspPendingG = false
+				switch key {
+				case "esc":
+					// release the prefix and let esc fall through
+				case "r":
+					m.startRename()
+					return true
+				case "a":
+					m.requestCodeActions()
+					return true
+				default:
+					return true // unknown g-sequence swallowed
+				}
+			} else {
+				m.lspPendingG = false // mode changed; release
+			}
+		} else if e.Mode() == textbuf.ModeNormal && key == "g" {
+			m.lspPendingG = true
+			return true
+		}
+		if e.Mode() == textbuf.ModeNormal && key == "K" {
+			m.requestHover()
+			return true
 		}
 
 		// esc in normal mode hands focus back to the tree
@@ -773,7 +838,7 @@ func (m *Model) navView() string {
 		centered = main // lists and buffers are left-aligned
 	}
 	if m.active() != nil {
-		centered = joinV(tabStrip(m.bufs, m.activeTab), centered)
+		centered = joinV(tabStrip(m.bufs, m.activeTab, mainW-2), centered)
 	}
 	mainPanel := kit.NewPanel(title, true)
 	mainPanel.SetContent(splitLines(centered)...)
@@ -835,7 +900,7 @@ func (m *Model) ExecEx(requester *textbuf.Editor, cmd string) bool {
 
 func (m *Model) openFind() {
 	if m.items == nil {
-		m.items = indexFiles(m.roots, indexCap)
+		m.items = fuzzy.NewIndex(indexFiles(m.roots, indexCap))
 	}
 	m.query = nil
 	m.mode = modeFind
@@ -844,14 +909,15 @@ func (m *Model) openFind() {
 
 func (m *Model) applyQuery() {
 	pat := string(m.query)
-	m.results = fuzzy.Rank(pat, m.items)
+	m.results = m.items.Rank(pat)
 	limit := len(m.results)
 	if limit > findCapRows {
 		limit = findCapRows
 	}
+	index := m.items.Items()
 	items := make([]kit.Item, 0, limit)
 	for _, r := range m.results[:limit] {
-		items = append(items, kit.Item{Title: m.items[r.Index]})
+		items = append(items, kit.Item{Title: index[r.Index]})
 	}
 	m.findList.SetItems(items)
 }
@@ -909,7 +975,7 @@ func (m *Model) pickResult() bool {
 	if idx >= len(m.results) {
 		return true
 	}
-	vpathStr := m.items[m.results[idx].Index]
+	vpathStr := m.items.Items()[m.results[idx].Index]
 	vp, err := workspace.ParseVPath(vpathStr)
 	if err != nil {
 		return true

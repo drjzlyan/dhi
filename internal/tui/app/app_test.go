@@ -132,14 +132,19 @@ func TestViewCompositionGolden(t *testing.T) {
 type stubGate struct {
 	resized  int
 	updates  int
+	keys     []string
 	finished bool
 }
 
 func (g *stubGate) Init() tea.Cmd          { return nil }
 func (g *stubGate) Resize(w, h int)        { g.resized++ }
 func (g *stubGate) Update(tea.Msg) tea.Cmd { g.updates++; return nil }
-func (g *stubGate) View() string           { return "GATE" }
-func (g *stubGate) Finished() bool         { return g.finished }
+func (g *stubGate) HandleKey(k string) bool {
+	g.keys = append(g.keys, k)
+	return true
+}
+func (g *stubGate) View() string   { return "GATE" }
+func (g *stubGate) Finished() bool { return g.finished }
 
 func TestGateOwnsBodyUntilFinished(t *testing.T) {
 	a, st := newTestApp(t)

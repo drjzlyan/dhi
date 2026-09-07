@@ -11,6 +11,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/runtime"
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
 	"github.com/drjzlyan/dhi/internal/review"
+	"github.com/drjzlyan/dhi/internal/sandbox"
 )
 
 // fakeCrew records Handle dispatches without running a real runtime.
@@ -177,6 +178,7 @@ func TestMockProviderEndToEnd(t *testing.T) {
 		Bus:       b,
 		Approvals: tools.NewApprovals(),
 		Provider:  provider.NewMock(provider.ScriptText("looked at it: the locking is fine")),
+		Sandbox:   sandbox.Noop{},
 	}, []*manifest.Agent{mf})
 	if err != nil {
 		t.Fatal(err)

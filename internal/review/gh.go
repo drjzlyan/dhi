@@ -52,20 +52,26 @@ type RemoteComment struct {
 	CreatedAt time.Time
 }
 
-// GHCLI runs the host gh binary. Zero value probes PATH lazily.
-type GHCLI struct{}
-
-// NewGHCLI returns the exec-backed gh seam.
-func NewGHCLI() *GHCLI { return &GHCLI{} }
-
-// Available reports whether gh exists on PATH.
-func (g *GHCLI) Available() bool {
-	_, err := exec.LookPath("gh")
-	return err == nil
+// GHCLI runs DHI's hermetic gh shim (registry-pinned, ADR-0011). The
+// host `gh` lookup path is gone: when the shim is absent the seam
+// reports unavailable and PR flows refuse with the named fix.
+type GHCLI struct {
+	bin string // shim path; "" = unavailable
 }
 
+// NewGHCLI binds the gh seam to a shim path. Callers pass the
+// toolchain shim path (<prefix>/bin/gh); an empty path yields a
+// permanently unavailable seam.
+func NewGHCLI(bin string) *GHCLI { return &GHCLI{bin: bin} }
+
+// Available reports whether the hermetic gh shim was provided.
+func (g *GHCLI) Available() bool { return g.bin != "" }
+
 func (g *GHCLI) run(ctx context.Context, args ...string) (string, error) {
-	c := exec.CommandContext(ctx, "gh", args...)
+	if g.bin == "" {
+		return "", fmt.Errorf("review: gh shim not installed — run bootstrap (PR flows refuse until then, ADR-0011)")
+	}
+	c := exec.CommandContext(ctx, g.bin, args...)
 	out, err := c.Output()
 	if err != nil {
 		return "", fmt.Errorf("review: gh %s: %w", strings.Join(args, " "), err)

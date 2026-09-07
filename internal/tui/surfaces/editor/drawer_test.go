@@ -1,10 +1,25 @@
 package editor
 
 import (
+	"os"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/drjzlyan/dhi/internal/tui/theme"
 )
+
+// liveEditor builds an editor whose terminal sessions get an explicit
+// environment (ADR-0011: tests opt in explicitly, like production
+// passes the hermetic toolchain env).
+func liveEditor(t *testing.T) *Model {
+	t.Helper()
+	theme.SwapForTest(t, theme.Dark())
+	ws, _ := setupWorkspace(t)
+	m := New("test", ws, WithTermEnv(os.Environ()))
+	m.Resize(100, 30)
+	return m
+}
 
 func TestDrawerToggleCycle(t *testing.T) {
 	m := newEditor(t)
@@ -62,7 +77,7 @@ func TestAltDigitSwitchesTabs(t *testing.T) {
 }
 
 func TestTerminalStreamingRender(t *testing.T) {
-	m := newEditor(t)
+	m := liveEditor(t)
 	feed(m, "ctrl+t")
 
 	m.Update(teaMsg{kind: termMsgOut, tab: 0, chunk: []byte("build ok\r\n$ ")})
@@ -82,7 +97,7 @@ func TestTerminalStreamingRender(t *testing.T) {
 }
 
 func TestLiveShellEchoThroughDrawer(t *testing.T) {
-	m := newEditor(t)
+	m := liveEditor(t)
 	feed(m, "ctrl+t")
 	if len(m.terms) == 0 || m.terms[0].sess == nil {
 		t.Skip("no session started")
@@ -100,4 +115,18 @@ func TestLiveShellEchoThroughDrawer(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 	}
 	t.Fatalf("live echo not observed:\n%s", plainView(m))
+}
+
+// TestDrawerRefusesWithoutHermeticEnv pins the visible refusal
+// (ADR-0011): no host-env fallback session, the drawer names the fix.
+func TestDrawerRefusesWithoutHermeticEnv(t *testing.T) {
+	m := newEditor(t) // no WithTermEnv → hermetic env unavailable
+	feed(m, "ctrl+t")
+	v := plainView(m)
+	if !strings.Contains(v, "hermetic environment unavailable") {
+		t.Fatalf("refusal not visible:\n%s", v)
+	}
+	if len(m.terms) == 0 || m.terms[0].sess != nil {
+		t.Fatal("no session may start without an explicit env")
+	}
 }

@@ -1,0 +1,26 @@
+╭─ › dhi test ────────────────────────────────────────────────╮
+│                                                              │
+│ boot blocked — no silent fallbacks                           │
+│ (ADR-0011)                                                   │
+│                                                              │
+│                                                              │
+│ sandbox: bwrap not found (install it, or set                 │
+│ security.sandbox = "off" in settings to opt out              │
+│ explicitly)                                                  │
+│                                                              │
+│ fixes:                                                       │
+│                                                              │
+│ · install the OS sandbox helper (sandbox-exec on macOS       │
+│ is built in; bwrap on Linux)                                 │
+│                                                              │
+│ · or set security.sandbox = "off" in settings to opt         │
+│ out explicitly                                               │
+│                                                              │
+│ ctrl+q quit · dhi doctor diagnoses a blocked boot            │
+│                                                              │
+│                                                              │
+│                                                              │
+│                                                              │
+│                                                              │
+│                                                              │
+╰──────────────────────────────────────────────────────────────╯

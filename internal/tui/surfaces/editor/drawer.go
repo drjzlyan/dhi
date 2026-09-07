@@ -2,6 +2,7 @@ package editor
 
 import (
 	"context"
+	"path/filepath"
 	"strings"
 
 	"github.com/drjzlyan/dhi/internal/ansi"
@@ -132,7 +133,12 @@ func termStrip(m *Model) string {
 	}
 	out := "  "
 	for i, t := range m.terms {
-		label := t.sess.Label()
+		label := ""
+		if t.sess != nil {
+			label = t.sess.Label()
+		} else {
+			label = filepath.Base(t.dir) // refused start; error shows in-body
+		}
 		switch {
 		case i == m.activeTerm:
 			out += theme.TabActive().Render("[" + label + "] ")

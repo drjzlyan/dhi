@@ -1,91 +1,114 @@
 # STATE — current position
 
-Updated: 2026-09-01 (session 4: M6 Ideator full shipped)
+Updated: 2026-09-02 (session 7: F-011 no-silent-fallbacks shipped)
 
 ## Where we are
 
-**M6 COMPLETE (F-004, ADR-0010; commit a30d5af; `make verify` green).** The Ideator
-replaced the placeholder (view 3): sessions with invited agents + implicit
-bus channels + artifact folders, read-only artifact tree with
-draft→reviewed→approved/rejected statuses, glamour markdown preview,
-session CHAT with @mention dispatch, and the reject→revision loop back
-to the authoring agent. Agents produce artifacts via the new reserved
-`.dhi` vpath pseudo-member (jailed, policy-gated). Next milestone: **M7
-Hardening & polish** (rich LSP, perf, animation) — or close M5 by
-dispatching the pending `release-git` (see ROADMAP P0 "On you").
+**F-011 COMPLETE (ADR-0011; `make verify` green).** Every silent
+fallback is gone. `internal/boot.Audit` resolves the launch decision
+(sandbox helper, workspace config, settings, lockfile are hard
+requirements; missing hermetic pieces become the install offer;
+decisions are table-tested). The new `bootgate` surface renders blocks
+(never releases; ctrl+q quits) and the confirm-first install
+(delegate to bootstrap + gopls source-build; skip ⇒ capabilities
+refuse at use with named fixes). Settings have no sanitize anymore —
+unknown keys/values refuse boot naming file+key; `term.Start` refuses
+nil Env (host-PATH leak dead); `search.Refused` replaces silent-inert
+rg; LSP surfaces a one-time notice; standards refuse turns on
+malformed docs; gh is hermetic (`review.GHCLI(shim)`) with the
+`pin-gh` pipeline ready for dispatch. Malformed task/session cards,
+missing gh shim, and missing/sandbox-off adapters now Fail in doctor.
+`Gate` gained `HandleKey` so gates can answer prompts.
 
 ## Gotchas added this session
 
-1. Policy rules are ROOT-RELATIVE: a manifest rule `sessions/**`
-   also matches `sessions/` dirs inside member repos — accepted (both
-   stay in the jail/user repos; documented in ADR-0010).
-2. glamor dark style renders H2 with a literal `## ` prefix (H1 has
-   none) — preview goldens must expect it; both editor and ideator share
-   `internal/preview`, so behavior is consistent.
-3. `bus.History(ch,0)` top-level-only semantics made dedicated
-   per-session channels the right call (not threads inside #general) —
-   agent context windows see the whole ideation conversation.
-4. Ideator `open()` doesn't set the section; key handlers that need
-   ARTIFACTS must set `m.sec` explicitly (tests hit this twice).
-5. requestTurn must call crew.Handle SYNCHRONOUSLY (runtime fans out
-   its own goroutines) — a goroutine wrapper races fake-crew assertions.
-6. Artifact sort is lexicographic ("option-btree.md" < "option-log.md")
-   — fixture assertions must match sort order, not intent.
+1. The Gate interface needed HandleKey for confirm prompts; the app
+   previously swallowed every key while gated. Any uint8/func nil
+   checks on tea.Cmd work directly (func type), no interface tricks.
+2. workspace.ErrNotWorkspace sentinel distinguishes "empty-state
+   editor" from broken-config blocks; changing the Load error text
+   keeps old message substrings ("not a DHI workspace") for tests.
+3. settings layer semantics: zero values in a fileLayer mean UNSET
+   (only non-zero/!="" overrides), so `tab_width = 0` cannot be
+   validated — the test for out-of-range uses 32. Strict load rejects
+   unknown keys per-layer via UnknownKeys before merge.
+4. term strictness broke drawer unit tests that fed synthetic PTY
+   messages: they now pass WithTermEnv(os.Environ()) explicitly —
+   same pattern for any test spawning DHI child processes.
+5. runtime.New REQUIRES Config.Sandbox now; every test harness must
+   inject sandbox.Noop{} explicitly (that's the opt-out a test holds).
+6. doctor must stay runnable on broken installs: use
+   settings.LoadBestEffort anywhere diagnostics read configs.
+7. boot.Decision.Sandbox is nil without a workspace (nothing to
+   confine) but the helper presence is still REQUIRED — the block
+   only needs a workspace+prefix to actually build the adapter.
+8. `gofmt -w` before verify; `go build ./cmd/dhi` drops a `dhi`
+   binary in cwd — remember to delete it.
 
-## Just finished (M6)
+## Gotchas carried (still load-bearing)
 
-- `internal/workspace`: reserved `.dhi` vpath alias (ParseVPath/Resolve/
-  VPathFor; member `.dhi` can't collide — names start [a-z0-9]) +
-  `DirSessions` reservation. `internal/agentkit/runtime`: `.dhi` added as
-  a jail root in New/Reload; grounding line tells agents the dotdir
-  convention. Tests: alias round-trip, traversal rejection, policy
-  default-deny + sessions/** allow via write tool.
-- `internal/ideation` (new): session TOML cards `.dhi/sessions/<slug>.toml`
-  (SchemaVersion 1, strict decode, malformed→warnings, mutate/
-  writeCard/commit/Subscribe — full tasks/review blueprint). Session =
-  name/topic/agents/channel + `[[artifact]]` records (path, author,
-  status, notes, hash). `Scan()` merges the filesystem: new file→draft,
-  hash change→draft (keeps author+notes), vanished→dropped. Transitions:
-  MarkReviewed/Approve (approved is terminal)/Reject(notes required).
-  Slugify keeps [a-z0-9._-].
-- `surfaces/ideator` (new): rail+pane dock; SESSIONS (n modal: name/
-  topic/agents CSV · enter open+scan · x remove confirm), ARTIFACTS
-  (enter preview · v reviewed · a approve · r reject-notes modal ·
-  s rescan), PREVIEW (memoized glamour md / raw, j/k scroll), CHAT
-  (i composer, posts to session channel + crew dispatch, j/k scroll).
-  agent.go: dispatchRevision (posts "@author please revise `<vpath>`:
-  notes" → requestTurn), mirrorBus claims artifact authorship from
-  agent chatter referencing `.dhi/sessions/<id>/...` vpaths.
-- cmd/dhi: ideation store wired into ideator Deps (placeholder removed).
-  doctor: `sessions/store` suite (malformed cards, dangling invites) +
-  `.dhi/sessions` in the reserved-dir checks.
+1. go-git Push needs a REGISTERED remote; fixtures use bare local origins.
+2. Test fakes must fully implement seams; event pumps must NOT re-arm.
+3. Read form fields BEFORE closeForm(); waitReply before provider.Calls().
+4. bus.History(ch,0) excludes threaded rows.
+5. requestTurn must call crew.Handle SYNCHRONOUSLY.
+6. Policy rules are ROOT-RELATIVE (ADR-0010); glamor renders H2 `## `.
+7. macOS /var→/private/var EvalSymlinks.
+8. g-chords are editor-owned (textbuf drops unknown keys); gopls hover
+   fences content-kept; WorkspaceEdit bottom-up; workspace/applyEdit
+   auto-answered in reader, routed async; LSP flows guard on client.
+9. Seatbelt deny-default profiles need the system allows (/System,
+   /usr/lib, dyld caches, mach-lookup) or wrapped processes die
+   cryptically; network stays policy-engine territory.
+10. sandbox.go's Sandbox interface (Name/Wrap) is load-bearing — never
+    redesign it casually; adapters implement it as-is.
+11. runtime guards deny-all by policy default: Guard.Exec tests need
+    an explicit exec allow in policy_json.
+12. fuzzy.Match and Index.Rank share matchRunes so scores can't drift.
 
-## Gotchas from M5 (carried, still load-bearing)
+## Just finished (M7 P3 — F-011)
 
-1. go-git Push needs a REGISTERED remote (member clones always have
-   origin); test fixtures use bare local origins for hermetic push flows.
-2. Test fakes must fully implement seams — zero-value stubs silently
-   break assertions.
-3. Go closure aliasing: read form fields BEFORE closeForm() resets them.
-4. Test event pumps must NOT re-arm listeners (`go cmd()` steals events).
-5. New confirm-modal kinds must join formKey's confirm branch.
-6. Guard modal-opening keys behind service presence.
-7. bus.History(ch,0) excludes threaded rows; thread views stitch roots.
-8. macOS /var→/private/var EvalSymlinks; rename-modal targets captured
-   at open time; waitReply before provider.Calls().
+- `internal/boot` (new): Audit decision matrix + SandboxMode; 11
+  table tests. `internal/tui/surfaces/bootgate` (new): block screen
+  (never releases), confirm-install (delegates to bootstrap.Model,
+  gopls source-build afterInstall), word-wrapped panels, 2 goldens.
+- `internal/settings`: sanitize DELETED; validate names key+value;
+  unknown keys refuse per layer; LoadBestEffort for diagnostics.
+- `internal/workspace`: ErrNotWorkspace + IsConfigError.
+- `internal/sandbox`: Select errors on missing helper (strict);
+  Require for the nothing-to-confine case; plus F-010's adapters.
+- `internal/term`: Start refuses nil Env (named refusal; ADR-0011).
+- `internal/search`: Refused searcher (visible at-use failure).
+- editor: one-time LSP-unavailable notice; drawer shows the term
+  refusal; termStrip tolerates refused (nil-sess) tabs.
+- `internal/agentkit/runtime`: New rejects nil Sandbox; Turn refuses
+  on malformed standards (standards.Check).
+- `internal/review/gh.go`: GHCLI shim-bound; host LookPath removed.
+- doctor: gh shim (Fail until pinned), sandbox/adapter (Fail on
+  missing helper in auto), standards malformed (Fail), tasks/sessions
+  malformed cards (Fail).
+- app.Gate gains HandleKey (confirm prompts); bootstrap.Model serves
+  as the install delegate inside bootgate.
+- `.github/workflows/pin-gh.yml` + `scripts/pin-gh-manifest.py` —
+  upstream cli/cli tarballs digested in CI, PR pinned (same human
+  trust step as release-git; DISPATCH PENDING user).
+- Docs: F-011 spec (done), ADR-0011, F-010 spec annotations for
+  superseded bits.
 
-## Next up (M7 per ROADMAP)
+## Next up
 
-1. Rich LSP features (hover, rename, refactor, code actions) — build on
-   `internal/lsp` stdio client + gopls hermetic build.
-2. Performance passes (large repos, many buffers); OS-sandbox adapters
-   on by default (sandbox seam exists since M1).
-3. Animation polish (bootstrap/transitions) + reduced-motion everywhere.
-4. M5 addendum leftovers: dispatch `release-git` for v2.55.0 (user step)
-   — doctor degrades visibly until merged.
-5. Post-M6 backlog (F-004): artifact export via MCP/repo paths; diagram
-   (SVG/mermaid) preview; `.dhi`-per-root policy scoping refinement.
+1. **On you:** dispatch `release-git` (v2.55.0) AND `pin-gh` (e.g.
+   2.65.0), merge both pin PRs — until then: git worktree ops and all
+   PR flows refuse, doctor fails those rows deliberately.
+2. Animation polish + reduced-motion across bootstrap/transitions
+   (last open M7 line item).
+3. F-010 deferred: MCP stdio spawn wrapped through the sandbox.
+4. F-009 deferred: prepareRename, references/definition nav,
+   auto-open-and-apply, hover markdown.
+5. Post-M6 backlog (F-004): artifact export, diagram preview,
+   `.dhi`-per-root policy scoping.
 
 ## Open questions for user
 
-- None blocking. M5 closure tag still pending user request; same for M6.
+- Archive/pick actions on task cards, ideator diagram export remain
+  backlog; M8 scope decision (what milestone comes after M7 closes).

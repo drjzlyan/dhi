@@ -3,9 +3,14 @@ package doctor
 import (
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/drjzlyan/dhi/internal/sandbox"
+	"github.com/drjzlyan/dhi/internal/settings"
 
 	agentkitStandards "github.com/drjzlyan/dhi/internal/agentkit/standards"
 )
@@ -218,11 +223,11 @@ func TestStandardsSuite(t *testing.T) {
 		t.Fatalf("typo warnings = %+v", c)
 	}
 
-	// Malformed doc warns about fallback.
+	// Malformed doc FAILS — turns refuse on broken standards (F-011).
 	os.WriteFile(filepath.Join(ws, ".dhi", "standards.toml"), []byte("schema = 7\n"), 0o644)
 	checks = Standards(ws)
 	c, _ = statusOf(checks, "standards/config")
-	if c.Status != Warn || !strings.Contains(c.Detail, "built-ins") {
+	if c.Status != Fail || !strings.Contains(c.Detail, "turns refuse") {
 		t.Fatalf("malformed = %+v", c)
 	}
 }
@@ -261,11 +266,11 @@ func TestTasksSuite(t *testing.T) {
 		t.Fatalf("dangling refs = %+v", c)
 	}
 
-	// Malformed file warns with fallback note.
+	// Malformed card FAILS (strict data, F-011): visible by name.
 	os.WriteFile(filepath.Join(ws, ".dhi", "tasks", "junk.toml"), []byte("schema = 3\n"), 0o644)
 	checks = Tasks(ws)
 	c, _ = statusOf(checks, "tasks/store")
-	if c.Status != Warn || !strings.Contains(c.Detail, "malformed") {
+	if c.Status != Fail || !strings.Contains(c.Detail, "malformed") {
 		t.Fatalf("malformed = %+v", c)
 	}
 }
@@ -299,11 +304,43 @@ func TestSessionsSuite(t *testing.T) {
 		t.Fatalf("dangling invite = %+v", c)
 	}
 
-	// Malformed file warns.
+	// Malformed card FAILS (strict data, F-011): visible by name.
 	os.WriteFile(filepath.Join(ws, ".dhi", "sessions", "junk.toml"), []byte("schema = 3\n"), 0o644)
 	checks = Sessions(ws)
 	c, _ = statusOf(checks, "sessions/store")
-	if c.Status != Warn || !strings.Contains(c.Detail, "malformed") {
+	if c.Status != Fail || !strings.Contains(c.Detail, "malformed") {
 		t.Fatalf("malformed = %+v", c)
+	}
+}
+
+func TestSandboxCheck(t *testing.T) {
+	// off is the explicit opt-out: Warn so it is never silent.
+	if got := Sandbox(settings.SandboxOff); got[0].Status != Warn {
+		t.Errorf("off: %+v, want warn", got[0])
+	}
+	// auto: missing helper is a Fail (hard requirement, ADR-0011).
+	got := Sandbox(settings.SandboxAuto)
+	if got[0].Name != "sandbox/adapter" {
+		t.Errorf("name = %q", got[0].Name)
+	}
+	name := sandbox.Detect(runtime.GOOS, exec.LookPath)
+	switch name {
+	case "noop":
+		if got[0].Status != Fail || !strings.Contains(got[0].Detail, "helper missing") {
+			t.Errorf("noop: %+v", got[0])
+		}
+	default:
+		if got[0].Status != OK || got[0].Detail != name {
+			t.Errorf("%s: %+v", name, got[0])
+		}
+	}
+	// unknown mode Fails (strict boot refuses).
+	if got := Sandbox("paranoid"); got[0].Status != Fail {
+		t.Errorf("unknown mode: %+v", got[0])
+	}
+	// the aggregate report carries the check.
+	r := Run(t.TempDir(), "")
+	if _, ok := statusOf(r.Checks, "sandbox/adapter"); !ok {
+		t.Error("sandbox/adapter missing from Run report")
 	}
 }

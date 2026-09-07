@@ -13,6 +13,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/provider"
 	"github.com/drjzlyan/dhi/internal/agentkit/runtime"
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
+	"github.com/drjzlyan/dhi/internal/sandbox"
 	"github.com/drjzlyan/dhi/internal/testutil/golden"
 	"github.com/drjzlyan/dhi/internal/tui/theme"
 	"github.com/drjzlyan/dhi/internal/workspace"
@@ -54,6 +55,7 @@ func newChatEditor(t *testing.T) *chatHarness {
 		Bus:       b,
 		Approvals: ap,
 		Provider:  mock,
+		Sandbox:   sandbox.Noop{},
 	}, []*manifest.Agent{mf})
 	if err != nil {
 		t.Fatal(err)

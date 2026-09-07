@@ -59,9 +59,22 @@ type doc struct {
 // TeamLookup resolves an agent id to its team slugs (wired from org).
 type TeamLookup func(agentID string) []string
 
+// Check validates the standards document (F-011/ADR-0011): absent is
+// fine — built-ins apply by design; malformed returns an error naming
+// the path instead of being silently ignored. Runtime refuses turns
+// when Check fails; Resolve assumes Check passed.
+func Check(root string) error {
+	if _, err := os.Stat(filepath.Join(root, File)); os.IsNotExist(err) {
+		return nil
+	}
+	_, err := loadDoc(root)
+	return err
+}
+
 // Resolve renders the effective instruction block for agentID: bulleted
 // lines, ready to append to a system prompt. Built-ins always apply;
-// an absent/invalid document degrades to them.
+// an absent document degrades to them (by design). Callers must run
+// Check first — a malformed document is surfaced only there.
 func Resolve(root, agentID string, teams TeamLookup) string {
 	lines := append([]string(nil), Builtins...)
 	if d, err := loadDoc(root); err == nil {

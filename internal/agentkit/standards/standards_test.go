@@ -147,3 +147,26 @@ func TestSaveRoundTripAndValidation(t *testing.T) {
 		t.Error("bad mode accepted")
 	}
 }
+
+func TestCheckAbsentIsHealthyMalformedRefuses(t *testing.T) {
+	root := t.TempDir()
+	if err := Check(root); err != nil {
+		t.Fatalf("absent doc must be healthy: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, ".dhi"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, File), []byte("not toml {{"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err := Check(root)
+	if err == nil || !strings.Contains(err.Error(), File) {
+		t.Fatalf("malformed must refuse with the path: %v", err)
+	}
+	if err := Save(root, []string{"be nice"}, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := Check(root); err != nil {
+		t.Fatalf("valid doc: %v", err)
+	}
+}

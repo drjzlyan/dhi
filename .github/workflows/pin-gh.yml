@@ -1,0 +1,70 @@
+name: pin-gh
+
+# Pins DHI's hermetic gh CLI (ADR-0011) into the registry manifest by
+# digesting the official cli/cli release tarballs. Nothing is built:
+# the trust chain matches rg/uv/node — upstream URL + CI-computed
+# sha256, proposed as a reviewed PR. Human work: dispatch → merge.
+#
+# Run: dispatch with the upstream gh version (e.g. 2.65.0), then merge
+# the PR this workflow opens.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "upstream gh version to pin (no leading v)"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  pin-pr:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # push the pin branch
+      pull-requests: write # open the PR
+    env:
+      GH_VERSION: ${{ github.event.inputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Update registry manifest (downloads + digests upstream)
+        run: python3 scripts/pin-gh-manifest.py --version "$GH_VERSION"
+
+      - name: Validate manifest
+        run: python3 -c "import json; m=json.load(open('internal/toolchain/registry/manifest.json')); c=m['tools']['gh']; assert c['version']=='$GH_VERSION', c; assert len(c['platforms'])==2; [print(p, s['sha256']) for p,s in c['platforms'].items()]"
+
+      - name: Open or update pin PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if git diff --quiet internal/toolchain/registry/manifest.json; then
+            echo "registry already carries these digests; nothing to do"
+            exit 0
+          fi
+          BRANCH="pin/hermetic-gh-v${GH_VERSION}"
+          git config user.name "dhi-pin-bot"
+          git config user.email "bot@drjzlyan.dhi"
+          git checkout -B "$BRANCH"
+          git add internal/toolchain/registry/manifest.json
+          git commit -m "pin hermetic gh v${GH_VERSION} (supply-chain review)" \
+            -m "Digests computed in CI from the official cli/cli release
+            tarballs (ADR-0011: no host tools). Review like any registry
+            change."
+          git push -f origin "$BRANCH"
+          gh pr create \
+            --title "pin hermetic gh v${GH_VERSION}" \
+            --body "Registry pin for gh v${GH_VERSION} (ADR-0011).
+
+            - digests recomputed in CI from the official cli/cli
+              release tarballs (\`scripts/pin-gh-manifest.py\`)
+            - platforms: darwin/arm64, linux/amd64
+            - only the \`gh\` tool in \`registry/manifest.json\` touched
+
+            Merge activates the gh shim; \`dhi doctor\` lights gh/cli and
+            reviewer PR flows stop refusing." || {
+              echo "PR may already exist; updating is a force-push above"
+            }
+    # Note: the workflow's own shell `gh` usage above is GitHub Actions'
+    # preinstalled CLI, unrelated to DHI's hermetic toolchain policy.

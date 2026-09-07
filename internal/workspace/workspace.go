@@ -96,6 +96,18 @@ func Create(root string, names ...string) error {
 	return nil
 }
 
+// ErrNotWorkspace marks a directory holding no .dhi/workspace.toml.
+// Boot treats it as "empty-state editor", NOT an error; every other
+// Load failure means a workspace exists but is broken and blocks boot
+// with the named reason (F-011/ADR-0011).
+var ErrNotWorkspace = errors.New("not a DHI workspace")
+
+// IsConfigError reports whether err means "workspace exists but its
+// config is broken/invalid" — as opposed to merely not-a-workspace.
+func IsConfigError(err error) bool {
+	return err != nil && !errors.Is(err, ErrNotWorkspace)
+}
+
 // Load parses and validates <root>/.dhi/workspace.toml. Member paths may
 // be relative to the workspace root; they are resolved to absolute paths
 // and must exist on disk. Duplicate registrations (by name or by
@@ -104,7 +116,7 @@ func Load(root string) (*Workspace, error) {
 	root = filepath.Clean(root)
 	data, err := os.ReadFile(filepath.Join(root, ConfigFile))
 	if os.IsNotExist(err) {
-		return nil, fmt.Errorf("workspace: %s not found under %s (not a DHI workspace?)", ConfigFile, root)
+		return nil, fmt.Errorf("workspace: %s not found under %s (%w)", ConfigFile, root, ErrNotWorkspace)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("workspace: read config: %w", err)

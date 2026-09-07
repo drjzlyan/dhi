@@ -40,6 +40,20 @@ type Terminal struct {
 	Scrollback int `toml:"scrollback"`
 }
 
+// Security holds the hardening toggles (F-010). Sandbox selects the
+// OS-sandbox mode: "auto" (use seatbelt/bubblewrap when the platform
+// binary exists) or "off" (path-jail + policy only). Unknown values
+// sanitize back to auto.
+type Security struct {
+	Sandbox string `toml:"sandbox"`
+}
+
+// Sandbox mode values.
+const (
+	SandboxAuto = "auto"
+	SandboxOff  = "off"
+)
+
 // Config is the full typed schema; zero values never leak — Load starts
 // from Defaults.
 type Config struct {
@@ -47,6 +61,7 @@ type Config struct {
 	Theme    string   `toml:"theme"`
 	Editor   Editor   `toml:"editor"`
 	Terminal Terminal `toml:"terminal"`
+	Security Security `toml:"security"`
 }
 
 // Defaults returns the built-in baseline every layer merges onto.
@@ -56,13 +71,15 @@ func Defaults() Config {
 		Theme:    theme.Dark().Name,
 		Editor:   Editor{TabWidth: 4, LineNumbers: true},
 		Terminal: Terminal{Scrollback: 1000},
+		Security: Security{Sandbox: SandboxAuto},
 	}
 }
 
 // Known reports the accepted top-level keys (for doctor warnings).
 func Known() []string {
-	return []string{"schema", "theme", "editor", "terminal",
-		"editor.tab_width", "editor.line_numbers", "terminal.scrollback"}
+	return []string{"schema", "theme", "editor", "terminal", "security",
+		"editor.tab_width", "editor.line_numbers", "terminal.scrollback",
+		"security.sandbox"}
 }
 
 // Load merges defaults ← user ← workspace. Missing files are fine;
@@ -84,13 +101,55 @@ func Load(userPath, wsPath string) (Config, error) {
 		if _, err := toml.Decode(string(data), &layer); err != nil {
 			return cfg, fmt.Errorf("settings: parse %s: %w", path, err)
 		}
+		// Strict mode (ADR-0011): unknown keys refuse instead of warn.
+		if unknown, err := UnknownKeys(data); err != nil {
+			return cfg, fmt.Errorf("settings: %s: %w", path, err)
+		} else if len(unknown) > 0 {
+			return cfg, fmt.Errorf("settings: unknown keys in %s: %s (fix or remove them)",
+				path, strings.Join(unknown, ", "))
+		}
 		layer.mergeInto(&cfg)
 	}
-	if cfg.Schema != SchemaVersion {
-		return cfg, fmt.Errorf("settings: schema %d, want %d", cfg.Schema, SchemaVersion)
+	if err := validate(cfg); err != nil {
+		return cfg, err
 	}
-	sanitize(&cfg)
 	return cfg, nil
+}
+
+// validate rejects invalid merged values by name — no silent
+// substitution (F-011). Every branch names the offending key + value.
+func validate(c Config) error {
+	if c.Schema != SchemaVersion {
+		return fmt.Errorf("settings: schema %d, want %d", c.Schema, SchemaVersion)
+	}
+	if !themeExists(c.Theme) {
+		return fmt.Errorf("settings: unknown theme %q (want %s or %s)",
+			c.Theme, theme.Dark().Name, theme.Light().Name)
+	}
+	if c.Editor.TabWidth <= 0 || c.Editor.TabWidth > 16 {
+		return fmt.Errorf("settings: editor.tab_width %d out of range 1..16", c.Editor.TabWidth)
+	}
+	if c.Terminal.Scrollback < 100 {
+		return fmt.Errorf("settings: terminal.scrollback %d below minimum 100", c.Terminal.Scrollback)
+	}
+	switch c.Security.Sandbox {
+	case SandboxAuto, SandboxOff:
+	default:
+		return fmt.Errorf("settings: security.sandbox %q (want %q or %q)",
+			c.Security.Sandbox, SandboxAuto, SandboxOff)
+	}
+	return nil
+}
+
+// LoadBestEffort returns defaults merged with whatever parsed, plus the
+// first error — for diagnostics (doctor) that must report ON a broken
+// install rather than refuse to run. Production boot uses Load.
+func LoadBestEffort(userPath, wsPath string) (Config, error) {
+	cfg, err := Load(userPath, wsPath)
+	if err == nil {
+		return cfg, nil
+	}
+	return Defaults(), err
 }
 
 // fileLayer decodes one TOML document; pointers distinguish "unset"
@@ -105,6 +164,9 @@ type fileLayer struct {
 	Terminal struct {
 		Scrollback int `toml:"scrollback"`
 	} `toml:"terminal"`
+	Security struct {
+		Sandbox string `toml:"sandbox"`
+	} `toml:"security"`
 }
 
 func (f fileLayer) mergeInto(dst *Config) {
@@ -123,17 +185,8 @@ func (f fileLayer) mergeInto(dst *Config) {
 	if f.Terminal.Scrollback != 0 {
 		dst.Terminal.Scrollback = f.Terminal.Scrollback
 	}
-}
-
-func sanitize(c *Config) {
-	if c.Editor.TabWidth <= 0 || c.Editor.TabWidth > 16 {
-		c.Editor.TabWidth = 4
-	}
-	if c.Terminal.Scrollback < 100 {
-		c.Terminal.Scrollback = 1000
-	}
-	if !themeExists(c.Theme) {
-		c.Theme = theme.Dark().Name
+	if f.Security.Sandbox != "" {
+		dst.Security.Sandbox = strings.TrimSpace(f.Security.Sandbox)
 	}
 }
 

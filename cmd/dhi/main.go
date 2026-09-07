@@ -10,7 +10,9 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -20,17 +22,20 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
 	agentkitOrg "github.com/drjzlyan/dhi/internal/agentkit/org"
 	"github.com/drjzlyan/dhi/internal/agentkit/provider"
-	"github.com/drjzlyan/dhi/internal/agentkit/runtime"
+	agentkitRuntime "github.com/drjzlyan/dhi/internal/agentkit/runtime"
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
+	"github.com/drjzlyan/dhi/internal/boot"
 	"github.com/drjzlyan/dhi/internal/doctor"
 	"github.com/drjzlyan/dhi/internal/gitcore"
 	"github.com/drjzlyan/dhi/internal/ideation"
 	"github.com/drjzlyan/dhi/internal/review"
+	"github.com/drjzlyan/dhi/internal/sandbox"
 	"github.com/drjzlyan/dhi/internal/search"
 	"github.com/drjzlyan/dhi/internal/settings"
 	"github.com/drjzlyan/dhi/internal/tasks"
 	"github.com/drjzlyan/dhi/internal/toolchain"
 	"github.com/drjzlyan/dhi/internal/tui/app"
+	"github.com/drjzlyan/dhi/internal/tui/surfaces/bootgate"
 	"github.com/drjzlyan/dhi/internal/tui/surfaces/bootstrap"
 	"github.com/drjzlyan/dhi/internal/tui/surfaces/editor"
 	ideator "github.com/drjzlyan/dhi/internal/tui/surfaces/ideator"
@@ -56,21 +61,41 @@ func main() {
 }
 
 func runTUI() {
-	var ws *workspace.Workspace
-	if cwd, err := os.Getwd(); err == nil {
-		ws, _ = workspace.Load(cwd) // not a workspace → empty-state editor
+	cwd, err := os.Getwd()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "dhi:", err)
+		os.Exit(1)
+	}
+	userCfg, _ := settings.DefaultUserPath()
+	toolRoot := ""
+	if root, terr := toolchain.DefaultRoot(); terr == nil {
+		toolRoot = root
 	}
 
-	// Settings: defaults < user config < workspace config; theme applies
-	// before any surface renders.
-	userCfg, _ := settings.DefaultUserPath()
+	// The boot audit resolves everything up front (F-011 / ADR-0011):
+	// proceed, offer confirmation-gated installs, or block with named
+	// reasons. No fallbacks live below this line.
+	decision := boot.Audit(boot.Input{
+		CWD:      cwd,
+		ToolRoot: toolRoot,
+		UserCfg:  userCfg,
+		GOOS:     runtime.GOOS,
+		LookPath: exec.LookPath,
+	})
+
+	// Surfaces are built against the validated state (a blocked boot
+	// never renders them; the gate owns the body until quit).
+	ws, _ := workspace.Load(cwd) // audit-guaranteed: nil ⇒ not a workspace
+
 	wsCfg := ""
 	if ws != nil {
 		wsCfg = filepath.Join(ws.Root, workspace.DHIDir, "config.toml")
 	}
 	cfg, cfgErr := settings.Load(userCfg, wsCfg)
-	if cfgErr != nil {
+	if cfgErr != nil && decision.Block == "" {
+		// Unreachable via the audit; refuse rather than guess.
 		fmt.Fprintln(os.Stderr, "dhi:", cfgErr)
+		os.Exit(1)
 	}
 	cfg.Apply()
 	savePath := userCfg
@@ -80,22 +105,25 @@ func runTUI() {
 
 	var edOpts []editor.Option
 	var rgSearcher search.Searcher
-	if root, err := toolchain.DefaultRoot(); err == nil {
-		mgr := toolchain.New(root)
-		// Terminal sessions run with DHI's hermetic PATH; search uses
-		// the shim rg. Capabilities stay off when the toolchain is not
-		// installed rather than falling back to host tools (ADR-0005).
+	if toolRoot != "" {
+		mgr := toolchain.New(toolRoot)
+		// Terminal sessions run with DHI's hermetic PATH. When the
+		// toolchain is absent the drawer REFUSES to open a session
+		// naming the fix — it never leaks the host PATH (ADR-0011).
 		edOpts = append(edOpts, editor.WithTermEnv(mgr.Env(nil)))
-		if _, err := os.Stat(filepath.Join(root, "bin", "rg")); err == nil {
-			rgSearcher = search.Ripgrep{Bin: filepath.Join(root, "bin", "rg")}
-			edOpts = append(edOpts, editor.WithSearcher(rgSearcher))
+		if _, err := os.Stat(filepath.Join(toolRoot, "bin", "rg")); err == nil {
+			rgSearcher = search.Ripgrep{Bin: filepath.Join(toolRoot, "bin", "rg")}
 		}
 	}
+	if rgSearcher == nil {
+		rgSearcher = search.Refused{Reason: "search unavailable: rg shim not installed — run bootstrap (dhi doctor shows status)"}
+	}
+	edOpts = append(edOpts, editor.WithSearcher(rgSearcher))
 
 	// Message bus + tasks store exist for every workspace; the worktree
 	// seam lights up only when the hermetic git shim is installed.
 	var messageBus *bus.Bus
-	var agentRT *runtime.Runtime
+	var agentRT *agentkitRuntime.Runtime
 	var taskStore *tasks.Store
 	var reviewSvc *review.Service
 	var sessionStore *ideation.Store
@@ -112,10 +140,10 @@ func runTUI() {
 			fmt.Fprintln(os.Stderr, "dhi: session store:", err)
 		}
 		// Agent runtime (F-007): lights up only when a roster exists
-		// under .dhi/agents/. A missing API key surfaces at first turn,
-		// not boot; doctor warns about it.
+		// under .dhi/agents/. Guards carry the audited OS-sandbox
+		// adapter (nil here is impossible: the audit blocked first).
 		if messageBus != nil {
-			agentRT = newAgentRuntime(ws, messageBus, rgSearcher)
+			agentRT = newAgentRuntime(ws, messageBus, rgSearcher, decision.Sandbox)
 			if agentRT != nil {
 				edOpts = append(edOpts, editor.WithChat(agentRT))
 			}
@@ -153,7 +181,15 @@ func runTUI() {
 	)
 	appRef = a
 
-	if cfgErr == nil && needsBootstrap(toolchainRoot()) {
+	// Gates, in strict order: a block never releases; missing pieces
+	// offer the confirmation-gated install; first-run (no lockfile)
+	// keeps the classic full bootstrap.
+	switch {
+	case decision.Block != "":
+		a.SetGate(bootgate.New(version.Version, decision, nil))
+	case len(decision.Offer) > 0:
+		a.SetGate(bootgate.New(version.Version, decision, toolchain.New(toolRoot)))
+	case needsBootstrap(toolRoot):
 		mgr := toolchain.New(toolchainRoot())
 		// DHI_REGISTRY overrides the embedded manifest with a remote one
 		// (loopback http allowed) for testing the pipeline end-to-end.
@@ -194,7 +230,15 @@ func openReviewService(ws *workspace.Workspace) *review.Service {
 		fmt.Fprintln(os.Stderr, "dhi: review store:", err)
 		return nil
 	}
-	gh := review.NewGHCLI()
+	// gh is hermetic (ADR-0011): the shim path lights PR flows; absent
+	// shim → the seam refuses with the named fix, never a host lookup.
+	ghShim := ""
+	if root, rerr := toolchain.DefaultRoot(); rerr == nil {
+		if _, serr := os.Stat(filepath.Join(root, "bin", "gh")); serr == nil {
+			ghShim = filepath.Join(root, "bin", "gh")
+		}
+	}
+	gh := review.NewGHCLI(ghShim)
 	svc := review.NewService(ws, st, nil, gh)
 	svc.SetTokenFn(func(ctx context.Context) (string, error) {
 		return gh.AuthToken(ctx)
@@ -304,7 +348,7 @@ func openBus(ws *workspace.Workspace) *bus.Bus {
 // newAgentRuntime wires the turn engine onto an existing bus; nil means
 // no crew (no roster, or a broken one). Org + layered coding standards
 // ride along when their sidecar files parse; broken ones degrade.
-func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, srch search.Searcher) *runtime.Runtime {
+func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, srch search.Searcher, sb sandbox.Sandbox) *agentkitRuntime.Runtime {
 	roster, err := manifest.LoadDir(filepath.Join(ws.Root, workspace.DirAgents))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "dhi: agent roster:", err)
@@ -324,7 +368,7 @@ func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, srch search.Searcher) 
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "dhi: org registry:", err)
 	}
-	rt, err := runtime.New(runtime.Config{
+	rt, err := agentkitRuntime.New(agentkitRuntime.Config{
 		WS:        ws,
 		Bus:       b,
 		Approvals: tools.NewApprovals(),
@@ -332,6 +376,7 @@ func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, srch search.Searcher) 
 		Provider:  provider.NewAnthropic("", os.Getenv(envVar)),
 		Org:       company,
 		Standards: true,
+		Sandbox:   sb,
 	}, roster)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "dhi: agent runtime:", err)

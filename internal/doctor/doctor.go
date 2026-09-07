@@ -11,11 +11,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/drjzlyan/dhi/internal/ideation"
+	"github.com/drjzlyan/dhi/internal/sandbox"
 	"github.com/drjzlyan/dhi/internal/tasks"
 
 	agentkitStandards "github.com/drjzlyan/dhi/internal/agentkit/standards"
@@ -62,7 +64,8 @@ func Run(toolRoot, wsRoot string) Report {
 	r.Checks = append(r.Checks, Standards(wsRoot)...)
 	r.Checks = append(r.Checks, Tasks(wsRoot)...)
 	r.Checks = append(r.Checks, Sessions(wsRoot)...)
-	r.Checks = append(r.Checks, GH()...)
+	r.Checks = append(r.Checks, GH(toolRoot)...)
+	r.Checks = append(r.Checks, Sandbox(sandboxMode(wsRoot))...)
 	r.Healthy = true
 	for _, c := range r.Checks {
 		if c.Status == Fail {
@@ -289,16 +292,17 @@ func joinIDs(roster []*manifest.Agent) string {
 }
 
 // Standards probes .dhi/standards.toml (F-003 layered instructions):
-// parse failures warn (the runtime silently degrades to built-ins), and
-// references to unknown teams or agents warn so typos surface.
+// parse failures FAIL (ADR-0011/F-011 — turns refuse on broken
+// standards; there is no silent built-ins fallback), and references to
+// unknown teams or agents warn so typos surface.
 func Standards(wsRoot string) []Check {
 	if wsRoot == "" {
 		return nil
 	}
 	snap, err := agentkitStandards.Inspect(wsRoot)
 	if err != nil {
-		return []Check{{Name: "standards/config", Status: Warn,
-			Detail: err.Error() + " (runtime falls back to built-ins)"}}
+		return []Check{{Name: "standards/config", Status: Fail,
+			Detail: err.Error() + " (turns refuse until fixed)"}}
 	}
 	total := len(snap.Workspace) + len(snap.Teams) + len(snap.Agents)
 	if total == 0 {
@@ -360,8 +364,10 @@ func Tasks(wsRoot string) []Check {
 		return []Check{{Name: "tasks/store", Status: Warn, Detail: err.Error()}}
 	}
 	all := store.List()
+	// Malformed cards FAIL (ADR-0011 strict data): the store skips them
+	// silently at load; doctor is where they become visible by name.
 	if w := store.Warnings(); len(w) > 0 {
-		return []Check{{Name: "tasks/store", Status: Warn,
+		return []Check{{Name: "tasks/store", Status: Fail,
 			Detail: fmt.Sprintf("%d malformed card(s): %s", len(w), strings.Join(w, "; "))}}
 	}
 	if len(all) == 0 {
@@ -408,8 +414,9 @@ func Tasks(wsRoot string) []Check {
 	return []Check{{Name: "tasks/store", Status: OK, Detail: detail}}
 }
 
-// Sessions probes .dhi/sessions/ (F-004 ideator): malformed cards warn
-// (they are skipped at load), invited agents not on the roster warn.
+// Sessions probes .dhi/sessions/ (F-004 ideator): malformed cards FAIL
+// (ADR-0011 strict data; they are skipped at load and must be visible
+// by name), invited agents not on the roster warn.
 func Sessions(wsRoot string) []Check {
 	if wsRoot == "" {
 		return nil
@@ -424,7 +431,7 @@ func Sessions(wsRoot string) []Check {
 	}
 	all := store.Sessions()
 	if w := store.Warnings(); len(w) > 0 {
-		return []Check{{Name: "sessions/store", Status: Warn,
+		return []Check{{Name: "sessions/store", Status: Fail,
 			Detail: fmt.Sprintf("%d malformed card(s): %s", len(w), strings.Join(w, "; "))}}
 	}
 	if len(all) == 0 {
@@ -455,13 +462,55 @@ func Sessions(wsRoot string) []Check {
 	return []Check{{Name: "sessions/store", Status: OK, Detail: detail}}
 }
 
-// GH probes the optional host gh CLI (F-005): PR reviews and posting
-// need it; everything else in the reviewer works without it, so absence
-// is a warning rather than a failure.
-func GH() []Check {
-	if _, err := exec.LookPath("gh"); err != nil {
-		return []Check{{Name: "gh/cli", Status: Warn,
-			Detail: "not on PATH — PR review input and posting disabled"}}
+// GH probes the hermetic gh shim (registry-pinned, ADR-0011). The host
+// `gh` lookup is gone; a missing shim is a Fail — PR flows refuse until
+// bootstrap provides the pinned binary.
+func GH(toolRoot string) []Check {
+	if toolRoot == "" {
+		return nil
 	}
-	return []Check{{Name: "gh/cli", Status: OK, Detail: "found on PATH"}}
+	shim := filepath.Join(toolRoot, "bin", "gh")
+	if _, err := os.Stat(shim); err != nil {
+		return []Check{{Name: "gh/cli", Status: Fail,
+			Detail: "gh shim not installed — PR flows refuse until bootstrap installs the pinned gh (dispatch the pin pipeline)"}}
+	}
+	return []Check{{Name: "gh/cli", Status: OK, Detail: shim}}
+}
+
+// sandboxMode resolves the effective sandbox setting; any load problem
+// degrades to auto here because doctor must report ON a broken install,
+// not refuse to run (strict boot is cmd's job, ADR-0011).
+func sandboxMode(wsRoot string) string {
+	user, _ := settings.DefaultUserPath()
+	ws := ""
+	if wsRoot != "" {
+		ws = filepath.Join(wsRoot, workspace.DHIDir, "config.toml")
+	}
+	cfg, err := settings.LoadBestEffort(user, ws)
+	if err != nil {
+		return settings.SandboxAuto
+	}
+	return cfg.Security.Sandbox
+}
+
+// Sandbox reports which OS-isolation adapter agent guards use (F-010/
+// F-011). Missing helper in auto mode is a hard requirement — Fail;
+// the boot audit blocks that boot too (ADR-0011). off is the user's
+// explicit opt-out: Warn so the downgrade is never silent.
+func Sandbox(mode string) []Check {
+	switch mode {
+	case settings.SandboxOff:
+		return []Check{{Name: "sandbox/adapter", Status: Warn,
+			Detail: "off in settings (explicit opt-out) — path-jail + policy only"}}
+	case settings.SandboxAuto:
+		name := sandbox.Detect(runtime.GOOS, exec.LookPath)
+		if name == "noop" {
+			return []Check{{Name: "sandbox/adapter", Status: Fail,
+				Detail: "OS sandbox helper missing (sandbox-exec/bwrap) — boot blocks until installed (ADR-0011)"}}
+		}
+		return []Check{{Name: "sandbox/adapter", Status: OK, Detail: name}}
+	default:
+		return []Check{{Name: "sandbox/adapter", Status: Fail,
+			Detail: fmt.Sprintf("unknown mode %q — boot refuses on strict settings", mode)}}
+	}
 }

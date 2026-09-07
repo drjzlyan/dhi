@@ -1,0 +1,26 @@
+╭─ › dhi test ────────────────────────────────────────────────╮
+│ missing hermetic components:                                 │
+│                                                              │
+│   · rg                                                       │
+│   · uv                                                       │
+│   · node                                                     │
+│   · git                                                      │
+│   · gopls (built from source)                                │
+│                                                              │
+│                                                              │
+│ os sandbox disabled by config                                │
+│ (explicit opt-out; path-jail + policy still apply)           │
+│                                                              │
+│ i install now · enter skip (capabilities refuse until instal │
+│                                                              │
+│                                                              │
+│                                                              │
+│                                                              │
+│                                                              │
+│                                                              │
+│                                                              │
+│                                                              │
+│                                                              │
+│                                                              │
+│                                                              │
+╰──────────────────────────────────────────────────────────────╯

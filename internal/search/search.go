@@ -8,6 +8,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os/exec"
 	"strconv"
@@ -125,4 +126,14 @@ func parseRipgrepJSON(line []byte) (Hit, bool) {
 // Format renders a hit for list display.
 func (h Hit) String() string {
 	return h.Path + ":" + strconv.Itoa(h.Line) + ": " + h.Text
+}
+
+// Refused is the explicit "capability not installed" searcher
+// (ADR-0011): instead of the search key being silently inert, every
+// query errors with the named fix, which the results view renders.
+type Refused struct{ Reason string }
+
+// Search implements Searcher by refusing.
+func (r Refused) Search(ctx context.Context, query string, roots []string) (<-chan Hit, error) {
+	return nil, errors.New(r.Reason)
 }

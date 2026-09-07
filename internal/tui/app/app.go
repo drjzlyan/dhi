@@ -15,13 +15,15 @@ import (
 )
 
 // Gate is a full-body takeover shown before normal surfaces (first-run
-// bootstrap). While the gate is active it owns Update/View; global keys
-// still quit, and once Finished() reports true the shell resumes
-// ordinary routing permanently.
+// bootstrap, boot gates). While the gate is active it owns Update/View
+// and receives every key via HandleKey; global keys still quit, and
+// once Finished() reports true the shell resumes ordinary routing
+// permanently. A gate that never finishes blocks boot (ADR-0011).
 type Gate interface {
 	Init() tea.Cmd
 	Resize(width, height int)
 	Update(tea.Msg) tea.Cmd
+	HandleKey(key string) bool
 	View() string
 	Finished() bool
 }
@@ -103,7 +105,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.quitting = true
 				return a, tea.Quit
 			}
-			return a, nil // gate owns all other input
+			a.gate.HandleKey(msg.String()) // the gate owns all other input
+			return a, nil
 		}
 		if cmd, handled := a.handleGlobal(msg.String()); handled {
 			return a, cmd
