@@ -19,12 +19,14 @@ polish + reduced-motion.
 ## Session 8 gotchas
 
 1. `gh workflow run pin-gh.yml` pushed `pin/hermetic-gh-v2.100.0` but
-   the repo FORBIDS Actions from creating PRs (GitHub Actions not
-   permitted to create or approve pull requests) — the workflow
-   force-push fallback printed "PR may already exist" instead. Fix was
-   opening PR #3 with the maintainer token and merging; the
-   release-git pin-pr job needs the same setting or workaround next
-   dispatch.
+   the repo FORBIDS Actions from creating PRs — the force-push
+   fallback printed "PR may already exist". PR #3 was opened with the
+   maintainer token instead; then the repo setting was FIXED via
+   `gh api repos/drjzlyan/dhi/actions/permissions/workflow -X PUT
+   -F can_approve_pull_request_reviews=true`, so future pin dispatches
+   (pin-gh, release-git) can open their PRs through GITHUB_TOKEN.
+   Next dispatch is the end-to-end proof (re-dispatching gh v2.100.0
+   short-circuits on "registry already carries these digests").
 2. `go run` of internal packages from /tmp fails ("use of internal
    package not allowed"); drive toolchain.Manager via a transient file
    INSIDE the repo, delete after.
