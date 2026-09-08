@@ -109,3 +109,34 @@ func TestBlockViewContent(t *testing.T) {
 }
 
 func plain(s string) string { return s }
+
+// TestConfirmInstallQueuesInitCommand pins the F-011 gate-start bug:
+// the delegated bootstrap's Init must be drained by the shell right
+// after the confirm key, or the install goroutine never starts.
+func TestConfirmInstallQueuesInitCommand(t *testing.T) {
+	m := New("test", boot.Decision{Offer: []string{"go"}}, toolchain.New(t.TempDir()))
+	m.Resize(80, 24)
+	if m.TakeCmd() != nil {
+		t.Fatal("no command before confirm")
+	}
+	m.HandleKey("i")
+	cmd := m.TakeCmd()
+	if cmd == nil {
+		t.Fatal("confirm key must queue the inner bootstrap Init")
+	}
+	if m.TakeCmd() != nil {
+		t.Fatal("drain must be exactly once")
+	}
+	// skip/block/clean queue nothing
+	for _, d := range []boot.Decision{
+		{Offer: []string{"go"}},
+		{Block: "x"},
+		{},
+	} {
+		m2 := New("test", d, nil)
+		m2.HandleKey("enter")
+		if m2.TakeCmd() != nil {
+			t.Errorf("decision %+v queued a command", d)
+		}
+	}
+}

@@ -208,3 +208,41 @@ func keyPress(s string) tea.KeyPressMsg {
 }
 
 func (s *stubSurface) View() string { return "stub:" + s.id }
+
+// cmdGate queues a command after any key, mimicking the bootgate's
+// confirm → install transition (the shell must drain it).
+type cmdGate struct {
+	stubGate
+	cmded tea.Cmd
+	taken int
+}
+
+func (g *cmdGate) HandleKey(k string) bool { g.keys = append(g.keys, k); return true }
+func (g *cmdGate) TakeCmd() tea.Cmd {
+	g.taken++
+	c := g.cmded
+	g.cmded = nil
+	return c
+}
+
+func TestGateKeyCommandDrained(t *testing.T) {
+	a, _ := newTestApp(t)
+	sent := make(chan struct{}, 1)
+	g := &cmdGate{cmded: func() tea.Msg { sent <- struct{}{}; return nil }}
+	a.SetGate(g)
+	a.Init()
+
+	_, out := a.Update(keyPress("i"))
+	if out == nil {
+		t.Fatal("drained command not returned to bubble tea")
+	}
+	out() // bubble tea would run it; the mark flows back
+	select {
+	case <-sent:
+	default:
+		t.Fatal("queued command not executed")
+	}
+	if g.taken != 1 || a.gate == nil {
+		t.Fatalf("drain count %d", g.taken)
+	}
+}

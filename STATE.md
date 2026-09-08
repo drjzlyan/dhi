@@ -33,6 +33,11 @@ polish + reduced-motion.
 3. Embedded manifest pins ARE the install contract: InstallEmbedded
    fetched the just-merged gh v2.100.0 entry and produced the shim
    without any manifest-side edit.
+4. REAL-UI smoke found a bootgate freeze: HandleKey("i") created the
+   inner bootstrap but its Init (install + event pump + tick) never
+   ran — gates cannot return commands from HandleKey, so App drains an
+   optional TakeCmd() right after the key. Gates that start work from
+   a keypress MUST queue through TakeCmd.
 
 ## Where we are
 

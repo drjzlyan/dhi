@@ -41,6 +41,7 @@ type Model struct {
 	inner    *bootstrap.Model // owns the manifest install phase
 	mgr      *toolchain.Manager
 	buildErr string
+	pending  tea.Cmd // command queued by HandleKey (confirm → install)
 }
 
 // Compile-time check against the shell's gate contract.
@@ -134,10 +135,20 @@ func (m *Model) HandleKey(key string) bool {
 	return true
 }
 
+// TakeCmd drains a command queued by HandleKey (the shell returns it
+// right after the key, since gates cannot return commands from key
+// handling — without this drain the delegated install never starts).
+func (m *Model) TakeCmd() tea.Cmd {
+	cmd := m.pending
+	m.pending = nil
+	return cmd
+}
+
 func (m *Model) startInstall() {
 	m.inner = bootstrap.New(m.version, m.mgr, "")
 	m.inner.Resize(m.width, m.height)
 	m.phase = phaseInstalling
+	m.pending = m.inner.Init() // start install + event pump + tick
 }
 
 // afterInstall builds gopls from source when the manifest install did

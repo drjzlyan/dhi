@@ -106,6 +106,14 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return a, tea.Quit
 			}
 			a.gate.HandleKey(msg.String()) // the gate owns all other input
+			// A key may START work (bootgate confirm → install): gates
+			// cannot return commands from HandleKey, so they queue one
+			// and the shell drains it here.
+			if cg, ok := a.gate.(interface{ TakeCmd() tea.Cmd }); ok {
+				if cmd := cg.TakeCmd(); cmd != nil {
+					return a, cmd
+				}
+			}
 			return a, nil
 		}
 		if cmd, handled := a.handleGlobal(msg.String()); handled {
