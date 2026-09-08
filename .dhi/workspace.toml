@@ -1,0 +1,7 @@
+# Self-hosting viewport: DHI is opened as its own DHI workspace
+# (development from within the IDE). The repo root is the single
+# member — every path is addressable as dhi/<rel-path>.
+schema = 1
+
+[members.dhi]
+path = "."

@@ -4,3 +4,17 @@ coverage.out
 .DS_Store
 dhi-git-*.tar.gz
 dhi-git-*.sha256
+
+# Self-hosting .dhi/: track the workspace contract (workspace.toml,
+# agents, standards), ignore per-user runtime state and reserved
+# scratch trees.
+.dhi/channels/
+.dhi/knowledge/
+.dhi/memory/
+.dhi/reviews/
+.dhi/sessions/
+.dhi/tasks/
+.dhi/marketplace.json
+.dhi/org.toml
+.dhi/config.toml
+.dhi/agents/.archived/

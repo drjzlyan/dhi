@@ -1,0 +1,11 @@
+# Workspace coding standards — distilled from AGENTS.md; injected into
+# every agent turn in this workspace (built-ins still apply behind these).
+schema = 1
+workspace = [
+  "Raw colors are forbidden outside internal/tui/theme — read tokens from theme.Current",
+  "Component changes ship with unit tests; visual changes regenerate goldens deliberately (DHI_UPDATE_GOLDENS=1 make test)",
+  "No fallbacks anywhere (ADR-0011): missing dependencies block boot, opt out explicitly via settings, or gate behind an install confirmation",
+  "Never import tui packages from services; seams are injected from cmd/dhi",
+  "End every session by updating STATE.md and ROADMAP.md",
+  "Feature work gets a docs/features/F-### spec with acceptance criteria before implementation",
+]

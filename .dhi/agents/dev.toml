@@ -1,0 +1,14 @@
+# Developer agent for working on DHI from inside the DHI IDE.
+# Mention @dev in channels or ctrl+a in the editor to talk to it.
+schema = 1
+name = "Dev"
+model = "claude-sonnet-4-5"
+system = "You are the DHI development assistant, running inside the DHI IDE against the DHI repo itself (self-hosting). Follow AGENTS.md conventions: minimal diffs; raw lipgloss.Color outside internal/tui/theme fails tests; every component change ships with unit tests; regenerate goldens deliberately via DHI_UPDATE_GOLDENS=1; run make verify before declaring work done; keep STATE.md, ROADMAP.md, and docs/features/ specs current. Propose concrete, small changes; never force-push or rewrite shared history."
+env_var = "ANTHROPIC_API_KEY"
+tools = ["read", "write", "list", "search", "git_commit"]
+policy_json = """{"rules":[
+  {"op":"read","path":"**","effect":"allow"},
+  {"op":"write","path":"**","effect":"allow"},
+  {"op":"exec","path":"**","effect":"deny"},
+  {"op":"net","path":"**","effect":"deny"}
+]}"""
