@@ -354,3 +354,32 @@ repo paths / MCP issue trackers.
       transitions fade in (2×100 ms, message-driven) on surface switch
       and gate release, instant when reduced. Goldens unchanged (fade is
       styling-only)
+
+## M8 — Roster any agent *(Multica-inspired)*
+
+Status: in progress (P0 specs landed 2026-09-08; implementation next).
+Design decisions: ADR-0012 (host agent CLIs as opt-in runtimes —
+user-owned, declared env, OS sandbox is the boundary, runs not turns;
+the one named exception to ADR-0005's hermetic rule). DHI keeps its
+identity: single binary, local-first, hermetic DHI-owned toolchain,
+no server/daemon.
+
+- [x] P0 — specs + ADR (F-013…F-016, ADR-0012, 2026-09-08)
+- [ ] P1 — CLI runtimes (F-013): `internal/agentkit/clirun` registry
+      (adapter = argv builder + stream parser + cost extractor +
+      declared env pass-through, all fixture-tested); manifest
+      `runtime` key (strict enum, default = today); sandbox-wrapped
+      headless spawn in the task worktree; transcript → bus thread;
+      `[[run]]` records on task cards; timeout + retry policy;
+      doctor `runtime/<cli>` rows. Waves: 1 claude · 2 codex,
+      opencode · 3 cursor-agent, copilot, gemini
+- [ ] P2 — run observability (F-014): uniform run schema (anthropic
+      turns join with honest `n/a` usage), per-agent/per-task cost
+      rollups, INSPECT run-replay pane, task-detail run suffix,
+      doctor `runs/store`
+- [ ] P3 — autopilots (F-015): `.dhi/autopilots/` cards (strict),
+      due-on-launch catch-up (one missed run, no backfill) +
+      in-session interval ticks, AUTOPILOTS pane
+- [ ] P4 — inbox (F-016): pure aggregation (approvals / unreplied
+      @-mentions / failed runs / in-review tasks), INBOX pane with
+      jump-to-owner, `!N` statusline marker
