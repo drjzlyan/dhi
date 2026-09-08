@@ -57,11 +57,12 @@ const (
 // Config is the full typed schema; zero values never leak — Load starts
 // from Defaults.
 type Config struct {
-	Schema   int      `toml:"schema"`
-	Theme    string   `toml:"theme"`
-	Editor   Editor   `toml:"editor"`
-	Terminal Terminal `toml:"terminal"`
-	Security Security `toml:"security"`
+	Schema        int      `toml:"schema"`
+	Theme         string   `toml:"theme"`
+	ReducedMotion bool     `toml:"reduced_motion"`
+	Editor        Editor   `toml:"editor"`
+	Terminal      Terminal `toml:"terminal"`
+	Security      Security `toml:"security"`
 }
 
 // Defaults returns the built-in baseline every layer merges onto.
@@ -77,9 +78,9 @@ func Defaults() Config {
 
 // Known reports the accepted top-level keys (for doctor warnings).
 func Known() []string {
-	return []string{"schema", "theme", "editor", "terminal", "security",
-		"editor.tab_width", "editor.line_numbers", "terminal.scrollback",
-		"security.sandbox"}
+	return []string{"schema", "theme", "reduced_motion", "editor", "terminal",
+		"security", "editor.tab_width", "editor.line_numbers",
+		"terminal.scrollback", "security.sandbox"}
 }
 
 // Load merges defaults ← user ← workspace. Missing files are fine;
@@ -155,9 +156,10 @@ func LoadBestEffort(userPath, wsPath string) (Config, error) {
 // fileLayer decodes one TOML document; pointers distinguish "unset"
 // from false/zero so later layers only override what they set.
 type fileLayer struct {
-	Schema int    `toml:"schema"`
-	Theme  string `toml:"theme"`
-	Editor struct {
+	Schema        int    `toml:"schema"`
+	Theme         string `toml:"theme"`
+	ReducedMotion *bool  `toml:"reduced_motion"`
+	Editor        struct {
 		TabWidth    int   `toml:"tab_width"`
 		LineNumbers *bool `toml:"line_numbers"`
 	} `toml:"editor"`
@@ -175,6 +177,9 @@ func (f fileLayer) mergeInto(dst *Config) {
 	}
 	if f.Theme != "" {
 		dst.Theme = strings.TrimSpace(f.Theme)
+	}
+	if f.ReducedMotion != nil {
+		dst.ReducedMotion = *f.ReducedMotion
 	}
 	if f.Editor.TabWidth != 0 {
 		dst.Editor.TabWidth = f.Editor.TabWidth
@@ -202,11 +207,15 @@ func themeExists(name string) bool {
 	return ok
 }
 
-// Apply sets the live theme from c.Theme; unknown names keep current.
+// Apply sets the live theme from c.Theme (unknown names keep current)
+// and the live reduced-motion switch from c.ReducedMotion (F-012);
+// surfaces read theme.Motion, so a Settings toggle takes effect on the
+// next frame.
 func (c Config) Apply() {
 	if fn, ok := themeRegistry[c.Theme]; ok {
 		theme.Current = fn()
 	}
+	theme.SetMotion(!c.ReducedMotion)
 }
 
 // UnknownKeys parses data and returns top-level/dotted keys not in the

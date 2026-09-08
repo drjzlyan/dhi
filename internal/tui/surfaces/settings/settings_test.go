@@ -43,10 +43,38 @@ func TestNavigateAndCycleTheme(t *testing.T) {
 	}
 }
 
+func TestReducedMotionTogglesLiveAndPersists(t *testing.T) {
+	theme.MotionForTest(t, true)
+	m, path := newSurface(t)
+	feed(m, "j") // reduced_motion row
+	feed(m, "enter")
+	if !m.cfg.ReducedMotion {
+		t.Fatal("toggle did not enable reduced motion")
+	}
+	if theme.Motion {
+		t.Fatal("live theme.Motion not disabled")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "reduced_motion = true") {
+		t.Errorf("persisted file:\n%s", data)
+	}
+	back, err := settings.Load(path, "")
+	if err != nil || !back.ReducedMotion {
+		t.Errorf("reload = %+v err=%v", back, err)
+	}
+	feed(m, "enter") // back off
+	if m.cfg.ReducedMotion || !theme.Motion {
+		t.Fatal("toggle off did not restore motion")
+	}
+}
+
 func TestTabWidthCyclesAndPersists(t *testing.T) {
 	m, path := newSurface(t)
-	feed(m, "j") // tab_width
-	feed(m, "l") // 4 → 8
+	feed(m, "j", "j") // tab_width
+	feed(m, "l")      // 4 → 8
 
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -63,7 +91,7 @@ func TestTabWidthCyclesAndPersists(t *testing.T) {
 
 func TestLineNumbersToggle(t *testing.T) {
 	m, _ := newSurface(t)
-	feed(m, "j", "j") // line_numbers
+	feed(m, "j", "j", "j") // line_numbers
 	was := m.cfg.Editor.LineNumbers
 	feed(m, "enter")
 	if m.cfg.Editor.LineNumbers == was {
@@ -74,7 +102,7 @@ func TestLineNumbersToggle(t *testing.T) {
 func TestScrollbackBounds(t *testing.T) {
 	m, _ := newSurface(t)
 	for i := 0; i < 20; i++ {
-		feed(m, "j", "j", "j")
+		feed(m, "j", "j", "j", "j")
 		feed(m, "h") // decrease repeatedly
 	}
 	if got := m.cfg.Terminal.Scrollback; got < 100 {

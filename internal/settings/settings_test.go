@@ -221,6 +221,86 @@ func TestSecuritySandboxModes(t *testing.T) {
 	}
 }
 
+func TestReducedMotionLayering(t *testing.T) {
+	dir := t.TempDir()
+	user := filepath.Join(dir, "user.toml")
+	ws := filepath.Join(dir, "ws.toml")
+
+	// default false survives when unset
+	cfg, err := Load(user, ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ReducedMotion {
+		t.Error("default reduced_motion must be false")
+	}
+
+	// user layer enables it
+	os.WriteFile(user, []byte("reduced_motion = true\n"), 0o644)
+	cfg, err = Load(user, ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.ReducedMotion {
+		t.Errorf("user reduced_motion lost: %+v", cfg)
+	}
+
+	// workspace layer explicitly cancels it (explicit false is a set
+	// value, not "unset")
+	os.WriteFile(ws, []byte("reduced_motion = false\n"), 0o644)
+	cfg, err = Load(user, ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ReducedMotion {
+		t.Errorf("workspace explicit false did not override user true: %+v", cfg)
+	}
+
+	// round trip keeps the value
+	p := filepath.Join(dir, "save.toml")
+	cfg = Defaults()
+	cfg.ReducedMotion = true
+	if err := cfg.Save(p); err != nil {
+		t.Fatal(err)
+	}
+	back, err := Load(p, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !back.ReducedMotion {
+		t.Error("save/load dropped reduced_motion = true")
+	}
+
+	// it is a known key (no doctor warning, no boot refusal)
+	unknown, err := UnknownKeys([]byte("reduced_motion = true\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(unknown) != 0 {
+		t.Fatalf("unexpected unknown keys: %v", unknown)
+	}
+}
+
+func TestReducedMotionAppliesLive(t *testing.T) {
+	t.Cleanup(func() { theme.SetMotion(true) })
+
+	cfg := Defaults()
+	cfg.Apply()
+	if !theme.Motion {
+		t.Fatal("default config must leave motion on")
+	}
+	cfg.ReducedMotion = true
+	cfg.Apply()
+	if theme.Motion {
+		t.Fatal("reduced_motion=true must disable theme.Motion")
+	}
+	cfg.ReducedMotion = false
+	cfg.Apply()
+	if !theme.Motion {
+		t.Fatal("reduced_motion=false must restore theme.Motion")
+	}
+}
+
 func TestApplySwapsLiveTheme(t *testing.T) {
 	before := theme.Current
 	cfg := Defaults()

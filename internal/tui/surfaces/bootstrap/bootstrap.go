@@ -57,6 +57,7 @@ type Model struct {
 	rows         map[string]*row
 	order        []string
 	spinnerFrame int
+	clockArmed   bool // a tick timer is currently in flight
 	phase        phase
 	errText      string
 }
@@ -85,7 +86,8 @@ func (m *Model) Meta() surfaces.Meta { return surfaces.Meta{ID: "bootstrap", Tit
 
 func (m *Model) Resize(w, h int) { m.width, m.height = w, h }
 
-// Init starts the install, the event pump, and the animation clock.
+// Init starts the install, the event pump, and the animation clock
+// (the clock stays off entirely under reduced motion, F-012).
 func (m *Model) Init() tea.Cmd {
 	return tea.Batch(m.startInstall(), m.listen(), m.tick())
 }
@@ -126,7 +128,14 @@ func (m *Model) listen() tea.Cmd {
 	}
 }
 
+// tick arms the animation clock if it is not already running; under
+// reduced motion (F-012) the spinner is static, so no clock runs at
+// all — zero idle frames.
 func (m *Model) tick() tea.Cmd {
+	if m.clockArmed || !theme.Motion {
+		return nil
+	}
+	m.clockArmed = true
 	return tea.Tick(tickInterval, func(time.Time) tea.Msg { return tickMsg{} })
 }
 
@@ -135,7 +144,10 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 	switch msg := msg.(type) {
 	case eventMsg:
 		m.applyEvent(toolchain.Event(msg))
-		return m.listen()
+		// A pipeline event re-arms the clock in case it went quiet:
+		// motion toggled off then back on mid-install would otherwise
+		// leave the spinner frozen (F-012).
+		return tea.Batch(m.listen(), m.ensureTick())
 
 	case installDoneMsg:
 		if msg.err != nil {
@@ -157,11 +169,27 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 		return nil
 
 	case tickMsg:
-		if m.phase != phaseRunning {
+		m.clockArmed = false // this timer has fired
+		if m.phase != phaseRunning || !theme.Motion {
 			return nil
 		}
 		m.spinnerFrame = (m.spinnerFrame + 1) % len(spinnerFrames)
 		return m.tick()
+	}
+	return nil
+}
+
+// ensureTick re-arms the animation clock when it can have gone quiet —
+// motion toggled off then back on mid-install (F-012). It never adds a
+// duplicate timer: tick() is a no-op while one is already in flight.
+func (m *Model) ensureTick() tea.Cmd {
+	if m.phase != phaseRunning {
+		return nil
+	}
+	for _, r := range m.rows {
+		if r.status == statusActive {
+			return m.tick()
+		}
 	}
 	return nil
 }
@@ -259,7 +287,13 @@ func stageLine(r *row, frame int) string {
 	case statusFail:
 		glyph = theme.DangerText().Render(theme.GlyphCross)
 	case statusActive:
-		glyph = theme.Brand().Render(spinnerFrames[frame%len(spinnerFrames)])
+		// Reduced motion (F-012): a static busy glyph instead of an
+		// advancing frame.
+		if theme.Motion {
+			glyph = theme.Brand().Render(spinnerFrames[frame%len(spinnerFrames)])
+		} else {
+			glyph = theme.Brand().Render(theme.GlyphBusy)
+		}
 	default:
 		glyph = theme.TextDim().Render("·")
 	}

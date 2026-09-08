@@ -8,6 +8,7 @@ package theme
 
 import (
 	"image/color"
+	"strings"
 
 	"charm.land/lipgloss/v2"
 	"github.com/lucasb-eyer/go-colorful"
@@ -103,6 +104,22 @@ func Light() Tokens {
 // must read styles through the helpers below rather than caching
 // colors directly.
 var Current = Dark()
+
+// Motion gates animated effects (spinner frames, view transitions).
+// Set by settings.Apply from the reduced_motion preference; everything
+// reads this rather than caching, so a live Settings toggle takes
+// effect immediately (F-012).
+var Motion = true
+
+// SetMotion flips the reduced-motion switch (production path: settings).
+func SetMotion(on bool) { Motion = on }
+
+// MotionForTest installs on for the duration of the test.
+func MotionForTest(t interface{ Cleanup(func()) }, on bool) {
+	old := Motion
+	Motion = on
+	t.Cleanup(func() { Motion = old })
+}
 
 // SwapForTest installs tk for the duration of the test and restores it via
 // t.Cleanup. Rendering helpers read Current lazily so swaps take effect.
@@ -208,6 +225,19 @@ func DangerText() lipgloss.Style  { return lipgloss.NewStyle().Foreground(Curren
 // TextDim styles secondary text.
 func TextDim() lipgloss.Style { return lipgloss.NewStyle().Foreground(Current.TextDim) }
 
+// Faint dims a pre-rendered block of text (view-transition fade-in,
+// F-012). Content is byte-identical: lines are styled one at a time so
+// lipgloss never re-pads them to a common width, and the terminal
+// degrades the SGR hint gracefully when it cannot honor it.
+func Faint(s string) string {
+	st := lipgloss.NewStyle().Faint(true)
+	lines := strings.Split(s, "\n")
+	for i, l := range lines {
+		lines[i] = st.Render(l)
+	}
+	return strings.Join(lines, "\n")
+}
+
 // Blend interpolates between two brand colors; t=0 → a, t=1 → b.
 func Blend(a, b color.Color, t float64) color.Color {
 	cf := colorful.Color{R: colR(a), G: colG(a), B: colB(a)}
@@ -244,6 +274,7 @@ var (
 	GlyphCheck   = "✓"
 	GlyphCross   = "✗"
 	GlyphBullet  = "•"
+	GlyphBusy    = "◐" // static activity indicator (reduced motion)
 	GlyphBranch  = ""  // nerd-font git branch
 	GlyphSpark   = ""  // agent activity
 	GlyphLogoBG  = "█" // logo block character

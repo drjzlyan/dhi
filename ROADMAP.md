@@ -316,7 +316,7 @@ repo paths / MCP issue trackers.
       claimed from agent chatter); CHAT section with @mention dispatch;
       doctor `sessions/store` suite
 
-## M7 — Hardening & polish
+## M7 — Hardening & polish ✅ (2026-09-08)
 
 - [x] Rich LSP features (F-009, 2026-09-02): hover (`K`), rename (`gr`
       prompt → server WorkspaceEdit), code actions (`ga`, quickfix
@@ -348,4 +348,9 @@ repo paths / MCP issue trackers.
       now Fail. gh hermetic: `review.GHCLI` shim-bound + pin-gh.yml /
       pin-gh-manifest.py pipeline — **done (PR #3, gh v2.100.0,
       shim locked)**: digests CI-computed and cross-checked locally.
-- [ ] Animation polish across bootstrap/transitions; reduced-motion honored everywhere
+- [x] Animation polish + reduced-motion (F-012, 2026-09-08): `reduced_motion`
+      setting (strict, layered, live) → `theme.Motion` switch; bootstrap
+      spinner goes static (`GlyphBusy`, clock off) when reduced; view
+      transitions fade in (2×100 ms, message-driven) on surface switch
+      and gate release, instant when reduced. Goldens unchanged (fade is
+      styling-only)

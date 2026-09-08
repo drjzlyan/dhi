@@ -60,6 +60,26 @@ func hex(c any) string {
 
 func itoa(i int) string { return strconv.Itoa(i) }
 
+// TestFaintDimsContent pins the transition-dim contract: content
+// survives intact and the SGR dim is present (F-012).
+func TestFaintDimsContent(t *testing.T) {
+	out := Faint("hello")
+	if !strings.Contains(out, "hello") {
+		t.Fatalf("Faint dropped content: %q", out)
+	}
+	if !strings.Contains(out, "\x1b[2m") {
+		t.Fatalf("Faint emitted no dim: %q", out)
+	}
+}
+
+// TestMotionDefaultsOn keeps the reduced-motion switch opt-in: a fresh
+// process animates (F-012).
+func TestMotionDefaultsOn(t *testing.T) {
+	if !Motion {
+		t.Fatal("motion must default to on")
+	}
+}
+
 // TestNoRawColorsOutsideTheme enforces the branding invariant: lipgloss colors
 // may only be constructed inside the theme package. Components must request
 // styles through theme helpers.

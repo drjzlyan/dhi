@@ -66,6 +66,7 @@ func (m *Model) HandleKey(key string) bool {
 
 const (
 	rowTheme = iota
+	rowReducedMotion
 	rowTabWidth
 	rowLineNumbers
 	rowScrollback
@@ -83,6 +84,8 @@ func (m *Model) cycle(dir int) {
 				break
 			}
 		}
+	case rowReducedMotion:
+		m.cfg.ReducedMotion = !m.cfg.ReducedMotion
 	case rowTabWidth:
 		widths := []int{2, 4, 8}
 		for i, w := range widths {
@@ -130,6 +133,8 @@ func (m *Model) View() string {
 	content := []string{
 		settingRow(m.cursor == rowTheme, "theme",
 			valueText(m.cfg.Theme)),
+		settingRow(m.cursor == rowReducedMotion, "reduced_motion",
+			valueText(boolStr(m.cfg.ReducedMotion))),
 		settingRow(m.cursor == rowTabWidth, "editor.tab_width",
 			valueText(itoa(m.cfg.Editor.TabWidth))),
 		settingRow(m.cursor == rowLineNumbers, "editor.line_numbers",

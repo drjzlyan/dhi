@@ -74,6 +74,104 @@ func TestTabCyclesWithWraparound(t *testing.T) {
 	}
 }
 
+func TestSurfaceSwitchFadesIn(t *testing.T) {
+	theme.MotionForTest(t, true)
+	a, _ := newTestApp(t)
+
+	_, cmd := a.Update(keyPress("2"))
+	if cmd == nil {
+		t.Fatal("surface switch must arm the transition clock")
+	}
+	if a.transLeft != transitionFrames {
+		t.Fatalf("transLeft = %d, want %d", a.transLeft, transitionFrames)
+	}
+	if got := a.compose(); !strings.Contains(got, "\x1b[2m") {
+		t.Errorf("body not dimmed mid-transition:\n%q", got)
+	}
+
+	a.Update(transitionMsg{})
+	if a.transLeft != transitionFrames-1 {
+		t.Fatalf("frame did not decrement: %d", a.transLeft)
+	}
+	a.Update(transitionMsg{})
+	if a.transLeft != 0 {
+		t.Fatalf("transLeft = %d after final frame, want 0", a.transLeft)
+	}
+	if got := a.compose(); strings.Contains(got, "\x1b[2m") {
+		t.Errorf("body still dimmed after transition:\n%q", got)
+	}
+}
+
+func TestRapidSwitchRestartsFade(t *testing.T) {
+	theme.MotionForTest(t, true)
+	a, _ := newTestApp(t)
+	a.Update(keyPress("2"))
+	a.Update(keyPress("3"))
+	if a.transLeft != transitionFrames {
+		t.Fatalf("transLeft = %d, want restarted %d", a.transLeft, transitionFrames)
+	}
+}
+
+func TestReducedMotionSkipsTransition(t *testing.T) {
+	theme.MotionForTest(t, false)
+	a, _ := newTestApp(t)
+	_, cmd := a.Update(keyPress("2"))
+	if cmd != nil {
+		t.Fatal("reduced motion: surface switch must not arm any clock")
+	}
+	if a.transLeft != 0 {
+		t.Fatalf("transLeft = %d, want 0", a.transLeft)
+	}
+	if a.active != 1 {
+		t.Fatal("surface did not switch")
+	}
+	if got := a.compose(); strings.Contains(got, "\x1b[2m") {
+		t.Error("body dimmed under reduced motion")
+	}
+}
+
+func TestGateReleaseFadesIn(t *testing.T) {
+	theme.MotionForTest(t, true)
+	a, _ := newTestApp(t)
+	gate := &stubGate{}
+	a.SetGate(gate)
+	a.Init()
+
+	gate.finished = true
+	_, cmd := a.Update(testMsg{})
+	if cmd == nil {
+		t.Fatal("gate release must arm the transition clock")
+	}
+	if a.transLeft != transitionFrames {
+		t.Fatalf("transLeft = %d, want %d", a.transLeft, transitionFrames)
+	}
+	a.Update(transitionMsg{})
+	a.Update(transitionMsg{})
+	if a.transLeft != 0 {
+		t.Fatal("transition did not settle after the gate release")
+	}
+}
+
+func TestGateReleaseInstantUnderReducedMotion(t *testing.T) {
+	theme.MotionForTest(t, false)
+	a, _ := newTestApp(t)
+	gate := &stubGate{}
+	a.SetGate(gate)
+	a.Init()
+
+	gate.finished = true
+	_, cmd := a.Update(testMsg{})
+	if cmd != nil {
+		t.Fatal("reduced motion: gate release must not arm any clock")
+	}
+	if a.transLeft != 0 {
+		t.Fatalf("transLeft = %d, want 0", a.transLeft)
+	}
+	if a.active != 0 {
+		t.Fatal("shell did not resume")
+	}
+}
+
 func TestUnknownKeysForwardToActiveSurface(t *testing.T) {
 	a, st := newTestApp(t)
 	a.Update(keyPress("j")) // home doesn't consume; still forwarded

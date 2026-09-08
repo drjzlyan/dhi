@@ -136,6 +136,61 @@ func TestFailureMarksActiveRows(t *testing.T) {
 	}
 }
 
+func TestReducedMotionStaticIndicator(t *testing.T) {
+	theme.MotionForTest(t, false)
+	m := newTestModel()
+
+	if cmd := m.tick(); cmd != nil {
+		t.Fatal("reduced motion must not arm the animation clock")
+	}
+	feed(m, toolchain.Event{Kind: toolchain.EventDownloadStart, Tool: "rg"})
+	v := plain(m)
+	if !strings.Contains(v, theme.GlyphBusy) {
+		t.Errorf("static busy glyph missing:\n%s", v)
+	}
+	for _, f := range spinnerFrames {
+		if strings.Contains(v, f) {
+			t.Errorf("braille frame %q rendered under reduced motion:\n%s", f, v)
+		}
+	}
+	// a stray tick is a no-op (the clock is not running)
+	if cmd := m.Update(tickMsg{}); cmd != nil {
+		t.Error("tick re-armed under reduced motion")
+	}
+	if !strings.Contains(plain(m), theme.GlyphBusy) {
+		t.Error("stray tick changed the static indicator")
+	}
+
+	// done rows still resolve to the check, busy to nothing after done
+	feed(m,
+		toolchain.Event{Kind: toolchain.EventDownloadDone, Tool: "rg"},
+		toolchain.Event{Kind: toolchain.EventToolDone, Tool: "rg"},
+	)
+	if !strings.Contains(plain(m), theme.GlyphCheck+"  rg") {
+		t.Errorf("completion row missing:\n%s", plain(m))
+	}
+}
+
+func TestMotionReenabledMidInstall(t *testing.T) {
+	theme.MotionForTest(t, false)
+	m := newTestModel()
+	feed(m, toolchain.Event{Kind: toolchain.EventDownloadStart, Tool: "rg"})
+	if !strings.Contains(plain(m), theme.GlyphBusy) {
+		t.Fatal("expected static indicator while motion is off")
+	}
+
+	// user re-enables motion from Settings mid-install: the next
+	// pipeline event re-arms the clock and the frame advances again.
+	theme.SetMotion(true)
+	if cmd := m.Update(eventMsg(toolchain.Event{Kind: toolchain.EventDownloadDone, Tool: "rg"})); cmd == nil {
+		t.Fatal("event must re-arm the animation clock after motion re-enable")
+	}
+	m.Update(tickMsg{})
+	if !strings.Contains(plain(m), spinnerFrames[1]) {
+		t.Errorf("spinner not advancing after re-enable:\n%s", plain(m))
+	}
+}
+
 func TestFinishedGatesRelease(t *testing.T) {
 	m := newTestModel()
 	if m.Finished() {

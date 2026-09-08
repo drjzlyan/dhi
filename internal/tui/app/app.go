@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"charm.land/bubbletea/v2"
 
@@ -13,6 +14,16 @@ import (
 	"github.com/drjzlyan/dhi/internal/tui/surfaces"
 	"github.com/drjzlyan/dhi/internal/tui/theme"
 )
+
+// View-transition fade-in (F-012): a surface switch renders the new body
+// dimmed for two short frames before settling. Message-driven like every
+// other DHI animation; reduced motion skips it entirely.
+const (
+	transitionFrames   = 2
+	transitionInterval = 100 * time.Millisecond
+)
+
+type transitionMsg struct{}
 
 // Gate is a full-body takeover shown before normal surfaces (first-run
 // bootstrap, boot gates). While the gate is active it owns Update/View
@@ -38,6 +49,8 @@ type App struct {
 
 	gate    Gate
 	gateRan bool
+
+	transLeft int // fade-in frames remaining for the active surface
 
 	width, height int
 	showHelp      bool
@@ -122,11 +135,28 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.Active().HandleKey(msg.String())
 		return a, nil
 
+	case transitionMsg:
+		if a.transLeft > 0 {
+			a.transLeft--
+			return a, a.transitionCmd()
+		}
+		return a, nil
+
 	default:
 		if a.gateActive() {
 			cmd := a.gate.Update(msg)
 			if a.gate.Finished() {
 				a.gateRan = true
+				// The gate→shell handoff fades in like a surface switch
+				// (F-012); reduced motion keeps it a hard cut.
+				a.startTransition()
+				if c := a.transitionCmd(); c != nil {
+					if cmd == nil {
+						cmd = c
+					} else {
+						cmd = tea.Batch(cmd, c)
+					}
+				}
 			}
 			return a, cmd
 		}
@@ -144,15 +174,15 @@ func (a *App) handleGlobal(key string) (tea.Cmd, bool) {
 		return nil, true
 	case "tab":
 		a.selectSurface((a.active + 1) % len(a.surfaces))
-		return nil, true
+		return a.transitionCmd(), true
 	case "shift+tab":
 		a.selectSurface((a.active - 1 + len(a.surfaces)) % len(a.surfaces))
-		return nil, true
+		return a.transitionCmd(), true
 	case "1", "2", "3", "4", "5", "6", "7", "8", "9":
 		n, _ := strconv.Atoi(key)
 		if n <= len(a.surfaces) {
 			a.selectSurface(n - 1)
-			return nil, true
+			return a.transitionCmd(), true
 		}
 	}
 	return nil, false
@@ -162,7 +192,24 @@ func (a *App) selectSurface(i int) {
 	if a.tabs.SetActive(i) {
 		a.active = i
 		a.status = kit.DefaultStatusLine(a.Active().Meta().Title)
+		a.startTransition()
 	}
+}
+
+// startTransition begins the fade-in on the newly active surface;
+// reduced motion (F-012) leaves transLeft at zero — an instant swap.
+func (a *App) startTransition() {
+	if theme.Motion {
+		a.transLeft = transitionFrames
+	}
+}
+
+// transitionCmd arms the next fade frame while one is in flight.
+func (a *App) transitionCmd() tea.Cmd {
+	if a.transLeft <= 0 {
+		return nil
+	}
+	return tea.Tick(transitionInterval, func(time.Time) tea.Msg { return transitionMsg{} })
 }
 
 // OpenInEditor hands file paths to the editor surface: buffers open
@@ -218,6 +265,9 @@ func (a *App) compose() string {
 	}
 
 	body := a.Active().View()
+	if a.transLeft > 0 { // fade-in frames (F-012); content unchanged
+		body = theme.Faint(body)
+	}
 	out := bar + "\n" + body + "\n" + status
 	if a.showHelp {
 		out = a.tabs.View() + "\n" + kit.Center(a.helpView(), a.width, a.bodyHeight()) + "\n" + status
