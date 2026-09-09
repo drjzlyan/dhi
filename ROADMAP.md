@@ -437,3 +437,22 @@ toolchain, no server/daemon.
       visible hint when absent; `!N` statusline segment appears iff
       N > 0 and is recomputed per frame so it clears on resolution;
       3 goldens
+
+## M9 — True unread *(read marks the human can feel)*
+
+Status: in progress (P0 spec 2026-09-09). Closes the M4-deferred
+unread marker that F-016 only approximated with a stateless mention
+rule. User decisions (2026-09-09): Slack-style read watermarks; items
+= all unreplied agent messages addressed to me + @you mentions (never
+agent-to-agent chatter); scope = CHANNELS rail + editor chat + INBOX;
+snooze included.
+
+- [x] P0 — spec (F-017-true-unread.md, 2026-09-09)
+- [ ] P1 — `internal/unread` store (strict `.dhi/unread.json`,
+      monotonic `MarkRead`, fresh-install seeding, subscribe pump) +
+      `AddressedToHuman` predicate + `inbox.Build` mention→
+      agent_message swap + doctor `unread/store` row
+- [ ] P2 — read-on-open/post wiring (workspace CHANNELS + editor chat
+      shared store) + `●`/`●N` rail markers (both surfaces)
+- [ ] P3 — snooze: `z` preset form, dimmed rows, `!N` exclusion,
+      30s tick chain for expiries; goldens
