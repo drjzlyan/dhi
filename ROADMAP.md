@@ -85,11 +85,15 @@ streaming render in sidebar (M7 polish).
       SSE adapter, hand-rolled, httptest-verified + scripted Mock sharing
       one conformance suite) (`internal/agentkit/manifest`,
       `internal/agentkit/provider`)
+      — package removed wholesale by ADR-0013 (2026-09-09); turns run
+      through host CLIs via `internal/agentkit/clirun`.
 - [x] Namespaced VPath tools behind path-jail policies (read/write/list/
       search; Ask decisions park in an approvals queue consumed by the
       sidebar); MCP client stdio+http bridged into the same guarded
       registry as `mcp__<server>__<tool>` (`internal/agentkit/tools`,
       `internal/mcp`)
+      — tool registry removed (ADR-0013); approvals queue + `internal/mcp`
+      retained (IDE-tool bridge is the forward path).
 - [x] Message bus (channels/DMs/threads, mention-triggered turns via the
       turn engine, JSONL persistence + replay) (`internal/agentkit/bus`,
       `internal/jsonl`, `internal/agentkit/runtime`)
@@ -357,26 +361,31 @@ repo paths / MCP issue trackers.
 
 ## M8 — Roster any agent *(Multica-inspired)*
 
-Status: in progress (P0 specs landed 2026-09-08; implementation next).
-Design decisions: ADR-0012 (host agent CLIs as opt-in runtimes —
-user-owned, declared env, OS sandbox is the boundary, runs not turns;
-the one named exception to ADR-0005's hermetic rule). DHI keeps its
-identity: single binary, local-first, hermetic DHI-owned toolchain,
-no server/daemon.
+Status: in progress (P1 wave-1 landed 2026-09-09; waves 2–3 next).
+Design decisions: ADR-0012 (host agent CLIs — user-owned, declared
+env, OS sandbox is the boundary, runs not turns; the one named
+exception to ADR-0005's hermetic rule), ADR-0013 (in-house engine
+removed; CLI runtimes are the ONLY kind — `runtime` required and
+CLI-only, approvals queue + manifest tools/policy retained). DHI
+keeps its identity: single binary, local-first, hermetic DHI-owned
+toolchain, no server/daemon.
 
 - [x] P0 — specs + ADR (F-013…F-016, ADR-0012, 2026-09-08)
 - [ ] P1 — CLI runtimes (F-013): `internal/agentkit/clirun` registry
       (adapter = argv builder + stream parser + cost extractor +
       declared env pass-through, all fixture-tested); manifest
-      `runtime` key (strict enum, default = today); sandbox-wrapped
+      `runtime` key (required, strict CLI enum); sandbox-wrapped
       headless spawn in the task worktree; transcript → bus thread;
       `[[run]]` records on task cards; timeout + retry policy;
-      doctor `runtime/<cli>` rows. Waves: 1 claude · 2 codex,
-      opencode · 3 cursor-agent, copilot, gemini
-- [ ] P2 — run observability (F-014): uniform run schema (anthropic
-      turns join with honest `n/a` usage), per-agent/per-task cost
-      rollups, INSPECT run-replay pane, task-detail run suffix,
-      doctor `runs/store`
+      doctor `runtime/<cli>` rows.
+      Wave 1 (LANDED): claude adapter — in-house engine removed by
+      ADR-0013, `runtime=""|"anthropic"` gone, tests script fixture
+      CLI stubs, `.dhi/agents/dev.toml` on claude.
+      Waves 2–3 (pending): codex, opencode · cursor-agent, copilot,
+      gemini
+- [ ] P2 — run observability (F-014): uniform `cli:<name>` run schema,
+      per-agent/per-task cost rollups, INSPECT run-replay pane,
+      task-detail run suffix, doctor `runs/store`
 - [ ] P3 — autopilots (F-015): `.dhi/autopilots/` cards (strict),
       due-on-launch catch-up (one missed run, no backfill) +
       in-session interval ticks, AUTOPILOTS pane

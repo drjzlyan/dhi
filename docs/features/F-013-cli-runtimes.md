@@ -8,18 +8,18 @@ sandbox/bus machinery.
 
 ## Summary
 
-Today every rostered agent thinks through DHI's own Anthropic-provider
-turn engine. This adds a second, declared kind of teammate: an agent
-whose brain is a **host agent CLI** (Claude Code, Codex, OpenCode, and
-later cursor-agent, copilot, gemini). A CLI agent is engaged as one
-delegated **run**: the runtime assembles the task prompt (same
-grounding + standards as in-house turns), spawns the CLI headless in
-the task's worktree wrapped by the OS sandbox, streams the transcript
-into the bound bus thread, and records the outcome (exit, duration,
-tokens, cost, transcript path) as a `run` on the task card. Failures
-stop with a posted reason; retries are explicit. Nothing degrades
-silently (ADR-0011); the CLIs are user-owned, so their absence is a
-named refusal + doctor row, never a boot block (ADR-0012).
+A CLI agent is engaged as one delegated **run**: the runtime assembles
+the task prompt (same grounding + standards as the old in-house turns),
+spawns the CLI headless in the task's worktree wrapped by the OS
+sandbox, streams the transcript into the bound bus thread, and records
+the outcome (exit, duration, tokens, cost, transcript path) as a `run`
+on the task card. Failures stop with a posted reason; retries are
+explicit. Nothing degrades silently (ADR-0011); the CLIs are
+user-owned, so their absence is a named refusal + doctor row, never a
+boot block (ADR-0012). Because ADR-0013 removed the in-house engine,
+CLI runtimes are no longer opt-in on top of one — every rostered agent
+thinks through a host CLI (wave 1 = claude), and waves 2–3 add
+codex/opencode/cursor-agent/copilot/gemini.
 
 ## Part A — CLI registry (`internal/agentkit/clirun`)
 
@@ -76,23 +76,32 @@ named refusal + doctor row, never a boot block (ADR-0012).
 
 ## Part B — manifest + runtime wiring
 
+> Final state per ADR-0013 (2026-09-09): the in-house engine is removed,
+> so the manifest and runtime below no longer branch on a native
+> provider. `runtime` is **required and CLI-only** — an empty or unknown
+> value is a parse error naming the valid set, and there is no implicit
+> engine to fall back to.
+
 - **Manifest** (`internal/agentkit/manifest`): new key
-  `runtime = "" | "anthropic" | <registry name>` (default `""` =
-  anthropic; current manifests round-trip unchanged). Strict enum
-  against `clirun.Names()` — unknown value is a parse error listing
-  the valid set. `env_var` + non-anthropic runtime = parse error
-  (CLI auth belongs to the CLI; no double-declared credentials).
-  `model` doubles as the CLI model arg (optional for CLI runtimes —
-  the CLI default applies when absent). Optional per-run policy:
-  `timeout` (duration, default 10m) and `retries` (int 0..3, default
-  0).
+  `runtime = <registry name>` (required, strict enum against
+  `clirun.Names()` — unknown value is a parse error listing the valid
+  set). The reserved `""` default and `"anthropic"` no longer exist,
+  and the `env_var` key is dropped — credentials are declared, never
+  ambient: each CLI's own auth is reached only through the adapter's
+  declared pass-through (ADR-0012 §4). `model` doubles as the CLI model
+  arg (optional for CLI runtimes — the CLI default applies when
+  absent). Optional per-run policy: `timeout` (duration, default 10m)
+  and `retries` (int 0..3, default 0). `tools` stays as declared intent
+  (validated for well-formedness; enforced later by the IDE-tool
+  bridge), and `policy_json` still configures policy but now scopes the
+  OS-sandbox roots around the spawn (ADR-0013 §4–5).
 - **Runtime** (`internal/agentkit/runtime`): `Config.CLIs *clirun.Registry`
   (nil ⇒ CLI runtimes unavailable; a rostered CLI agent then refuses
   turns with the named fix and fails its doctor row — the roster
   still loads, so manifest validity and binary availability stay
-  separate concerns). `Turn` branches: anthropic → existing provider
-  loop untouched; CLI → the executor below. Prompt assembly reuses
-  the in-house path (grounding + layered standards + task context)
+  separate concerns). `Turn` is a thin CLI dispatcher (the former
+  anthropic→provider branch is deleted). Prompt assembly reuses
+  the in-house grounding path (layered standards + task context)
   plus a short "report format" tail: final summary + what changed +
   anything the human must know.
 - **The executor** (one run):
@@ -146,9 +155,9 @@ named refusal + doctor row, never a boot block (ADR-0012).
   tolerance (bad line → error event, stream continues); Detect
   matrix (present / absent / wrong version).
 - **Manifest:** unknown `runtime` value refused with the valid set
-  named; `env_var` + CLI runtime refused; default (no key) behavior
-  byte-identical to today; save/load round-trip with `runtime`,
-  `timeout`, `retries`.
+  named; no `env_var` key exists — CLI secrets reach an agent only
+  through the adapter's declared pass-through; save/load round-trip
+  with `runtime`, `timeout`, `retries`.
 - **Executor:** a fixture CLI on a temp PATH runs end-to-end in a
   temp workspace — worktree cwd, sandbox Wrap observed with worktree
   + state roots (recording sandbox), transcript persisted, `[[run]]`

@@ -1,7 +1,12 @@
 # F-007: Agent runtime — agentkit, tools, message bus, chat sidebar
 
 Status: done (M3, 2026-08-24) · Marketplace packs/org UI track M4 ·
-embedding-backed KB retrieval deferred (ADR-0007 seam)
+embedding-backed KB retrieval deferred (ADR-0007 seam) ·
+**Partially superseded by F-013 / ADR-0013**: the native turn engine,
+`Provider` seam, and native tool registry are removed; agents now run
+through host CLIs. The bus/chat, manifest shape, roster, and approvals
+panel from this feature survive unchanged.
+
 Decisions: ADR-0003 (Anthropic-first + Mock), ADR-0005 (hermetic), ADR-0006 (path-jail-first), ADR-0007 (file-based memory + KB)
 
 ## Summary

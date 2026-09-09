@@ -1,18 +1,47 @@
 # STATE — current position
 
-Updated: 2026-09-08 (session 10: M8 opened — P0 specs + ADR-0012 landed)
+Updated: 2026-09-09 (session 11: M8 P1 wave 1 landed — ADR-0013,
+in-house engine removed, claude runtime only)
 
 ## Where we are
 
-**M7 closed (F-012, 47af9b7). M8 "Roster any agent" opened — P0
-done, implementation next.** The user picked Multica
-(multica-ai/multica, agents-as-teammates platform driving 26 host
-CLIs) as the north star. P0 shipped: ADR-0012 (host agent CLIs as
-opt-in runtimes — the one named exception to ADR-0005) + specs
-F-013 (CLI runtimes), F-014 (run observability), F-015 (autopilots),
-F-016 (inbox), + ROADMAP M8 section. Scope agreed: full M8 (P1–P4),
-CLI roster = claude, codex, opencode (waves 1–2) + cursor-agent,
-copilot, gemini (wave 3). Next: P1 wave 1.
+**M8 P1 wave 1 is functionally complete: `make verify` green, no
+net-new failures.** ADR-0013 shipped with F-013: `internal/agentkit/provider`
+is deleted, the native tool registry machinery is gone, and the
+runtime is a thin CLI dispatcher. `runtime` is now required + CLI-only
+on every manifest (`""`/`"anthropic"` rejected, unknown → error naming
+the set). All rostered agents run through registered host CLIs —
+today only `claude` (2.1.177) is registered. Approvals queue/panel
+retained (nothing enqueues yet; UI + `Approvals.Ask` are the seams for
+the future CLI permission-prompt bridge). Doctor drops `agents/api_key`,
+tracks `runtime/<cli>` + `runtime/<cli>/<env_key>` rows. Tests script
+fixture CLI stubs on a temp PATH (`internal/testutil/stubcli`) — the
+shape that replaced `provider.Mock`. `.dhi/agents/dev.toml` migrated
+to `runtime = "claude"`. Next: M8 P1 waves 2–3 (codex, opencode;
+cursor-agent, copilot, gemini), then M8 P2 (F-014 run observability).
+
+## Session 11 gotchas (engine removal)
+
+1. `/bin/sh` echo is xpg_echo on macOS: `echo "a\nb"` emits a literal
+   `\n`. Fixture stubs must use `printf '%s\n'` (and for any JSON line
+   built from the prompt, build it in Go or awk-escape — never `$2`
+   raw, or embedded newlines in the prompt produce invalid JSONL).
+2. BSD sed (macOS) does not accept `:a;N;$!ba`. Use awk for
+   newline-joining (or keep stub JSON single-line via Go-side
+   escaping in `stubcli.FixedReply`).
+3. A fixture `claude` needs system dirs in PATH (`/usr/bin:/bin`) for
+   its own helpers (base64/awk) to resolve — a PATH-only CLIEnv makes
+   the stub hang.
+4. `Approvals.remove()` had a genuine missing-unlock bug (lock never
+   released) revealed when the rewritten turn tests exercised cancel;
+   fixed with `defer`. `wait` is now exported as `Ask`.
+5. Roster/org/pack/workspace-surface fixtures all construct manifests
+   in Go — every one needs `Runtime: "claude"` (or `runtime =`
+   "claude" in TOML) or strict-parse/marshal self-check fails.
+6. Editor/reviewer e2e tests were rebuilt from `provider.Mock` to the
+   real runtime + `stubcli.FixedReply` stub — F-005 acceptance flow
+   survives unchanged on a fake PATH (the reviewer/chat seams didn't
+   move).
 
 ## Session 10 gotchas (P0 research)
 
@@ -41,18 +70,20 @@ copilot, gemini (wave 3). Next: P1 wave 1.
    RecordChangeSet, AttachFn/DetachFn, Subscribe) — `[[run]]`
    records extend the card TOML there; the runs dir is
    `.dhi/agents/<id>/runs/` next to memory journals.
-6. runtime.Config already has Providers map[string]provider.Provider
-   (per-agent override) + Turn(ctx, agentID, trigger) — the CLI
-   branch lands inside Turn; anthropic path must stay byte-identical.
-7. provider.Event has NO usage field — F-014 records anthropic runs
-   with tokens -1 / cost false ("n/a") until the seam extension
-   (deferred, needs the conformance suite to carry it).
+6. (void, ADR-0013) runtime.Config had a Providers map + Turn branch —
+   the provider layer is deleted; Turn is now a thin CLI dispatcher.
+7. (void, ADR-0013) provider.Event had no usage field — there is no
+   provider.Event anymore; claude's terminal `result` carries
+   `total_cost_usd` + `usage`, and the `[[run]]` schema is
+   `cli:<name>` only (F-014).
 
 ## Gotchas carried (still load-bearing)
 
 1. go-git Push needs a REGISTERED remote; fixtures use bare local origins.
 2. Test fakes must fully implement seams; event pumps must NOT re-arm.
-3. Read form fields BEFORE closeForm(); waitReply before provider.Calls().
+3. Read form fields BEFORE closeForm(); waitReply before
+   crew.Handle — mirror assertions come from the reply message, not a
+   provider call log (the Mock's call log is gone with the engine).
 4. bus.History(ch,0) excludes threaded rows.
 5. requestTurn must call crew.Handle SYNCHRONOUSLY.
 6. Policy rules are ROOT-RELATIVE (ADR-0010); glamor renders H2 `## `.

@@ -1,6 +1,9 @@
 # ADR-0012: Host agent CLIs as opt-in runtimes
 
-Date: 2026-09-08 · Status: accepted · Companion to: ADR-0003 (provider
+Date: 2026-09-08 · Status: accepted · Superseded by: ADR-0013 in part
+(the `runtime = "" | "anthropic"` default is gone; CLI runtimes are now
+the ONLY kind — everything else, incl. the sandbox boundary and exact
+env pass-through, stands) · Companion to: ADR-0003 (provider
 boundary), ADR-0005 (hermetic toolchain), ADR-0006 (path-jail/sandbox),
 ADR-0011 (no silent fallbacks); F-013 is the implementation.
 Inspired by: Multica's daemon-runtimes model — "drives them, doesn't

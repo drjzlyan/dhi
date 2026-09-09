@@ -1,6 +1,7 @@
 # ADR-0003: Anthropic-first provider with scripted MockProvider
 
-Date: 2026-08-23 · Status: accepted
+Date: 2026-08-23 · Status: accepted · Superseded by: ADR-0013 (in-house
+provider removed — tests now script fixture host-CLI stubs)
 
 ## Context
 

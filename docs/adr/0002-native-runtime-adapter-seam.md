@@ -1,6 +1,7 @@
 # ADR-0002: Native agent runtime behind an adapter seam
 
-Date: 2026-08-23 · Status: accepted
+Date: 2026-08-23 · Status: accepted · Superseded by: ADR-0013 (native
+in-process turn engine removed — CLI runtimes only)
 
 ## Context
 

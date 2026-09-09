@@ -9,29 +9,22 @@ and error, timestamped") and per-agent/per-issue token usage.
 A delegated run (F-013) leaves two artifacts: the transcript
 (`.dhi/agents/<id>/runs/*.jsonl`) and the `[[run]]` record on the task
 card. This feature makes them first-class, viewable surfaces: a
-uniform run schema that in-house (anthropic) turns can also feed,
-cost/usage rollups per agent and per task, and a run-replay pane in
-INSPECT. No new execution machinery — this is aggregation + rendering
-over F-013's records.
+uniform run schema that CLI turns feed, cost/usage rollups per agent
+and per task, and a run-replay pane in INSPECT. No new execution
+machinery — this is aggregation + rendering over F-013's records.
 
 ## Part A — uniform run schema
 
 - The `[[run]]` record (introduced by F-013) is THE run schema:
-  `ts, runtime` (`cli:<name>` | `anthropic`), `model`, `status`,
+  `ts, runtime` (`cli:<name>`), `model`, `status`,
   `exit`, `duration`, `tokens_in`, `tokens_out`, `cost_usd`,
-  `transcript`, `attempt`, plus `task` (the card slug; in-house runs
-  reference the binding task when one exists, else the thread only).
+  `transcript`, `attempt`, plus `task` (the card slug, when the run is
+  bound to one; otherwise the thread only).
 - **CLI runs** fill it completely (cost from the terminal event;
   `cost_usd` 0 + a declared `cost: false` marker when the CLI reports
-  none — never a guessed number).
-- **Anthropic runs:** the in-house turn engine records one run per
-  completed turn with `tokens_in/out` from the API usage when the
-  provider surfaces it. The current `provider.Event` vocabulary does
-  NOT carry usage, so M8 records anthropic runs with tokens as
-  `unknown` (`-1`) and cost `false` — honest gaps, rendered as `n/a`.
-  Extending the ADR-0003 event vocabulary with usage is the deferred
-  follow-up (it is a seam change every provider — including the
-  conformance suite — must honor).
+  none — never a guessed number). ADR-0013 removed the in-house
+  engine, so there are no anthropic runs to reconcile; `runtime` is
+  always `cli:<name>`.
 - Rollups are pure math over records: per-agent totals (runs,
   succeeded/failed/timed_out, tokens, cost sum over costed runs only),
   per-task totals (same, for that card's runs). A run with
@@ -84,9 +77,9 @@ over F-013's records.
 
 ## Deferred
 
-- `provider.Event` usage extension (seam change; unblocks real
-  anthropic token/cost accounting) — its own spec when the conformance
-  suite is ready to carry it.
+- A `cli:<name>` model/cost schema *per CLI* (each adapter's terminal
+  usage shape; claude's is parsed today, the rest land with waves 2–3
+  of F-013) — its own spec when the conformance fixtures carry it.
 - Cost per *model* breakdown and trend charts (data is already
   recorded; a rendering question).
 - Transcripts in the reviewer surface alongside the diff (natural

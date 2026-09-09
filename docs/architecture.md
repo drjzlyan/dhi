@@ -11,8 +11,8 @@ internal/
     kit/            reusable primitives (Panel/Tabs/StatusLine/List/…)
     app/            shell: registry, router, global keys, overlays
     surfaces/       Surface contract + home/editor/files/term/trees/…
-  runtime/          agent orchestration: provider adapters, tools, MCP, bus
-  agentkit/         agent+skill manifest spec, load/validate/package
+  runtime/          agent orchestration: CLI runtimes (host agent CLIs) + bus
+  agentkit/         agent manifest spec, load/validate/package, registry
   gitcore/          Git interface + CLI-backed impl (+fake) — worktree-first
   workspace/        multi-repo model, .dhi/ management, VPath resolver
   toolchain/        hermetic tool manager (M1): registry, verify, activate
@@ -57,9 +57,12 @@ Non-key messages go to the active surface's `Update`; resizes broadcast to all.
 
 ## Agent system shape (lands M3+)
 
-- Agent = manifest(skills[], knowledge[], mcp[], tools allowlist, model).
-- Runtime turn loop: context build → provider stream → tool exec (sandboxed)
-  → post message; scripted MockProvider drives all tests offline.
+- Agent = manifest(runtime CLI, skills[], knowledge[], mcp[], tools
+  allowlist, model, timeout/retries).
+- Runtime turn loop: context build → sandbox-wrapped host-CLI spawn
+  in the task worktree (claude today; more CLIs per wave) → stream →
+  post message; fixture CLI stubs on a temp PATH drive all tests
+  offline (ADR-0013).
 - Memory: private per-agent journal+notes; shared KB with rg-based retrieval
   behind a `KnowledgeStore` interface (embedding impl can replace later).
 
