@@ -114,7 +114,7 @@ func (m *Model) sectionCounts() [secCount]int {
 	c[secTasks] = len(m.taskRows())
 	c[secInspect] = len(m.agentIDs())
 	c[secAutopilots] = len(m.autoRows())
-	c[secInbox] = len(m.inboxItems())
+	c[secInbox] = m.AttentionCount()
 	return c
 }
 
@@ -567,7 +567,7 @@ func (m *Model) inboxBody() string {
 
 	var out []string
 	out = append(out, theme.Hint().Render("inbox — everything that needs you")+
-		theme.TextDim().Render("   enter/o jump to owner"))
+		theme.TextDim().Render("   enter/o jump · z snooze · u unsnooze"))
 	if m.inboxHint != "" {
 		out = append(out, theme.WarningText().Render(m.inboxHint))
 	}
@@ -581,12 +581,19 @@ func (m *Model) inboxBody() string {
 	lines := maxInt(m.width-railWidth-12, 30)
 	gl := len([]rune(theme.GlyphCursor))
 	for i, it := range items {
+		snoozed := !it.Snoozed.IsZero()
+		// Snoozed rows stay visible but dim — even under the cursor
+		// (F-017: parked, not urgent).
 		style := theme.TextDim()
-		if i == *c {
+		if i == *c && !snoozed {
 			style = theme.TabActive()
 		}
+		row := it.Row
+		if snoozed {
+			row += "  — snoozed until " + snoozeUntilText(it.Snoozed, m.now())
+		}
 		first := true
-		for _, ln := range wordWrap(it.Row, lines) {
+		for _, ln := range wordWrap(row, lines) {
 			if first {
 				prefix := strings.Repeat(" ", gl)
 				if i == *c {

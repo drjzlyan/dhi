@@ -5,7 +5,11 @@
 package workspace
 
 import (
+	"fmt"
 	"strings"
+	"time"
+
+	"charm.land/bubbletea/v2"
 
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
 	"github.com/drjzlyan/dhi/internal/inbox"
@@ -55,8 +59,8 @@ func (m *Model) reviewIDFor(slug string) string {
 	return ""
 }
 
-// inboxKey handles INBOX row navigation and jump keys: enter/o launches
-// the owning surface for the selected item; nothing else edits.
+// inboxKey handles INBOX row navigation, jump keys, and snooze: enter/o
+// launches the owning surface; z parks (or unparks) the selected item.
 func (m *Model) inboxKey(key string) bool {
 	items := m.inboxItems()
 	c := &m.cursors[secInbox]
@@ -73,7 +77,38 @@ func (m *Model) inboxKey(key string) bool {
 		return true
 	case "enter", "o":
 		if *c < len(items) {
-			m.inboxJump(items[*c])
+			it := items[*c]
+			if !it.Snoozed.IsZero() {
+				m.inboxHint = "snoozed until " + snoozeUntilText(it.Snoozed, m.now()) +
+					" (z to unsnooze)"
+				return true
+			}
+			m.inboxJump(it)
+			return true
+		}
+	case "z":
+		if *c < len(items) {
+			it := items[*c]
+			switch {
+			case it.Kind != inbox.AgentMessage:
+				m.inboxHint = "snooze applies to agent messages — " +
+					string(it.Kind) + " resolves in its owner surface"
+			case !it.Snoozed.IsZero():
+				m.unsnoozeSelected(it) // z again = unpark
+			default:
+				m.snoozeTarget = it
+				m.form = formState{kind: fSnooze, fields: []field{
+					toggleField("until ", snoozePresets),
+				}}
+			}
+			return true
+		}
+	case "u":
+		if *c < len(items) {
+			it := items[*c]
+			if !it.Snoozed.IsZero() {
+				m.unsnoozeSelected(it)
+			}
 			return true
 		}
 	}
@@ -122,10 +157,17 @@ func (m *Model) inboxJump(it inbox.Item) {
 	}
 }
 
-// AttentionCount feeds the app statusline's !N segment: the number of
-// open attention items, recomputed on demand.
+// AttentionCount feeds the app statusline's !N segment and the INBOX
+// rail count: the number of OPEN attention items — snoozed ones are
+// parked, not urgent (F-017 §Part D).
 func (m *Model) AttentionCount() int {
-	return len(m.inboxItems())
+	n := 0
+	for _, it := range m.inboxItems() {
+		if it.Snoozed.IsZero() {
+			n++
+		}
+	}
+	return n
 }
 
 // wireUnreadSeams connects the CHANNELS pane to the read-mark store:
@@ -165,4 +207,93 @@ func (m *Model) syncUnread() {
 		return
 	}
 	m.unreadCounts = m.unreadStore.Counts(m.bus, m.now())
+}
+
+// ---- snooze (F-017 §Part D) ----
+
+// snoozeTickMsg fires every 30s while a snooze is pending so expiries
+// flip without interaction (message-driven, deterministic in tests).
+type snoozeTickMsg struct{}
+
+const snoozeTickInterval = 30 * time.Second
+
+// armSnoozeTick keeps exactly one expiry chain in flight.
+func (m *Model) armSnoozeTick() tea.Cmd {
+	if m.snoozeChain || m.unreadStore == nil || !m.unreadStore.HasActiveSnoozes(m.now()) {
+		return nil
+	}
+	m.snoozeChain = true
+	return tea.Tick(snoozeTickInterval, func(time.Time) tea.Msg { return snoozeTickMsg{} })
+}
+
+func (m *Model) onSnoozeTick() tea.Cmd {
+	m.snoozeChain = false
+	return m.armSnoozeTick()
+}
+
+// snoozeUntilText renders a snooze expiry: "15:04" when it lands today,
+// "15:04 Mon 2" once it crosses midnight (F-017 row suffix).
+func snoozeUntilText(until, now time.Time) string {
+	if until.Day() == now.Day() && until.Month() == now.Month() && until.Year() == now.Year() {
+		return until.Format("15:04")
+	}
+	return until.Format("15:04 Mon 2")
+}
+
+// snoozePresets are the "remind me later" choices (F-017 §Part D).
+var snoozePresets = []string{"15m", "1h", "4h", "tomorrow 09:00"}
+
+// parseSnoozePreset maps a preset token to an absolute expiry. Pure so
+// the form submit is table-tested.
+func parseSnoozePreset(preset string, now time.Time) (time.Time, error) {
+	switch preset {
+	case "15m":
+		return now.Add(15 * time.Minute), nil
+	case "1h":
+		return now.Add(time.Hour), nil
+	case "4h":
+		return now.Add(4 * time.Hour), nil
+	case "tomorrow 09:00":
+		next := time.Date(now.Year(), now.Month(), now.Day(), 9, 0, 0, 0, now.Location())
+		if !next.After(now) {
+			next = next.AddDate(0, 0, 1)
+		}
+		return next, nil
+	default:
+		return time.Time{}, fmt.Errorf("unknown snooze preset %q (want one of: %s)",
+			preset, strings.Join(snoozePresets, ", "))
+	}
+}
+
+// snoozeSelected parks the selected agent message until the preset
+// expiry. Other kinds refuse by name — the snooze schema keys on a bus
+// message (channel + message ID), which only agent messages carry.
+func (m *Model) snoozeSelected(it inbox.Item, preset string) {
+	if m.unreadStore == nil {
+		m.inboxHint = "snooze unavailable: read-mark store is down"
+		return
+	}
+	until, err := parseSnoozePreset(preset, m.now())
+	if err != nil {
+		m.inboxHint = err.Error()
+		return
+	}
+	if err := m.unreadStore.Snooze(it.Channel, it.MsgID, until); err != nil {
+		m.inboxHint = "snooze failed: " + err.Error()
+		return
+	}
+	m.inboxHint = ""
+}
+
+// unsnoozeSelected lifts the parked state off the selected item.
+func (m *Model) unsnoozeSelected(it inbox.Item) {
+	if m.unreadStore == nil {
+		m.inboxHint = "snooze unavailable: read-mark store is down"
+		return
+	}
+	if err := m.unreadStore.Unsnooze(it.Channel, it.MsgID); err != nil {
+		m.inboxHint = "unsnooze failed: " + err.Error()
+		return
+	}
+	m.inboxHint = ""
 }

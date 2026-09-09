@@ -1,12 +1,12 @@
   MEMBERS           2   ╭─ › inbox ───────────────────────────────────────────────────────────────────────╮ 
   ORG               0   │ inbox — everything that needs you   enter/o jump · z snooze · u unsnooze         │
-  PACKS             0   │ (nothing needs attention)                                                        │
-  STANDARDS         1   │                                                                                  │
-  CHANNELS          0   │                                                                                  │
-  TASKS             0   │                                                                                  │
-  INSPECT           0   │                                                                                  │
+  PACKS             0   │  ◆ approve scout: write .dhi/tasks/x/y.md                                        │
+  STANDARDS         1   │  ✗ run failed fix-login (alice) — timeout after 10.0m                            │
+  CHANNELS          1   │  ✓ in review ship-docs — scout, 1 runs · cost partial                            │
+  TASKS             2   │ ▌ @ #general scout: "@you needs a decision on the plan" — snoozed until          │
+  INSPECT           0   │   09:15                                                                          │
   AUTOPILOTS        0   │                                                                                  │
-▌ INBOX             0   │                                                                                  │
+▌ INBOX             3   │                                                                                  │
                         │                                                                                  │
                         │                                                                                  │
                         │                                                                                  │

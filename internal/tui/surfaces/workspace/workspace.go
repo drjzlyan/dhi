@@ -22,6 +22,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
 	"github.com/drjzlyan/dhi/internal/autopilot"
 	"github.com/drjzlyan/dhi/internal/gitcore"
+	"github.com/drjzlyan/dhi/internal/inbox"
 	"github.com/drjzlyan/dhi/internal/review"
 	"github.com/drjzlyan/dhi/internal/tasks"
 	"github.com/drjzlyan/dhi/internal/tui/surfaces"
@@ -113,6 +114,8 @@ type Model struct {
 	openChat     func() bool          // focus editor chat approvals (F-016 jump)
 	openReview   func(id string) bool // reviewer select (F-016 jump)
 	inboxHint    string               // last jump degrade hint (visible, never silent)
+	snoozeTarget inbox.Item           // item parked by the fSnooze form
+	snoozeChain  bool                 // expiry tick chain in flight (F-017)
 
 	inspectOpen bool
 	replay      *runReplay // non-nil = run-replay pane open (F-014)
@@ -262,6 +265,7 @@ func (m *Model) Init() tea.Cmd {
 				m.send(wsEvent{kind: evPing})
 			}
 		}()
+		cmds = append(cmds, m.armSnoozeTick())
 	}
 	return tea.Batch(cmds...)
 }
@@ -415,6 +419,8 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 		return m.listen()
 	case autopilotTickMsg:
 		return m.onAutopilotTick()
+	case snoozeTickMsg:
+		return m.onSnoozeTick()
 	}
 	return nil
 }
@@ -448,6 +454,7 @@ const (
 	fTaskPush
 	fAutoNew
 	fAutoDeleteConfirm
+	fSnooze
 )
 
 type field struct {
@@ -499,6 +506,11 @@ func modeField(mode string) field {
 		}
 	}
 	return f
+}
+
+// toggleField is a cycling single-choice field (F-017 snooze presets).
+func toggleField(label string, opts []string) field {
+	return field{label: label, toggle: opts}
 }
 
 func (fs *formState) target() string { return fs.orig }
@@ -1408,6 +1420,13 @@ func (m *Model) submitForm() {
 			return
 		}
 		clampCursor(&m.cursors[secAutopilots], len(m.autopilots.List()))
+		m.closeForm()
+	case fSnooze:
+		if m.snoozeTarget.Kind != inbox.AgentMessage {
+			f.err = "snooze target lost — reopen with z"
+			return
+		}
+		m.snoozeSelected(m.snoozeTarget, f.fields[0].toggleValue())
 		m.closeForm()
 	case fStdPreviewPrompt:
 		id := strings.TrimSpace(f.fields[0].text())

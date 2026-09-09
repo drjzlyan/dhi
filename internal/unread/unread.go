@@ -509,3 +509,16 @@ type snoozeOut struct {
 	MessageID int64     `json:"messageID"`
 	Until     time.Time `json:"until"`
 }
+
+// HasActiveSnoozes reports whether any snooze is still pending at now —
+// the UI's cue to keep the expiry tick chain armed.
+func (s *Store) HasActiveSnoozes(now time.Time) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, sn := range s.data.Snoozes {
+		if sn.Until.After(now) {
+			return true
+		}
+	}
+	return false
+}
