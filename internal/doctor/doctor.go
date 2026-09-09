@@ -29,7 +29,10 @@ import (
 	"github.com/drjzlyan/dhi/internal/gitcore"
 	"github.com/drjzlyan/dhi/internal/settings"
 	"github.com/drjzlyan/dhi/internal/toolchain"
+	"github.com/drjzlyan/dhi/internal/unread"
 	"github.com/drjzlyan/dhi/internal/workspace"
+
+	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 )
 
 // lookPath resolves an executable on PATH; swappable in tests.
@@ -71,6 +74,7 @@ func Run(toolRoot, wsRoot string) Report {
 	r.Checks = append(r.Checks, Tasks(wsRoot)...)
 	r.Checks = append(r.Checks, RunStore(wsRoot)...)
 	r.Checks = append(r.Checks, Autopilots(wsRoot)...)
+	r.Checks = append(r.Checks, UnreadStore(wsRoot)...)
 	r.Checks = append(r.Checks, Sessions(wsRoot)...)
 	r.Checks = append(r.Checks, GH(toolRoot)...)
 	r.Checks = append(r.Checks, Sandbox(sandboxMode(wsRoot))...)
@@ -563,6 +567,65 @@ func Autopilots(wsRoot string) []Check {
 			Detail: detail + "; " + strings.Join(warnings, "; ")}}
 	}
 	return []Check{{Name: "autopilots/store", Status: OK, Detail: detail}}
+}
+
+// UnreadStore probes the F-017 read-mark state (.dhi/unread.json) READ-ONLY
+// — never seeds, never prunes (that is the store's Open). A missing file is
+// the fresh-install state (silent); a strict-decode failure is a Fail naming
+// the offending key/value; a snooze pointing at a channel absent from the
+// bus warns by name; expired entries are counted (dropped on next open).
+func UnreadStore(wsRoot string) []Check {
+	if wsRoot == "" {
+		return nil
+	}
+	ws, err := workspace.Load(wsRoot)
+	if err != nil {
+		return nil // not a workspace; workspace/config already reported
+	}
+	raw, err := os.ReadFile(filepath.Join(wsRoot, unread.File))
+	if os.IsNotExist(err) {
+		return nil // fresh install: healthy silence
+	}
+	if err != nil {
+		return []Check{{Name: "unread/store", Status: Fail, Detail: err.Error()}}
+	}
+	data, derr := unread.Decode(raw)
+	if derr != nil {
+		return []Check{{Name: "unread/store", Status: Fail, Detail: derr.Error()}}
+	}
+
+	var b *bus.Bus
+	if bb, err := bus.Open(ws); err == nil {
+		b = bb
+	}
+	channels := map[string]bool{}
+	if b != nil {
+		for _, ch := range b.Channels() {
+			channels[ch] = true
+		}
+	}
+	var warnings []string
+	expired := 0
+	now := time.Now()
+	for _, sn := range data.Snoozes {
+		switch {
+		case !sn.Until.After(now):
+			expired++
+		case b != nil && !channels[sn.Channel]:
+			warnings = append(warnings,
+				fmt.Sprintf("snooze msg %d: channel %s not on bus", sn.MessageID, sn.Channel))
+		}
+	}
+	sort.Strings(warnings)
+	detail := fmt.Sprintf("%d watermark(s), %d snooze(s)", len(data.Channels), len(data.Snoozes))
+	if expired > 0 {
+		detail += fmt.Sprintf("; %d expired (dropped on next open)", expired)
+	}
+	if len(warnings) > 0 {
+		return []Check{{Name: "unread/store", Status: Warn,
+			Detail: detail + "; " + strings.Join(warnings, "; ")}}
+	}
+	return []Check{{Name: "unread/store", Status: OK, Detail: detail}}
 }
 
 // GH probes the hermetic gh shim (registry-pinned, ADR-0011). The host

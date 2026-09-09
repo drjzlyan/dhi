@@ -1,7 +1,8 @@
-// Package inbox is DHI's pure attention aggregation (F-016): one rail
-// listing every open "needs a human" item across the existing seams —
-// pending tool approvals, unreplied @you mentions, failed/timed-out runs
-// on open tasks, and in-review tasks. It writes no state: items disappear
+// Package inbox is DHI's pure attention aggregation (F-016, F-017):
+// one rail listing every open "needs a human" item across the existing
+// seams — pending tool approvals, unaddressed agent messages (DMs and
+// @you mentions per the read-mark predicate), failed/timed-out runs on
+// open tasks, and in-review tasks. It writes no state: items disappear
 // when their source resolves in its home surface.
 package inbox
 
@@ -14,6 +15,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
 	"github.com/drjzlyan/dhi/internal/sandbox"
 	"github.com/drjzlyan/dhi/internal/tasks"
+	"github.com/drjzlyan/dhi/internal/unread"
 )
 
 // ItemKind classifies one attention item.
@@ -21,13 +23,13 @@ type ItemKind string
 
 // Kinds, in severity order (approval highest).
 const (
-	Approval  ItemKind = "approval"
-	RunFailed ItemKind = "run_failed"
-	InReview  ItemKind = "in_review"
-	Mention   ItemKind = "mention"
+	Approval     ItemKind = "approval"
+	RunFailed    ItemKind = "run_failed"
+	InReview     ItemKind = "in_review"
+	AgentMessage ItemKind = "agent_message"
 )
 
-var rank = map[ItemKind]int{Approval: 0, RunFailed: 1, InReview: 2, Mention: 3}
+var rank = map[ItemKind]int{Approval: 0, RunFailed: 1, InReview: 2, AgentMessage: 3}
 
 // Item is one row of the inbox. Row is the display text (label + payload,
 // no glyph); the rest is jump payload for the owning surfaces.
@@ -35,6 +37,9 @@ type Item struct {
 	Kind ItemKind
 	Row  string
 	At   time.Time // sort root (approval: epoch + pending id)
+	// Snoozed is zero unless the item is parked (F-017): it stays in
+	// the rail dimmed but leaves the !N count and jump candidates.
+	Snoozed time.Time
 
 	ApprovalID int
 	Agent      string
@@ -53,15 +58,17 @@ type Item struct {
 	ReviewID  string
 }
 
-// Build is the pure aggregation (F-016 §Part A): a deterministic,
-// severity-then-age ordering over the source seams. Nil/empty sources
-// contribute nothing; the inputs are treated as already-stable snapshots.
-func Build(apprs []*tools.Approval, b *bus.Bus, ts []tasks.Task) []Item {
+// Build is the pure aggregation: a deterministic, severity-then-age
+// ordering over the source seams. Nil/empty sources contribute nothing;
+// the inputs are treated as already-stable snapshots. Agent messages
+// arrive pre-computed by the read-mark store, whose predicate owns the
+// addressed-to-human rule (F-017 §Part B).
+func Build(apprs []*tools.Approval, msgs []unread.Item, ts []tasks.Task) []Item {
 	var out []Item
 	for _, ap := range apprs {
 		out = append(out, approvalItem(ap))
 	}
-	out = append(out, mentions(b)...)
+	out = append(out, messageItems(msgs)...)
 	for _, tk := range ts {
 		if r, ok := tk.NewestRun(); ok && !tkDone(tk) && failedRun(r) {
 			out = append(out, failedItem(tk, r))
@@ -148,57 +155,24 @@ func reviewItem(tk tasks.Task) Item {
 	}
 }
 
-// mentions scans every bus channel for "a message @-ing you with no later
-// message from you in its thread" (F-016 §Part A). The human is a bus
-// participant with author id "you"; messages by "you" never count.
-func mentions(b *bus.Bus) []Item {
-	if b == nil {
-		return nil
-	}
+// messageItems lifts the read-mark store's attention set into inbox
+// rows (F-017: the F-016 mention rule's successor — DMs and @you
+// mentions alike, per unread.AddressedToHuman).
+func messageItems(msgs []unread.Item) []Item {
 	var out []Item
-	for _, ch := range b.Channels() {
-		for _, root := range b.History(ch, 0) {
-			thread := append([]bus.Message{root}, b.History(ch, bus.ThreadOf(root))...)
-			for i, m := range thread {
-				if m.Author == bus.Human || !mentionsYou(m.Text) {
-					continue
-				}
-				if repliedByYou(thread, i) {
-					continue
-				}
-				out = append(out, Item{
-					Kind:       Mention,
-					Channel:    ch,
-					MsgID:      m.ID,
-					ThreadRoot: bus.ThreadOf(m),
-					Text:       m.Text,
-					At:         m.At,
-					Row:        ch + "  " + m.Author + ": \"" + truncQuote(m.Text) + "\"",
-				})
-			}
-		}
+	for _, um := range msgs {
+		out = append(out, Item{
+			Kind:       AgentMessage,
+			Channel:    um.Msg.Channel,
+			MsgID:      um.Msg.ID,
+			ThreadRoot: bus.ThreadOf(um.Msg),
+			Text:       um.Msg.Text,
+			At:         um.Msg.At,
+			Snoozed:    um.Snoozed,
+			Row:        um.Msg.Channel + "  " + um.Msg.Author + ": \"" + truncQuote(um.Msg.Text) + "\"",
+		})
 	}
 	return out
-}
-
-func mentionsYou(text string) bool {
-	for _, id := range bus.Mentions(text) {
-		if id == bus.Human {
-			return true
-		}
-	}
-	return false
-}
-
-// repliedByYou reports whether any later message in the same thread
-// (position i and after) is authored by the human.
-func repliedByYou(thread []bus.Message, i int) bool {
-	for _, m := range thread[i+1:] {
-		if m.Author == bus.Human {
-			return true
-		}
-	}
-	return false
 }
 
 // truncQuote bounds the quoted text so one row stays readable after

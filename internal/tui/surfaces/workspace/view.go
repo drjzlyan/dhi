@@ -570,6 +570,9 @@ func (m *Model) inboxBody() string {
 	if m.inboxHint != "" {
 		out = append(out, theme.WarningText().Render(m.inboxHint))
 	}
+	if m.unreadErr != "" {
+		out = append(out, theme.DangerText().Render("unread unavailable: "+m.unreadErr))
+	}
 	if len(items) == 0 {
 		out = append(out, theme.TextDim().Render("(nothing needs attention)"))
 		return strings.Join(out, "\n")

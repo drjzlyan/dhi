@@ -15,6 +15,7 @@ dhi-git-*.sha256
 .dhi/sessions/
 .dhi/tasks/
 .dhi/marketplace.json
+.dhi/unread.json
 .dhi/org.toml
 .dhi/config.toml
 .dhi/agents/.archived/

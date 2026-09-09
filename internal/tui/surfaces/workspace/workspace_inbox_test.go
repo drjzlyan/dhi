@@ -12,6 +12,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/sandbox"
 	"github.com/drjzlyan/dhi/internal/tasks"
 	"github.com/drjzlyan/dhi/internal/testutil/golden"
+	"github.com/drjzlyan/dhi/internal/unread"
 )
 
 // seedInbox populates a model with one of each attention source: a pending
@@ -48,6 +49,13 @@ func seedInbox(t *testing.T, m *Model) {
 		m.bus = b
 		m.pane = newChatPane(b, m.rt, m.org)
 		m.refreshPaneRail()
+		// Open the read-mark store BEFORE posting: seeding marks the
+		// (empty) history read, so the mention below is genuinely unread.
+		us, err := unread.Open(m.ws, b)
+		if err != nil {
+			t.Fatal(err)
+		}
+		m.unreadStore = us
 	}
 	_, _ = m.bus.Post(bus.Message{Channel: "#general", Author: "scout",
 		Text: "@you needs a decision on the plan"})
@@ -67,7 +75,7 @@ func TestInboxPopulatedGolden(t *testing.T) {
 	if len(items) != 4 {
 		t.Fatalf("got %d items", len(items))
 	}
-	want := []inbox.ItemKind{inbox.Approval, inbox.RunFailed, inbox.InReview, inbox.Mention}
+	want := []inbox.ItemKind{inbox.Approval, inbox.RunFailed, inbox.InReview, inbox.AgentMessage}
 	for i, w := range want {
 		if items[i].Kind != w {
 			t.Fatalf("item %d kind = %v, want %v", i, items[i].Kind, w)
@@ -203,6 +211,7 @@ func TestInboxCountClearsAfterResolve(t *testing.T) {
 	m.taskStore = nil
 	m.bus = nil
 	m.pane = nil
+	m.unreadStore = nil
 	if n := m.AttentionCount(); n != 0 {
 		t.Fatalf("resolved attention = %d, want 0", n)
 	}

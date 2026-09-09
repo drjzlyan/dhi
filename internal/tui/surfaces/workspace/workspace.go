@@ -25,6 +25,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/review"
 	"github.com/drjzlyan/dhi/internal/tasks"
 	"github.com/drjzlyan/dhi/internal/tui/surfaces"
+	"github.com/drjzlyan/dhi/internal/unread"
 	"github.com/drjzlyan/dhi/internal/workspace"
 )
 
@@ -105,17 +106,20 @@ type Model struct {
 	armSeq     uint64 // autopilot tick-chain guard: exactly one in flight
 	cancelAuto func()
 
-	approvals  *tools.Approvals     // pending-approval queue (F-016 source)
-	openChat   func() bool          // focus editor chat approvals (F-016 jump)
-	openReview func(id string) bool // reviewer select (F-016 jump)
-	inboxHint  string               // last jump degrade hint (visible, never silent)
+	approvals   *tools.Approvals     // pending-approval queue (F-016 source)
+	unreadStore *unread.Store        // read-mark store (F-017); nil = no bus
+	unreadErr   string               // store unavailable: named, never silent
+	openChat    func() bool          // focus editor chat approvals (F-016 jump)
+	openReview  func(id string) bool // reviewer select (F-016 jump)
+	inboxHint   string               // last jump degrade hint (visible, never silent)
 
 	inspectOpen bool
 	replay      *runReplay // non-nil = run-replay pane open (F-014)
 
-	events    chan wsEvent
-	cancelSub func()
-	cancelOrg func()
+	events       chan wsEvent
+	cancelSub    func()
+	cancelOrg    func()
+	cancelUnread func()
 }
 
 var _ surfaces.Surface = (*Model)(nil)
@@ -193,6 +197,11 @@ func New(version string, ws *workspace.Workspace, d Deps) *Model {
 		}
 		if d.Bus != nil {
 			m.pane = newChatPane(d.Bus, d.Runtime, m.org)
+			if us, err := unread.Open(ws, d.Bus); err != nil {
+				m.unreadErr = err.Error()
+			} else {
+				m.unreadStore = us
+			}
 		}
 	}
 	return m
@@ -236,6 +245,15 @@ func (m *Model) Init() tea.Cmd {
 			}
 		}()
 		cmds = append(cmds, m.armAutopilots())
+	}
+	if m.unreadStore != nil {
+		uch, ucancel := m.unreadStore.Subscribe()
+		m.cancelUnread = ucancel
+		go func() {
+			for range uch {
+				m.send(wsEvent{kind: evPing})
+			}
+		}()
 	}
 	return tea.Batch(cmds...)
 }

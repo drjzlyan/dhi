@@ -10,21 +10,27 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
 	"github.com/drjzlyan/dhi/internal/inbox"
 	"github.com/drjzlyan/dhi/internal/tasks"
+	"github.com/drjzlyan/dhi/internal/unread"
 )
 
 // inboxItems aggregates the current attention set. Pure over snapshots:
 // each call recomputes, so resolution in a home surface removes a row
-// on the next render.
+// on the next render. Agent messages come from the read-mark store
+// (F-017); an unavailable store is a visible hint, never silent.
 func (m *Model) inboxItems() []inbox.Item {
 	var apprs []*tools.Approval
 	if m.approvals != nil {
 		apprs = m.approvals.List()
 	}
+	var msgs []unread.Item
+	if m.unreadStore != nil && m.bus != nil {
+		msgs = m.unreadStore.Unread(m.bus, m.now())
+	}
 	var ts []tasks.Task
 	if m.taskStore != nil {
 		ts = m.taskStore.List()
 	}
-	items := inbox.Build(apprs, m.bus, ts)
+	items := inbox.Build(apprs, msgs, ts)
 	for i := range items {
 		if items[i].Kind == inbox.InReview {
 			if id := m.reviewIDFor(items[i].TaskSlug); id != "" {
@@ -84,7 +90,7 @@ func (m *Model) inboxJump(it inbox.Item) {
 			return
 		}
 		m.inboxHint = "approval jump: editor chat unavailable"
-	case inbox.Mention:
+	case inbox.AgentMessage:
 		if m.pane != nil && m.pane.openAt(it.Channel, it.ThreadRoot, it.MsgID) {
 			m.sec = secChannels
 			return
