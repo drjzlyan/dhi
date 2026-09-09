@@ -1,0 +1,34 @@
+  MEMBERS           2   ╭─ › tasks ───────────────────────────────────────────────────────────────────────╮ 
+  ORG               0   │ replay run-replay-test · cli:claude/opus · ok · 1.2s · $0.42      j/k scroll · g │
+  PACKS             0   │ inspecting the login flow                                                        │
+  STANDARDS         1   │ ❯ git status                                                                     │
+  CHANNELS          0   │ ❯ cd repos/alpha && go test ./...                                                │
+▌ TASKS             1   │ compile error: undefined: x                                                      │
+  INSPECT           0   │ applying the fix                                                                 │
+                        │ ▸ done · 1.2s · 1.5k in / 0.4k out · $0.42                                       │
+                        │                                                                                  │
+                        │                                                                                  │
+                        │                                                                                  │
+                        │                                                                                  │
+                        │                                                                                  │
+                        │                                                                                  │
+                        │                                                                                  │
+                        │                                                                                  │
+                        │                                                                                  │
+                        │                                                                                  │
+                        │                                                                                  │
+                        │                                                                                  │
+                        │                                                                                  │
+                        │                                                                                  │
+                        │                                                                                  │
+                        │                                                                                  │
+                        │                                                                                  │
+                        │                                                                                  │
+                        │                                                                                  │
+                        │                                                                                  │
+                        │                                                                                  │
+                        │                                                                                  │
+                        │                                                                                  │
+                        │                                                                                  │
+[ ] sections            │                                                                                  │
+                        ╰──────────────────────────────────────────────────────────────────────────────────╯

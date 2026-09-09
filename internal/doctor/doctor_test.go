@@ -275,6 +275,39 @@ func TestTasksSuite(t *testing.T) {
 	}
 }
 
+func TestRunStoreSuite(t *testing.T) {
+	ws := setupWorkspaceRoot(t, true)
+
+	// Nothing recorded yet: runs/store stays silent (F-014).
+	if checks := RunStore(ws); checks != nil {
+		t.Fatalf("empty store emitted %+v", checks)
+	}
+
+	// Malformed [[run]] block warns naming the card + line.
+	os.MkdirAll(filepath.Join(ws, ".dhi", "tasks"), 0o755)
+	bad := "schema = 1\ntitle = \"Fix\"\nstatus = \"active\"\n\n[[run]]\nid = \"run-1\"\nagent = \"alice\"\nstarted = 2026-01-01T00:00:00Z\nfinished = 2026-01-01T01:00:00Z\nstatus = \"bogus\"\ntokens_in = -1\ntokens_out = -1\n"
+	os.WriteFile(filepath.Join(ws, ".dhi", "tasks", "fix.toml"), []byte(bad), 0o644)
+
+	checks := RunStore(ws)
+	c, ok := statusOf(checks, "runs/store")
+	if !ok || c.Status != Warn ||
+		!strings.Contains(c.Detail, "fix") ||
+		!strings.Contains(c.Detail, "@L10") ||
+		!strings.Contains(c.Detail, `bad status "bogus"`) {
+		t.Fatalf("run rows = %+v (found=%v), want Warn naming fix @L10 bogus", c, ok)
+	}
+
+	// The aggregate JSON report includes the row.
+	lockDir := t.TempDir()
+	data, err := Run(lockDir, ws).JSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "runs/store") {
+		t.Fatalf("JSON report missing runs/store row:\n%s", data)
+	}
+}
+
 func TestSessionsSuite(t *testing.T) {
 	ws := setupWorkspaceRoot(t, true)
 

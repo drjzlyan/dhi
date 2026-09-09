@@ -1,6 +1,6 @@
 # F-014: Run observability — execution log + cost accounting
 
-Status: in progress (M8 P2) · Milestone: M8 · Depends on: F-013
+Status: implemented (M8 P2, 2026-09-09) · Milestone: M8 · Depends on: F-013
 Inspired by: Multica's execution log ("replay every tool call, command,
 and error, timestamped") and per-agent/per-issue token usage.
 

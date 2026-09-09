@@ -13,10 +13,11 @@ func TestRecordRunAppendsAndPersists(t *testing.T) {
 	now := time.Now().UTC()
 	r := Run{
 		ID: "run-1", Agent: "alice",
+		Runtime: "cli:claude", Model: "opus",
 		Started: now.Add(-5 * time.Minute), Finished: now,
-		Status:   RunOK,
+		Status: RunOK, Exit: 0,
 		Summary:  "Fixed the race via a mutex.",
-		TokensIn: 100, TokensOut: 40, CostUSD: 0.01,
+		TokensIn: 100, TokensOut: 40, CostUSD: 0.01, HasCost: true,
 	}
 	if err := s.RecordRun("fix-login", r); err != nil {
 		t.Fatalf("RecordRun: %v", err)
@@ -27,6 +28,9 @@ func TestRecordRunAppendsAndPersists(t *testing.T) {
 	}
 	if task.Runs[0].ID != "run-1" || task.Runs[0].Summary != "Fixed the race via a mutex." {
 		t.Errorf("Run[0] = %+v", task.Runs[0])
+	}
+	if task.Runs[0].Runtime != "cli:claude" || task.Runs[0].HasCost != true {
+		t.Errorf("Run[0] schema = %+v (cli: prefix + cost marker lost?)", task.Runs[0])
 	}
 
 	// second run appends; the card reloads with both (history contract)

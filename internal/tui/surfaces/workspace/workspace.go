@@ -91,6 +91,7 @@ type Model struct {
 	reviewSvc *review.Service
 
 	inspectOpen bool
+	replay      *runReplay // non-nil = run-replay pane open (F-014)
 
 	events    chan wsEvent
 	cancelSub func()
@@ -410,6 +411,11 @@ func (m *Model) sectionKey(key string) bool {
 		return true
 	}
 
+	// Run-replay pane (F-014): modal until esc or a section switch.
+	if m.replay != nil {
+		return m.replay.Key(key, m)
+	}
+
 	switch m.sec {
 	case secMembers:
 		return m.membersKey(key)
@@ -692,6 +698,15 @@ func (m *Model) tasksKey(key string) bool {
 			m.form = formState{kind: fTaskPush, orig: tk.Slug, fields: nil}
 			return true
 		}
+	case "r":
+		if tk := sel(); tk != nil {
+			if run, ok := tk.NewestRun(); ok {
+				m.replay = openReplay(run)
+				return true
+			}
+			m.flashErr("card has no recorded runs")
+			return true
+		}
 	}
 	return false
 }
@@ -736,11 +751,46 @@ func (m *Model) inspectKey(key string) bool {
 			m.inspectOpen = !m.inspectOpen
 		}
 		return true
+	case "e":
+		// e on a run row (the RUNS subsection) opens the newest replay.
+		if len(ids) > 0 {
+			if !m.inspectOpen {
+				m.inspectOpen = true
+				return true
+			}
+			if run, ok := m.newestAgentRun(ids[*c]); ok {
+				m.replay = openReplay(run)
+			} else {
+				m.flashErr("no run records for this agent")
+			}
+		}
+		return true
 	case "esc":
 		m.inspectOpen = false
 		return true
 	}
 	return false
+}
+
+// newestAgentRun is the most recently finished run recorded by id
+// across all cards (F-014 replay routing from INSPECT).
+func (m *Model) newestAgentRun(id string) (tasks.Run, bool) {
+	if m.taskStore == nil {
+		return tasks.Run{}, false
+	}
+	var best tasks.Run
+	var ok bool
+	for _, tk := range m.taskStore.List() {
+		for _, r := range tk.Runs {
+			if r.Agent != id {
+				continue
+			}
+			if !ok || r.Finished.After(best.Finished) {
+				best, ok = r, true
+			}
+		}
+	}
+	return best, ok
 }
 
 func (m *Model) flashErr(msg string) {

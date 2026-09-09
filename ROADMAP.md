@@ -361,8 +361,8 @@ repo paths / MCP issue trackers.
 
 ## M8 — Roster any agent *(Multica-inspired)*
 
-Status: in progress (P1 implemented 2026-09-09; wave-3 live-verify
-pending installs).
+Status: in progress (P1 implemented 2026-09-09; P2 landed 2026-09-09;
+wave-3 live-verify pending installs).
 Design decisions: ADR-0012 (host agent CLIs — user-owned, declared
 env, OS sandbox is the boundary, runs not turns; the one named
 exception to ADR-0005's hermetic rule), ADR-0013 (in-house engine
@@ -391,9 +391,18 @@ toolchain, no server/daemon.
       checklists recorded in each adapter file — `Tested` stays empty
       until a real run fills them, so doctor treats a detected version
       as untested (FAIL), never a guess
-- [ ] P2 — run observability (F-014): uniform `cli:<name>` run schema,
-      per-agent/per-task cost rollups, INSPECT run-replay pane,
-      task-detail run suffix, doctor `runs/store`
+- [x] P2 — run observability (F-014, 2026-09-09): uniform `cli:<name>`
+      run schema (`[[run]]` gains `exit` + declared `cost:` marker,
+      strict decode refuses unknown status with the value named);
+      `tasks/runs` rollup math (per-task + per-agent: ok/fail/timeout,
+      token sums excluding `-1` with a partial marker, cost over costed
+      runs only); INSPECT profile RUNS subsection (totals + last 5
+      runs); run-replay pane (`r` on a card, `e` on an INSPECT agent —
+      transcript jsonl chronological, wrapped, scrollable, named
+      "transcript unavailable at <path>" refusal on missing files);
+      task-detail runs suffix (`N runs · $cost` / `cost partial`);
+      doctor `runs/store` row (line-precise warnings) wired into the
+      JSON report; 3 goldens
 - [ ] P3 — autopilots (F-015): `.dhi/autopilots/` cards (strict),
       due-on-launch catch-up (one missed run, no backfill) +
       in-session interval ticks, AUTOPILOTS pane

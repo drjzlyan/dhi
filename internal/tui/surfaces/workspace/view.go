@@ -3,6 +3,7 @@ package workspace
 import (
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -185,6 +186,9 @@ func (m *Model) sectionStrip() string {
 }
 
 func (m *Model) activeSection() string {
+	if m.replay != nil {
+		return m.replayBody()
+	}
 	switch m.sec {
 	case secMembers:
 		return m.membersBody()
@@ -211,7 +215,7 @@ func (m *Model) inspectBody() string {
 
 	var out []string
 	out = append(out, theme.Hint().Render("agent inspection")+
-		theme.TextDim().Render("      enter/v open profile"))
+		theme.TextDim().Render("      enter/v open profile · e runs"))
 	if len(ids) == 0 {
 		out = append(out, theme.TextDim().Render(
 			"(no crew — create agents under ORG)"))
@@ -282,6 +286,30 @@ func (m *Model) paneBus() *bus.Bus {
 
 const profileCapLines = 26
 
+// profileRuns collects every run recorded by the profile's agent across
+// its tasks, newest first (F-014 RUNS subsection).
+func (m *Model) profileRuns(p *profile.Profile) []tasks.Run {
+	var runs []tasks.Run
+	for _, t := range p.TasksOpen {
+		for _, r := range t.Runs {
+			if r.Agent == p.ID {
+				runs = append(runs, r)
+			}
+		}
+	}
+	for _, t := range p.TasksDone {
+		for _, r := range t.Runs {
+			if r.Agent == p.ID {
+				runs = append(runs, r)
+			}
+		}
+	}
+	sort.SliceStable(runs, func(i, j int) bool {
+		return runs[i].Started.After(runs[j].Started)
+	})
+	return runs
+}
+
 func (m *Model) profileLines(p *profile.Profile) []string {
 	var out []string
 	add := func(s string) {
@@ -322,6 +350,39 @@ func (m *Model) profileLines(p *profile.Profile) []string {
 		}
 		add("  " + theme.Hint().Render(msg.At.Format("01-02 15:04")) +
 			" " + msg.Channel + " · " + text)
+	}
+
+	add("")
+	add(theme.Hint().Render("runs"))
+	if runs := m.profileRuns(p); len(runs) == 0 {
+		add(theme.TextDim().Render("(none recorded)"))
+	} else {
+		rl := tasks.RollupRuns(runs)
+		add(rl.Summary())
+		for i, r := range runs {
+			if i >= 5 {
+				break
+			}
+			cost := "-"
+			if r.HasCost {
+				cost = fmtCost(r.CostUSD)
+			}
+			rt := r.Runtime
+			if rt == "" {
+				rt = "cli:?"
+			}
+			model := r.Model
+			if model == "" {
+				model = "-"
+			}
+			st := string(r.Status)
+			if f := m.runStyle(r.Status); f != "" {
+				st = f
+			}
+			add("  " + theme.Hint().Render(r.Started.Format("01-02 15:04")) + " " +
+				rt + "/" + model + "  " + st + "  " +
+				tasks.DurationText(runMs(r)) + "  " + cost)
+		}
 	}
 
 	add("")
@@ -390,7 +451,7 @@ func (m *Model) tasksBody() string {
 
 	var out []string
 	out = append(out, theme.Hint().Render("tasks")+
-		theme.TextDim().Render("                    n new · s status · a assign · w worktree · x remove"))
+		theme.TextDim().Render("                    n new · s status · a assign · w worktree · x remove · r runs"))
 	if m.taskStore == nil {
 		out = append(out, theme.TextDim().Render("(task store unavailable)"))
 		return strings.Join(out, "\n")
@@ -451,6 +512,12 @@ func taskDetail(tk tasks.Task) string {
 	all := parts
 	if thread != "" {
 		all = append(all, thread)
+	}
+	// Run accounting (F-014 §Part B): a runs suffix only when the card
+	// has history — "cost partial" marks a cost-less run in the set.
+	if len(tk.Runs) > 0 {
+		rl := tasks.RollupRuns(tk.Runs)
+		all = append(all, fmt.Sprintf("%d runs · %s", len(tk.Runs), rl.CostText()))
 	}
 	return strings.Join(all, "  ")
 }

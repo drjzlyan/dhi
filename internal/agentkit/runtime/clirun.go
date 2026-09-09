@@ -77,7 +77,7 @@ func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Messag
 	started := time.Now().UTC()
 	run := tasks.Run{
 		ID: runID(started), Agent: e.m.ID,
-		Runtime: e.m.Runtime, Model: e.m.Model, Attempt: attempt,
+		Runtime: "cli:" + e.m.Runtime, Model: e.m.Model, Attempt: attempt,
 		Started: started, Finished: time.Now().UTC(),
 		TokensIn: -1, TokensOut: -1,
 	}
@@ -123,6 +123,7 @@ func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Messag
 	}
 	waitErr := cmd.Wait()
 	run.Finished = time.Now().UTC()
+	run.Exit = exitCode(waitErr)
 
 	switch {
 	case ctx.Err() != nil:
@@ -145,6 +146,7 @@ func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Messag
 		run.Summary = summary
 		run.TokensIn, run.TokensOut = u.TokensIn, u.TokensOut
 		run.CostUSD = u.CostUSD
+		run.HasCost = u.HasCost
 	case waitErr != nil:
 		run.Status = tasks.RunError
 		run.Error = cliErrText(waitErr)
@@ -292,6 +294,16 @@ func cliErrText(err error) string {
 		return fmt.Sprintf("exit %d", ee.ProcessState.ExitCode())
 	}
 	return err.Error()
+}
+
+// exitCode extracts the CLI process exit code, 0 when the process
+// finished cleanly or the wait error carries none (F-014 `exit` field).
+func exitCode(err error) int {
+	var ee *exec.ExitError
+	if errors.As(err, &ee) {
+		return ee.ProcessState.ExitCode()
+	}
+	return 0
 }
 
 func truncateRunes(s string, n int) string {

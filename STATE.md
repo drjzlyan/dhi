@@ -1,21 +1,47 @@
 # STATE — current position
 
-Updated: 2026-09-09 (session 13: M8 P1 wave 3 landed fixture-first —
-cursor-agent/copilot/gemini adapters; live-verify pending installs)
+Updated: 2026-09-09 (session 14: M8 P2 F-014 run observability landed;
+wave-3 live-verify still pending installs)
 
 ## Where we are
 
-**M8 P1 is implemented: `make verify` green.** All six adapters are
-registered — claude, codex, opencode (live-verified) plus cursor-agent,
-copilot, gemini (wave-3, fixture-first with live-verify checklists in
-each adapter file; their `Tested` pins stay empty until a real run fills
-them, so doctor reports a detected version as untested/FAIL — never a
-guess, in line with ADR-0011). Executor retries (F-013 step 7) and
-durable transcripts (step 4, `.dhi/agents/<id>/runs/<run>-<attempt>.jsonl`)
-landed with wave 2. `tests/registry` pinned at 6 names + the manifest
-"unknown runtime" fixture switched from `codex` to `nope`. P1's box in
-ROADMAP stays unchecked only because wave-3 live verification needs the
-CLIs installed. Next: M8 P2 (F-014 run observability), then P3/P4.
+**M8 P1 + P2 are implemented: `make verify` green.** P2 (F-014) made
+F-013's run records first-class: `[[run]]` now carries `exit` and a
+declared `cost:` marker (`cli:<name>` runtime prefix enforced at the
+runtime, strict decode refuses unknown run statuses naming the value), a
+pure `tasks/runs` rollup layer (per-card + per-agent: ok/fail/timeout,
+token sums exclude `-1` with a partial marker, cost sums over costed
+runs only), an INSPECT RUNS subsection (totals line + last 5 runs),
+a run-replay pane (`r` on a card, `e` on an INSPECT agent; transcript
+jsonl rendered chronologically, wrapped, scrollable, named "transcript
+unavailable at <path>" refusal on missing files — no fake data), a
+task-detail runs suffix (`3 runs · cost partial`), and a doctor
+`runs/store` row (line-precise warnings wired into the JSON report).
+3 new goldens under `internal/tui/surfaces/workspace/testdata/goldens/`.
+Next: P3 (F-015 autopilots), then P4 (F-016 inbox).
+
+## Session 14 gotchas (F-014 / P2)
+
+- `tasks.Run.Runtime` is now stored prefixed (`cli:claude`); run decode
+  is strict — a hand-edited card with a bad `[[run]]` status refuses the
+  whole card (F-011 strict-data spirit) AND gets a line-precise warning
+  from doctor `runs/store` via `tasks.CheckRuns` (which re-parses raw
+  lines — validateRun messages map to the offending field's line).
+- Rollup cost math: `HasCost` is the declared `cost:false` marker; older
+  cards written before the field decode as cost-less → sums are marked
+  "partial" rather than pretending to know the cost (ADR-0011: never
+  guess). `-1` token runs never leak zeroes: `TokPartial` flags them.
+- Replay pane is modal on `workspace.sectionKey` AFTER `[`/`]` handling
+  so section switching still works; j/k/g/G scroll (G = bottom), esc
+  closes; all other keys are swallowed so card state can't mutate
+  behind the pane. Replay re-renders/wraps on geometry change
+  (`width/height` cache on `runReplay`).
+- `flashErr` messages are only visible while a modal is open (form.kind
+  fNone = invisible) — test the `m.form.err` value, not the rendered
+  output, for refused-key assertions.
+- Golden gotcha: the missing-transcript golden embeds an absolute
+  `t.TempDir()` path; it's stable because Go seeds temp dir names per
+  test identity — regenerate goldens rather than hand-editing.
 
 ## Session 13 gotchas (wave 3)
 
@@ -178,10 +204,13 @@ CLIs installed. Next: M8 P2 (F-014 run observability), then P3/P4.
 
 ## Next up
 
-1. **P2 (F-014 run observability, next):** uniform `cli:<name>` run
-   schema + per-agent/per-task cost rollups + INSPECT run-replay pane
-   + task-detail run suffix + doctor `runs/store`.
-2. P3 (F-015 autopilots) then P4 (F-016 inbox) per spec.
+1. **P3 (F-015 autopilots, next):** read `docs/features/F-015*.md`,
+   implement `.dhi/autopilots/` cards (strict), due-on-launch catch-up
+   (one missed run, no backfill) + in-session interval ticks, AUTOPILOTS
+   pane. Commit.
+2. P4 (F-016 inbox): read the spec, implement pure aggregation
+   (approvals / unreplied / mentions), INBOX pane, jump-to-owner.
+   Commit.
 3. Wave-3 live verify once cursor-agent/copilot/gemini are installed:
    fill each adapter's checklist + set `Tested`, then doctor reports OK.
 

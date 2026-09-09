@@ -1,0 +1,34 @@
+  MEMBERS           2   ╭─ › inspect ─────────────────────────────────────────────────────────────────────╮ 
+  ORG               0   │ agent inspection      enter/v open profile · e runs                              │
+  PACKS             0   │ ▌ alice         ALICE · mock-1 · 1 tool(s)                                       │
+  STANDARDS         1   │                                                                                  │
+  CHANNELS          0   │ ────────────────────────────────────────────────────                             │
+  TASKS             1   │ ▍ alice — fix-login (backlog)                                                    │
+▌ INSPECT           1   │ model mock-1  tools: read                                                        │
+                        │ no teams                                                                         │
+                        │                                                                                  │
+                        │ recent activity                                                                  │
+                        │ (none captured)                                                                  │
+                        │                                                                                  │
+                        │ runs                                                                             │
+                        │ 3 runs · 1 ok · 1 fail · 1 timeout · 100 in / 50 out partial · cost partial      │
+                        │   01-01 02:00 cli:claude/opus  ok  1.2s  $0.42                                   │
+                        │   01-01 01:00 cli:claude/opus  error  1.0m  -                                    │
+                        │   01-01 00:00 cli:claude/opus  timeout  10.0m  -                                 │
+                        │                                                                                  │
+                        │ private memory                                                                   │
+                        │ (empty)                                                                          │
+                        │                                                                                  │
+                        │ knowledge contributions                                                          │
+                        │ (none)                                                                           │
+                        │                                                                                  │
+                        │ Standing instructions (apply to all coding work):                                │
+                        │   - Run the project's tests before declaring work done                           │
+                        │   - Never force-push or rewrite shared history                                   │
+                        │   - Keep changes minimal and focused on the requested task                       │
+                        │   … +1 more rules                                                                │
+                        │                                                                                  │
+                        │                                                                                  │
+                        │                                                                                  │
+[ ] sections            │                                                                                  │
+                        ╰──────────────────────────────────────────────────────────────────────────────────╯

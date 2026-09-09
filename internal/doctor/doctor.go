@@ -68,6 +68,7 @@ func Run(toolRoot, wsRoot string) Report {
 	r.Checks = append(r.Checks, Standards(wsRoot)...)
 	r.Checks = append(r.Checks, Runtimes()...)
 	r.Checks = append(r.Checks, Tasks(wsRoot)...)
+	r.Checks = append(r.Checks, RunStore(wsRoot)...)
 	r.Checks = append(r.Checks, Sessions(wsRoot)...)
 	r.Checks = append(r.Checks, GH(toolRoot)...)
 	r.Checks = append(r.Checks, Sandbox(sandboxMode(wsRoot))...)
@@ -384,6 +385,22 @@ func Standards(wsRoot string) []Check {
 			Detail: detail + "; " + strings.Join(warnings, "; ")}}
 	}
 	return []Check{{Name: "standards/config", Status: OK, Detail: detail}}
+}
+
+// RunStore probes the run schema recorded on cards (F-014 §Part C):
+// malformed [[run]] blocks warn naming the card and line, and unreadable
+// agent transcript dirs warn by name. Absent runs dir = OK (nothing
+// recorded yet).
+func RunStore(wsRoot string) []Check {
+	if wsRoot == "" {
+		return nil
+	}
+	warns := tasks.CheckRuns(wsRoot)
+	if len(warns) == 0 {
+		return nil
+	}
+	return []Check{{Name: "runs/store", Status: Warn,
+		Detail: fmt.Sprintf("%d run record(s) unhealthy: %s", len(warns), strings.Join(warns, "; "))}}
 }
 
 // Tasks probes .dhi/tasks/ (F-003 kanban): malformed cards warn (they
