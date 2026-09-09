@@ -15,7 +15,7 @@ func newSurface(t *testing.T) (*Model, string) {
 	t.Helper()
 	theme.SwapForTest(t, theme.Dark())
 	path := filepath.Join(t.TempDir(), ".dhi", "config.toml")
-	m := New(settings.Defaults(), path)
+	m := New(settings.Defaults(), path, Deps{})
 	m.Resize(80, 24)
 	return m, path
 }
@@ -111,7 +111,7 @@ func TestScrollbackBounds(t *testing.T) {
 }
 
 func TestNoSavePathIsSessionOnly(t *testing.T) {
-	m := New(settings.Defaults(), "")
+	m := New(settings.Defaults(), "", Deps{})
 	m.Resize(60, 20)
 	feed(m, "enter")
 	if !strings.Contains(ansi.Strip(m.View()), "session-only") {

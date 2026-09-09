@@ -102,3 +102,35 @@ func TestCreateRejectsArchivedID(t *testing.T) {
 		t.Fatalf("create over archived = %v", err)
 	}
 }
+
+func TestDeleteAgent(t *testing.T) {
+	o, ws := setupCrew(t)
+	if err := o.CreateAgent(ws, testAgent("carol", "Carol")); err != nil {
+		t.Fatal(err)
+	}
+	if err := o.DeleteAgent(ws, "carol"); err != nil {
+		t.Fatalf("DeleteAgent: %v", err)
+	}
+	if roster, _ := LoadRoster(ws); len(roster) != 0 {
+		t.Fatalf("deleted agent still active: %+v", roster)
+	}
+	// Unknown ids refuse by name.
+	if err := o.DeleteAgent(ws, "ghost"); err == nil ||
+		!strings.Contains(err.Error(), `unknown agent "ghost"`) {
+		t.Fatalf("unknown delete = %v", err)
+	}
+	// Deleting an archived id removes the archived copy (the hard path
+	// reaches both).
+	if err := o.CreateAgent(ws, testAgent("dave", "Dave")); err != nil {
+		t.Fatal(err)
+	}
+	if err := o.ArchiveAgent(ws, "dave"); err != nil {
+		t.Fatal(err)
+	}
+	if err := o.DeleteAgent(ws, "dave"); err != nil {
+		t.Fatalf("archived delete: %v", err)
+	}
+	if got := o.Archived(ws); len(got) != 0 {
+		t.Fatalf("archived copy survived delete: %v", got)
+	}
+}

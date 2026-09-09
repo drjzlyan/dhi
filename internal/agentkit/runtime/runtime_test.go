@@ -12,6 +12,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/agentkit/clirun"
 	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
+	"github.com/drjzlyan/dhi/internal/agentkit/org"
 	"github.com/drjzlyan/dhi/internal/agentkit/standards"
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
 	"github.com/drjzlyan/dhi/internal/sandbox"
@@ -650,5 +651,72 @@ func TestMalformedStandardsRefuseTurn(t *testing.T) {
 	err = rt.Turn(context.Background(), "scout", bus.Message{Channel: "#general"})
 	if err == nil || !contains(err.Error(), "standards.toml") {
 		t.Fatalf("turn must refuse with the path, got: %v", err)
+	}
+}
+
+// TestReloadPicksUpNewAgentsLive is the F-018 contract: a crew write
+// (what the Settings/ORG CRUD performs) plus the reload seam makes the
+// new agent mention-addressable WITHOUT a restart.
+func TestReloadPicksUpNewAgentsLive(t *testing.T) {
+	h := newHarness(t, baseDoc())
+
+	// Mirror real state: the boot roster lives on disk, then the
+	// Settings-style crew write adds a second manifest.
+	sm, err := manifest.Parse("scout", []byte(baseDoc()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := manifest.WriteFile(org.RosterDir(h.ws), sm); err != nil {
+		t.Fatal(err)
+	}
+	doc := strings.Replace(baseDoc(), "Scout", "Muse", 1)
+	mm, err := manifest.Parse("muse", []byte(doc))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := manifest.WriteFile(org.RosterDir(h.ws), mm); err != nil {
+		t.Fatal(err)
+	}
+
+	// The pump: LoadRoster → Reload (atomic; failure keeps the roster).
+	roster, err := org.LoadRoster(h.ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.rt.Reload(roster); err != nil {
+		t.Fatal(err)
+	}
+	ids := h.rt.AgentIDs()
+	if len(ids) != 2 {
+		t.Fatalf("AgentIDs = %v, want [muse scout]", ids)
+	}
+
+	// The new agent routes a turn.
+	replies, cancel := h.bus.Subscribe("#general")
+	defer cancel()
+	trig, err := h.bus.Post(bus.Message{Channel: "#general", Author: bus.Human, Text: "@muse hello"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.rt.Handle(context.Background(), trig)
+	if got := waitReply(t, replies); got.Author != "muse" {
+		t.Fatalf("reply author = %q, want muse", got.Author)
+	}
+}
+
+// TestReloadRefusesBrokenManifestKeepsRoster: one malformed file aborts
+// the swap with the reason named — the running crew never degrades.
+func TestReloadRefusesBrokenManifestKeepsRoster(t *testing.T) {
+	h := newHarness(t, baseDoc())
+	broken := filepath.Join(org.RosterDir(h.ws), "junk.toml")
+	if err := os.WriteFile(broken, []byte("schema = 9\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := org.LoadRoster(h.ws)
+	if err == nil {
+		t.Fatal("broken roster loaded without error")
+	}
+	if ids := h.rt.AgentIDs(); len(ids) != 1 || ids[0] != "scout" {
+		t.Fatalf("roster changed on failed reload: %v", ids)
 	}
 }

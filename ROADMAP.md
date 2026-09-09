@@ -488,8 +488,18 @@ agent CRUD in Settings; full IDE parity via the audited tool seam.
 - [x] P0 — specs (F-018/F-019/F-020, 2026-09-09); survey found the
       dead seam: `runtime.Reload` has no callers — roster changes do
       not go live until restart (F-018 Part C fixes it)
-- [ ] P1 — F-018: Settings AGENTS section (full CRUD via org crew
-      ops, strict manifest forms) + the live-reload pump
+- [x] P1 — F-018: Settings AGENTS section (full CRUD via org crew
+      ops, strict manifest forms) + the live-reload pump — landed
+      2026-09-09: Settings gains `[`/`]` sections (CONFIG · AGENTS);
+      create/edit forms validate via the strict `Marshal`→`Parse`
+      round-trip (id immutable on edit, unknown tool/runtime named),
+      writes go through `org.CreateAgent/UpdateAgent/ArchiveAgent/
+      RestoreAgent` + NEW `DeleteAgent` (removes active OR archived
+      copy; active `x` archives first — the soft path is the default);
+      every successful crew op drives the injected reload seam
+      (`LoadRoster` → `runtime.Reload`, atomic, failure keeps the
+      previous roster); live-reload contract proven by a runtime test
+      (new manifest on disk → @mention routes without restart)
 - [ ] P2 — F-019: one add-from-source flow (git URL or path;
       pack.toml → pack install, else manifest import; validate-all-
       before-write; named skips) in Settings

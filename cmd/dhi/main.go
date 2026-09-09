@@ -164,6 +164,34 @@ func runTUI() {
 		}
 	}
 
+	// Agent roster changes go live without a restart (F-018): the
+	// reload seam re-reads .dhi/agents and swaps the runtime atomically
+	// (failures keep the previous roster and name the manifest error).
+	reloadRoster := func() error {
+		if ws == nil {
+			return fmt.Errorf("not inside a workspace")
+		}
+		if agentRT == nil {
+			return fmt.Errorf("agent runtime unavailable — changes apply on next launch")
+		}
+		roster, err := agentkitOrg.LoadRoster(ws)
+		if err != nil {
+			return err
+		}
+		return agentRT.Reload(roster)
+	}
+	var settingsDeps settingsview.Deps
+	if ws != nil {
+		company, oerr := agentkitOrg.Load(ws.Root)
+		if oerr == nil {
+			settingsDeps = settingsview.Deps{
+				WS:     ws,
+				Org:    company,
+				CLIs:   clirun.NewRegistry(exec.LookPath).Names(),
+				Reload: reloadRoster,
+			}
+		}
+	}
 	var appRef *app.App
 	var approvals *tools.Approvals
 	if agentRT != nil {
@@ -176,13 +204,14 @@ func runTUI() {
 	}
 	a := app.New(version.Version,
 		wsview.New(version.Version, ws, wsview.Deps{
-			Bus:       messageBus,
-			Runtime:   agentRT,
-			Tasks:     taskStore,
-			Roster:    agentRT,
-			ReviewSvc: reviewSvc,
-			Approvals: approvals,
-			Unread:    unreadStore,
+			Bus:          messageBus,
+			Runtime:      agentRT,
+			Tasks:        taskStore,
+			Roster:       agentRT,
+			ReviewSvc:    reviewSvc,
+			Approvals:    approvals,
+			Unread:       unreadStore,
+			ReloadRoster: reloadRoster,
 			OpenChat: func() bool {
 				if appRef == nil {
 					return false
@@ -214,7 +243,7 @@ func runTUI() {
 				return appRef.OpenInEditor(paths)
 			},
 		}),
-		settingsview.New(cfg, savePath),
+		settingsview.New(cfg, savePath, settingsDeps),
 	)
 	appRef = a
 

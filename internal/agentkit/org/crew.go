@@ -68,6 +68,32 @@ func (o *Org) Archived(ws *workspace.Workspace) []string {
 	return manifest.ArchivedIDs(RosterDir(ws))
 }
 
+// DeleteAgent removes the manifest outright — the hard path (archive
+// is the soft one; the confirm modal names both). It removes whichever
+// copy exists (active or archived); unknown ids refuse by name.
+func (o *Org) DeleteAgent(ws *workspace.Workspace, id string) error {
+	active := filepath.Join(RosterDir(ws), id+".toml")
+	archived := filepath.Join(RosterDir(ws), manifest.ArchiveDirName, id+".toml")
+	switch {
+	case fileExists(active):
+		if err := os.Remove(active); err != nil {
+			return fmt.Errorf("org: delete %s: %w", id, err)
+		}
+	case fileExists(archived):
+		if err := os.Remove(archived); err != nil {
+			return fmt.Errorf("org: delete archived %s: %w", id, err)
+		}
+	default:
+		return fmt.Errorf("org: unknown agent %q", id)
+	}
+	return nil
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
 func (o *Org) archivedExists(ws *workspace.Workspace, id string) (string, bool) {
 	for _, a := range o.Archived(ws) {
 		if a == id {

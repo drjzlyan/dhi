@@ -107,15 +107,16 @@ type Model struct {
 	armSeq     uint64 // autopilot tick-chain guard: exactly one in flight
 	cancelAuto func()
 
-	approvals    *tools.Approvals     // pending-approval queue (F-016 source)
-	unreadStore  *unread.Store        // read-mark store (F-017); nil = no bus
-	unreadErr    string               // store unavailable: named, never silent
-	unreadCounts map[string]int       // per-frame rail counts (syncUnread)
-	openChat     func() bool          // focus editor chat approvals (F-016 jump)
-	openReview   func(id string) bool // reviewer select (F-016 jump)
-	inboxHint    string               // last jump degrade hint (visible, never silent)
-	snoozeTarget inbox.Item           // item parked by the fSnooze form
-	snoozeChain  bool                 // expiry tick chain in flight (F-017)
+	approvals      *tools.Approvals     // pending-approval queue (F-016 source)
+	unreadStore    *unread.Store        // read-mark store (F-017); nil = no bus
+	unreadErr      string               // store unavailable: named, never silent
+	unreadCounts   map[string]int       // per-frame rail counts (syncUnread)
+	openChat       func() bool          // focus editor chat approvals (F-016 jump)
+	openReview     func(id string) bool // reviewer select (F-016 jump)
+	inboxHint      string               // last jump degrade hint (visible, never silent)
+	snoozeTarget   inbox.Item           // item parked by the fSnooze form
+	snoozeChain    bool                 // expiry tick chain in flight (F-017)
+	reloadRosterFn func() error         // live-roster seam (F-018); nil = next launch
 
 	inspectOpen bool
 	replay      *runReplay // non-nil = run-replay pane open (F-014)
@@ -159,15 +160,16 @@ func errString(err error) string {
 // Deps carries the services this surface operates. Zero fields degrade
 // their sections to visible "unavailable" rows rather than errors.
 type Deps struct {
-	Bus        *bus.Bus
-	Runtime    turnHandler
-	Tasks      *tasks.Store
-	Roster     profiface.Roster
-	ReviewSvc  *review.Service      // nil = task PR creation unavailable
-	Approvals  *tools.Approvals     // nil = no pending-approval inbox source
-	Unread     *unread.Store        // shared read-mark store (F-017); opened here if nil
-	OpenChat   func() bool          // focus editor chat (approval jump)
-	OpenReview func(id string) bool // reviewer select (in_review jump)
+	Bus          *bus.Bus
+	Runtime      turnHandler
+	Tasks        *tasks.Store
+	Roster       profiface.Roster
+	ReviewSvc    *review.Service      // nil = task PR creation unavailable
+	Approvals    *tools.Approvals     // nil = no pending-approval inbox source
+	Unread       *unread.Store        // shared read-mark store (F-017); opened here if nil
+	ReloadRoster func() error         // live-roster seam (F-018); nil = changes apply next launch
+	OpenChat     func() bool          // focus editor chat (approval jump)
+	OpenReview   func(id string) bool // reviewer select (in_review jump)
 }
 
 // New returns the workspace model. A nil ws renders the not-a-workspace
@@ -197,6 +199,7 @@ func New(version string, ws *workspace.Workspace, d Deps) *Model {
 		m.approvals = d.Approvals
 		m.openChat = d.OpenChat
 		m.openReview = d.OpenReview
+		m.reloadRosterFn = d.ReloadRoster
 		if as, err := autopilot.Open(ws); err == nil {
 			m.autopilots = as
 		}
@@ -718,6 +721,7 @@ func (m *Model) orgKey(key string) bool {
 			if m.org != nil {
 				if err := m.org.RestoreAgent(m.ws, id); err == nil {
 					clampCursor(c, m.orgItemCount())
+					m.reloadRoster()
 				} else {
 					m.flashErr(err.Error())
 				}
@@ -726,6 +730,14 @@ func (m *Model) orgKey(key string) bool {
 		}
 	}
 	return false
+}
+
+// reloadRoster drives the live-roster seam (F-018): a nil seam degrades
+// silently here — the crew op itself already succeeded and flashed.
+func (m *Model) reloadRoster() {
+	if m.reloadRosterFn != nil {
+		_ = m.reloadRosterFn()
+	}
 }
 
 // ---- TASKS section ----
@@ -1231,6 +1243,7 @@ func (m *Model) submitForm() {
 			f.err = err.Error()
 			return
 		}
+		m.reloadRoster()
 		m.closeForm()
 	case fPackInstall:
 		src := strings.TrimSpace(f.fields[0].text())
@@ -1460,6 +1473,7 @@ func (m *Model) submitConfirm() {
 			return
 		}
 		clampCursor(&m.cursors[secOrg], m.orgItemCount())
+		m.reloadRoster()
 		m.closeForm()
 	case fTaskRemoveConfirm:
 		if m.taskStore == nil {
