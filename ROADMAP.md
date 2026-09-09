@@ -527,3 +527,29 @@ agent CRUD in Settings; full IDE parity via the audited tool seam.
       resolves the card's changeset through the review service (gh
       missing refuses by name); runtime tests cover end-to-end
       create/refuse/approve + prompt contract
+
+## M11 — Dashboard floor & Settings management *(IA restructure)*
+
+Status: in progress (P0 landed 2026-09-10). User goal: workspace = a
+JIRA-like dashboard (board + notifications + team chat + repos);
+agent/team management lives in Settings; UI mirrors JIRA/Slack; theme
+gets continuous borders, section background shades, working dialogs.
+Design decisions: ADR-0014 (workspace IA restructure — four sections,
+management in Settings, autopilot execution stays on the boot view).
+
+- [x] P0 — specs (F-021/F-022/F-023/F-024) + ADR-0014, 2026-09-10
+- [ ] P1 — F-024 foundation: kit Panel top-edge corner fix; theme bg
+      tokens (BgBase/BgInset/BgOverlay shades); kit.Modal + kit.Form +
+      kit.Columns primitives; deliberate golden regeneration
+- [ ] P2 — F-023: Settings TEAMS · PACKS · STANDARDS · AUTOPILOTS
+      sections (+ agent profile in AGENTS); workspace management
+      panes deleted
+- [ ] P3 — F-021: workspace → INBOX · BOARD · CHANNELS · REPOS;
+      BOARD kanban + detail pane + jump-to-CHANNELS; section enum
+      9 → 4; inbox jump indices updated
+- [ ] P4 — F-022: CHANNELS Slack floor — vertical rail, transcript +
+      composer, right context pane (thread side-by-side, agent
+      profile); openAt/watermark contracts preserved
+- [ ] P5 — F-024 adoption sweep: all surfaces on kit.Modal/kit.Form,
+      help overlay as true overlay; final theme aesthetic pass +
+      golden regeneration + closeout docs
