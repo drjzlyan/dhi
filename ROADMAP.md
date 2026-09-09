@@ -475,3 +475,24 @@ snooze included.
       exclude parked items so `!N` clears; single 30s `snoozeTickMsg`
       chain armed in Init/after snooze re-arms while snoozes are
       pending (deterministic via explicit ticks); INBOX golden
+
+## M10 — Agent lifecycle & full IDE parity *(the user's crew goal)*
+
+Status: in progress (P0 specs 2026-09-09). User goal: create agents in
+Settings, add agents from GitHub, and give agents the IDE tools for
+everything — editing, reading files, suggesting changes, chatting in
+channels and with the user — to complete work end-to-end. Decisions
+(2026-09-09): one GitHub flow (manifest or pack, auto-detected); full
+agent CRUD in Settings; full IDE parity via the audited tool seam.
+
+- [x] P0 — specs (F-018/F-019/F-020, 2026-09-09); survey found the
+      dead seam: `runtime.Reload` has no callers — roster changes do
+      not go live until restart (F-018 Part C fixes it)
+- [ ] P1 — F-018: Settings AGENTS section (full CRUD via org crew
+      ops, strict manifest forms) + the live-reload pump
+- [ ] P2 — F-019: one add-from-source flow (git URL or path;
+      pack.toml → pack install, else manifest import; validate-all-
+      before-write; named skips) in Settings
+- [ ] P3 — F-020: parity matrix + toolbridge (DHI-namespaced tool
+      calls from CLI adapters → tasks/PR actions, allowlist-gated,
+      approvals for mutating ops)

@@ -1,19 +1,22 @@
 # STATE — current position
 
 Updated: 2026-09-09 (session 17: MIT license adopted; M9 true-unread
-complete P0–P3; wave-3 live-verify still pending installs)
+complete; M10 started — agent lifecycle + IDE parity specs landed;
+wave-3 live-verify still pending installs)
 
 ## Where we are
 
-**M8 and M9 are complete: `make verify` green.** M8 (F-013…F-016)
-landed CLI runtimes, run observability, autopilots, and the inbox.
-M9 (F-017 true unread) landed the read-mark model: strict
-`.dhi/unread.json` (monotonic `MarkRead`, fresh-install seeding,
-pruning), the addressed-to-human predicate (DMs + @you mentions, never
-agent-to-agent), read-on-open/post (channel switch, thread open, jump,
-post — shared store across the workspace CHANNELS rail and the editor
-chat sidebar), `●`/`●N` markers on both surfaces, and snooze (`z`
-presets, dimmed rows, `!N` exclusion, 30s expiry tick chain).
+**M8 and M9 are complete: `make verify` green.** M10 (agent lifecycle
+& full IDE parity) is specced from the user's product goal: create
+agents in Settings (full CRUD), add agents from GitHub (one flow,
+auto-detects pack vs bare manifests), and give agents full IDE parity
+(a documented matrix + a toolbridge so CLI agents can drive DHI
+actions like task cards and PRs, allowlist-gated, approvals for
+mutating ops). Survey finding baked into F-018: `runtime.Reload` has
+no callers today — roster changes don't go live until restart; the
+reload pump fixes that for every surface at once.
+Phases: P1 settings CRUD + pump, P2 GitHub import, P3 parity bridge.
+Next: M10 P1.
 
 ## Session 17 gotchas (F-017 / M9)
 
@@ -319,12 +322,24 @@ hint when absent. The `!N` statusline segment is recomputed per frame.
 
 ## Next up
 
-1. **Wave-3 live verify** (needs installs): once cursor-agent/copilot/
+1. **M10 P1 — agents in Settings (F-018):** Settings AGENTS section
+   (full CRUD via `org.CreateAgent/UpdateAgent/ArchiveAgent/
+   DeleteAgent` — DeleteAgent is NEW), strict manifest forms, and the
+   live-reload pump (roster change → `LoadRoster` → `runtime.Reload`).
+   Commit.
+2. M10 P2 — add agents from GitHub (F-019): one source form in
+   Settings (git URL or path, `#sub/path` fragment), auto-detect
+   pack.toml vs bare manifests, validate-all-then-write, named skips.
+   Commit.
+3. M10 P3 — full IDE parity (F-020): parity matrix + `toolbridge`
+   (DHI-namespaced tool calls from clirun adapters → task/PR actions,
+   manifest allowlist gating, approvals for mutating ops). Commit.
+4. **Wave-3 live verify** (needs installs): once cursor-agent/copilot/
    gemini are on the machine, run a real task per adapter, fill each
    adapter's live-verify checklist + set `Tested`, then doctor reports
    OK. Until then the adapters stay fixture-first and doctor marks a
    detected version untested (FAIL), never a guess.
-2. **(Deferred, from F-017)** snooze-expiry push notifications,
+5. **(Deferred, from F-017)** snooze-expiry push notifications,
    per-message read granularity, multi-human read states, bulk
    "mark all read"; inbox items from autopilot completions / doctor
    regressions (F-016 deferral).
