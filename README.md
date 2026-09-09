@@ -49,4 +49,4 @@ Keys: `1-9` switch workspace · `tab`/`shift+tab` cycle · `?` help · `ctrl+c` 
 
 ## License
 
-TBD (pre-release).
+MIT — see [LICENSE](LICENSE).

@@ -272,8 +272,8 @@ hint when absent. The `!N` statusline segment is recomputed per frame.
 
 ## Open questions for user
 
-- DHI LICENSE: still none. Decide before any upstream sharing of
-  DHI code (see session 10 gotcha 3).
+- LICENSE: decided 2026-09-09 — **MIT** (LICENSE file + `license MIT`
+  in go.mod + README). No longer blocking upstream sharing.
 - Wave-3 CLIs (cursor-agent, copilot, gemini) aren't installed on the
   dev machine — do you have accounts/installs for live verification,
   or should wave 3 stay fixture-only until you install them?
