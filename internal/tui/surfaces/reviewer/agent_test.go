@@ -7,11 +7,11 @@ import (
 
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
-	"github.com/drjzlyan/dhi/internal/agentkit/provider"
 	"github.com/drjzlyan/dhi/internal/agentkit/runtime"
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
 	"github.com/drjzlyan/dhi/internal/review"
 	"github.com/drjzlyan/dhi/internal/sandbox"
+	"github.com/drjzlyan/dhi/internal/testutil/stubcli"
 )
 
 // fakeCrew records Handle dispatches without running a real runtime.
@@ -160,25 +160,27 @@ func TestCompleteAgentReviewUnknownAgentRejected(t *testing.T) {
 	}
 }
 
-// TestMockProviderEndToEnd runs the F-005 acceptance flow against the
-// real runtime + scripted MockProvider: invite → turn → reply lands
+// TestCLIRuntimeEndToEnd runs the F-005 acceptance flow against the
+// real runtime + fixture claude CLI: invite → turn → reply lands
 // in-thread as an immutable comment authored by the agent.
-func TestMockProviderEndToEnd(t *testing.T) {
+func TestCLIRuntimeEndToEnd(t *testing.T) {
 	m, ws, st, _ := newSurface(t)
 	b, err := bus.Open(ws)
 	if err != nil {
 		t.Fatal(err)
 	}
-	mf, err := manifest.Parse("rev", []byte("schema = 1\nname = \"Rev\"\nmodel = \"mock-1\"\nsystem = \"You review code.\"\n"))
+	mf, err := manifest.Parse("rev", []byte("schema = 1\nname = \"Rev\"\nmodel = \"m\"\nruntime = \"claude\"\nsystem = \"You review code.\"\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
+	_, cliEnv, reg := stubcli.FixedReply(t, "looked at it: the locking is fine")
 	rt, err := runtime.New(runtime.Config{
 		WS:        ws,
 		Bus:       b,
 		Approvals: tools.NewApprovals(),
-		Provider:  provider.NewMock(provider.ScriptText("looked at it: the locking is fine")),
 		Sandbox:   sandbox.Noop{},
+		CLIs:      reg,
+		CLIEnv:    []string{cliEnv},
 	}, []*manifest.Agent{mf})
 	if err != nil {
 		t.Fatal(err)

@@ -58,9 +58,10 @@ func (a *Approvals) signal() {
 	}
 }
 
-// wait parks the caller until Resolve answers or ctx is done. It is the
-// only method called from tool goroutines.
-func (a *Approvals) wait(ctx context.Context, agent string, op sandbox.Op, target, reason string) error {
+// Ask parks a decision until Resolve answers or ctx is done. It is the
+// seam UIs, guards, and the future CLI permission-prompt bridge use to
+// surface an operator prompt.
+func (a *Approvals) Ask(ctx context.Context, agent string, op sandbox.Op, target, reason string) error {
 	ap := &Approval{
 		Agent:   agent,
 		Op:      op,
@@ -137,6 +138,7 @@ func (a *Approvals) Resolve(id int, allow bool) bool {
 
 func (a *Approvals) remove(id int) {
 	a.mu.Lock()
+	defer a.mu.Unlock()
 	kept := a.pending[:0]
 	for _, ap := range a.pending {
 		if ap.ID != id {

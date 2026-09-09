@@ -2,46 +2,43 @@ package editor
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
-	"github.com/drjzlyan/dhi/internal/agentkit/provider"
 	"github.com/drjzlyan/dhi/internal/agentkit/runtime"
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
 	"github.com/drjzlyan/dhi/internal/sandbox"
 	"github.com/drjzlyan/dhi/internal/testutil/golden"
+	"github.com/drjzlyan/dhi/internal/testutil/stubcli"
 	"github.com/drjzlyan/dhi/internal/tui/theme"
 	"github.com/drjzlyan/dhi/internal/workspace"
 )
 
 const scoutDoc = `schema = 1
 name = "Scout"
-model = "mock-1"
+model = "m"
 system = "You scout."
 tools = ["read", "write"]
-policy_json = """{"rules":[{"op":"read","path":"**","effect":"allow"},{"op":"write","path":"docs/**","effect":"ask"}]}"""
+runtime = "claude"
 `
 
 type chatHarness struct {
 	m     *Model
 	rt    *runtime.Runtime
-	mock  *provider.Mock
 	apprs *tools.Approvals
 	ws    *workspace.Workspace
 }
 
-func newChatEditor(t *testing.T) *chatHarness {
+func newChatEditor(t *testing.T, reply string) *chatHarness {
 	t.Helper()
 	theme.SwapForTest(t, theme.Dark())
 	ws, _ := setupWorkspace(t)
-	mock := provider.NewMock()
 	ap := tools.NewApprovals()
 
+	_, cliEnv, reg := stubcli.FixedReply(t, reply)
 	b, err := bus.Open(ws)
 	if err != nil {
 		t.Fatal(err)
@@ -54,15 +51,16 @@ func newChatEditor(t *testing.T) *chatHarness {
 		WS:        ws,
 		Bus:       b,
 		Approvals: ap,
-		Provider:  mock,
 		Sandbox:   sandbox.Noop{},
+		CLIs:      reg,
+		CLIEnv:    []string{cliEnv},
 	}, []*manifest.Agent{mf})
 	if err != nil {
 		t.Fatal(err)
 	}
 	m := New("test", ws, WithChat(rt))
 	m.Resize(120, 30)
-	return &chatHarness{m: m, rt: rt, mock: mock, apprs: ap, ws: ws}
+	return &chatHarness{m: m, rt: rt, apprs: ap, ws: ws}
 }
 
 func (h *chatHarness) openFocused() {
@@ -70,7 +68,7 @@ func (h *chatHarness) openFocused() {
 }
 
 func TestChatToggleTriState(t *testing.T) {
-	h := newChatEditor(t)
+	h := newChatEditor(t, "ok")
 	if strings.Contains(plainView(h.m), "crew") {
 		t.Fatal("sidebar visible before toggle")
 	}
@@ -93,7 +91,7 @@ func TestChatToggleTriState(t *testing.T) {
 }
 
 func TestChatSendPostsToBus(t *testing.T) {
-	h := newChatEditor(t)
+	h := newChatEditor(t, "ok")
 	h.openFocused()
 	typeKeys(h.m, "@scout please look")
 	h.m.HandleKey("enter")
@@ -107,8 +105,7 @@ func TestChatSendPostsToBus(t *testing.T) {
 }
 
 func TestChatTurnReplyAppearsInTranscript(t *testing.T) {
-	h := newChatEditor(t)
-	h.mock.Add(provider.ScriptText("All quiet on the western front."))
+	h := newChatEditor(t, "All quiet on the western front.")
 	trig, err := h.rt.Bus().Post(bus.Message{Channel: "#general", Author: bus.Human, Text: "@scout status"})
 	if err != nil {
 		t.Fatal(err)
@@ -124,14 +121,15 @@ func TestChatTurnReplyAppearsInTranscript(t *testing.T) {
 }
 
 func TestChatApprovalFlow(t *testing.T) {
-	h := newChatEditor(t)
-	h.mock.Add(
-		provider.ScriptToolCall("w1", "write", []byte(`{"path":"alpha/docs/n.md","content":"ok"}`)),
-		provider.ScriptText("Done."),
-	)
-	trig, _ := h.rt.Bus().Post(bus.Message{Channel: "#general", Author: bus.Human, Text: "@scout document"})
+	h := newChatEditor(t, "ok")
+	// CLI permission prompts will repopulate this queue (ADR-0013 §3);
+	// today a turn never enqueues, so park one the way the incoming
+	// bridge eventually will and drive it through the panel.
 	done := make(chan error, 1)
-	go func() { done <- h.rt.Turn(context.Background(), "scout", trig) }()
+	go func() {
+		done <- h.apprs.Ask(context.Background(),
+			"scout", sandbox.OpWrite, "alpha/docs/n.md", "policy: docs/** asks")
+	}()
 
 	h.openFocused()
 	deadline := time.After(2 * time.Second)
@@ -147,16 +145,12 @@ func TestChatApprovalFlow(t *testing.T) {
 	}
 	h.m.HandleKey("y")
 	if err := <-done; err != nil {
-		t.Fatalf("turn errored: %v", err)
-	}
-	data, err := os.ReadFile(filepath.Join(h.ws.Members()[0].Path, "docs", "n.md"))
-	if err != nil || string(data) != "ok" {
-		t.Errorf("approved write missing: %q %v", data, err)
+		t.Fatalf("approval errored: %v", err)
 	}
 }
 
 func TestApplySuggestionIntoBuffer(t *testing.T) {
-	h := newChatEditor(t)
+	h := newChatEditor(t, "ok")
 	// Open a buffer first.
 	feed(h.m, "/")
 	typeKeys(h.m, "app.go")

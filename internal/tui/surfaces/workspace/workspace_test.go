@@ -231,7 +231,7 @@ func TestTeamCreateEditDeleteFlow(t *testing.T) {
 
 func writeAgentManifest(t *testing.T, dir, id string) {
 	t.Helper()
-	doc := "schema = 1\nname = \"" + id[:1] + strings.ToUpper(id[1:]) + "\"\nmodel = \"mock-1\"\n"
+	doc := "schema = 1\nname = \"" + id[:1] + strings.ToUpper(id[1:]) + "\"\nmodel = \"m\"\nruntime = \"claude\"\n"
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -294,7 +294,7 @@ func fixturePackDir(t *testing.T) string {
 	agents := filepath.Join(root, "pack", "agents")
 	os.MkdirAll(agents, 0o755)
 	os.WriteFile(filepath.Join(agents, "carol.toml"),
-		[]byte("schema = 1\nname = \"Carol\"\nmodel = \"mock-1\"\ntools = [\"read\"]\n"), 0o644)
+		[]byte("schema = 1\nname = \"Carol\"\nmodel = \"mock-1\"\ntools = [\"read\"]\nruntime = \"claude\"\n"), 0o644)
 	os.WriteFile(filepath.Join(root, "pack", "pack.toml"),
 		[]byte("schema = 1\nname = \"acme\"\nversion = \"0.1.0\"\nagents = [\"agents/carol.toml\"]\n"), 0o644)
 	return filepath.Join(root, "pack")
@@ -565,7 +565,7 @@ func (s *stubRoster) Manifest(id string) (*manifest.Agent, bool) {
 	for _, i := range s.ids {
 		if i == id {
 			return &manifest.Agent{ID: id, Name: strings.ToUpper(id),
-				Model: "mock-1", Tools: []string{"read"}}, true
+				Model: "mock-1", Runtime: "claude", Tools: []string{"read"}}, true
 		}
 	}
 	return nil, false

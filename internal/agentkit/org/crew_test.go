@@ -13,7 +13,7 @@ import (
 func testAgent(id, name string) *manifest.Agent {
 	return &manifest.Agent{
 		ID: id, Name: name, Model: "claude-smoke-1",
-		System: "be brief", Tools: []string{"read", "list"}, EnvVar: "",
+		Runtime: "claude", System: "be brief", Tools: []string{"read", "list"},
 	}
 }
 

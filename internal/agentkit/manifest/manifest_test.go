@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/drjzlyan/dhi/internal/sandbox"
 )
@@ -13,10 +14,10 @@ func validDoc() string {
 	return `schema = 1
 name = "Scout"
 model = "claude-sonnet-4-5"
+runtime = "claude"
 system = "You scout code."
 tools = ["read", "list", "search", "mcp__docs__lookup"]
 policy_json = """{"rules":[{"op":"read","effect":"allow"}]}"""
-env_var = "ANTHROPIC_API_KEY"
 `
 }
 
@@ -40,9 +41,6 @@ func TestParseValid(t *testing.T) {
 			t.Errorf("Tools[%d] = %q, want %q", i, a.Tools[i], want[i])
 		}
 	}
-	if a.EnvVar != "ANTHROPIC_API_KEY" {
-		t.Errorf("EnvVar = %q", a.EnvVar)
-	}
 	if a.Policy() == nil {
 		t.Fatal("Policy() = nil, want parsed policy")
 	}
@@ -53,7 +51,12 @@ func TestParseValid(t *testing.T) {
 }
 
 func TestParseMinimalDefaults(t *testing.T) {
-	doc := "schema = 1\nname = \"Bare\"\nmodel = \"m\"\n"
+	// A manifest without a `runtime` is invalid now (ADR-0013): there
+	// is no in-house engine to default to.
+	if _, err := Parse("bare", []byte("schema = 1\nname = \"Bare\"\nmodel = \"m\"\n")); err == nil {
+		t.Fatal("missing runtime must be refused")
+	}
+	doc := "schema = 1\nname = \"Bare\"\nmodel = \"m\"\nruntime = \"claude\"\n"
 	a, err := Parse("bare", []byte(doc))
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
@@ -64,8 +67,49 @@ func TestParseMinimalDefaults(t *testing.T) {
 	if a.Policy() != nil {
 		t.Error("Policy() != nil with no policy_json")
 	}
-	if a.EnvVar != "" || a.System != "" {
+	if a.System != "" {
 		t.Errorf("defaults leaked: %+v", a)
+	}
+	if a.Runtime != "claude" || !a.UsesCLIRuntime() {
+		t.Errorf("Runtime = %q (UsesCLIRuntime=%v), want registered CLI", a.Runtime, a.UsesCLIRuntime())
+	}
+	if a.Timeout != 0 || a.Retries != 0 {
+		t.Errorf("Timeout=%v Retries=%d, want zero defaults", a.Timeout, a.Retries)
+	}
+}
+
+func TestParseRuntimeFields(t *testing.T) {
+	doc := `schema = 1
+name = "Rover"
+model = "m"
+runtime = "claude"
+timeout = "90s"
+retries = 2
+`
+	a, err := Parse("rover", []byte(doc))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if a.Runtime != "claude" || !a.UsesCLIRuntime() {
+		t.Errorf("Runtime = %q UsesCLIRuntime=%v, want claude CLI", a.Runtime, a.UsesCLIRuntime())
+	}
+	if a.Timeout != 90*time.Second {
+		t.Errorf("Timeout = %v, want 90s", a.Timeout)
+	}
+	if a.Retries != 2 {
+		t.Errorf("Retries = %d, want 2", a.Retries)
+	}
+
+	data, err := Marshal(a)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	back, err := Parse("rover", data)
+	if err != nil {
+		t.Fatalf("Parse(marshal): %v", err)
+	}
+	if back.Runtime != "claude" || back.Timeout != 90*time.Second || back.Retries != 2 {
+		t.Errorf("round-trip: %+v", back)
 	}
 }
 
@@ -81,13 +125,17 @@ func TestParseErrors(t *testing.T) {
 		{"bad schema", "a", "schema = 2\nname = \"n\"\nmodel = \"m\"\n", "schema 2"},
 		{"missing name", "a", "schema = 1\nmodel = \"m\"\n", "name is required"},
 		{"missing model", "a", "schema = 1\nname = \"n\"\n", "model is required"},
+		{"missing runtime", "a", "schema = 1\nname = \"n\"\nmodel = \"m\"\n", "runtime"},
+		{"empty runtime", "a", "schema = 1\nname = \"n\"\nmodel = \"m\"\nruntime = \"\"\n", "runtime"},
 		{"dup tool", "a", "schema = 1\nname = \"n\"\nmodel = \"m\"\ntools = [\"read\", \"read\"]\n", "duplicate tool"},
 		{"typo builtin", "a", "schema = 1\nname = \"n\"\nmodel = \"m\"\ntools = [\"serch\"]\n", "unknown tool"},
 		{"bad mcp ref", "a", "schema = 1\nname = \"n\"\nmodel = \"m\"\ntools = [\"mcp_docs_lookup\"]\n", "unknown tool"},
 		{"empty tool", "a", "schema = 1\nname = \"n\"\nmodel = \"m\"\ntools = [\" \"]\n", "unknown tool"},
 		{"bad policy effect", "a", "schema = 1\nname = \"n\"\nmodel = \"m\"\npolicy_json = \"{\\\"rules\\\":[{\\\"op\\\":\\\"read\\\",\\\"effect\\\":\\\"maybe\\\"}]}\"\n", "policy_json"},
 		{"policy not json", "a", "schema = 1\nname = \"n\"\nmodel = \"m\"\npolicy_json = \"{\"\n", "policy_json"},
-		{"bad env var", "a", "schema = 1\nname = \"n\"\nmodel = \"m\"\nenv_var = \"9KEYS\"\n", "env_var"},
+		{"unknown runtime", "a", "schema = 1\nname = \"n\"\nmodel = \"m\"\nruntime = \"codex\"\n", "runtime"},
+		{"bad timeout", "a", "schema = 1\nname = \"n\"\nmodel = \"m\"\nruntime = \"claude\"\ntimeout = \"soon\"\n", "timeout"},
+		{"negative retries", "a", "schema = 1\nname = \"n\"\nmodel = \"m\"\nruntime = \"claude\"\nretries = -1\n", "retries"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -111,7 +159,7 @@ func TestLoadDir(t *testing.T) {
 		}
 	}
 	minimal := func(name string) string {
-		return "schema = 1\nname = \"" + name + "\"\nmodel = \"m\"\n"
+		return "schema = 1\nname = \"" + name + "\"\nmodel = \"m\"\nruntime = \"claude\"\n"
 	}
 	write("zeta.toml", minimal("Z"))
 	write("alpha.toml", minimal("A"))
@@ -134,7 +182,7 @@ func TestLoadDir(t *testing.T) {
 
 func TestLoadDirIDMismatch(t *testing.T) {
 	dir := t.TempDir()
-	doc := "schema = 1\nname = \"N\"\nmodel = \"m\"\n"
+	doc := "schema = 1\nname = \"N\"\nmodel = \"m\"\nruntime = \"claude\"\n"
 	if err := os.WriteFile(filepath.Join(dir, "other.toml"), []byte(doc), 0o644); err != nil {
 		t.Fatal(err)
 	}

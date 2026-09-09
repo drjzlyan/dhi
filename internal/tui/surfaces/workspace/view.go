@@ -21,7 +21,7 @@ import (
 )
 
 func manifestAgent(id, name, model, system string) *manifest.Agent {
-	return &manifest.Agent{ID: id, Name: name, Model: model, System: system}
+	return &manifest.Agent{ID: id, Name: name, Model: model, System: system, Runtime: "claude"}
 }
 
 func fmtErr(msg string) error { return errors.New(msg) }

@@ -195,7 +195,7 @@ func TestStandardsSuite(t *testing.T) {
 
 	// Custom layers referencing real roster + org entries pass.
 	os.WriteFile(filepath.Join(ws, ".dhi", "agents", "alice.toml"),
-		[]byte("schema = 1\nname = \"Alice\"\nmodel = \"m\"\n"), 0o644)
+		[]byte("schema = 1\nname = \"Alice\"\nmodel = \"m\"\nruntime = \"claude\"\n"), 0o644)
 	os.WriteFile(filepath.Join(ws, ".dhi", "org.toml"),
 		[]byte("schema = 1\n\n[teams.frontend]\nmembers = [\"alice\"]\n"), 0o644)
 	if err := agentkitStandards.Save(ws,
@@ -243,7 +243,7 @@ func TestTasksSuite(t *testing.T) {
 	os.WriteFile(filepath.Join(ws, ".dhi", "org.toml"),
 		[]byte("schema = 1\n\n[teams.frontend]\nmembers = [\"alice\"]\n"), 0o644)
 	os.WriteFile(filepath.Join(ws, ".dhi", "agents", "alice.toml"),
-		[]byte("schema = 1\nname = \"Alice\"\nmodel = \"m\"\n"), 0o644)
+		[]byte("schema = 1\nname = \"Alice\"\nmodel = \"m\"\nruntime = \"claude\"\n"), 0o644)
 	os.MkdirAll(filepath.Join(ws, ".dhi", "tasks"), 0o755)
 	card := "schema = 1\ntitle = \"Fix it\"\nstatus = \"active\"\nassignee = \"alice\"\nteam = \"frontend\"\n\n[[changeset]]\nmember = \"main\"\nbranch = \"task/x\"\npath = \".dhi/tasks/x/main\"\n"
 	os.WriteFile(filepath.Join(ws, ".dhi", "tasks", "fix.toml"), []byte(card), 0o644)
@@ -284,7 +284,7 @@ func TestSessionsSuite(t *testing.T) {
 	}
 
 	os.WriteFile(filepath.Join(ws, ".dhi", "agents", "scout.toml"),
-		[]byte("schema = 1\nname = \"Scout\"\nmodel = \"m\"\n"), 0o644)
+		[]byte("schema = 1\nname = \"Scout\"\nmodel = \"m\"\nruntime = \"claude\"\n"), 0o644)
 	os.MkdirAll(filepath.Join(ws, ".dhi", "sessions"), 0o755)
 	card := "schema = 1\nname = \"Storage\"\ntopic = \"engines\"\nagents = [\"scout\"]\nchannel = \"#ideation-storage\"\n"
 	os.WriteFile(filepath.Join(ws, ".dhi", "sessions", "storage.toml"), []byte(card), 0o644)

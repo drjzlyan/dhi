@@ -1,58 +1,53 @@
 // Package runtime is the agent turn engine: it owns the roster, routes
-// bus mentions to the right agent, assembles conversations from channel
-// history, drives provider streams through tool round-trips inside the
-// sandbox, and posts replies back to the bus. UIs subscribe to the bus;
-// they never talk to providers directly.
+// bus mentions to the right agent, assembles prompts from channel
+// history, and drives each agent through its registered host CLI inside
+// the OS sandbox, posting the transcript and final reply back to the
+// bus. UIs subscribe to the bus; they never talk to providers directly.
+// DHI ships no model engine of its own (ADR-0013): every rostered agent
+// thinks through a host CLI.
 package runtime
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"strings"
 	"sync"
 
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
+	"github.com/drjzlyan/dhi/internal/agentkit/clirun"
 	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
 	"github.com/drjzlyan/dhi/internal/agentkit/org"
-	"github.com/drjzlyan/dhi/internal/agentkit/provider"
 	"github.com/drjzlyan/dhi/internal/agentkit/standards"
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
-	"github.com/drjzlyan/dhi/internal/gitcore"
-	"github.com/drjzlyan/dhi/internal/mcp"
 	"github.com/drjzlyan/dhi/internal/sandbox"
-	"github.com/drjzlyan/dhi/internal/search"
+	"github.com/drjzlyan/dhi/internal/tasks"
 	"github.com/drjzlyan/dhi/internal/workspace"
 )
-
-// maxToolRounds bounds a single turn's tool loop.
-const maxToolRounds = 8
 
 // historyWindow caps how much channel context feeds a prompt.
 const historyWindow = 50
 
-// MCPClient is a connected tool server: discovery plus invocation
-// (satisfied by *mcp.Stdio / *mcp.HTTP).
-type MCPClient interface {
-	Tools(ctx context.Context) ([]mcp.ToolInfo, error)
-	CallTool(ctx context.Context, name string, args json.RawMessage) (content string, isError bool, err error)
-}
-
-// Config wires the runtime's seams. Provider serves agents without an
-// override; MCPClients must be pre-connected by the embedder (transports
-// outlive turns).
+// Config wires the runtime's seams. Every rostered agent runs through a
+// registered host CLI (ADR-0012/0013); the CLI registry is required.
 type Config struct {
-	WS         *workspace.Workspace
-	Bus        *bus.Bus
-	Approvals  *tools.Approvals
-	Searcher   search.Searcher
-	Provider   provider.Provider
-	Providers  map[string]provider.Provider // agent id → override
-	MCPClients map[string]MCPClient         // server name → connected client
+	WS        *workspace.Workspace
+	Bus       *bus.Bus
+	Approvals *tools.Approvals
 	// Sandbox is the OS-isolation adapter applied to every Guard built
 	// for agents (F-010). Nil means Noop: path-jail + policy only.
 	Sandbox sandbox.Sandbox
+	// CLIs is the host CLI runtime registry (F-013, ADR-0012). Every
+	// rostered agent's `runtime` resolves against it; nil refuses all
+	// agents at build time (strict, no silent fallback).
+	CLIs *clirun.Registry
+	// CLIEnv is the base environment for CLI spawns (hermetic toolchain
+	// PATH and the like). The executor extends it with each CLI's
+	// declared pass-through — the exact set, nothing else (ADR-0012 §4).
+	CLIEnv []string
+	// Tasks persists run records onto task cards (F-013). Nil disables
+	// card recording; the transcript still lives on the bus.
+	Tasks *tasks.Store
 	// Org supplies team membership for layered coding standards; nil
 	// disables team layers.
 	Org *org.Org
@@ -67,19 +62,17 @@ type Runtime struct {
 	mu     sync.Mutex
 	agents map[string]*entry
 	roster chan struct{} // pinged after every Reload
-
-	gitRunner *gitRunner
 }
 
 type entry struct {
-	m      *manifest.Agent
-	p      provider.Provider
-	reg    *tools.Registry
-	guard  *sandbox.Guard // isolation seam (doctor/diagnostics surface)
-	turnMu sync.Mutex     // one turn at a time per agent
+	m       *manifest.Agent
+	guard   *sandbox.Guard // isolation seam (doctor/diagnostics surface)
+	cli     *clirun.CLI    // host CLI adapter
+	cliPath string         // resolved binary path for the CLI runtime
+	turnMu  sync.Mutex     // one turn at a time per agent
 }
 
-// New builds per-agent registries from the roster. Agents whose manifest
+// New builds per-agent entries from the roster. Agents whose manifest
 // fails are skipped with an error return only if none load.
 func New(cfg Config, roster []*manifest.Agent) (*Runtime, error) {
 	if len(roster) == 0 {
@@ -99,7 +92,6 @@ func New(cfg Config, roster []*manifest.Agent) (*Runtime, error) {
 	// ideation artifacts under .dhi/sessions/ (F-004) while policies
 	// stay deny-by-default (ADR-0006/0010).
 	jailRoots = append(jailRoots, filepath.Join(cfg.WS.Root, workspace.DHIDir))
-	r.gitRunner = newGitRunner(cfg.WS)
 	for _, m := range roster {
 		e, err := r.buildEntry(m, jailRoots)
 		if err != nil {
@@ -110,16 +102,21 @@ func New(cfg Config, roster []*manifest.Agent) (*Runtime, error) {
 	return r, nil
 }
 
-// buildEntry wires one agent's provider, jail, and tool registry.
+// buildEntry wires one agent's host CLI and OS-sandbox guard. The
+// manifest's `runtime` key is the exec authorization; the guard wraps
+// every CLI spawn through the same OS-sandbox seam every other exec uses
+// (ADR-0012 §3).
 func (r *Runtime) buildEntry(m *manifest.Agent, jailRoots []string) (*entry, error) {
-	e := &entry{m: m}
-	if p, ok := r.cfg.Providers[m.ID]; ok {
-		e.p = p
-	} else {
-		e.p = r.cfg.Provider
+	if r.cfg.CLIs == nil {
+		return nil, fmt.Errorf("runtime: %s: runtime %q needs a CLI registry (config.CLIs is nil)", m.ID, m.Runtime)
 	}
-	if e.p == nil {
-		return nil, fmt.Errorf("runtime: %s has no provider", m.ID)
+	c, ok := r.cfg.CLIs.Get(m.Runtime)
+	if !ok {
+		return nil, fmt.Errorf("runtime: %s: unknown CLI runtime %q", m.ID, m.Runtime)
+	}
+	path, err := r.cfg.CLIs.Path(m.Runtime)
+	if err != nil {
+		return nil, fmt.Errorf("runtime: %s: %w (install %s to use this runtime)", m.ID, err, c.Bin)
 	}
 	var policy *sandbox.Policy
 	if m.Policy() != nil {
@@ -131,44 +128,9 @@ func (r *Runtime) buildEntry(m *manifest.Agent, jailRoots []string) (*entry, err
 	if err != nil {
 		return nil, fmt.Errorf("runtime: jail: %w", err)
 	}
-	deps := tools.Deps{
-		WS:        r.cfg.WS,
-		Guard:     sandbox.NewGuard(jail, policy),
-		Approvals: r.cfg.Approvals,
-		Searcher:  r.cfg.Searcher,
-		GitRunner: r.gitRunner,
-		AgentID:   m.ID,
-	}
-	if r.cfg.Sandbox != nil {
-		deps.Guard.Sandbox = r.cfg.Sandbox
-	}
-	e.guard = deps.Guard
-	e.reg = tools.New()
-	for _, t := range tools.Builtins(deps) {
-		if err := e.reg.Register(t); err != nil {
-			return nil, fmt.Errorf("runtime: %s: %w", m.ID, err)
-		}
-	}
-	gate := tools.PolicyGate(policy, r.cfg.Approvals, m.ID)
-	for server, client := range r.cfg.MCPClients {
-		infos, err := client.Tools(context.Background())
-		if err != nil {
-			return nil, fmt.Errorf("runtime: mcp server %q: %w", server, err)
-		}
-		remotes := make([]tools.RemoteInfo, 0, len(infos))
-		for _, i := range infos {
-			remotes = append(remotes, tools.RemoteInfo{Name: i.Name, Description: i.Description, Schema: i.InputSchema})
-		}
-		for _, t := range tools.RemoteTools(server, gate, client, remotes) {
-			if !allowed(m.Tools, t.Def().Name) {
-				continue
-			}
-			if err := e.reg.Register(t); err != nil {
-				return nil, fmt.Errorf("runtime: %s: %w", m.ID, err)
-			}
-		}
-	}
-	return e, nil
+	guard := sandbox.NewGuard(jail, policy)
+	guard.Sandbox = r.cfg.Sandbox
+	return &entry{m: m, guard: guard, cli: c, cliPath: path}, nil
 }
 
 // Changes pings once after every successful Reload so UIs can refresh
@@ -203,15 +165,6 @@ func (r *Runtime) Reload(roster []*manifest.Agent) error {
 	return nil
 }
 
-func allowed(allow []string, name string) bool {
-	for _, a := range allow {
-		if a == name {
-			return true
-		}
-	}
-	return false
-}
-
 // AgentIDs lists rostered agents sorted.
 func (r *Runtime) AgentIDs() []string {
 	r.mu.Lock()
@@ -227,7 +180,9 @@ func (r *Runtime) AgentIDs() []string {
 // Bus exposes the message bus for UI subscribers.
 func (r *Runtime) Bus() *bus.Bus { return r.cfg.Bus }
 
-// Approvals exposes the shared approval queue for UIs.
+// Approvals exposes the shared approval queue for UIs. The in-house
+// tool gate that filled it is gone (ADR-0013 §3); CLI permission prompts
+// will repopulate it as a forward adapter feature.
 func (r *Runtime) Approvals() *tools.Approvals { return r.cfg.Approvals }
 
 // Handle processes one inbound message: any mentioned rostered agent
@@ -260,8 +215,8 @@ func (r *Runtime) targets(msg bus.Message) []string {
 }
 
 // Turn executes one full conversational turn for agentID in response to
-// trigger: history → prompt → streamed completion → tool round-trips →
-// reply posted to the trigger's channel/thread.
+// trigger: history → prompted host CLI spawn → streamed transcript →
+// final reply posted to the trigger's channel/thread (F-013/ADR-0012).
 func (r *Runtime) Turn(ctx context.Context, agentID string, trigger bus.Message) error {
 	r.mu.Lock()
 	e, ok := r.agents[agentID]
@@ -280,114 +235,7 @@ func (r *Runtime) Turn(ctx context.Context, agentID string, trigger bus.Message)
 		}
 	}
 
-	req := r.prompt(e, trigger)
-
-	var reply strings.Builder
-	for round := 0; round < maxToolRounds; round++ {
-		ch, err := e.p.Stream(ctx, req)
-		if err != nil {
-			return fmt.Errorf("runtime: %s: stream: %w", agentID, err)
-		}
-		var calls []tools.Call
-		stop := ""
-		for ev := range ch {
-			switch ev.Kind {
-			case provider.EventText:
-				reply.WriteString(ev.Text)
-			case provider.EventToolUse:
-				calls = append(calls, tools.Call{ID: ev.ToolUseID, Name: ev.ToolName, Input: ev.Input})
-			case provider.EventStop:
-				stop = ev.StopReason
-			case provider.EventError:
-				return fmt.Errorf("runtime: %s: %w", agentID, ev.Err)
-			}
-		}
-		if len(calls) == 0 || stop != provider.StopToolUse {
-			break // plain end: fall through to reply
-		}
-
-		// Record the assistant tool-use turn, execute, feed results back.
-		asst := provider.Message{Role: provider.Assistant, Blocks: []provider.Block{
-			provider.Text{Value: reply.String()},
-		}}
-		for _, c := range calls {
-			asst.Blocks = append(asst.Blocks, provider.ToolUse{ID: c.ID, Name: c.Name, Input: c.Input})
-		}
-		req.Messages = append(req.Messages, asst)
-
-		results := provider.Message{Role: provider.User}
-		for _, c := range calls {
-			res := e.reg.Call(ctx, c)
-			results.Blocks = append(results.Blocks, provider.ToolResult{
-				ToolUseID: res.CallID,
-				Content:   res.Content,
-				IsError:   res.IsError,
-			})
-		}
-		req.Messages = append(req.Messages, results)
-		reply.Reset()
-	}
-
-	text := strings.TrimSpace(reply.String())
-	if text == "" {
-		return fmt.Errorf("runtime: %s produced no reply", agentID)
-	}
-	// Stay inside the trigger's thread when already in one; top-level
-	// prompts get top-level replies so channel transcripts stay linear.
-	_, err := r.cfg.Bus.Post(bus.Message{
-		Channel: trigger.Channel,
-		Thread:  trigger.Thread,
-		Author:  agentID,
-		Text:    text,
-	})
-	return err
-}
-
-// prompt flattens recent history into a Request grounded with the
-// workspace layout so models emit valid vpaths.
-func (r *Runtime) prompt(e *entry, trigger bus.Message) provider.Request {
-	system := strings.TrimSpace(e.m.System)
-	var members []string
-	for _, m := range r.cfg.WS.Members() {
-		members = append(members, m.Name)
-	}
-	grounding := "\n\nFiles are addressed as <member>/<rel-path>. Members: " + strings.Join(members, ", ")
-	grounding += "\nThe reserved workspace dotdir is addressed as .dhi/<rel-path>; ideation artifacts belong under .dhi/sessions/<session>/<file>."
-	system += grounding
-	if r.cfg.Standards {
-		system += "\n\n" + standards.Resolve(r.cfg.WS.Root, e.m.ID, r.teamLookup())
-	}
-	req := provider.Request{
-		Model:     e.m.Model,
-		System:    system,
-		MaxTokens: 4096,
-	}
-	for _, d := range e.reg.Defs(e.m.Tools) {
-		schema := json.RawMessage(d.InputSchema)
-		if len(schema) == 0 {
-			schema = json.RawMessage(`{"type":"object"}`)
-		}
-		req.Tools = append(req.Tools, provider.ToolDef{Name: d.Name, Description: d.Description, InputSchema: schema})
-	}
-	history := r.cfg.Bus.History(trigger.Channel, 0)
-	if n := len(history); n > historyWindow {
-		history = history[n-historyWindow:]
-	}
-	for _, m := range history {
-		role := provider.User
-		if m.Author == e.m.ID {
-			role = provider.Assistant
-		}
-		text := m.Text
-		if role == provider.User && m.ID == trigger.ID {
-			text = stripMention(text, e.m.ID)
-		}
-		req.Messages = append(req.Messages, provider.Message{
-			Role:   role,
-			Blocks: []provider.Block{provider.Text{Value: text}},
-		})
-	}
-	return req
+	return r.cliTurn(ctx, e, trigger)
 }
 
 // teamLookup adapts the org registry for standards resolution; nil org
@@ -410,53 +258,6 @@ func sortStrings(s []string) {
 			s[j], s[j-1] = s[j-1], s[j]
 		}
 	}
-}
-
-// gitRunner implements the tools.GitRunner interface using the hermetic
-// git core. It uses the managed git shim for all operations.
-type gitRunner struct {
-	ws *workspace.Workspace
-}
-
-func newGitRunner(ws *workspace.Workspace) *gitRunner {
-	return &gitRunner{ws: ws}
-}
-
-// Commit stages all changes in the given working directory and creates
-// a commit with the provided message. Returns the new commit SHA.
-func (g *gitRunner) Commit(ctx context.Context, workdir, message, authorName, authorEmail string) (string, error) {
-	repo, err := gitcore.Open(workdir)
-	if err != nil {
-		return "", fmt.Errorf("git commit: open repo: %w", err)
-	}
-	// Stage all changes
-	if err := repo.Stage("."); err != nil {
-		return "", fmt.Errorf("git commit: stage: %w", err)
-	}
-	sha, err := repo.Commit(gitcore.CommitOptions{
-		Message: message,
-		Author:  authorName,
-		Email:   authorEmail,
-	})
-	if err != nil {
-		return "", fmt.Errorf("git commit: commit: %w", err)
-	}
-	return sha, nil
-}
-
-// Push pushes the given branch to origin with the provided auth.
-// The auth parameter is currently unused (local remotes only); in
-// production the runtime wires the gh auth token via the git core.
-func (g *gitRunner) Push(ctx context.Context, workdir, branch string, auth interface{}) error {
-	repo, err := gitcore.Open(workdir)
-	if err != nil {
-		return fmt.Errorf("git push: open repo: %w", err)
-	}
-	refspec := "refs/heads/" + branch + ":refs/heads/" + branch
-	if err := repo.Push(ctx, "", refspec, nil); err != nil {
-		return fmt.Errorf("git push: %w", err)
-	}
-	return nil
 }
 
 // Manifest returns the parsed manifest for id (false when not rostered).

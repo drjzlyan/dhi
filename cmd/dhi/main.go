@@ -19,9 +19,9 @@ import (
 	"charm.land/bubbletea/v2"
 
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
+	"github.com/drjzlyan/dhi/internal/agentkit/clirun"
 	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
 	agentkitOrg "github.com/drjzlyan/dhi/internal/agentkit/org"
-	"github.com/drjzlyan/dhi/internal/agentkit/provider"
 	agentkitRuntime "github.com/drjzlyan/dhi/internal/agentkit/runtime"
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
 	"github.com/drjzlyan/dhi/internal/boot"
@@ -105,12 +105,14 @@ func runTUI() {
 
 	var edOpts []editor.Option
 	var rgSearcher search.Searcher
+	var termEnv []string
 	if toolRoot != "" {
 		mgr := toolchain.New(toolRoot)
 		// Terminal sessions run with DHI's hermetic PATH. When the
 		// toolchain is absent the drawer REFUSES to open a session
 		// naming the fix — it never leaks the host PATH (ADR-0011).
-		edOpts = append(edOpts, editor.WithTermEnv(mgr.Env(nil)))
+		termEnv = mgr.Env(nil)
+		edOpts = append(edOpts, editor.WithTermEnv(termEnv))
 		if _, err := os.Stat(filepath.Join(toolRoot, "bin", "rg")); err == nil {
 			rgSearcher = search.Ripgrep{Bin: filepath.Join(toolRoot, "bin", "rg")}
 		}
@@ -143,7 +145,7 @@ func runTUI() {
 		// under .dhi/agents/. Guards carry the audited OS-sandbox
 		// adapter (nil here is impossible: the audit blocked first).
 		if messageBus != nil {
-			agentRT = newAgentRuntime(ws, messageBus, rgSearcher, decision.Sandbox)
+			agentRT = newAgentRuntime(ws, messageBus, decision.Sandbox, termEnv, taskStore)
 			if agentRT != nil {
 				edOpts = append(edOpts, editor.WithChat(agentRT))
 			}
@@ -348,7 +350,7 @@ func openBus(ws *workspace.Workspace) *bus.Bus {
 // newAgentRuntime wires the turn engine onto an existing bus; nil means
 // no crew (no roster, or a broken one). Org + layered coding standards
 // ride along when their sidecar files parse; broken ones degrade.
-func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, srch search.Searcher, sb sandbox.Sandbox) *agentkitRuntime.Runtime {
+func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cliEnv []string, taskStore *tasks.Store) *agentkitRuntime.Runtime {
 	roster, err := manifest.LoadDir(filepath.Join(ws.Root, workspace.DirAgents))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "dhi: agent roster:", err)
@@ -356,13 +358,6 @@ func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, srch search.Searcher, 
 	}
 	if len(roster) == 0 {
 		return nil
-	}
-	envVar := "ANTHROPIC_API_KEY"
-	for _, a := range roster {
-		if a.EnvVar != "" {
-			envVar = a.EnvVar
-			break
-		}
 	}
 	company, err := agentkitOrg.Load(ws.Root)
 	if err != nil {
@@ -372,8 +367,14 @@ func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, srch search.Searcher, 
 		WS:        ws,
 		Bus:       b,
 		Approvals: tools.NewApprovals(),
-		Searcher:  srch,
-		Provider:  provider.NewAnthropic("", os.Getenv(envVar)),
+		// Host agent CLIs (F-013/ADR-0012/0013): DHI ships no model
+		// engine of its own; every rostered agent thinks through one of
+		// these, resolved on the host PATH. Absent CLIs refuse roster
+		// agents that declare them, and doctor names the installation —
+		// never a fallback.
+		CLIs:      clirun.NewRegistry(exec.LookPath),
+		CLIEnv:    cliEnv,
+		Tasks:     taskStore,
 		Org:       company,
 		Standards: true,
 		Sandbox:   sb,

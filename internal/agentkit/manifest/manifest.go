@@ -1,8 +1,8 @@
 // Package manifest defines DHI's agent roster format: one TOML document
 // per agent under .dhi/agents/<id>.toml. Manifests declare identity,
 // model, system prompt, tool allowlist, an embedded sandbox policy
-// (validated through internal/sandbox), and the env var holding the
-// provider API key. Parsing is strict: unknown keys are errors so
+// (validated through internal/sandbox), and the host CLI runtime the
+// agent thinks through. Parsing is strict: unknown keys are errors so
 // hand-edited rosters fail loudly instead of silently misbehaving.
 package manifest
 
@@ -15,9 +15,11 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/BurntSushi/toml"
 
+	"github.com/drjzlyan/dhi/internal/agentkit/clirun"
 	"github.com/drjzlyan/dhi/internal/sandbox"
 )
 
@@ -26,7 +28,6 @@ const SchemaVersion = 1
 
 var (
 	idRe      = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]*$`)
-	envVarRe  = regexp.MustCompile(`^[A-Z_][A-Z0-9_]*$`)
 	mcpToolRe = regexp.MustCompile(`^mcp__[a-z0-9_]+__[a-z0-9_]+$`)
 )
 
@@ -58,7 +59,16 @@ type Agent struct {
 	Model  string   // provider model identifier
 	System string   // system prompt ("")
 	Tools  []string // allowlisted tool refs; empty allows none
-	EnvVar string   // env var holding the provider API key ("" = none)
+
+	// Runtime selects the host CLI the agent runs on (F-013, ADR-0012,
+	// ADR-0013): a registered registry name such as "claude". It is
+	// required — DHI ships no turn engine of its own any more, so a
+	// manifest without a registered runtime is invalid. Secrets reach
+	// the agent only through the adapter's declared env pass-through
+	// (env credentials are declared, never ambient).
+	Runtime string        // registered host CLI name; required
+	Timeout time.Duration // max wall time per run; 0 = no limit
+	Retries int           // retries on transient CLI failure; 0 = none
 
 	policy *sandbox.Policy // parsed from policy_json; nil if absent
 }
@@ -66,6 +76,10 @@ type Agent struct {
 // Policy returns the agent's sandbox policy, or nil when the manifest
 // declares none (the runtime then applies a deny-all default).
 func (a *Agent) Policy() *sandbox.Policy { return a.policy }
+
+// UsesCLIRuntime reports whether the agent runs on a host CLI rather
+// than the in-house engine.
+func (a *Agent) UsesCLIRuntime() bool { return clirun.IsCLIRuntime(a.Runtime) }
 
 // file is the on-disk TOML shape of one agent manifest.
 type file struct {
@@ -75,7 +89,9 @@ type file struct {
 	System    string   `toml:"system"`
 	Tools     []string `toml:"tools"`
 	PolicyRaw string   `toml:"policy_json"`
-	EnvVar    string   `toml:"env_var"`
+	Runtime   string   `toml:"runtime"`
+	Timeout   string   `toml:"timeout"`
+	Retries   int      `toml:"retries"`
 }
 
 // Parse decodes and strictly validates one agent manifest. The id comes
@@ -102,12 +118,13 @@ func Parse(id string, data []byte) (*Agent, error) {
 		return nil, fmt.Errorf("agentkit/manifest: %s: schema %d, want %d", id, f.Schema, SchemaVersion)
 	}
 	a := &Agent{
-		ID:     id,
-		Name:   strings.TrimSpace(f.Name),
-		Model:  strings.TrimSpace(f.Model),
-		System: f.System,
-		Tools:  f.Tools,
-		EnvVar: f.EnvVar,
+		ID:      id,
+		Name:    strings.TrimSpace(f.Name),
+		Model:   strings.TrimSpace(f.Model),
+		System:  f.System,
+		Tools:   f.Tools,
+		Runtime: strings.TrimSpace(strings.ToLower(f.Runtime)),
+		Retries: f.Retries,
 	}
 	if a.Name == "" {
 		return nil, fmt.Errorf("agentkit/manifest: %s: name is required", id)
@@ -135,10 +152,30 @@ func Parse(id string, data []byte) (*Agent, error) {
 		}
 		a.policy = p
 	}
-	if a.EnvVar != "" && !envVarRe.MatchString(a.EnvVar) {
-		return nil, fmt.Errorf("agentkit/manifest: %s: env_var %q is not a valid env var name", id, a.EnvVar)
+	if !clirun.ValidRuntimeStatic(a.Runtime) {
+		return nil, fmt.Errorf("agentkit/manifest: %s: runtime %q is not a registered host CLI (valid: %s)",
+			id, a.Runtime, clirunRuntimeList())
+	}
+	if f.Timeout != "" {
+		d, err := time.ParseDuration(f.Timeout)
+		if err != nil {
+			return nil, fmt.Errorf("agentkit/manifest: %s: timeout %q: %w", id, f.Timeout, err)
+		}
+		a.Timeout = d
+	}
+	if a.Retries < 0 {
+		return nil, fmt.Errorf("agentkit/manifest: %s: retries %d must not be negative", id, a.Retries)
 	}
 	return a, nil
+}
+
+// clirunRuntimeList renders the registered CLI names for error text.
+func clirunRuntimeList() string {
+	names := clirun.CLINames()
+	if len(names) == 0 {
+		return ""
+	}
+	return ", " + strings.Join(names, ", ")
 }
 
 // LoadDir loads every *.toml under dir as one agent, requiring each
@@ -186,7 +223,11 @@ func Marshal(a *Agent) ([]byte, error) {
 	f.Model = a.Model
 	f.System = a.System
 	f.Tools = append([]string(nil), a.Tools...)
-	f.EnvVar = a.EnvVar
+	f.Runtime = a.Runtime
+	f.Retries = a.Retries
+	if a.Timeout > 0 {
+		f.Timeout = a.Timeout.String()
+	}
 	if a.policy != nil {
 		raw, err := json.Marshal(a.policy)
 		if err != nil {
@@ -203,7 +244,8 @@ func Marshal(a *Agent) ([]byte, error) {
 		return nil, fmt.Errorf("agentkit/manifest: %s: marshal self-check: %w", a.ID, err)
 	}
 	if back.Name != a.Name || back.Model != a.Model || back.System != a.System ||
-		back.EnvVar != a.EnvVar || strings.Join(back.Tools, ",") != strings.Join(a.Tools, ",") {
+		strings.Join(back.Tools, ",") != strings.Join(a.Tools, ",") ||
+		back.Runtime != a.Runtime || back.Timeout != a.Timeout || back.Retries != a.Retries {
 		return nil, fmt.Errorf("agentkit/manifest: %s: marshal round-trip mismatch", a.ID)
 	}
 	return data.Bytes(), nil

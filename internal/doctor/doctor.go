@@ -22,6 +22,7 @@ import (
 
 	agentkitStandards "github.com/drjzlyan/dhi/internal/agentkit/standards"
 
+	"github.com/drjzlyan/dhi/internal/agentkit/clirun"
 	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
 	"github.com/drjzlyan/dhi/internal/agentkit/org"
 	"github.com/drjzlyan/dhi/internal/gitcore"
@@ -29,6 +30,9 @@ import (
 	"github.com/drjzlyan/dhi/internal/toolchain"
 	"github.com/drjzlyan/dhi/internal/workspace"
 )
+
+// lookPath resolves an executable on PATH; swappable in tests.
+var lookPath = exec.LookPath
 
 // Status is the outcome severity of one check.
 type Status string
@@ -62,6 +66,7 @@ func Run(toolRoot, wsRoot string) Report {
 	r.Checks = append(r.Checks, Config(wsRoot)...)
 	r.Checks = append(r.Checks, Agents(wsRoot)...)
 	r.Checks = append(r.Checks, Standards(wsRoot)...)
+	r.Checks = append(r.Checks, Runtimes()...)
 	r.Checks = append(r.Checks, Tasks(wsRoot)...)
 	r.Checks = append(r.Checks, Sessions(wsRoot)...)
 	r.Checks = append(r.Checks, GH(toolRoot)...)
@@ -255,9 +260,11 @@ func Config(wsRoot string) []Check {
 		Detail: "unknown keys in " + path + ": " + strings.Join(unknown, ", ")}}
 }
 
-// Agents validates the roster under .dhi/agents (F-007): every manifest
-// must parse, and each declared provider env var should be set (missing
-// keys warn — turns fail later otherwise).
+// Agents validates the roster under .dhi/agents: every manifest must
+// parse (F-007). Each agent's runtime CLI availability is probed by the
+// Runtimes suite; authentication is the CLI's own concern through its
+// declared pass-through (ADR-0012 §4), so there is no engine key check
+// any more (ADR-0013 §6).
 func Agents(wsRoot string) []Check {
 	if wsRoot == "" {
 		return nil
@@ -269,15 +276,45 @@ func Agents(wsRoot string) []Check {
 	if len(roster) == 0 {
 		return nil // no crew is a valid configuration
 	}
-	checks := []Check{{Name: "agents/roster", Status: OK,
+	return []Check{{Name: "agents/roster", Status: OK,
 		Detail: fmt.Sprintf("%d agent(s): %s", len(roster), joinIDs(roster))}}
-	for _, a := range roster {
-		if a.EnvVar == "" {
+}
+
+// Runtimes probes the registered host agent CLIs (F-013, ADR-0012):
+// a missing binary is a FAIL (DHI never installs host CLIs — install
+// it or roster the agent to another runtime), a present-but-untested
+// version is a FAIL (adapters pin exact versions; re-verify and bump
+// the pin, or pin the CLI), and unset declared pass-through vars warn
+// so auth failures surface before a run, not mid-run.
+func Runtimes() []Check {
+	reg := clirun.NewRegistry(lookPath)
+	if len(reg.Names()) == 0 {
+		return nil
+	}
+	var checks []Check
+	detected := reg.Detect()
+	for _, c := range reg.All() {
+		v := detected[c.Name]
+		if v == "" {
+			checks = append(checks, Check{Name: "runtime/" + c.Name, Status: Fail,
+				Detail: c.Bin + " not found on PATH (DHI never installs host CLIs)"})
 			continue
 		}
-		if os.Getenv(a.EnvVar) == "" {
-			checks = append(checks, Check{Name: "agents/" + a.ID, Status: Warn,
-				Detail: fmt.Sprintf("%s not set; %s cannot reach its provider", a.EnvVar, a.ID)})
+		if v != c.Tested {
+			checks = append(checks, Check{Name: "runtime/" + c.Name, Status: Fail,
+				Detail: fmt.Sprintf("%s %s untested (adapter pinned to %s); re-verify and bump the pin, or pin the CLI", c.Bin, v, c.Tested)})
+			continue
+		}
+		checks = append(checks, Check{Name: "runtime/" + c.Name, Status: OK,
+			Detail: fmt.Sprintf("%s %s (adapter pinned)", c.Bin, v)})
+		for _, k := range c.EnvPass {
+			if k == "HOME" {
+				continue // always set; not worth a row
+			}
+			if os.Getenv(k) == "" {
+				checks = append(checks, Check{Name: "runtime/" + c.Name + "/" + strings.ToLower(k), Status: Warn,
+					Detail: fmt.Sprintf("declared pass-through %s unset; %s may fail to authenticate at run time", k, c.Bin)})
+			}
 		}
 	}
 	return checks

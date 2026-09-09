@@ -17,14 +17,16 @@ import (
 
 const aliceDoc = `schema = 1
 name = "Alice"
-model = "mock-1"
+model = "m"
 tools = ["read", "list"]
+runtime = "claude"
 `
 
 const bobDoc = `schema = 1
 name = "Bob"
-model = "mock-1"
+model = "m"
 tools = ["read"]
+runtime = "claude"
 `
 
 // fixturePack writes a valid pack into a temp dir and returns its root.
@@ -106,7 +108,7 @@ func TestConflictAbortsWithoutSideEffects(t *testing.T) {
 	os.MkdirAll(dir, 0o755)
 
 	// A hand-written alice exists.
-	hand := &manifest.Agent{ID: "alice", Name: "Handmade", Model: "m"}
+	hand := &manifest.Agent{ID: "alice", Name: "Handmade", Model: "m", Runtime: "claude"}
 	if err := manifest.WriteFile(dir, hand); err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +136,7 @@ func TestUninstallRemovesExactlyRecordedAgents(t *testing.T) {
 	}
 	// A manual agent that must survive uninstall.
 	dir := filepath.Join(ws.Root, workspace.DirAgents)
-	manual := &manifest.Agent{ID: "zoe", Name: "Zoe", Model: "m"}
+	manual := &manifest.Agent{ID: "zoe", Name: "Zoe", Model: "m", Runtime: "claude"}
 	manifest.WriteFile(dir, manual)
 
 	if err := in.Uninstall("acme"); err != nil {
