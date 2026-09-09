@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -18,19 +19,67 @@ import (
 
 // cliTurn executes one full turn of a CLI-runtime agent (F-013,
 // ADR-0012): flat prompt → sandbox-wrapped headless spawn in the task
-// worktree → streamed transcript (posted to the trigger thread) →
-// finalize → run record on the task card + final reply in the thread.
-// The manifest's `runtime` key is the exec authorization; the OS
-// sandbox — from the same Guard seam every exec uses — is the boundary.
+// worktree → streamed transcript (posted to the trigger thread + one
+// persisted JSONL per attempt) → finalize → run record on the task card
+// + final reply in the thread. A failed or timed-out attempt retries per
+// the manifest's retries budget (step 7), backing off between spawns.
+// The manifest's `runtime` key is the exec authorization; the OS sandbox
+// — from the same Guard seam every exec uses — is the boundary.
 func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message) error {
 	prompt, system := r.cliPrompt(e, trigger)
 	workdir := r.cliWorkdir(trigger)
-	started := time.Now().UTC()
 
 	if e.m.Timeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, e.m.Timeout)
 		defer cancel()
+	}
+
+	var lastErr error
+	for attempt := 0; ; attempt++ {
+		run := r.cliSpawnOnce(ctx, e, trigger, prompt, system, workdir, attempt)
+		r.recordRun(trigger, run)
+
+		if run.Status == tasks.RunOK {
+			if run.Summary != "" {
+				_, _ = r.cfg.Bus.Post(bus.Message{
+					Channel: trigger.Channel, Thread: trigger.Thread,
+					Author: e.m.ID, Text: run.Summary,
+				})
+			}
+			return nil
+		}
+		lastErr = fmt.Errorf("runtime: %s: run %s: %s", e.m.ID, run.ID, run.Error)
+		if attempt >= e.m.Retries {
+			return lastErr
+		}
+		_, _ = r.cfg.Bus.Post(bus.Message{
+			Channel: trigger.Channel, Thread: trigger.Thread,
+			Author: e.m.ID,
+			Text:   fmt.Sprintf("retrying (attempt %d/%d) in %s…", attempt+1, e.m.Retries, cliRetryBackoff),
+		})
+		select {
+		case <-time.After(cliRetryBackoff):
+		case <-ctx.Done():
+			return fmt.Errorf("runtime: %s: %w", e.m.ID, ctx.Err())
+		}
+	}
+}
+
+// cliRetryBackoff is the wait between retry spawns (F-013 step 7 says
+// 30s in production; tests compress it to milliseconds via this var).
+var cliRetryBackoff = 30 * time.Second
+
+// cliSpawnOnce runs a single attempt: spawn the wrapped CLI, stream the
+// transcript into the trigger thread, persist the event JSONL, finalize,
+// and return the run record.
+func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Message, prompt, system, workdir string, attempt int) tasks.Run {
+	started := time.Now().UTC()
+	run := tasks.Run{
+		ID: runID(started), Agent: e.m.ID,
+		Runtime: e.m.Runtime, Model: e.m.Model, Attempt: attempt,
+		Started: started, Finished: time.Now().UTC(),
+		TokensIn: -1, TokensOut: -1,
 	}
 
 	argv := e.cli.BuildArgs(clirun.RunInput{
@@ -39,7 +88,9 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message) er
 	})
 	wrapped, err := e.guard.Sandbox.Wrap(argv)
 	if err != nil {
-		return fmt.Errorf("runtime: %s: wrap: %w", e.m.ID, err)
+		run.Status = tasks.RunError
+		run.Error = fmt.Sprintf("wrap: %v", err)
+		return run
 	}
 
 	cmd := exec.CommandContext(ctx, e.cliPath, wrapped...)
@@ -47,28 +98,32 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message) er
 	cmd.Env = r.cliEnv(e.cli)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		return fmt.Errorf("runtime: %s: stdout: %w", e.m.ID, err)
+		run.Status = tasks.RunError
+		run.Error = fmt.Sprintf("stdout: %v", err)
+		return run
 	}
 	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("runtime: %s: spawn %s: %w", e.m.ID, e.cli.Bin, err)
+		run.Status = tasks.RunError
+		run.Error = fmt.Sprintf("spawn %s: %v", e.cli.Bin, err)
+		return run
 	}
 
 	// Stream the transcript into the trigger's thread as it happens, so
-	// long CLI runs stay visible; the terminal line is kept for Finalize.
+	// long CLI runs stay visible; the terminal line is kept for
+	// Finalize. Events are also persisted (F-013 step 4) for the P2
+	// run-replay surface.
 	var final string
+	var events []clirun.StreamEvent
 	for ev := range e.cli.ParseStream(stdout) {
+		events = append(events, ev)
 		r.cliEvent(e.m.ID, trigger, ev)
 		if ev.Kind == clirun.EventFinal {
 			final = ev.Detail
 		}
 	}
 	waitErr := cmd.Wait()
+	run.Finished = time.Now().UTC()
 
-	run := tasks.Run{
-		ID: runID(started), Agent: e.m.ID,
-		Started: started, Finished: time.Now().UTC(),
-		TokensIn: -1, TokensOut: -1,
-	}
 	switch {
 	case ctx.Err() != nil:
 		// The turn's context fired (manifest timeout or caller cancel);
@@ -98,19 +153,41 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message) er
 		run.Error = "CLI stream ended without a final event"
 	}
 
-	// Success → the final summary is the reply in the thread, mirroring
-	// the in-house engine's reply semantics.
-	if run.Status == tasks.RunOK && run.Summary != "" {
-		_, _ = r.cfg.Bus.Post(bus.Message{
-			Channel: trigger.Channel, Thread: trigger.Thread,
-			Author: e.m.ID, Text: run.Summary,
-		})
+	run.Transcript = r.saveTranscript(events, run)
+	return run
+}
+
+// saveTranscript persists one attempt's events as JSONL under
+// .dhi/agents/<id>/runs/<run-id>-<attempt>.jsonl (F-013 step 4). It is
+// best-effort: the thread already carries the live stream, so a failure
+// here only loses the durable replay file.
+func (r *Runtime) saveTranscript(events []clirun.StreamEvent, run tasks.Run) string {
+	if len(events) == 0 {
+		return ""
 	}
-	r.recordRun(trigger, run)
-	if run.Status != tasks.RunOK {
-		return fmt.Errorf("runtime: %s: run %s: %s", e.m.ID, run.ID, run.Error)
+	dir := filepath.Join(r.cfg.WS.Root, ".dhi", "agents", run.Agent, "runs")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return ""
 	}
-	return nil
+	p := filepath.Join(dir, fmt.Sprintf("%s-%d.jsonl", run.ID, run.Attempt))
+	f, err := os.Create(p)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	enc := json.NewEncoder(f)
+	for _, ev := range events {
+		if ev.Detail == "" {
+			continue
+		}
+		if err := enc.Encode(struct {
+			Kind   string `json:"kind"`
+			Detail string `json:"detail"`
+		}{ev.Kind, ev.Detail}); err != nil {
+			return ""
+		}
+	}
+	return p
 }
 
 // cliPrompt flattens the trigger + recent history into a headless CLI

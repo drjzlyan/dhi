@@ -361,7 +361,7 @@ repo paths / MCP issue trackers.
 
 ## M8 — Roster any agent *(Multica-inspired)*
 
-Status: in progress (P1 wave-1 landed 2026-09-09; waves 2–3 next).
+Status: in progress (P1 wave-2 landed 2026-09-09; wave 3 next).
 Design decisions: ADR-0012 (host agent CLIs — user-owned, declared
 env, OS sandbox is the boundary, runs not turns; the one named
 exception to ADR-0005's hermetic rule), ADR-0013 (in-house engine
@@ -381,8 +381,11 @@ toolchain, no server/daemon.
       Wave 1 (LANDED): claude adapter — in-house engine removed by
       ADR-0013, `runtime=""|"anthropic"` gone, tests script fixture
       CLI stubs, `.dhi/agents/dev.toml` on claude.
-      Waves 2–3 (pending): codex, opencode · cursor-agent, copilot,
-      gemini
+      Wave 2 (LANDED 2026-09-09): codex (0.147.0) + opencode (1.18.25)
+      adapters live-verified; executor gains retry loop (30s backoff,
+      ms-compressed in tests via injected clock) + persisted
+      `runs/<run>-<attempt>.jsonl` transcripts (F-013 step 4).
+      Wave 3 (pending): cursor-agent, copilot, gemini
 - [ ] P2 — run observability (F-014): uniform `cli:<name>` run schema,
       per-agent/per-task cost rollups, INSPECT run-replay pane,
       task-detail run suffix, doctor `runs/store`

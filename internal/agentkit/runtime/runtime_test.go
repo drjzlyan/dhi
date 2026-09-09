@@ -354,6 +354,190 @@ func mustPost(t *testing.T, h *harness, m bus.Message) bus.Message {
 
 func contains(s, sub string) bool { return strings.Contains(s, sub) }
 
+// flakeStub is a claude fixture that fails (is_error final) until the
+// N-th spawn, then succeeds — count lives in $DUMPDIR/attempts so each
+// spawn (separate process) sees the previous attempt.
+const flakeStub = `#!/bin/sh
+N=0
+if [ -f "$DUMPDIR/attempts" ]; then N=$(cat "$DUMPDIR/attempts" 2>/dev/null); fi
+N=$((N+1))
+printf '%s\n' "$N" > "$DUMPDIR/attempts"
+if [ "$N" -lt 2 ]; then
+  echo '{"type":"system","subtype":"init"}'
+  echo '{"type":"result","subtype":"error","is_error":true,"result":"transient failure"}'
+  exit 1
+fi
+echo '{"type":"system","subtype":"init"}'
+echo '{"type":"result","subtype":"success","is_error":false,"result":"Recovered on retry.","total_cost_usd":0,"usage":{"input_tokens":3,"output_tokens":3}}'
+exit 0
+`
+
+// transcriptsUnder returns the persisted run JSONL files for an agent.
+func transcriptsUnder(t *testing.T, wsRoot, agent string) []string {
+	t.Helper()
+	dir := filepath.Join(wsRoot, ".dhi", "agents", agent, "runs")
+	ents, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, e := range ents {
+		if e.Type().IsRegular() && strings.HasSuffix(e.Name(), ".jsonl") {
+			out = append(out, filepath.Join(dir, e.Name()))
+		}
+	}
+	sortStrings(out)
+	return out
+}
+
+func TestCLIRetriesOnFailure(t *testing.T) {
+	prev := cliRetryBackoff
+	cliRetryBackoff = time.Millisecond
+	defer func() { cliRetryBackoff = prev }()
+
+	doc := baseDoc() + "retries = 1\n"
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "api"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "api", "main.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := workspace.Create(root, "api"); err != nil {
+		t.Fatal(err)
+	}
+	ws, err := workspace.Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := bus.Open(ws)
+	ap := tools.NewApprovals()
+	binDir, dumpDir, cliEnv := stubEnv(t, flakeStub)
+	m, err := manifest.Parse("scout", []byte(doc))
+	if err != nil {
+		t.Fatalf("manifest: %v", err)
+	}
+	rt, err := New(Config{
+		WS: ws, Bus: b, Approvals: ap,
+		Sandbox: sandbox.Noop{},
+		CLIs:    stubRegistry(binDir), CLIEnv: cliEnv,
+	}, []*manifest.Agent{m})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	trig, _ := b.Post(bus.Message{Channel: "#general", Author: bus.Human, Text: "@scout go"})
+	if err := rt.Turn(context.Background(), "scout", trig); err != nil {
+		t.Fatalf("turn: %v", err)
+	}
+
+	// F-013 step 7: a retry notice, then the recovered reply; two spawns
+	// (attempt 0 failed, attempt 1 succeeded) with two persisted
+	// transcripts.
+	hist := b.History("#general", 0)
+	if hasPrefix(hist, "retrying (attempt 1/1)") == nil {
+		t.Fatalf("no retry notice in history: %+v", hist)
+	}
+	if has(hist, "Recovered on retry.") == nil {
+		t.Fatalf("no recovered reply in history: %+v", hist)
+	}
+	if got := readIntFile(t, filepath.Join(dumpDir, "attempts")); got != 2 {
+		t.Fatalf("spawns = %d, want 2", got)
+	}
+	if got := transcriptsUnder(t, ws.Root, "scout"); len(got) != 2 {
+		t.Fatalf("transcripts = %v, want 2 attempts persisted", got)
+	}
+}
+
+func TestCLINoRetryWhenExhausted(t *testing.T) {
+	prev := cliRetryBackoff
+	cliRetryBackoff = time.Millisecond
+	defer func() { cliRetryBackoff = prev }()
+
+	// retries = 1 but the fixture fails every spawn.
+	const alwaysFail = `#!/bin/sh
+echo '{"type":"result","subtype":"error","is_error":true,"result":"still broken"}'
+exit 1
+`
+	binDir, _, cliEnv := stubEnv(t, alwaysFail)
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "api"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := workspace.Create(root, "api"); err != nil {
+		t.Fatal(err)
+	}
+	ws, err := workspace.Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := bus.Open(ws)
+	m, err := manifest.Parse("scout", []byte(baseDoc()+"retries = 1\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rt, err := New(Config{WS: ws, Bus: b, Approvals: tools.NewApprovals(),
+		Sandbox: sandbox.Noop{}, CLIs: stubRegistry(binDir), CLIEnv: cliEnv},
+		[]*manifest.Agent{m})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trig, _ := b.Post(bus.Message{Channel: "#general", Author: bus.Human, Text: "@scout go"})
+	err = rt.Turn(context.Background(), "scout", trig)
+	if err == nil || !contains(err.Error(), "run ended with") {
+		t.Fatalf("exhausted retries must fail the turn, got: %v", err)
+	}
+	// A failed final attempt still persists its transcript.
+	if got := transcriptsUnder(t, ws.Root, "scout"); len(got) != 2 {
+		t.Fatalf("transcripts = %v, want 2", got)
+	}
+	// No success reply was posted for the failed turn — only the retry
+	// notice from the exhausted budget.
+	hist := b.History("#general", 0)
+	if n := len(hist); n > 2 {
+		t.Fatalf("history = %d messages, want trigger + retry notice only: %+v", n, hist)
+	}
+	if has(hist, "Recovered on retry.") != nil {
+		t.Fatal("a success reply was posted despite the failed turn")
+	}
+}
+
+func has(msgs []bus.Message, text string) *bus.Message {
+	for i := range msgs {
+		if msgs[i].Text == text {
+			return &msgs[i]
+		}
+	}
+	return nil
+}
+
+func hasPrefix(msgs []bus.Message, prefix string) *bus.Message {
+	for i := range msgs {
+		if strings.HasPrefix(msgs[i].Text, prefix) {
+			return &msgs[i]
+		}
+	}
+	return nil
+}
+
+func readIntFile(t *testing.T, path string) int {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0
+		}
+		t.Fatal(err)
+	}
+	n := 0
+	for _, r := range string(data) {
+		if r >= '0' && r <= '9' {
+			n = n*10 + int(r-'0')
+		}
+	}
+	return n
+}
+
 // recordingSandbox observes Wrap calls; it never rewrites argv.
 type recordingSandbox struct{ wraps int }
 

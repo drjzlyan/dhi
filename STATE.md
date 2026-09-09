@@ -1,24 +1,58 @@
 # STATE — current position
 
-Updated: 2026-09-09 (session 11: M8 P1 wave 1 landed — ADR-0013,
-in-house engine removed, claude runtime only)
+Updated: 2026-09-09 (session 12: M8 P1 wave 2 landed — codex +
+opencode live-verified, executor retry + transcript persistence)
 
 ## Where we are
 
-**M8 P1 wave 1 is functionally complete: `make verify` green, no
-net-new failures.** ADR-0013 shipped with F-013: `internal/agentkit/provider`
-is deleted, the native tool registry machinery is gone, and the
-runtime is a thin CLI dispatcher. `runtime` is now required + CLI-only
-on every manifest (`""`/`"anthropic"` rejected, unknown → error naming
-the set). All rostered agents run through registered host CLIs —
-today only `claude` (2.1.177) is registered. Approvals queue/panel
-retained (nothing enqueues yet; UI + `Approvals.Ask` are the seams for
-the future CLI permission-prompt bridge). Doctor drops `agents/api_key`,
-tracks `runtime/<cli>` + `runtime/<cli>/<env_key>` rows. Tests script
-fixture CLI stubs on a temp PATH (`internal/testutil/stubcli`) — the
-shape that replaced `provider.Mock`. `.dhi/agents/dev.toml` migrated
-to `runtime = "claude"`. Next: M8 P1 waves 2–3 (codex, opencode;
-cursor-agent, copilot, gemini), then M8 P2 (F-014 run observability).
+**M8 P1 wave 2 is functionally complete: `make verify` green.** The
+registry now holds three adapters — claude (2.1.177), codex (0.147.0),
+opencode (1.18.25) — the last two live-verified this session (real
+JSONL streams captured, fixtures mirror them exactly). The executor
+gained F-013 step 7's retry loop (`retries` budget, 30s backoff
+compressed to ms in tests via the `cliRetryBackoff` package var) and
+step 4's durable transcripts (rendered event JSONL persisted to
+`.dhi/agents/<id>/runs/<run-id>-<attempt>.jsonl`; `Run.Transcript`
+points at it). `tasks.Run` grew `runtime`, `model`, `attempt`,
+`transcript`. `TestRegistryBasics` now asserts the 3-name registry;
+`manifest_test`'s "unknown runtime" fixture uses `nope` (its former
+`codex` value became valid). Additionally removed the stray local
+`sortStrings` test duplicate. Next: M8 P1 wave 3 (cursor-agent,
+copilot, gemini — all fixture-first, none installed here), then M8 P2
+(F-014 run observability).
+
+## Session 12 gotchas (wave 2)
+
+1. The `CLI` adapter is a struct of function fields (claude.go), not an
+   interface — new adapters like codex.go must follow the struct shape
+   exactly (`ParseStream func(io.Reader) <-chan StreamEvent`, `Finalize
+   func(string) (string, Usage, error)`), and register in `allAdapters()`
+   (declared once, in claude.go).
+2. codex never puts the final-text and usage on one line:
+   `turn.completed` has usage but no text, the last assistant reply is a
+   separate `agent_message`. Adapters must stitch the summary onto the
+   terminal event themselves (a normalized payload with `last_message`)
+   so `Finalize` gets both (same for opencode's stop `step_finish`).
+3. codex `item.started` AND `item.completed` both carry the same
+   `command_execution` — emitting both would double the transcript
+   rows, so the codex parser shows commands on `started` and only
+   surfaces failures on `completed`.
+4. opencode emits `tool_use` (not `tool`): `part.type == "tool"`,
+   fields `part.tool`, `part.state.metadata.exit`. exit != 0 or
+   status error ⇒ EventError.
+5. codex reports no cost (HasCost=false); opencode reports cost only
+   when the provider emits it (0 when unconfigured) → HasCost = cost > 0.
+6. Retry state lives in a package var `cliRetryBackoff` (default 30s);
+   runtime tests set it to 1ms + restore. The retry notice posted to the
+   thread is prefix-matched in tests, not equality-matched (it embeds
+   the backoff duration).
+7. `rt.Handle` dispatches async goroutines; `rt.Turn` is the synchronous
+   error-returning path — retry tests assert transcript files/history
+   after `Turn` returns, not via Handle.
+8. The "unknown runtime" manifest-test fixture previously used
+   `runtime = "codex"` as its invalid value — every adapter addition
+   turns a former negative fixture valid. Grep for the CLINames when
+   adding adapters.
 
 ## Session 11 gotchas (engine removal)
 
@@ -131,15 +165,13 @@ cursor-agent, copilot, gemini), then M8 P2 (F-014 run observability).
 
 ## Next up
 
-1. **P1 wave 1 (next session):** `internal/agentkit/clirun` registry
-   + `CLI` shape + claude adapter + fixture harness (scripted stub
-   CLIs, canned stream-json); manifest `runtime`/`timeout`/`retries`
-   keys; `[[run]]` record on task cards; doctor `runtime/<cli>` rows.
-2. P1 wave 1b: sandbox-wrapped spawn + worktree cwd + transcript
-   persistence + thread streaming + Turn branch.
-3. P1 wave 2: codex + opencode adapters + retry/timeout policy.
-4. P1 wave 3: cursor-agent, copilot, gemini + reviewer handoff.
-5. P2 → P3 → P4 per spec.
+1. **P1 wave 3 (next):** cursor-agent, copilot, gemini adapters —
+   fixture-first per F-013, with the live-verify checklist recorded in
+   each adapter file before the doctor row may report OK (none are
+   installed on this machine).
+2. P2 (F-014 run observability): rollups, INSPECT replay pane, task
+   run suffix, doctor `runs/store`.
+3. P3 (F-015 autopilots) then P4 (F-016 inbox) per spec.
 
 ## Open questions for user
 

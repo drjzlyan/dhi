@@ -1,6 +1,6 @@
 # F-013: CLI runtimes — roster the agent CLIs you already run
 
-Status: in progress (M8 P1) · Milestone: M8 · Closes: ADR-0012
+Status: in progress (M8 P1 · waves 2–3) · Milestone: M8 · Closes: ADR-0012
 Inspired by: Multica's daemon-runtimes model — an agent is a teammate
 who works on a runtime you control; Multica drives 26 host agent CLIs
 and DHI starts with six of the same, through DHI's own task/worktree/
@@ -46,17 +46,20 @@ codex/opencode/cursor-agent/copilot/gemini.
     [--model M] --permission-mode bypassPermissions --max-turns 50
     --add-dir <worktree>`; terminal `result` event carries
     `total_cost_usd` + `usage` (in/out/cache tokens).
-  - `codex` (codex-cli 0.147.0):
-    `codex exec --json -C <worktree> [-m M]
+  - `codex` (codex-cli 0.147.0, live-verified 2026-09-09):
+    `codex exec --json --skip-git-repo-check -C <worktree> [-m M]
     --sandbox danger-full-access --dangerously-bypass-approvals-and-
-    sandbox <prompt>`; JSONL events (`turn_start`, item started/
-    completed with `command_execution`/`file_change`/`agent_message`,
-    `turn_completed` carrying usage). The bypass flag is sanctioned
-    here because the OS sandbox wraps the process (ADR-0012 §3).
-  - `opencode` (1.18.25):
-    `opencode run --format json --dir <worktree>
-    [--model provider/model] --title <task-slug> <prompt>`; raw JSON
-    event stream, terminal step-finish carries tokens/cost.
+    sandbox <prompt>`; JSONL events (`thread.started`, `turn.started`,
+    item `started`/`completed` with `command_execution`/`file_change`/
+    `agent_message`, `turn.completed` carrying usage). The bypass flag
+    is sanctioned here because the OS sandbox wraps the process
+    (ADR-0012 §3). codex reports no US-dollar cost (HasCost=false);
+    only stdout is parsed (stderr carries models-cache noise).
+  - `opencode` (1.18.25, live-verified 2026-09-09):
+    `opencode run --format json --dir <worktree> --auto
+    [--model provider/model] [--title <task-slug>] <prompt>`; JSONL
+    of `step_start`/`tool_use` (state.status, metadata.exit)/`text`/
+    `step_finish` (tokens + cost); the stop step_finish is terminal.
   - Wave 3 (cursor-agent, copilot, gemini): documented headless mode
     per CLI; NOT installed on the dev machine at spec time, so each
     adapter ships with its fixture contract first and a live-verify

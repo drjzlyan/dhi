@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -257,4 +258,28 @@ func probeVersion(ctx context.Context, path, flag string) (string, error) {
 		return "", fmt.Errorf("clirun: version probe: %w", err)
 	}
 	return strings.TrimSpace(string(out)), nil
+}
+
+// firstVersionToken scans a `--version` banner for the first
+// version-shaped token ("2.1.177 (Claude Code)", "codex-cli 0.147.0",
+// "v1.2.3"): leading "v" and trailing commas tolerated.
+func firstVersionToken(out string) string {
+	for _, f := range strings.Fields(out) {
+		f = strings.TrimPrefix(f, "v")
+		f = strings.TrimSuffix(f, ",")
+		if isVersionLike(f) {
+			return f
+		}
+	}
+	return ""
+}
+
+// safeTitle renders a "task slug" for CLIs that want a session title on
+// the command line (opencode --title): the workdir basename when one is
+// set, else a generic label — never the full prompt.
+func safeTitle(workdir, fallback string) string {
+	if workdir != "" {
+		return "dhi-" + strings.TrimPrefix(filepath.Base(workdir), ".")
+	}
+	return fallback
 }

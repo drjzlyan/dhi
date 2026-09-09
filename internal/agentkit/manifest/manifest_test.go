@@ -133,7 +133,7 @@ func TestParseErrors(t *testing.T) {
 		{"empty tool", "a", "schema = 1\nname = \"n\"\nmodel = \"m\"\ntools = [\" \"]\n", "unknown tool"},
 		{"bad policy effect", "a", "schema = 1\nname = \"n\"\nmodel = \"m\"\npolicy_json = \"{\\\"rules\\\":[{\\\"op\\\":\\\"read\\\",\\\"effect\\\":\\\"maybe\\\"}]}\"\n", "policy_json"},
 		{"policy not json", "a", "schema = 1\nname = \"n\"\nmodel = \"m\"\npolicy_json = \"{\"\n", "policy_json"},
-		{"unknown runtime", "a", "schema = 1\nname = \"n\"\nmodel = \"m\"\nruntime = \"codex\"\n", "runtime"},
+		{"unknown runtime", "a", "schema = 1\nname = \"n\"\nmodel = \"m\"\nruntime = \"nope\"\n", "runtime"},
 		{"bad timeout", "a", "schema = 1\nname = \"n\"\nmodel = \"m\"\nruntime = \"claude\"\ntimeout = \"soon\"\n", "timeout"},
 		{"negative retries", "a", "schema = 1\nname = \"n\"\nmodel = \"m\"\nruntime = \"claude\"\nretries = -1\n", "retries"},
 	}
