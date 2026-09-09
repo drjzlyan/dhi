@@ -1,6 +1,6 @@
 # F-015: Autopilots — scheduled agent work, in DHI flavor
 
-Status: in progress (M8 P3) · Milestone: M8 · Depends on: F-013
+Status: implemented (M8 P3, 2026-09-09) · Milestone: M8 · Depends on: F-013
 Inspired by: Multica's Autopilots ("run standups, audits, and reports
 on a cron — nobody to remind").
 

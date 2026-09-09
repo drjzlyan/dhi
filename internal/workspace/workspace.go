@@ -30,14 +30,15 @@ const SchemaVersion = 1
 
 // Reserved paths inside a workspace root.
 const (
-	DHIDir       = ".dhi"
-	ConfigFile   = ".dhi/workspace.toml"
-	DirAgents    = ".dhi/agents"
-	DirMemory    = ".dhi/memory"
-	DirKnowledge = ".dhi/knowledge"
-	DirChannels  = ".dhi/channels"
-	DirTasks     = ".dhi/tasks"
-	DirSessions  = ".dhi/sessions"
+	DHIDir        = ".dhi"
+	ConfigFile    = ".dhi/workspace.toml"
+	DirAgents     = ".dhi/agents"
+	DirMemory     = ".dhi/memory"
+	DirKnowledge  = ".dhi/knowledge"
+	DirChannels   = ".dhi/channels"
+	DirTasks      = ".dhi/tasks"
+	DirSessions   = ".dhi/sessions"
+	DirAutopilots = ".dhi/autopilots"
 )
 
 // Member is one repo registered in the workspace.
@@ -75,7 +76,7 @@ func Create(root string, names ...string) error {
 	if _, err := os.Stat(cfgPath); err == nil {
 		return fmt.Errorf("workspace: %s already exists", cfgPath)
 	}
-	for _, dir := range []string{DirAgents, DirMemory, DirKnowledge, DirChannels, DirTasks, DirSessions} {
+	for _, dir := range []string{DirAgents, DirMemory, DirKnowledge, DirChannels, DirTasks, DirSessions, DirAutopilots} {
 		if err := os.MkdirAll(filepath.Join(root, dir), 0o755); err != nil {
 			return fmt.Errorf("workspace: reserve %s: %w", dir, err)
 		}

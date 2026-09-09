@@ -5,7 +5,7 @@
   CHANNELS          0   │ ────────────────────────────────────────────────────                             │
   TASKS             1   │ ▍ alice — fix-login (backlog)                                                    │
 ▌ INSPECT           1   │ model mock-1  tools: read                                                        │
-                        │ no teams                                                                         │
+  AUTOPILOTS        0   │ no teams                                                                         │
                         │                                                                                  │
                         │ recent activity                                                                  │
                         │ (none captured)                                                                  │

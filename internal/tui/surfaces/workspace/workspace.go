@@ -1,9 +1,7 @@
 // Package workspace is DHI's landing view: the company of agents.
-// Four sections — members, org, packs, standards — switched with [ ];
-// each carries its own cursor and contextual keymap. P1 shipped member
-// management; P2c adds live org/crew editing, marketplace pack install,
-// and layered coding-standards editors. Channels/tasks/inspection land
-// in P3–P5 and render as dim roadmap rows until then.
+// Eight sections — members, org, packs, standards, channels, tasks,
+// inspect, autopilots — switched with [ ]; each carries its own cursor
+// and contextual keymap.
 package workspace
 
 import (
@@ -21,6 +19,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/pack"
 	profiface "github.com/drjzlyan/dhi/internal/agentkit/profile"
 	"github.com/drjzlyan/dhi/internal/agentkit/standards"
+	"github.com/drjzlyan/dhi/internal/autopilot"
 	"github.com/drjzlyan/dhi/internal/gitcore"
 	"github.com/drjzlyan/dhi/internal/review"
 	"github.com/drjzlyan/dhi/internal/tasks"
@@ -46,6 +45,7 @@ const (
 	secChannels
 	secTasks
 	secInspect
+	secAutopilots
 	secCount
 )
 
@@ -57,14 +57,18 @@ func (s sectionID) label() string {
 		return "ORG"
 	case secPacks:
 		return "PACKS"
+	case secStandards:
+		return "STANDARDS"
 	case secChannels:
 		return "CHANNELS"
 	case secTasks:
 		return "TASKS"
 	case secInspect:
 		return "INSPECT"
+	case secAutopilots:
+		return "AUTOPILOTS"
 	default:
-		return "STANDARDS"
+		return "MEMBERS"
 	}
 }
 
@@ -89,6 +93,13 @@ type Model struct {
 	taskStore *tasks.Store
 	roster    profiface.Roster
 	reviewSvc *review.Service
+
+	autopilots *autopilot.Store // nil = store unavailable (not a workspace)
+	bus        *bus.Bus
+	rt         turnHandler
+	now        func() time.Time
+	armSeq     uint64 // autopilot tick-chain guard: exactly one in flight
+	cancelAuto func()
 
 	inspectOpen bool
 	replay      *runReplay // non-nil = run-replay pane open (F-014)
@@ -159,6 +170,12 @@ func New(version string, ws *workspace.Workspace, d Deps) *Model {
 		m.taskStore = d.Tasks
 		m.roster = d.Roster
 		m.reviewSvc = d.ReviewSvc
+		m.bus = d.Bus
+		m.rt = d.Runtime
+		m.now = time.Now
+		if as, err := autopilot.Open(ws); err == nil {
+			m.autopilots = as
+		}
 		if d.Bus != nil {
 			m.pane = newChatPane(d.Bus, d.Runtime, m.org)
 		}
@@ -195,7 +212,63 @@ func (m *Model) Init() tea.Cmd {
 		m.pane.resubscribe()
 		cmds = append(cmds, m.listenPane())
 	}
+	if m.autopilots != nil {
+		ach, acancel := m.autopilots.Subscribe()
+		m.cancelAuto = acancel
+		go func() {
+			for range ach {
+				m.send(wsEvent{kind: evPing})
+			}
+		}()
+		cmds = append(cmds, m.armAutopilots())
+	}
 	return tea.Batch(cmds...)
+}
+
+// armAutopilots runs the F-015 re-evaluation chain: an explicit tick to
+// the next schedule/date boundary, or an immediate catch-up when a card
+// is due right now. Paused/absent stores arm nothing (no tick chain).
+// The guard (armSeq) keeps exactly one chain in flight per surface.
+func (m *Model) armAutopilots() tea.Cmd {
+	if m.autopilots == nil {
+		return nil
+	}
+	if !m.autoArmed() {
+		return nil
+	}
+	next, ok := m.autopilots.NextArm(m.now())
+	if !ok {
+		m.autoDisarm()
+		return nil
+	}
+	d := time.Until(next)
+	if d < 0 {
+		d = 0
+	}
+	return tea.Tick(d, func(time.Time) tea.Msg { return autopilotTickMsg{} })
+}
+
+func (m *Model) autoArmed() bool {
+	if m.armSeq > 0 {
+		return false
+	}
+	m.armSeq++
+	return true
+}
+
+func (m *Model) autoDisarm() { m.armSeq = 0 }
+
+// autopilotTickMsg fires when an armed tick boundary arrives.
+type autopilotTickMsg struct{}
+
+// onAutopilotTick runs the launch/in-session catch-up and re-arms the
+// chain for the next boundary.
+func (m *Model) onAutopilotTick() tea.Cmd {
+	m.autoDisarm()
+	if m.autopilots != nil {
+		m.catchUpAutopilots()
+	}
+	return m.armAutopilots()
 }
 
 // refreshPaneRail rebuilds channel sources from live org+roster state.
@@ -291,7 +364,16 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 		case evPingFlash:
 			m.form = formState{flash: msg.flash}
 		}
+		if msg.kind == evPing && m.autopilots != nil {
+			// A card changed (created/armed/removed): the schedule set
+			// moved — re-arm the tick chain for the new boundaries so a
+			// brand-new interval card starts ticking without a resize.
+			m.autoDisarm()
+			return tea.Batch(m.armAutopilots(), m.listen())
+		}
 		return m.listen()
+	case autopilotTickMsg:
+		return m.onAutopilotTick()
 	}
 	return nil
 }
@@ -323,6 +405,8 @@ const (
 	fTaskPR
 	fTaskCommit
 	fTaskPush
+	fAutoNew
+	fAutoDeleteConfirm
 )
 
 type field struct {
@@ -429,6 +513,8 @@ func (m *Model) sectionKey(key string) bool {
 		return m.tasksKey(key)
 	case secInspect:
 		return m.inspectKey(key)
+	case secAutopilots:
+		return m.autopilotsKey(key)
 	default:
 		return m.standardsKey(key)
 	}
@@ -958,7 +1044,7 @@ func (m *Model) formKey(key string) bool {
 	}
 	switch f.kind {
 	case fRemoveConfirm, fTeamDeleteConfirm, fAgentArchiveConfirm,
-		fPackUninstallConfirm, fTaskRemoveConfirm:
+		fPackUninstallConfirm, fTaskRemoveConfirm, fAutoDeleteConfirm:
 		switch key {
 		case "enter":
 			m.submitConfirm()
@@ -1260,6 +1346,26 @@ func (m *Model) submitForm() {
 			m.send(ev)
 		}()
 		return
+	case fAutoNew:
+		if m.autopilots == nil {
+			f.err = "autopilot store unavailable"
+			return
+		}
+		slug := strings.TrimSpace(f.fields[0].text())
+		name := strings.TrimSpace(f.fields[1].text())
+		agent := strings.TrimSpace(f.fields[2].text())
+		prompt := strings.TrimSpace(f.fields[3].text())
+		sch, err := autopilot.ParseSchedule(strings.TrimSpace(f.fields[4].text()))
+		if err != nil {
+			f.err = err.Error()
+			return
+		}
+		if _, err := m.autopilots.Create(slug, name, agent, prompt, sch); err != nil {
+			f.err = err.Error()
+			return
+		}
+		clampCursor(&m.cursors[secAutopilots], len(m.autopilots.List()))
+		m.closeForm()
 	case fStdPreviewPrompt:
 		id := strings.TrimSpace(f.fields[0].text())
 		block := standards.Resolve(m.ws.Root, id, m.teamLookup())
@@ -1312,6 +1418,18 @@ func (m *Model) submitConfirm() {
 		}
 		names, _ := m.installedNames()
 		clampCursor(&m.cursors[secPacks], len(names))
+		m.closeForm()
+	case fAutoDeleteConfirm:
+		if m.autopilots == nil {
+			f.err = "autopilot store unavailable"
+			return
+		}
+		if err := m.autopilots.Remove(f.target()); err != nil {
+			f.err = err.Error()
+			return
+		}
+		rows := m.autoRows()
+		clampCursor(&m.cursors[secAutopilots], len(rows))
 		m.closeForm()
 	}
 }

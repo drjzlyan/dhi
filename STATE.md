@@ -5,7 +5,7 @@ wave-3 live-verify still pending installs)
 
 ## Where we are
 
-**M8 P1 + P2 are implemented: `make verify` green.** P2 (F-014) made
+**M8 P1–P3 are implemented: `make verify` green.** P2 (F-014) made
 F-013's run records first-class: `[[run]]` now carries `exit` and a
 declared `cost:` marker (`cli:<name>` runtime prefix enforced at the
 runtime, strict decode refuses unknown run statuses naming the value), a
@@ -18,7 +18,45 @@ unavailable at <path>" refusal on missing files — no fake data), a
 task-detail runs suffix (`3 runs · cost partial`), and a doctor
 `runs/store` row (line-precise warnings wired into the JSON report).
 3 new goldens under `internal/tui/surfaces/workspace/testdata/goldens/`.
-Next: P3 (F-015 autopilots), then P4 (F-016 inbox).
+
+P3 (F-015 autopilots) landed: strict `.dhi/autopilots/` cards, launch
+catch-up (due set in slug order, success-only MarkRan), an AUTOPILOTS
+8th pane (`n` new / `e` arm-pause / `r` run now / `x` remove-confirm /
+`o` last transcript), interval ticks (`tea.Tick(NextArm)` re-arm chain),
+doctor `autopilots` row. Next: P4 (F-016 inbox).
+
+## Session 15 gotchas (F-015 / P3)
+
+- Autopilot **execution is a bus post**, not a direct agent call: run
+  now / catch-up / ticks all post `bus.Message{Channel:"dm:<agent>",
+  Author: bus.Human, Text:"[autopilot <slug>] <prompt>"}` then
+  `rt.Handle(ctx,msg)` in a goroutine. Success = `MarkRan(slug, now)`
+  ONLY after the turn returns, so a crash mid-turn never marks ran and
+  catch-up re-fires exactly once (persist-before-visibility).
+  `bus.Post` is synchronous and stamps `m.At = time.Now()` itself — tests
+  observe the recorded posts (no goroutine sleeps).
+- **Dangling agent** (not in Store.ids): run_autopilot_now refuses with
+  `"agent <x> not on roster (recheck autopilot card or roster)"` and is
+  NOT marked ran — the named fix is the ADR-0011 no-guess rule on the
+  UI surface too. Catch-up skips (never refuses) dangling cards.
+- `NextArm` is the ONLY arming input: interval → `now + every` (never
+  ran → now), daily/weekly → next weekday instant since last mark ran,
+  paused card → never arms. Ticks re-arm via `autopilotTickMsg`
+  (armSeq guard = one chain). Paused/absent store → `nil` cmd = no
+  chain. In-session ticks run ONLY while Workspace is the active surface
+  (App routes async msgs to Active); catch-up covers boot.
+- Launch catch-up = Workspace `Init()`, not "after gate release" — the
+  gate may not exist at all (gate only on block/offer/bootstrap), and
+  App.Init runs every surface's Init at boot. Catch-up runs the due set
+  in slug order, exactly once (posts are synchronous, so slug-order is
+  testable without sleeps).
+- AUTOPILOTS is the 8th pane (secAutopilots, after secInspect); `[`
+  from the first section wraps to it. Columns: name/agent/schedule/
+  next-due/last-result; next-due shows "due" when due-last-checked,
+  else `Next` formatted (interval "in 10m", daily "today 09:00",
+  weekly "Fri 17:00"), last-result = newest agent run status else
+  "ran HH:MM" (LastRun) else "-". Widths: 20/12/28/16 — keep content
+  under them or pads collapse (golden `workspace_autopilots`).
 
 ## Session 14 gotchas (F-014 / P2)
 
@@ -191,28 +229,13 @@ Next: P3 (F-015 autopilots), then P4 (F-016 inbox).
     rejects undecoded keys — new manifest keys must land in the
     file struct + validation + round-trip test together.
 
-## Just finished (M8 P0)
+## Just finished (M8 P3)
 
-- `docs/adr/0012-host-agent-clis-as-optin-runtimes.md`: declared
-  runtime category, user-owned (ADR-0005 exception), OS sandbox is
-  the boundary, declared env (never ambient), runs not turns.
-- `docs/features/F-013-cli-runtimes.md` (core), `F-014-run-
-  observability.md`, `F-015-autopilot.md`, `F-016-inbox.md` — each
-  with acceptance criteria + "inspired by Multica" citations +
-  deferred lists.
-- ROADMAP M8 section (P0 checked, P1–P4 listed); STATE updated.
-
-## Next up
-
-1. **P3 (F-015 autopilots, next):** read `docs/features/F-015*.md`,
-   implement `.dhi/autopilots/` cards (strict), due-on-launch catch-up
-   (one missed run, no backfill) + in-session interval ticks, AUTOPILOTS
-   pane. Commit.
-2. P4 (F-016 inbox): read the spec, implement pure aggregation
-   (approvals / unreplied / mentions), INBOX pane, jump-to-owner.
-   Commit.
-3. Wave-3 live verify once cursor-agent/copilot/gemini are installed:
-   fill each adapter's checklist + set `Tested`, then doctor reports OK.
+- `internal/autopilot`: strict `.dhi/autopilots/` card store
+  (`ParseSchedule` table-tested names bad values), `Due`/`Next` pure
+  math given injected clock, `Store.ids` roster from agent names.
+- Catch-up + tick chain + AUTOPILOTS pane + edge cases covered by
+  `workspace_autopilots_test.go`; doctor `autopilots` row. 2 goldens.
 
 ## Open questions for user
 
@@ -221,3 +244,12 @@ Next: P3 (F-015 autopilots), then P4 (F-016 inbox).
 - Wave-3 CLIs (cursor-agent, copilot, gemini) aren't installed on the
   dev machine — do you have accounts/installs for live verification,
   or should wave 3 stay fixture-only until you install them?
+
+## Next up
+
+1. **P4 (F-016 inbox, next):** read `docs/features/F-016-inbox.md`,
+   implement pure aggregation (approvals / unreplied @-mentions /
+   failed runs / in-review tasks), INBOX pane with jump-to-owner,
+   `!N` statusline marker. Commit.
+2. Wave-3 live verify once cursor-agent/copilot/gemini are installed:
+   fill each adapter's checklist + set `Tested`, then doctor reports OK.

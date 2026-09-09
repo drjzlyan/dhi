@@ -127,7 +127,7 @@ func setupWorkspaceRoot(t *testing.T, reserveAll bool) string {
 		t.Fatal(err)
 	}
 	if reserveAll {
-		for _, dir := range []string{".dhi/agents", ".dhi/memory", ".dhi/knowledge", ".dhi/channels", ".dhi/tasks", ".dhi/sessions"} {
+		for _, dir := range []string{".dhi/agents", ".dhi/memory", ".dhi/knowledge", ".dhi/channels", ".dhi/tasks", ".dhi/sessions", ".dhi/autopilots"} {
 			if err := os.MkdirAll(filepath.Join(root, dir), 0o755); err != nil {
 				t.Fatal(err)
 			}
@@ -343,6 +343,51 @@ func TestSessionsSuite(t *testing.T) {
 	c, _ = statusOf(checks, "sessions/store")
 	if c.Status != Fail || !strings.Contains(c.Detail, "malformed") {
 		t.Fatalf("malformed = %+v", c)
+	}
+}
+
+func TestAutopilotsSuite(t *testing.T) {
+	ws := setupWorkspaceRoot(t, true)
+
+	// No autopilots: silent.
+	if checks := Autopilots(ws); checks != nil {
+		t.Fatalf("empty store emitted %+v", checks)
+	}
+
+	os.WriteFile(filepath.Join(ws, ".dhi", "agents", "scout.toml"),
+		[]byte("schema = 1\nname = \"Scout\"\nmodel = \"m\"\nruntime = \"claude\"\n"), 0o644)
+	os.MkdirAll(filepath.Join(ws, ".dhi", "autopilots"), 0o755)
+	card := "schema = 1\nname = \"Standup\"\nagent = \"scout\"\nprompt = \"summarize\"\nschedule = \"daily 09:00\"\nenabled = true\n"
+	os.WriteFile(filepath.Join(ws, ".dhi", "autopilots", "standup.toml"), []byte(card), 0o644)
+
+	checks := Autopilots(ws)
+	c, ok := statusOf(checks, "autopilots/store")
+	if !ok || c.Status != OK || !strings.Contains(c.Detail, "1 autopilot") {
+		t.Fatalf("healthy card = %+v (found=%v)", c, ok)
+	}
+
+	// Dangling agent ref warns by name (refuses only at run time).
+	bad := strings.Replace(card, "agent = \"scout\"", "agent = \"ghost\"", 1)
+	os.WriteFile(filepath.Join(ws, ".dhi", "autopilots", "bad.toml"), []byte(bad), 0o644)
+	checks = Autopilots(ws)
+	c, _ = statusOf(checks, "autopilots/store")
+	if c.Status != Warn || !strings.Contains(c.Detail, "agent ghost") {
+		t.Fatalf("dangling agent = %+v", c)
+	}
+
+	// Malformed card FAILS (strict data, F-011): visible by name.
+	os.WriteFile(filepath.Join(ws, ".dhi", "autopilots", "junk.toml"), []byte("schema = 3\n"), 0o644)
+	checks = Autopilots(ws)
+	c, _ = statusOf(checks, "autopilots/store")
+	if c.Status != Fail || !strings.Contains(c.Detail, "malformed") {
+		t.Fatalf("malformed = %+v", c)
+	}
+
+	// The aggregate JSON report includes the row.
+	if data, err := json.Marshal(Run("", ws)); err != nil {
+		t.Fatal(err)
+	} else if !strings.Contains(string(data), "autopilots/store") {
+		t.Fatalf("JSON report missing autopilots/store row:\n%s", data)
 	}
 }
 

@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/drjzlyan/dhi/internal/autopilot"
 	"github.com/drjzlyan/dhi/internal/ideation"
 	"github.com/drjzlyan/dhi/internal/sandbox"
 	"github.com/drjzlyan/dhi/internal/tasks"
@@ -69,6 +70,7 @@ func Run(toolRoot, wsRoot string) Report {
 	r.Checks = append(r.Checks, Runtimes()...)
 	r.Checks = append(r.Checks, Tasks(wsRoot)...)
 	r.Checks = append(r.Checks, RunStore(wsRoot)...)
+	r.Checks = append(r.Checks, Autopilots(wsRoot)...)
 	r.Checks = append(r.Checks, Sessions(wsRoot)...)
 	r.Checks = append(r.Checks, GH(toolRoot)...)
 	r.Checks = append(r.Checks, Sandbox(sandboxMode(wsRoot))...)
@@ -224,6 +226,7 @@ func Workspace(root string) []Check {
 	for _, dir := range []string{
 		workspace.DirAgents, workspace.DirMemory, workspace.DirKnowledge,
 		workspace.DirChannels, workspace.DirTasks, workspace.DirSessions,
+		workspace.DirAutopilots,
 	} {
 		info, err := os.Stat(filepath.Join(root, dir))
 		if err != nil || !info.IsDir() {
@@ -514,6 +517,52 @@ func Sessions(wsRoot string) []Check {
 			Detail: detail + "; " + strings.Join(warnings, "; ")}}
 	}
 	return []Check{{Name: "sessions/store", Status: OK, Detail: detail}}
+}
+
+// Autopilots probes .dhi/autopilots/ (F-015): malformed cards FAIL
+// (ADR-0011 strict data; they are skipped at load and must be visible
+// by name), dangling agent refs warn (they only refuse at run time).
+func Autopilots(wsRoot string) []Check {
+	if wsRoot == "" {
+		return nil
+	}
+	ws, err := workspace.Load(wsRoot)
+	if err != nil {
+		return nil // not a workspace; workspace/config already reported
+	}
+	store, err := autopilot.Open(ws)
+	if err != nil {
+		return []Check{{Name: "autopilots/store", Status: Warn, Detail: err.Error()}}
+	}
+	all := store.List()
+	if w := store.Warnings(); len(w) > 0 {
+		return []Check{{Name: "autopilots/store", Status: Fail,
+			Detail: fmt.Sprintf("%d malformed card(s): %s", len(w), strings.Join(w, "; "))}}
+	}
+	if len(all) == 0 {
+		return nil // no autopilots is healthy
+	}
+
+	var warnings []string
+	roster, rerr := manifest.LoadDir(filepath.Join(wsRoot, workspace.DirAgents))
+	validIDs := map[string]bool{}
+	if rerr == nil {
+		for _, a := range roster {
+			validIDs[a.ID] = true
+		}
+	}
+	for _, c := range all {
+		if !validIDs[c.Agent] {
+			warnings = append(warnings, c.Slug+": agent "+c.Agent+" not on roster")
+		}
+	}
+	sort.Strings(warnings)
+	detail := fmt.Sprintf("%d autopilot(s)", len(all))
+	if len(warnings) > 0 {
+		return []Check{{Name: "autopilots/store", Status: Warn,
+			Detail: detail + "; " + strings.Join(warnings, "; ")}}
+	}
+	return []Check{{Name: "autopilots/store", Status: OK, Detail: detail}}
 }
 
 // GH probes the hermetic gh shim (registry-pinned, ADR-0011). The host

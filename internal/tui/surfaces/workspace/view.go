@@ -111,6 +111,7 @@ func (m *Model) sectionCounts() [secCount]int {
 	}
 	c[secTasks] = len(m.taskRows())
 	c[secInspect] = len(m.agentIDs())
+	c[secAutopilots] = len(m.autoRows())
 	return c
 }
 
@@ -203,6 +204,8 @@ func (m *Model) activeSection() string {
 		return m.tasksBody()
 	case secInspect:
 		return m.inspectBody()
+	case secAutopilots:
+		return m.autopilotsBody()
 	default:
 		return m.standardsBody()
 	}
@@ -488,6 +491,53 @@ func assignLabel(a string) string {
 		return "unassigned"
 	}
 	return a
+}
+
+func (m *Model) autopilotsBody() string {
+	rows := m.autoRows()
+	c := m.cursors[secAutopilots]
+	clampCursor(&c, len(rows))
+
+	out := []string{
+		theme.Hint().Render("autopilots") +
+			theme.TextDim().Render("      n new · e arm/pause · r run now · x remove · o last transcript"),
+	}
+	if m.autopilots == nil {
+		out = append(out, theme.TextDim().Render("(autopilot store unavailable)"))
+		return strings.Join(out, "\n")
+	}
+	if w := m.autopilots.Warnings(); len(w) > 0 {
+		out = append(out, theme.DangerText().Render(
+			fmt.Sprintf("%d malformed card(s) skipped", len(w))))
+	}
+	if len(rows) == 0 {
+		out = append(out, theme.TextDim().Render(
+			"(no autopilots — \"n\" to schedule one)"))
+		return strings.Join(out, "\n")
+	}
+
+	// header
+	out = append(out, theme.TextDim().Render(
+		"  "+padTo("name", 20)+padTo("agent", 12)+padTo("schedule", 28)+
+			padTo("next-due", 16)+"last-result"))
+	for i, card := range rows {
+		style := theme.TextDim()
+		if i == c {
+			style = theme.TabActive()
+		}
+		sched := card.Schedule.String()
+		if !card.Enabled {
+			sched = "paused " + sched
+		}
+		line := cursorGlyph(i == c) +
+			style.Render(padTo(card.Name, 20)) +
+			theme.Hint().Render(padTo(card.Agent, 12)) +
+			style.Render(padTo(sched, 28)) +
+			theme.Hint().Render(padTo(m.autoNext(card), 16)) +
+			theme.TextDim().Render(m.autoResult(card))
+		out = append(out, line)
+	}
+	return strings.Join(out, "\n")
 }
 
 func taskDetail(tk tasks.Task) string {

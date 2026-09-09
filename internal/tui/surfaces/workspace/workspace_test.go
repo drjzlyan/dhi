@@ -71,8 +71,8 @@ func TestSectionCyclingWraps(t *testing.T) {
 		t.Fatalf("initial section = %v", m.sec)
 	}
 	m.HandleKey("[")
-	if m.sec != secInspect {
-		t.Fatalf("[ from first should wrap to inspect, got %v", m.sec)
+	if m.sec != secAutopilots {
+		t.Fatalf("[ from first should wrap to autopilots, got %v", m.sec)
 	}
 	m.HandleKey("]")
 	if m.sec != secMembers {

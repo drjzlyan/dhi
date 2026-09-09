@@ -362,7 +362,7 @@ repo paths / MCP issue trackers.
 ## M8 — Roster any agent *(Multica-inspired)*
 
 Status: in progress (P1 implemented 2026-09-09; P2 landed 2026-09-09;
-wave-3 live-verify pending installs).
+P3 landed 2026-09-09; wave-3 live-verify pending installs).
 Design decisions: ADR-0012 (host agent CLIs — user-owned, declared
 env, OS sandbox is the boundary, runs not turns; the one named
 exception to ADR-0005's hermetic rule), ADR-0013 (in-house engine
@@ -403,9 +403,26 @@ toolchain, no server/daemon.
       task-detail runs suffix (`N runs · $cost` / `cost partial`);
       doctor `runs/store` row (line-precise warnings) wired into the
       JSON report; 3 goldens
-- [ ] P3 — autopilots (F-015): `.dhi/autopilots/` cards (strict),
+- [x] P3 — autopilots (F-015): `.dhi/autopilots/` cards (strict),
       due-on-launch catch-up (one missed run, no backfill) +
-      in-session interval ticks, AUTOPILOTS pane
+      in-session interval ticks, AUTOPILOTS pane — landed 2026-09-09:
+      8th pane (secAutopilots) with `n` new (schema-validated form),
+      `e` arm/pause, `r` run now, `x` remove-with-confirm, `o` last
+      transcript; `internal/autopilot` strict store (`ParseSchedule`
+      names bad values; duplicate-create refused; unknown-key refusal)
+      with pure `Due`/`Next` table-tested math (interval from first
+      run, daily weekly-anchor, `weekly` dow wrap); Store keeps
+      armSeq roster (`strings.Join(ids)`), cards validated before
+      write; docs-only run = readiness probe (not advisory);
+      **execution** = `dm:<agent>` post + `[autopilot <slug>] <prompt>`
+      tagged bus message through the same runtime seam as @-mentions
+      (same timeout/retry/review gate), success-only `MarkRan` (crash
+      never double-runs catch-up), dangling agent → named refusal, never
+      marked; **ticks**: interval cards arm `tea.Tick(NextArm)` re-arms
+      on `autopilotTickMsg`; paused/absent store = nil (no chain);
+      catch-up runs due set in slug order at launch (workspace Init);
+      doctor `autopilots` row (malformed card → Fail naming slugs,
+      dangling agent → Warn, line-precise); 2 goldens
 - [ ] P4 — inbox (F-016): pure aggregation (approvals / unreplied
       @-mentions / failed runs / in-review tasks), INBOX pane with
       jump-to-owner, `!N` statusline marker

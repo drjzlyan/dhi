@@ -5,7 +5,7 @@
   CHANNELS          0   │ ❯ cd repos/alpha && go test ./...                                                │
 ▌ TASKS             1   │ compile error: undefined: x                                                      │
   INSPECT           0   │ applying the fix                                                                 │
-                        │ ▸ done · 1.2s · 1.5k in / 0.4k out · $0.42                                       │
+  AUTOPILOTS        0   │ ▸ done · 1.2s · 1.5k in / 0.4k out · $0.42                                       │
                         │                                                                                  │
                         │                                                                                  │
                         │                                                                                  │

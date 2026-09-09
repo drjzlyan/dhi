@@ -55,7 +55,7 @@ func TestCreateAndLoadRoundTrip(t *testing.T) {
 	if err := Create(root); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	for _, dir := range []string{DirAgents, DirMemory, DirKnowledge, DirChannels, DirTasks} {
+	for _, dir := range []string{DirAgents, DirMemory, DirKnowledge, DirChannels, DirTasks, DirAutopilots} {
 		if info, err := os.Stat(filepath.Join(root, dir)); err != nil || !info.IsDir() {
 			t.Errorf("reserved dir %s not created (%v)", dir, err)
 		}
