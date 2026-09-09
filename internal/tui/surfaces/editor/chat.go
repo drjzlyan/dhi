@@ -2,6 +2,7 @@ package editor
 
 import (
 	"strings"
+	"time"
 
 	"charm.land/bubbletea/v2"
 
@@ -9,6 +10,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/runtime"
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
 	"github.com/drjzlyan/dhi/internal/tui/theme"
+	"github.com/drjzlyan/dhi/internal/unread"
 )
 
 const (
@@ -31,6 +33,7 @@ type chatModel struct {
 	rt     *runtime.Runtime
 	bus    *bus.Bus
 	apprs  *tools.Approvals
+	unread *unread.Store // F-017 read-mark store (nil = no markers)
 	agents []string
 	events chan chatEvent
 	cancel func()
@@ -148,6 +151,29 @@ func (c *chatModel) Focus() {
 		c.resubscribe()
 	}
 	c.focus = true
+	c.markChannelRead() // opening reads the channel (F-017)
+}
+
+// markChannelRead advances the active channel's watermark to the
+// transcript tail (F-017 Slack rule; nil store = no-op).
+func (c *chatModel) markChannelRead() {
+	if c.unread == nil {
+		return
+	}
+	top := c.bus.History(c.channelName(), 0)
+	if len(top) == 0 {
+		return
+	}
+	_ = c.unread.MarkRead(c.channelName(), top[len(top)-1].ID)
+}
+
+// unreadCount reports the active channel's unread count for the badge.
+func (c *chatModel) unreadCount() int {
+	if c.unread == nil || c.bus == nil {
+		return 0
+	}
+	counts := c.unread.Counts(c.bus, time.Now())
+	return counts[c.channelName()]
 }
 
 // Toggle opens/closes the sidebar; opening focuses it and (re)subscribes.
@@ -156,6 +182,7 @@ func (c *chatModel) Toggle() {
 		c.open = true
 		c.focus = true
 		c.resubscribe()
+		c.markChannelRead()
 		return
 	}
 	if c.focus { // first toggle from focused: blur, second closes
@@ -191,10 +218,12 @@ func (c *chatModel) handleKey(key string, apply func(string)) bool {
 	case "[":
 		c.active = (c.active - 1 + len(c.channels)) % len(c.channels)
 		c.resubscribe()
+		c.markChannelRead()
 		return true
 	case "]":
 		c.active = (c.active + 1) % len(c.channels)
 		c.resubscribe()
+		c.markChannelRead()
 		return true
 	case "ctrl+f":
 		if apply != nil {
@@ -218,6 +247,7 @@ func (c *chatModel) handleKey(key string, apply func(string)) bool {
 		if text != "" {
 			_, _ = c.bus.Post(bus.Message{Channel: c.channelName(), Author: bus.Human, Text: text})
 			c.input = nil
+			c.markChannelRead() // posting reads the channel (F-017)
 		}
 		return true
 	case "backspace":
@@ -256,6 +286,13 @@ func (c *chatModel) lastSuggestion() string {
 // view renders the panel body at full height h.
 func (c *chatModel) view(h int) string {
 	name := theme.Brand().Render(channelLabel(c.channelName()))
+	if n := c.unreadCount(); n > 0 {
+		marker := theme.GlyphDot
+		if n > 1 {
+			marker = theme.GlyphDot + itoa(n)
+		}
+		name += " " + theme.DangerText().Render(marker)
+	}
 	head := name + theme.Hint().Render("  [/] switch · ^f apply · esc blur")
 
 	var lines []string

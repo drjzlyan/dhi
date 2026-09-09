@@ -395,8 +395,10 @@ func AddressedToHuman(m bus.Message) bool {
 // Scan is the pure unread computation over a bus snapshot: for every
 // channel, top-level messages past the channel watermark, plus each
 // thread's replies past the thread watermark when the thread was opened
-// (unopened threads count fully). Oldest first (bus IDs are
-// chronological), snoozed items flagged.
+// (unopened threads count fully). A top-level message whose OWN thread
+// was opened also counts as read (you looked at it) — max of the two
+// watermarks applies. Oldest first (bus IDs are chronological),
+// snoozed items flagged.
 func Scan(channels map[string]int64, snoozes []Snooze, b *bus.Bus, now time.Time) []Item {
 	if b == nil {
 		return nil
@@ -422,18 +424,40 @@ func Scan(channels map[string]int64, snoozes []Snooze, b *bus.Bus, now time.Time
 		top := b.History(ch, 0)
 		limit := channels[ch]
 		for _, m := range top {
+			// Opening a message's thread reads that message too.
+			if tw, ok := channels[ThreadScope(ch, m.ID)]; ok && tw > limit {
+				limit = tw
+			}
 			consider(m, limit)
+			threadLimit, opened := channels[ThreadScope(ch, m.ID)]
+			if !opened {
+				threadLimit = 0
+			}
 			for _, r := range b.History(ch, m.ID) {
-				threadLimit, opened := channels[ThreadScope(ch, m.ID)]
-				if !opened {
-					threadLimit = 0
-				}
 				consider(r, threadLimit)
 			}
 		}
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Msg.ID < out[j].Msg.ID })
 	return out
+}
+
+// Counts groups the unread set per channel (snoozed included — the rail
+// reports unseen messages; the inbox reports attention).
+func Counts(channels map[string]int64, snoozes []Snooze, b *bus.Bus, now time.Time) map[string]int {
+	out := map[string]int{}
+	for _, it := range Scan(channels, snoozes, b, now) {
+		out[it.Msg.Channel]++
+	}
+	return out
+}
+
+// Counts reports the current per-channel unread counts (rail markers).
+func (s *Store) Counts(b *bus.Bus, now time.Time) map[string]int {
+	s.mu.Lock()
+	d := s.data
+	s.mu.Unlock()
+	return Counts(d.Channels, d.Snoozes, b, now)
 }
 
 func (s *Store) write() error {

@@ -42,6 +42,7 @@ import (
 	reviewer "github.com/drjzlyan/dhi/internal/tui/surfaces/reviewer"
 	settingsview "github.com/drjzlyan/dhi/internal/tui/surfaces/settings"
 	wsview "github.com/drjzlyan/dhi/internal/tui/surfaces/workspace"
+	"github.com/drjzlyan/dhi/internal/unread"
 	"github.com/drjzlyan/dhi/internal/version"
 	"github.com/drjzlyan/dhi/internal/workspace"
 )
@@ -129,6 +130,7 @@ func runTUI() {
 	var taskStore *tasks.Store
 	var reviewSvc *review.Service
 	var sessionStore *ideation.Store
+	var unreadStore *unread.Store
 	if ws != nil {
 		messageBus = openBus(ws)
 		if ts, err := tasks.Open(ws); err == nil {
@@ -140,6 +142,16 @@ func runTUI() {
 			sessionStore = ss
 		} else {
 			fmt.Fprintln(os.Stderr, "dhi: session store:", err)
+		}
+		// Read-mark store (F-017): one instance shared by the workspace
+		// CHANNELS rail and the editor chat sidebar; a failed open leaves
+		// it nil and doctor reports the reason.
+		if messageBus != nil {
+			if us, err := unread.Open(ws, messageBus); err != nil {
+				fmt.Fprintln(os.Stderr, "dhi: unread store:", err)
+			} else {
+				unreadStore = us
+			}
 		}
 		// Agent runtime (F-007): lights up only when a roster exists
 		// under .dhi/agents/. Guards carry the audited OS-sandbox
@@ -157,6 +169,11 @@ func runTUI() {
 	if agentRT != nil {
 		approvals = agentRT.Approvals()
 	}
+	// The chat sidebar shares the read-mark store (F-017): one read
+	// state, two surfaces.
+	if unreadStore != nil {
+		edOpts = append(edOpts, editor.WithUnread(unreadStore))
+	}
 	a := app.New(version.Version,
 		wsview.New(version.Version, ws, wsview.Deps{
 			Bus:       messageBus,
@@ -165,6 +182,7 @@ func runTUI() {
 			Roster:    agentRT,
 			ReviewSvc: reviewSvc,
 			Approvals: approvals,
+			Unread:    unreadStore,
 			OpenChat: func() bool {
 				if appRef == nil {
 					return false

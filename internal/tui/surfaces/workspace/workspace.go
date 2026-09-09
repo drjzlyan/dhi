@@ -106,12 +106,13 @@ type Model struct {
 	armSeq     uint64 // autopilot tick-chain guard: exactly one in flight
 	cancelAuto func()
 
-	approvals   *tools.Approvals     // pending-approval queue (F-016 source)
-	unreadStore *unread.Store        // read-mark store (F-017); nil = no bus
-	unreadErr   string               // store unavailable: named, never silent
-	openChat    func() bool          // focus editor chat approvals (F-016 jump)
-	openReview  func(id string) bool // reviewer select (F-016 jump)
-	inboxHint   string               // last jump degrade hint (visible, never silent)
+	approvals    *tools.Approvals     // pending-approval queue (F-016 source)
+	unreadStore  *unread.Store        // read-mark store (F-017); nil = no bus
+	unreadErr    string               // store unavailable: named, never silent
+	unreadCounts map[string]int       // per-frame rail counts (syncUnread)
+	openChat     func() bool          // focus editor chat approvals (F-016 jump)
+	openReview   func(id string) bool // reviewer select (F-016 jump)
+	inboxHint    string               // last jump degrade hint (visible, never silent)
 
 	inspectOpen bool
 	replay      *runReplay // non-nil = run-replay pane open (F-014)
@@ -161,6 +162,7 @@ type Deps struct {
 	Roster     profiface.Roster
 	ReviewSvc  *review.Service      // nil = task PR creation unavailable
 	Approvals  *tools.Approvals     // nil = no pending-approval inbox source
+	Unread     *unread.Store        // shared read-mark store (F-017); opened here if nil
 	OpenChat   func() bool          // focus editor chat (approval jump)
 	OpenReview func(id string) bool // reviewer select (in_review jump)
 }
@@ -197,10 +199,16 @@ func New(version string, ws *workspace.Workspace, d Deps) *Model {
 		}
 		if d.Bus != nil {
 			m.pane = newChatPane(d.Bus, d.Runtime, m.org)
-			if us, err := unread.Open(ws, d.Bus); err != nil {
-				m.unreadErr = err.Error()
-			} else {
-				m.unreadStore = us
+			m.wireUnreadSeams()
+			switch {
+			case d.Unread != nil:
+				m.unreadStore = d.Unread // shared with the editor chat
+			default:
+				if us, err := unread.Open(ws, d.Bus); err != nil {
+					m.unreadErr = err.Error()
+				} else {
+					m.unreadStore = us
+				}
 			}
 		}
 	}

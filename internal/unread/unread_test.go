@@ -365,3 +365,49 @@ func TestScanOrderAndThreadRules(t *testing.T) {
 		}
 	}
 }
+
+func TestThreadScopeReadsTopLevel(t *testing.T) {
+	ws := testWS(t)
+	b := testBus(t, ws)
+	seedBus(t, b)
+	now := time.Now()
+
+	// Open ONLY the "deep dive" thread: its root (a top-level message
+	// mentioning nothing) was read via the thread scope — but a
+	// top-level mention elsewhere stays unread.
+	tr := threadRootOf(b)
+	topGen := b.History("#general", 0)
+	lastGen := topGen[len(topGen)-1].ID
+	replies := b.History("#general", tr)
+	ch := map[string]int64{ThreadScope("#general", tr): replies[len(replies)-1].ID}
+	items := Scan(ch, nil, b, now)
+	sawMention := false
+	for _, it := range items {
+		if it.Msg.ID == tr {
+			t.Fatalf("thread root read via thread scope leaked: %+v", it.Msg)
+		}
+		if it.Msg.Channel == "#general" && it.Msg.Thread == 0 {
+			if it.Msg.ID == 1 {
+				sawMention = true // unopened top-level mention survives
+			} else {
+				t.Fatalf("unexpected top-level item: %+v", it.Msg)
+			}
+		}
+	}
+	if !sawMention {
+		t.Fatal("unopened top-level mention dropped")
+	}
+	_ = lastGen
+
+	// Counts groups per channel, snoozed included. dm:scout has no
+	// watermark in ch → all three of its agent messages count.
+	until := now.Add(time.Hour)
+	dm := post(t, b, bus.Message{Channel: "dm:scout", Author: "scout", Text: "fresh"})
+	counts := Counts(ch, []Snooze{{Channel: "dm:scout", MessageID: dm.ID, Until: until}}, b, now)
+	if counts["dm:scout"] != 3 {
+		t.Fatalf("dm count = %d, want 3 (snoozed included)", counts["dm:scout"])
+	}
+	if counts["#general"] < 1 {
+		t.Fatalf("general count = %d, want >= 1", counts["#general"])
+	}
+}

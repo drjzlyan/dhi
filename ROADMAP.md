@@ -448,11 +448,20 @@ agent-to-agent chatter); scope = CHANNELS rail + editor chat + INBOX;
 snooze included.
 
 - [x] P0 — spec (F-017-true-unread.md, 2026-09-09)
-- [ ] P1 — `internal/unread` store (strict `.dhi/unread.json`,
+- [x] P1 — `internal/unread` store (strict `.dhi/unread.json`,
       monotonic `MarkRead`, fresh-install seeding, subscribe pump) +
       `AddressedToHuman` predicate + `inbox.Build` mention→
-      agent_message swap + doctor `unread/store` row
-- [ ] P2 — read-on-open/post wiring (workspace CHANNELS + editor chat
-      shared store) + `●`/`●N` rail markers (both surfaces)
+      agent_message swap + doctor `unread/store` row — landed
+      2026-09-09 (f7bc4e1)
+- [x] P2 — read-on-open/post wiring (workspace CHANNELS + editor chat
+      shared store) + `●`/`●N` rail markers (both surfaces) — landed
+      2026-09-09: one store opened in cmd/dhi, injected into the
+      workspace Deps + editor `WithUnread`; chatPane `onRead` seam
+      fires on channel switch, thread open (`t`), inbox mention jump
+      (`openAt` marks the thread scope) and post; Scan treats a
+      top-level message whose thread was opened as read (jump truly
+      resolves the row); `●`/`●N` markers on the CHANNELS rail and the
+      editor chat header (dot = 1, ●N otherwise, theme danger);
+      `unread.Counts` per frame via `syncUnread` in View
 - [ ] P3 — snooze: `z` preset form, dimmed rows, `!N` exclusion,
       30s tick chain for expiries; goldens

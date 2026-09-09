@@ -127,3 +127,42 @@ func (m *Model) inboxJump(it inbox.Item) {
 func (m *Model) AttentionCount() int {
 	return len(m.inboxItems())
 }
+
+// wireUnreadSeams connects the CHANNELS pane to the read-mark store:
+// opening a channel/thread/post advances watermarks; the rail reads
+// per-channel counts. Called from New and safe for test-built panes.
+func (m *Model) wireUnreadSeams() {
+	if m.pane == nil {
+		return
+	}
+	m.pane.onRead = m.markScopeRead
+	m.pane.unreadFor = m.unreadForChannel
+}
+
+// markScopeRead advances one watermark scope; a failed write is a named
+// degrade (never swallowed, F-011).
+func (m *Model) markScopeRead(scope string, upToID int64) {
+	if m.unreadStore == nil {
+		return
+	}
+	if err := m.unreadStore.MarkRead(scope, upToID); err != nil {
+		m.unreadErr = err.Error()
+	}
+}
+
+// unreadForChannel reports the cached per-frame count for the rail.
+func (m *Model) unreadForChannel(ch string) int {
+	if m.unreadCounts == nil {
+		return 0
+	}
+	return m.unreadCounts[ch]
+}
+
+// syncUnread refreshes the per-frame rail counts (one Scan per render).
+func (m *Model) syncUnread() {
+	if m.unreadStore == nil || m.bus == nil {
+		m.unreadCounts = nil
+		return
+	}
+	m.unreadCounts = m.unreadStore.Counts(m.bus, m.now())
+}

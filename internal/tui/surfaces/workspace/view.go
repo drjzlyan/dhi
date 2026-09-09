@@ -38,6 +38,7 @@ func (m *Model) View() string {
 		lines = append(lines, "", theme.Hint().Render("not inside a DHI workspace"))
 		return kit.Center(strings.Join(lines, "\n"), maxInt(m.width, 40), maxInt(m.height, 10))
 	}
+	m.syncUnread()
 	if m.width < dockMinWidth {
 		return kit.Center(m.compactBody(), maxInt(m.width, 40), maxInt(m.height, 10))
 	}

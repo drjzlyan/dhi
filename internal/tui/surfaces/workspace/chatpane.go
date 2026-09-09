@@ -8,6 +8,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/agentkit/org"
 	"github.com/drjzlyan/dhi/internal/tui/theme"
+	"github.com/drjzlyan/dhi/internal/unread"
 )
 
 // turnHandler is the slice of the agent runtime the channels floor
@@ -25,6 +26,11 @@ type chatPane struct {
 	bus *bus.Bus
 	rt  turnHandler // nil → post-only (no crew installed)
 	org *org.Org
+
+	// F-017 read-on-open seams: the Model injects both (store-backed).
+	// onRead advances a scope's watermark; unreadFor feeds rail markers.
+	onRead    func(scope string, upToID int64)
+	unreadFor func(ch string) int
 
 	channels   []string
 	active     int
@@ -99,6 +105,48 @@ func (p *chatPane) switchChannel(dir int) {
 	p.threadID = 0
 	p.cursor = 0
 	p.resubscribe()
+	p.markChannelRead(p.channelName())
+}
+
+// markChannelRead advances the channel's top-level watermark to the
+// current transcript tail (F-017: opening a channel reads it).
+func (p *chatPane) markChannelRead(ch string) {
+	if p.onRead == nil || ch == "" {
+		return
+	}
+	top := p.bus.History(ch, 0)
+	if len(top) == 0 {
+		return
+	}
+	p.onRead(ch, top[len(top)-1].ID)
+}
+
+// markThreadRead advances the thread scope watermark for the given
+// thread root on the active channel.
+func (p *chatPane) markThreadRead(root int64) {
+	if p.onRead == nil || root == 0 {
+		return
+	}
+	thread := append([]bus.Message{}, p.bus.History(p.channelName(), root)...)
+	if root != 0 {
+		// include the root message itself in the read set
+		for _, m := range p.bus.History(p.channelName(), 0) {
+			if m.ID == root {
+				thread = append(thread, m)
+				break
+			}
+		}
+	}
+	if len(thread) == 0 {
+		return
+	}
+	maxID := thread[0].ID
+	for _, m := range thread {
+		if m.ID > maxID {
+			maxID = m.ID
+		}
+	}
+	p.onRead(unread.ThreadScope(p.channelName(), root), maxID)
 }
 
 // openAt jumps the CHANNELS pane to a channel's thread, positioning the
@@ -120,6 +168,13 @@ func (p *chatPane) openAt(channel string, threadRoot, msgID int64) bool {
 				p.cursor = j
 				break
 			}
+		}
+		// F-017: jumping into a thread reads that thread (and, per the
+		// Scan rule, its root message).
+		if threadRoot != 0 {
+			p.markThreadRead(threadRoot)
+		} else {
+			p.markChannelRead(channel)
 		}
 		return true
 	}
@@ -177,8 +232,11 @@ func (p *chatPane) handleKey(key string) bool {
 		return true
 	case "t":
 		if p.cursor < len(history) {
-			p.threadID = bus.ThreadOf(history[p.cursor])
+			root := bus.ThreadOf(history[p.cursor])
+			p.threadID = root
 			p.cursor = 0
+			// Opening a thread reads it (F-017 Slack rule).
+			p.markThreadRead(root)
 		}
 		return true
 	case "c", "0":
@@ -228,6 +286,11 @@ func (p *chatPane) post(text string) {
 	})
 	if err != nil {
 		return
+	}
+	if p.threadID != 0 {
+		p.markThreadRead(p.threadID)
+	} else {
+		p.markChannelRead(p.channelName())
 	}
 	if p.rt != nil {
 		p.rt.Handle(context.Background(), posted)
@@ -349,6 +412,13 @@ func (p *chatPane) rail() string {
 	var parts []string
 	for i, ch := range p.channels {
 		label := ch
+		if n := p.unreadCount(ch); n > 0 {
+			if n == 1 {
+				label += " " + theme.DangerText().Render(theme.GlyphDot)
+			} else {
+				label += " " + theme.DangerText().Render(theme.GlyphDot+itoa(n))
+			}
+		}
 		if i == p.active {
 			parts = append(parts, theme.TabActive().Render("["+label+"]"))
 		} else {
@@ -359,6 +429,15 @@ func (p *chatPane) rail() string {
 		parts = append(parts, theme.TextDim().Render("#general"))
 	}
 	return strings.Join(parts, " ")
+}
+
+// unreadCount reports the channel's unread attention count via the
+// Model-injected seam (nil-safe: no store → no markers).
+func (p *chatPane) unreadCount(ch string) int {
+	if p.unreadFor == nil {
+		return 0
+	}
+	return p.unreadFor(ch)
 }
 
 func minInt(a, b int) int {

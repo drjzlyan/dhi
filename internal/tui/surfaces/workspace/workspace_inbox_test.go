@@ -49,6 +49,7 @@ func seedInbox(t *testing.T, m *Model) {
 		m.bus = b
 		m.pane = newChatPane(b, m.rt, m.org)
 		m.refreshPaneRail()
+		m.wireUnreadSeams()
 		// Open the read-mark store BEFORE posting: seeding marks the
 		// (empty) history read, so the mention below is genuinely unread.
 		us, err := unread.Open(m.ws, b)
@@ -215,4 +216,52 @@ func TestInboxCountClearsAfterResolve(t *testing.T) {
 	if n := m.AttentionCount(); n != 0 {
 		t.Fatalf("resolved attention = %d, want 0", n)
 	}
+}
+
+func TestInboxJumpMentionResolves(t *testing.T) {
+	m, _ := newSurface(t)
+	seedInbox(t, m)
+	gotoInbox(m)
+	for i := 0; i < 3; i++ {
+		m.HandleKey("j")
+	}
+	if !m.HandleKey("enter") {
+		t.Fatal("enter not consumed")
+	}
+	if m.sec != secChannels {
+		t.Fatalf("jumped to %v, want channels", m.sec)
+	}
+	// F-017: the jump marked the thread read — the row is gone on the
+	// next aggregation.
+	items := m.inboxItems()
+	for _, it := range items {
+		if it.Kind == inbox.AgentMessage {
+			t.Fatalf("mention row survived the jump: %+v", it)
+		}
+	}
+	if len(items) != 3 {
+		t.Fatalf("items = %d, want 3 (approval/run_failed/in_review)", len(items))
+	}
+}
+
+func gotoChannels(m *Model) {
+	for i := secMembers; i < secChannels; i++ {
+		m.HandleKey("]")
+	}
+}
+
+func TestChannelsRailUnreadGolden(t *testing.T) {
+	m, _ := newSurface(t)
+	seedInbox(t, m)
+	// A second unread mention makes the rail marker counted (●2).
+	if _, err := m.bus.Post(bus.Message{Channel: "#general", Author: "muse",
+		Text: "@you second decision"}); err != nil {
+		t.Fatal(err)
+	}
+	gotoChannels(m)
+	out := ansi.Strip(m.View())
+	if !strings.Contains(out, "●2") {
+		t.Fatalf("rail marker missing:\n%s", out)
+	}
+	golden.Snapshot(t, "workspace_channels_unread", m.View())
 }

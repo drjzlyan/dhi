@@ -23,6 +23,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/tui/kit"
 	"github.com/drjzlyan/dhi/internal/tui/surfaces"
 	"github.com/drjzlyan/dhi/internal/tui/theme"
+	"github.com/drjzlyan/dhi/internal/unread"
 	"github.com/drjzlyan/dhi/internal/workspace"
 )
 
@@ -65,6 +66,16 @@ func WithLSP(mgr *lsp.Manager) Option {
 // nil leaves ctrl+a inert.
 func WithChat(rt *runtime.Runtime) Option {
 	return func(m *Model) { m.chat = newChat(rt) }
+}
+
+// WithUnread shares the F-017 read-mark store with the chat sidebar so
+// both surfaces see one read state (rail markers clear in lockstep).
+func WithUnread(us *unread.Store) Option {
+	return func(m *Model) {
+		if m.chat != nil {
+			m.chat.unread = us
+		}
+	}
 }
 
 // Model is the Editor surface.

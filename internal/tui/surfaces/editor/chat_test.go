@@ -14,6 +14,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/testutil/golden"
 	"github.com/drjzlyan/dhi/internal/testutil/stubcli"
 	"github.com/drjzlyan/dhi/internal/tui/theme"
+	"github.com/drjzlyan/dhi/internal/unread"
 	"github.com/drjzlyan/dhi/internal/workspace"
 )
 
@@ -170,5 +171,64 @@ func TestApplySuggestionIntoBuffer(t *testing.T) {
 	after := h.m.active().Buffer().Text()
 	if !strings.Contains(after, `fmt.Println("applied")`) {
 		t.Errorf("apply failed; buffer = %q", after)
+	}
+}
+
+func TestChatUnreadMarksReadAndBadge(t *testing.T) {
+	h := newChatEditor(t, "ok")
+	us, err := unread.Open(h.ws, h.rt.Bus())
+	if err != nil {
+		t.Fatal(err)
+	}
+	WithUnread(us)(h.m)
+	// Seed an unread DM from scout BEFORE the sidebar opens.
+	if _, err := h.rt.Bus().Post(bus.Message{Channel: "dm:scout", Author: "scout",
+		Text: "@you ping"}); err != nil {
+		t.Fatal(err)
+	}
+	if n := us.Counts(h.rt.Bus(), time.Now())["dm:scout"]; n != 1 {
+		t.Fatalf("precondition count = %d", n)
+	}
+
+	// Opening the sidebar reads the active channel (#general) — the DM
+	// stays unread until the sidebar switches to it.
+	h.openFocused()
+	if n := us.Counts(h.rt.Bus(), time.Now())["dm:scout"]; n != 1 {
+		t.Fatalf("open cleared the wrong channel: %d", n)
+	}
+
+	// Switch to the DM ("]" cycles): watermark advances, badge clears.
+	h.m.HandleKey("]")
+	if n := us.Counts(h.rt.Bus(), time.Now())["dm:scout"]; n != 0 {
+		t.Fatalf("switch did not read the DM: %d", n)
+	}
+	out := h.m.View()
+	if strings.Contains(out, "●1") {
+		t.Fatalf("badge still rendered after read:\n%s", out)
+	}
+}
+
+func TestChatUnreadBadgeRenders(t *testing.T) {
+	h := newChatEditor(t, "ok")
+	us, err := unread.Open(h.ws, h.rt.Bus())
+	if err != nil {
+		t.Fatal(err)
+	}
+	WithUnread(us)(h.m)
+	if _, err := h.rt.Bus().Post(bus.Message{Channel: "#general", Author: "scout",
+		Text: "@you ping"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.rt.Bus().Post(bus.Message{Channel: "#general", Author: "scout",
+		Text: "@you again"}); err != nil {
+		t.Fatal(err)
+	}
+	// The chat view only renders when open; open WITHOUT reading the
+	// channel by going through the raw chat view.
+	h.m.chat.open = true
+	h.m.chat.focus = false
+	out := h.m.chat.view(h.m.height)
+	if !strings.Contains(out, "●2") {
+		t.Fatalf("badge missing from header:\n%s", out)
 	}
 }
