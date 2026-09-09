@@ -211,3 +211,16 @@ func TestAgentsSectionGolden(t *testing.T) {
 	}
 	golden.Snapshot(t, "settings_agents", m.View())
 }
+
+// company returns the surface's org store (test helper).
+func company(m *Model) *org.Org { return m.d.Org }
+
+// mustAgent parses a manifest doc or fails the test.
+func mustAgent(t *testing.T, id, doc string) *manifest.Agent {
+	t.Helper()
+	a, err := manifest.Parse(id, []byte(doc))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return a
+}

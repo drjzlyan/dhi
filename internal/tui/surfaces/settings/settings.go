@@ -5,12 +5,18 @@
 package settings
 
 import (
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"charm.land/bubbletea/v2"
 
 	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
 	"github.com/drjzlyan/dhi/internal/agentkit/org"
+	"github.com/drjzlyan/dhi/internal/agentkit/pack"
+	"github.com/drjzlyan/dhi/internal/gitcore"
 	"github.com/drjzlyan/dhi/internal/settings"
 	"github.com/drjzlyan/dhi/internal/tui/kit"
 	"github.com/drjzlyan/dhi/internal/tui/surfaces"
@@ -28,13 +34,20 @@ type Model struct {
 	cursor   int // CONFIG rows
 	agentCur int // AGENTS roster rows
 
-	form   agentForm // open modal (agent create/edit)
+	form   agentForm // open modal (agent create/edit or add-from-source)
 	flash  string
+	events chan settingsEvent
 	width  int
 	height int
 }
 
 var _ surfaces.Surface = (*Model)(nil)
+
+// settingsEvent carries one async crew/import outcome to the loop.
+type settingsEvent struct {
+	msg string
+	err string
+}
 
 type sectionID uint8
 
@@ -69,12 +82,44 @@ type Deps struct {
 // New wires the surface to a loaded config, its persistence target,
 // and (optionally) the workspace services behind agent management.
 func New(cfg settings.Config, savePath string, d Deps) *Model {
-	return &Model{cfg: cfg, savePath: savePath, d: d}
+	return &Model{cfg: cfg, savePath: savePath, d: d,
+		events: make(chan settingsEvent, 4)}
 }
 
-func (m *Model) Meta() surfaces.Meta    { return surfaces.Meta{ID: "settings", Title: "Settings"} }
-func (m *Model) Init() tea.Cmd          { return nil }
-func (m *Model) Update(tea.Msg) tea.Cmd { return nil }
+func (m *Model) Meta() surfaces.Meta { return surfaces.Meta{ID: "settings", Title: "Settings"} }
+
+// Init starts the async-outcome listener (imports/clones can take
+// seconds; the form stays busy until the event lands).
+func (m *Model) Init() tea.Cmd { return m.listen() }
+
+func (m *Model) listen() tea.Cmd {
+	ch := m.events
+	return func() tea.Msg {
+		ev, ok := <-ch
+		if !ok {
+			return nil
+		}
+		return ev
+	}
+}
+
+func (m *Model) Update(msg tea.Msg) tea.Cmd {
+	if ev, ok := msg.(settingsEvent); ok {
+		m.form.busy = false
+		if m.form.kind == formSource {
+			m.form.open = false
+		}
+		if ev.err != "" {
+			m.flash = "failed: " + ev.err
+		} else {
+			m.flash = ev.msg
+		}
+		rows, _ := m.agentRows()
+		clampAgentCursor(&m.agentCur, len(rows))
+		return m.listen()
+	}
+	return nil
+}
 
 func (m *Model) Resize(w, h int) {
 	m.width, m.height = w, h
@@ -240,6 +285,9 @@ func (m *Model) agentsKey(key string) bool {
 	case "n":
 		m.form = newAgentForm(m.d.CLIs)
 		return true
+	case "g":
+		m.form = newSourceForm() // F-019: add from source (one flow)
+		return true
 	case "e":
 		if m.agentCur < len(rows) && m.d.WS != nil {
 			// Prefill from the full manifest, not the summary row.
@@ -327,23 +375,40 @@ func (f *agentField) cycle(dir int) {
 
 type agentForm struct {
 	open   bool
-	orig   string // "" = create; else the id being edited
+	kind   formKind // formAgent | formSource
+	orig   string   // formAgent: "" = create; else the id being edited
 	cur    int
 	fields []agentField
 	err    string
+	busy   bool
 }
+
+type formKind uint8
+
+const (
+	formAgent formKind = iota
+	formSource
+)
 
 func newAgentForm(clis []string) agentForm {
 	if len(clis) == 0 {
 		clis = []string{"claude"}
 	}
-	return agentForm{open: true, fields: []agentField{
+	return agentForm{open: true, kind: formAgent, fields: []agentField{
 		{label: "id     "},
 		{label: "name   "},
 		{label: "model  "},
 		{label: "system "},
 		{label: "runtime", toggle: clis},
 		{label: "tools  "},
+	}}
+}
+
+// newSourceForm is the F-019 one-flow input: a local path or a git URL,
+// optionally with a #sub/path fragment scoping the import.
+func newSourceForm() agentForm {
+	return agentForm{open: true, kind: formSource, fields: []agentField{
+		{label: "source "},
 	}}
 }
 
@@ -366,12 +431,20 @@ func editAgentForm(a *manifest.Agent, clis []string) agentForm {
 
 func (m *Model) formKey(key string) bool {
 	f := &m.form
+	if f.busy {
+		return true // swallow while the import/clone runs
+	}
 	switch key {
 	case "esc":
 		f.open = false
 		return true
 	case "enter":
-		m.submitAgent()
+		switch f.kind {
+		case formSource:
+			m.submitSource()
+		default:
+			m.submitAgent()
+		}
 		return true
 	case "tab":
 		f.cur = (f.cur + 1) % len(f.fields)
@@ -458,6 +531,161 @@ func clampAgentCursor(c *int, n int) {
 	if *c < 0 {
 		*c = 0
 	}
+}
+
+// ---- add from source (F-019) ----
+
+// submitSource kicks the one-flow import asynchronously: the form stays
+// busy until the outcome event lands (clones can take seconds).
+func (m *Model) submitSource() {
+	f := &m.form
+	if m.d.WS == nil || m.d.Org == nil {
+		f.err = "agent import unavailable: not inside a workspace"
+		return
+	}
+	src := strings.TrimSpace(f.fields[0].text())
+	if src == "" {
+		f.err = "path or git URL required"
+		return
+	}
+	f.busy = true
+	f.err = ""
+	go func(src string) {
+		summary, err := m.addFromSource(src)
+		ev := settingsEvent{msg: summary}
+		if err != nil {
+			ev = settingsEvent{err: err.Error()}
+		}
+		select {
+		case m.events <- ev:
+		default:
+		}
+	}(src)
+}
+
+// addFromSource is the F-019 one flow: a git URL clones through the
+// hermetic shim; then pack.toml delegates to the validated pack
+// install, and bare manifests validate ALL before the first write.
+// Duplicate ids skip with named reasons — never fatal, never silent.
+func (m *Model) addFromSource(src string) (string, error) {
+	dir := src
+	sub := ""
+	if i := strings.Index(src, "#"); i >= 0 {
+		dir, sub = src[:i], src[i+1:]
+	}
+	if isURL(dir) {
+		c, err := os.MkdirTemp("", "dhi-import-*")
+		if err != nil {
+			return "", err
+		}
+		defer func() { _ = os.RemoveAll(c) }()
+		dst := filepath.Join(c, "src")
+		if _, err := gitcore.Clone(context.Background(), dir, dst); err != nil {
+			return "", err
+		}
+		dir = dst
+	} else if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+		return "", fmt.Errorf("source %s is not a directory", dir)
+	}
+	if sub != "" {
+		dir = filepath.Join(dir, filepath.FromSlash(sub))
+		if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+			return "", fmt.Errorf("subpath %q not found in source", sub)
+		}
+	}
+
+	// pack.toml present → the existing pack flow (provenance tracked).
+	if _, err := os.Stat(filepath.Join(dir, "pack.toml")); err == nil {
+		res, err := (&pack.Installer{WS: m.d.WS}).Install(context.Background(), dir)
+		if err != nil {
+			return "", err
+		}
+		if rerr := m.reloadAfterImport(); rerr != nil {
+			return fmt.Sprintf("installed pack %s (%d agents); reload failed: %s",
+				res.Pack, len(res.Agents), rerr), nil
+		}
+		return fmt.Sprintf("installed pack %s (%d agents)", res.Pack, len(res.Agents)), nil
+	}
+
+	// Bare manifests: strict-parse every candidate BEFORE the first
+	// write — one bad file refuses the whole import, named.
+	cands, err := scanManifests(dir)
+	if err != nil {
+		return "", err
+	}
+	if len(cands) == 0 {
+		return "", fmt.Errorf("no pack.toml or agent manifests found in %s", dir)
+	}
+	var imported, skipped []string
+	for _, a := range cands {
+		if err := m.d.Org.CreateAgent(m.d.WS, a); err != nil {
+			skipped = append(skipped, a.ID+" ("+err.Error()+")")
+			continue
+		}
+		imported = append(imported, a.ID)
+	}
+	reloadNote := ""
+	if rerr := m.reloadAfterImport(); rerr != nil {
+		reloadNote = "; reload failed: " + rerr.Error()
+	}
+	summary := fmt.Sprintf("imported %d: %s", len(imported), strings.Join(imported, ", "))
+	if len(skipped) > 0 {
+		summary += fmt.Sprintf("; skipped %d: %s", len(skipped), strings.Join(skipped, ", "))
+	}
+	return summary + reloadNote, nil
+}
+
+// reloadAfterImport drives the live-roster seam; nil seam = next launch.
+func (m *Model) reloadAfterImport() error {
+	if m.d.Reload == nil {
+		return nil
+	}
+	return m.d.Reload()
+}
+
+// scanManifests parses every .toml under dir (recursively), id from the
+// filename stem. All-or-nothing: any unparseable file aborts with the
+// file + reason named.
+func scanManifests(dir string) ([]*manifest.Agent, error) {
+	var out []*manifest.Agent
+	var errs []string
+	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() || !strings.HasSuffix(path, ".toml") {
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			errs = append(errs, path+": "+err.Error())
+			return nil
+		}
+		id := strings.TrimSuffix(filepath.Base(path), ".toml")
+		a, err := manifest.Parse(id, data)
+		if err != nil {
+			errs = append(errs, filepath.Base(path)+": "+err.Error())
+			return nil
+		}
+		out = append(out, a)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if len(errs) > 0 {
+		return nil, fmt.Errorf("invalid manifest(s): %s", strings.Join(errs, "; "))
+	}
+	return out, nil
+}
+
+func isURL(s string) bool {
+	for _, p := range []string{"http://", "https://", "git://", "ssh://", "git@"} {
+		if strings.HasPrefix(s, p) {
+			return true
+		}
+	}
+	return false
 }
 
 // View renders the docked settings panel: section strip, section body,
@@ -555,7 +783,9 @@ func (m *Model) agentsView() []string {
 func (m *Model) formView() []string {
 	f := &m.form
 	title := "new agent"
-	if f.orig != "" {
+	if f.kind == formSource {
+		title = "add from source (path or git URL, #sub/path to scope)"
+	} else if f.orig != "" {
 		title = "edit agent " + f.orig
 	}
 	out := []string{theme.Brand().Render(title), ""}
@@ -573,7 +803,9 @@ func (m *Model) formView() []string {
 		out = append(out, cursor+style.Render(padTo(fld.label, 8))+" "+v)
 	}
 	out = append(out, "")
-	if f.err != "" {
+	if f.busy {
+		out = append(out, theme.WarningText().Render("working… (clone/import in flight)"))
+	} else if f.err != "" {
 		out = append(out, theme.DangerText().Render(f.err))
 	} else {
 		out = append(out, theme.Hint().Render("tab field · ←/→ cycle · ⏎ save · esc cancel"))

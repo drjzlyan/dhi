@@ -500,9 +500,16 @@ agent CRUD in Settings; full IDE parity via the audited tool seam.
       (`LoadRoster` → `runtime.Reload`, atomic, failure keeps the
       previous roster); live-reload contract proven by a runtime test
       (new manifest on disk → @mention routes without restart)
-- [ ] P2 — F-019: one add-from-source flow (git URL or path;
+- [x] P2 — F-019: one add-from-source flow (git URL or path;
       pack.toml → pack install, else manifest import; validate-all-
-      before-write; named skips) in Settings
+      before-write; named skips) in Settings — landed 2026-09-09:
+      `g` on AGENTS opens the source form (busy while in flight, async
+      outcome via the surface's event channel); `#sub/path` fragment
+      scopes the import; pack.toml delegates to the provenance-tracked
+      pack install; bare manifests strict-parse ALL before the first
+      write (one bad file refuses the batch naming file + reason);
+      duplicate ids skip named (`scout (already exists)`); reload seam
+      drives the imported agents live
 - [ ] P3 — F-020: parity matrix + toolbridge (DHI-namespaced tool
       calls from CLI adapters → tasks/PR actions, allowlist-gated,
       approvals for mutating ops)
