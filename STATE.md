@@ -1,22 +1,21 @@
 # STATE — current position
 
-Updated: 2026-09-09 (session 17: MIT license adopted; M9 true-unread
-complete; M10 started — agent lifecycle + IDE parity specs landed;
-wave-3 live-verify still pending installs)
+Updated: 2026-09-09 (session 17: MIT license; M9 true-unread complete;
+M10 agent lifecycle + IDE parity complete; wave-3 live-verify pending)
 
 ## Where we are
 
-**M8 and M9 are complete: `make verify` green.** M10 (agent lifecycle
-& full IDE parity) is specced from the user's product goal: create
-agents in Settings (full CRUD), add agents from GitHub (one flow,
-auto-detects pack vs bare manifests), and give agents full IDE parity
-(a documented matrix + a toolbridge so CLI agents can drive DHI
-actions like task cards and PRs, allowlist-gated, approvals for
-mutating ops). Survey finding baked into F-018: `runtime.Reload` has
-no callers today — roster changes don't go live until restart; the
-reload pump fixes that for every surface at once.
-Phases: P1 settings CRUD + pump, P2 GitHub import, P3 parity bridge.
-Next: M10 P1.
+**M8, M9, and M10 are complete: `make verify` green.** M10 delivered
+the user's crew goal: full agent CRUD in Settings (CONFIG · AGENTS
+sections, strict manifest forms, `org.DeleteAgent`), the live-reload
+pump (roster changes go live without restart — the dead `runtime.
+Reload` seam now wired for Settings, ORG pane, and imports), one
+add-from-source flow (git URL or path, `#sub/path` scoping,
+pack.toml → pack install else bare-manifest import,
+validate-all-before-write, named skips), and the F-020 toolbridge
+(```dhi-action blocks in the final message → task/PR actions,
+manifest-allowlist gated, approvals-gated, results posted to the
+thread; prompt carries the contract when allowed).
 
 ## Session 17 gotchas (F-017 / M9)
 
@@ -311,6 +310,32 @@ hint when absent. The `!N` statusline segment is recomputed per frame.
   value, dangling snooze Warn, expired counted). Goldens: channels-unread
   rail, inbox-snoozed. `make verify` + `-race` green.
 
+## Session 17 gotchas (M10)
+
+- **`runtime.Reload` had zero callers** — crew changes never went live.
+  The fix is ONE injected seam (`reloadRoster` closure in main →
+  `LoadRoster` → `Reload`), wired into Settings CRUD, the ORG pane
+  crew ops, and the import flow. Runtime tests prove the contract
+  (manifest on disk → @mention routes without restart).
+- **Settings row math**: the panel inner height is h−2; strip(1) +
+  blank(1) + content + blank(1) + foot(1) → pad content to h−6 or the
+  foot clips. `SetContent` REPLACES content — one call only.
+- **Panel width clips long lines** (no wrap) — assert errors on the
+  model state + a short visible marker, never the full message.
+- **`stubcli.FixedReply` must single-quote the JSON** — double-quoted
+  sh mangles backticks (command substitution) in any reply carrying
+  markdown fences, and backslash-escapes pass through literally in
+  single quotes, so no escaping beyond the `'\''` dance.
+- **Toolbridge design**: the neutral `StreamEvent` has no structured
+  tool args and run-to-completion CLIs can't receive mid-turn results —
+  so actions parse from the FINAL message (` ```dhi-action ` blocks,
+  the suggestion-block pattern) and results post to the thread for the
+  next turn. One code path for all six adapters.
+- **Every bridge action goes through `Approvals.Ask`** — tests MUST
+  resolve (poll `List()` → `Resolve(id, true)`) or the turn goroutine
+  blocks forever and the 5s waits flake. Full-suite CLI-stub runs can
+  still flake TestDetect/TestDM under load — rerun in isolation.
+
 ## Open questions for user
 
 - LICENSE: decided 2026-09-09 — **MIT** (LICENSE file + README; the
@@ -322,24 +347,14 @@ hint when absent. The `!N` statusline segment is recomputed per frame.
 
 ## Next up
 
-1. **M10 P1 — agents in Settings (F-018):** Settings AGENTS section
-   (full CRUD via `org.CreateAgent/UpdateAgent/ArchiveAgent/
-   DeleteAgent` — DeleteAgent is NEW), strict manifest forms, and the
-   live-reload pump (roster change → `LoadRoster` → `runtime.Reload`).
-   Commit.
-2. M10 P2 — add agents from GitHub (F-019): one source form in
-   Settings (git URL or path, `#sub/path` fragment), auto-detect
-   pack.toml vs bare manifests, validate-all-then-write, named skips.
-   Commit.
-3. M10 P3 — full IDE parity (F-020): parity matrix + `toolbridge`
-   (DHI-namespaced tool calls from clirun adapters → task/PR actions,
-   manifest allowlist gating, approvals for mutating ops). Commit.
-4. **Wave-3 live verify** (needs installs): once cursor-agent/copilot/
+1. **Wave-3 live verify** (needs installs): once cursor-agent/copilot/
    gemini are on the machine, run a real task per adapter, fill each
    adapter's live-verify checklist + set `Tested`, then doctor reports
    OK. Until then the adapters stay fixture-first and doctor marks a
    detected version untested (FAIL), never a guess.
-5. **(Deferred, from F-017)** snooze-expiry push notifications,
-   per-message read granularity, multi-human read states, bulk
-   "mark all read"; inbox items from autopilot completions / doctor
-   regressions (F-016 deferral).
+2. **(Deferred, F-017)** snooze-expiry push notifications, per-message
+   read granularity, multi-human read states, bulk "mark all read";
+   inbox items from autopilot completions / doctor regressions.
+3. **(Deferred, F-020)** MCP-style third-party tool registries;
+   per-agent env/secrets editing in Settings; a curated remote agent
+   registry for F-019 discovery.

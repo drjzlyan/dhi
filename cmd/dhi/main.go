@@ -157,7 +157,7 @@ func runTUI() {
 		// under .dhi/agents/. Guards carry the audited OS-sandbox
 		// adapter (nil here is impossible: the audit blocked first).
 		if messageBus != nil {
-			agentRT = newAgentRuntime(ws, messageBus, decision.Sandbox, termEnv, taskStore)
+			agentRT = newAgentRuntime(ws, messageBus, decision.Sandbox, termEnv, taskStore, reviewSvc)
 			if agentRT != nil {
 				edOpts = append(edOpts, editor.WithChat(agentRT))
 			}
@@ -414,7 +414,7 @@ func openBus(ws *workspace.Workspace) *bus.Bus {
 // newAgentRuntime wires the turn engine onto an existing bus; nil means
 // no crew (no roster, or a broken one). Org + layered coding standards
 // ride along when their sidecar files parse; broken ones degrade.
-func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cliEnv []string, taskStore *tasks.Store) *agentkitRuntime.Runtime {
+func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cliEnv []string, taskStore *tasks.Store, reviewSvc *review.Service) *agentkitRuntime.Runtime {
 	roster, err := manifest.LoadDir(filepath.Join(ws.Root, workspace.DirAgents))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "dhi: agent roster:", err)
@@ -442,6 +442,18 @@ func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cl
 		Org:       company,
 		Standards: true,
 		Sandbox:   sb,
+		// F-020 pr_open: the review service opens task PRs; gh missing
+		// refuses by name at dispatch.
+		PR: func(ctx context.Context, member, branch, title, base string) (string, error) {
+			if reviewSvc == nil {
+				return "", fmt.Errorf("review service unavailable")
+			}
+			meta, err := reviewSvc.CreatePRForBranch(ctx, member, branch, title, base)
+			if err != nil {
+				return "", err
+			}
+			return fmt.Sprintf("PR #%d %s", meta.Number, meta.URL), nil
+		},
 	}, roster)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "dhi: agent runtime:", err)

@@ -14,6 +14,9 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/agentkit/clirun"
 	"github.com/drjzlyan/dhi/internal/agentkit/standards"
+	"github.com/drjzlyan/dhi/internal/agentkit/toolbridge"
+	"github.com/drjzlyan/dhi/internal/agentkit/tools"
+	"github.com/drjzlyan/dhi/internal/sandbox"
 	"github.com/drjzlyan/dhi/internal/tasks"
 )
 
@@ -47,6 +50,7 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message) er
 					Author: e.m.ID, Text: run.Summary,
 				})
 			}
+			r.dispatchActions(ctx, e, trigger, run.Summary)
 			return nil
 		}
 		lastErr = fmt.Errorf("runtime: %s: run %s: %s", e.m.ID, run.ID, run.Error)
@@ -204,6 +208,12 @@ func (r *Runtime) cliPrompt(e *entry, trigger bus.Message) (prompt, system strin
 	grounding := "\n\nFiles are addressed as <member>/<rel-path>. Members: " + strings.Join(members, ", ")
 	grounding += "\nThe reserved workspace dotdir is addressed as .dhi/<rel-path>; ideation artifacts belong under .dhi/sessions/<session>/<file>."
 	system += grounding
+	if actions := r.allowedActions(e); len(actions) > 0 {
+		system += "\n\nDHI actions: end your reply with a fenced ```dhi-action block to request one. " +
+			"Shape: {\"action\": \"<name>\", \"args\": {...}}. Valid names: " +
+			strings.Join(actions, ", ") + ". Each runs after the human approves it; " +
+			"the result arrives as a reply in this thread."
+	}
 	if r.cfg.Standards {
 		system += "\n\n" + standards.Resolve(r.cfg.WS.Root, e.m.ID, r.teamLookup())
 	}
@@ -312,4 +322,76 @@ func truncateRunes(s string, n int) string {
 		return s
 	}
 	return string(r[:n-1]) + "…"
+}
+
+// dispatchActions runs the F-020 toolbridge: dhi-action blocks in the
+// agent's final message execute against the real stores (allowlist +
+// approvals gated), and every outcome — result or named refusal — is
+// posted to the trigger thread so the agent sees it on its next turn.
+func (r *Runtime) dispatchActions(ctx context.Context, e *entry, trigger bus.Message, summary string) {
+	reqs, parseErrs := toolbridge.ParseActions(summary)
+	if len(reqs) == 0 && len(parseErrs) == 0 {
+		return
+	}
+	b := r.bridge(e)
+	post := func(text string) {
+		_, _ = r.cfg.Bus.Post(bus.Message{
+			Channel: trigger.Channel, Thread: trigger.Thread,
+			Author: e.m.ID, Text: text,
+		})
+	}
+	for _, perr := range parseErrs {
+		post("dhi-action refused: " + perr.Error())
+	}
+	for _, req := range reqs {
+		res, err := b.Dispatch(ctx, e.m.ID, req)
+		if err != nil {
+			post("dhi-action refused: " + err.Error())
+			continue
+		}
+		post(res)
+	}
+}
+
+// bridge wires the toolbridge seams from the runtime config: the
+// manifest allowlist gates every action, approvals park mutating ops
+// on the human's y/n seam, and the PR seam (when wired) opens PRs.
+func (r *Runtime) bridge(e *entry) *toolbridge.Bridge {
+	allow := map[string]bool{}
+	for _, t := range e.m.Tools {
+		allow[t] = true
+	}
+	var approvals *tools.Approvals
+	if r.cfg.Approvals != nil {
+		approvals = r.cfg.Approvals
+	}
+	b := &toolbridge.Bridge{
+		Tasks:  r.cfg.Tasks,
+		OpenPR: r.cfg.PR,
+		Allow:  func(agentID, action string) bool { return allow[action] },
+	}
+	if approvals != nil {
+		b.Approve = func(ctx context.Context, agentID, detail string) error {
+			return approvals.Ask(ctx, agentID, sandbox.OpExec, detail,
+				"agent-requested DHI action")
+		}
+	}
+	return b
+}
+
+// allowedActions lists the bridge actions the manifest allows, in
+// documentation order — the prompt-side contract (agents can only
+// request what their tools allowlist).
+func (r *Runtime) allowedActions(e *entry) []string {
+	allow := map[string]bool{}
+	for _, t := range e.m.Tools {
+		allow[t] = true
+	}
+	var out []string
+	for _, a := range toolbridge.All() {
+		if allow[a] {
+			out = append(out, a)
+		}
+	}
+	return out
 }

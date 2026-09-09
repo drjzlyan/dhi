@@ -33,8 +33,13 @@ var (
 
 // BuiltinTools are the native tool names a manifest may allowlist.
 // Any other entry must be an mcp__<server>__<tool> reference resolved
-// against connected MCP servers at runtime.
-var BuiltinTools = []string{"read", "write", "list", "search", "git_commit", "git_push"}
+// against connected MCP servers at runtime. The F-020 toolbridge
+// actions (task cards + PRs) are builtins too — the work-facing moves
+// a human makes by hand.
+var BuiltinTools = []string{
+	"read", "write", "list", "search", "git_commit", "git_push",
+	"task_create", "task_status", "task_assign", "pr_open",
+}
 
 // IsBuiltinTool reports whether name is one of the native tools.
 func IsBuiltinTool(name string) bool {

@@ -476,9 +476,9 @@ snooze included.
       chain armed in Init/after snooze re-arms while snoozes are
       pending (deterministic via explicit ticks); INBOX golden
 
-## M10 — Agent lifecycle & full IDE parity *(the user's crew goal)*
+## M10 — Agent lifecycle & full IDE parity *(the user's crew goal)* ✅ (2026-09-09)
 
-Status: in progress (P0 specs 2026-09-09). User goal: create agents in
+Status: complete (P0–P3 landed 2026-09-09). User goal: create agents in
 Settings, add agents from GitHub, and give agents the IDE tools for
 everything — editing, reading files, suggesting changes, chatting in
 channels and with the user — to complete work end-to-end. Decisions
@@ -510,6 +510,20 @@ agent CRUD in Settings; full IDE parity via the audited tool seam.
       write (one bad file refuses the batch naming file + reason);
       duplicate ids skip named (`scout (already exists)`); reload seam
       drives the imported agents live
-- [ ] P3 — F-020: parity matrix + toolbridge (DHI-namespaced tool
+- [x] P3 — F-020: parity matrix + toolbridge (DHI-namespaced tool
       calls from CLI adapters → tasks/PR actions, allowlist-gated,
-      approvals for mutating ops)
+      approvals for mutating ops) — landed 2026-09-09: `internal/
+      agentkit/toolbridge` executes ```dhi-action blocks from the
+      turn's final message (one code path for all six adapters — the
+      stream-interception draft was a documented deviation: no
+      structured tool args in the neutral event model, no mid-turn
+      result channel for run-to-completion CLIs); builtins gain
+      task_create/task_status/task_assign/pr_open (strict args, unknown
+      keys named); manifest allowlist gates every action; mutating ops
+      cross `tools.Approvals.Ask` (the human's y/n); results and
+      refusals post to the trigger thread so the agent sees the
+      outcome next turn; system prompt carries the block contract
+      exactly when the allowlist includes bridge actions; pr_open
+      resolves the card's changeset through the review service (gh
+      missing refuses by name); runtime tests cover end-to-end
+      create/refuse/approve + prompt contract

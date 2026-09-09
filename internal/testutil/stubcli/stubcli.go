@@ -50,10 +50,12 @@ func FixedReply(t *testing.T, reply string) (binDir, cliEnv string, reg *clirun.
 	if err != nil {
 		t.Fatal(err)
 	}
-	escaped := strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(string(result))
+	// Single-quote the raw JSON so backticks/fences in replies survive
+	// the shell; only "'" needs the escape dance inside single quotes.
+	shQuoted := "'" + strings.ReplaceAll(string(result), "'", `'\''`) + "'"
 	script := "#!/bin/sh\n" +
 		"printf '%s\\n' '{\"type\":\"system\",\"subtype\":\"init\"}'\n" +
-		fmt.Sprintf("printf '%%s\\n' \"%s\"\n", escaped) +
+		fmt.Sprintf("printf '%%s\\n' %s\n", shQuoted) +
 		"exit 0\n"
 	return Claude(t, script)
 }

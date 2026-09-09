@@ -33,34 +33,61 @@ Agent-to-agent and agent-to-human interaction parity is complete once
 the NEW rows land; anything not in the matrix is out of scope for the
 tool seam (the OS sandbox boundary stays the boundary, ADR-0012).
 
-## Part B — the tool bridge
+## Part B — the tool bridge (as built)
 
-Host CLIs run their own tools inside the OS sandbox; DHI-namespaced
-tool calls are intercepted by the clirun adapters' existing event
-parsers (`tool_use` streams) and routed to a new `toolbridge.Seam`:
+The neutral stream-event model carries no structured tool args, and a
+run-to-completion CLI cannot receive mid-turn results — so interception
+happens at the turn boundary, on the same channel agents already use
+for suggestions: **```dhi-action blocks in the final message**.
 
-- A call is recognized when its name is a DHI builtin (`task_*`,
-  `pr_open`, or the existing file/git set for audit symmetry).
-- The manifest's `tools` allowlist gates every call — an
-  un-allowlisted DHI tool is refused with the name, exactly like the
-  CLI's own tool gating.
-- Mutating ops (`task_*`, `pr_open`) require approvals (`tools.
-  Approvals.Ask`) — the same y/n seam humans already answer.
-- The bridge executes against the real stores (tasks, review) with
-  strict validation; results return to the CLI as tool results so the
-  agent can continue its turn.
+````
+```dhi-action
+{"action": "task_create", "args": {"slug": "fix-login", "title": "Fix login race"}}
+```
+````
+
+The runtime parses the final summary, and the `toolbridge.Bridge`
+executes each request:
+
+- **Allowlist gate** — every action must be in the manifest's `tools`
+  (the bridge actions are builtins: `task_create`, `task_status`,
+  `task_assign`, `pr_open`); an un-allowlisted action refuses with the
+  name.
+- **Args are strict** — unknown keys refuse with the key named; bad
+  values (statuses, unknown slugs) refuse naming the value.
+- **Approvals gate** — every mutating action crosses
+  `tools.Approvals.Ask`, the same y/n seam humans already answer; a
+  denial refuses and writes nothing.
+- **Results land in the thread** — result or named refusal posts to
+  the trigger's channel + thread, so the agent sees the outcome on its
+  next turn. Malformed blocks refuse per-block; well-formed ones still
+  dispatch.
+- **Prompt-side contract** — when an agent's allowlist includes bridge
+  actions, the system prompt carries the block shape and the valid
+  names; agents can only request what they are allowed to.
+- **pr_open** resolves the task card's first changeset (member +
+  branch) and opens through the review service; gh missing or no
+  worktree refuses by name.
+
+The stream-interception point named in the earlier draft is a
+documented deviation: adapters would need per-CLI structured tool-event
+plumbing and a mid-turn result channel that run-to-completion CLIs do
+not offer. The turn-boundary design keeps one code path for all six
+adapters.
 
 ## Acceptance criteria
 
 - Manifest enum: new builtins validate (unknown tool named, strict
   round-trip); existing manifests unaffected (default allowlist none).
-- Bridge: a fixture CLI emitting `dhi:task_create` produces a task
-  card (store asserted); un-allowlisted → named refusal in the
-  transcript; mutating op without approval parks in Approvals and
-  resolves with y/n; `pr_open` without the gh shim refuses by name.
-- Parity matrix lives in this doc and in doctor's runtime docs
-  pointer; adapters' fixture tests cover the interception for at
-  least claude + codex.
+- Bridge: a fixture CLI emitting a `dhi-action` task_create block
+  produces a task card (store asserted) and the result posts to the
+  thread; un-allowlisted → named refusal in the thread, nothing
+  written; mutating op parks in Approvals and resolves with y/n;
+  `pr_open` without the review seam or worktree refuses by name.
+- Prompt contract: the system prompt carries the block shape exactly
+  when the allowlist includes bridge actions (allowedActions test).
+- Parity matrix lives in this doc; the bridge applies to every adapter
+  through the one turn-boundary path (no per-CLI code).
 - `make verify` green.
 
 ## Deferred

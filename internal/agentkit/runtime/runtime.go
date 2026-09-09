@@ -19,6 +19,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
 	"github.com/drjzlyan/dhi/internal/agentkit/org"
 	"github.com/drjzlyan/dhi/internal/agentkit/standards"
+	"github.com/drjzlyan/dhi/internal/agentkit/toolbridge"
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
 	"github.com/drjzlyan/dhi/internal/sandbox"
 	"github.com/drjzlyan/dhi/internal/tasks"
@@ -54,6 +55,9 @@ type Config struct {
 	// Standards injects layered coding instructions into every turn's
 	// system prompt (built-ins apply even without a document).
 	Standards bool
+	// PR opens a PR for a task's branch (F-020 pr_open; the review
+	// service in main). nil = pr_open refuses by name.
+	PR toolbridge.PRSeam
 }
 
 // Runtime manages rostered agents and executes their turns.
