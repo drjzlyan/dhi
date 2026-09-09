@@ -94,7 +94,9 @@ func topEdge(width int, title string, edge, titleSt lipgloss.Style) string {
 	}
 	head := " " + theme.GlyphChevron + " " + title + " "
 	tw := runeWidth(head)
-	fill := width - 2 - tw - 2
+	// 2 corner cells + head + fill + TopRight must total exactly width —
+	// one short and the top-right corner sits inset from the body (F-024).
+	fill := width - 2 - tw - 1
 	if fill < 1 {
 		fill = 1
 	}
@@ -128,13 +130,8 @@ func runeWidth(s string) int {
 	return n
 }
 
-// clip cuts s to at most n visible cells, preserving ANSI styling bytes as-is
-// when they appear between visible cells.
+// clip cuts s to at most n visible cells, preserving ANSI styling so
+// truncated rows keep their colors (F-024).
 func clip(s string, n int) string {
-	plain := ansi.Strip(s)
-	r := []rune(plain)
-	if len(r) <= n {
-		return s
-	}
-	return string(r[:n])
+	return ansi.Clip(s, n)
 }

@@ -1,4 +1,4 @@
-  MEMBERS           2   ╭─ › autopilots ──────────────────────────────────────────────────────────────────╮ 
+  MEMBERS           2   ╭─ › autopilots ───────────────────────────────────────────────────────────────────╮
   ORG               0   │ autopilots      n new · e arm/pause · r run now · x remove · o last transcript   │
   PACKS             0   │   name                agent       schedule                    next-due        la │
   STANDARDS         1   │ ▌ Friday audit        bob         paused weekly fri 17:00     Fri 17:00       -  │

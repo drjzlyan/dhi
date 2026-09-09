@@ -23,7 +23,9 @@ type Tokens struct {
 	Bg            color.Color // application background
 	BgPanel       color.Color // panel/card background
 	BgElevated    color.Color // overlays, modals, popups
+	BgInset       color.Color // sub-columns inside a panel: board columns, chat rail, thread pane
 	BgSelection   color.Color // selected rows, highlighted ranges
+	BgOverlay     color.Color // modal backdrop dim layer
 	Border        color.Color // unfocused borders, dividers
 	BorderFocused color.Color // focused element borders
 	Text          color.Color // primary text
@@ -52,7 +54,9 @@ func Dark() Tokens {
 		Bg:            c("#0B0E14"),
 		BgPanel:       c("#10141B"),
 		BgElevated:    c("#151B26"),
+		BgInset:       c("#07090D"),
 		BgSelection:   c("#1B2739"),
+		BgOverlay:     c("#05070B"),
 		Border:        c("#232C3B"),
 		BorderFocused: c("#22D3EE"),
 		Text:          c("#E6EDF3"),
@@ -81,7 +85,9 @@ func Light() Tokens {
 		Bg:            c("#F5F2EA"),
 		BgPanel:       c("#FBF9F3"),
 		BgElevated:    c("#FFFFFF"),
+		BgInset:       c("#EDE9DE"),
 		BgSelection:   c("#DCEFEF"),
+		BgOverlay:     c("#E3DED0"),
 		Border:        c("#D8D2C4"),
 		BorderFocused: c("#0E7490"),
 		Text:          c("#1F2937"),
@@ -161,6 +167,31 @@ func PanelBg() lipgloss.Style {
 	return lipgloss.NewStyle().Background(Current.BgPanel)
 }
 
+// InsetBg paints sub-columns inside a panel — board columns, the chat
+// rail, the thread pane. One shade darker than the panel so nesting
+// reads as depth, not clutter (F-024).
+func InsetBg() lipgloss.Style {
+	return lipgloss.NewStyle().Background(Current.BgInset)
+}
+
+// OverlayDim paints the modal backdrop: content dimmed under a solid
+// near-black veil.
+func OverlayDim() lipgloss.Style {
+	return lipgloss.NewStyle().Background(Current.BgOverlay)
+}
+
+// ElevatedBg paints modal and context-pane bodies.
+func ElevatedBg() lipgloss.Style {
+	return lipgloss.NewStyle().Background(Current.BgElevated)
+}
+
+// Chip styles a quiet status pill: selection background, dim text.
+// Callers colorize with theme.Current.Success/Warning/Danger when the
+// status warrants it.
+func Chip() lipgloss.Style {
+	return lipgloss.NewStyle().Background(Current.BgSelection).Foreground(Current.TextDim)
+}
+
 func panelEdge(focused bool) color.Color {
 	if focused {
 		return Current.BorderFocused
@@ -224,6 +255,19 @@ func DangerText() lipgloss.Style  { return lipgloss.NewStyle().Foreground(Curren
 
 // TextDim styles secondary text.
 func TextDim() lipgloss.Style { return lipgloss.NewStyle().Foreground(Current.TextDim) }
+
+// TextMuted styles hints, disabled and placeholder text.
+func TextMuted() lipgloss.Style { return lipgloss.NewStyle().Foreground(Current.TextMuted) }
+
+// DialogEdge / DialogTitle style modal boxes (violet edge = dialog
+// identity, distinct from focused panes).
+func DialogEdge() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(Current.Accent2)
+}
+
+func DialogTitle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(Current.Text).Bold(true)
+}
 
 // Faint dims a pre-rendered block of text (view-transition fade-in,
 // F-012). Content is byte-identical: lines are styled one at a time so

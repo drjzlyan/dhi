@@ -1,4 +1,4 @@
-  MEMBERS           2   ╭─ › tasks ───────────────────────────────────────────────────────────────────────╮ 
+  MEMBERS           2   ╭─ › tasks ────────────────────────────────────────────────────────────────────────╮
   ORG               0   │ replay run-replay-test · cli:claude/opus · ok · 1.2s · $0.42      j/k scroll · g │
   PACKS             0   │ inspecting the login flow                                                        │
   STANDARDS         1   │ ❯ git status                                                                     │

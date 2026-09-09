@@ -19,7 +19,8 @@ func TestTokensAreComplete(t *testing.T) {
 	}
 	for name, c := range map[string]any{
 		"Bg": tk.Bg, "BgPanel": tk.BgPanel, "BgElevated": tk.BgElevated,
-		"BgSelection": tk.BgSelection, "Border": tk.Border, "BorderFocused": tk.BorderFocused,
+		"BgInset": tk.BgInset, "BgSelection": tk.BgSelection, "BgOverlay": tk.BgOverlay,
+		"Border": tk.Border, "BorderFocused": tk.BorderFocused,
 		"Text": tk.Text, "TextDim": tk.TextDim, "TextMuted": tk.TextMuted,
 		"Accent": tk.Accent, "Accent2": tk.Accent2,
 		"Success": tk.Success, "Warning": tk.Warning, "Danger": tk.Danger,
