@@ -1,7 +1,7 @@
 // Package workspace is DHI's landing view: the company of agents.
-// Eight sections — members, org, packs, standards, channels, tasks,
-// inspect, autopilots — switched with [ ]; each carries its own cursor
-// and contextual keymap.
+// Nine sections — members, org, packs, standards, channels, tasks,
+// inspect, autopilots, inbox — switched with [ ]; each carries its own
+// cursor and contextual keymap.
 package workspace
 
 import (
@@ -19,6 +19,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/pack"
 	profiface "github.com/drjzlyan/dhi/internal/agentkit/profile"
 	"github.com/drjzlyan/dhi/internal/agentkit/standards"
+	"github.com/drjzlyan/dhi/internal/agentkit/tools"
 	"github.com/drjzlyan/dhi/internal/autopilot"
 	"github.com/drjzlyan/dhi/internal/gitcore"
 	"github.com/drjzlyan/dhi/internal/review"
@@ -46,6 +47,7 @@ const (
 	secTasks
 	secInspect
 	secAutopilots
+	secInbox
 	secCount
 )
 
@@ -67,6 +69,8 @@ func (s sectionID) label() string {
 		return "INSPECT"
 	case secAutopilots:
 		return "AUTOPILOTS"
+	case secInbox:
+		return "INBOX"
 	default:
 		return "MEMBERS"
 	}
@@ -100,6 +104,11 @@ type Model struct {
 	now        func() time.Time
 	armSeq     uint64 // autopilot tick-chain guard: exactly one in flight
 	cancelAuto func()
+
+	approvals  *tools.Approvals     // pending-approval queue (F-016 source)
+	openChat   func() bool          // focus editor chat approvals (F-016 jump)
+	openReview func(id string) bool // reviewer select (F-016 jump)
+	inboxHint  string               // last jump degrade hint (visible, never silent)
 
 	inspectOpen bool
 	replay      *runReplay // non-nil = run-replay pane open (F-014)
@@ -142,11 +151,14 @@ func errString(err error) string {
 // Deps carries the services this surface operates. Zero fields degrade
 // their sections to visible "unavailable" rows rather than errors.
 type Deps struct {
-	Bus       *bus.Bus
-	Runtime   turnHandler
-	Tasks     *tasks.Store
-	Roster    profiface.Roster
-	ReviewSvc *review.Service // nil = task PR creation unavailable
+	Bus        *bus.Bus
+	Runtime    turnHandler
+	Tasks      *tasks.Store
+	Roster     profiface.Roster
+	ReviewSvc  *review.Service      // nil = task PR creation unavailable
+	Approvals  *tools.Approvals     // nil = no pending-approval inbox source
+	OpenChat   func() bool          // focus editor chat (approval jump)
+	OpenReview func(id string) bool // reviewer select (in_review jump)
 }
 
 // New returns the workspace model. A nil ws renders the not-a-workspace
@@ -173,6 +185,9 @@ func New(version string, ws *workspace.Workspace, d Deps) *Model {
 		m.bus = d.Bus
 		m.rt = d.Runtime
 		m.now = time.Now
+		m.approvals = d.Approvals
+		m.openChat = d.OpenChat
+		m.openReview = d.OpenReview
 		if as, err := autopilot.Open(ws); err == nil {
 			m.autopilots = as
 		}
@@ -515,6 +530,8 @@ func (m *Model) sectionKey(key string) bool {
 		return m.inspectKey(key)
 	case secAutopilots:
 		return m.autopilotsKey(key)
+	case secInbox:
+		return m.inboxKey(key)
 	default:
 		return m.standardsKey(key)
 	}

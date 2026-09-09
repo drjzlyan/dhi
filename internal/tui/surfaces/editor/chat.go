@@ -140,6 +140,16 @@ func (c *chatModel) refreshRoster() {
 	}
 }
 
+// Focus opens the sidebar if closed and moves input focus onto it,
+// without the toggle-off case (F-016 approval-jump seam).
+func (c *chatModel) Focus() {
+	if !c.open {
+		c.open = true
+		c.resubscribe()
+	}
+	c.focus = true
+}
+
 // Toggle opens/closes the sidebar; opening focuses it and (re)subscribes.
 func (c *chatModel) Toggle() {
 	if !c.open {

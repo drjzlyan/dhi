@@ -101,6 +101,31 @@ func (p *chatPane) switchChannel(dir int) {
 	p.resubscribe()
 }
 
+// openAt jumps the CHANNELS pane to a channel's thread, positioning the
+// cursor on the message that triggered the jump. False when the channel
+// has fallen out of the rail (reported after aggregation) so callers can
+// degrade visibly.
+func (p *chatPane) openAt(channel string, threadRoot, msgID int64) bool {
+	for i, ch := range p.channels {
+		if ch != channel {
+			continue
+		}
+		p.active = i
+		p.threadID = threadRoot
+		p.cursor = 0
+		p.resubscribe()
+		hist := p.visibleHistory()
+		for j, m := range hist {
+			if m.ID == msgID {
+				p.cursor = j
+				break
+			}
+		}
+		return true
+	}
+	return false
+}
+
 // resubscribe points the message pump at the active channel.
 func (p *chatPane) resubscribe() {
 	if p.subCancel != nil {

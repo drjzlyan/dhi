@@ -1,6 +1,6 @@
 # F-016: Inbox — one place for everything that needs you
 
-Status: in progress (M8 P4) · Milestone: M8 · Depends on: F-013/F-014
+Status: implemented (M8 P4, 2026-09-09) · Milestone: M8 · Depends on: F-013/F-014
 Inspired by: Multica's Inbox ("get pinged when an agent needs a call,
 not for every step").
 

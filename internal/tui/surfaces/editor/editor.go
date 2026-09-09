@@ -948,6 +948,7 @@ func (m *Model) handleFindKey(key string) bool {
 // the nav tree, and reports how many buffers opened. It is the
 // cross-surface handoff seam used by the Reviewer's "open in editor"
 // completion flow (F-005).
+// OpenPaths opens files preloaded and focused.
 func (m *Model) OpenPaths(paths ...string) int {
 	opened := 0
 	for _, p := range paths {
@@ -964,6 +965,16 @@ func (m *Model) OpenPaths(paths ...string) int {
 		opened++
 	}
 	return opened
+}
+
+// FocusChat opens the chat sidebar focused (F-016 approval jump). False
+// when this editor has no chat (no runtime wired).
+func (m *Model) FocusChat() bool {
+	if m.chat == nil {
+		return false
+	}
+	m.chat.Focus()
+	return true
 }
 
 func (m *Model) pickResult() bool {

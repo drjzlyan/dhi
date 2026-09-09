@@ -273,6 +273,8 @@ var (
 	GlyphChevron = "›" // breadcrumb separator
 	GlyphCheck   = "✓"
 	GlyphCross   = "✗"
+	GlyphDiamond = "◆" // approval pending
+	GlyphAt      = "@" // mention
 	GlyphBullet  = "•"
 	GlyphBusy    = "◐" // static activity indicator (reduced motion)
 	GlyphBranch  = ""  // nerd-font git branch

@@ -60,6 +60,34 @@ func TestNumberKeySwitchesSurface(t *testing.T) {
 	}
 }
 
+type attentionStub struct {
+	stubSurface
+	n int
+}
+
+func (s *attentionStub) AttentionCount() int { return s.n }
+
+func TestStatuslineAttentionSegment(t *testing.T) {
+	theme.SwapForTest(t, theme.Dark())
+	ws := &attentionStub{stubSurface: stubSurface{id: "ws", title: "Workspace"}, n: 3}
+	a := New("test", ws, &stubSurface{id: "editor", title: "Editor"})
+	a.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+
+	if got := a.compose(); !strings.Contains(got, "!3") {
+		t.Fatalf("statusline missing !3:\n%s", got)
+	}
+	// Resolving the items (count → 0) clears the segment the next frame.
+	ws.n = 0
+	if got := a.compose(); strings.Contains(got, "!3") {
+		t.Fatalf("statusline still shows !3 after resolve:\n%s", got)
+	}
+	// No raw theme colors leaked: the segment uses a style, not a literal.
+	ws.n = 1
+	if got := a.compose(); !strings.Contains(got, "\x1b[") {
+		t.Fatalf("statusline !1 segment not styled:\n%s", got)
+	}
+}
+
 func TestTabCyclesWithWraparound(t *testing.T) {
 	a, _ := newTestApp(t)
 	a.Update(keyPress("tab"))

@@ -289,6 +289,20 @@ func (m *Model) openReview() (review.Review, bool) {
 	return m.svc.Store().Get(m.openID)
 }
 
+// SelectReview is the F-016 in-review jump seam: opens the named review
+// card for a task. Returns false when the reviewer is unavailable or the
+// review is unknown (the inbox then degrades to a named hint).
+func (m *Model) SelectReview(id string) bool {
+	if m.ws == nil || m.svc == nil {
+		return false
+	}
+	if _, ok := m.svc.Store().Get(id); !ok {
+		return false
+	}
+	m.open(id)
+	return true
+}
+
 // open selects a review and (re)loads its diff asynchronously, then
 // subscribes to its review channel so agent replies mirror live. PR-backed
 // reviews also pull remote GitHub comments in the background.

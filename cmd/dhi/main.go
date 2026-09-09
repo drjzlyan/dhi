@@ -153,6 +153,10 @@ func runTUI() {
 	}
 
 	var appRef *app.App
+	var approvals *tools.Approvals
+	if agentRT != nil {
+		approvals = agentRT.Approvals()
+	}
 	a := app.New(version.Version,
 		wsview.New(version.Version, ws, wsview.Deps{
 			Bus:       messageBus,
@@ -160,6 +164,19 @@ func runTUI() {
 			Tasks:     taskStore,
 			Roster:    agentRT,
 			ReviewSvc: reviewSvc,
+			Approvals: approvals,
+			OpenChat: func() bool {
+				if appRef == nil {
+					return false
+				}
+				return appRef.FocusEditorChat()
+			},
+			OpenReview: func(id string) bool {
+				if appRef == nil {
+					return false
+				}
+				return appRef.SelectReviewer(id)
+			},
 		}),
 		editor.New(version.Version, ws, edOpts...),
 		ideator.New(version.Version, ws, ideator.Deps{

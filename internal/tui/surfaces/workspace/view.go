@@ -14,6 +14,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/memory"
 	"github.com/drjzlyan/dhi/internal/agentkit/profile"
 	"github.com/drjzlyan/dhi/internal/agentkit/standards"
+	"github.com/drjzlyan/dhi/internal/inbox"
 	"github.com/drjzlyan/dhi/internal/tasks"
 	"github.com/drjzlyan/dhi/internal/tui/branding"
 	"github.com/drjzlyan/dhi/internal/tui/kit"
@@ -112,6 +113,7 @@ func (m *Model) sectionCounts() [secCount]int {
 	c[secTasks] = len(m.taskRows())
 	c[secInspect] = len(m.agentIDs())
 	c[secAutopilots] = len(m.autoRows())
+	c[secInbox] = len(m.inboxItems())
 	return c
 }
 
@@ -206,6 +208,8 @@ func (m *Model) activeSection() string {
 		return m.inspectBody()
 	case secAutopilots:
 		return m.autopilotsBody()
+	case secInbox:
+		return m.inboxBody()
 	default:
 		return m.standardsBody()
 	}
@@ -538,6 +542,93 @@ func (m *Model) autopilotsBody() string {
 		out = append(out, line)
 	}
 	return strings.Join(out, "\n")
+}
+
+// inboxGlyph marks one item kind with a shape: warning diamond (approval),
+// cross (run failed), check (in review), @ (mention).
+func inboxGlyph(k inbox.ItemKind) string {
+	switch k {
+	case inbox.Approval:
+		return theme.GlyphDiamond
+	case inbox.RunFailed:
+		return theme.GlyphCross
+	case inbox.InReview:
+		return theme.GlyphCheck
+	default:
+		return theme.GlyphAt
+	}
+}
+
+func (m *Model) inboxBody() string {
+	items := m.inboxItems()
+	c := &m.cursors[secInbox]
+	clampCursor(c, len(items))
+
+	var out []string
+	out = append(out, theme.Hint().Render("inbox — everything that needs you")+
+		theme.TextDim().Render("   enter/o jump to owner"))
+	if m.inboxHint != "" {
+		out = append(out, theme.WarningText().Render(m.inboxHint))
+	}
+	if len(items) == 0 {
+		out = append(out, theme.TextDim().Render("(nothing needs attention)"))
+		return strings.Join(out, "\n")
+	}
+	lines := maxInt(m.width-railWidth-12, 30)
+	gl := len([]rune(theme.GlyphCursor))
+	for i, it := range items {
+		style := theme.TextDim()
+		if i == *c {
+			style = theme.TabActive()
+		}
+		first := true
+		for _, ln := range wordWrap(it.Row, lines) {
+			if first {
+				prefix := strings.Repeat(" ", gl)
+				if i == *c {
+					prefix = theme.GlyphCursor + " "
+				}
+				out = append(out, prefix+style.Render(inboxGlyph(it.Kind)+" "+ln))
+				first = false
+			} else {
+				out = append(out, strings.Repeat(" ", gl+1)+style.Render(ln))
+			}
+		}
+	}
+	return strings.Join(out, "\n")
+}
+
+// wordWrap breaks s at word boundaries into width-or-less lines (F-016
+// inbox rows); a single word wider than width hard-breaks at width.
+func wordWrap(s string, width int) []string {
+	if width < 1 {
+		width = 1
+	}
+	var out []string
+	for _, para := range strings.Split(s, "\n") {
+		line := ""
+		for _, f := range strings.Fields(para) {
+			cand := f
+			if line != "" {
+				cand = line + " " + f
+			}
+			if len([]rune(cand)) <= width {
+				line = cand
+				continue
+			}
+			if line != "" {
+				out = append(out, line)
+				line = ""
+			}
+			for len([]rune(f)) > width { // hard break
+				out = append(out, string([]rune(f)[:width]))
+				f = string([]rune(f)[width:])
+			}
+			line = f
+		}
+		out = append(out, line)
+	}
+	return out
 }
 
 func taskDetail(tk tasks.Task) string {

@@ -1,29 +1,59 @@
 # STATE — current position
 
-Updated: 2026-09-09 (session 14: M8 P2 F-014 run observability landed;
+Updated: 2026-09-09 (session 16: M8 P4 F-016 inbox landed; M8 complete;
 wave-3 live-verify still pending installs)
 
 ## Where we are
 
-**M8 P1–P3 are implemented: `make verify` green.** P2 (F-014) made
-F-013's run records first-class: `[[run]]` now carries `exit` and a
-declared `cost:` marker (`cli:<name>` runtime prefix enforced at the
-runtime, strict decode refuses unknown run statuses naming the value), a
-pure `tasks/runs` rollup layer (per-card + per-agent: ok/fail/timeout,
-token sums exclude `-1` with a partial marker, cost sums over costed
-runs only), an INSPECT RUNS subsection (totals line + last 5 runs),
-a run-replay pane (`r` on a card, `e` on an INSPECT agent; transcript
-jsonl rendered chronologically, wrapped, scrollable, named "transcript
-unavailable at <path>" refusal on missing files — no fake data), a
-task-detail runs suffix (`3 runs · cost partial`), and a doctor
-`runs/store` row (line-precise warnings wired into the JSON report).
-3 new goldens under `internal/tui/surfaces/workspace/testdata/goldens/`.
+**M8 is complete (P0–P4): `make verify` green.** All four phases
+landed: P1 (F-013 CLI runtimes) + P2 (F-014 run observability) + P3
+(F-015 autopilots) + P4 (F-016 inbox). The workspace now has nine
+`[ ]` panes (members, org, packs, standards, channels, tasks, inspect,
+autopilots, inbox); the app statusline carries a `!N` attention
+segment that appears only while something needs a human. Remaining:
+wave-3 CLI live-verify once the tools are installed.
 
-P3 (F-015 autopilots) landed: strict `.dhi/autopilots/` cards, launch
-catch-up (due set in slug order, success-only MarkRan), an AUTOPILOTS
-8th pane (`n` new / `e` arm-pause / `r` run now / `x` remove-confirm /
-`o` last transcript), interval ticks (`tea.Tick(NextArm)` re-arm chain),
-doctor `autopilots` row. Next: P4 (F-016 inbox).
+P4 (F-016 inbox) landed: `internal/inbox` is a pure aggregation
+(`Build(apprs, bus, tasks)`, no state) that lists approvals, unreplied
+@you mentions, failed runs on open tasks, and in-review tasks in
+severity-then-age order. The INBOX 9th pane is a launcher: `enter`/`o`
+jumps to the owning surface (editor chat approvals, CHANNELS thread,
+run-replay, Reviewer) via narrow injected seams that degrade to a named
+hint when absent. The `!N` statusline segment is recomputed per frame.
+
+## Session 16 gotchas (F-016 / P4)
+
+- **Inbox is pure + per-frame**: `m.inboxItems()` recomputes
+  `inbox.Build` on every call (view + `AttentionCount`), so a row
+  disappears the frame its home surface resolves it — no read-marks, no
+  cache, nothing to invalidate. The `!N` statusline reads the same
+  `AttentionCount()` via an interface assertion in `App.compose()`, so it
+  clears in lockstep. Keep `Build` side-effect free (it is the
+  table-tested contract).
+- **Mention thread rule**: "replied" means a later `Author == bus.Human`
+  message in the SAME thread — `repliedByYou(thread, i)` scans
+  `thread[i+1:]`. A top-level DM message IS its own thread
+  (`bus.ThreadOf` = own id), so a plain new top-level message does NOT
+  close it; only a threaded reply (`Thread: dm.ID`) does. Tests assert
+  both the close-by-threaded-reply and the not-closed-by-top-level cases.
+- **Jump seams are injected closures**, not surface refs: workspace
+  `Deps` carries `OpenChat func() bool` + `OpenReview func(id) bool`
+  (main wires them to `app.FocusEditorChat()` / `app.SelectReviewer(id)`
+  which assert `FocusChat()` / `SelectReview(string) bool` on the editor /
+  reviewer surfaces). A nil/false seam degrades to a named `m.inboxHint`
+  rendered via `theme.WarningText()` — visible, never silent. Mention +
+  run jumps are internal (chatpane.openAt / openReplay), no seam needed.
+- **INBOX is the 9th pane (secInbox)**; `TestSectionCyclingWraps` was
+  updated so `[` from the first wraps to inbox and 8 `]` reach it.
+  Inbox rows word-wrap at the pane width (`wordWrap` in view.go: break at
+  spaces, hard-break overlong tokens); the kind glyph (◆ approve / ✗
+  run_failed / ✓ in_review / @ mention) + cursor are prefixed per-line.
+- `chatPane` must be built from the bus BEFORE the mention jump test
+  asserts `openAt` — `newChatPane` starts with an empty channel rail;
+  `refreshPaneRail()` populates it. Without that, `openAt` returns false.
+- App `compose()` builds a LOCAL copy of the statusline (`status :=
+  *a.status`, copies `Left`) before prepending the `!N` segment — never
+  mutate `a.status.Left` in place or it re-prepends every frame.
 
 ## Session 15 gotchas (F-015 / P3)
 
@@ -229,13 +259,16 @@ doctor `autopilots` row. Next: P4 (F-016 inbox).
     rejects undecoded keys — new manifest keys must land in the
     file struct + validation + round-trip test together.
 
-## Just finished (M8 P3)
+## Just finished (M8 P4 — M8 complete)
 
-- `internal/autopilot`: strict `.dhi/autopilots/` card store
-  (`ParseSchedule` table-tested names bad values), `Due`/`Next` pure
-  math given injected clock, `Store.ids` roster from agent names.
-- Catch-up + tick chain + AUTOPILOTS pane + edge cases covered by
-  `workspace_autopilots_test.go`; doctor `autopilots` row. 2 goldens.
+- `internal/inbox` (new): pure `Build(apprs, bus, tasks) []Item` —
+  severity order approval > run_failed > in_review > mention, then
+  oldest-first; table-tested; writes no state. Mention rule = a message
+  @-ing the human with no later human message in its thread.
+- Workspace INBOX 9th pane + `enter`/`o` jump-to-owner (chatpane.openAt,
+  openReplay, editor FocusChat, reviewer SelectReview) with named-hint
+  degrade; `!N` statusline segment (App recomputes per frame). 3 goldens
+  (populated / empty / narrow-wrap). `make verify` green.
 
 ## Open questions for user
 
@@ -247,9 +280,13 @@ doctor `autopilots` row. Next: P4 (F-016 inbox).
 
 ## Next up
 
-1. **P4 (F-016 inbox, next):** read `docs/features/F-016-inbox.md`,
-   implement pure aggregation (approvals / unreplied @-mentions /
-   failed runs / in-review tasks), INBOX pane with jump-to-owner,
-   `!N` statusline marker. Commit.
-2. Wave-3 live verify once cursor-agent/copilot/gemini are installed:
-   fill each adapter's checklist + set `Tested`, then doctor reports OK.
+M8 is complete (P0–P4). The only M8 follow-up left is environment-gated.
+
+1. **Wave-3 live verify** (needs installs): once cursor-agent/copilot/
+   gemini are on the machine, run a real task per adapter, fill each
+   adapter's live-verify checklist + set `Tested`, then doctor reports OK.
+   Until then the adapters stay fixture-first and doctor marks a detected
+   version untested (FAIL), never a guess.
+2. **(Optional, deferred)** M4 "true unread" read-mark model — the
+   mention rule in F-016 is a deliberate subset until that lands;
+   also unblocks per-item inbox snooze.

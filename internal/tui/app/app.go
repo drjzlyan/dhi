@@ -235,6 +235,59 @@ func (a *App) OpenInEditor(paths []string) bool {
 	return false
 }
 
+// FocusEditorChat opens the editor's chat sidebar focused (the F-016
+// approval jump). Returns false when no editor surface exposes a chat.
+func (a *App) FocusEditorChat() bool {
+	for i, s := range a.surfaces {
+		if s.Meta().ID != "editor" {
+			continue
+		}
+		f, ok := s.(interface{ FocusChat() bool })
+		if !ok {
+			return false
+		}
+		if f.FocusChat() {
+			a.selectSurface(i)
+			return true
+		}
+	}
+	return false
+}
+
+// SelectReviewer jumps the reviewer surface to one review card (the
+// F-016 in-review jump). Returns false when unknown or unavailable.
+func (a *App) SelectReviewer(id string) bool {
+	for i, s := range a.surfaces {
+		if s.Meta().ID != "reviewer" {
+			continue
+		}
+		sel, ok := s.(interface {
+			SelectReview(string) bool
+		})
+		if !ok {
+			return false
+		}
+		if sel.SelectReview(id) {
+			a.selectSurface(i)
+			return true
+		}
+	}
+	return false
+}
+
+// attentionCount sums the open attention items across surfaces (F-016
+// statusline !N segment; recomputed on demand — items resolve out of the
+// count the frame their home surface flips them).
+func (a *App) attentionCount() int {
+	n := 0
+	for _, s := range a.surfaces {
+		if c, ok := s.(interface{ AttentionCount() int }); ok {
+			n += c.AttentionCount()
+		}
+	}
+	return n
+}
+
 func (a *App) bodyWidth() int { return a.width }
 func (a *App) bodyHeight() int {
 	h := a.height - theme.Current.HeightTab - theme.Current.HeightState
@@ -258,19 +311,29 @@ func (a *App) compose() string {
 
 	a.status.Center = ""
 	a.status.Width = a.width
-	status := a.status.View()
+	status := *a.status
+	base := make([]kit.StatusSegment, len(a.status.Left))
+	copy(base, a.status.Left)
+	status.Left = base
+	if n := a.attentionCount(); n > 0 {
+		status.Left = append([]kit.StatusSegment{{
+			Text:  fmt.Sprintf(" !%d ", n),
+			Style: theme.DangerText(),
+		}}, status.Left...)
+	}
+	statusLine := status.View()
 
 	if a.gateActive() {
-		return bar + "\n" + a.gate.View() + "\n" + status
+		return bar + "\n" + a.gate.View() + "\n" + statusLine
 	}
 
 	body := a.Active().View()
 	if a.transLeft > 0 { // fade-in frames (F-012); content unchanged
 		body = theme.Faint(body)
 	}
-	out := bar + "\n" + body + "\n" + status
+	out := bar + "\n" + body + "\n" + statusLine
 	if a.showHelp {
-		out = a.tabs.View() + "\n" + kit.Center(a.helpView(), a.width, a.bodyHeight()) + "\n" + status
+		out = a.tabs.View() + "\n" + kit.Center(a.helpView(), a.width, a.bodyHeight()) + "\n" + statusLine
 	}
 	return out
 }

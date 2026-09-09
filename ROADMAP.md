@@ -361,8 +361,8 @@ repo paths / MCP issue trackers.
 
 ## M8 — Roster any agent *(Multica-inspired)*
 
-Status: in progress (P1 implemented 2026-09-09; P2 landed 2026-09-09;
-P3 landed 2026-09-09; wave-3 live-verify pending installs).
+Status: complete (P0–P4 landed 2026-09-09; wave-3 live-verify pending
+installs).
 Design decisions: ADR-0012 (host agent CLIs — user-owned, declared
 env, OS sandbox is the boundary, runs not turns; the one named
 exception to ADR-0005's hermetic rule), ADR-0013 (in-house engine
@@ -372,7 +372,7 @@ keeps its identity: single binary, local-first, hermetic DHI-owned
 toolchain, no server/daemon.
 
 - [x] P0 — specs + ADR (F-013…F-016, ADR-0012, 2026-09-08)
-- [ ] P1 — CLI runtimes (F-013): `internal/agentkit/clirun` registry
+- [x] P1 — CLI runtimes (F-013): `internal/agentkit/clirun` registry
       (adapter = argv builder + stream parser + cost extractor +
       declared env pass-through, all fixture-tested); manifest
       `runtime` key (required, strict CLI enum); sandbox-wrapped
@@ -423,6 +423,17 @@ toolchain, no server/daemon.
       catch-up runs due set in slug order at launch (workspace Init);
       doctor `autopilots` row (malformed card → Fail naming slugs,
       dangling agent → Warn, line-precise); 2 goldens
-- [ ] P4 — inbox (F-016): pure aggregation (approvals / unreplied
+- [x] P4 — inbox (F-016): pure aggregation (approvals / unreplied
       @-mentions / failed runs / in-review tasks), INBOX pane with
-      jump-to-owner, `!N` statusline marker
+      jump-to-owner, `!N` statusline marker — landed 2026-09-09:
+      `internal/inbox` pure `Build(apprs, bus, tasks)` (severity
+      approval > run_failed > in_review > mention, then oldest-first,
+      table-tested; no state written); mention rule = a message @-ing
+      the human ("you") with no later "you" message in its bus thread
+      (replied → gone next render; unread DM mention stays); INBOX is
+      the 9th `[`/`]` pane, `enter`/`o` jumps to the owner (editor
+      chat approvals, CHANNELS thread at the mention, run-replay pane,
+      Reviewer card) via narrow injected seams that degrade to a named
+      visible hint when absent; `!N` statusline segment appears iff
+      N > 0 and is recomputed per frame so it clears on resolution;
+      3 goldens
