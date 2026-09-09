@@ -1,26 +1,50 @@
 # STATE — current position
 
-Updated: 2026-09-09 (session 17: MIT license adopted; M9 started —
-F-017 true-unread spec landed; wave-3 live-verify still pending
-installs)
+Updated: 2026-09-09 (session 17: MIT license adopted; M9 true-unread
+complete P0–P3; wave-3 live-verify still pending installs)
 
 ## Where we are
 
-**M8 is complete (P0–P4); M9 started (P0 spec): `make verify` green.**
-M8 landed: P1 (F-013 CLI runtimes) + P2 (F-014 run observability) + P3
-(F-015 autopilots) + P4 (F-016 inbox). The workspace now has nine
-`[ ]` panes (members, org, packs, standards, channels, tasks, inspect,
-autopilots, inbox); the app statusline carries a `!N` attention
-segment that appears only while something needs a human.
+**M8 and M9 are complete: `make verify` green.** M8 (F-013…F-016)
+landed CLI runtimes, run observability, autopilots, and the inbox.
+M9 (F-017 true unread) landed the read-mark model: strict
+`.dhi/unread.json` (monotonic `MarkRead`, fresh-install seeding,
+pruning), the addressed-to-human predicate (DMs + @you mentions, never
+agent-to-agent), read-on-open/post (channel switch, thread open, jump,
+post — shared store across the workspace CHANNELS rail and the editor
+chat sidebar), `●`/`●N` markers on both surfaces, and snooze (`z`
+presets, dimmed rows, `!N` exclusion, 30s expiry tick chain).
 
-M9 (true unread, F-017) is specced with user decisions: Slack-style
-read watermarks in a strict `.dhi/unread.json` (monotonic MarkRead,
-fresh-install seeding so history never floods), the attention
-predicate (DMs + @you mentions, never agent-to-agent), read-on-open /
-read-on-post, `●N` markers on the CHANNELS rail + editor chat header,
-and snooze (`z` presets, dimmed rows, `!N` exclusion, 30s tick chain).
-Phases: P1 store+predicate+inbox swap+doctor, P2 read-on-open +
-markers, P3 snooze. Next: P1.
+## Session 17 gotchas (F-017 / M9)
+
+- **`unread.File` is `.dhi/unread.json`** (full relative path, the
+  pack-provenance precedent). An early version used bare `unread.json`
+  and wrote `<root>/unread.json`; the doctor suite caught it only
+  because its fixture wrote `.dhi/unread.json` directly — keep the
+  store and doctor on the ONE constant.
+- **Doctor's unread row must stay read-only**: `unread.Open` SEEDS
+  (writes) on a missing file. Doctor reads raw bytes + `unread.Decode`;
+  the store's Open is the only writer. A read-only diagnostic that
+  creates state would mask "fresh install" from "corrupted".
+- **`signal()` must hold the mutex** while iterating `subs` — MarkRead
+  unlocks BEFORE signaling, so an unlocked iteration raced with
+  Subscribe's cancel delete (-race caught it in TestSubscribeFiresOnWrite).
+- **Scan's thread rule**: a top-level message whose thread scope
+  (`<channel>#<rootID>`) carries a watermark counts as read (max of the
+  two limits). Without this, the inbox mention jump (which marks the
+  THREAD scope) could never clear a top-level mention row.
+- **Snooze keys are (channel, messageID)** — agent messages only.
+  Approval/run_failed/in_review items refuse `z` with a named hint
+  (snoozing them would need a different keying; noted as a scope cut).
+- **`gotoInbox` in tests loops `for m.sec != secInbox`** — a fixed `]`
+  count breaks when the test is ALREADY at inbox (form submit leaves
+  you there; 8 more `]` lands on autopilots).
+- **Snoozed rows stay dim even under the cursor** (parked ≠ urgent);
+  the word-wrapped "snoozed until HH:MM" suffix can split across lines —
+  assert "snoozed until" and the time separately.
+- Editor chat shares the store via `editor.WithUnread` in main; the
+  workspace Deps `Unread` field takes precedence, falling back to
+  opening its own (tests) — one read state, two surfaces.
 
 P4 (F-016 inbox) landed: `internal/inbox` is a pure aggregation
 (`Build(apprs, bus, tasks)`, no state) that lists approvals, unreplied
@@ -268,23 +292,21 @@ hint when absent. The `!N` statusline segment is recomputed per frame.
     rejects undecoded keys — new manifest keys must land in the
     file struct + validation + round-trip test together.
 
-## Just finished (M8 P4 + license + M9 P0)
+## Just finished (M9 — true unread, complete)
 
-- `internal/inbox` (new): pure `Build(apprs, bus, tasks) []Item` —
-  severity order approval > run_failed > in_review > mention, then
-  oldest-first; table-tested; writes no state. Mention rule = a message
-  @-ing the human with no later human message in its thread.
-- Workspace INBOX 9th pane + `enter`/`o` jump-to-owner (chatpane.openAt,
-  openReplay, editor FocusChat, reviewer SelectReview) with named-hint
-  degrade; `!N` statusline segment (App recomputes per frame). 3 goldens
-  (populated / empty / narrow-wrap). `make verify` green.
-- **License: MIT** (LICENSE file + README; go.mod `license` directive
-  dropped — toolchain rejects it). Upstream sharing unblocked.
-- **M9 P0: `docs/features/F-017-true-unread.md`** — Slack-style read
-  watermarks (`.dhi/unread.json`, monotonic MarkRead, fresh-install
-  seeding), attention predicate (DMs + @you, never agent-to-agent),
-  read-on-open/post, `●N` rail + editor-chat markers, snooze with
-  30s tick chain. ROADMAP M9 section (P0–P3).
+- `internal/unread` (new): strict `.dhi/unread.json` store — monotonic
+  `MarkRead`, fresh-install seeding (history never floods), atomic
+  writes, subscribe pump, prune-on-load with named notes,
+  `AddressedToHuman` predicate, pure `Scan`/`Counts`.
+- Read-on-open/post: chatPane `onRead` seam (channel switch, `t`, jump,
+  post), editor chat `WithUnread` (open, `[/]`, post) — one store shared
+  via main; `●`/`●N` markers on both rails; the inbox mention jump
+  resolves its row (thread-scope Scan rule).
+- Snooze: `z` toggle form (15m/1h/4h/tomorrow 09:00), `u`/`z` unpark,
+  dimmed rows, `!N` + rail count exclusion, 30s `snoozeTickMsg` chain.
+- Doctor `unread/store` row (read-only, strict-decode Fail names the
+  value, dangling snooze Warn, expired counted). Goldens: channels-unread
+  rail, inbox-snoozed. `make verify` + `-race` green.
 
 ## Open questions for user
 
@@ -297,17 +319,12 @@ hint when absent. The `!N` statusline segment is recomputed per frame.
 
 ## Next up
 
-1. **M9 P1 — unread store + predicate (F-017):** `internal/unread`
-   strict `.dhi/unread.json` (monotonic `MarkRead`, fresh-install
-   seeding, subscribe pump), `AddressedToHuman` predicate,
-   `inbox.Build` mention→agent_message swap, doctor `unread/store`
-   row. Commit.
-2. M9 P2 — read-on-open/post wiring + `●N` markers (CHANNELS rail +
-   editor chat header). Commit.
-3. M9 P3 — snooze (`z` presets, dimmed rows, `!N` exclusion, 30s tick
-   chain) + goldens. Commit.
-4. **Wave-3 live verify** (needs installs): once cursor-agent/copilot/
+1. **Wave-3 live verify** (needs installs): once cursor-agent/copilot/
    gemini are on the machine, run a real task per adapter, fill each
    adapter's live-verify checklist + set `Tested`, then doctor reports
    OK. Until then the adapters stay fixture-first and doctor marks a
    detected version untested (FAIL), never a guess.
+2. **(Deferred, from F-017)** snooze-expiry push notifications,
+   per-message read granularity, multi-human read states, bulk
+   "mark all read"; inbox items from autopilot completions / doctor
+   regressions (F-016 deferral).

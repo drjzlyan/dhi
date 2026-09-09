@@ -1,8 +1,8 @@
 # F-017: True unread — read watermarks, snooze, indicators everywhere
 
-Status: planned (M9) · Milestone: M9 · Depends on: F-016 (inbox), M4-P3
-(channels). Inspired by: Slack's read-watermark model; closes the
-M4-deferred unread marker that F-016 only approximated.
+Status: implemented (M9, 2026-09-09) · Milestone: M9 · Depends on: F-016
+(inbox), M4-P3 (channels). Inspired by: Slack's read-watermark model;
+closes the M4-deferred unread marker that F-016 only approximated.
 
 ## Summary
 

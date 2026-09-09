@@ -438,9 +438,9 @@ toolchain, no server/daemon.
       N > 0 and is recomputed per frame so it clears on resolution;
       3 goldens
 
-## M9 — True unread *(read marks the human can feel)*
+## M9 — True unread *(read marks the human can feel)* ✅ (2026-09-09)
 
-Status: in progress (P0 spec 2026-09-09). Closes the M4-deferred
+Status: complete (P0–P3 landed 2026-09-09). Closes the M4-deferred
 unread marker that F-016 only approximated with a stateless mention
 rule. User decisions (2026-09-09): Slack-style read watermarks; items
 = all unreplied agent messages addressed to me + @you mentions (never
@@ -463,5 +463,15 @@ snooze included.
       resolves the row); `●`/`●N` markers on the CHANNELS rail and the
       editor chat header (dot = 1, ●N otherwise, theme danger);
       `unread.Counts` per frame via `syncUnread` in View
-- [ ] P3 — snooze: `z` preset form, dimmed rows, `!N` exclusion,
-      30s tick chain for expiries; goldens
+- [x] P3 — snooze: `z` preset form, dimmed rows, `!N` exclusion,
+      30s tick chain for expiries; goldens — landed 2026-09-09:
+      `z` opens a toggle form with presets 15m/1h/4h/tomorrow 09:00
+      (pure `parseSnoozePreset`, day-wrap aware, unknown names the
+      value); `z` again/`u` unsnoozes; snooze applies to agent messages
+      only (the store schema keys on channel+messageID — other kinds
+      refuse by name); snoozed rows stay visible dimmed with
+      "snoozed until HH:MM" (cross-midnight: "HH:MM Mon d"), enter
+      refuses the jump naming the expiry; `AttentionCount` + rail count
+      exclude parked items so `!N` clears; single 30s `snoozeTickMsg`
+      chain armed in Init/after snooze re-arms while snoozes are
+      pending (deterministic via explicit ticks); INBOX golden
