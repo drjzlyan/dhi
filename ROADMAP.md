@@ -361,7 +361,8 @@ repo paths / MCP issue trackers.
 
 ## M8 — Roster any agent *(Multica-inspired)*
 
-Status: in progress (P1 wave-2 landed 2026-09-09; wave 3 next).
+Status: in progress (P1 implemented 2026-09-09; wave-3 live-verify
+pending installs).
 Design decisions: ADR-0012 (host agent CLIs — user-owned, declared
 env, OS sandbox is the boundary, runs not turns; the one named
 exception to ADR-0005's hermetic rule), ADR-0013 (in-house engine
@@ -385,7 +386,11 @@ toolchain, no server/daemon.
       adapters live-verified; executor gains retry loop (30s backoff,
       ms-compressed in tests via injected clock) + persisted
       `runs/<run>-<attempt>.jsonl` transcripts (F-013 step 4).
-      Wave 3 (pending): cursor-agent, copilot, gemini
+      Wave 3 (LANDED fixture-first 2026-09-09): cursor-agent, copilot,
+      gemini adapters + fixtures to the documented contracts; live-verify
+      checklists recorded in each adapter file — `Tested` stays empty
+      until a real run fills them, so doctor treats a detected version
+      as untested (FAIL), never a guess
 - [ ] P2 — run observability (F-014): uniform `cli:<name>` run schema,
       per-agent/per-task cost rollups, INSPECT run-replay pane,
       task-detail run suffix, doctor `runs/store`

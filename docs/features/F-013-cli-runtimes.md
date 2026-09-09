@@ -1,6 +1,6 @@
 # F-013: CLI runtimes — roster the agent CLIs you already run
 
-Status: in progress (M8 P1 · waves 2–3) · Milestone: M8 · Closes: ADR-0012
+Status: in progress (M8 P1 · wave-3 live-verify pending) · Milestone: M8 · Closes: ADR-0012
 Inspired by: Multica's daemon-runtimes model — an agent is a teammate
 who works on a runtime you control; Multica drives 26 host agent CLIs
 and DHI starts with six of the same, through DHI's own task/worktree/
@@ -60,15 +60,14 @@ codex/opencode/cursor-agent/copilot/gemini.
     [--model provider/model] [--title <task-slug>] <prompt>`; JSONL
     of `step_start`/`tool_use` (state.status, metadata.exit)/`text`/
     `step_finish` (tokens + cost); the stop step_finish is terminal.
-  - Wave 3 (cursor-agent, copilot, gemini): documented headless mode
-    per CLI; NOT installed on the dev machine at spec time, so each
-    adapter ships with its fixture contract first and a live-verify
-    checklist (version, flag set, stream shape, cost location)
-    recorded in the adapter file before its doctor row may report OK.
-    If a CLI has no structured stream, its adapter degrades to a
-    **plain-text transcript** mode (single text stream + exit code +
-    optional trailing usage line) — declared in the adapter, never
-    implicit.
+  - Wave 3 (cursor-agent, copilot, gemini): LANDED fixture-first
+    2026-09-09 (adapters + fixtures to the documented contracts), but
+    NOT installed on the dev machine — each adapter ships with its
+    fixture contract first and a live-verify checklist (version, flag
+    set, stream shape, cost location) recorded in the adapter file
+    before its doctor row may report OK. Until verified, their
+    `Tested` pin is empty, so a detected-but-untested version is a
+    doctor FAIL (never a guess).
 - **Fixture harness.** Each adapter is tested against a scripted
   fixture binary (a tiny shell/Go stub on a temp PATH) emitting canned
   event streams: success-with-cost, mid-stream error, hang (timeout),

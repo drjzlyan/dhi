@@ -43,8 +43,15 @@ echo '{"type":"result","subtype":"success","is_error":false,"result":"Done: two 
 
 func TestRegistryBasics(t *testing.T) {
 	r := NewRegistry(nil)
-	if got := r.Names(); len(got) != 3 || got[0] != "claude" || got[1] != "codex" || got[2] != "opencode" {
-		t.Fatalf("Names = %v", got)
+	names := r.Names()
+	wantNames := []string{"claude", "codex", "copilot", "cursor-agent", "gemini", "opencode"}
+	if len(names) != len(wantNames) {
+		t.Fatalf("Names = %v, want %v", names, wantNames)
+	}
+	for i := range wantNames {
+		if names[i] != wantNames[i] {
+			t.Fatalf("Names = %v, want %v", names, wantNames)
+		}
 	}
 	if c, ok := r.Get("claude"); !ok || c.Bin != "claude" || c.Tested == "" {
 		t.Fatalf("Get(claude) = %+v ok=%v", c, ok)
@@ -56,7 +63,9 @@ func TestRegistryBasics(t *testing.T) {
 		t.Fatal("Get(unknown) must miss")
 	}
 	for name, want := range map[string]bool{
-		"": false, "anthropic": false, "claude": true, "codex": true, "opencode": true, "Claude": false, "nope": false,
+		"": false, "anthropic": false, "claude": true, "codex": true,
+		"opencode": true, "cursor-agent": true, "copilot": true, "gemini": true,
+		"Claude": false, "nope": false,
 	} {
 		if got := r.ValidRuntime(name); got != want {
 			t.Errorf("ValidRuntime(%q) = %v, want %v", name, got, want)

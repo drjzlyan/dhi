@@ -1,25 +1,38 @@
 # STATE — current position
 
-Updated: 2026-09-09 (session 12: M8 P1 wave 2 landed — codex +
-opencode live-verified, executor retry + transcript persistence)
+Updated: 2026-09-09 (session 13: M8 P1 wave 3 landed fixture-first —
+cursor-agent/copilot/gemini adapters; live-verify pending installs)
 
 ## Where we are
 
-**M8 P1 wave 2 is functionally complete: `make verify` green.** The
-registry now holds three adapters — claude (2.1.177), codex (0.147.0),
-opencode (1.18.25) — the last two live-verified this session (real
-JSONL streams captured, fixtures mirror them exactly). The executor
-gained F-013 step 7's retry loop (`retries` budget, 30s backoff
-compressed to ms in tests via the `cliRetryBackoff` package var) and
-step 4's durable transcripts (rendered event JSONL persisted to
-`.dhi/agents/<id>/runs/<run-id>-<attempt>.jsonl`; `Run.Transcript`
-points at it). `tasks.Run` grew `runtime`, `model`, `attempt`,
-`transcript`. `TestRegistryBasics` now asserts the 3-name registry;
-`manifest_test`'s "unknown runtime" fixture uses `nope` (its former
-`codex` value became valid). Additionally removed the stray local
-`sortStrings` test duplicate. Next: M8 P1 wave 3 (cursor-agent,
-copilot, gemini — all fixture-first, none installed here), then M8 P2
-(F-014 run observability).
+**M8 P1 is implemented: `make verify` green.** All six adapters are
+registered — claude, codex, opencode (live-verified) plus cursor-agent,
+copilot, gemini (wave-3, fixture-first with live-verify checklists in
+each adapter file; their `Tested` pins stay empty until a real run fills
+them, so doctor reports a detected version as untested/FAIL — never a
+guess, in line with ADR-0011). Executor retries (F-013 step 7) and
+durable transcripts (step 4, `.dhi/agents/<id>/runs/<run>-<attempt>.jsonl`)
+landed with wave 2. `tests/registry` pinned at 6 names + the manifest
+"unknown runtime" fixture switched from `codex` to `nope`. P1's box in
+ROADMAP stays unchecked only because wave-3 live verification needs the
+CLIs installed. Next: M8 P2 (F-014 run observability), then P3/P4.
+
+## Session 13 gotchas (wave 3)
+
+1. All three wave-3 contracts are DOCUMENTED, not live-verified —
+   cursor-agent's stream-json (system/assistant/tool_call/result),
+   copilot's session JSONL envelope (data.content/toolRequests,
+   tool.execution_end.result), gemini's stream-json timeline
+   (init/message/tool_use/tool_result/error/result). Each adapter
+   carries its live-verify checklist; the terminal event always gets
+   `last_message` stitched on because none of the three put the final
+   summary text on their terminal result event.
+2. copilot's JSONL nests name/result under `data` (tool.execution_end
+   has `data:{name,result}`), not top-level — reading top-level fields
+   silently matched nothing.
+3. Doctor + goldens needed no changes with 6 adapters: doctor iterates
+   the registry generically and the golden surfaces never render the
+   full runtime set.
 
 ## Session 12 gotchas (wave 2)
 
@@ -165,13 +178,12 @@ copilot, gemini — all fixture-first, none installed here), then M8 P2
 
 ## Next up
 
-1. **P1 wave 3 (next):** cursor-agent, copilot, gemini adapters —
-   fixture-first per F-013, with the live-verify checklist recorded in
-   each adapter file before the doctor row may report OK (none are
-   installed on this machine).
-2. P2 (F-014 run observability): rollups, INSPECT replay pane, task
-   run suffix, doctor `runs/store`.
-3. P3 (F-015 autopilots) then P4 (F-016 inbox) per spec.
+1. **P2 (F-014 run observability, next):** uniform `cli:<name>` run
+   schema + per-agent/per-task cost rollups + INSPECT run-replay pane
+   + task-detail run suffix + doctor `runs/store`.
+2. P3 (F-015 autopilots) then P4 (F-016 inbox) per spec.
+3. Wave-3 live verify once cursor-agent/copilot/gemini are installed:
+   fill each adapter's checklist + set `Tested`, then doctor reports OK.
 
 ## Open questions for user
 
