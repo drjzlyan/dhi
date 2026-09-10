@@ -88,3 +88,30 @@ func TestGoldenColumnsLanes(t *testing.T) {
 	c.Cols[1].Cursor = 0
 	golden.Snapshot(t, "columns_lanes", c.View())
 }
+
+func TestGoldenHintBar(t *testing.T) {
+	theme.SwapForTest(t, theme.Dark())
+	bar := HintBar(78,
+		theme.ChromeStatus(theme.Current.Success).Render("✓ team platform saved"),
+		"n new", "e edit", "x delete", "[ ] sections")
+	golden.Snapshot(t, "hintbar_status", bar)
+	golden.Snapshot(t, "hintbar_plain", HintBar(78, "", "j/k move", "enter open", "? help"))
+}
+
+func TestGoldenRail(t *testing.T) {
+	theme.SwapForTest(t, theme.Dark())
+	r := &Rail{
+		Title:  "workspace",
+		Active: 1,
+		Width:  26,
+		Height: 9,
+		Rows: []RailRow{
+			{Label: "INBOX", Count: "4"},
+			{Label: "BOARD", Count: "2"},
+			{Label: "CHANNELS", Count: "1"},
+			{Label: "REPOS", Count: "2"},
+		},
+		Foot: "[ ] sections",
+	}
+	golden.Snapshot(t, "rail_nav", r.View())
+}

@@ -24,6 +24,7 @@ type Tokens struct {
 	BgPanel       color.Color // panel/card background
 	BgElevated    color.Color // overlays, modals, popups
 	BgInset       color.Color // sub-columns inside a panel: board columns, chat rail, thread pane
+	BgChrome      color.Color // bottom chrome: hint bars, keymap rows (F-025)
 	BgSelection   color.Color // selected rows, highlighted ranges
 	BgOverlay     color.Color // modal backdrop dim layer
 	Border        color.Color // unfocused borders, dividers
@@ -55,6 +56,7 @@ func Dark() Tokens {
 		BgPanel:       c("#10141B"),
 		BgElevated:    c("#151B26"),
 		BgInset:       c("#07090D"),
+		BgChrome:      c("#262F3E"),
 		BgSelection:   c("#1B2739"),
 		BgOverlay:     c("#05070B"),
 		Border:        c("#232C3B"),
@@ -86,6 +88,7 @@ func Light() Tokens {
 		BgPanel:       c("#FBF9F3"),
 		BgElevated:    c("#FFFFFF"),
 		BgInset:       c("#EDE9DE"),
+		BgChrome:      c("#E6E0D0"),
 		BgSelection:   c("#DCEFEF"),
 		BgOverlay:     c("#E3DED0"),
 		Border:        c("#D8D2C4"),
@@ -190,6 +193,29 @@ func ElevatedBg() lipgloss.Style {
 // status warrants it.
 func Chip() lipgloss.Style {
 	return lipgloss.NewStyle().Background(Current.BgSelection).Foreground(Current.TextDim)
+}
+
+// ChromeBar is the bottom hint-bar base: chrome background, dim text
+// (F-025 Part A — instructions live here, never the focus).
+func ChromeBar() lipgloss.Style {
+	return lipgloss.NewStyle().Background(Current.BgChrome).Foreground(Current.TextDim)
+}
+
+// ChromeStatus styles one status/flash segment on the chrome bar;
+// pass theme.Current.Success/Warning/Danger (or Text) for the fg.
+func ChromeStatus(fg color.Color) lipgloss.Style {
+	return lipgloss.NewStyle().Background(Current.BgChrome).Foreground(fg)
+}
+
+// RailDim / RailMuted style inactive rail rows on the inset
+// background (single style per row — SGR resets inside concatenated
+// segments drop the row background).
+func RailDim() lipgloss.Style {
+	return lipgloss.NewStyle().Background(Current.BgInset).Foreground(Current.TextDim)
+}
+
+func RailMuted() lipgloss.Style {
+	return lipgloss.NewStyle().Background(Current.BgInset).Foreground(Current.TextMuted)
 }
 
 func panelEdge(focused bool) color.Color {

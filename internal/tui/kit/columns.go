@@ -1,18 +1,23 @@
 package kit
 
 import (
+	"image/color"
 	"strconv"
 	"strings"
+
+	"charm.land/lipgloss/v2"
 
 	"github.com/drjzlyan/dhi/internal/tui/theme"
 )
 
 // Column is one lane of a Columns layout: a title, pre-rendered rows,
-// and the lane's own card cursor.
+// and the lane's own card cursor. Accent (optional) colors the header
+// dot — the board passes its status colors.
 type Column struct {
 	Title  string
 	Cursor int
 	Rows   []string
+	Accent color.Color
 }
 
 // Columns lays out lanes side by side (F-024): each lane is an inset
@@ -95,7 +100,11 @@ func (c *Columns) View() string {
 	lines := make([]string, 0, c.Height+1)
 	var heads []string
 	for i, col := range c.Cols {
-		t := " " + col.Title + " (" + strconv.Itoa(len(col.Rows)) + ") "
+		dot := ""
+		if col.Accent != nil {
+			dot = lipgloss.NewStyle().Foreground(col.Accent).Render(theme.GlyphDot) + " "
+		}
+		t := " " + dot + col.Title + " (" + strconv.Itoa(len(col.Rows)) + ") "
 		if i == c.Active {
 			heads = append(heads, padTo(active.Render(t), laneW))
 		} else {

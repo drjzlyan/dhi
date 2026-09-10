@@ -243,3 +243,69 @@ func TestColumnsViewRowsPadded(t *testing.T) {
 		t.Fatal("empty lane must show the placeholder")
 	}
 }
+
+func TestHintBarChromeRow(t *testing.T) {
+	theme.SwapForTest(t, theme.Dark())
+	out := ansi.Strip(HintBar(50, "", "n new", "e edit", "x delete"))
+	if !strings.Contains(out, "n new") || !strings.Contains(out, "e edit") {
+		t.Fatalf("hints missing: %q", out)
+	}
+	if w := runeWidth(ansi.Strip(out)); w != 50 {
+		t.Fatalf("width=%d, want 50", w)
+	}
+	// The chrome background is structural (theme token + style); color
+	// SGR assertions depend on the test terminal's color profile, so
+	// only geometry + content are pinned here.
+	// A status segment renders before the hints.
+	withStatus := ansi.Strip(HintBar(50,
+		theme.ChromeStatus(theme.Current.Success).Render("✓ saved"),
+		"enter confirm"))
+	if !strings.Contains(withStatus, "✓ saved") || !strings.Contains(withStatus, "enter confirm") {
+		t.Fatalf("status row wrong: %q", withStatus)
+	}
+	// Long hint lists clip to width without breaking the row.
+	if w := runeWidth(ansi.Strip(HintBar(10, "", "aaaaaaaaaaaaaaaaaaaa"))); w != 10 {
+		t.Fatal("unclipped hint bar")
+	}
+}
+
+func TestRailView(t *testing.T) {
+	theme.SwapForTest(t, theme.Dark())
+	r := &Rail{
+		Title:  "workspace",
+		Active: 1,
+		Width:  24,
+		Height: 6,
+		Rows: []RailRow{
+			{Label: "INBOX", Count: "4"},
+			{Label: "BOARD", Count: "2"},
+			{Label: "CHANNELS"},
+			{Label: "REPOS"},
+		},
+		Foot: "[ ] sections",
+	}
+	out := ansi.Strip(r.View())
+	for _, want := range []string{"WORKSPACE", "INBOX", "BOARD", "CHANNELS", "REPOS", "[ ] sections"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("rail missing %q:\n%s", want, out)
+		}
+	}
+	rows := strings.Split(out, "\n")
+	if len(rows) != 6 {
+		t.Fatalf("rows=%d, want 6", len(rows))
+	}
+	for i, row := range rows {
+		if w := runeWidth(row); w != 24 {
+			t.Fatalf("row %d width=%d, want 24 (%q)", i, w, row)
+		}
+	}
+	// Active row carries the cursor marker.
+	if !strings.Contains(rows[2], "▌") {
+		t.Fatalf("active marker missing: %q", rows[2])
+	}
+	// No title, no foot: content height.
+	r2 := &Rail{Rows: []RailRow{{Label: "a"}, {Label: "b"}}, Width: 10}
+	if got := len(strings.Split(r2.View(), "\n")); got != 2 {
+		t.Fatalf("bare rail rows=%d, want 2", got)
+	}
+}
