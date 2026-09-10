@@ -186,6 +186,7 @@ func New(version string, ws *workspace.Workspace, d Deps) *Model {
 		}
 		if d.Bus != nil {
 			m.pane = newChatPane(d.Bus, d.Runtime, m.org)
+			m.pane.profile = m.agentProfileLines
 			m.wireUnreadSeams()
 			switch {
 			case d.Unread != nil:

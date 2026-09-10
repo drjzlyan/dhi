@@ -6,6 +6,7 @@ import (
 
 	"charm.land/lipgloss/v2"
 
+	"github.com/drjzlyan/dhi/internal/ansi"
 	"github.com/drjzlyan/dhi/internal/inbox"
 	"github.com/drjzlyan/dhi/internal/tasks"
 	"github.com/drjzlyan/dhi/internal/tui/branding"
@@ -248,7 +249,7 @@ func (m *Model) boardBody(w, h int) string {
 		for y, ln := range laneLines {
 			var d string
 			if y < len(detailLines) {
-				d = clipPlain(detailLines[y], detailW-1)
+				d = ansi.Clip(detailLines[y], detailW-1)
 			}
 			block = append(block, padTo(ln, w-detailW)+theme.Hint().Render(padTo(d, detailW)))
 		}
@@ -310,13 +311,6 @@ func boardDetailLines(tk tasks.Task) []string {
 			fmt.Sprintf("%d runs · %s", len(tk.Runs), rl.CostText())))
 	}
 	return lines
-}
-
-func clipPlain(s string, w int) string {
-	if rn := len([]rune(s)); rn <= w {
-		return s
-	}
-	return string([]rune(s)[:w])
 }
 
 func orDash(s string) string {
