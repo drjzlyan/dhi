@@ -566,3 +566,24 @@ management in Settings, autopilot execution stays on the boot view).
       kit.Overlay (dimmed backdrop, centered box); the four duplicated
       stackOver/overlayCentered/dimLines implementations deleted;
       rail/sidebar inset shades; final golden regeneration + closeout
+
+## M12 — Coherent UX *(bottom chrome, shaded zones, responsive)*
+
+Status: in progress (P0 landed 2026-09-10). User goal: responsive,
+consistent UI that uses all available space; keymap instructions at the
+BOTTOM on a distinct chrome background (never the focus); different
+background shades per zone; best-practice UX across the IDE.
+Decisions: F-025 (bottom chrome bar, left-rail Settings, contextual
+statusline, full-width narrow stacks).
+
+- [x] P0 — spec (F-025), 2026-09-10
+- [ ] P1 — kit foundation: theme.BgChrome; kit.HintBar; kit.Rail;
+      shared breakpoints; kit.Column lane accent
+- [ ] P2 — contextual statusline (mode chip + surface › zone +
+      per-surface hints via interface assertions)
+- [ ] P3 — Settings left-rail IA + HintBar
+- [ ] P4 — Workspace: keymaps to pane foot, board lane chips +
+      ElevatedBg detail, compact full-width stack
+- [ ] P5 — Editor/Ideator/Reviewer: shaded rails, hints to foot,
+      zone shades
+- [ ] P6 — full golden regen + closeout docs
