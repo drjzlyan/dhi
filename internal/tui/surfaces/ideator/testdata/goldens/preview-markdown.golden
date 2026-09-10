@@ -1,30 +1,30 @@
- SESSIONS          ╭─ › preview ──────────────────────────────────────────────────────────────────╮
- ARTIFACTS         │ plan.md  (markdown)                                                          │
-▌ PREVIEW          │                                                                              │
- CHAT              │    Ideation plan                                                             │
-                   │                                                                              │
-                   │   ## Goals                                                                   │
-                   │                                                                              │
-                   │   • alternatives                                                             │
-                   │   • review loop                                                              │
-                   │                                                                              │
-                   │                                                                              │
-                   │                                                                              │
-                   │                                                                              │
-                   │                                                                              │
-                   │                                                                              │
-                   │                                                                              │
-                   │                                                                              │
-                   │                                                                              │
-                   │                                                                              │
-                   │                                                                              │
-                   │                                                                              │
-                   │                                                                              │
-                   │                                                                              │
-                   │                                                                              │
-                   │                                                                              │
-                   │                                                                              │
-                   │                                                                              │
-✓ session docs cre…│                                                                              │
-[ ] sections       │                                                                              │
-                   ╰──────────────────────────────────────────────────────────────────────────────╯
+  SESSIONS          ╭─ › preview ──────────────────────────────────────────────────────────────────╮
+  ARTIFACTS         │ plan.md  (markdown)                                                          │
+▌ PREVIEW           │                                                                              │
+  CHAT              │    Ideation plan                                                             │
+                    │                                                                              │
+                    │   ## Goals                                                                   │
+                    │                                                                              │
+                    │   • alternatives                                                             │
+                    │   • review loop                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │ ✓ session docs created  j/k scroll • esc back                                │
+[ ] sections        ╰──────────────────────────────────────────────────────────────────────────────╯

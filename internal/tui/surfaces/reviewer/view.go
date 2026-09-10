@@ -27,14 +27,18 @@ func (m *Model) View() string {
 		lines = append(lines, "", theme.Hint().Render("not inside a DHI workspace"))
 		return kit.Center(strings.Join(lines, "\n"), maxInt(m.width, 40), maxInt(m.height, 10))
 	}
-	if m.width < dockMinWidth {
+	if m.width < kit.WCompact {
 		return kit.Center(m.compactBody(), maxInt(m.width, 40), maxInt(m.height, 10))
+	}
+	if m.width < kit.WDock {
+		return m.compactBody()
 	}
 	return m.dockedView()
 }
 
 func (m *Model) compactBody() string {
-	body := m.sectionStrip() + "\n" + m.activeSection()
+	body := m.sectionStrip() + "\n" + m.activeSection() + "\n" +
+		kit.HintBar(maxInt(m.width, 40), m.statusFlash(), m.sectionHints()...)
 	if m.form.kind != fNone {
 		body = m.modalView(body)
 	}
@@ -52,27 +56,17 @@ func (m *Model) dockedView() string {
 }
 
 func (m *Model) railView(h int) string {
-	lines := make([]string, 0, h)
+	rows := make([]kit.RailRow, 0, secCount)
 	for s := sectionID(0); s < secCount; s++ {
-		if s == m.sec {
-			lines = append(lines, theme.TabActive().Render(
-				padTo(theme.GlyphCursor+" "+padTo(s.label(), 8), railWidth-4)))
-		} else {
-			lines = append(lines, " "+
-				theme.TextDim().Render(padTo(s.label(), railWidth-5)))
-		}
+		rows = append(rows, kit.RailRow{Label: s.label()})
 	}
-	for len(lines) < h {
-		lines = append(lines, "")
-	}
-	if m.form.flash != "" && h >= 3 {
-		lines[h-3] = theme.SuccessText().Render(crop("✓ "+m.form.flash, railWidth-1))
-	}
-	if h >= 2 {
-		lines[h-2] = theme.Hint().Render(padTo("[ ] sections", railWidth-1))
-	}
-	lines = lines[:h]
-	return strings.Join(lines, "\n")
+	return (&kit.Rail{
+		Rows:   rows,
+		Active: int(m.sec),
+		Width:  railWidth,
+		Height: h,
+		Foot:   "[ ] sections",
+	}).View()
 }
 
 func (m *Model) sectionCounts() [secCount]int {
@@ -85,8 +79,15 @@ func (m *Model) sectionCounts() [secCount]int {
 
 func (m *Model) mainPane(w, h int) string {
 	p := kit.NewPanel(strings.ToLower(m.sec.label()), true)
-	body := m.activeSectionFor(w, h)
-	p.SetContent(strings.Split(body, "\n")...)
+	inner := w - 4
+	body := m.activeSectionFor(inner, h-3)
+	content := strings.Split(body, "\n")
+	for len(content) < h-3 {
+		content = append(content, "")
+	}
+	content = content[:h-3]
+	content = append(content, kit.HintBar(inner, m.statusFlash(), m.sectionHints()...))
+	p.SetContent(content...)
 	p.Width, p.Height = w, h
 	pane := p.View()
 	if m.composer != nil {
@@ -97,6 +98,30 @@ func (m *Model) mainPane(w, h int) string {
 	}
 	box := kit.Modal{Title: modalTitle(m.form.kind), Lines: m.modalLines()}
 	return kit.Overlay(strings.Split(pane, "\n"), box.View(), w, h)
+}
+
+// statusFlash renders the outcome segment on the chrome bar.
+func (m *Model) statusFlash() string {
+	switch {
+	case m.form.err != "":
+		return theme.ChromeStatus(theme.Current.Danger).Render("✗ " + m.form.err)
+	case m.form.flash != "":
+		return theme.ChromeStatus(theme.Current.Success).Render("✓ " + m.form.flash)
+	}
+	return ""
+}
+
+// sectionHints is the active section's keymap for the chrome bar.
+func (m *Model) sectionHints() []string {
+	switch m.sec {
+	case secReviews:
+		return []string{"n new", "enter open", "s submit", "P post", "F fixer"}
+	case secFiles:
+		return []string{"enter diff", "v viewed", "A agent review"}
+	case secDiff:
+		return []string{"c comment", "t threads", "\\ split", "n/p file"}
+	}
+	return nil
 }
 
 // composerBox renders the comment input as a dialog box.
@@ -176,8 +201,7 @@ func (m *Model) reviewsBody(w int) string {
 	c := m.cursors[secReviews]
 	clampCursor(&c, len(rows))
 
-	out := []string{theme.Hint().Render("review sessions") +
-		theme.TextDim().Render(" n new · enter open · s submit · P post · F fixer · e editor")}
+	out := []string{}
 	if m.svc == nil {
 		out = append(out, theme.DangerText().Render("(review service unavailable)"))
 		return strings.Join(out, "\n")
@@ -221,9 +245,8 @@ func (m *Model) reviewsBody(w int) string {
 }
 
 func (m *Model) filesBody(w int) string {
+	var out []string
 	r, ok := m.openReview()
-	out := []string{theme.Hint().Render("changed files") +
-		theme.TextDim().Render("         enter diff · v mark viewed")}
 	if !ok {
 		out = append(out, theme.TextDim().Render("(no review open — pick one under REVIEWS)"))
 		return strings.Join(out, "\n")

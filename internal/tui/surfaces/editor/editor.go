@@ -376,6 +376,7 @@ func (m *Model) Resize(w, h int) {
 	m.width, m.height = w, h
 	m.list.Width = railWidth - 4
 	m.list.Height = h - 3
+	m.list.Inset = true // shaded sidebar zone (F-025)
 	m.findList.Width = 60 - 4
 	m.findList.Height = min(12, h-6)
 	m.hitList.Width = maxInt(w-railWidth-7, 10)

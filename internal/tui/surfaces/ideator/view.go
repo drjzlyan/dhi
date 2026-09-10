@@ -12,28 +12,29 @@ import (
 	"github.com/drjzlyan/dhi/internal/tui/theme"
 )
 
-// dockMinWidth is the narrowest terminal that still fits rail + pane.
-const dockMinWidth = 84
-
 const railWidth = 20
 
 // View renders the ideator floor: docked rail + active pane on wide
-// terminals, centered stack on narrow ones, brand hero when not inside
-// a workspace.
+// terminals, full-width stack on middle widths, centered fallback on
+// truly tiny ones, brand hero when not inside a workspace (F-025).
 func (m *Model) View() string {
 	if m.ws == nil {
 		lines := strings.Split(branding.HeroBlock(m.version), "\n")
 		lines = append(lines, "", theme.Hint().Render("not inside a DHI workspace"))
 		return kit.Center(strings.Join(lines, "\n"), maxInt(m.width, 40), maxInt(m.height, 10))
 	}
-	if m.width < dockMinWidth {
+	if m.width < kit.WCompact {
 		return kit.Center(m.compactBody(), maxInt(m.width, 40), maxInt(m.height, 10))
+	}
+	if m.width < kit.WDock {
+		return m.compactBody()
 	}
 	return m.dockedView()
 }
 
 func (m *Model) compactBody() string {
-	body := m.sectionStrip() + "\n" + m.activeSection()
+	body := m.sectionStrip() + "\n" + m.activeSection() + "\n" +
+		kit.HintBar(maxInt(m.width, 40), m.statusFlash(), m.sectionHints()...)
 	if m.form.kind != fNone {
 		body = m.modalView(body)
 	}
@@ -51,33 +52,30 @@ func (m *Model) dockedView() string {
 }
 
 func (m *Model) railView(h int) string {
-	lines := make([]string, 0, h)
+	rows := make([]kit.RailRow, 0, secCount)
 	for s := sectionID(0); s < secCount; s++ {
-		if s == m.sec {
-			lines = append(lines, theme.TabActive().Render(
-				padTo(theme.GlyphCursor+" "+padTo(s.label(), 10), railWidth-4)))
-		} else {
-			lines = append(lines, " "+
-				theme.TextDim().Render(padTo(s.label(), railWidth-5)))
-		}
+		rows = append(rows, kit.RailRow{Label: s.label()})
 	}
-	for len(lines) < h {
-		lines = append(lines, "")
-	}
-	if m.form.flash != "" && h >= 3 {
-		lines[h-3] = theme.SuccessText().Render(crop("✓ "+m.form.flash, railWidth-1))
-	}
-	if h >= 2 {
-		lines[h-2] = theme.Hint().Render(padTo("[ ] sections", railWidth-1))
-	}
-	lines = lines[:h]
-	return strings.Join(lines, "\n")
+	return (&kit.Rail{
+		Rows:   rows,
+		Active: int(m.sec),
+		Width:  railWidth,
+		Height: h,
+		Foot:   "[ ] sections",
+	}).View()
 }
 
 func (m *Model) mainPane(w, h int) string {
 	p := kit.NewPanel(strings.ToLower(m.sec.label()), true)
-	body := m.activeSectionFor(w, h)
-	p.SetContent(strings.Split(body, "\n")...)
+	inner := w - 4
+	body := m.activeSectionFor(inner, h-3)
+	content := strings.Split(body, "\n")
+	for len(content) < h-3 {
+		content = append(content, "")
+	}
+	content = content[:h-3]
+	content = append(content, kit.HintBar(inner, m.statusFlash(), m.sectionHints()...))
+	p.SetContent(content...)
 	p.Width, p.Height = w, h
 	pane := p.View()
 	if m.form.kind == fNone {
@@ -85,6 +83,32 @@ func (m *Model) mainPane(w, h int) string {
 	}
 	box := kit.Modal{Title: modalTitle(m.form.kind), Lines: m.modalLines()}
 	return kit.Overlay(strings.Split(pane, "\n"), box.View(), w, h)
+}
+
+// statusFlash renders the outcome segment on the chrome bar.
+func (m *Model) statusFlash() string {
+	switch {
+	case m.form.err != "":
+		return theme.ChromeStatus(theme.Current.Danger).Render("✗ " + m.form.err)
+	case m.form.flash != "":
+		return theme.ChromeStatus(theme.Current.Success).Render("✓ " + m.form.flash)
+	}
+	return ""
+}
+
+// sectionHints is the active section's keymap for the chrome bar.
+func (m *Model) sectionHints() []string {
+	switch m.sec {
+	case secSessions:
+		return []string{"n new", "enter open", "x remove"}
+	case secArtifacts:
+		return []string{"enter preview", "s scan", "v reviewed", "a approve", "r reject"}
+	case secPreview:
+		return []string{"j/k scroll", "esc back"}
+	case secChat:
+		return []string{"i compose", "enter send"}
+	}
+	return nil
 }
 
 func (m *Model) activeSectionFor(w, h int) string {
@@ -138,8 +162,7 @@ func (m *Model) sessionsBody(w int) string {
 	c := m.cursors[secSessions]
 	clampCursor(&c, len(rows))
 
-	out := []string{theme.Hint().Render("ideation sessions") +
-		theme.TextDim().Render(" n new · enter open · x remove")}
+	var out []string
 	if m.store == nil {
 		out = append(out, theme.DangerText().Render("(session store unavailable)"))
 		return strings.Join(out, "\n")
@@ -176,8 +199,7 @@ func (m *Model) sessionsBody(w int) string {
 }
 
 func (m *Model) artifactsBody(w int) string {
-	out := []string{theme.Hint().Render("artifacts") +
-		theme.TextDim().Render(" (read-only)  enter preview · v reviewed · a approve · r reject · s scan")}
+	var out []string
 	sess, ok := m.openSession()
 	if !ok {
 		out = append(out, theme.TextDim().Render("(no session open — pick one under SESSIONS)"))

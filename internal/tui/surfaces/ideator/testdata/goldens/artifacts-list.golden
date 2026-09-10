@@ -1,30 +1,30 @@
- SESSIONS          ╭─ › artifacts ────────────────────────────────────────────────────────────────╮
-▌ ARTIFACTS        │ artifacts (read-only)  enter preview · v reviewed · a approve · r reject · s │
- PREVIEW           │ ▌ design-log.md                                         ○ draft              │
- CHAT              │       by mason                                                               │
-                   │   design-sql.md                                         ○ draft              │
-                   │                                                                              │
-                   │                                                                              │
-                   │                                                                              │
-                   │                                                                              │
-                   │                                                                              │
-                   │                                                                              │
-                   │                                                                              │
-                   │                                                                              │
-                   │                                                                              │
-                   │                                                                              │
-                   │                                                                              │
-                   │                                                                              │
-                   │                                                                              │
-                   │                                                                              │
-                   │                                                                              │
-                   │                                                                              │
-                   │                                                                              │
-                   │                                                                              │
-                   │                                                                              │
-                   │                                                                              │
-                   │                                                                              │
-                   │                                                                              │
-✓ session design-a…│                                                                              │
-[ ] sections       │                                                                              │
-                   ╰──────────────────────────────────────────────────────────────────────────────╯
+  SESSIONS          ╭─ › artifacts ────────────────────────────────────────────────────────────────╮
+▌ ARTIFACTS         │ ▌ design-log.md                                     ○ draft                  │
+  PREVIEW           │       by mason                                                               │
+  CHAT              │   design-sql.md                                     ○ draft                  │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │ ✓ session design-alternatives created  enter preview • s scan • v reviewed • │
+[ ] sections        ╰──────────────────────────────────────────────────────────────────────────────╯

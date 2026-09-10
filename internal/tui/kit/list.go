@@ -3,6 +3,8 @@ package kit
 import (
 	"strings"
 
+	"charm.land/lipgloss/v2"
+
 	"github.com/drjzlyan/dhi/internal/ansi"
 	"github.com/drjzlyan/dhi/internal/tui/theme"
 )
@@ -20,7 +22,8 @@ type List struct {
 	Items  []Item
 	Cursor int
 	Width  int
-	Height int // visible rows; 0 = all
+	Height int  // visible rows; 0 = all
+	Inset  bool // render rows on the inset shade (sidebar zones, F-025)
 
 	offset int
 }
@@ -84,6 +87,10 @@ func (l *List) View() string {
 	var out []string
 	for i, it := range rows {
 		idx := l.offset + i
+		if l.Inset {
+			out = append(out, l.insetRow(idx, it))
+			continue
+		}
 		marker := "  "
 		st := theme.TabInactive()
 		if idx == l.Cursor {
@@ -102,6 +109,33 @@ func (l *List) View() string {
 		out = append(out, padTo(st.Render(line), l.Width))
 	}
 	return strings.Join(out, "\n")
+}
+
+// insetRow renders one row on the inset shade: each segment carries its
+// own background (padding inside the style) so the row bg survives the
+// per-segment SGR resets.
+func (l *List) insetRow(idx int, it Item) string {
+	base := theme.RailDim()
+	badgeSt := theme.RailMuted()
+	marker := "  "
+	if idx == l.Cursor {
+		marker = theme.GlyphCursor + " "
+		base = theme.TabActive()
+		badgeSt = lipgloss.NewStyle().
+			Background(theme.Current.BgSelection).
+			Foreground(theme.Current.TextMuted)
+	}
+	line := marker + it.Title
+	if it.Badge == "" {
+		return base.Render(padTo(line, l.Width))
+	}
+	badge := "[" + it.Badge + "]"
+	gap := l.Width - runeWidth(ansi.Strip(line)) - runeWidth(badge) - 1
+	if gap < 0 {
+		gap = 0
+	}
+	return base.Render(padTo(line, l.Width-runeWidth(badge)-1)) +
+		" " + badgeSt.Render(badge)
 }
 
 func (l *List) visibleRows() []Item {
