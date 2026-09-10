@@ -362,6 +362,40 @@ hint when absent. The `!N` statusline segment is recomputed per frame.
 20. Manifest Parse takes id from the filename stem; strict decode
     rejects undecoded keys — new manifest keys must land in the
     file struct + validation + round-trip test together.
+21. sandbox.Sandbox.Wrap's contract is BINARY-FIRST: argv[0] is the
+    wrapped program and the return value is the COMPLETE command
+    line (`[wrapper…, --, argv…]`). Never prepend the CLI path after
+    wrapping — the session-20 agent bug was exactly that (wrapper
+    bits became claude's prompt args → "malformed final line").
+    recordingSandbox.lastArg asserts the invariant.
+22. runtime.extendSandboxForRoster merges each rostered CLI's
+    StateRoots + binary tree (dir, resolved-symlink dir + parent) via
+    sandbox.RootExtender BEFORE guards are built, in New and live
+    Reload — claude lives under ~/.local and writes ~/.claude, the
+    workspace jail alone denies its exec (exit 71, silent).
+23. Seatbelt reads are broad by design (bun/node CLIs touch fonts/
+    tz/certs; per-CLI enumeration aborts cryptically, SIGABRT no
+    stderr): `(allow file-read*)` + explicit credential denies
+    (~/.ssh, ~/.gnupg, ~/.aws, ~/.kube, gcloud, azure, .netrc — deny
+    wins in SBPL). Writes + exec stay deny-default jailed. Tightening
+    = deliberate future ADR, never casual.
+24. Live agent verification: `DHI_SMOKE_CLAUDE=1 go test
+    ./internal/agentkit/runtime/ -run TestLiveClaudeSeatbeltSmoke`
+    (real claude 2.1.177 through the real seatbelt; expect a PONG
+    result event). Gate-style like DHI_SMOKE_GIT/DHI_SMOKE_NET.
+
+## Just finished (session 21 — agent connection fix + hint dedup)
+
+- **Agent "unable to connect" FIXED** (commits a2216c8, 10971b2):
+  cliSpawnOnce now wraps binary-first argv (bug 1), and
+  runtime.extendSandboxForRoots admits rostered CLI state+binary roots
+  via sandbox.RootExtender before guards build (bug 2 — seatbelt had
+  never actually engaged for agent spawns; tests masked it via Noop).
+  Live-verified: real claude through the real seatbelt returns PONG +
+  usage. Hint-dedup from M12 feedback landed: StatusHints removed
+  everywhere, channels hints render once via chatPane.hints().
+- Working tree clean; M11+M12+this fix all committed. Next actions in
+  "Next up" below.
 
 ## Just finished (M12 — coherent UX, complete)
 
