@@ -1,6 +1,6 @@
 # F-021: Workspace dashboard — INBOX · BOARD · CHANNELS · REPOS
 
-Status: planned (M11 P3/P4) · Milestone: M11 · Depends on: F-003,
+Status: implemented (M11 P3/P4, 2026-09-10)
 F-016 (inbox), F-017 (unread), F-023 (settings owns management).
 Companion to ADR-0014.
 

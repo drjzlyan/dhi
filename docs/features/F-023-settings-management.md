@@ -1,6 +1,6 @@
 # F-023: Settings owns management — TEAMS · PACKS · STANDARDS · AUTOPILOTS
 
-Status: planned (M11 P2) · Milestone: M11 · Depends on: F-018
+Status: implemented (M11 P2, 2026-09-10)
 (AGENTS section), F-008 (packs), M4-P2 (standards), F-015
 (autopilots). Companion to ADR-0014.
 

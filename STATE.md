@@ -1,21 +1,61 @@
 # STATE — current position
 
-Updated: 2026-09-09 (session 17: MIT license; M9 true-unread complete;
-M10 agent lifecycle + IDE parity complete; wave-3 live-verify pending)
+Updated: 2026-09-10 (session 18: M11 complete — dashboard floor,
+Slack channels, Settings management, theme/dialog refresh)
 
 ## Where we are
 
-**M8, M9, and M10 are complete: `make verify` green.** M10 delivered
-the user's crew goal: full agent CRUD in Settings (CONFIG · AGENTS
-sections, strict manifest forms, `org.DeleteAgent`), the live-reload
-pump (roster changes go live without restart — the dead `runtime.
-Reload` seam now wired for Settings, ORG pane, and imports), one
-add-from-source flow (git URL or path, `#sub/path` scoping,
-pack.toml → pack install else bare-manifest import,
-validate-all-before-write, named skips), and the F-020 toolbridge
-(```dhi-action blocks in the final message → task/PR actions,
-manifest-allowlist gated, approvals-gated, results posted to the
-thread; prompt carries the contract when allowed).
+**M11 is complete: `make verify` green.** The IA restructure landed:
+Workspace = INBOX · BOARD · CHANNELS · REPOS (BOARD is the landing
+section); Settings owns management (TEAMS · PACKS · STANDARDS ·
+AUTOPILOTS + agent CRUD + profile modal); CHANNELS is a Slack floor
+(vertical rail / transcript / context pane); all dialogs render
+through kit.Modal + kit.Overlay over dimmed backdrops; the panel
+top-edge corner bug is fixed everywhere.
+
+## Session 18 gotchas (M11)
+
+- **kit.Form.Cur() is exported for tests** — the field cursor is
+  unexported; typeDialog-style helpers tab until `Cur() == i`.
+- **CloseDialog before building flash strings**: `dtarget` is zeroed
+  by closeDialog, so capture `target := m.dtarget` first (the team
+  delete flash was "team  deleted" until fixed).
+- **Board cursors are per-lane** (`boardActive` + `boardCur[4]`);
+  flat task indexes are wrong. `s` re-finds the card after SetStatus
+  so focus follows it into the new lane; inbox run-jumps select the
+  card inside its lane.
+- **The board renders lanes even without a task store** (rows all
+  empty + the unavailable note) — the early-return version broke the
+  "board reads as a board" assertion.
+- **activeSectionFor must check `m.replay != nil` first** — the
+  explicit secBoard case bypassed the modal replay and the board
+  painted over it.
+- **Empty lanes get NO placeholder row appended by the board** —
+  kit.Columns renders EmptyRow itself; appending one inflates the
+  lane header counts.
+- **Slack floor geometry**: transW = width − railW − ctxW − 2 (the
+  two separator columns); rail/context cells are veil-padded via
+  padToANSI (measures ansi.Strip); transcript rows padToANSI'd.
+- **Thread-pane wrap width must budget the author prefix** (`width-12`)
+  — the prefix is prepended after wrapWords, so wrap-then-prefix
+  overflowed and ansi.Clip corrupted a style sequence mid-escape
+  (clipPlain cut raw runes; use ansi.Clip everywhere).
+- **chatPane keys are width-aware via `lastWidth`** (set per render);
+  tests must render once before pressing tab (rail focus is
+  width-gated at slackCtxMin).
+- **Rail rows render as ONE styled string** — concatenating two
+  rendered segments under an outer bg loses the row bg after the
+  first segment's SGR reset.
+- **Settings autoNext/autoResult use the injectable `m.now`** — the
+  autopilots golden is wall-clock dependent otherwise.
+- **Confirm dialogs route enter → submitConfirmDialog** — forgetting
+  that branch silently closed the dialog without acting.
+- **Workspace Init semantics preserved exactly** (goroutine pumps,
+  pane resubscribe, armAutopilots; NO direct catchUpAutopilots call —
+  launch catch-up rides the due-now tick; adding one double-runs).
+- **kit.Modal carries title+lines only for workspace forms** —
+  modalLines already render busy/error rows; setting box.Busy/Error
+  duplicates them.
 
 ## Session 17 gotchas (F-017 / M9)
 
@@ -294,21 +334,29 @@ hint when absent. The `!N` statusline segment is recomputed per frame.
     rejects undecoded keys — new manifest keys must land in the
     file struct + validation + round-trip test together.
 
-## Just finished (M9 — true unread, complete)
+## Just finished (M11 — dashboard floor & Settings management, complete)
 
-- `internal/unread` (new): strict `.dhi/unread.json` store — monotonic
-  `MarkRead`, fresh-install seeding (history never floods), atomic
-  writes, subscribe pump, prune-on-load with named notes,
-  `AddressedToHuman` predicate, pure `Scan`/`Counts`.
-- Read-on-open/post: chatPane `onRead` seam (channel switch, `t`, jump,
-  post), editor chat `WithUnread` (open, `[/]`, post) — one store shared
-  via main; `●`/`●N` markers on both rails; the inbox mention jump
-  resolves its row (thread-scope Scan rule).
-- Snooze: `z` toggle form (15m/1h/4h/tomorrow 09:00), `u`/`z` unpark,
-  dimmed rows, `!N` + rail count exclusion, 30s `snoozeTickMsg` chain.
-- Doctor `unread/store` row (read-only, strict-decode Fail names the
-  value, dangling snooze Warn, expired counted). Goldens: channels-unread
-  rail, inbox-snoozed. `make verify` + `-race` green.
+- `internal/tui/kit`: Panel corner fix (titled top edge was one column
+  short — 42 goldens regenerated); `Modal`/`Overlay` (dimmed backdrop
+  via BgOverlay veil, centered box, styled clip), `Form` (text +
+  cycling toggles, canonical esc/enter/tab/busy contract), `Columns`
+  (per-lane cursors). `internal/ansi.Clip` truncates preserving ANSI.
+- `internal/tui/theme`: BgInset/BgOverlay tokens + InsetBg/OverlayDim/
+  ElevatedBg/Chip/TextMuted/DialogEdge/DialogTitle helpers.
+- Settings (F-023): six sections; TEAMS/PACKS/STANDARDS/AUTOPILOTS
+  CRUD via kit dialogs; agent profile modal; shared autopilot.Store
+  (main wires wsAuto into both surfaces); execution (catch-up + ticks)
+  stays on the workspace.
+- Workspace (F-021/F-022): INBOX · BOARD · CHANNELS · REPOS; kanban
+  board with fact pane + focus-follows-card + `o` floor jump; Slack
+  floor (rail/tab-nav/thread side pane/`v` profile; narrow inline
+  drill-down); inbox jumps retargeted (run_failed lands the card's
+  lane).
+- Dialog sweep (F-024): all four surfaces + the app help overlay on
+  kit.Modal/kit.Overlay; stackOver/overlayCentered/dimLines deleted.
+- Goldens regenerated deliberately per phase; new goldens: kit
+  (modal/form/columns), settings (teams/packs/standards/autopilots),
+  workspace (channels floor/profile).
 
 ## Session 17 gotchas (M10)
 
@@ -358,3 +406,7 @@ hint when absent. The `!N` statusline segment is recomputed per frame.
 3. **(Deferred, F-020)** MCP-style third-party tool registries;
    per-agent env/secrets editing in Settings; a curated remote agent
    registry for F-019 discovery.
+4. **(Deferred, M11)** per-agent env/secrets editing rides the AGENTS
+   profile; board drag-free reordering (move-card between lanes beyond
+   `s` cycling); doctor rows for the new settings sections; the F-024
+   `clip()` note — all truncation now goes through ansi.Clip.

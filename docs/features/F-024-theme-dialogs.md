@@ -1,6 +1,6 @@
 # F-024: Theme & dialog refresh — backgrounds, borders, one modal system
 
-Status: planned (M11 P1/P5) · Milestone: M11 · Depends on: nothing
+Status: implemented (M11 P1/P5, 2026-09-10)
 (P1 lands first; surfaces adopt through P2–P5). Companion to ADR-0014.
 
 ## Summary

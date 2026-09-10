@@ -1,6 +1,6 @@
 # F-020: Full IDE parity — the agent tool seam
 
-Status: planned (M10 P3) · Milestone: M10 · Depends on: F-007
+Status: implemented (M10 P3, 2026-09-09)
 (runtime), F-013 (CLI runtimes). Inspired by: the user goal — "the IDE
 tools should be available to the agents for everything: editing,
 reading files, suggesting changes, chatting in channels, chatting with

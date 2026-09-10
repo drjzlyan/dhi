@@ -780,9 +780,6 @@ func (m *Model) View() string {
 	default:
 		content = m.configView()
 	}
-	if m.form.open {
-		content = m.formView()
-	}
 	for len(content) < h-6 {
 		content = append(content, "")
 	}
@@ -794,12 +791,29 @@ func (m *Model) View() string {
 	p.Width, p.Height = w, h
 
 	view := p.View()
-	if m.dlg != nil {
+	switch {
+	case m.dlg != nil:
 		// Dialogs overlay the panel over a dimmed backdrop (F-024),
 		// never replace its content.
 		view = kit.Overlay(strings.Split(view, "\n"), m.dlg.View(), w, h)
+	case m.form.open:
+		// The legacy agent form rides the same overlay system.
+		box := kit.Modal{Title: m.formTitle(), Lines: m.formView()}
+		view = kit.Overlay(strings.Split(view, "\n"), box.View(), w, h)
 	}
 	return view
+}
+
+// formTitle names the legacy agent modal.
+func (m *Model) formTitle() string {
+	switch {
+	case m.form.kind == formSource:
+		return "add from source (path or git URL, #sub/path to scope)"
+	case m.form.orig != "":
+		return "edit agent " + m.form.orig
+	default:
+		return "new agent"
+	}
 }
 
 func (m *Model) sectionStrip() string {
@@ -858,17 +872,11 @@ func (m *Model) agentsView() []string {
 	return out
 }
 
-// formView renders the agent modal: label/value rows with the cursor
-// field highlighted, the toggle shown bracketed, errors in danger.
+// formView renders the agent modal body: label/value rows with the
+// cursor field highlighted, the toggle shown bracketed, errors in danger.
 func (m *Model) formView() []string {
 	f := &m.form
-	title := "new agent"
-	if f.kind == formSource {
-		title = "add from source (path or git URL, #sub/path to scope)"
-	} else if f.orig != "" {
-		title = "edit agent " + f.orig
-	}
-	out := []string{theme.Brand().Render(title), ""}
+	out := make([]string, 0, len(f.fields)*2+3)
 	for i, fld := range f.fields {
 		cursor := "  "
 		style := theme.TextDim()

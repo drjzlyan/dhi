@@ -333,7 +333,11 @@ func (a *App) compose() string {
 	}
 	out := bar + "\n" + body + "\n" + statusLine
 	if a.showHelp {
-		out = a.tabs.View() + "\n" + kit.Center(a.helpView(), a.width, a.bodyHeight()) + "\n" + statusLine
+		// The help dialog overlays the composed view over a dimmed
+		// backdrop (F-024) — the surface stays visible beneath it.
+		box := a.helpView()
+		over := kit.Overlay(strings.Split(out, "\n"), box, a.width, a.height)
+		out = over
 	}
 	return out
 }

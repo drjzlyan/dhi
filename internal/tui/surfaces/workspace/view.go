@@ -56,31 +56,34 @@ func (m *Model) dockedView() string {
 }
 
 // railView renders the always-visible section switcher with live item
-// counts, padded to the full body height.
+// counts, padded to the full body height. The inset background shade
+// reads the rail as a distinct sidebar (F-024). Each row is one styled
+// string — SGR resets inside concatenated segments would drop the row
+// background mid-line.
 func (m *Model) railView(h int) string {
 	counts := m.sectionCounts()
+	railBg := lipgloss.NewStyle().Background(theme.Current.BgInset)
+	dim := railBg.Foreground(theme.Current.TextDim)
+	muted := railBg.Foreground(theme.Current.TextMuted)
 	lines := make([]string, 0, h)
 	for s := sectionID(0); s < secCount; s++ {
 		label := padTo(s.label(), 11)
 		count := fmt.Sprintf("%d", counts[s])
 		if s == m.sec {
 			lines = append(lines, theme.TabActive().Render(
-				padTo(theme.GlyphCursor+" "+label, railWidth-6))+
-				theme.Hint().Render(count))
+				padTo(theme.GlyphCursor+" "+label, railWidth-6)+count))
 		} else {
-			lines = append(lines, "  "+
-				theme.TextDim().Render(padTo(label, railWidth-8))+
-				theme.TextDim().Render(count))
+			lines = append(lines, dim.Render("  "+label+count))
 		}
 	}
 	for len(lines) < h {
-		lines = append(lines, "")
+		lines = append(lines, railBg.Render(strings.Repeat(" ", railWidth)))
 	}
 	if m.form.flash != "" && h >= 3 {
-		lines[h-3] = theme.SuccessText().Render("✓ " + m.form.flash)
+		lines[h-3] = railBg.Foreground(theme.Current.Success).Render("✓ " + m.form.flash)
 	}
 	if h >= 2 {
-		lines[h-2] = theme.Hint().Render(padTo("[ ] sections", railWidth-2))
+		lines[h-2] = muted.Render(padTo("[ ] sections", railWidth))
 	}
 	lines = lines[:h]
 	return strings.Join(lines, "\n")
@@ -101,8 +104,10 @@ func (m *Model) sectionCounts() [secCount]int {
 	return c
 }
 
-// mainPane wraps the active section in a full-height panel; modals
-// overlay its center while the rail stays put.
+// mainPane wraps the active section in a full-height panel; dialogs
+// ride kit.Modal over a dimmed backdrop while the rail stays put.
+// modalLines renders busy/error rows itself, so the box carries only
+// title + lines.
 func (m *Model) mainPane(w, h int) string {
 	p := kit.NewPanel(strings.ToLower(m.sec.label()), true)
 	body := m.activeSectionFor(w, h)
@@ -112,30 +117,8 @@ func (m *Model) mainPane(w, h int) string {
 	if m.form.kind == fNone {
 		return pane
 	}
-	return m.overlayCentered(pane, m.modalView(strings.Repeat(" ", w)))
-}
-
-// overlayCentered places overlay (already panel-rendered) in the middle
-// of the pane block, replacing covered lines.
-func (m *Model) overlayCentered(pane string, overlay string) string {
-	pl := strings.Split(pane, "\n")
-	ol := strings.Split(overlay, "\n")
-	vOff := (len(pl) - len(ol)) / 2
-	if vOff < 0 {
-		vOff = 0
-	}
-	for i, line := range ol {
-		y := vOff + i
-		if y >= len(pl) {
-			break
-		}
-		indent := (m.width - railWidth - lipgloss.Width(line)) / 2
-		if indent < 0 {
-			indent = 0
-		}
-		pl[y] = strings.Repeat(" ", indent) + line
-	}
-	return strings.Join(pl, "\n")
+	box := kit.Modal{Title: modalTitle(m.form.kind), Lines: m.modalLines()}
+	return kit.Overlay(strings.Split(pane, "\n"), box.View(), w, h)
 }
 
 // activeSectionFor renders the active section body with pane-aware
@@ -492,11 +475,11 @@ func (m *Model) reposBody() string {
 
 // ---- modals ----
 
+// modalView overlays the dialog box on the compact body (narrow path).
 func (m *Model) modalView(body string) string {
-	f := &m.form
-	p := kit.NewPanel(modalTitle(f.kind), true)
-	p.SetContent(m.modalLines()...)
-	return stackOver(dimLines(body), p.View())
+	box := kit.Modal{Title: modalTitle(m.form.kind), Lines: m.modalLines()}
+	return kit.Overlay(strings.Split(body, "\n"), box.View(),
+		maxInt(m.width, 40), maxInt(m.height, 10))
 }
 
 func (m *Model) modalLines() []string {
@@ -620,33 +603,6 @@ func modalTitle(k modalKind) string {
 		return "push branch"
 	}
 	return ""
-}
-
-// stackOver places overlay on top of body, centered, replacing covered
-// lines so geometry stays fixed.
-func stackOver(body, overlay string) string {
-	bl := strings.Split(body, "\n")
-	ol := strings.Split(overlay, "\n")
-	vOffset := (len(bl) - len(ol)) / 2
-	if vOffset < 0 {
-		vOffset = 0
-	}
-	for i, line := range ol {
-		y := vOffset + i
-		if y >= len(bl) {
-			break
-		}
-		bl[y] = line
-	}
-	return strings.Join(bl, "\n")
-}
-
-func dimLines(s string) string {
-	var out []string
-	for _, l := range strings.Split(s, "\n") {
-		out = append(out, theme.TextDim().Render(l))
-	}
-	return strings.Join(out, "\n")
 }
 
 func shorten(p string, n int) string {

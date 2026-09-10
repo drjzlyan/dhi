@@ -83,31 +83,8 @@ func (m *Model) mainPane(w, h int) string {
 	if m.form.kind == fNone {
 		return pane
 	}
-	modal := kit.NewPanel(modalTitle(m.form.kind), true)
-	modal.SetContent(m.modalLines()...)
-	return m.overlayCentered(pane, modal.View())
-}
-
-func (m *Model) overlayCentered(pane string, overlay string) string {
-	pl := strings.Split(pane, "\n")
-	ol := strings.Split(overlay, "\n")
-	vOff := (len(pl) - len(ol)) / 2
-	if vOff < 0 {
-		vOff = 0
-	}
-	inner := maxInt(m.width-railWidth-4, 10)
-	for i, line := range ol {
-		y := vOff + i
-		if y >= len(pl) {
-			break
-		}
-		indent := (inner - lipgloss.Width(line)) / 2
-		if indent < 0 {
-			indent = 0
-		}
-		pl[y] = strings.Repeat(" ", indent) + line
-	}
-	return strings.Join(pl, "\n")
+	box := kit.Modal{Title: modalTitle(m.form.kind), Lines: m.modalLines()}
+	return kit.Overlay(strings.Split(pane, "\n"), box.View(), w, h)
 }
 
 func (m *Model) activeSectionFor(w, h int) string {
@@ -263,10 +240,9 @@ func cursorGlyph(active bool) string {
 // ---- modals ----
 
 func (m *Model) modalView(body string) string {
-	f := &m.form
-	p := kit.NewPanel(modalTitle(f.kind), true)
-	p.SetContent(m.modalLines()...)
-	return stackOver(strings.Split(body, "\n"), p.View())
+	box := kit.Modal{Title: modalTitle(m.form.kind), Lines: m.modalLines()}
+	return kit.Overlay(strings.Split(body, "\n"), box.View(),
+		maxInt(m.width, 40), maxInt(m.height, 10))
 }
 
 func (m *Model) modalLines() []string {
@@ -360,23 +336,6 @@ func modalTitle(k modalKind) string {
 		return "reject artifact"
 	}
 	return ""
-}
-
-func stackOver(body []string, overlay string) string {
-	bl := body
-	ol := strings.Split(overlay, "\n")
-	vOffset := (len(bl) - len(ol)) / 2
-	if vOffset < 0 {
-		vOffset = 0
-	}
-	for i, line := range ol {
-		y := vOffset + i
-		if y >= len(bl) {
-			break
-		}
-		bl[y] = line
-	}
-	return strings.Join(bl, "\n")
 }
 
 func padTo(s string, n int) string {

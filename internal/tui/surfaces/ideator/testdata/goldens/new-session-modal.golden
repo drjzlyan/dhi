@@ -9,14 +9,14 @@
                    │                                                                              │
                    │                                                                              │
                    │                                                                              │
-                            ╭─ › new session ───────────────────────────────────────╮              
-                            │ opens a channel and an artifact folder                │              
-                            │ ▌ name    ▏                                           │              
-                            │   topic                                               │              
-                            │   agents  scout (comma-separated)                     │              
-                            │                                                       │              
-                            │ agents are mentioned by id · tab field · enter create │              
-                            ╰───────────────────────────────────────────────────────╯              
+                              ╭─ › new session ───────────────────────────────────────╮            
+                              │ opens a channel and an artifact folder                │            
+                              │ ▌ name    ▏                                           │            
+                              │   topic                                               │            
+                              │   agents  scout (comma-separated)                     │            
+                              │                                                       │            
+                              │ agents are mentioned by id · tab field · enter create │            
+                              ╰───────────────────────────────────────────────────────╯            
                    │                                                                              │
                    │                                                                              │
                    │                                                                              │

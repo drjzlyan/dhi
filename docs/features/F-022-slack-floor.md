@@ -1,6 +1,6 @@
 # F-022: The Slack floor — CHANNELS rebuilt
 
-Status: planned (M11 P4) · Milestone: M11 · Depends on: M4-P3
+Status: implemented (M11 P4, 2026-09-10)
 (channels), F-017 (unread watermarks), F-016 (inbox jumps). Companion
 to ADR-0014, F-021.
 

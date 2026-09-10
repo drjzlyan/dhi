@@ -90,19 +90,17 @@ func (m *Model) mainPane(w, h int) string {
 	p.Width, p.Height = w, h
 	pane := p.View()
 	if m.composer != nil {
-		return m.overlayCentered(pane, composerPanel(m.composer).View())
+		return kit.Overlay(strings.Split(pane, "\n"), composerBox(m.composer).View(), w, h)
 	}
 	if m.form.kind == fNone {
 		return pane
 	}
-	modal := kit.NewPanel(modalTitle(m.form.kind), true)
-	modal.SetContent(m.modalLines()...)
-	return m.overlayCentered(pane, modal.View())
+	box := kit.Modal{Title: modalTitle(m.form.kind), Lines: m.modalLines()}
+	return kit.Overlay(strings.Split(pane, "\n"), box.View(), w, h)
 }
 
-// composerPanel renders the comment input as its own small panel.
-func composerPanel(c *composer) *kit.Panel {
-	p := kit.NewPanel("comment", true)
+// composerBox renders the comment input as a dialog box.
+func composerBox(c *composer) *kit.Modal {
 	head := theme.TextDim().Render(c.file)
 	if c.line > 0 {
 		head += theme.TextDim().Render(" :" + strconv.Itoa(c.line) + " " + string(c.side))
@@ -120,32 +118,7 @@ func composerPanel(c *composer) *kit.Panel {
 		theme.SuccessText().Render(string(c.runes))+"▏",
 		"",
 		theme.Hint().Render("enter save (pending) · esc cancel"))
-	p.SetContent(lines...)
-	p.Width = 56
-	p.Height = len(lines) + 2
-	return p
-}
-
-func (m *Model) overlayCentered(pane string, overlay string) string {
-	pl := strings.Split(pane, "\n")
-	ol := strings.Split(overlay, "\n")
-	vOff := (len(pl) - len(ol)) / 2
-	if vOff < 0 {
-		vOff = 0
-	}
-	inner := maxInt(m.width-railWidth-4, 10)
-	for i, line := range ol {
-		y := vOff + i
-		if y >= len(pl) {
-			break
-		}
-		indent := (inner - lipgloss.Width(line)) / 2
-		if indent < 0 {
-			indent = 0
-		}
-		pl[y] = strings.Repeat(" ", indent) + line
-	}
-	return strings.Join(pl, "\n")
+	return &kit.Modal{Title: "comment", Lines: lines}
 }
 
 func (m *Model) activeSectionFor(w, h int) string {
@@ -330,10 +303,9 @@ func shortSHA(s string) string {
 // ---- modals ----
 
 func (m *Model) modalView(body string) string {
-	f := &m.form
-	p := kit.NewPanel(modalTitle(f.kind), true)
-	p.SetContent(m.modalLines()...)
-	return stackOver(strings.Split(body, "\n"), p.View())
+	box := kit.Modal{Title: modalTitle(m.form.kind), Lines: m.modalLines()}
+	return kit.Overlay(strings.Split(body, "\n"), box.View(),
+		maxInt(m.width, 40), maxInt(m.height, 10))
 }
 
 func (m *Model) modalLines() []string {
@@ -437,29 +409,4 @@ func modalTitle(k modalKind) string {
 		return "create PR"
 	}
 	return ""
-}
-
-func stackOver(body []string, overlay string) string {
-	bl := body
-	ol := strings.Split(overlay, "\n")
-	vOffset := (len(bl) - len(ol)) / 2
-	if vOffset < 0 {
-		vOffset = 0
-	}
-	for i, line := range ol {
-		y := vOffset + i
-		if y >= len(bl) {
-			break
-		}
-		bl[y] = line
-	}
-	return strings.Join(bl, "\n")
-}
-
-func dimLines(s string) string {
-	var out []string
-	for _, l := range strings.Split(s, "\n") {
-		out = append(out, theme.TextDim().Render(l))
-	}
-	return strings.Join(out, "\n")
 }
