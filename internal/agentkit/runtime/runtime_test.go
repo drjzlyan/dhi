@@ -542,11 +542,15 @@ func readIntFile(t *testing.T, path string) int {
 }
 
 // recordingSandbox observes Wrap calls; it never rewrites argv.
-type recordingSandbox struct{ wraps int }
+type recordingSandbox struct {
+	wraps   int
+	lastArg []string // the argv Wrap received (binary-first contract)
+}
 
 func (r *recordingSandbox) Name() string { return "recording" }
 func (r *recordingSandbox) Wrap(argv []string) ([]string, error) {
 	r.wraps++
+	r.lastArg = append([]string(nil), argv...)
 	return argv, nil
 }
 

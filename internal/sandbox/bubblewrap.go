@@ -36,6 +36,27 @@ func NewBubblewrap(bin string, rw, ro []string) (*Bubblewrap, error) {
 	return &Bubblewrap{bin: bin, rw: rw, ro: ro}, nil
 }
 
+// WithExtraRoots implements RootExtender: a new Bubblewrap binding the
+// extra rw roots on top of the existing set.
+func (b *Bubblewrap) WithExtraRoots(rw []string) (Sandbox, error) {
+	if len(rw) == 0 {
+		return b, nil
+	}
+	seen := map[string]bool{}
+	for _, r := range b.rw {
+		seen[r] = true
+	}
+	merged := append([]string(nil), b.rw...)
+	for _, r := range rw {
+		if r == "" || seen[r] {
+			continue
+		}
+		seen[r] = true
+		merged = append(merged, r)
+	}
+	return NewBubblewrap(b.bin, merged, b.ro)
+}
+
 // Name implements Sandbox.
 func (b *Bubblewrap) Name() string { return "bubblewrap" }
 

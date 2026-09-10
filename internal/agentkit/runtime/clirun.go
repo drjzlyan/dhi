@@ -86,10 +86,17 @@ func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Messag
 		TokensIn: -1, TokensOut: -1,
 	}
 
-	argv := e.cli.BuildArgs(clirun.RunInput{
+	// The sandbox Wrap contract is binary-first: argv[0] is the CLI and
+	// the result is the COMPLETE command line to exec (Noop returns it
+	// unchanged; seatbelt/bubblewrap prepend their wrapper and a `--`
+	// separator). Passing BuildArgs output alone made everything after
+	// the wrapper's `--` land in the CLI's lap as positional args — for
+	// claude that turned the sandbox invocation itself into the prompt
+	// and the reply came back as plain text (no stream-json at all).
+	argv := append([]string{e.cliPath}, e.cli.BuildArgs(clirun.RunInput{
 		Prompt: prompt, System: system,
 		Model: e.m.Model, Workdir: workdir,
-	})
+	})...)
 	wrapped, err := e.guard.Sandbox.Wrap(argv)
 	if err != nil {
 		run.Status = tasks.RunError
@@ -97,7 +104,7 @@ func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Messag
 		return run
 	}
 
-	cmd := exec.CommandContext(ctx, e.cliPath, wrapped...)
+	cmd := exec.CommandContext(ctx, wrapped[0], wrapped[1:]...)
 	cmd.Dir = workdir
 	cmd.Env = r.cliEnv(e.cli)
 	stdout, err := cmd.StdoutPipe()

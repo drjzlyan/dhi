@@ -2,6 +2,8 @@ package sandbox
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -15,6 +17,8 @@ import (
 type Seatbelt struct {
 	bin     string
 	profile string
+	rw      []string
+	ro      []string
 }
 
 // seatbeltSystemDirs are read/exec allows every macOS process needs
@@ -36,7 +40,31 @@ func NewSeatbelt(bin string, rw, ro []string) (*Seatbelt, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Seatbelt{bin: bin, profile: p}, nil
+	return &Seatbelt{bin: bin, profile: p, rw: append([]string(nil), rw...),
+		ro: append([]string(nil), ro...)}, nil
+}
+
+// WithExtraRoots implements RootExtender: a new Seatbelt whose profile
+// also allows the extra rw roots (merged, deduped). Used by the runtime
+// to admit each rostered CLI's state + binary roots (claude lives under
+// ~/.local and writes ~/.claude — neither belongs to the workspace jail).
+func (s *Seatbelt) WithExtraRoots(rw []string) (Sandbox, error) {
+	if len(rw) == 0 {
+		return s, nil
+	}
+	seen := map[string]bool{}
+	for _, r := range s.rw {
+		seen[r] = true
+	}
+	merged := append([]string(nil), s.rw...)
+	for _, r := range rw {
+		if r == "" || seen[r] {
+			continue
+		}
+		seen[r] = true
+		merged = append(merged, r)
+	}
+	return NewSeatbelt(s.bin, merged, s.ro)
 }
 
 // Name implements Sandbox.
@@ -83,7 +111,43 @@ func seatbeltProfile(rw, ro []string) (string, error) {
 	b.WriteString("(allow file-write*" + subpaths(rw) + ")\n")
 	// Exec: registered trees + system dirs.
 	b.WriteString("(allow process-exec*" + subpaths(rw) + subpaths(ro) + subpaths(seatbeltSystemDirs) + ")\n")
+
+	// Host CLIs (claude et al) read the world as the user — bun/node
+	// runtimes touch system fonts, timezone data, cert stores, and the
+	// CLI's own tool state; enumerating those per-CLI is unbounded and
+	// every missed tree aborts the binary cryptically (SIGABRT, no
+	// stderr). Reads therefore open to the user's scope, and the
+	// credential trees are fenced explicitly (a deny wins over an allow
+	// in SBPL). The REAL boundaries stay deny-default: writes are
+	// jailed to the workspace + declared roots, and exec only to the
+	// admitted trees (F-025/ADR-0012: the CLI runs as the user, the
+	// sandbox guards path/process escape).
+	b.WriteString("(allow file-read*)\n")
+	for _, d := range seatbeltCredentialDenies() {
+		if d != "" {
+			b.WriteString(`(deny file-read* (subpath ` + sbplQuote(d) + `))` + "\n")
+		}
+	}
 	return b.String(), nil
+}
+
+// seatbeltCredentialDenies lists the user's credential trees reads may
+// never cross, even with broad file-read. Missing dirs are harmless
+// (a deny on an absent path never matches).
+func seatbeltCredentialDenies() []string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return nil
+	}
+	return []string{
+		filepath.Join(home, ".ssh"),
+		filepath.Join(home, ".gnupg"),
+		filepath.Join(home, ".aws"),
+		filepath.Join(home, ".kube"),
+		filepath.Join(home, ".config", "gcloud"),
+		filepath.Join(home, ".azure"),
+		filepath.Join(home, ".netrc"),
+	}
 }
 
 // sbplQuote renders an absolute path as an SBPL string literal.

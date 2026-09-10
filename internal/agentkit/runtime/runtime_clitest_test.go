@@ -180,6 +180,18 @@ runtime = "claude"
 	if h.rec.wraps != 1 {
 		t.Errorf("sandbox wraps = %d, want 1 (OS boundary is the wrap seam)", h.rec.wraps)
 	}
+	// Wrap contract (binary-first): the argv the sandbox receives must
+	// start with the CLI itself, so the wrapped command is complete and
+	// exec runs wrapped[0]. The regression here was real: passing the
+	// adapter args alone made the sandbox wrapper's `--` separator feed
+	// the sandbox invocation to claude AS THE PROMPT, and the reply
+	// came back as plain text ("malformed final line").
+	if len(h.rec.lastArg) == 0 || filepath.Base(h.rec.lastArg[0]) != "claude" {
+		t.Errorf("Wrap argv[0] = %v, want the claude binary first", h.rec.lastArg)
+	}
+	if len(h.rec.lastArg) > 1 && h.rec.lastArg[1] != "-p" {
+		t.Errorf("Wrap argv[1] = %q, want the adapter's first flag", h.rec.lastArg[1])
+	}
 
 	task, _ := h.st.Get("fix-login")
 	if len(task.Runs) != 1 {

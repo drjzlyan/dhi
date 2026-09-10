@@ -88,6 +88,13 @@ func New(cfg Config, roster []*manifest.Agent) (*Runtime, error) {
 		return nil, fmt.Errorf("runtime: config.Sandbox is required (pass sandbox.Noop{} to opt out explicitly)")
 	}
 	r := &Runtime{cfg: cfg, agents: map[string]*entry{}, roster: make(chan struct{}, 1)}
+	// Admit each rostered CLI's state + binary roots into the OS sandbox
+	// BEFORE guards capture the adapter: claude lives under ~/.local and
+	// writes ~/.claude — the workspace jail alone denies its exec (exit
+	// 71 with no diagnosis). Noop and non-extending adapters skip this.
+	if err := r.extendSandboxForRoster(roster); err != nil {
+		return nil, err
+	}
 	jailRoots := make([]string, 0, len(cfg.WS.Members())+2)
 	for _, m := range cfg.WS.Members() {
 		jailRoots = append(jailRoots, m.Path)
@@ -104,6 +111,58 @@ func New(cfg Config, roster []*manifest.Agent) (*Runtime, error) {
 		r.agents[m.ID] = e
 	}
 	return r, nil
+}
+
+// extendSandboxForRoster merges every rostered CLI's sandbox roots into
+// the OS adapter: the CLI's declared StateRoots (claude → ~/.claude)
+// plus the binary's own directory tree (the resolved symlink target and
+// its parent — claude is ~/.local/bin/claude →
+// ~/.local/share/claude/versions/<v>). Adapters that don't extend
+// (Noop) are skipped; extension failures refuse the runtime by name.
+func (r *Runtime) extendSandboxForRoster(roster []*manifest.Agent) error {
+	if r.cfg.Sandbox == nil || r.cfg.CLIs == nil {
+		return nil
+	}
+	re, ok := r.cfg.Sandbox.(sandbox.RootExtender)
+	if !ok {
+		return nil // noop and test adapters have no roots to grow
+	}
+	seen := map[string]bool{}
+	var extras []string
+	add := func(p string) {
+		if p == "" || seen[p] {
+			return
+		}
+		seen[p] = true
+		extras = append(extras, p)
+	}
+	for _, m := range roster {
+		c, ok := r.cfg.CLIs.Get(m.Runtime)
+		if !ok {
+			continue // buildEntry names the unknown runtime precisely
+		}
+		for _, root := range c.StateRoot() {
+			add(root)
+		}
+		path, err := r.cfg.CLIs.Path(m.Runtime)
+		if err != nil {
+			continue // same: the missing binary is the entry's named error
+		}
+		add(filepath.Dir(path))
+		if resolved, err := filepath.EvalSymlinks(path); err == nil {
+			add(filepath.Dir(resolved))
+			add(filepath.Dir(filepath.Dir(resolved)))
+		}
+	}
+	if len(extras) == 0 {
+		return nil
+	}
+	ext, err := re.WithExtraRoots(extras)
+	if err != nil {
+		return fmt.Errorf("runtime: sandbox roots for rostered CLIs: %w", err)
+	}
+	r.cfg.Sandbox = ext
+	return nil
 }
 
 // buildEntry wires one agent's host CLI and OS-sandbox guard. The
@@ -146,6 +205,11 @@ func (r *Runtime) Changes() <-chan struct{} { return r.roster }
 // entries finish untouched (they hold their own turnMu); new turns bind
 // to the new entries. An empty roster clears the crew.
 func (r *Runtime) Reload(roster []*manifest.Agent) error {
+	// A live-reloaded roster may introduce runtimes the boot profile
+	// never admitted; extend again (the adapter merges, never shrinks).
+	if err := r.extendSandboxForRoster(roster); err != nil {
+		return fmt.Errorf("runtime: reload aborted; previous roster kept: %w", err)
+	}
 	jailRoots := make([]string, 0, len(r.cfg.WS.Members())+2)
 	for _, m := range r.cfg.WS.Members() {
 		jailRoots = append(jailRoots, m.Path)

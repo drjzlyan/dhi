@@ -22,6 +22,15 @@ type Noop struct{}
 // Name implements Sandbox.
 func (Noop) Name() string { return "noop" }
 
+// RootExtender is implemented by adapters whose rw roots can grow after
+// construction. The agent runtime uses it to admit each rostered CLI's
+// state + binary roots before the first spawn (claude lives under
+// ~/.local and writes ~/.claude — neither belongs to the workspace
+// jail). Adapters without it keep their boot profile unchanged.
+type RootExtender interface {
+	WithExtraRoots(rw []string) (Sandbox, error)
+}
+
 // Wrap implements Sandbox by returning argv unchanged.
 func (Noop) Wrap(argv []string) ([]string, error) {
 	if len(argv) == 0 {
