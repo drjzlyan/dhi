@@ -191,6 +191,39 @@ func New(version string, ws *workspace.Workspace, opts ...Option) *Model {
 
 func (m *Model) Meta() surfaces.Meta { return surfaces.Meta{ID: "editor", Title: "Editor"} }
 
+// StatusContext feeds the app statusline (F-025): which zone owns the
+// keys, and the live mode chip (buffer modal states, finder, chat).
+func (m *Model) StatusContext() (string, string) {
+	switch {
+	case m.chat != nil && m.chat.open && m.chat.focus:
+		return "crew", "CHAT"
+	case m.mode == modeFind:
+		return "files", "FIND"
+	case m.mode == modeSearchQuery:
+		return "search", "SEARCH"
+	case m.mode == modeResults:
+		return "results", ""
+	case m.drawerOpen && m.termFocus:
+		return "terminal", "TERM"
+	case m.gitOpen && m.gitFocus:
+		return "git", "GIT"
+	case m.bufFocus && m.active() != nil:
+		switch m.active().Mode() {
+		case textbuf.ModeInsert:
+			return "buffer", "INSERT"
+		case textbuf.ModeVisual:
+			return "buffer", "VISUAL"
+		}
+		return "buffer", ""
+	}
+	return "files", ""
+}
+
+// StatusHints is the top action summary for wide statuslines.
+func (m *Model) StatusHints() []string {
+	return []string{"enter open", "/ find", "ctrl+a crew"}
+}
+
 // Init starts the terminal and chat message pumps plus the workspace
 // roster watcher (live re-resolution without restart, P1).
 func (m *Model) Init() tea.Cmd {

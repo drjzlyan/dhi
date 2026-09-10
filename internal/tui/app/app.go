@@ -45,7 +45,6 @@ type App struct {
 	surfaces []surfaces.Surface
 	active   int
 	tabs     *kit.Tabs
-	status   *kit.StatusLine
 
 	gate    Gate
 	gateRan bool
@@ -66,7 +65,6 @@ func New(version string, regs ...surfaces.Surface) *App {
 		pairs[i] = [2]string{s.Meta().ID, s.Meta().Title}
 	}
 	a.tabs = kit.NewTabs(pairs...)
-	a.status = kit.DefaultStatusLine(regs[0].Meta().Title)
 	return a
 }
 
@@ -191,7 +189,6 @@ func (a *App) handleGlobal(key string) (tea.Cmd, bool) {
 func (a *App) selectSurface(i int) {
 	if a.tabs.SetActive(i) {
 		a.active = i
-		a.status = kit.DefaultStatusLine(a.Active().Meta().Title)
 		a.startTransition()
 	}
 }
@@ -309,19 +306,7 @@ func (a *App) compose() string {
 	a.tabs.Width = a.width
 	bar := a.tabs.View()
 
-	a.status.Center = ""
-	a.status.Width = a.width
-	status := *a.status
-	base := make([]kit.StatusSegment, len(a.status.Left))
-	copy(base, a.status.Left)
-	status.Left = base
-	if n := a.attentionCount(); n > 0 {
-		status.Left = append([]kit.StatusSegment{{
-			Text:  fmt.Sprintf(" !%d ", n),
-			Style: theme.DangerText(),
-		}}, status.Left...)
-	}
-	statusLine := status.View()
+	statusLine := a.buildStatus().View()
 
 	if a.gateActive() {
 		return bar + "\n" + a.gate.View() + "\n" + statusLine
@@ -340,6 +325,53 @@ func (a *App) compose() string {
 		out = over
 	}
 	return out
+}
+
+// Surfaces may expose their active zone + mode and their own key
+// summary for the statusline (F-025 Part C). Narrow interface
+// assertions — the Surface contract is untouched, and surfaces without
+// them degrade to the neutral base line.
+type statusContext interface{ StatusContext() (zone, mode string) }
+type statusHints interface{ StatusHints() []string }
+
+// buildStatus composes the statusline fresh every frame so mode and
+// zone changes render live without a surface switch.
+func (a *App) buildStatus() *kit.StatusLine {
+	sl := kit.DefaultStatusLine(a.Active().Meta().Title)
+	if sc, ok := a.Active().(statusContext); ok {
+		zone, mode := sc.StatusContext()
+		left := make([]kit.StatusSegment, 0, 3)
+		if mode != "" {
+			left = append(left, kit.ModeChip(mode))
+		}
+		base := make([]kit.StatusSegment, len(sl.Left))
+		copy(base, sl.Left)
+		if zone != "" {
+			base = append(base, kit.StatusSegment{
+				Text:  " " + theme.GlyphChevron + " " + zone,
+				Style: theme.TextDim(),
+			})
+		}
+		left = append(left, base...)
+		sl.Left = left
+	}
+	if sh, ok := a.Active().(statusHints); ok {
+		if hints := sh.StatusHints(); len(hints) > 0 && a.width >= 110 {
+			if len(hints) > 3 {
+				hints = hints[:3]
+			}
+			sl.Hints = append(hints, "? help", "^c quit")
+		}
+	}
+	if n := a.attentionCount(); n > 0 {
+		sl.Left = append([]kit.StatusSegment{{
+			Text:  fmt.Sprintf(" !%d ", n),
+			Style: theme.DangerText(),
+		}}, sl.Left...)
+	}
+	sl.Center = ""
+	sl.Width = a.width
+	return sl
 }
 
 func (a *App) helpView() string {

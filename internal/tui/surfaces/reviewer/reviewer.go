@@ -8,6 +8,7 @@ package reviewer
 import (
 	"context"
 	"strconv"
+	"strings"
 	"time"
 
 	"charm.land/bubbletea/v2"
@@ -153,6 +154,21 @@ func New(version string, ws *workspace.Workspace, d Deps) *Model {
 }
 
 func (m *Model) Meta() surfaces.Meta { return surfaces.Meta{ID: "reviewer", Title: "Reviewer"} }
+
+// StatusContext feeds the app statusline (F-025).
+func (m *Model) StatusContext() (string, string) {
+	zone := strings.ToLower(m.sec.label())
+	switch {
+	case m.composer != nil:
+		return zone, "COMPOSE"
+	case m.form.kind != fNone:
+		return zone, "FORM"
+	}
+	return zone, ""
+}
+
+// StatusHints is the top action summary for wide statuslines.
+func (m *Model) StatusHints() []string { return []string{"n review", "enter open", "s submit"} }
 
 // Init starts the store change pump.
 func (m *Model) Init() tea.Cmd {

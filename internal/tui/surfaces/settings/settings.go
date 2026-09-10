@@ -129,6 +129,20 @@ func New(cfg settings.Config, savePath string, d Deps) *Model {
 
 func (m *Model) Meta() surfaces.Meta { return surfaces.Meta{ID: "settings", Title: "Settings"} }
 
+// StatusContext feeds the app statusline (F-025).
+func (m *Model) StatusContext() (string, string) {
+	zone := strings.ToLower(m.sec.label())
+	if m.form.open || m.dlg != nil {
+		return zone, "FORM"
+	}
+	return zone, ""
+}
+
+// StatusHints is the top action summary for wide statuslines.
+func (m *Model) StatusHints() []string {
+	return []string{"[ ] sections", "ctrl+s write"}
+}
+
 // Init starts the async-outcome listener (imports/clones can take
 // seconds; the form stays busy until the event lands).
 func (m *Model) Init() tea.Cmd { return m.listen() }

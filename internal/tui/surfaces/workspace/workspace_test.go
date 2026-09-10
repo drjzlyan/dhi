@@ -87,6 +87,28 @@ func TestBoardIsTheLandingSection(t *testing.T) {
 	}
 }
 
+func TestStatuslineContextFollowsZoneAndMode(t *testing.T) {
+	m, _ := newSurface(t)
+	zone, mode := m.StatusContext()
+	if zone != "board" || mode != "" {
+		t.Fatalf("context = %q %q", zone, mode)
+	}
+	m.sec = secRepos
+	m.HandleKey("a") // add-repo modal owns the keys
+	zone, mode = m.StatusContext()
+	if zone != "repos" || mode != "FORM" {
+		t.Fatalf("modal context = %q %q", zone, mode)
+	}
+	m.HandleKey("esc")
+	m.sec = secInbox
+	if _, mode := m.StatusContext(); mode != "" {
+		t.Fatalf("inbox mode = %q", mode)
+	}
+	if h := m.StatusHints(); len(h) == 0 {
+		t.Fatal("board hints missing")
+	}
+}
+
 func TestSectionCyclingWraps(t *testing.T) {
 	m, _ := newSurface(t)
 	if m.sec != secBoard {

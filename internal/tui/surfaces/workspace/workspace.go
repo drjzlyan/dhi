@@ -205,6 +205,35 @@ func New(version string, ws *workspace.Workspace, d Deps) *Model {
 
 func (m *Model) Meta() surfaces.Meta { return surfaces.Meta{ID: "workspace", Title: "Workspace"} }
 
+// StatusContext feeds the app statusline (F-025): the active zone plus
+// a mode chip when a modal or the replay pane owns the keys.
+func (m *Model) StatusContext() (string, string) {
+	zone := strings.ToLower(m.sec.label())
+	switch {
+	case m.replay != nil:
+		return zone, "REPLAY"
+	case m.form.kind != fNone:
+		return zone, "FORM"
+	}
+	return zone, ""
+}
+
+// StatusHints is the surface's top action summary for wide statuslines
+// (the full keymap lives in the pane's HintBar).
+func (m *Model) StatusHints() []string {
+	switch m.sec {
+	case secBoard:
+		return []string{"n new", "s status", "o thread"}
+	case secChannels:
+		return []string{"i compose", "t thread", "v profile"}
+	case secInbox:
+		return []string{"enter jump", "z snooze"}
+	case secRepos:
+		return []string{"a add", "r rename", "d remove"}
+	}
+	return nil
+}
+
 // Init starts the change pumps for re-render triggers and arms the
 // autopilot chain — launch catch-up rides the due-now tick (F-015),
 // execution stays on this surface (ADR-0014 §5).

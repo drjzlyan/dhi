@@ -25,16 +25,25 @@ type StatusLine struct {
 	Width   int
 }
 
-// DefaultStatusLine returns the M0 statusline for the given surface name.
+// DefaultStatusLine returns the neutral base statusline for the given
+// surface name: the surface label on the left, the global keys on the
+// right. Contextual surfaces layer mode chips + zone + their own hints
+// on top (F-025 Part C).
 func DefaultStatusLine(surfaceName string) *StatusLine {
-	mode := theme.TabInactive().Background(theme.Current.BgSelection).
-		Foreground(theme.Current.Accent).Bold(true)
 	return &StatusLine{
-		Left: []StatusSegment{
-			{Text: " NORMAL ", Style: mode},
-			{Text: " " + surfaceName},
-		},
+		Left:  []StatusSegment{{Text: " " + surfaceName, Style: theme.TextDim()}},
 		Hints: []string{"1-5 views", "tab next", "? help", "^c quit"},
+	}
+}
+
+// ModeChip renders a statusline mode segment: accent on the selection
+// background (INSERT / FIND / CHAT …).
+func ModeChip(text string) StatusSegment {
+	return StatusSegment{
+		Text: " " + strings.ToUpper(text) + " ",
+		Style: lipgloss.NewStyle().
+			Background(theme.Current.BgSelection).
+			Foreground(theme.Current.Accent).Bold(true),
 	}
 }
 

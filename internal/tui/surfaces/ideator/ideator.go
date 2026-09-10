@@ -124,6 +124,18 @@ func New(version string, ws *workspace.Workspace, d Deps) *Model {
 
 func (m *Model) Meta() surfaces.Meta { return surfaces.Meta{ID: "ideator", Title: "Ideator"} }
 
+// StatusContext feeds the app statusline (F-025).
+func (m *Model) StatusContext() (string, string) {
+	zone := strings.ToLower(m.sec.label())
+	if m.form.kind != fNone {
+		return zone, "FORM"
+	}
+	return zone, ""
+}
+
+// StatusHints is the top action summary for wide statuslines.
+func (m *Model) StatusHints() []string { return []string{"n session", "enter open", "v preview"} }
+
 // Init starts the store change pump.
 func (m *Model) Init() tea.Cmd {
 	if m.ws == nil || m.store == nil {
