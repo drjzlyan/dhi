@@ -1,17 +1,46 @@
 # STATE — current position
 
-Updated: 2026-09-10 (session 18: M11 complete — dashboard floor,
-Slack channels, Settings management, theme/dialog refresh)
+Updated: 2026-09-10 (session 19: M12 complete — coherent UX: bottom
+chrome, shaded zones, contextual statusline, responsive breakpoints)
 
 ## Where we are
 
-**M11 is complete: `make verify` green.** The IA restructure landed:
-Workspace = INBOX · BOARD · CHANNELS · REPOS (BOARD is the landing
-section); Settings owns management (TEAMS · PACKS · STANDARDS ·
-AUTOPILOTS + agent CRUD + profile modal); CHANNELS is a Slack floor
-(vertical rail / transcript / context pane); all dialogs render
-through kit.Modal + kit.Overlay over dimmed backdrops; the panel
-top-edge corner bug is fixed everywhere.
+**M11 and M12 are complete: `make verify` green.** M12 delivered the
+coherence pass: every pane ends in a BgChrome HintBar (status left,
+keymap right — keymaps never render above content); all nav sidebars
+share kit.Rail (inset shade) including the new Settings left-rail IA;
+the statusline is contextual (mode chip + `surface › zone`, rebuilt
+per frame); surfaces fill the terminal with full-width stacks at
+middle widths; the board got status-colored lane dots and an
+ElevatedBg detail pane.
+
+## Session 19 gotchas (M12)
+
+- **HintBar clips, never wraps**: the keymap segment goes through
+  ansi.Clip against the width left by the status segment; compose the
+  row from self-contained segments (each with its own chrome bg) or
+  the flash's SGR reset kills the bg mid-row.
+- **kit.Rail foot sits at the LAST row** (h-1) — at h-2 it overwrote
+  the last nav row when content exactly filled Height.
+- **Column count strings**: Columns.View returns header+Height rows;
+  board lanesH budgets must subtract 1 for the header or the detail
+  tail clips under the HintBar.
+- **Settings pane geometry**: panel inner = h-2 rows; content pads to
+  h-3 + HintBar = h-2 exactly (the old code under-filled by 2 rows).
+- **kit.List.Inset renders padding INSIDE the style** (RailDim rows:
+  bg+fg one render) — padTo outside the render leaves raw spaces on
+  the default background; badge segments carry their own bg style.
+- **Color SGR assertions don't work in tests** — lipgloss's test color
+  profile may degrade to Ascii; assert geometry + stripped content,
+  never escape sequences (faint `\x1b[2m` is the exception).
+- **Statusline is per-frame** (`buildStatus()` in compose); the old
+  per-switch `a.status` reset is gone. Surfaces opt in via
+  StatusContext/StatusHints assertions — nil-safe degradation.
+- **Workspace section budgets**: mainPane gives sections h-3 (panel
+  inner h-2 minus the HintBar) and the full inner width (w-4, was
+  w-6) — activeSectionFor no longer subtracts its own margins.
+- **Replay/modal geometry**: activeSectionFor checks `m.replay` FIRST
+  (board/channels cases would paint over the modal).
 
 ## Session 18 gotchas (M11)
 
@@ -334,29 +363,24 @@ hint when absent. The `!N` statusline segment is recomputed per frame.
     rejects undecoded keys — new manifest keys must land in the
     file struct + validation + round-trip test together.
 
-## Just finished (M11 — dashboard floor & Settings management, complete)
+## Just finished (M12 — coherent UX, complete)
 
-- `internal/tui/kit`: Panel corner fix (titled top edge was one column
-  short — 42 goldens regenerated); `Modal`/`Overlay` (dimmed backdrop
-  via BgOverlay veil, centered box, styled clip), `Form` (text +
-  cycling toggles, canonical esc/enter/tab/busy contract), `Columns`
-  (per-lane cursors). `internal/ansi.Clip` truncates preserving ANSI.
-- `internal/tui/theme`: BgInset/BgOverlay tokens + InsetBg/OverlayDim/
-  ElevatedBg/Chip/TextMuted/DialogEdge/DialogTitle helpers.
-- Settings (F-023): six sections; TEAMS/PACKS/STANDARDS/AUTOPILOTS
-  CRUD via kit dialogs; agent profile modal; shared autopilot.Store
-  (main wires wsAuto into both surfaces); execution (catch-up + ticks)
-  stays on the workspace.
-- Workspace (F-021/F-022): INBOX · BOARD · CHANNELS · REPOS; kanban
-  board with fact pane + focus-follows-card + `o` floor jump; Slack
-  floor (rail/tab-nav/thread side pane/`v` profile; narrow inline
-  drill-down); inbox jumps retargeted (run_failed lands the card's
-  lane).
-- Dialog sweep (F-024): all four surfaces + the app help overlay on
-  kit.Modal/kit.Overlay; stackOver/overlayCentered/dimLines deleted.
-- Goldens regenerated deliberately per phase; new goldens: kit
-  (modal/form/columns), settings (teams/packs/standards/autopilots),
-  workspace (channels floor/profile).
+- kit: HintBar (chrome bottom row: status + clipped keymap, exact
+  width), Rail (shared nav sidebar: inset rows, counts/badges,
+  cursor, foot), breakpoints WCompact/WDock/WWide, Column.Accent,
+  List.Inset.
+- theme: BgChrome (dark #262F3E / light #E6E0D0) + ChromeBar/
+  ChromeStatus/RailDim/RailMuted.
+- Settings: left-rail IA; workspace/ideator/reviewer rails on the
+  shared primitive; all top-of-body keymap rows deleted; chrome
+  HintBar pins status+keys at every pane foot.
+- Statusline contextual: kit.ModeChip + StatusContext/StatusHints
+  interface assertions on all five surfaces; rebuilt per frame in
+  app.buildStatus.
+- Responsive: full-width stacks 60–83 cols; board detail side-by-side
+  at >=120; sections use the full panel inner width.
+- Goldens regenerated deliberately across kit/app/settings/workspace/
+  ideator/reviewer/editor.
 
 ## Session 17 gotchas (M10)
 

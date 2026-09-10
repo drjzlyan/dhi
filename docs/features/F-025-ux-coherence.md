@@ -1,6 +1,6 @@
 # F-025: Coherent UX — bottom chrome, shaded zones, full-space layouts
 
-Status: planned (M12) · Milestone: M12 · Depends on: F-024 (kit
+Status: implemented (M12, 2026-09-10)
 Modal/Form/Columns, bg tokens). Decisions (2026-09-10): keymap
 instructions move to the BOTTOM of every pane on a dedicated chrome
 background; Settings adopts the left-rail IA; the statusline becomes

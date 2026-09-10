@@ -567,9 +567,9 @@ management in Settings, autopilot execution stays on the boot view).
       stackOver/overlayCentered/dimLines implementations deleted;
       rail/sidebar inset shades; final golden regeneration + closeout
 
-## M12 — Coherent UX *(bottom chrome, shaded zones, responsive)*
+## M12 — Coherent UX *(bottom chrome, shaded zones, responsive)* ✅ (2026-09-10)
 
-Status: in progress (P0 landed 2026-09-10). User goal: responsive,
+Status: complete (P0–P6 landed 2026-09-10). User goal: responsive,
 consistent UI that uses all available space; keymap instructions at the
 BOTTOM on a distinct chrome background (never the focus); different
 background shades per zone; best-practice UX across the IDE.
@@ -577,13 +577,20 @@ Decisions: F-025 (bottom chrome bar, left-rail Settings, contextual
 statusline, full-width narrow stacks).
 
 - [x] P0 — spec (F-025), 2026-09-10
-- [ ] P1 — kit foundation: theme.BgChrome; kit.HintBar; kit.Rail;
-      shared breakpoints; kit.Column lane accent
-- [ ] P2 — contextual statusline (mode chip + surface › zone +
-      per-surface hints via interface assertions)
-- [ ] P3 — Settings left-rail IA + HintBar
-- [ ] P4 — Workspace: keymaps to pane foot, board lane chips +
-      ElevatedBg detail, compact full-width stack
-- [ ] P5 — Editor/Ideator/Reviewer: shaded rails, hints to foot,
-      zone shades
-- [ ] P6 — full golden regen + closeout docs
+- [x] P1 — kit foundation: theme.BgChrome (dark+light);
+      kit.HintBar (status segment + muted keymap, exact-width chrome
+      row); kit.Rail (shared nav sidebar); breakpoints WCompact=60/
+      WDock=84/WWide=120; kit.Column.Accent lane dots
+- [x] P2 — contextual statusline: mode chip (INSERT/VISUAL/FIND/
+      CHAT/TERM/GIT/FORM/REPLAY/COMPOSE) + `surface › zone`, recomputed
+      per frame via StatusContext/StatusHints interface assertions;
+      static NORMAL dies; per-surface key summaries at width >= 110
+- [x] P3 — Settings left-rail IA (kit.Rail) + chrome HintBar; the
+      horizontal strip and foot keymap line are gone
+- [x] P4 — Workspace: all top-of-body keymap rows deleted; chrome
+      HintBar on every pane (flash semantics: danger > warning >
+      success); board lane status dots + ElevatedBg detail pane at
+      >=120; rail through kit.Rail; full-width stacks 60–83
+- [x] P5 — Ideator/Reviewer on kit.Rail + HintBar + breakpoints;
+      editor files rail rows inset-shaded (kit.List.Inset)
+- [x] P6 — full golden regeneration + closeout docs
