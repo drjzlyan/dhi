@@ -1,8 +1,7 @@
-▌ INBOX             3     ╭─ › inbox ────────────────────────────────────────────────────────────────────────╮
-  BOARD      2            │ inbox — everything that needs you   enter/o jump · z snooze · u unsnooze         │
-  CHANNELS   1            │  ◆ approve scout: write .dhi/tasks/x/y.md                                        │
-  REPOS      2            │  ✗ run failed fix-login (alice) — timeout after 10.0m                            │
-                          │  ✓ in review ship-docs — scout, 1 runs · cost partial                            │
+▌ INBOX                  3╭─ › inbox ────────────────────────────────────────────────────────────────────────╮
+  BOARD                  2│  ◆ approve scout: write .dhi/tasks/x/y.md                                        │
+  CHANNELS               1│  ✗ run failed fix-login (alice) — timeout after 10.0m                            │
+  REPOS                  2│  ✓ in review ship-docs — scout, 1 runs · cost partial                            │
                           │ ▌ @ #general scout: "@you needs a decision on the plan" — snoozed until          │
                           │   09:15                                                                          │
                           │                                                                                  │
@@ -30,5 +29,6 @@
                           │                                                                                  │
                           │                                                                                  │
                           │                                                                                  │
-[ ] sections              │                                                                                  │
-                          ╰──────────────────────────────────────────────────────────────────────────────────╯
+                          │                                                                                  │
+                          │ enter/o jump • z snooze • u unsnooze                                             │
+[ ] sections              ╰──────────────────────────────────────────────────────────────────────────────────╯

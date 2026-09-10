@@ -8,6 +8,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/agentkit/org"
 	"github.com/drjzlyan/dhi/internal/ansi"
+	"github.com/drjzlyan/dhi/internal/tui/kit"
 	"github.com/drjzlyan/dhi/internal/tui/theme"
 	"github.com/drjzlyan/dhi/internal/unread"
 )
@@ -549,11 +550,11 @@ func (p *chatPane) renderNarrow(width, height int) []string {
 	lines = append(lines, "")
 	if p.focus {
 		lines = append(lines, theme.TabActive().Render("> "+string(p.input))+"▌")
-		lines = append(lines, theme.Hint().Render(
-			"⏎ send · @mention triggers agents · esc blur"))
+		lines = append(lines, kit.HintBar(width, "",
+			"enter send", "@mention triggers agents", "esc blur"))
 	} else {
-		lines = append(lines, theme.Hint().Render(
-			"i compose · j/k select · t thread · c all · ,/. channel"))
+		lines = append(lines, kit.HintBar(width, "",
+			"i compose", "j/k select", "t thread", "c all", ",/. channel"))
 	}
 	return lines
 }
@@ -621,11 +622,12 @@ func (p *chatPane) transcriptLines(width, height int, wide bool) []string {
 	lines = append(lines, "")
 	if p.focus {
 		lines = append(lines, theme.TabActive().Render("> "+string(p.input))+"▌")
+		lines = append(lines, kit.HintBar(width, "", "enter send", "esc blur"))
 	} else if p.threadID != 0 {
-		lines = append(lines, theme.Hint().Render("i reply in thread · esc closes pane"))
+		lines = append(lines, kit.HintBar(width, "", "i reply in thread", "esc closes pane"))
 	} else {
-		lines = append(lines, theme.Hint().Render(
-			"i compose · j/k select · t thread · v profile · tab rail"))
+		lines = append(lines, kit.HintBar(width, "",
+			"i compose", "j/k select", "t thread", "v profile", "tab rail"))
 	}
 	return lines
 }

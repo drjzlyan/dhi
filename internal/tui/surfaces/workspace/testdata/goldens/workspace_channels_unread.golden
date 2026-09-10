@@ -1,11 +1,11 @@
-  INBOX      5            ╭─ › channels ─────────────────────────────────────────────────────────────────────╮
-  BOARD      2            │ [#general ●2]                                                                    │
-▌ CHANNELS          1     │ ────────────────────────────────────────────────────────                         │
-  REPOS      2            │ #general                                                                         │
+  INBOX                  5╭─ › channels ─────────────────────────────────────────────────────────────────────╮
+  BOARD                  2│ [#general ●2]                                                                    │
+▌ CHANNELS               1│ ────────────────────────────────────────────────────────                         │
+  REPOS                  2│ #general                                                                         │
                           │ ▌ scout @you needs a decision on the plan                                        │
                           │   muse @you second decision                                                      │
                           │                                                                                  │
-                          │ i compose · j/k select · t thread · c all · ,/. channel                          │
+                          │ i compose • j/k select • t thread • c all • ,/. channel                          │
                           │                                                                                  │
                           │                                                                                  │
                           │                                                                                  │
@@ -30,5 +30,5 @@
                           │                                                                                  │
                           │                                                                                  │
                           │                                                                                  │
-[ ] sections              │                                                                                  │
-                          ╰──────────────────────────────────────────────────────────────────────────────────╯
+                          │ i compose • t thread • v profile • ,/. channel                                   │
+[ ] sections              ╰──────────────────────────────────────────────────────────────────────────────────╯

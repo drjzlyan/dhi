@@ -1,7 +1,7 @@
-▌ INBOX             0     ╭─ › inbox ────────────────────────────────────────────────────────────────────────╮
-  BOARD      0            │ inbox — everything that needs you   enter/o jump · z snooze · u unsnooze         │
-  CHANNELS   0            │ (nothing needs attention)                                                        │
-  REPOS      2            │                                                                                  │
+▌ INBOX                  0╭─ › inbox ────────────────────────────────────────────────────────────────────────╮
+  BOARD                  0│ (nothing needs attention)                                                        │
+  CHANNELS               0│                                                                                  │
+  REPOS                  2│                                                                                  │
                           │                                                                                  │
                           │                                                                                  │
                           │                                                                                  │
@@ -30,5 +30,5 @@
                           │                                                                                  │
                           │                                                                                  │
                           │                                                                                  │
-[ ] sections              │                                                                                  │
-                          ╰──────────────────────────────────────────────────────────────────────────────────╯
+                          │ enter/o jump • z snooze • u unsnooze                                             │
+[ ] sections              ╰──────────────────────────────────────────────────────────────────────────────────╯

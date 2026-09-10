@@ -2,6 +2,7 @@ package workspace
 
 import (
 	"fmt"
+	"image/color"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -16,8 +17,10 @@ import (
 
 // View renders the operations floor. Wide terminals get a docked
 // layout — persistent section rail on the left, active section filling
-// the remaining width and full height. Narrow terminals fall back to a
-// centered stack. Not-inside-a-workspace keeps the brand hero.
+// the remaining width and full height. Middle widths render a
+// full-width vertical stack (no centered dead margins); only truly
+// tiny terminals center (F-025 Part D). Not-inside-a-workspace keeps
+// the brand hero.
 func (m *Model) View() string {
 	if m.ws == nil {
 		lines := strings.Split(branding.HeroBlock(m.version), "\n")
@@ -25,8 +28,11 @@ func (m *Model) View() string {
 		return kit.Center(strings.Join(lines, "\n"), maxInt(m.width, 40), maxInt(m.height, 10))
 	}
 	m.syncUnread()
-	if m.width < dockMinWidth {
+	if m.width < kit.WCompact {
 		return kit.Center(m.compactBody(), maxInt(m.width, 40), maxInt(m.height, 10))
+	}
+	if m.width < kit.WDock {
+		return m.compactBody()
 	}
 	return m.dockedView()
 }
@@ -38,7 +44,8 @@ const dockMinWidth = 84
 const railWidth = 26
 
 func (m *Model) compactBody() string {
-	body := m.sectionStrip() + "\n" + m.activeSection()
+	body := m.sectionStrip() + "\n" + m.activeSection() + "\n" +
+		kit.HintBar(maxInt(m.width, 40), m.statusFlash(), m.sectionHints()...)
 	if m.form.kind != fNone {
 		body = m.modalView(body)
 	}
@@ -56,37 +63,25 @@ func (m *Model) dockedView() string {
 }
 
 // railView renders the always-visible section switcher with live item
-// counts, padded to the full body height. The inset background shade
-// reads the rail as a distinct sidebar (F-024). Each row is one styled
-// string — SGR resets inside concatenated segments would drop the row
-// background mid-line.
+// counts, padded to the full body height — the kit.Rail primitive with
+// the inset background shade (F-025). Status messages live on the
+// pane's HintBar, not here.
 func (m *Model) railView(h int) string {
 	counts := m.sectionCounts()
-	railBg := lipgloss.NewStyle().Background(theme.Current.BgInset)
-	dim := railBg.Foreground(theme.Current.TextDim)
-	muted := railBg.Foreground(theme.Current.TextMuted)
-	lines := make([]string, 0, h)
+	rows := make([]kit.RailRow, 0, secCount)
 	for s := sectionID(0); s < secCount; s++ {
-		label := padTo(s.label(), 11)
-		count := fmt.Sprintf("%d", counts[s])
-		if s == m.sec {
-			lines = append(lines, theme.TabActive().Render(
-				padTo(theme.GlyphCursor+" "+label, railWidth-6)+count))
-		} else {
-			lines = append(lines, dim.Render("  "+label+count))
-		}
+		rows = append(rows, kit.RailRow{
+			Label: s.label(),
+			Count: fmt.Sprintf("%d", counts[s]),
+		})
 	}
-	for len(lines) < h {
-		lines = append(lines, railBg.Render(strings.Repeat(" ", railWidth)))
-	}
-	if m.form.flash != "" && h >= 3 {
-		lines[h-3] = railBg.Foreground(theme.Current.Success).Render("✓ " + m.form.flash)
-	}
-	if h >= 2 {
-		lines[h-2] = muted.Render(padTo("[ ] sections", railWidth))
-	}
-	lines = lines[:h]
-	return strings.Join(lines, "\n")
+	return (&kit.Rail{
+		Rows:   rows,
+		Active: int(m.sec),
+		Width:  railWidth,
+		Height: h,
+		Foot:   "[ ] sections",
+	}).View()
 }
 
 func (m *Model) sectionCounts() [secCount]int {
@@ -107,18 +102,56 @@ func (m *Model) sectionCounts() [secCount]int {
 // mainPane wraps the active section in a full-height panel; dialogs
 // ride kit.Modal over a dimmed backdrop while the rail stays put.
 // modalLines renders busy/error rows itself, so the box carries only
-// title + lines.
+// title + lines. The last pane row is the chrome HintBar (F-025):
+// status/flash left, the section's keymap right.
 func (m *Model) mainPane(w, h int) string {
 	p := kit.NewPanel(strings.ToLower(m.sec.label()), true)
-	body := m.activeSectionFor(w, h)
-	p.SetContent(strings.Split(body, "\n")...)
+	inner := w - 4 // panel edges + horizontal padding
+	body := m.activeSectionFor(inner, h-3)
+	content := strings.Split(body, "\n")
+	for len(content) < h-3 {
+		content = append(content, "")
+	}
+	content = content[:h-3]
+	content = append(content, kit.HintBar(inner, m.statusFlash(), m.sectionHints()...))
+	p.SetContent(content...)
 	p.Width, p.Height = w, h
 	pane := p.View()
+
 	if m.form.kind == fNone {
 		return pane
 	}
 	box := kit.Modal{Title: modalTitle(m.form.kind), Lines: m.modalLines()}
 	return kit.Overlay(strings.Split(pane, "\n"), box.View(), w, h)
+}
+
+// statusFlash renders the outcome segment on the chrome bar: error >
+// warning hint > success flash (F-025 Part A).
+func (m *Model) statusFlash() string {
+	switch {
+	case m.form.err != "":
+		return theme.ChromeStatus(theme.Current.Danger).Render("✗ " + m.form.err)
+	case m.inboxHint != "":
+		return theme.ChromeStatus(theme.Current.Warning).Render(m.inboxHint)
+	case m.form.flash != "":
+		return theme.ChromeStatus(theme.Current.Success).Render("✓ " + m.form.flash)
+	}
+	return ""
+}
+
+// sectionHints is the active section's keymap for the chrome bar.
+func (m *Model) sectionHints() []string {
+	switch m.sec {
+	case secInbox:
+		return []string{"enter/o jump", "z snooze", "u unsnooze"}
+	case secBoard:
+		return []string{"h/l lane", "n new", "s status", "a assign", "o thread"}
+	case secChannels:
+		return []string{"i compose", "t thread", "v profile", ",/. channel"}
+	case secRepos:
+		return []string{"a add", "r rename", "d remove"}
+	}
+	return nil
 }
 
 // activeSectionFor renders the active section body with pane-aware
@@ -128,15 +161,11 @@ func (m *Model) activeSectionFor(w, h int) string {
 	if m.replay != nil {
 		return m.replayBody()
 	}
-	inner := w - 6
-	if inner < 40 {
-		inner = 40
-	}
 	switch m.sec {
 	case secBoard:
-		return m.boardBody(inner, maxInt(h-6, 12))
+		return m.boardBody(w, maxInt(h, 6))
 	case secChannels:
-		return strings.Join(m.pane.render(inner, maxInt(h-6, 12)), "\n")
+		return strings.Join(m.pane.render(w, maxInt(h, 12)), "\n")
 	default:
 		return m.activeSection()
 	}
@@ -165,13 +194,14 @@ func (m *Model) activeSection() string {
 	if m.replay != nil {
 		return m.replayBody()
 	}
+	w := maxInt(m.width, 40)
 	switch m.sec {
 	case secInbox:
 		return m.inboxBody()
 	case secRepos:
 		return m.reposBody()
 	default:
-		return m.boardBody(maxInt(m.width-railWidth-6, 40), maxInt(m.height-10, 12))
+		return m.boardBody(w-6, maxInt(m.height-8, 8))
 	}
 }
 
@@ -179,14 +209,26 @@ func (m *Model) activeSection() string {
 
 const boardDetailWidth = 36
 
+// boardStatusColor maps a task lane to its status color (F-025 lane
+// dots: backlog quiet, active accent, in-review warning, done success).
+func boardStatusColor(i int) color.Color {
+	switch tasks.Statuses[i] {
+	case tasks.Active:
+		return theme.Current.Accent
+	case tasks.InReview:
+		return theme.Current.Warning
+	case tasks.Done:
+		return theme.Current.Success
+	}
+	return theme.Current.TextMuted
+}
+
 // boardBody renders the four kanban lanes plus the selected card's
-// detail pane (right on wide panes, below on narrow).
+// detail pane (right on wide panes, below on narrow, ElevatedBg).
 func (m *Model) boardBody(w, h int) string {
 	g := m.boardGroups()
 
 	var out []string
-	out = append(out, theme.Hint().Render("board")+theme.TextDim().Render(
-		"                    n new · s status · a assign · w worktree · t thread · p PR · c commit · u push · r runs · o open thread"))
 	if m.taskStore == nil {
 		out = append(out, theme.TextDim().Render("(task store unavailable)"))
 		// The lanes still render (empty) so the board reads as a board.
@@ -197,16 +239,17 @@ func (m *Model) boardBody(w, h int) string {
 	}
 
 	detailW := 0
-	if w >= 120 {
+	if w >= kit.WWide {
 		detailW = boardDetailWidth
 	}
-	lanesH := h - 2 // hint + one detail row minimum
+	lanesH := h - len(out) // the warning/unavailable rows, if any
 	var detailLines []string
 	if tk, ok := m.boardSelected(g); ok {
 		detailLines = boardDetailLines(tk)
 	}
 	if detailW == 0 && len(detailLines) > 0 {
-		lanesH = h - 2 - len(detailLines)
+		// -1: the lane header row above the Height body rows.
+		lanesH = h - len(out) - len(detailLines) - 1
 	}
 	if lanesH < 3 {
 		lanesH = 3
@@ -218,7 +261,10 @@ func (m *Model) boardBody(w, h int) string {
 		for _, tk := range g[i] {
 			rows = append(rows, boardCard(tk))
 		}
-		cols[i] = kit.Column{Title: string(st), Cursor: m.boardCur[i], Rows: rows}
+		cols[i] = kit.Column{
+			Title: string(st), Cursor: m.boardCur[i], Rows: rows,
+			Accent: boardStatusColor(i),
+		}
 	}
 	board := &kit.Columns{Cols: cols, Active: m.boardActive, Width: w - detailW, Height: lanesH}
 	lanes := board.View()
@@ -228,13 +274,17 @@ func (m *Model) boardBody(w, h int) string {
 		for len(laneLines) < lanesH+1 {
 			laneLines = append(laneLines, "")
 		}
+		bg := theme.ElevatedBg()
 		block := make([]string, 0, len(laneLines))
 		for y, ln := range laneLines {
-			var d string
+			d := ""
 			if y < len(detailLines) {
 				d = ansi.Clip(detailLines[y], detailW-1)
+				d = bg.Render(padToANSI(d, detailW))
+			} else {
+				d = bg.Render(strings.Repeat(" ", detailW))
 			}
-			block = append(block, padTo(ln, w-detailW)+theme.Hint().Render(padTo(d, detailW)))
+			block = append(block, padToANSI(ln, w-detailW)+d)
 		}
 		out = append(out, block...)
 	} else {
@@ -324,11 +374,6 @@ func (m *Model) inboxBody() string {
 	clampCursor(c, len(items))
 
 	var out []string
-	out = append(out, theme.Hint().Render("inbox — everything that needs you")+
-		theme.TextDim().Render("   enter/o jump · z snooze · u unsnooze"))
-	if m.inboxHint != "" {
-		out = append(out, theme.WarningText().Render(m.inboxHint))
-	}
 	if m.unreadErr != "" {
 		out = append(out, theme.DangerText().Render("unread unavailable: "+m.unreadErr))
 	}
@@ -456,8 +501,6 @@ func (m *Model) reposBody() string {
 	clampCursor(&c, len(members))
 
 	var rows []string
-	rows = append(rows, theme.Hint().Render("member repos")+theme.TextDim().Render(
-		"                    a add · r rename · d remove"))
 	if len(members) == 0 {
 		rows = append(rows, theme.TextDim().Render("(none — press a to add one)"))
 	}
