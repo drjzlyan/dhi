@@ -13,11 +13,14 @@ import (
 
 	"charm.land/bubbletea/v2"
 
+	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
 	"github.com/drjzlyan/dhi/internal/agentkit/org"
 	"github.com/drjzlyan/dhi/internal/agentkit/pack"
+	"github.com/drjzlyan/dhi/internal/autopilot"
 	"github.com/drjzlyan/dhi/internal/gitcore"
 	"github.com/drjzlyan/dhi/internal/settings"
+	"github.com/drjzlyan/dhi/internal/tasks"
 	"github.com/drjzlyan/dhi/internal/tui/kit"
 	"github.com/drjzlyan/dhi/internal/tui/surfaces"
 	"github.com/drjzlyan/dhi/internal/tui/theme"
@@ -33,8 +36,17 @@ type Model struct {
 	sec      sectionID
 	cursor   int // CONFIG rows
 	agentCur int // AGENTS roster rows
+	teamCur  int // TEAMS rows
+	packCur  int // PACKS rows
+	stdCur   int // STANDARDS rows
+	autoCur  int // AUTOPILOTS rows
 
-	form   agentForm // open modal (agent create/edit or add-from-source)
+	form    agentForm // legacy agent modal (create/edit/source) — P5 folds into kit dialogs
+	dlg     *kit.Modal
+	dform   *kit.Form
+	dkind   dialogKind
+	dtarget string
+
 	flash  string
 	events chan settingsEvent
 	width  int
@@ -54,6 +66,10 @@ type sectionID uint8
 const (
 	secConfig sectionID = iota
 	secAgents
+	secTeams
+	secPacks
+	secStandards
+	secAutopilots
 	secCount
 )
 
@@ -63,13 +79,27 @@ func (s sectionID) label() string {
 		return "CONFIG"
 	case secAgents:
 		return "AGENTS"
+	case secTeams:
+		return "TEAMS"
+	case secPacks:
+		return "PACKS"
+	case secStandards:
+		return "STANDARDS"
+	case secAutopilots:
+		return "AUTOPILOTS"
 	default:
 		return "CONFIG"
 	}
 }
 
-// Deps wires workspace-scoped services. Zero fields degrade the AGENTS
-// section to visible "unavailable" rows rather than errors (F-011).
+// TurnHandler is the narrow runtime seam autopilot run-now dispatches
+// through (satisfied by *runtime.Runtime).
+type TurnHandler interface {
+	Handle(ctx context.Context, msg bus.Message)
+}
+
+// Deps wires workspace-scoped services. Zero fields degrade the managed
+// sections to visible "unavailable" rows rather than errors (F-011).
 type Deps struct {
 	WS   *workspace.Workspace
 	Org  *org.Org
@@ -77,6 +107,13 @@ type Deps struct {
 	// Reload swaps the live runtime roster after a successful crew
 	// write; nil means changes apply on next launch (named in flash).
 	Reload func() error
+	// Management-section seams (F-023). Autopilots must be the SAME
+	// store instance the workspace uses so schedules and marks share
+	// one view of the cards.
+	Autopilots *autopilot.Store
+	Bus        *bus.Bus
+	Runtime    TurnHandler
+	Tasks      *tasks.Store
 }
 
 // New wires the surface to a loaded config, its persistence target,
@@ -109,6 +146,9 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 		if m.form.kind == formSource {
 			m.form.open = false
 		}
+		if m.dlg != nil && m.dkind == dlgPackInstall {
+			m.closeDialog()
+		}
 		if ev.err != "" {
 			m.flash = "failed: " + ev.err
 		} else {
@@ -126,6 +166,10 @@ func (m *Model) Resize(w, h int) {
 }
 
 func (m *Model) HandleKey(key string) bool {
+	if m.dlg != nil {
+		m.dialogKey(key)
+		return true // the modal swallows everything (focus trap)
+	}
 	if m.form.open {
 		return m.formKey(key)
 	}
@@ -140,10 +184,20 @@ func (m *Model) HandleKey(key string) bool {
 		m.applyAndPersist()
 		return true
 	}
-	if m.sec == secAgents {
+	switch m.sec {
+	case secAgents:
 		return m.agentsKey(key)
+	case secTeams:
+		return m.teamsKey(key)
+	case secPacks:
+		return m.packsKey(key)
+	case secStandards:
+		return m.standardsKey(key)
+	case secAutopilots:
+		return m.autopilotsKey(key)
+	default:
+		return m.configKey(key)
 	}
-	return m.configKey(key)
 }
 
 func (m *Model) configKey(key string) bool {
@@ -299,6 +353,11 @@ func (m *Model) agentsKey(key string) bool {
 					}
 				}
 			}
+		}
+	case "enter", "v":
+		if m.agentCur < len(rows) && m.d.WS != nil {
+			m.openProfile(rows[m.agentCur].id)
+			return true
 		}
 	case "a":
 		if m.agentCur < len(rows) && m.d.Org != nil {
@@ -703,12 +762,22 @@ func (m *Model) View() string {
 	}
 
 	var content []string
+	switch {
+	case m.sec == secAgents:
+		content = m.agentsView()
+	case m.sec == secTeams:
+		content = m.teamsView()
+	case m.sec == secPacks:
+		content = m.packsView()
+	case m.sec == secStandards:
+		content = m.standardsView()
+	case m.sec == secAutopilots:
+		content = m.autopilotsView()
+	default:
+		content = m.configView()
+	}
 	if m.form.open {
 		content = m.formView()
-	} else if m.sec == secAgents {
-		content = m.agentsView()
-	} else {
-		content = m.configView()
 	}
 	for len(content) < h-6 {
 		content = append(content, "")
@@ -719,7 +788,14 @@ func (m *Model) View() string {
 	body := append([]string{strip, ""}, content...)
 	p.SetContent(body...)
 	p.Width, p.Height = w, h
-	return p.View()
+
+	view := p.View()
+	if m.dlg != nil {
+		// Dialogs overlay the panel over a dimmed backdrop (F-024),
+		// never replace its content.
+		view = kit.Overlay(strings.Split(view, "\n"), m.dlg.View(), w, h)
+	}
+	return view
 }
 
 func (m *Model) sectionStrip() string {
@@ -750,7 +826,7 @@ func (m *Model) configView() []string {
 }
 
 func (m *Model) agentsView() []string {
-	hint := theme.Hint().Render("n new · e edit · a archive/restore · x delete")
+	hint := theme.Hint().Render("n new · e edit · a archive/restore · x delete · v profile")
 	if m.d.WS == nil || m.d.Org == nil {
 		return []string{hint, theme.TextDim().Render(
 			"(agent management unavailable — not inside a workspace)")}

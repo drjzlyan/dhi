@@ -24,6 +24,7 @@ import (
 	agentkitOrg "github.com/drjzlyan/dhi/internal/agentkit/org"
 	agentkitRuntime "github.com/drjzlyan/dhi/internal/agentkit/runtime"
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
+	"github.com/drjzlyan/dhi/internal/autopilot"
 	"github.com/drjzlyan/dhi/internal/boot"
 	"github.com/drjzlyan/dhi/internal/doctor"
 	"github.com/drjzlyan/dhi/internal/gitcore"
@@ -180,15 +181,28 @@ func runTUI() {
 		}
 		return agentRT.Reload(roster)
 	}
+	var wsAuto *autopilot.Store // one store shared by workspace + settings
 	var settingsDeps settingsview.Deps
 	if ws != nil {
 		company, oerr := agentkitOrg.Load(ws.Root)
 		if oerr == nil {
+			// One autopilot store shared by the workspace (execution:
+			// catch-up + ticks, ADR-0014 §5) and Settings (management UI).
+			autoStore, aerr := autopilot.Open(ws)
+			if aerr != nil {
+				fmt.Fprintln(os.Stderr, "dhi: autopilot store:", aerr)
+			} else {
+				wsAuto = autoStore
+			}
 			settingsDeps = settingsview.Deps{
-				WS:     ws,
-				Org:    company,
-				CLIs:   clirun.NewRegistry(exec.LookPath).Names(),
-				Reload: reloadRoster,
+				WS:         ws,
+				Org:        company,
+				CLIs:       clirun.NewRegistry(exec.LookPath).Names(),
+				Reload:     reloadRoster,
+				Autopilots: autoStore,
+				Bus:        messageBus,
+				Runtime:    agentRT,
+				Tasks:      taskStore,
 			}
 		}
 	}
@@ -211,6 +225,7 @@ func runTUI() {
 			ReviewSvc:    reviewSvc,
 			Approvals:    approvals,
 			Unread:       unreadStore,
+			Autopilots:   wsAuto,
 			ReloadRoster: reloadRoster,
 			OpenChat: func() bool {
 				if appRef == nil {

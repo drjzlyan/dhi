@@ -1,9 +1,9 @@
 ╭─ › settings ───────────────────────────────────────────────────────────────────────────╮
-│ CONFIG · [AGENTS] · TEAMS · PACKS · STANDARDS · AUTOPILOTS                             │
+│ CONFIG · AGENTS · [TEAMS] · PACKS · STANDARDS · AUTOPILOTS                             │
 │                                                                                        │
-│ n new · e edit · a archive/restore · x delete · v profile                              │
-│ ▌ scout       m-1           claude    2 tools                                          │
-│   muse        archived                                                                 │
+│ n new · e edit · x delete                                                              │
+│ ▌ platform        lead: scout       1 members                                          │
+│                                                                                        │
 │                                                                                        │
 │                                                                                        │
 │                                                                                        │

@@ -1,9 +1,9 @@
 ╭─ › settings ───────────────────────────────────────────────────────────────────────────╮
-│ CONFIG · [AGENTS] · TEAMS · PACKS · STANDARDS · AUTOPILOTS                             │
+│ CONFIG · AGENTS · TEAMS · PACKS · STANDARDS · [AUTOPILOTS]                             │
 │                                                                                        │
-│ n new · e edit · a archive/restore · x delete · v profile                              │
-│ ▌ scout       m-1           claude    2 tools                                          │
-│   muse        archived                                                                 │
+│ n new · e arm/pause · r run now · x remove · o last run                                │
+│   name                agent       schedule                    next-due        last-res │
+│ ▌ Sweep               scout       daily 09:00                 09:00           -        │
 │                                                                                        │
 │                                                                                        │
 │                                                                                        │

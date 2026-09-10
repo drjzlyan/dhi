@@ -82,6 +82,10 @@ func (f *Form) ToggleIndex(i int) int {
 	return f.Fields[i].sel
 }
 
+// Cur returns the active field index (tests and callers that need to
+// know where typing will land).
+func (f *Form) Cur() int { return f.cur }
+
 // HandleKey implements the canonical contract; busy swallows all.
 // Unknown keys are consumed anyway while the form is open (the
 // focus-trap rule) — the surface decides pre-form keys.

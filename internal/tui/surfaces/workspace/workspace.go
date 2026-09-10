@@ -167,6 +167,7 @@ type Deps struct {
 	ReviewSvc    *review.Service      // nil = task PR creation unavailable
 	Approvals    *tools.Approvals     // nil = no pending-approval inbox source
 	Unread       *unread.Store        // shared read-mark store (F-017); opened here if nil
+	Autopilots   *autopilot.Store     // shared with Settings (F-023); opened here if nil
 	ReloadRoster func() error         // live-roster seam (F-018); nil = changes apply next launch
 	OpenChat     func() bool          // focus editor chat (approval jump)
 	OpenReview   func(id string) bool // reviewer select (in_review jump)
@@ -200,8 +201,13 @@ func New(version string, ws *workspace.Workspace, d Deps) *Model {
 		m.openChat = d.OpenChat
 		m.openReview = d.OpenReview
 		m.reloadRosterFn = d.ReloadRoster
-		if as, err := autopilot.Open(ws); err == nil {
-			m.autopilots = as
+		switch {
+		case d.Autopilots != nil:
+			m.autopilots = d.Autopilots // shared with Settings (F-023)
+		default:
+			if as, err := autopilot.Open(ws); err == nil {
+				m.autopilots = as
+			}
 		}
 		if d.Bus != nil {
 			m.pane = newChatPane(d.Bus, d.Runtime, m.org)
