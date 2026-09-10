@@ -1,26 +1,26 @@
-╭─ › settings ───────────────────────────────────────────────────────────────────────────╮
-│ CONFIG · AGENTS · TEAMS · [PACKS] · STANDARDS · AUTOPILOTS                             │
-│                                                                                        │
-│ i install · x uninstall                                                                │
-│ (no packs installed — "i" to install from a path or git URL)                           │
-│                                                                                        │
-│                                                                                        │
-│                                                                                        │
-│                                                                                        │
-│                                                                                        │
-│                                                                                        │
-│                                                                                        │
-│                                                                                        │
-│                                                                                        │
-│                                                                                        │
-│                                                                                        │
-│                                                                                        │
-│                                                                                        │
-│                                                                                        │
-│                                                                                        │
-│                                                                                        │
-│                                                                                        │
-│                                                                                        │
-│                                                                                        │
-│ ←/→ change · [ ] sections · ctrl+s write                                               │
-╰────────────────────────────────────────────────────────────────────────────────────────╯
+  CONFIG        ╭─ › packs ──────────────────────────────────────────────────────────────╮
+  AGENTS        │ (no packs installed — "i" to install from a path or git URL)           │
+  TEAMS         │                                                                        │
+▌ PACKS         │                                                                        │
+  STANDARDS     │                                                                        │
+  AUTOPILOTS    │                                                                        │
+                │                                                                        │
+                │                                                                        │
+                │                                                                        │
+                │                                                                        │
+                │                                                                        │
+                │                                                                        │
+                │                                                                        │
+                │                                                                        │
+                │                                                                        │
+                │                                                                        │
+                │                                                                        │
+                │                                                                        │
+                │                                                                        │
+                │                                                                        │
+                │                                                                        │
+                │                                                                        │
+                │                                                                        │
+                │                                                                        │
+                │ i install • x uninstall • [ ] sections • ctrl+s write                  │
+                ╰────────────────────────────────────────────────────────────────────────╯

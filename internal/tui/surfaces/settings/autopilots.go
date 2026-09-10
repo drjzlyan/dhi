@@ -196,13 +196,12 @@ func newestAgentRun(store *tasks.Store, id string) (tasks.Run, bool) {
 }
 
 func (m *Model) autopilotsView() []string {
-	hint := theme.Hint().Render("n new · e arm/pause · r run now · x remove · o last run")
 	if m.d.Autopilots == nil {
-		return []string{hint, theme.TextDim().Render(
+		return []string{theme.TextDim().Render(
 			"(autopilot store unavailable — not inside a workspace)")}
 	}
 	rows := m.autoRows()
-	out := []string{hint}
+	out := []string{}
 	if w := m.d.Autopilots.Warnings(); len(w) > 0 {
 		out = append(out, theme.DangerText().Render(
 			fmt.Sprintf("%d malformed card(s) skipped", len(w))))

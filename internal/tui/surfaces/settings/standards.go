@@ -209,13 +209,12 @@ func currentAgentRules(root string) map[string]standards.AgentOverride {
 }
 
 func (m *Model) standardsView() []string {
-	hint := theme.Hint().Render("w workspace · t team · g agent · v preview")
 	rows := m.standardRows()
 	if m.d.WS == nil || len(rows) == 0 {
-		return []string{hint, theme.TextDim().Render(
+		return []string{theme.TextDim().Render(
 			"(standards unavailable — not inside a workspace)")}
 	}
-	out := []string{hint}
+	out := []string{}
 	for i, r := range rows {
 		var line string
 		switch r.kind {

@@ -1,26 +1,26 @@
-╭─ › settings ───────────────────────────────────────────────────────────────────────────╮
-│ CONFIG · [AGENTS] · TEAMS · PACKS · STANDARDS · AUTOPILOTS                             │
-│                                                                                        │
-│ n new · e edit · a archive/restore · x delete · v profile                              │
-│ ▌ scout       m-1           claude    2 tools                                          │
-│   muse        archived                                                                 │
-│                                                                                        │
-│                                                                                        │
-│                                                                                        │
-│                                                                                        │
-│                                                                                        │
-│                                                                                        │
-│                                                                                        │
-│                                                                                        │
-│                                                                                        │
-│                                                                                        │
-│                                                                                        │
-│                                                                                        │
-│                                                                                        │
-│                                                                                        │
-│                                                                                        │
-│                                                                                        │
-│                                                                                        │
-│                                                                                        │
-│ ←/→ change · [ ] sections · ctrl+s write                                               │
-╰────────────────────────────────────────────────────────────────────────────────────────╯
+  CONFIG        ╭─ › agents ─────────────────────────────────────────────────────────────╮
+▌ AGENTS        │ ▌ scout       m-1           claude    2 tools                          │
+  TEAMS         │   muse        archived                                                 │
+  PACKS         │                                                                        │
+  STANDARDS     │                                                                        │
+  AUTOPILOTS    │                                                                        │
+                │                                                                        │
+                │                                                                        │
+                │                                                                        │
+                │                                                                        │
+                │                                                                        │
+                │                                                                        │
+                │                                                                        │
+                │                                                                        │
+                │                                                                        │
+                │                                                                        │
+                │                                                                        │
+                │                                                                        │
+                │                                                                        │
+                │                                                                        │
+                │                                                                        │
+                │                                                                        │
+                │                                                                        │
+                │                                                                        │
+                │ n new • e edit • a archive • x delete • v profile • [ ] sections • ctr │
+                ╰────────────────────────────────────────────────────────────────────────╯

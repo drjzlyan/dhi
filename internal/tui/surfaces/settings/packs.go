@@ -112,17 +112,16 @@ func (m *Model) submitPackInstall() {
 }
 
 func (m *Model) packsView() []string {
-	hint := theme.Hint().Render("i install · x uninstall")
 	if m.d.WS == nil {
-		return []string{hint, theme.TextDim().Render(
+		return []string{theme.TextDim().Render(
 			"(pack management unavailable — not inside a workspace)")}
 	}
 	rows := m.packRows()
 	if len(rows) == 0 {
-		return []string{hint, theme.TextDim().Render(
+		return []string{theme.TextDim().Render(
 			"(no packs installed — \"i\" to install from a path or git URL)")}
 	}
-	out := []string{hint}
+	out := []string{}
 	for i, r := range rows {
 		line := padTo(r.name, 16) +
 			theme.Hint().Render(padTo(orDash(r.version), 10)) +

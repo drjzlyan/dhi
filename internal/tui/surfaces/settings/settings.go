@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
@@ -765,19 +766,54 @@ func isURL(s string) bool {
 	return false
 }
 
-// View renders the docked settings panel: section strip, section body,
-// status or keymap hints pinned to the foot — the same full-height
-// panel language as the workspace and editor surfaces.
+// View renders the docked settings surface: section rail (the same
+// left-rail IA as every other surface, F-025) + the section panel with
+// its keymap on the chrome HintBar. Dialogs overlay the whole view.
 func (m *Model) View() string {
 	w := maxInt(m.width, 40)
 	h := maxInt(m.height, 10)
 
-	strip := m.sectionStrip()
-
-	foot := theme.Hint().Render("←/→ change · [ ] sections · ctrl+s write")
-	if m.flash != "" {
-		foot = theme.SuccessText().Render(m.flash)
+	railW := 16
+	paneW := w - railW
+	if paneW < 24 {
+		paneW = 24
 	}
+
+	rail := (&kit.Rail{
+		Rows:   m.railRows(),
+		Active: int(m.sec),
+		Width:  railW,
+		Height: h,
+	}).View()
+
+	pane := m.sectionPane(paneW, h)
+
+	view := lipgloss.JoinHorizontal(lipgloss.Top, rail, pane)
+	switch {
+	case m.dlg != nil:
+		// Dialogs overlay the panel over a dimmed backdrop (F-024),
+		// never replace its content.
+		view = kit.Overlay(strings.Split(view, "\n"), m.dlg.View(), w, h)
+	case m.form.open:
+		// The legacy agent form rides the same overlay system.
+		box := kit.Modal{Title: m.formTitle(), Lines: m.formView()}
+		view = kit.Overlay(strings.Split(view, "\n"), box.View(), w, h)
+	}
+	return view
+}
+
+func (m *Model) railRows() []kit.RailRow {
+	rows := make([]kit.RailRow, 0, secCount)
+	for s := sectionID(0); s < secCount; s++ {
+		rows = append(rows, kit.RailRow{Label: s.label()})
+	}
+	return rows
+}
+
+// sectionPane renders the active section's panel: body + the chrome
+// HintBar (status/flash left, keymap right).
+func (m *Model) sectionPane(w, h int) string {
+	p := kit.NewPanel(strings.ToLower(m.sec.label()), true)
 
 	var content []string
 	switch {
@@ -794,28 +830,48 @@ func (m *Model) View() string {
 	default:
 		content = m.configView()
 	}
-	for len(content) < h-6 {
+	inner := w - 4 // panel edges + horizontal padding
+	for len(content) < h-3 {
 		content = append(content, "")
 	}
-	content = append(content, "", foot)
+	content = content[:h-3]
+	content = append(content, kit.HintBar(inner, m.statusFlash(), m.sectionHints()...))
 
-	p := kit.NewPanel("settings", true)
-	body := append([]string{strip, ""}, content...)
-	p.SetContent(body...)
+	p.SetContent(content...)
 	p.Width, p.Height = w, h
+	return p.View()
+}
 
-	view := p.View()
-	switch {
-	case m.dlg != nil:
-		// Dialogs overlay the panel over a dimmed backdrop (F-024),
-		// never replace its content.
-		view = kit.Overlay(strings.Split(view, "\n"), m.dlg.View(), w, h)
-	case m.form.open:
-		// The legacy agent form rides the same overlay system.
-		box := kit.Modal{Title: m.formTitle(), Lines: m.formView()}
-		view = kit.Overlay(strings.Split(view, "\n"), box.View(), w, h)
+// statusFlash renders the flash on the chrome bar: failure names red.
+func (m *Model) statusFlash() string {
+	if m.flash == "" {
+		return ""
 	}
-	return view
+	if strings.HasPrefix(m.flash, "failed") {
+		return theme.ChromeStatus(theme.Current.Danger).Render(m.flash)
+	}
+	return theme.ChromeStatus(theme.Current.Success).Render(m.flash)
+}
+
+// sectionHints is the per-section keymap for the HintBar.
+func (m *Model) sectionHints() []string {
+	global := []string{"[ ] sections", "ctrl+s write"}
+	var sec []string
+	switch m.sec {
+	case secConfig:
+		sec = []string{"enter/l change", "h/l back"}
+	case secAgents:
+		sec = []string{"n new", "e edit", "a archive", "x delete", "v profile"}
+	case secTeams:
+		sec = []string{"n new", "e edit", "x delete"}
+	case secPacks:
+		sec = []string{"i install", "x uninstall"}
+	case secStandards:
+		sec = []string{"w workspace", "t team", "g agent", "v preview"}
+	case secAutopilots:
+		sec = []string{"n new", "e arm/pause", "r run now", "x remove"}
+	}
+	return append(sec, global...)
 }
 
 // formTitle names the legacy agent modal.
@@ -828,18 +884,6 @@ func (m *Model) formTitle() string {
 	default:
 		return "new agent"
 	}
-}
-
-func (m *Model) sectionStrip() string {
-	var parts []string
-	for s := sectionID(0); s < secCount; s++ {
-		if s == m.sec {
-			parts = append(parts, theme.TabActive().Render("["+s.label()+"]"))
-		} else {
-			parts = append(parts, theme.TextDim().Render(s.label()))
-		}
-	}
-	return strings.Join(parts, " · ")
 }
 
 func (m *Model) configView() []string {
@@ -858,19 +902,18 @@ func (m *Model) configView() []string {
 }
 
 func (m *Model) agentsView() []string {
-	hint := theme.Hint().Render("n new · e edit · a archive/restore · x delete · v profile")
 	if m.d.WS == nil || m.d.Org == nil {
-		return []string{hint, theme.TextDim().Render(
+		return []string{theme.TextDim().Render(
 			"(agent management unavailable — not inside a workspace)")}
 	}
 	rows, err := m.agentRows()
 	if err != nil {
-		return []string{hint, theme.DangerText().Render("roster unavailable: " + err.Error())}
+		return []string{theme.DangerText().Render("roster unavailable: " + err.Error())}
 	}
 	if len(rows) == 0 {
-		return []string{hint, theme.TextDim().Render("(no agents — \"n\" to create one)")}
+		return []string{theme.TextDim().Render("(no agents — \"n\" to create one)")}
 	}
-	out := []string{hint}
+	out := []string{}
 	for i, r := range rows {
 		line := padTo(r.id, 12) + padTo(r.model, 14) + padTo(r.runtime, 10) +
 			itoa(r.tools) + " tools"

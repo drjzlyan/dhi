@@ -117,16 +117,15 @@ func (m *Model) submitTeam() {
 }
 
 func (m *Model) teamsView() []string {
-	hint := theme.Hint().Render("n new · e edit · x delete")
 	if m.d.Org == nil {
-		return []string{hint, theme.TextDim().Render(
+		return []string{theme.TextDim().Render(
 			"(team management unavailable — not inside a workspace)")}
 	}
 	rows := m.teamRows()
 	if len(rows) == 0 {
-		return []string{hint, theme.TextDim().Render("(no teams — \"n\" to create one)")}
+		return []string{theme.TextDim().Render("(no teams — \"n\" to create one)")}
 	}
-	out := []string{hint}
+	out := []string{}
 	for i, t := range rows {
 		line := padTo(t.Name, 16) +
 			theme.Hint().Render(padTo("lead: "+orDash(t.Lead), 18)) +
