@@ -140,11 +140,11 @@ func TestInboxJumpRunFailedOpensReplay(t *testing.T) {
 	if m.replay == nil {
 		t.Fatal("run jump did not open replay")
 	}
-	if m.sec != secTasks {
-		t.Fatalf("run jump left sec=%v, want tasks", m.sec)
+	if m.sec != secBoard {
+		t.Fatalf("run jump left sec=%v, want board", m.sec)
 	}
-	if tk := m.taskRows(); m.cursors[secTasks] >= len(tk) {
-		t.Fatal("run jump left task cursor out of range")
+	if _, ok := m.boardSelected(m.boardGroups()); !ok {
+		t.Fatal("run jump left board cursor out of range")
 	}
 }
 

@@ -1,32 +1,17 @@
 package workspace
 
 import (
-	"errors"
 	"fmt"
-	"sort"
 	"strings"
 
 	"charm.land/lipgloss/v2"
-	"github.com/drjzlyan/dhi/internal/agentkit/bus"
-	"github.com/drjzlyan/dhi/internal/agentkit/knowledge"
 
-	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
-	"github.com/drjzlyan/dhi/internal/agentkit/memory"
-	"github.com/drjzlyan/dhi/internal/agentkit/profile"
-	"github.com/drjzlyan/dhi/internal/agentkit/standards"
 	"github.com/drjzlyan/dhi/internal/inbox"
 	"github.com/drjzlyan/dhi/internal/tasks"
 	"github.com/drjzlyan/dhi/internal/tui/branding"
 	"github.com/drjzlyan/dhi/internal/tui/kit"
 	"github.com/drjzlyan/dhi/internal/tui/theme"
-	"github.com/drjzlyan/dhi/internal/workspace"
 )
-
-func manifestAgent(id, name, model, system string) *manifest.Agent {
-	return &manifest.Agent{ID: id, Name: name, Model: model, System: system, Runtime: "claude"}
-}
-
-func fmtErr(msg string) error { return errors.New(msg) }
 
 // View renders the operations floor. Wide terminals get a docked
 // layout — persistent section rail on the left, active section filling
@@ -102,19 +87,16 @@ func (m *Model) railView(h int) string {
 
 func (m *Model) sectionCounts() [secCount]int {
 	var c [secCount]int
-	c[secMembers] = len(m.ws.Members())
-	c[secOrg] = m.orgItemCount()
-	if names, _ := m.installedNames(); c[secPacks] == 0 {
-		c[secPacks] = len(names)
+	c[secInbox] = m.AttentionCount()
+	for _, tk := range m.taskRows() {
+		if tk.Status != tasks.Done {
+			c[secBoard]++
+		}
 	}
-	c[secStandards] = len(m.standardRows())
 	if m.pane != nil {
 		c[secChannels] = len(m.pane.channels)
 	}
-	c[secTasks] = len(m.taskRows())
-	c[secInspect] = len(m.agentIDs())
-	c[secAutopilots] = len(m.autoRows())
-	c[secInbox] = m.AttentionCount()
+	c[secRepos] = len(m.ws.Members())
 	return c
 }
 
@@ -156,14 +138,20 @@ func (m *Model) overlayCentered(pane string, overlay string) string {
 }
 
 // activeSectionFor renders the active section body with pane-aware
-// geometry (channels needs real width/height).
+// geometry (board and channels need real width/height). The run-replay
+// pane is modal: it replaces whatever section is active.
 func (m *Model) activeSectionFor(w, h int) string {
+	if m.replay != nil {
+		return m.replayBody()
+	}
+	inner := w - 6
+	if inner < 40 {
+		inner = 40
+	}
 	switch m.sec {
+	case secBoard:
+		return m.boardBody(inner, maxInt(h-6, 12))
 	case secChannels:
-		inner := w - 6
-		if inner < 40 {
-			inner = 40
-		}
 		return strings.Join(m.pane.render(inner, maxInt(h-6, 12)), "\n")
 	default:
 		return m.activeSection()
@@ -194,253 +182,141 @@ func (m *Model) activeSection() string {
 		return m.replayBody()
 	}
 	switch m.sec {
-	case secMembers:
-		return m.membersBody()
-	case secOrg:
-		return m.orgBody()
-	case secPacks:
-		return m.packsBody()
-	case secChannels:
-		return strings.Join(m.pane.render(maxInt(m.width-8, 40),
-			maxInt(m.height-10, 12)), "\n")
-	case secTasks:
-		return m.tasksBody()
-	case secInspect:
-		return m.inspectBody()
-	case secAutopilots:
-		return m.autopilotsBody()
 	case secInbox:
 		return m.inboxBody()
+	case secRepos:
+		return m.reposBody()
 	default:
-		return m.standardsBody()
+		return m.boardBody(maxInt(m.width-railWidth-6, 40), maxInt(m.height-10, 12))
 	}
 }
 
-func (m *Model) inspectBody() string {
-	ids := m.agentIDs()
-	c := m.cursors[secInspect]
-	clampCursor(&c, len(ids))
+// ---- BOARD (F-021) ----
+
+const boardDetailWidth = 36
+
+// boardBody renders the four kanban lanes plus the selected card's
+// detail pane (right on wide panes, below on narrow).
+func (m *Model) boardBody(w, h int) string {
+	g := m.boardGroups()
 
 	var out []string
-	out = append(out, theme.Hint().Render("agent inspection")+
-		theme.TextDim().Render("      enter/v open profile · e runs"))
-	if len(ids) == 0 {
-		out = append(out, theme.TextDim().Render(
-			"(no crew — create agents under ORG)"))
-		return strings.Join(out, "\n")
+	out = append(out, theme.Hint().Render("board")+theme.TextDim().Render(
+		"                    n new · s status · a assign · w worktree · t thread · p PR · c commit · u push · r runs · o open thread"))
+	if m.taskStore == nil {
+		out = append(out, theme.TextDim().Render("(task store unavailable)"))
+		// The lanes still render (empty) so the board reads as a board.
+		g = [4][]tasks.Task{}
+	} else if warn := m.taskStore.Warnings(); len(warn) > 0 {
+		out = append(out, theme.DangerText().Render(
+			fmt.Sprintf("%d malformed card(s) skipped", len(warn))))
 	}
-	for i, id := range ids {
-		style := theme.TextDim()
-		if i == c {
-			style = theme.TabActive()
-		}
-		sum := "(unavailable)"
-		if p := m.profileFor(id); p != nil {
-			sum = p.Summary()
-		}
-		out = append(out, cursorGlyph(i == c)+
-			style.Render(padTo(id, nameCol))+theme.Hint().Render(sum))
+
+	detailW := 0
+	if w >= 120 {
+		detailW = boardDetailWidth
 	}
-	if m.inspectOpen && c < len(ids) {
-		if p := m.profileFor(ids[c]); p != nil {
-			out = append(out, "", theme.TextDim().Render(strings.Repeat("─", 52)))
-			out = append(out, m.profileLines(p)...)
+	lanesH := h - 2 // hint + one detail row minimum
+	var detailLines []string
+	if tk, ok := m.boardSelected(g); ok {
+		detailLines = boardDetailLines(tk)
+	}
+	if detailW == 0 && len(detailLines) > 0 {
+		lanesH = h - 2 - len(detailLines)
+	}
+	if lanesH < 3 {
+		lanesH = 3
+	}
+
+	cols := make([]kit.Column, 4)
+	for i, st := range tasks.Statuses {
+		rows := make([]string, 0, len(g[i]))
+		for _, tk := range g[i] {
+			rows = append(rows, boardCard(tk))
 		}
+		cols[i] = kit.Column{Title: string(st), Cursor: m.boardCur[i], Rows: rows}
+	}
+	board := &kit.Columns{Cols: cols, Active: m.boardActive, Width: w - detailW, Height: lanesH}
+	lanes := board.View()
+
+	if detailW > 0 && len(detailLines) > 0 {
+		laneLines := strings.Split(lanes, "\n")
+		for len(laneLines) < lanesH+1 {
+			laneLines = append(laneLines, "")
+		}
+		block := make([]string, 0, len(laneLines))
+		for y, ln := range laneLines {
+			var d string
+			if y < len(detailLines) {
+				d = clipPlain(detailLines[y], detailW-1)
+			}
+			block = append(block, padTo(ln, w-detailW)+theme.Hint().Render(padTo(d, detailW)))
+		}
+		out = append(out, block...)
+	} else {
+		out = append(out, lanes)
+		out = append(out, detailLines...)
 	}
 	return strings.Join(out, "\n")
 }
 
-func (m *Model) profileFor(id string) *profile.Profile {
-	deps := profile.Deps{
-		Roster: m.roster, Bus: m.paneBus(), Org: m.org,
-		Tasks:  m.taskStore,
-		Memory: memoryStoreFor(m.ws), KB: kbStoreFor(m.ws),
-		Standards: true,
+// boardCard renders one lane row: slug + title, assignee chip.
+func boardCard(tk tasks.Task) string {
+	title := tk.Title
+	if title == "" {
+		title = "-"
 	}
-	return profile.Build(m.ws, deps, id)
+	if len(title) > 18 {
+		title = title[:17] + "…"
+	}
+	who := tk.Assignee
+	if who == "" {
+		who = "unassigned"
+	}
+	return padTo(tk.Slug, 14) + padTo(title, 20) + theme.Hint().Render(who)
 }
 
-var (
-	memCache *memory.Store
-	kbCache  *knowledge.Store
-	cacheWS  string
-)
-
-// store caches built once per workspace root (inspection reads only).
-func memoryStoreFor(ws *workspace.Workspace) *memory.Store {
-	if ws == nil || cacheWS == ws.Root && memCache != nil {
-		return memCache
+// boardDetailLines is the JIRA-issue fact block for the selected card.
+func boardDetailLines(tk tasks.Task) []string {
+	who := tk.Assignee
+	if who == "" {
+		who = "unassigned"
 	}
-	memCache = memory.Open(ws)
-	kb, err := knowledge.Open(ws, knowledge.Auto, nil)
-	if err == nil {
-		kbCache = kb
+	lines := []string{
+		theme.Brand().Render(tk.Slug) + "  " + theme.Chip().Render(string(tk.Status)),
+		tk.Title,
+		theme.TextDim().Render("assignee " + who + " · team " + orDash(tk.Team)),
 	}
-	cacheWS = ws.Root
-	return memCache
+	if tk.ThreadChannel != "" {
+		lines = append(lines, theme.Hint().Render("thread "+threadRef(tk.ThreadChannel, tk.ThreadID)))
+	}
+	if tk.PRNumber > 0 {
+		pr := fmt.Sprintf("PR #%d", tk.PRNumber)
+		if tk.PRURL != "" {
+			pr += " " + tk.PRURL
+		}
+		lines = append(lines, theme.SuccessText().Render(pr))
+	}
+	if len(tk.ChangeSets) > 0 {
+		var cs []string
+		for _, c := range tk.ChangeSets {
+			cs = append(cs, c.Member+"@"+c.Branch)
+		}
+		lines = append(lines, theme.TextDim().Render("worktrees "+strings.Join(cs, ", ")))
+	}
+	if len(tk.Runs) > 0 {
+		rl := tasks.RollupRuns(tk.Runs)
+		lines = append(lines, theme.TextDim().Render(
+			fmt.Sprintf("%d runs · %s", len(tk.Runs), rl.CostText())))
+	}
+	return lines
 }
 
-func kbStoreFor(ws *workspace.Workspace) profile.KBSearch {
-	memoryStoreFor(ws)
-	return kbCache
-}
-
-func (m *Model) paneBus() *bus.Bus {
-	if m.pane == nil {
-		return nil
+func clipPlain(s string, w int) string {
+	if rn := len([]rune(s)); rn <= w {
+		return s
 	}
-	return m.pane.bus
-}
-
-const profileCapLines = 26
-
-// profileRuns collects every run recorded by the profile's agent across
-// its tasks, newest first (F-014 RUNS subsection).
-func (m *Model) profileRuns(p *profile.Profile) []tasks.Run {
-	var runs []tasks.Run
-	for _, t := range p.TasksOpen {
-		for _, r := range t.Runs {
-			if r.Agent == p.ID {
-				runs = append(runs, r)
-			}
-		}
-	}
-	for _, t := range p.TasksDone {
-		for _, r := range t.Runs {
-			if r.Agent == p.ID {
-				runs = append(runs, r)
-			}
-		}
-	}
-	sort.SliceStable(runs, func(i, j int) bool {
-		return runs[i].Started.After(runs[j].Started)
-	})
-	return runs
-}
-
-func (m *Model) profileLines(p *profile.Profile) []string {
-	var out []string
-	add := func(s string) {
-		if len(out) < profileCapLines {
-			out = append(out, s)
-		}
-	}
-	add(theme.Brand().Render("▍ " + p.ID + " — " + p.TaskLine()))
-	if p.Manifest != nil {
-		sys := p.Manifest.System
-		if len(sys) > 60 {
-			sys = sys[:57] + "…"
-		}
-		add("model " + p.Manifest.Model +
-			theme.Hint().Render("  tools: "+orDash(strings.Join(p.Manifest.Tools, ","))))
-		if sys != "" {
-			add(theme.TextDim().Render("system: " + sys))
-		}
-	}
-	if len(p.Teams) > 0 {
-		add("teams " + theme.TabActive().Render(strings.Join(p.Teams, ", ")))
-	} else {
-		add(theme.TextDim().Render("no teams"))
-	}
-
-	add("")
-	add(theme.Hint().Render("recent activity"))
-	if len(p.RecentActivity) == 0 {
-		add(theme.TextDim().Render("(none captured)"))
-	}
-	for i, msg := range p.RecentActivity {
-		if i >= 4 {
-			break
-		}
-		text := msg.Text
-		if len(text) > 44 {
-			text = text[:41] + "…"
-		}
-		add("  " + theme.Hint().Render(msg.At.Format("01-02 15:04")) +
-			" " + msg.Channel + " · " + text)
-	}
-
-	add("")
-	add(theme.Hint().Render("runs"))
-	if runs := m.profileRuns(p); len(runs) == 0 {
-		add(theme.TextDim().Render("(none recorded)"))
-	} else {
-		rl := tasks.RollupRuns(runs)
-		add(rl.Summary())
-		for i, r := range runs {
-			if i >= 5 {
-				break
-			}
-			cost := "-"
-			if r.HasCost {
-				cost = fmtCost(r.CostUSD)
-			}
-			rt := r.Runtime
-			if rt == "" {
-				rt = "cli:?"
-			}
-			model := r.Model
-			if model == "" {
-				model = "-"
-			}
-			st := string(r.Status)
-			if f := m.runStyle(r.Status); f != "" {
-				st = f
-			}
-			add("  " + theme.Hint().Render(r.Started.Format("01-02 15:04")) + " " +
-				rt + "/" + model + "  " + st + "  " +
-				tasks.DurationText(runMs(r)) + "  " + cost)
-		}
-	}
-
-	add("")
-	add(theme.Hint().Render("private memory"))
-	if len(p.Journal) == 0 && p.Notes == "" {
-		add(theme.TextDim().Render("(empty)"))
-	}
-	for i, e := range p.Journal {
-		if i >= 3 {
-			break
-		}
-		text := e.Text
-		if len(text) > 48 {
-			text = text[:45] + "…"
-		}
-		add("  " + theme.TextDim().Render(e.Kind) + " · " + text)
-	}
-	if p.Notes != "" {
-		first := strings.SplitN(strings.TrimSpace(p.Notes), "\n", 2)[0]
-		if len(first) > 50 {
-			first = first[:47] + "…"
-		}
-		add("  notes: " + first)
-	}
-
-	add("")
-	add(theme.Hint().Render("knowledge contributions"))
-	if len(p.KBAuthor) == 0 {
-		add(theme.TextDim().Render("(none)"))
-	}
-	for i, e := range p.KBAuthor {
-		if i >= 3 {
-			break
-		}
-		add("  " + e.Title + theme.TextDim().Render(" ("+e.File+")"))
-	}
-
-	if p.StandardsBlock != "" {
-		add("")
-		lines := strings.Split(p.StandardsBlock, "\n")
-		add(theme.Hint().Render(lines[0]))
-		for i, l := range lines[1:] {
-			if i >= 3 {
-				add(theme.TextDim().Render(fmt.Sprintf("  … +%d more rules", len(lines)-4)))
-				break
-			}
-			add(theme.TextDim().Render("  " + l))
-		}
-	}
-	return out
+	return string([]rune(s)[:w])
 }
 
 func orDash(s string) string {
@@ -448,101 +324,6 @@ func orDash(s string) string {
 		return "-"
 	}
 	return s
-}
-
-const statusCol = 11
-
-func (m *Model) tasksBody() string {
-	rows := m.taskRows()
-	c := m.cursors[secTasks]
-	clampCursor(&c, len(rows))
-
-	var out []string
-	out = append(out, theme.Hint().Render("tasks")+
-		theme.TextDim().Render("                    n new · s status · a assign · w worktree · x remove · r runs"))
-	if m.taskStore == nil {
-		out = append(out, theme.TextDim().Render("(task store unavailable)"))
-		return strings.Join(out, "\n")
-	}
-	if w := m.taskStore.Warnings(); len(w) > 0 {
-		out = append(out, theme.DangerText().Render(
-			fmt.Sprintf("%d malformed card(s) skipped", len(w))))
-	}
-	if len(rows) == 0 {
-		out = append(out, theme.TextDim().Render("(empty — press n)"))
-	}
-	for i, tk := range rows {
-		style := theme.TextDim()
-		if i == c {
-			style = theme.TabActive()
-		}
-		line := cursorGlyph(i == c) +
-			style.Render(padTo(tk.Slug, nameCol)) +
-			theme.Hint().Render(padTo(string(tk.Status), statusCol)) +
-			theme.TextDim().Render(assignLabel(tk.Assignee))
-		out = append(out, line)
-		if i == c { // detail line for the selected card
-			detail := taskDetail(tk)
-			if detail != "" {
-				out = append(out, "      "+theme.Hint().Render(detail))
-			}
-		}
-	}
-	return strings.Join(out, "\n")
-}
-
-func assignLabel(a string) string {
-	if a == "" {
-		return "unassigned"
-	}
-	return a
-}
-
-func (m *Model) autopilotsBody() string {
-	rows := m.autoRows()
-	c := m.cursors[secAutopilots]
-	clampCursor(&c, len(rows))
-
-	out := []string{
-		theme.Hint().Render("autopilots") +
-			theme.TextDim().Render("      n new · e arm/pause · r run now · x remove · o last transcript"),
-	}
-	if m.autopilots == nil {
-		out = append(out, theme.TextDim().Render("(autopilot store unavailable)"))
-		return strings.Join(out, "\n")
-	}
-	if w := m.autopilots.Warnings(); len(w) > 0 {
-		out = append(out, theme.DangerText().Render(
-			fmt.Sprintf("%d malformed card(s) skipped", len(w))))
-	}
-	if len(rows) == 0 {
-		out = append(out, theme.TextDim().Render(
-			"(no autopilots — \"n\" to schedule one)"))
-		return strings.Join(out, "\n")
-	}
-
-	// header
-	out = append(out, theme.TextDim().Render(
-		"  "+padTo("name", 20)+padTo("agent", 12)+padTo("schedule", 28)+
-			padTo("next-due", 16)+"last-result"))
-	for i, card := range rows {
-		style := theme.TextDim()
-		if i == c {
-			style = theme.TabActive()
-		}
-		sched := card.Schedule.String()
-		if !card.Enabled {
-			sched = "paused " + sched
-		}
-		line := cursorGlyph(i == c) +
-			style.Render(padTo(card.Name, 20)) +
-			theme.Hint().Render(padTo(card.Agent, 12)) +
-			style.Render(padTo(sched, 28)) +
-			theme.Hint().Render(padTo(m.autoNext(card), 16)) +
-			theme.TextDim().Render(m.autoResult(card))
-		out = append(out, line)
-	}
-	return strings.Join(out, "\n")
 }
 
 // inboxGlyph marks one item kind with a shape: warning diamond (approval),
@@ -690,9 +471,11 @@ func cursorGlyph(active bool) string {
 	return "  "
 }
 
-func (m *Model) membersBody() string {
+// ---- REPOS (member repos) ----
+
+func (m *Model) reposBody() string {
 	members := m.ws.Members()
-	c := m.cursors[secMembers]
+	c := m.cursors[secRepos]
 	clampCursor(&c, len(members))
 
 	var rows []string
@@ -711,162 +494,6 @@ func (m *Model) membersBody() string {
 			theme.Hint().Render(shorten(mem.Path, 46)))
 	}
 	return strings.Join(rows, "\n")
-}
-
-func (m *Model) orgBody() string {
-	c := m.cursors[secOrg]
-	clampCursor(&c, m.orgItemCount())
-	teams, active, archived := m.orgRows()
-
-	var rows []string
-	rows = append(rows, theme.Hint().Render("teams & crew")+theme.TextDim().Render(
-		"            t team · A agent · x del/archive · R restore"))
-	if m.orgErr != "" {
-		rows = append(rows, theme.DangerText().Render("org unavailable: "+m.orgErr))
-	}
-
-	if len(teams) == 0 && len(active) == 0 && len(archived) == 0 {
-		rows = append(rows, theme.TextDim().Render("(empty — press t or A)"))
-	}
-	idx := 0
-	for _, tm := range teams {
-		members := "(no members)"
-		if n := len(tm.Members); n > 0 {
-			lead := tm.Lead
-			if lead == "" {
-				lead = "—"
-			}
-			members = fmt.Sprintf("lead %s · %d member(s)", lead, n)
-		}
-		style := theme.TextDim()
-		if idx == c {
-			style = theme.TabActive()
-		}
-		rows = append(rows, cursorGlyph(idx == c)+
-			style.Render(padTo(tm.Name, nameCol))+theme.Hint().Render(members))
-		idx++
-	}
-	if idx > 0 && len(active)+len(archived) > 0 {
-		rows = append(rows, "")
-	}
-	for _, id := range active {
-		style := theme.TextDim()
-		if idx == c {
-			style = theme.TabActive()
-		}
-		rows = append(rows, cursorGlyph(idx == c)+style.Render(id)+
-			theme.TextDim().Render("  active"))
-		idx++
-	}
-	for _, id := range archived {
-		style := theme.TextDim()
-		if idx == c {
-			style = theme.TabActive()
-		}
-		rows = append(rows, cursorGlyph(idx == c)+style.Render("[archived] "+id))
-		idx++
-	}
-	return strings.Join(rows, "\n")
-}
-
-func (m *Model) packsBody() string {
-	names, _ := m.installedNames()
-	c := m.cursors[secPacks]
-	clampCursor(&c, len(names))
-
-	var rows []string
-	rows = append(rows, theme.Hint().Render("marketplace packs")+
-		theme.TextDim().Render("         i install · x uninstall"))
-	if len(names) == 0 {
-		rows = append(rows, theme.TextDim().Render("(none installed — press i)"))
-	}
-	recs := m.packRecords(names)
-	for i, rec := range recs {
-		style := theme.TextDim()
-		if i == c {
-			style = theme.TabActive()
-		}
-		rows = append(rows, cursorGlyph(i == c)+
-			style.Render(padTo(rec.name, nameCol))+
-			theme.Hint().Render(rec.detail))
-	}
-	return strings.Join(rows, "\n")
-}
-
-type packRow struct {
-	name, detail string
-}
-
-func (m *Model) packRecords(names []string) []packRow {
-	out := make([]packRow, 0, len(names))
-	if m.packs == nil {
-		return out
-	}
-	recs, err := m.packs.Records()
-	if err != nil {
-		return out
-	}
-	for _, n := range names {
-		detail := ""
-		if rec, ok := recs[n]; ok {
-			unit := "agent"
-			if len(rec.Agents) != 1 {
-				unit = "agents"
-			}
-			detail = fmt.Sprintf("%s · %d %s", rec.Version, len(rec.Agents), unit)
-		}
-		out = append(out, packRow{name: n, detail: detail})
-	}
-	return out
-}
-
-func (m *Model) standardsBody() string {
-	rows := m.standardRows()
-	c := m.cursors[secStandards]
-	clampCursor(&c, len(rows))
-
-	var out []string
-	out = append(out, theme.Hint().Render("coding standards")+
-		theme.TextDim().Render("      w ws-layer · t team · g agent · v preview"))
-	for i, r := range rows {
-		style := theme.TextDim()
-		note := fmt.Sprintf("%d rule(s)", r.count)
-		switch r.kind {
-		case stdTeam:
-			if r.count == 0 {
-				note += " (inherit workspace)"
-			}
-		case stdAgent:
-			switch r.mode {
-			case "":
-				note += " (inherit)"
-			default:
-				note += " · " + r.mode
-			}
-		}
-		if i == c {
-			style = theme.TabActive()
-		}
-		out = append(out, cursorGlyph(i == c)+
-			style.Render(padTo(sectionLabel(r), nameCol))+
-			theme.Hint().Render(note))
-	}
-	out = append(out, "", theme.TextDim().Render(
-		"built-in defaults always apply on top of these layers"))
-	return strings.Join(out, "\n")
-}
-
-func sectionLabel(r stdRow) string {
-	switch r.kind {
-	case stdWorkspace:
-		return "workspace"
-	case stdTeam:
-		return "team " + r.label
-	case stdAgent:
-		return "agent " + r.label
-	default:
-		return r.label
-	}
 }
 
 // ---- modals ----
@@ -908,21 +535,6 @@ func (m *Model) modalLines() []string {
 		return confirmLines("remove member "+f.target()+"?",
 			"unregisters the repo; the working tree",
 			"on disk is never deleted.", f)
-	case fTeamDeleteConfirm:
-		return confirmLines("delete team "+f.target()+"?",
-			"membership lists go with it;", "agents themselves are untouched.", f)
-	case fAgentArchiveConfirm:
-		return confirmLines("archive agent "+f.target()+"?",
-			"its manifest moves to .archived/",
-			"and it stops receiving turns.", f)
-	case fPackUninstallConfirm:
-		return confirmLines("uninstall pack "+f.target()+"?",
-			"removes exactly the agents this",
-			"pack installed.", f)
-	case fStdPreviewShow:
-		lines := []string{theme.TextDim().Render("effective instructions"), ""}
-		lines = append(lines, f.preview...)
-		return append(lines, "", theme.Hint().Render("any key closes"))
 	}
 
 	lines := make([]string, 0, len(f.fields)*2)
@@ -941,16 +553,6 @@ func (m *Model) modalLines() []string {
 
 func defaultHint(k modalKind) string {
 	switch k {
-	case fPackInstall:
-		return "local dir or git URL · enter install"
-	case fStdLayerEdit:
-		return "comma-separated rules · enter save"
-	case fStdPreviewPrompt:
-		return "enter shows effective block"
-	case fAgentNew:
-		return "id slug · model required · enter create"
-	case fTeamEdit:
-		return "lead: you or agent id · enter save"
 	case fTaskPR:
 		return "pushes the card's branch and opens a PR · enter create"
 	case fTaskCommit:
@@ -1006,24 +608,6 @@ func modalTitle(k modalKind) string {
 		return "rename member"
 	case fRemoveConfirm:
 		return "remove member"
-	case fTeamEdit:
-		return "team"
-	case fTeamDeleteConfirm:
-		return "delete team"
-	case fAgentNew:
-		return "new agent"
-	case fAgentArchiveConfirm:
-		return "archive agent"
-	case fPackInstall:
-		return "install pack"
-	case fPackUninstallConfirm:
-		return "uninstall pack"
-	case fStdLayerEdit:
-		return "edit rules"
-	case fStdPreviewPrompt:
-		return "preview rules"
-	case fStdPreviewShow:
-		return "effective rules"
 	case fTaskNew:
 		return "new task"
 	case fTaskAssign:
@@ -1102,30 +686,4 @@ func itoa(n int) string {
 		n /= 10
 	}
 	return string(digits)
-}
-
-// stdSnapshotAlias aliases the standards snapshot for in-package tests.
-type stdSnapshotAlias = struct {
-	Workspace []string
-	Teams     map[string][]string
-	Agents    map[string]standards.AgentOverride
-}
-
-func inspectSnapshot(root string) (*stdSnapshotAlias, error) {
-	snap, err := standards.Inspect(root)
-	if err != nil {
-		return nil, err
-	}
-	out := &stdSnapshotAlias{
-		Workspace: snap.Workspace,
-		Teams:     map[string][]string{},
-		Agents:    map[string]standards.AgentOverride{},
-	}
-	for k, v := range snap.Teams {
-		out.Teams[k] = v
-	}
-	for k, v := range snap.Agents {
-		out.Agents[k] = v
-	}
-	return out, nil
 }

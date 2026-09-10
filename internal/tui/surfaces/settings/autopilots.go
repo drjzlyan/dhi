@@ -3,7 +3,6 @@ package settings
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/autopilot"
@@ -136,7 +135,7 @@ func (m *Model) runAutopilotNow(slug string) error {
 		Channel: "dm:" + c.Agent,
 		Author:  bus.Human,
 		Text:    "[autopilot " + c.Slug + "] " + c.Prompt,
-		At:      time.Now(),
+		At:      m.now(),
 	}
 	if m.d.Bus != nil {
 		if _, err := m.d.Bus.Post(msg); err != nil {
@@ -144,7 +143,7 @@ func (m *Model) runAutopilotNow(slug string) error {
 		}
 	}
 	go m.d.Runtime.Handle(context.Background(), msg)
-	return m.d.Autopilots.MarkRan(c.Slug, time.Now())
+	return m.d.Autopilots.MarkRan(c.Slug, m.now())
 }
 
 // showLastRun renders the newest recorded run for the card's agent in
@@ -237,7 +236,7 @@ func (m *Model) autopilotsView() []string {
 }
 
 func (m *Model) autoNext(c autopilot.Card) string {
-	now := time.Now()
+	now := m.now()
 	if c.Enabled && c.Due(now) {
 		return "due"
 	}

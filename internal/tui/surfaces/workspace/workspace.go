@@ -1,7 +1,9 @@
 // Package workspace is DHI's landing view: the company of agents.
-// Nine sections — members, org, packs, standards, channels, tasks,
-// inspect, autopilots, inbox — switched with [ ]; each carries its own
-// cursor and contextual keymap.
+// Four sections — inbox, board, channels, repos — switched with [ ];
+// each carries its own cursor and contextual keymap (ADR-0014).
+// Management (agents, teams, packs, standards, autopilot cards) lives
+// in Settings; this surface keeps the operational floor plus the
+// autopilot execution engine (launch catch-up + ticks, ADR-0014 §5).
 package workspace
 
 import (
@@ -16,9 +18,7 @@ import (
 
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/agentkit/org"
-	"github.com/drjzlyan/dhi/internal/agentkit/pack"
 	profiface "github.com/drjzlyan/dhi/internal/agentkit/profile"
-	"github.com/drjzlyan/dhi/internal/agentkit/standards"
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
 	"github.com/drjzlyan/dhi/internal/autopilot"
 	"github.com/drjzlyan/dhi/internal/gitcore"
@@ -32,49 +32,33 @@ import (
 
 // Timeouts for async operations; the UI stays responsive either way.
 const (
-	cloneTimeout   = 5 * time.Minute
-	installTimeout = 5 * time.Minute
-	taskPRTimeout  = 5 * time.Minute
+	cloneTimeout  = 5 * time.Minute
+	taskPRTimeout = 5 * time.Minute
 )
 
-// sectionID enumerates the switchable panes.
+// sectionID enumerates the switchable panes (rail order, ADR-0014 §1).
 type sectionID uint8
 
 const (
-	secMembers sectionID = iota
-	secOrg
-	secPacks
-	secStandards
+	secInbox sectionID = iota
+	secBoard
 	secChannels
-	secTasks
-	secInspect
-	secAutopilots
-	secInbox
+	secRepos
 	secCount
 )
 
 func (s sectionID) label() string {
 	switch s {
-	case secMembers:
-		return "MEMBERS"
-	case secOrg:
-		return "ORG"
-	case secPacks:
-		return "PACKS"
-	case secStandards:
-		return "STANDARDS"
-	case secChannels:
-		return "CHANNELS"
-	case secTasks:
-		return "TASKS"
-	case secInspect:
-		return "INSPECT"
-	case secAutopilots:
-		return "AUTOPILOTS"
 	case secInbox:
 		return "INBOX"
+	case secBoard:
+		return "BOARD"
+	case secChannels:
+		return "CHANNELS"
+	case secRepos:
+		return "REPOS"
 	default:
-		return "MEMBERS"
+		return "INBOX"
 	}
 }
 
@@ -88,13 +72,17 @@ type Model struct {
 	sec     sectionID
 	cursors [secCount]int
 
-	org       *org.Org
-	orgErr    string
-	packs     *pack.Installer
-	stdRootOK bool
+	// Board state (F-021): active lane + per-lane card cursors. Lanes
+	// follow tasks.Statuses order (backlog, active, in-review, done).
+	boardActive int
+	boardCur    [4]int
+
+	org    *org.Org
+	orgErr string
+	pane   *chatPane
+	replay *runReplay // non-nil = run-replay pane open (F-014)
 
 	form formState
-	pane *chatPane
 
 	taskStore *tasks.Store
 	roster    profiface.Roster
@@ -107,19 +95,15 @@ type Model struct {
 	armSeq     uint64 // autopilot tick-chain guard: exactly one in flight
 	cancelAuto func()
 
-	approvals      *tools.Approvals     // pending-approval queue (F-016 source)
-	unreadStore    *unread.Store        // read-mark store (F-017); nil = no bus
-	unreadErr      string               // store unavailable: named, never silent
-	unreadCounts   map[string]int       // per-frame rail counts (syncUnread)
-	openChat       func() bool          // focus editor chat approvals (F-016 jump)
-	openReview     func(id string) bool // reviewer select (F-016 jump)
-	inboxHint      string               // last jump degrade hint (visible, never silent)
-	snoozeTarget   inbox.Item           // item parked by the fSnooze form
-	snoozeChain    bool                 // expiry tick chain in flight (F-017)
-	reloadRosterFn func() error         // live-roster seam (F-018); nil = next launch
-
-	inspectOpen bool
-	replay      *runReplay // non-nil = run-replay pane open (F-014)
+	approvals    *tools.Approvals     // pending-approval queue (F-016 source)
+	unreadStore  *unread.Store        // read-mark store (F-017); nil = no bus
+	unreadErr    string               // store unavailable: named, never silent
+	unreadCounts map[string]int       // per-frame rail counts (syncUnread)
+	openChat     func() bool          // focus editor chat approvals (F-016 jump)
+	openReview   func(id string) bool // reviewer select (F-016 jump)
+	inboxHint    string               // last jump degrade hint (visible, never silent)
+	snoozeTarget inbox.Item           // item parked by the fSnooze form
+	snoozeChain  bool                 // expiry tick chain in flight (F-017)
 
 	events       chan wsEvent
 	cancelSub    func()
@@ -130,9 +114,9 @@ type Model struct {
 var _ surfaces.Surface = (*Model)(nil)
 
 type wsEvent struct {
-	kind       uint8 // evPing | evCloneDone | evInstallDone | evTaskPRDone
+	kind       uint8 // evPing | evCloneDone | evTaskPRDone
 	err        string
-	packName   string
+	packName   string // task slug for evTaskPRDone
 	packAgents []string
 	prNum      int
 	flash      string
@@ -141,13 +125,9 @@ type wsEvent struct {
 const (
 	evPing uint8 = iota
 	evCloneDone
-	evInstallDone
 	evTaskPRDone
 	evPingFlash // ping with flash message
 )
-
-// opTimeout bounds async operations.
-const opTimeout = 5 * time.Minute
 
 // errString converts error to string, empty string if nil.
 func errString(err error) string {
@@ -160,17 +140,16 @@ func errString(err error) string {
 // Deps carries the services this surface operates. Zero fields degrade
 // their sections to visible "unavailable" rows rather than errors.
 type Deps struct {
-	Bus          *bus.Bus
-	Runtime      turnHandler
-	Tasks        *tasks.Store
-	Roster       profiface.Roster
-	ReviewSvc    *review.Service      // nil = task PR creation unavailable
-	Approvals    *tools.Approvals     // nil = no pending-approval inbox source
-	Unread       *unread.Store        // shared read-mark store (F-017); opened here if nil
-	Autopilots   *autopilot.Store     // shared with Settings (F-023); opened here if nil
-	ReloadRoster func() error         // live-roster seam (F-018); nil = changes apply next launch
-	OpenChat     func() bool          // focus editor chat (approval jump)
-	OpenReview   func(id string) bool // reviewer select (in_review jump)
+	Bus        *bus.Bus
+	Runtime    turnHandler
+	Tasks      *tasks.Store
+	Roster     profiface.Roster
+	ReviewSvc  *review.Service      // nil = task PR creation unavailable
+	Approvals  *tools.Approvals     // nil = no pending-approval inbox source
+	Unread     *unread.Store        // shared read-mark store (F-017); opened here if nil
+	Autopilots *autopilot.Store     // shared with Settings (F-023); opened here if nil
+	OpenChat   func() bool          // focus editor chat (approval jump)
+	OpenReview func(id string) bool // reviewer select (in_review jump)
 }
 
 // New returns the workspace model. A nil ws renders the not-a-workspace
@@ -180,16 +159,13 @@ func New(version string, ws *workspace.Workspace, d Deps) *Model {
 		version: version,
 		ws:      ws,
 		events:  make(chan wsEvent, 16),
+		sec:     secBoard, // the dashboard is the landing view (F-021)
 	}
 	if ws != nil {
 		if o, err := org.Load(ws.Root); err == nil {
 			m.org = o
 		} else {
 			m.orgErr = err.Error()
-		}
-		m.packs = &pack.Installer{WS: ws}
-		if _, err := standards.Inspect(ws.Root); err == nil {
-			m.stdRootOK = true
 		}
 		m.taskStore = d.Tasks
 		m.roster = d.Roster
@@ -200,7 +176,6 @@ func New(version string, ws *workspace.Workspace, d Deps) *Model {
 		m.approvals = d.Approvals
 		m.openChat = d.OpenChat
 		m.openReview = d.OpenReview
-		m.reloadRosterFn = d.ReloadRoster
 		switch {
 		case d.Autopilots != nil:
 			m.autopilots = d.Autopilots // shared with Settings (F-023)
@@ -229,7 +204,9 @@ func New(version string, ws *workspace.Workspace, d Deps) *Model {
 
 func (m *Model) Meta() surfaces.Meta { return surfaces.Meta{ID: "workspace", Title: "Workspace"} }
 
-// Init starts the change pumps for re-render triggers.
+// Init starts the change pumps for re-render triggers and arms the
+// autopilot chain — launch catch-up rides the due-now tick (F-015),
+// execution stays on this surface (ADR-0014 §5).
 func (m *Model) Init() tea.Cmd {
 	if m.ws == nil {
 		return nil
@@ -376,8 +353,8 @@ func (m *Model) listen() tea.Cmd {
 
 func (m *Model) Resize(w, h int) { m.width, m.height = w, h }
 
-// Update handles async events: pings re-render; clone/install results
-// resolve the busy modal or surface the error inline.
+// Update handles async events: pings re-render; clone results resolve
+// the busy modal or surface the error inline.
 func (m *Model) Update(msg tea.Msg) tea.Cmd {
 	switch msg := msg.(type) {
 	case paneMsg:
@@ -394,18 +371,6 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 					m.form.err = msg.err
 				} else {
 					m.form = formState{}
-				}
-			}
-		case evInstallDone:
-			if m.form.kind == fPackInstall && m.form.busy {
-				m.form.busy = false
-				if msg.err != "" {
-					m.form.err = msg.err
-				} else {
-					m.form.flash = "installed " + msg.packName +
-						" (" + itoa(len(msg.packAgents)) + " agents)"
-					m.form = formState{flash: m.form.flash}
-					m.sec = secPacks
 				}
 			}
 		case evTaskPRDone:
@@ -444,15 +409,6 @@ const (
 	fAdd
 	fRename
 	fRemoveConfirm
-	fTeamEdit
-	fTeamDeleteConfirm
-	fAgentNew
-	fAgentArchiveConfirm
-	fPackInstall
-	fPackUninstallConfirm
-	fStdLayerEdit
-	fStdPreviewPrompt
-	fStdPreviewShow
 	fTaskNew
 	fTaskAssign
 	fTaskAttach
@@ -461,8 +417,6 @@ const (
 	fTaskPR
 	fTaskCommit
 	fTaskPush
-	fAutoNew
-	fAutoDeleteConfirm
 	fSnooze
 )
 
@@ -493,28 +447,17 @@ func (f *field) toggleValue() string {
 // inputs; orig captures the entity being edited so renames of the name
 // buffer cannot detach the target.
 type formState struct {
-	kind    modalKind
-	orig    string
-	fields  []field
-	cur     int
-	busy    bool
-	err     string
-	flash   string
-	preview []string // fStdPreviewShow body
+	kind   modalKind
+	orig   string
+	fields []field
+	cur    int
+	busy   bool
+	err    string
+	flash  string
 }
 
 func textField(label, value string) field {
 	return field{label: label, runes: []rune(value)}
-}
-
-func modeField(mode string) field {
-	f := field{label: "mode ", toggle: []string{"extend", "replace"}}
-	for i, v := range f.toggle {
-		if v == mode {
-			f.val = i
-		}
-	}
-	return f
 }
 
 // toggleField is a cycling single-choice field (F-017 snooze presets).
@@ -563,25 +506,16 @@ func (m *Model) sectionKey(key string) bool {
 	}
 
 	switch m.sec {
-	case secMembers:
-		return m.membersKey(key)
-	case secOrg:
-		return m.orgKey(key)
-	case secPacks:
-		return m.packsKey(key)
-	case secChannels:
-		return m.pane.handleKey(key)
-	case secTasks:
-		return m.tasksKey(key)
-	case secInspect:
-		return m.inspectKey(key)
-	case secAutopilots:
-		return m.autopilotsKey(key)
 	case secInbox:
 		return m.inboxKey(key)
-	default:
-		return m.standardsKey(key)
+	case secBoard:
+		return m.boardKey(key)
+	case secChannels:
+		return m.pane.handleKey(key)
+	case secRepos:
+		return m.reposKey(key)
 	}
+	return false
 }
 
 func clampCursor(c *int, n int) {
@@ -593,9 +527,15 @@ func clampCursor(c *int, n int) {
 	}
 }
 
-func (m *Model) membersKey(key string) bool {
+func (m *Model) flashErr(msg string) {
+	m.form = formState{kind: fNone, err: msg}
+}
+
+// ---- REPOS section (member repos) ----
+
+func (m *Model) reposKey(key string) bool {
 	members := m.ws.Members()
-	c := &m.cursors[secMembers]
+	c := &m.cursors[secRepos]
 	clampCursor(c, len(members))
 	switch key {
 	case "j", "down":
@@ -629,153 +569,91 @@ func (m *Model) membersKey(key string) bool {
 	return false
 }
 
-func (m *Model) orgRows() (teams []org.Team, activeIDs, archivedIDs []string) {
-	if m.org != nil {
-		teams = m.org.Teams()
+// ---- BOARD section (F-021): the kanban over the task store ----
+
+// boardGroups snapshots the store into the four lanes, in
+// tasks.Statuses order. Pure over List(); rendering and keys share it.
+func (m *Model) boardGroups() [4][]tasks.Task {
+	var g [4][]tasks.Task
+	if m.taskStore == nil {
+		return g
 	}
-	if roster, err := org.LoadRoster(m.ws); err == nil {
-		for _, a := range roster {
-			activeIDs = append(activeIDs, a.ID)
+	ix := map[tasks.Status]int{}
+	for i, s := range tasks.Statuses {
+		ix[s] = i
+	}
+	for _, tk := range m.taskRows() {
+		if i, ok := ix[tk.Status]; ok {
+			g[i] = append(g[i], tk)
 		}
 	}
-	if m.org != nil {
-		archivedIDs = m.org.Archived(m.ws)
-	}
-	return teams, activeIDs, archivedIDs
+	return g
 }
 
-// orgItemCount counts selectable rows (teams + crew incl. archived).
-func (m *Model) orgItemCount() int {
-	teams, active, archived := m.orgRows()
-	return len(teams) + len(active) + len(archived)
+// boardSelected returns the card under the cursor.
+func (m *Model) boardSelected(g [4][]tasks.Task) (tasks.Task, bool) {
+	if m.boardActive < 0 || m.boardActive >= 4 {
+		return tasks.Task{}, false
+	}
+	col := g[m.boardActive]
+	if len(col) == 0 {
+		return tasks.Task{}, false
+	}
+	cur := m.boardCur[m.boardActive]
+	if cur < 0 || cur >= len(col) {
+		return col[len(col)-1], true
+	}
+	return col[cur], true
 }
 
-func (m *Model) orgKey(key string) bool {
-	c := &m.cursors[secOrg]
-	clampCursor(c, m.orgItemCount())
-	teams, active, archived := m.orgRows()
-
-	move := func(n int) {
-		if *c < n-1 {
-			*c++
-		}
-	}
-	up := func() {
-		if *c > 0 {
-			*c--
-		}
-	}
-	teamAt := func() (org.Team, bool) {
-		if *c < len(teams) {
-			return teams[*c], true
-		}
-		return org.Team{}, false
-	}
-	activeAt := func() (string, bool) {
-		idx := *c - len(teams)
-		if idx >= 0 && idx < len(active) {
-			return active[idx], true
-		}
-		return "", false
-	}
-	archivedAt := func() (string, bool) {
-		idx := *c - len(teams) - len(active)
-		if idx >= 0 && idx < len(archived) {
-			return archived[idx], true
-		}
-		return "", false
-	}
-
+func (m *Model) boardKey(key string) bool {
+	g := m.boardGroups()
 	switch key {
+	case "h", "left":
+		if m.boardActive > 0 {
+			m.boardActive--
+		}
+		return true
+	case "l", "right":
+		if m.boardActive < 3 {
+			m.boardActive++
+		}
+		return true
 	case "j", "down":
-		move(m.orgItemCount())
+		if len(g[m.boardActive]) > 0 &&
+			m.boardCur[m.boardActive] < len(g[m.boardActive])-1 {
+			m.boardCur[m.boardActive]++
+		}
 		return true
 	case "k", "up":
-		up()
+		if m.boardCur[m.boardActive] > 0 {
+			m.boardCur[m.boardActive]--
+		}
 		return true
-	case "t":
-		m.form = formState{kind: fTeamEdit, fields: []field{
-			textField("team  ", ""), textField("lead  ", ""),
-			textField("members (csv) ", ""),
-		}}
+	case "g":
+		m.boardCur[m.boardActive] = 0
 		return true
-	case "enter":
-		if tm, ok := teamAt(); ok {
-			m.form = formState{kind: fTeamEdit, orig: tm.Name, fields: []field{
-				textField("team  ", tm.Name), textField("lead  ", tm.Lead),
-				textField("members (csv) ", strings.Join(tm.Members, ",")),
+	case "G":
+		if n := len(g[m.boardActive]); n > 0 {
+			m.boardCur[m.boardActive] = n - 1
+		}
+		return true
+	}
+
+	tk, ok := m.boardSelected(g)
+	if !ok {
+		// The board is inert without a selected card, but `n` always
+		// works and the board swallows navigation keys above.
+		if key == "n" && m.taskStore != nil {
+			m.form = formState{kind: fTaskNew, fields: []field{
+				textField("slug  ", ""), textField("title ", ""),
 			}}
 			return true
 		}
-	case "x":
-		if tm, ok := teamAt(); ok {
-			m.form = formState{kind: fTeamDeleteConfirm, orig: tm.Name}
-			return true
-		}
-		if id, ok := activeAt(); ok {
-			m.form = formState{kind: fAgentArchiveConfirm, orig: id}
-			return true
-		}
-	case "A":
-		m.form = formState{kind: fAgentNew, fields: []field{
-			textField("id    ", ""), textField("name  ", ""),
-			textField("model ", ""), textField("system ", ""),
-		}}
-		return true
-	case "R":
-		if id, ok := archivedAt(); ok {
-			if m.org != nil {
-				if err := m.org.RestoreAgent(m.ws, id); err == nil {
-					clampCursor(c, m.orgItemCount())
-					m.reloadRoster()
-				} else {
-					m.flashErr(err.Error())
-				}
-			}
-			return true
-		}
+		return false
 	}
-	return false
-}
 
-// reloadRoster drives the live-roster seam (F-018): a nil seam degrades
-// silently here — the crew op itself already succeeded and flashed.
-func (m *Model) reloadRoster() {
-	if m.reloadRosterFn != nil {
-		_ = m.reloadRosterFn()
-	}
-}
-
-// ---- TASKS section ----
-
-func (m *Model) taskRows() []tasks.Task {
-	if m.taskStore == nil {
-		return nil
-	}
-	return m.taskStore.List()
-}
-
-func (m *Model) tasksKey(key string) bool {
-	rows := m.taskRows()
-	c := &m.cursors[secTasks]
-	clampCursor(c, len(rows))
-	sel := func() *tasks.Task {
-		if *c < len(rows) {
-			return &rows[*c]
-		}
-		return nil
-	}
 	switch key {
-	case "j", "down":
-		if *c < len(rows)-1 {
-			*c++
-		}
-		return true
-	case "k", "up":
-		if *c > 0 {
-			*c--
-		}
-		return true
 	case "n":
 		if m.taskStore == nil {
 			return false
@@ -783,91 +661,101 @@ func (m *Model) tasksKey(key string) bool {
 		m.form = formState{kind: fTaskNew, fields: []field{
 			textField("slug  ", ""), textField("title ", ""),
 		}}
-		return true
 	case "s":
-		if tk := sel(); tk != nil && m.taskStore != nil {
+		if m.taskStore != nil {
+			slug := tk.Slug
 			next := nextStatus(tk.Status)
-			if err := m.taskStore.SetStatus(tk.Slug, next); err != nil {
+			if err := m.taskStore.SetStatus(slug, next); err != nil {
 				m.flashErr(err.Error())
+				return true
 			}
-			return true
+			// Focus follows the card into its new lane (the board is a
+			// kanban, not a list — selection never strands in the old
+			// column).
+			for li, col := range m.boardGroups() {
+				for ci, t2 := range col {
+					if t2.Slug == slug {
+						m.boardActive = li
+						m.boardCur[li] = ci
+						return true
+					}
+				}
+			}
 		}
 	case "a":
-		if tk := sel(); tk != nil {
-			m.form = formState{kind: fTaskAssign, orig: tk.Slug,
-				fields: []field{textField("assignee ", tk.Assignee)}}
-			return true
-		}
+		m.form = formState{kind: fTaskAssign, orig: tk.Slug,
+			fields: []field{textField("assignee ", tk.Assignee)}}
 	case "w":
-		if tk := sel(); tk != nil {
-			m.form = formState{kind: fTaskAttach, orig: tk.Slug,
-				fields: []field{
-					textField("member ", ""),
-					textField("branch ", "task/"+tk.Slug),
-				}}
-			return true
-		}
+		m.form = formState{kind: fTaskAttach, orig: tk.Slug,
+			fields: []field{
+				textField("member ", ""),
+				textField("branch ", "task/"+tk.Slug),
+			}}
 	case "t":
-		if tk := sel(); tk != nil {
-			m.form = formState{kind: fTaskThread, orig: tk.Slug,
-				fields: []field{
-					textField("channel ", tk.ThreadChannel),
-					textField("thread# ", itoa(int(tk.ThreadID))),
-				}}
-			return true
-		}
+		m.form = formState{kind: fTaskThread, orig: tk.Slug,
+			fields: []field{
+				textField("channel ", tk.ThreadChannel),
+				textField("thread# ", itoa(int(tk.ThreadID))),
+			}}
 	case "x", "d":
-		if tk := sel(); tk != nil {
-			m.form = formState{kind: fTaskRemoveConfirm, orig: tk.Slug}
-			return true
-		}
+		m.form = formState{kind: fTaskRemoveConfirm, orig: tk.Slug}
 	case "p":
-		if tk := sel(); tk != nil {
-			switch {
-			case m.reviewSvc == nil:
-				m.flashErr("review service unavailable — cannot create PRs")
-			case len(tk.ChangeSets) == 0:
-				m.flashErr("card has no worktree — attach one first (w)")
-			default:
-				base := "main"
-				m.form = formState{kind: fTaskPR, orig: tk.Slug,
-					fields: []field{
-						textField("title ", tk.Title),
-						textField("base  ", base),
-					}}
-			}
-			return true
+		switch {
+		case m.reviewSvc == nil:
+			m.flashErr("review service unavailable — cannot create PRs")
+		case len(tk.ChangeSets) == 0:
+			m.flashErr("card has no worktree — attach one first (w)")
+		default:
+			m.form = formState{kind: fTaskPR, orig: tk.Slug,
+				fields: []field{
+					textField("title ", tk.Title),
+					textField("base  ", "main"),
+				}}
 		}
 	case "c":
-		if tk := sel(); tk != nil {
-			if m.taskStore == nil || len(tk.ChangeSets) == 0 {
-				m.flashErr("card has no worktree — attach one first (w)")
-				return true
-			}
-			m.form = formState{kind: fTaskCommit, orig: tk.Slug,
-				fields: []field{textField("message ", "")}}
+		if m.taskStore == nil || len(tk.ChangeSets) == 0 {
+			m.flashErr("card has no worktree — attach one first (w)")
 			return true
 		}
+		m.form = formState{kind: fTaskCommit, orig: tk.Slug,
+			fields: []field{textField("message ", "")}}
 	case "u":
-		if tk := sel(); tk != nil {
-			if m.taskStore == nil || len(tk.ChangeSets) == 0 {
-				m.flashErr("card has no worktree — attach one first (w)")
-				return true
-			}
-			m.form = formState{kind: fTaskPush, orig: tk.Slug, fields: nil}
+		if m.taskStore == nil || len(tk.ChangeSets) == 0 {
+			m.flashErr("card has no worktree — attach one first (w)")
 			return true
 		}
+		m.form = formState{kind: fTaskPush, orig: tk.Slug, fields: nil}
 	case "r":
-		if tk := sel(); tk != nil {
-			if run, ok := tk.NewestRun(); ok {
-				m.replay = openReplay(run)
-				return true
-			}
-			m.flashErr("card has no recorded runs")
+		if run, ok := tk.NewestRun(); ok {
+			m.replay = openReplay(run)
+			return true
+		}
+		m.flashErr("card has no recorded runs")
+	case "o":
+		return m.boardOpenOnFloor(tk)
+	default:
+		return false
+	}
+	return true
+}
+
+// boardOpenOnFloor is the board→floor jump (F-021): the bound thread,
+// else the assignee's DM; neither → a named flash, never a guess.
+func (m *Model) boardOpenOnFloor(tk tasks.Task) bool {
+	if tk.ThreadChannel != "" && m.pane != nil {
+		if m.pane.openAt(tk.ThreadChannel, tk.ThreadID, 0) {
+			m.sec = secChannels
 			return true
 		}
 	}
-	return false
+	if tk.Assignee != "" && tk.Assignee != "you" && m.pane != nil {
+		if m.pane.openAt("dm:"+tk.Assignee, 0, 0) {
+			m.sec = secChannels
+			return true
+		}
+	}
+	m.flashErr("no bound thread or agent assignee to open")
+	return true
 }
 
 func nextStatus(st tasks.Status) tasks.Status {
@@ -879,234 +767,16 @@ func nextStatus(st tasks.Status) tasks.Status {
 	return tasks.Backlog
 }
 
-// ---- INSPECT section ----
-
-func (m *Model) agentIDs() []string {
-	if m.roster == nil {
+// taskRows lists every card in store order.
+func (m *Model) taskRows() []tasks.Task {
+	if m.taskStore == nil {
 		return nil
 	}
-	return m.roster.AgentIDs()
+	return m.taskStore.List()
 }
 
-func (m *Model) inspectKey(key string) bool {
-	ids := m.agentIDs()
-	c := &m.cursors[secInspect]
-	clampCursor(c, len(ids))
-	switch key {
-	case "j", "down":
-		if *c < len(ids)-1 {
-			*c++
-			m.inspectOpen = false
-		}
-		return true
-	case "k", "up":
-		if *c > 0 {
-			*c--
-			m.inspectOpen = false
-		}
-		return true
-	case "enter", "v":
-		if len(ids) > 0 {
-			m.inspectOpen = !m.inspectOpen
-		}
-		return true
-	case "e":
-		// e on a run row (the RUNS subsection) opens the newest replay.
-		if len(ids) > 0 {
-			if !m.inspectOpen {
-				m.inspectOpen = true
-				return true
-			}
-			if run, ok := m.newestAgentRun(ids[*c]); ok {
-				m.replay = openReplay(run)
-			} else {
-				m.flashErr("no run records for this agent")
-			}
-		}
-		return true
-	case "esc":
-		m.inspectOpen = false
-		return true
-	}
-	return false
-}
-
-// newestAgentRun is the most recently finished run recorded by id
-// across all cards (F-014 replay routing from INSPECT).
-func (m *Model) newestAgentRun(id string) (tasks.Run, bool) {
-	if m.taskStore == nil {
-		return tasks.Run{}, false
-	}
-	var best tasks.Run
-	var ok bool
-	for _, tk := range m.taskStore.List() {
-		for _, r := range tk.Runs {
-			if r.Agent != id {
-				continue
-			}
-			if !ok || r.Finished.After(best.Finished) {
-				best, ok = r, true
-			}
-		}
-	}
-	return best, ok
-}
-
-func (m *Model) flashErr(msg string) {
-	m.form = formState{kind: fNone, err: msg}
-}
-
-func (m *Model) packsKey(key string) bool {
-	c := &m.cursors[secPacks]
-	names, _ := m.installedNames()
-	clampCursor(c, len(names))
-	switch key {
-	case "j", "down":
-		if *c < len(names)-1 {
-			*c++
-		}
-		return true
-	case "k", "up":
-		if *c > 0 {
-			*c--
-		}
-		return true
-	case "i", "a":
-		m.form = formState{kind: fPackInstall, fields: []field{
-			textField("source ", ""),
-		}}
-		return true
-	case "x", "d":
-		if *c < len(names) {
-			m.form = formState{kind: fPackUninstallConfirm, orig: names[*c]}
-			return true
-		}
-	}
-	return false
-}
-
-func (m *Model) installedNames() ([]string, error) {
-	if m.packs == nil {
-		return nil, nil
-	}
-	return m.packs.Installed()
-}
-
-func (m *Model) standardsKey(key string) bool {
-	rows := m.standardRows()
-	c := &m.cursors[secStandards]
-	clampCursor(c, len(rows))
-	switch key {
-	case "j", "down":
-		if *c < len(rows)-1 {
-			*c++
-		}
-		return true
-	case "k", "up":
-		if *c > 0 {
-			*c--
-		}
-		return true
-	case "w":
-		snap, _ := standards.Inspect(m.ws.Root)
-		m.form = formState{kind: fStdLayerEdit, orig: "@workspace",
-			fields: []field{textField("rules (csv) ", strings.Join(snap.Workspace, ", "))}}
-		return true
-	case "t":
-		if r := rows[*c]; r.kind == stdTeam {
-			snap, _ := standards.Inspect(m.ws.Root)
-			entries := snap.Teams[r.label]
-			m.form = formState{kind: fStdLayerEdit, orig: "@team:" + r.label,
-				fields: []field{textField("rules (csv) ", strings.Join(entries, ", "))}}
-			return true
-		}
-	case "g":
-		r := rows[*c]
-		id := ""
-		mode := standards.ModeExtend
-		entries := []string(nil)
-		switch r.kind {
-		case stdAgent:
-			id = r.label
-			if ov, ok := m.agentOverride(id); ok {
-				mode = ov.Mode
-				entries = ov.Entries
-			}
-		case stdMember:
-			id = r.label
-		}
-		m.form = formState{kind: fStdLayerEdit, orig: "@agent:" + id,
-			fields: []field{
-				textField("agent id ", id),
-				modeField(mode),
-				textField("rules (csv) ", strings.Join(entries, ", ")),
-			}}
-		return true
-	case "v":
-		r := rows[*c]
-		id := ""
-		if r.kind == stdAgent || r.kind == stdMember || r.kind == stdTeam {
-			id = r.label
-		}
-		m.form = formState{kind: fStdPreviewPrompt, orig: id,
-			fields: []field{textField("agent id ", id)}}
-		return true
-	}
-	return false
-}
-
-func (m *Model) agentOverride(id string) (standards.AgentOverride, bool) {
-	snap, err := standards.Inspect(m.ws.Root)
-	if err != nil {
-		return standards.AgentOverride{}, false
-	}
-	ov, ok := snap.Agents[id]
-	return ov, ok
-}
-
-// standardRow is one selectable row of the standards section.
-type stdRowKind uint8
-
-const (
-	stdWorkspace stdRowKind = iota
-	stdTeam
-	stdAgent
-	stdMember
-)
-
-type stdRow struct {
-	kind  stdRowKind
-	label string
-	count int
-	mode  string // agent rows: extend|replace|"" (no layer yet)
-}
-
-func (m *Model) standardRows() []stdRow {
-	snap, err := standards.Inspect(m.ws.Root)
-	if err != nil {
-		return []stdRow{{kind: stdWorkspace, label: "workspace", count: 0}}
-	}
-	rows := []stdRow{{kind: stdWorkspace, label: "workspace", count: len(snap.Workspace)}}
-	if m.org != nil {
-		for _, t := range m.org.Teams() {
-			rows = append(rows, stdRow{kind: stdTeam, label: t.Name,
-				count: len(snap.Teams[t.Name])})
-		}
-	}
-	if roster, rerr := org.LoadRoster(m.ws); rerr == nil {
-		for _, a := range roster {
-			count := 0
-			mode := ""
-			if ov, ok := snap.Agents[a.ID]; ok {
-				count = len(ov.Entries)
-				mode = ov.Mode
-			}
-			rows = append(rows, stdRow{kind: stdAgent, label: a.ID,
-				count: count, mode: mode})
-		}
-	}
-	return rows
-}
+// ---- autopilot execution (ADR-0014 §5) ----
+// (catchUpAutopilots/autopilotRun/rostered live in autopilots.go)
 
 // ---- form keys & submission ----
 
@@ -1116,8 +786,7 @@ func (m *Model) formKey(key string) bool {
 		return true // swallow while async work runs
 	}
 	switch f.kind {
-	case fRemoveConfirm, fTeamDeleteConfirm, fAgentArchiveConfirm,
-		fPackUninstallConfirm, fTaskRemoveConfirm, fAutoDeleteConfirm:
+	case fRemoveConfirm, fTaskRemoveConfirm:
 		switch key {
 		case "enter":
 			m.submitConfirm()
@@ -1127,9 +796,6 @@ func (m *Model) formKey(key string) bool {
 			return true
 		}
 		return true // confirm modals swallow everything else
-	case fStdPreviewShow:
-		m.closeForm()
-		return true
 	}
 
 	switch key {
@@ -1216,86 +882,6 @@ func (m *Model) submitForm() {
 		if err := m.ws.RenameMember(f.target(), newName); err != nil {
 			f.err = err.Error()
 			return
-		}
-		m.closeForm()
-	case fTeamEdit:
-		slug := strings.TrimSpace(f.fields[0].text())
-		lead := strings.TrimSpace(f.fields[1].text())
-		members := csv(f.fields[2].text())
-		if slug == "" {
-			f.err = "team name required"
-			return
-		}
-		var err error
-		if f.orig == "" {
-			err = m.orgCreateTeam(slug, lead, members)
-		} else {
-			err = m.orgUpdateTeam(f.orig, lead, members)
-		}
-		if err != nil {
-			f.err = err.Error()
-			return
-		}
-		m.closeForm()
-	case fAgentNew:
-		id := strings.TrimSpace(f.fields[0].text())
-		agent := manifestAgent(
-			id,
-			strings.TrimSpace(f.fields[1].text()),
-			strings.TrimSpace(f.fields[2].text()),
-			f.fields[3].text(),
-		)
-		if err := m.org.CreateAgent(m.ws, agent); err != nil {
-			f.err = err.Error()
-			return
-		}
-		m.reloadRoster()
-		m.closeForm()
-	case fPackInstall:
-		src := strings.TrimSpace(f.fields[0].text())
-		if src == "" {
-			f.err = "path or git URL required"
-			return
-		}
-		f.busy = true
-		f.err = ""
-		go m.installPack(src)
-	case fStdLayerEdit:
-		switch {
-		case strings.HasPrefix(f.orig, "@workspace"):
-			if err := standards.Save(m.ws.Root,
-				csv(f.fields[0].text()), nil, nil); err != nil {
-				f.err = err.Error()
-				return
-			}
-		case strings.HasPrefix(f.orig, "@team:"):
-			slug := strings.TrimPrefix(f.orig, "@team:")
-			slug = strings.TrimSpace(slug)
-			if err := standards.Save(m.ws.Root, currentWorkspace(m.ws.Root),
-				map[string][]string{slug: csv(f.fields[0].text())},
-				currentAgents(m.ws.Root)); err != nil {
-				f.err = err.Error()
-				return
-			}
-		case strings.HasPrefix(f.orig, "@agent:"):
-			id := strings.TrimSpace(f.fields[0].text())
-			if err := workspace.ValidateName(id); err != nil {
-				f.err = err.Error()
-				return
-			}
-			mode := f.fields[1].toggleValue()
-			entries := csv(f.fields[2].text())
-			agents := currentAgents(m.ws.Root)
-			if len(entries) == 0 {
-				delete(agents, id)
-			} else {
-				agents[id] = standards.AgentOverride{Mode: mode, Entries: entries}
-			}
-			if err := standards.Save(m.ws.Root, currentWorkspace(m.ws.Root),
-				currentTeams(m.ws.Root), agents); err != nil {
-				f.err = err.Error()
-				return
-			}
 		}
 		m.closeForm()
 	case fTaskNew:
@@ -1420,26 +1006,6 @@ func (m *Model) submitForm() {
 			m.send(ev)
 		}()
 		return
-	case fAutoNew:
-		if m.autopilots == nil {
-			f.err = "autopilot store unavailable"
-			return
-		}
-		slug := strings.TrimSpace(f.fields[0].text())
-		name := strings.TrimSpace(f.fields[1].text())
-		agent := strings.TrimSpace(f.fields[2].text())
-		prompt := strings.TrimSpace(f.fields[3].text())
-		sch, err := autopilot.ParseSchedule(strings.TrimSpace(f.fields[4].text()))
-		if err != nil {
-			f.err = err.Error()
-			return
-		}
-		if _, err := m.autopilots.Create(slug, name, agent, prompt, sch); err != nil {
-			f.err = err.Error()
-			return
-		}
-		clampCursor(&m.cursors[secAutopilots], len(m.autopilots.List()))
-		m.closeForm()
 	case fSnooze:
 		if m.snoozeTarget.Kind != inbox.AgentMessage {
 			f.err = "snooze target lost — reopen with z"
@@ -1447,11 +1013,6 @@ func (m *Model) submitForm() {
 		}
 		m.snoozeSelected(m.snoozeTarget, f.fields[0].toggleValue())
 		m.closeForm()
-	case fStdPreviewPrompt:
-		id := strings.TrimSpace(f.fields[0].text())
-		block := standards.Resolve(m.ws.Root, id, m.teamLookup())
-		m.form.preview = strings.Split(block, "\n")
-		m.form.kind = fStdPreviewShow
 	}
 }
 
@@ -1463,23 +1024,8 @@ func (m *Model) submitConfirm() {
 			f.err = err.Error()
 			return
 		}
-		c := &m.cursors[secMembers]
+		c := &m.cursors[secRepos]
 		clampCursor(c, len(m.ws.Members()))
-		m.closeForm()
-	case fTeamDeleteConfirm:
-		if err := m.org.DeleteTeam(f.target()); err != nil {
-			f.err = err.Error()
-			return
-		}
-		clampCursor(&m.cursors[secOrg], m.orgItemCount())
-		m.closeForm()
-	case fAgentArchiveConfirm:
-		if err := m.org.ArchiveAgent(m.ws, f.target()); err != nil {
-			f.err = err.Error()
-			return
-		}
-		clampCursor(&m.cursors[secOrg], m.orgItemCount())
-		m.reloadRoster()
 		m.closeForm()
 	case fTaskRemoveConfirm:
 		if m.taskStore == nil {
@@ -1490,81 +1036,11 @@ func (m *Model) submitConfirm() {
 			f.err = err.Error()
 			return
 		}
-		names := m.taskRows()
-		clampCursor(&m.cursors[secTasks], len(names))
-		m.closeForm()
-	case fPackUninstallConfirm:
-		if err := m.packs.Uninstall(f.target()); err != nil {
-			f.err = err.Error()
-			return
-		}
-		names, _ := m.installedNames()
-		clampCursor(&m.cursors[secPacks], len(names))
-		m.closeForm()
-	case fAutoDeleteConfirm:
-		if m.autopilots == nil {
-			f.err = "autopilot store unavailable"
-			return
-		}
-		if err := m.autopilots.Remove(f.target()); err != nil {
-			f.err = err.Error()
-			return
-		}
-		rows := m.autoRows()
-		clampCursor(&m.cursors[secAutopilots], len(rows))
+		rows := m.taskRows()
+		clampCursor(&m.boardCur[m.boardActive], len(m.boardGroups()[m.boardActive]))
+		_ = rows
 		m.closeForm()
 	}
-}
-
-// read-modify-write helpers keep untouched layers intact when saving one.
-
-func currentWorkspace(root string) []string {
-	snap, err := standards.Inspect(root)
-	if err != nil {
-		return nil
-	}
-	return snap.Workspace
-}
-
-func currentTeams(root string) map[string][]string {
-	out := map[string][]string{}
-	if snap, err := standards.Inspect(root); err == nil {
-		for slug, v := range snap.Teams {
-			out[slug] = v
-		}
-	}
-	return out
-}
-
-func currentAgents(root string) map[string]standards.AgentOverride {
-	out := map[string]standards.AgentOverride{}
-	if snap, err := standards.Inspect(root); err == nil {
-		for id, ov := range snap.Agents {
-			out[id] = ov
-		}
-	}
-	return out
-}
-
-func (m *Model) orgCreateTeam(slug, lead string, members []string) error {
-	if m.org == nil {
-		return fmtErr("org registry unavailable: " + m.orgErr)
-	}
-	return m.org.CreateTeam(slug, lead, members)
-}
-
-func (m *Model) orgUpdateTeam(slug, lead string, members []string) error {
-	if m.org == nil {
-		return fmtErr("org registry unavailable: " + m.orgErr)
-	}
-	return m.org.UpdateTeam(slug, lead, members)
-}
-
-func (m *Model) teamLookup() standards.TeamLookup {
-	if m.org == nil {
-		return nil
-	}
-	return func(agentID string) []string { return m.org.TeamsOf(agentID) }
 }
 
 // async workers ----
@@ -1582,17 +1058,6 @@ func (m *Model) cloneAndRegister(name, url, dst string) {
 		return
 	}
 	m.send(wsEvent{kind: evCloneDone})
-}
-
-func (m *Model) installPack(source string) {
-	ctx, cancel := context.WithTimeout(context.Background(), installTimeout)
-	defer cancel()
-	res, err := m.packs.Install(ctx, source)
-	if err != nil {
-		m.send(wsEvent{kind: evInstallDone, err: err.Error()})
-		return
-	}
-	m.send(wsEvent{kind: evInstallDone, packName: res.Pack, packAgents: res.Agents})
 }
 
 func isCloneSource(loc string) bool {

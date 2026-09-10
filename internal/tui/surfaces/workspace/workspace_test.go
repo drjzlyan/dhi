@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
+	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/ansi"
 	"github.com/drjzlyan/dhi/internal/tasks"
 	"github.com/drjzlyan/dhi/internal/tui/surfaces"
@@ -42,6 +42,21 @@ func newSurface(t *testing.T) (*Model, *workspace.Workspace) {
 	return m, ws
 }
 
+// newSurfaceWithBus wires the chat pane so board→floor jumps resolve.
+func newSurfaceWithBus(t *testing.T) (*Model, *workspace.Workspace, *bus.Bus) {
+	t.Helper()
+	m, ws := newSurface(t)
+	b, err := bus.Open(ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.bus = b
+	m.pane = newChatPane(b, nil, m.org)
+	m.wireUnreadSeams()
+	m.refreshPaneRail()
+	return m, ws, b
+}
+
 func TestMetaIsBootSurface(t *testing.T) {
 	m, _ := newSurface(t)
 	if got := m.Meta(); got.ID != "workspace" || got.Title != "Workspace" {
@@ -65,54 +80,40 @@ func TestNilWorkspaceRendersHeroAndSwallowsKeys(t *testing.T) {
 	}
 }
 
+func TestBoardIsTheLandingSection(t *testing.T) {
+	m, _ := newSurface(t)
+	if m.sec != secBoard {
+		t.Fatalf("initial section = %v, want the board", m.sec)
+	}
+}
+
 func TestSectionCyclingWraps(t *testing.T) {
 	m, _ := newSurface(t)
-	if m.sec != secMembers {
+	if m.sec != secBoard {
 		t.Fatalf("initial section = %v", m.sec)
-	}
-	m.HandleKey("[")
-	if m.sec != secInbox {
-		t.Fatalf("[ from first should wrap to inbox, got %v", m.sec)
-	}
-	m.HandleKey("]")
-	if m.sec != secMembers {
-		t.Fatalf("] did not wrap back: %v", m.sec)
-	}
-	m.HandleKey("]")
-	m.HandleKey("]")
-	if m.sec != secPacks {
-		t.Fatalf("two ] from members should reach packs, got %v", m.sec)
-	}
-	m.HandleKey("]")
-	if m.sec != secStandards {
-		t.Fatalf("third ] should reach standards, got %v", m.sec)
 	}
 	m.HandleKey("]")
 	if m.sec != secChannels {
-		t.Fatalf("fourth ] should reach channels, got %v", m.sec)
+		t.Fatalf("first ] should reach channels, got %v", m.sec)
 	}
 	m.HandleKey("]")
-	if m.sec != secTasks {
-		t.Fatalf("fifth ] should reach tasks, got %v", m.sec)
-	}
-	m.HandleKey("]")
-	if m.sec != secInspect {
-		t.Fatalf("sixth ] should reach inspect, got %v", m.sec)
-	}
-	m.HandleKey("]")
-	if m.sec != secAutopilots {
-		t.Fatalf("seventh ] should reach autopilots, got %v", m.sec)
+	if m.sec != secRepos {
+		t.Fatalf("second ] should reach repos, got %v", m.sec)
 	}
 	m.HandleKey("]")
 	if m.sec != secInbox {
-		t.Fatalf("eighth ] should reach inbox, got %v", m.sec)
+		t.Fatalf("third ] should wrap to inbox, got %v", m.sec)
+	}
+	m.HandleKey("[")
+	if m.sec != secRepos {
+		t.Fatalf("[ from inbox should wrap back to repos, got %v", m.sec)
 	}
 }
 
 func TestViewRendersAllSectionsAndBounds(t *testing.T) {
 	m, _ := newSurface(t)
 	out := ansi.Strip(m.View())
-	for _, want := range []string{"MEMBERS", "ORG", "PACKS", "STANDARDS", "alpha"} {
+	for _, want := range []string{"INBOX", "BOARD", "CHANNELS", "REPOS", "backlog", "active", "in-review", "done"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("view missing %q:\n%s", want, out)
 		}
@@ -141,8 +142,9 @@ func typeInto(t *testing.T, m *Model, idx int, s string) {
 	}
 }
 
-func TestAddMemberLocalPathFlow(t *testing.T) {
+func TestAddRepoLocalPathFlow(t *testing.T) {
 	m, ws := newSurface(t)
+	m.sec = secRepos
 	gamma := filepath.Join(ws.Root, "gamma")
 	os.MkdirAll(gamma, 0o755)
 
@@ -159,8 +161,9 @@ func TestAddMemberLocalPathFlow(t *testing.T) {
 	}
 }
 
-func TestRenameMemberFlow(t *testing.T) {
+func TestRenameRepoFlow(t *testing.T) {
 	m, ws := newSurface(t)
+	m.sec = secRepos
 	m.HandleKey("j") // beta
 	m.HandleKey("r")
 	m.form.fields[0].runes = []rune("aab")
@@ -173,8 +176,9 @@ func TestRenameMemberFlow(t *testing.T) {
 	}
 }
 
-func TestRemoveMemberConfirmKeepsTree(t *testing.T) {
+func TestRemoveRepoConfirmKeepsTree(t *testing.T) {
 	m, ws := newSurface(t)
+	m.sec = secRepos
 	m.HandleKey("j")
 	m.HandleKey("d")
 	m.HandleKey("enter")
@@ -192,251 +196,10 @@ func TestRemoveMemberConfirmKeepsTree(t *testing.T) {
 	}
 }
 
-func TestTeamCreateEditDeleteFlow(t *testing.T) {
-	m, _ := newSurface(t)
-	m.HandleKey("]") // org
-
-	m.HandleKey("t")
-	typeInto(t, m, 0, "frontend")
-	typeInto(t, m, 1, "you")
-	typeInto(t, m, 2, "alice,bob,alice")
-	m.HandleKey("enter")
-
-	tm, ok := m.org.Team("frontend")
-	if !ok || tm.Lead != "you" || strings.Join(tm.Members, ",") != "alice,bob" {
-		t.Fatalf("team after create = %+v err=%q", tm, m.form.err)
-	}
-
-	// Cursor sits on the only row; edit it.
-	m.HandleKey("enter")
-	if m.form.kind != fTeamEdit || m.form.orig != "frontend" {
-		t.Fatalf("edit modal = %+v orig=%q", m.form.kind, m.form.orig)
-	}
-	typeInto(t, m, 1, "alice")
-	typeInto(t, m, 2, "alice,zoe")
-	m.HandleKey("enter")
-	tm, _ = m.org.Team("frontend")
-	if tm.Lead != "alice" || strings.Join(tm.Members, ",") != "alice,zoe" {
-		t.Fatalf("team after edit = %+v", tm)
-	}
-
-	// Delete with confirmation.
-	m.cursors[secOrg] = 0
-	m.HandleKey("x")
-	if m.form.kind != fTeamDeleteConfirm {
-		t.Fatalf("expected delete confirm, got %v", m.form.kind)
-	}
-	m.HandleKey("esc")
-	if _, ok := m.org.Team("frontend"); !ok {
-		t.Fatal("esc deleted anyway")
-	}
-	m.HandleKey("x")
-	m.HandleKey("enter")
-	if _, ok := m.org.Team("frontend"); ok {
-		t.Fatal("delete not applied")
-	}
-}
-
-func writeAgentManifest(t *testing.T, dir, id string) {
-	t.Helper()
-	doc := "schema = 1\nname = \"" + id[:1] + strings.ToUpper(id[1:]) + "\"\nmodel = \"m\"\nruntime = \"claude\"\n"
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, id+".toml"), []byte(doc), 0o644); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestAgentCreateArchiveRestoreFlow(t *testing.T) {
-	m, ws := newSurface(t)
-	rosterDir := filepath.Join(ws.Root, ".dhi", "agents")
-	writeAgentManifest(t, rosterDir, "alice")
-
-	m.HandleKey("]") // org; cursor 0 = no teams yet → crew rows start here
-	// Row 0 is alice (no teams exist).
-	if _, active, _ := m.orgRows(); len(active) != 1 || active[0] != "alice" {
-		t.Fatalf("crew rows = %v", active)
-	}
-	m.HandleKey("x")
-	if m.form.kind != fAgentArchiveConfirm {
-		t.Fatalf("expected archive confirm, got %v", m.form.kind)
-	}
-	m.HandleKey("enter")
-	if _, active, archived := m.orgRows(); len(active) != 0 || len(archived) != 1 {
-		t.Fatalf("after archive: active=%v archived=%v", active, archived)
-	}
-	if info, err := os.Stat(filepath.Join(rosterDir, ".archived", "alice.toml")); err != nil || info.IsDir() {
-		t.Fatalf("archived manifest missing: %v", err)
-	}
-
-	// Cursor still lands on a selectable row; restore it.
-	c := m.cursors[secOrg]
-	_, active, archived := m.orgRows()
-	if c < len(active) || c >= len(active)+len(archived) {
-		m.cursors[secOrg] = len(active) // point at first archived row
-	}
-	m.HandleKey("R")
-	if _, active, _ = m.orgRows(); len(active) != 1 || active[0] != "alice" {
-		t.Fatalf("restore failed: %v", active)
-	}
-
-	// New-agent modal creates a valid manifest through strict Marshal.
-	m.HandleKey("A")
-	typeInto(t, m, 0, "bob")
-	typeInto(t, m, 1, "Bob")
-	typeInto(t, m, 2, "mock-1")
-	typeInto(t, m, 3, "Be brief.")
-	m.HandleKey("enter")
-	if m.form.err != "" {
-		t.Fatalf("agent create error: %q", m.form.err)
-	}
-	if _, err := os.Stat(filepath.Join(rosterDir, "bob.toml")); err != nil {
-		t.Fatalf("bob.toml missing: %v", err)
-	}
-}
-
-func fixturePackDir(t *testing.T) string {
-	t.Helper()
-	root := t.TempDir()
-	agents := filepath.Join(root, "pack", "agents")
-	os.MkdirAll(agents, 0o755)
-	os.WriteFile(filepath.Join(agents, "carol.toml"),
-		[]byte("schema = 1\nname = \"Carol\"\nmodel = \"mock-1\"\ntools = [\"read\"]\nruntime = \"claude\"\n"), 0o644)
-	os.WriteFile(filepath.Join(root, "pack", "pack.toml"),
-		[]byte("schema = 1\nname = \"acme\"\nversion = \"0.1.0\"\nagents = [\"agents/carol.toml\"]\n"), 0o644)
-	return filepath.Join(root, "pack")
-}
-
-func TestPackInstallAndUninstallFlow(t *testing.T) {
-	m, ws := newSurface(t)
-	src := fixturePackDir(t)
-
-	m.HandleKey("]") // org
-	m.HandleKey("]") // packs
-	if m.sec != secPacks {
-		t.Fatalf("section = %v", m.sec)
-	}
-	m.HandleKey("i")
-	typeInto(t, m, 0, src)
-	m.HandleKey("enter")
-	if !m.form.busy {
-		t.Fatal("install not marked busy")
-	}
-
-	// Pump the async result like the program loop would.
-	select {
-	case ev := <-m.events:
-		m.Update(ev)
-	case <-time.After(3 * time.Second):
-		t.Fatal("no install event")
-	}
-	if m.form.kind != fNone || m.form.flash == "" {
-		t.Fatalf("form after install = kind:%v flash:%q err:%q",
-			m.form.kind, m.form.flash, m.form.err)
-	}
-	if _, err := os.Stat(filepath.Join(ws.Root, ".dhi", "agents", "carol.toml")); err != nil {
-		t.Fatalf("carol not installed: %v", err)
-	}
-
-	out := ansi.Strip(m.View())
-	if !strings.Contains(out, "acme") || !strings.Contains(out, "0.1.0") {
-		t.Fatalf("pack listing missing:\n%s", out)
-	}
-
-	m.HandleKey("x")
-	if m.form.kind != fPackUninstallConfirm {
-		t.Fatalf("expected uninstall confirm, got %v", m.form.kind)
-	}
-	m.HandleKey("enter")
-	if _, err := os.Stat(filepath.Join(ws.Root, ".dhi", "agents", "carol.toml")); !os.IsNotExist(err) {
-		t.Fatalf("carol survived uninstall: %v", err)
-	}
-}
-
-func TestStandardsLayersFlow(t *testing.T) {
-	m, ws := newSurface(t)
-	rosterDir := filepath.Join(ws.Root, ".dhi", "agents")
-	writeAgentManifest(t, rosterDir, "alice")
-	m.org.CreateTeam("frontend", "", []string{"alice"})
-
-	m.HandleKey("]")
-	m.HandleKey("]") // packs
-	m.HandleKey("]") // standards
-	if m.sec != secStandards {
-		t.Fatalf("section = %v", m.sec)
-	}
-
-	// Workspace layer via w.
-	m.HandleKey("w")
-	typeInto(t, m, 0, "use conventional commits, run lint")
-	m.HandleKey("enter")
-	snap, err := inspectFor(m)
-	if err != nil || strings.Join(snap.Workspace, "|") != "use conventional commits|run lint" {
-		t.Fatalf("workspace layer = %+v err=%v", snap, err)
-	}
-
-	// Team layer: cursor row 0=workspace, 1=team frontend.
-	m.cursors[secStandards] = 1
-	m.HandleKey("t")
-	if m.form.orig != "@team:frontend" {
-		t.Fatalf("target = %q", m.form.orig)
-	}
-	typeInto(t, m, 0, "prefer table-driven tests")
-	m.HandleKey("enter")
-	snap, _ = inspectFor(m)
-	if strings.Join(snap.Teams["frontend"], "|") != "prefer table-driven tests" {
-		t.Fatalf("team layer = %+v", snap.Teams)
-	}
-
-	// Agent override with replace mode: cursor on agent row (index 2).
-	m.cursors[secStandards] = 2
-	m.HandleKey("g")
-	if m.form.orig != "@agent:alice" || m.form.fields[0].text() != "alice" {
-		t.Fatalf("g prefill = %q / %q", m.form.orig, m.form.fields[0].text())
-	}
-	// Mode field: tab once, flip to replace.
-	m.HandleKey("tab")
-	m.HandleKey("right")
-	if got := m.form.fields[1].toggleValue(); got != "replace" {
-		t.Fatalf("mode = %q", got)
-	}
-	typeInto(t, m, 2, "diffs only")
-	m.HandleKey("enter")
-	snap, _ = inspectFor(m)
-	ov, ok := snap.Agents["alice"]
-	if !ok || ov.Mode != "replace" || strings.Join(ov.Entries, "|") != "diffs only" {
-		t.Fatalf("agent override = %+v", ov)
-	}
-
-	// Preview shows resolved block including builtins but not dropped layers.
-	m.HandleKey("v")
-	m.HandleKey("enter")
-	if m.form.kind != fStdPreviewShow || len(m.form.preview) == 0 {
-		t.Fatalf("preview = %v lines=%d", m.form.kind, len(m.form.preview))
-	}
-	text := strings.Join(m.form.preview, "\n")
-	for _, want := range []string{"diffs only", "force-push"} {
-		if !strings.Contains(text, want) {
-			t.Errorf("preview missing %q:\n%s", want, text)
-		}
-	}
-	for _, gone := range []string{"conventional commits", "table-driven"} {
-		if strings.Contains(text, gone) {
-			t.Errorf("replace leaked %q", gone)
-		}
-	}
-}
-
-func inspectFor(m *Model) (*stdSnapshotAlias, error) {
-	return inspectSnapshot(m.ws.Root)
-}
-
 func TestFormEscSwallowWhileBusy(t *testing.T) {
 	m, _ := newSurface(t)
-	m.HandleKey("]")
-	m.HandleKey("]")
-	m.HandleKey("i")
+	m.sec = secRepos
+	m.HandleKey("a")
 	m.form.busy = true
 	if !m.HandleKey("x") || !m.HandleKey("j") {
 		t.Fatal("busy form must swallow keys")
@@ -448,7 +211,7 @@ func TestFormEscSwallowWhileBusy(t *testing.T) {
 	}
 }
 
-func TestTasksSectionFlows(t *testing.T) {
+func TestBoardFlows(t *testing.T) {
 	m, ws := newSurface(t)
 	store, err := tasks.Open(ws)
 	if err != nil {
@@ -467,14 +230,7 @@ func TestTasksSectionFlows(t *testing.T) {
 		},
 	)
 	m.taskStore = store
-
-	// Navigate to the last section.
-	for i := secMembers; i < secTasks; i++ {
-		m.HandleKey("]")
-	}
-	if m.sec != secTasks {
-		t.Fatalf("section = %v", m.sec)
-	}
+	m.sec = secBoard
 
 	// Create via modal (slug+title).
 	m.HandleKey("n")
@@ -485,7 +241,7 @@ func TestTasksSectionFlows(t *testing.T) {
 		t.Fatalf("card after create = %+v err=%q", tk, m.form.err)
 	}
 
-	// Status cycles backlog → active.
+	// Status cycles backlog → active; the card moves lanes.
 	m.HandleKey("s")
 	tk, _ := store.Get("fix-login")
 	if tk.Status != tasks.Active {
@@ -524,9 +280,10 @@ func TestTasksSectionFlows(t *testing.T) {
 		t.Fatalf("thread binding = %+v", tk)
 	}
 
-	// Detail line renders changeset + thread for the selected row.
+	// Detail pane renders assignee, changeset, thread, status for the
+	// selected card.
 	out := ansi.Strip(m.View())
-	for _, want := range []string{"alpha@task/fix-login", "thread #general#42", "active"} {
+	for _, want := range []string{"fix-login", "alice", "alpha@task/fix-login", "thread #general#42", "active"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("view missing %q:\n%s", want, out)
 		}
@@ -549,11 +306,8 @@ func TestTasksSectionFlows(t *testing.T) {
 	}
 }
 
-func TestTasksSectionWithoutStoreRendersUnavailable(t *testing.T) {
+func TestBoardWithoutStoreRendersUnavailable(t *testing.T) {
 	m, _ := newSurface(t)
-	for i := secMembers; i < secTasks; i++ {
-		m.HandleKey("]")
-	}
 	m.HandleKey("n") // must not open a modal without a store
 	if m.form.kind == fTaskNew {
 		t.Fatal("modal opened without task store")
@@ -564,80 +318,106 @@ func TestTasksSectionWithoutStoreRendersUnavailable(t *testing.T) {
 	}
 }
 
-// stubRoster satisfies profile.Roster for section tests.
-type stubRoster struct{ ids []string }
-
-func (s *stubRoster) AgentIDs() []string { return s.ids }
-
-func (s *stubRoster) Manifest(id string) (*manifest.Agent, bool) {
-	for _, i := range s.ids {
-		if i == id {
-			return &manifest.Agent{ID: id, Name: strings.ToUpper(id),
-				Model: "mock-1", Runtime: "claude", Tools: []string{"read"}}, true
-		}
+func TestBoardLanesAndCursor(t *testing.T) {
+	m, ws := newSurface(t)
+	store, err := tasks.Open(ws)
+	if err != nil {
+		t.Fatal(err)
 	}
-	return nil, false
+	m.taskStore = store
+	m.sec = secBoard
+	store.Create("a-one", "One", "", "")
+	store.Create("b-two", "Two", "", "")
+	if err := store.SetStatus("b-two", tasks.Active); err != nil {
+		t.Fatal(err)
+	}
+
+	// Lane 0 holds the backlog card; l moves the active lane.
+	if g := m.boardGroups(); len(g[0]) != 1 || len(g[1]) != 1 {
+		t.Fatalf("groups = %+v", g)
+	}
+	m.HandleKey("l")
+	if m.boardActive != 1 {
+		t.Fatalf("active = %d", m.boardActive)
+	}
+	m.HandleKey("l")
+	m.HandleKey("l") // clamped at done
+	if m.boardActive != 3 {
+		t.Fatalf("active = %d", m.boardActive)
+	}
+	m.HandleKey("h")
+	m.HandleKey("h")
+	m.HandleKey("h") // clamped at backlog
+	if m.boardActive != 0 {
+		t.Fatalf("active = %d", m.boardActive)
+	}
+	// Empty lane selection: action keys are not consumed (nothing selected).
+	m.HandleKey("l")
+	m.HandleKey("l")
+	if m.HandleKey("s") {
+		t.Fatal("s on an empty lane must not be consumed")
+	}
+	if len(store.List()) != 2 {
+		t.Fatal("empty-lane keypress wrote to the store")
+	}
 }
 
-func TestInspectSectionFlows(t *testing.T) {
-	m, _ := newSurface(t)
-	m.roster = &stubRoster{ids: []string{"alice", "bob"}}
+func TestBoardOpenOnFloorJumps(t *testing.T) {
+	m, ws, b := newSurfaceWithBus(t)
+	store, err := tasks.Open(ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.taskStore = store
+	m.sec = secBoard
 
-	for i := secMembers; i < secInspect; i++ {
-		m.HandleKey("]")
+	// Bound thread jump.
+	store.Create("with-thread", "Threaded", "", "")
+	if err := store.BindThread("with-thread", "#general", 7); err != nil {
+		t.Fatal(err)
 	}
-	if m.sec != secInspect {
-		t.Fatalf("section = %v", m.sec)
+	m.HandleKey("o")
+	if m.sec != secChannels {
+		t.Fatalf("thread jump landed in %v", m.sec)
 	}
-
-	out := ansi.Strip(m.View())
-	for _, want := range []string{"agent inspection", "alice", "bob", "mock-1"} {
-		if !strings.Contains(out, want) {
-			t.Fatalf("list missing %q:\n%s", want, out)
-		}
-	}
-	if strings.Contains(out, "recent activity") && m.inspectOpen == false {
-		t.Fatal("profile expanded before enter")
-	}
-
-	// Open the profile for alice.
-	m.HandleKey("enter")
-	if !m.inspectOpen {
-		t.Fatal("profile did not open")
-	}
-	out = ansi.Strip(m.View())
-	for _, want := range []string{"alice", "idle", "recent activity", "private memory",
-		"knowledge contributions", "Standing instructions"} {
-		if !strings.Contains(out, want) {
-			t.Fatalf("profile missing %q:\n%s", want, out)
-		}
+	if m.pane.threadID != 7 {
+		t.Fatalf("thread pane = %d, want 7", m.pane.threadID)
 	}
 
-	// Toggle closed; cursor move also closes a stale pane.
-	m.HandleKey("enter")
-	if m.inspectOpen {
-		t.Fatal("toggle did not close")
+	// Assignee DM jump (the rail builds from the on-disk roster).
+	rosterDir := filepath.Join(ws.Root, ".dhi", "agents")
+	if err := os.MkdirAll(rosterDir, 0o755); err != nil {
+		t.Fatal(err)
 	}
-	m.HandleKey("j")
-	if m.inspectOpen {
-		t.Fatal("cursor move kept stale pane open")
+	if err := os.WriteFile(filepath.Join(rosterDir, "scout.toml"),
+		[]byte("schema = 1\nname = \"Scout\"\nmodel = \"m-1\"\nruntime = \"claude\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m.refreshPaneRail()
+	store.Create("dm-jump", "Dmj", "scout", "")
+	m.sec = secBoard
+	m.boardActive = 0
+	m.boardCur[0] = 0 // dm-jump sorts before lonely/with-thread
+	m.HandleKey("o")
+	if m.sec != secChannels {
+		t.Fatalf("dm jump landed in %v", m.sec)
+	}
+	if m.pane.active == 0 || !strings.HasPrefix(m.pane.channels[m.pane.active], "dm:scout") {
+		t.Fatalf("active channel = %q", m.pane.channels[m.pane.active])
 	}
 
-	// Empty roster renders guidance and stays inert-ish.
-	m2, _ := newSurface(t)
-	out = ansi.Strip(m2.View())
-	_ = out
-}
-
-func TestInspectSectionWithoutRoster(t *testing.T) {
-	m, _ := newSurface(t)
-	for i := secMembers; i < secInspect; i++ {
-		m.HandleKey("]")
+	// Neither → named flash, no jump.
+	store.Create("lonely", "Lonely", "", "")
+	m.sec = secBoard
+	m.boardCur[0] = 1 // lonely
+	m.HandleKey("o")
+	if m.sec != secBoard {
+		t.Fatal("nothing to open must not jump")
 	}
-	out := ansi.Strip(m.View())
-	if !strings.Contains(out, "no crew") {
-		t.Fatalf("guidance missing:\n%s", out)
+	if m.form.err == "" || !strings.Contains(m.form.err, "no bound thread") {
+		t.Fatalf("flash = %q", m.form.err)
 	}
+	_ = b
 }
 
 func TestDockedLayoutUsesFullWidth(t *testing.T) {
@@ -659,7 +439,7 @@ func TestDockedLayoutUsesFullWidth(t *testing.T) {
 	}
 	// Rail lists every section with counts.
 	plain := ansi.Strip(out)
-	for _, want := range []string{"MEMBERS", "ORG", "PACKS", "STANDARDS", "CHANNELS", "TASKS", "INSPECT"} {
+	for _, want := range []string{"INBOX", "BOARD", "CHANNELS", "REPOS"} {
 		if !strings.Contains(plain, want) {
 			t.Fatalf("rail missing %q", want)
 		}
@@ -669,12 +449,15 @@ func TestDockedLayoutUsesFullWidth(t *testing.T) {
 func TestModalOverlayKeepsRailVisible(t *testing.T) {
 	m, _ := newSurface(t)
 	m.Resize(200, 50)
+	m.sec = secRepos
 	m.HandleKey("a") // add-member modal
 	out := ansi.Strip(m.View())
-	if !strings.Contains(out, "MEMBERS") || !strings.Contains(out, "INSPECT") {
+	if !strings.Contains(out, "REPOS") || !strings.Contains(out, "INBOX") {
 		t.Fatal("rail hidden while modal open")
 	}
 	if !strings.Contains(out, "add member") {
 		t.Fatalf("modal missing:\n%s", out[:400])
 	}
 }
+
+var _ = time.Now

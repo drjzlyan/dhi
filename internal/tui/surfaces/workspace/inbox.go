@@ -138,11 +138,14 @@ func (m *Model) inboxJump(it inbox.Item) {
 		}
 		m.replay = openReplay(it.Run)
 		m.replay.refresh(m.replayWidth(), m.replayHeight())
-		m.sec = secTasks
-		for i, tk := range m.taskRows() {
-			if tk.Slug == it.TaskSlug {
-				m.cursors[secTasks] = i
-				break
+		m.sec = secBoard
+		// Lane cursors: select the failed card inside its status lane.
+		for li, col := range m.boardGroups() {
+			for ci, tk := range col {
+				if tk.Slug == it.TaskSlug {
+					m.boardActive = li
+					m.boardCur[li] = ci
+				}
 			}
 		}
 	case inbox.InReview:

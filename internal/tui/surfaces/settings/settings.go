@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"charm.land/bubbletea/v2"
 
@@ -51,6 +52,7 @@ type Model struct {
 	events chan settingsEvent
 	width  int
 	height int
+	now    func() time.Time // injectable clock (deterministic due math)
 }
 
 var _ surfaces.Surface = (*Model)(nil)
@@ -120,7 +122,9 @@ type Deps struct {
 // and (optionally) the workspace services behind agent management.
 func New(cfg settings.Config, savePath string, d Deps) *Model {
 	return &Model{cfg: cfg, savePath: savePath, d: d,
-		events: make(chan settingsEvent, 4)}
+		events: make(chan settingsEvent, 4),
+		now:    time.Now,
+	}
 }
 
 func (m *Model) Meta() surfaces.Meta { return surfaces.Meta{ID: "settings", Title: "Settings"} }

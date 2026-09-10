@@ -218,15 +218,14 @@ func runTUI() {
 	}
 	a := app.New(version.Version,
 		wsview.New(version.Version, ws, wsview.Deps{
-			Bus:          messageBus,
-			Runtime:      agentRT,
-			Tasks:        taskStore,
-			Roster:       agentRT,
-			ReviewSvc:    reviewSvc,
-			Approvals:    approvals,
-			Unread:       unreadStore,
-			Autopilots:   wsAuto,
-			ReloadRoster: reloadRoster,
+			Bus:        messageBus,
+			Runtime:    agentRT,
+			Tasks:      taskStore,
+			Roster:     agentRT,
+			ReviewSvc:  reviewSvc,
+			Approvals:  approvals,
+			Unread:     unreadStore,
+			Autopilots: wsAuto,
 			OpenChat: func() bool {
 				if appRef == nil {
 					return false

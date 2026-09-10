@@ -1,12 +1,12 @@
-  MEMBERS           2   ╭─ › channels ─────────────────────────────────────────────────────────────────────╮
-  ORG               0   │ [#general ●2]                                                                    │
-  PACKS             0   │ ────────────────────────────────────────────────────────                         │
-  STANDARDS         1   │ #general                                                                         │
-▌ CHANNELS          1   │ ▌ scout @you needs a decision on the plan                                        │
-  TASKS             2   │   muse @you second decision                                                      │
-  INSPECT           0   │                                                                                  │
-  AUTOPILOTS        0   │ i compose · j/k select · t thread · c all · ,/. channel                          │
-  INBOX             5   │                                                                                  │
+  INBOX             5   ╭─ › channels ─────────────────────────────────────────────────────────────────────╮
+  BOARD             2   │ [#general ●2]                                                                    │
+▌ CHANNELS          1   │ ────────────────────────────────────────────────────────                         │
+  REPOS             2   │ #general                                                                         │
+                        │ ▌ scout @you needs a decision on the plan                                        │
+                        │   muse @you second decision                                                      │
+                        │                                                                                  │
+                        │ i compose · j/k select · t thread · c all · ,/. channel                          │
+                        │                                                                                  │
                         │                                                                                  │
                         │                                                                                  │
                         │                                                                                  │

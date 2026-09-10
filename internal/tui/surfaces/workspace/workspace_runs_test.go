@@ -79,9 +79,7 @@ func TestTasksRunsSuffixAndReplayRouting(t *testing.T) {
 	m, ws := newSurface(t)
 	m.taskStore = seededRunStore(t, ws)
 
-	for i := secMembers; i < secTasks; i++ {
-		m.HandleKey("]")
-	}
+	m.sec = secBoard
 	out := ansi.Strip(m.View())
 	if !strings.Contains(out, "3 runs · cost partial") {
 		t.Fatalf("runs suffix missing:\n%s", out)
@@ -117,53 +115,9 @@ func TestTasksRunsSuffixAndReplayRouting(t *testing.T) {
 func TestTaskReplayGolden(t *testing.T) {
 	m, ws := newSurface(t)
 	m.taskStore = seededRunStore(t, ws)
-	for i := secMembers; i < secTasks; i++ {
-		m.HandleKey("]")
-	}
+	m.sec = secBoard
 	m.HandleKey("r")
 	golden.Snapshot(t, "workspace_task_run_replay", m.View())
-}
-
-func TestInspectRunsSubsection(t *testing.T) {
-	m, ws := newSurface(t)
-	m.roster = &stubRoster{ids: []string{"alice"}}
-	m.taskStore = seededRunStore(t, ws)
-
-	for i := secMembers; i < secInspect; i++ {
-		m.HandleKey("]")
-	}
-	m.HandleKey("enter") // open profile
-
-	out := ansi.Strip(m.View())
-	for _, want := range []string{
-		"runs",
-		"3 runs · 1 ok · 1 fail · 1 timeout · 100 in / 50 out partial · cost partial",
-		"cli:claude/opus",
-	} {
-		if !strings.Contains(out, want) {
-			t.Fatalf("RUNS subsection missing %q:\n%s", want, out)
-		}
-	}
-
-	// e opens the newest run's replay from the run rows.
-	m.HandleKey("e")
-	if m.replay == nil {
-		t.Fatal("e did not open the newest replay")
-	}
-	if got := ansi.Strip(m.View()); !strings.Contains(got, "replay run-replay-test") {
-		t.Fatalf("replay header missing newest run:\n%s", got)
-	}
-}
-
-func TestInspectRunsSubsectionGolden(t *testing.T) {
-	m, ws := newSurface(t)
-	m.roster = &stubRoster{ids: []string{"alice"}}
-	m.taskStore = seededRunStore(t, ws)
-	for i := secMembers; i < secInspect; i++ {
-		m.HandleKey("]")
-	}
-	m.HandleKey("enter")
-	golden.Snapshot(t, "workspace_inspect_runs", m.View())
 }
 
 func TestReplayMissingTranscriptGolden(t *testing.T) {
@@ -185,9 +139,7 @@ func TestReplayMissingTranscriptGolden(t *testing.T) {
 		t.Fatal(err)
 	}
 	m.taskStore = store
-	for i := secMembers; i < secTasks; i++ {
-		m.HandleKey("]")
-	}
+	m.sec = secBoard
 	m.HandleKey("r")
 	golden.Snapshot(t, "workspace_replay_missing_transcript", m.View())
 }
@@ -242,9 +194,7 @@ func TestReplayScrolls(t *testing.T) {
 		t.Fatal(err)
 	}
 	m.taskStore = store
-	for i := secMembers; i < secTasks; i++ {
-		m.HandleKey("]")
-	}
+	m.sec = secBoard
 	m.HandleKey("r")
 
 	if m.replay.scroll != 0 {
@@ -280,9 +230,7 @@ func TestReplayScrolls(t *testing.T) {
 func TestReplayRWithoutRuns(t *testing.T) {
 	m, ws := newSurface(t)
 	m.taskStore = cardsWithRuns(t, ws, nil)
-	for i := secMembers; i < secTasks; i++ {
-		m.HandleKey("]")
-	}
+	m.sec = secBoard
 	m.HandleKey("r")
 	if m.replay != nil {
 		t.Fatal("r opened a replay for a card with no runs")

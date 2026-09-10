@@ -138,12 +138,23 @@ func gitTaskFixture(t *testing.T) (*Model, *tasks.Store, *review.Store, *ghStub)
 
 	m := New("test", ws, Deps{Tasks: ts, ReviewSvc: svc})
 	m.Resize(110, 34)
-	// land on the card in TASKS
-	for m.sec != secTasks {
-		m.HandleKey("]")
-	}
-	m.cursors[secTasks] = 0
+	// land on the card in BOARD
+	m.sec = secBoard
+	selectBoardCard(m, "feat-1")
 	return m, ts, rs, stub
+}
+
+// selectBoardCard positions the board cursor on the card's lane/row.
+func selectBoardCard(m *Model, slug string) {
+	for li, col := range m.boardGroups() {
+		for ci, tk := range col {
+			if tk.Slug == slug {
+				m.boardActive = li
+				m.boardCur[li] = ci
+				return
+			}
+		}
+	}
 }
 
 func TestTaskCreatePRFlow(t *testing.T) {
@@ -152,7 +163,7 @@ func TestTaskCreatePRFlow(t *testing.T) {
 	if err := m0.taskStore.Create("nowt", "No worktree", "", ""); err != nil {
 		t.Fatal(err)
 	}
-	m0.cursors[secTasks] = 1 // "nowt" sorts after "feat-1"
+	selectBoardCard(m0, "nowt") // sorts after feat-1
 	if !m0.HandleKey("p") {
 		t.Fatal("p not consumed")
 	}
@@ -163,7 +174,7 @@ func TestTaskCreatePRFlow(t *testing.T) {
 
 	// happy path on feat-1
 	m2, ts2, _, stub2 := gitTaskFixture(t)
-	m2.cursors[secTasks] = 0
+	selectBoardCard(m2, "feat-1")
 	if !m2.HandleKey("p") {
 		t.Fatal("p not consumed")
 	}

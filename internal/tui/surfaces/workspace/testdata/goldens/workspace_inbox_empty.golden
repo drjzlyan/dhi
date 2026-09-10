@@ -1,12 +1,12 @@
-  MEMBERS           2   ╭─ › inbox ────────────────────────────────────────────────────────────────────────╮
-  ORG               0   │ inbox — everything that needs you   enter/o jump · z snooze · u unsnooze         │
-  PACKS             0   │ (nothing needs attention)                                                        │
-  STANDARDS         1   │                                                                                  │
-  CHANNELS          0   │                                                                                  │
-  TASKS             0   │                                                                                  │
-  INSPECT           0   │                                                                                  │
-  AUTOPILOTS        0   │                                                                                  │
-▌ INBOX             0   │                                                                                  │
+▌ INBOX             0   ╭─ › inbox ────────────────────────────────────────────────────────────────────────╮
+  BOARD             0   │ inbox — everything that needs you   enter/o jump · z snooze · u unsnooze         │
+  CHANNELS          0   │ (nothing needs attention)                                                        │
+  REPOS             2   │                                                                                  │
+                        │                                                                                  │
+                        │                                                                                  │
+                        │                                                                                  │
+                        │                                                                                  │
+                        │                                                                                  │
                         │                                                                                  │
                         │                                                                                  │
                         │                                                                                  │

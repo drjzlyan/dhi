@@ -177,6 +177,7 @@ func TestAutopilotsSectionGolden(t *testing.T) {
 	writeRosterAgent(t, ws.Root, "scout")
 	m.d.Autopilots = mustAutoStore(t, ws)
 	m.d.Runtime = &fakeTurn{handled: make(chan bus.Message, 4)}
+	m.now = func() time.Time { return time.Date(2026, 9, 10, 8, 30, 0, 0, time.UTC) }
 	m.sec = secAutopilots
 	sch, _ := autopilot.ParseSchedule("daily 09:00")
 	if _, err := m.d.Autopilots.Create("sweep", "Sweep", "scout", "check the inbox", sch); err != nil {
