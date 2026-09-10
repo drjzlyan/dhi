@@ -327,12 +327,12 @@ func (a *App) compose() string {
 	return out
 }
 
-// Surfaces may expose their active zone + mode and their own key
-// summary for the statusline (F-025 Part C). Narrow interface
-// assertions — the Surface contract is untouched, and surfaces without
-// them degrade to the neutral base line.
+// Surfaces may expose their active zone + mode for the statusline
+// (F-025 Part C). Narrow interface assertions — the Surface contract
+// is untouched, and surfaces without them degrade to the neutral base
+// line. Keymaps are NOT repeated here: they live once, on the pane's
+// chrome HintBar.
 type statusContext interface{ StatusContext() (zone, mode string) }
-type statusHints interface{ StatusHints() []string }
 
 // buildStatus composes the statusline fresh every frame so mode and
 // zone changes render live without a surface switch.
@@ -354,14 +354,6 @@ func (a *App) buildStatus() *kit.StatusLine {
 		}
 		left = append(left, base...)
 		sl.Left = left
-	}
-	if sh, ok := a.Active().(statusHints); ok {
-		if hints := sh.StatusHints(); len(hints) > 0 && a.width >= 110 {
-			if len(hints) > 3 {
-				hints = hints[:3]
-			}
-			sl.Hints = append(hints, "? help", "^c quit")
-		}
 	}
 	if n := a.attentionCount(); n > 0 {
 		sl.Left = append([]kit.StatusSegment{{

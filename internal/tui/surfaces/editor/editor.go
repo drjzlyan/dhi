@@ -219,11 +219,6 @@ func (m *Model) StatusContext() (string, string) {
 	return "files", ""
 }
 
-// StatusHints is the top action summary for wide statuslines.
-func (m *Model) StatusHints() []string {
-	return []string{"enter open", "/ find", "ctrl+a crew"}
-}
-
 // Init starts the terminal and chat message pumps plus the workspace
 // roster watcher (live re-resolution without restart, P1).
 func (m *Model) Init() tea.Cmd {

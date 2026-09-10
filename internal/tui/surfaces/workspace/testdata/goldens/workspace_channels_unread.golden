@@ -5,7 +5,6 @@
                           │ ▌ scout @you needs a decision on the plan                                        │
                           │   muse @you second decision                                                      │
                           │                                                                                  │
-                          │ i compose • j/k select • t thread • c all • ,/. channel                          │
                           │                                                                                  │
                           │                                                                                  │
                           │                                                                                  │
@@ -30,5 +29,6 @@
                           │                                                                                  │
                           │                                                                                  │
                           │                                                                                  │
-                          │ i compose • t thread • v profile • ,/. channel                                   │
+                          │                                                                                  │
+                          │ i compose • j/k select • t thread • v profile • tab rail • ,/. channel           │
 [ ] sections              ╰──────────────────────────────────────────────────────────────────────────────────╯

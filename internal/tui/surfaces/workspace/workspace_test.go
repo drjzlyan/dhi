@@ -104,7 +104,7 @@ func TestStatuslineContextFollowsZoneAndMode(t *testing.T) {
 	if _, mode := m.StatusContext(); mode != "" {
 		t.Fatalf("inbox mode = %q", mode)
 	}
-	if h := m.StatusHints(); len(h) == 0 {
+	if h := m.sectionHints(); len(h) == 0 {
 		t.Fatal("board hints missing")
 	}
 }

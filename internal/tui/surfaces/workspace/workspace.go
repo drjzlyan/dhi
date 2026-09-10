@@ -218,22 +218,6 @@ func (m *Model) StatusContext() (string, string) {
 	return zone, ""
 }
 
-// StatusHints is the surface's top action summary for wide statuslines
-// (the full keymap lives in the pane's HintBar).
-func (m *Model) StatusHints() []string {
-	switch m.sec {
-	case secBoard:
-		return []string{"n new", "s status", "o thread"}
-	case secChannels:
-		return []string{"i compose", "t thread", "v profile"}
-	case secInbox:
-		return []string{"enter jump", "z snooze"}
-	case secRepos:
-		return []string{"a add", "r rename", "d remove"}
-	}
-	return nil
-}
-
 // Init starts the change pumps for re-render triggers and arms the
 // autopilot chain — launch catch-up rides the due-now tick (F-015),
 // execution stays on this surface (ADR-0014 §5).

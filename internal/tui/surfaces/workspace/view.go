@@ -147,7 +147,7 @@ func (m *Model) sectionHints() []string {
 	case secBoard:
 		return []string{"h/l lane", "n new", "s status", "a assign", "o thread"}
 	case secChannels:
-		return []string{"i compose", "t thread", "v profile", ",/. channel"}
+		return m.pane.hints()
 	case secRepos:
 		return []string{"a add", "r rename", "d remove"}
 	}

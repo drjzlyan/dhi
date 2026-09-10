@@ -167,9 +167,6 @@ func (m *Model) StatusContext() (string, string) {
 	return zone, ""
 }
 
-// StatusHints is the top action summary for wide statuslines.
-func (m *Model) StatusHints() []string { return []string{"n review", "enter open", "s submit"} }
-
 // Init starts the store change pump.
 func (m *Model) Init() tea.Cmd {
 	if m.ws == nil || m.svc == nil {

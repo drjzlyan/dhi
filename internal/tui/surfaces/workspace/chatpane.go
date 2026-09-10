@@ -8,7 +8,6 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/agentkit/org"
 	"github.com/drjzlyan/dhi/internal/ansi"
-	"github.com/drjzlyan/dhi/internal/tui/kit"
 	"github.com/drjzlyan/dhi/internal/tui/theme"
 	"github.com/drjzlyan/dhi/internal/unread"
 )
@@ -116,6 +115,23 @@ func (p *chatPane) channelName() string {
 		return p.channels[p.active]
 	}
 	return "#general"
+}
+
+// hints is the channels section's keymap for the workspace chrome bar —
+// the one place channel navigation hints render. Keys track state: the
+// composer owns focus while typing, an open thread narrows to reply
+// navigation, otherwise the full channel keymap applies.
+func (p *chatPane) hints() []string {
+	if p.focus {
+		return []string{"enter send", "esc blur"}
+	}
+	if p.profileID != "" {
+		return []string{"esc close", "i compose", "j/k select", ",/. channel"}
+	}
+	if p.threadID != 0 {
+		return []string{"i reply in thread", "esc close"}
+	}
+	return []string{"i compose", "j/k select", "t thread", "v profile", "tab rail", ",/. channel"}
 }
 
 func (p *chatPane) switchChannel(dir int) {
@@ -550,11 +566,6 @@ func (p *chatPane) renderNarrow(width, height int) []string {
 	lines = append(lines, "")
 	if p.focus {
 		lines = append(lines, theme.TabActive().Render("> "+string(p.input))+"▌")
-		lines = append(lines, kit.HintBar(width, "",
-			"enter send", "@mention triggers agents", "esc blur"))
-	} else {
-		lines = append(lines, kit.HintBar(width, "",
-			"i compose", "j/k select", "t thread", "c all", ",/. channel"))
 	}
 	return lines
 }
@@ -622,12 +633,6 @@ func (p *chatPane) transcriptLines(width, height int, wide bool) []string {
 	lines = append(lines, "")
 	if p.focus {
 		lines = append(lines, theme.TabActive().Render("> "+string(p.input))+"▌")
-		lines = append(lines, kit.HintBar(width, "", "enter send", "esc blur"))
-	} else if p.threadID != 0 {
-		lines = append(lines, kit.HintBar(width, "", "i reply in thread", "esc closes pane"))
-	} else {
-		lines = append(lines, kit.HintBar(width, "",
-			"i compose", "j/k select", "t thread", "v profile", "tab rail"))
 	}
 	return lines
 }
@@ -687,7 +692,6 @@ func (p *chatPane) contextLines(width, height int) []string {
 		} else {
 			body = append(body, theme.TextDim().Render(" (profile unavailable)"))
 		}
-		body = append(body, "", theme.Hint().Render(" esc close"))
 	case p.threadID != 0:
 		wrap := width - 12 // room for the author prefix + margins
 		body = append(body, theme.Brand().Render(" thread #"+itoa(int(p.threadID))), "")
@@ -709,7 +713,6 @@ func (p *chatPane) contextLines(width, height int) []string {
 				prefix = "  "
 			}
 		}
-		body = append(body, "", theme.Hint().Render(" i reply · esc close"))
 	default:
 		out := make([]string, height)
 		for i := range out {
