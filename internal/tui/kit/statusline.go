@@ -5,7 +5,6 @@ import (
 
 	"charm.land/lipgloss/v2"
 
-	"github.com/drjzlyan/dhi/internal/ansi"
 	"github.com/drjzlyan/dhi/internal/tui/theme"
 )
 
@@ -48,6 +47,9 @@ func ModeChip(text string) StatusSegment {
 }
 
 // View renders the statusline padded to Width cells when Width > 0.
+// Overflow rule (F-026 P1): the center segment is dropped first, then
+// hints are dropped from the start (quit survives), then left/right
+// ellipsis-clip — the line never exceeds the terminal width.
 func (s *StatusLine) View() string {
 	bar := theme.StatusBar()
 	hint := theme.Hint()
@@ -56,21 +58,53 @@ func (s *StatusLine) View() string {
 	for _, seg := range s.Left {
 		left += seg.Style.Render(seg.Text)
 	}
-	var right string
-	for i, h := range s.Hints {
-		if i > 0 {
-			right += hint.Render(theme.GlyphBullet)
+	rightFor := func(hints []string) string {
+		var right string
+		for i, h := range hints {
+			if i > 0 {
+				right += hint.Render(theme.GlyphBullet)
+			}
+			right += hint.Render(" " + h + " ")
 		}
-		right += hint.Render(" " + h + " ")
+		return right
 	}
 
-	total := runeWidth(ansi.Strip(left)) + runeWidth(ansi.Strip(s.Center)) + runeWidth(ansi.Strip(right))
+	hints := s.Hints
+	right := rightFor(hints)
+	center := s.Center
+	over := func() bool {
+		return runeWidth(left)+runeWidth(center)+runeWidth(right) > s.Width
+	}
+	if over() {
+		center = ""
+	}
+	for over() && len(hints) > 1 {
+		hints = hints[1:]
+		right = rightFor(hints)
+	}
+	if over() {
+		center = ""
+		hints = nil
+		if w := runeWidth(left) + runeWidth(right); w > s.Width {
+			split := clamp(s.Width-runeWidth(right), 0, s.Width)
+			if split > 1 {
+				left = ellipsisClip(left, split)
+			} else {
+				left = ""
+			}
+			if runeWidth(left)+runeWidth(right) > s.Width {
+				right = ellipsisClip(right, s.Width-runeWidth(left))
+			}
+		}
+	}
+
+	total := runeWidth(left) + runeWidth(center) + runeWidth(right)
 	gap := 0
 	if s.Width > total {
 		gap = s.Width - total
 	}
 	lg := gap / 2
-	mid := strings.Repeat(" ", lg) + s.Center
+	mid := strings.Repeat(" ", lg) + center
 
 	out := left + mid + strings.Repeat(" ", gap-lg) + right
 	out = padTo(out, s.Width)

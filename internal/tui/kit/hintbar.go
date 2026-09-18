@@ -7,16 +7,18 @@ import (
 	"github.com/drjzlyan/dhi/internal/tui/theme"
 )
 
-// Layout breakpoints shared by every surface (F-025 Part D).
+// Layout breakpoints shared by every surface (F-025 Part D). The
+// definition moved to theme (F-026 P1 — theme owns the responsive
+// identity); these aliases keep kit consumers compiling.
 const (
 	// WCompact: below this the centered fallback is the only option.
-	WCompact = 60
+	WCompact = theme.WCompact
 	// WDock: below this surfaces render a full-width vertical stack;
 	// at/above it they dock a rail beside the main pane.
-	WDock = 84
+	WDock = theme.WDock
 	// WWide: at/above this, surfaces open extra side panes (board
 	// detail, chat context).
-	WWide = 120
+	WWide = theme.WWide
 )
 
 // HintBar renders the bottom chrome row (F-025 Part A): an optional
@@ -24,7 +26,8 @@ const (
 // keep their semantic color) followed by the muted keymap, right-
 // padded on the chrome background. Instructions live here, at the
 // bottom, never the focus. The row is exactly width cells: the keymap
-// clips (styles preserved) when the status leaves no room.
+// clips with an ellipsis marker (styles preserved) when the status
+// leaves no room — truncation is visible, never silent (F-026).
 func HintBar(width int, status string, hints ...string) string {
 	bar := theme.ChromeBar()
 	sep := " " + theme.GlyphBullet + " "
@@ -33,9 +36,10 @@ func HintBar(width int, status string, hints ...string) string {
 	if status != "" {
 		gap = 2
 	}
-	hintText := ansi.Clip(strings.Join(hints, sep), width-statusW-gap)
+	full := strings.Join(hints, sep)
+	hintText := ellipsisClip(full, width-statusW-gap)
 	if hintText == "" && status == "" {
-		hintText = ansi.Clip(strings.Join(hints, sep), width)
+		hintText = ellipsisClip(full, width)
 	}
 	row := status
 	if status != "" && hintText != "" {

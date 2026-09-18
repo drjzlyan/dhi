@@ -9,13 +9,13 @@
                     │                                                                              │
                     │                                                                              │
                     │                                                                              │
-                    │                                                                              │
                                   ╭─ › reject artifact ──────────────────────────────╮              
                                   │ routes back to the authoring agent               │              
                                   │ ▌ notes   ▏                                      │              
                                   │                                                  │              
                                   │ notes post to the session channel · enter reject │              
                                   ╰──────────────────────────────────────────────────╯              
+                                                                                                    
                     │                                                                              │
                     │                                                                              │
                     │                                                                              │

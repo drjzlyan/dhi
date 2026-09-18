@@ -26,6 +26,7 @@ type Panel struct {
 	Height  int // total height including edges; 0 = size to content
 
 	content []string
+	footer  []string
 }
 
 // NewPanel returns an empty panel. Chain SetContent to populate.
@@ -35,6 +36,11 @@ func NewPanel(title string, focused bool) *Panel {
 
 // SetContent replaces the panel body; each string is one row (no newlines).
 func (p *Panel) SetContent(lines ...string) *Panel { p.content = lines; return p }
+
+// SetFooter adds quiet rows pinned under the body ("… N more", scroll
+// cues, position summaries — F-026 P1). The body budget shrinks; at
+// tiny heights the footer yields to content.
+func (p *Panel) SetFooter(lines ...string) *Panel { p.footer = lines; return p }
 
 // View renders the complete panel including edges and title.
 func (p *Panel) View() string {
@@ -46,6 +52,7 @@ func (p *Panel) View() string {
 	if len(body) == 0 {
 		body = []string{""}
 	}
+	footerRows := len(p.footer)
 
 	width := p.Width
 	if width == 0 {
@@ -56,21 +63,35 @@ func (p *Panel) View() string {
 	}
 	height := p.Height
 	if height == 0 {
-		height = len(body) + 2
+		height = len(body) + footerRows + 2
 	}
 
 	inner := width - pad*2 - 2
+	budget := height - 2 - footerRows
+	if budget < 1 {
+		footerRows = 0
+		budget = height - 2
+	}
 
 	bg := theme.PanelBg()
 
 	var out []string
 	out = append(out, topEdge(width, p.Title, edge, titleSt))
 
-	for y := 0; y < height-2; y++ {
+	for y := 0; y < budget; y++ {
 		var row string
 		if y < len(body) {
 			row = clip(body[y], inner)
 		}
+		if w := runeWidth(ansi.Strip(row)); w < inner {
+			row += strings.Repeat(" ", inner-w)
+		}
+		line := strings.Repeat(" ", pad) + bg.Render(row) + strings.Repeat(" ", pad)
+		out = append(out, edge.Render(lipgloss.RoundedBorder().Left)+line+
+			edge.Render(lipgloss.RoundedBorder().Right))
+	}
+	for y := 0; y < footerRows; y++ {
+		row := clip(p.footer[y], inner)
 		if w := runeWidth(ansi.Strip(row)); w < inner {
 			row += strings.Repeat(" ", inner-w)
 		}
@@ -122,16 +143,27 @@ func maxRuneWidth(lines []string) int {
 	return max
 }
 
+// runeWidth measures visible display cells (wide glyphs count twice);
+// delegates to ansi.Width, the one width truth (ADR-0015).
 func runeWidth(s string) int {
-	n := 0
-	for range ansi.Strip(s) {
-		n++
-	}
-	return n
+	return ansi.Width(s)
 }
 
 // clip cuts s to at most n visible cells, preserving ANSI styling so
 // truncated rows keep their colors (F-024).
 func clip(s string, n int) string {
 	return ansi.Clip(s, n)
+}
+
+// ellipsisClip cuts s to at most n visible cells, appending "…" on the
+// cell before the cut so truncation is visible, never silent (F-026).
+// n <= 1 returns "" (no room for content + marker).
+func ellipsisClip(s string, n int) string {
+	if n <= 1 {
+		return ""
+	}
+	if runeWidth(s) <= n {
+		return s
+	}
+	return ansi.Clip(s, n-1) + "…"
 }

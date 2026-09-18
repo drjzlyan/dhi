@@ -594,3 +594,37 @@ statusline, full-width narrow stacks).
 - [x] P5 — Ideator/Reviewer on kit.Rail + HintBar + breakpoints;
       editor files rail rows inset-shaded (kit.List.Inset)
 - [x] P6 — full golden regeneration + closeout docs
+
+## M13 — UI beauty, usefulness & interaction *(F-026)* [~]
+
+Status: in progress (P0–P1 landed 2026-09-18). User scope decisions:
+syntax highlighting via chroma = IN; terminal ANSI scrollback = IN;
+mouse (wheel + click) = IN. Zero new deps in the graph — chroma +
+go-runewidth promoted from indirect (ADR-0015).
+
+- [x] P0 — spec (F-026) + ADR-0015 (UI dependency promotions), 2026-09-18
+- [x] P1 — theme & kit foundation: theme.Info/AccentDim/Keycap +
+      InfoText/AccentDimText/TextStyle, motion knobs (MotionFrames/
+      MotionInterval, adopted by app), breakpoints kit→theme; dead
+      tokens deleted (base/AppFrame/PanelBorder/RadiusPad/GlyphLogoBG),
+      GlyphBranch/Spark adopted; ansi.Width display-cell math
+      (go-runewidth) + wide-rune-safe ansi.Clip; kit.Scroller/
+      Scrollbar + indicators; List group rows + inline Desc + ellipsis
+      + flush-right badges + Cues/Scrollbar; Rail glyph slot + own-row
+      foot + overflow scroll + cue on foot; Modal scrollable bodies
+      (pinned busy/error + thumb track) + ellipsis + shadow row;
+      Panel.SetFooter; HintBar ellipsis; StatusLine overflow rule
+      (center dropped → hints dropped from start → clip); Tabs
+      width-clip; kit.Form in-value cursor + shift+tab + paste +
+      focus-visible fields; kit.Transcript (day dividers, stamps,
+      thread tags, shared WrapWords, injected markdown seam) —
+      contract tests in kit/f026_test.go + transcript_test.go
+- [ ] P2 — interaction & mouse foundation (Wheel/Click seams)
+- [ ] P3 — workspace pass (scrollers, board grid, channels transcript,
+      repos info, replay, forms on kit.Form)
+- [ ] P4 — editor pass (chroma buffers, floating popups, transcript,
+      find/replace)
+- [ ] P5 — terminal ANSI scrollback
+- [ ] P6 — ideator/reviewer/settings consistency sweep
+- [ ] P7 — shell coherence (contextual help, statusline, toasts)
+- [ ] P8 — closeout (goldens reviewed, perf benches, docs)

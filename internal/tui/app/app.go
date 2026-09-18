@@ -16,11 +16,12 @@ import (
 )
 
 // View-transition fade-in (F-012): a surface switch renders the new body
-// dimmed for two short frames before settling. Message-driven like every
-// other DHI animation; reduced motion skips it entirely.
-const (
-	transitionFrames   = 2
-	transitionInterval = 100 * time.Millisecond
+// dimmed for a couple of short frames before settling. Message-driven like
+// every other DHI animation; reduced motion skips it entirely. Cadence
+// lives in theme (F-026 P1).
+var (
+	transitionFrames   = theme.MotionFrames
+	transitionInterval = theme.MotionInterval
 )
 
 type transitionMsg struct{}

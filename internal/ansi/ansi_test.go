@@ -36,3 +36,30 @@ func TestClipExactAndEmpty(t *testing.T) {
 		t.Fatalf("Clip with leading style = %q", got)
 	}
 }
+
+func TestWidthCountsDisplayCells(t *testing.T) {
+	// ASCII: display width == rune count.
+	if got := Width("hello"); got != 5 {
+		t.Fatalf("Width ascii = %d", got)
+	}
+	// Wide glyphs count as two cells.
+	if got := Width("日本"); got != 4 {
+		t.Fatalf("Width cjk = %d", got)
+	}
+	// Escape sequences are skipped in either input shape.
+	if got := Width("\x1b[31m日本\x1b[0mx"); got != 5 {
+		t.Fatalf("Width styled = %d", got)
+	}
+	if got := Width(Strip("\x1b[31m日本\x1b[0mx")); got != 5 {
+		t.Fatalf("Width stripped = %d", got)
+	}
+}
+
+func TestClipNeverOverflowsWideRunes(t *testing.T) {
+	if got := Strip(Clip("日本", 3)); got != "日" {
+		t.Fatalf("Clip wide = %q, want the single 2-cell rune", got)
+	}
+	if got := Strip(Clip("日本", 4)); got != "日本" {
+		t.Fatalf("Clip wide exact = %q", got)
+	}
+}

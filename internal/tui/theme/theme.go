@@ -9,6 +9,7 @@ package theme
 import (
 	"image/color"
 	"strings"
+	"time"
 
 	"charm.land/lipgloss/v2"
 	"github.com/lucasb-eyer/go-colorful"
@@ -33,14 +34,15 @@ type Tokens struct {
 	TextDim       color.Color // secondary text
 	TextMuted     color.Color // hints, disabled elements
 	Accent        color.Color // primary brand accent (cyan)
+	AccentDim     color.Color // quieter accent for secondary emphasis
 	Accent2       color.Color // secondary brand accent (violet)
+	Info          color.Color // neutral-blue semantic (informational rows)
 	Success       color.Color
 	Warning       color.Color
 	Danger        color.Color
 
 	// Layout metrics (in terminal cells).
 	PadX        int // horizontal padding inside panels
-	RadiusPad   int // breathing room around the app frame
 	HeightTab   int // tab bar height
 	HeightState int // statusline height
 }
@@ -52,26 +54,29 @@ func Dark() Tokens {
 	return Tokens{
 		Name: "dark-futuristic",
 
-		Bg:            c("#0B0E14"),
-		BgPanel:       c("#10141B"),
-		BgElevated:    c("#151B26"),
-		BgInset:       c("#07090D"),
-		BgChrome:      c("#262F3E"),
-		BgSelection:   c("#1B2739"),
-		BgOverlay:     c("#05070B"),
-		Border:        c("#232C3B"),
-		BorderFocused: c("#22D3EE"),
+		Bg:          c("#0B0E14"),
+		BgPanel:     c("#10141B"),
+		BgElevated:  c("#151B26"),
+		BgInset:     c("#07090D"),
+		BgChrome:    c("#262F3E"),
+		BgSelection: c("#1B2739"),
+		BgOverlay:   c("#05070B"),
+		Border:      c("#232C3B"),
+		// BorderFocused is a brighter cyan than Accent so a focused
+		// edge reads as attention, not brand emphasis (F-026 P1).
+		BorderFocused: c("#67E8F9"),
 		Text:          c("#E6EDF3"),
 		TextDim:       c("#8B98A9"),
 		TextMuted:     c("#58657A"),
 		Accent:        c("#22D3EE"),
+		AccentDim:     c("#0E7490"),
 		Accent2:       c("#A78BFA"),
+		Info:          c("#60A5FA"),
 		Success:       c("#34D399"),
 		Warning:       c("#FBBF24"),
 		Danger:        c("#F87171"),
 
 		PadX:        1,
-		RadiusPad:   0,
 		HeightTab:   1,
 		HeightState: 1,
 	}
@@ -92,18 +97,19 @@ func Light() Tokens {
 		BgSelection:   c("#DCEFEF"),
 		BgOverlay:     c("#E3DED0"),
 		Border:        c("#D8D2C4"),
-		BorderFocused: c("#0E7490"),
+		BorderFocused: c("#0891B2"),
 		Text:          c("#1F2937"),
 		TextDim:       c("#5B6472"),
 		TextMuted:     c("#8B93A1"),
 		Accent:        c("#0E7490"),
+		AccentDim:     c("#4E8FA3"),
 		Accent2:       c("#6D28D9"),
+		Info:          c("#1D4ED8"),
 		Success:       c("#047857"),
 		Warning:       c("#B45309"),
 		Danger:        c("#B91C1C"),
 
 		PadX:        1,
-		RadiusPad:   0,
 		HeightTab:   1,
 		HeightState: 1,
 	}
@@ -119,6 +125,22 @@ var Current = Dark()
 // reads this rather than caching, so a live Settings toggle takes
 // effect immediately (F-012).
 var Motion = true
+
+// Motion knobs (F-026 P1): one place for animated-effect cadence so
+// reduced-motion and tuning never touch component code.
+var (
+	MotionFrames   = 2                      // view-transition fade frames
+	MotionInterval = 100 * time.Millisecond // view-transition tick
+)
+
+// Breakpoints are the shared responsive widths in terminal cells.
+// kit re-exports them as consts for compatibility (F-026 P1 moved the
+// definition here — theme owns the responsive identity).
+const (
+	WCompact = 60  // below: centered hero / full-width stack
+	WDock    = 84  // at/above: docked rail + main pane
+	WWide    = 120 // at/above: side-by-side detail floors
+)
 
 // SetMotion flips the reduced-motion switch (production path: settings).
 func SetMotion(on bool) { Motion = on }
@@ -142,22 +164,6 @@ func SwapForTest(t interface{ Cleanup(func()) }, tk Tokens) {
 // Style helpers. Components build on these so re-theming never touches
 // component code.
 // ---------------------------------------------------------------------------
-
-func base() lipgloss.Style {
-	return lipgloss.NewStyle().Background(Current.Bg).Foreground(Current.Text)
-}
-
-// AppFrame styles the outermost background layer.
-func AppFrame() lipgloss.Style { return base() }
-
-// PanelBorder returns the rounded border used by every panel.
-func PanelBorder(focused bool) lipgloss.Border {
-	b := lipgloss.RoundedBorder()
-	if !focused {
-		return b
-	}
-	return b
-}
 
 // PanelEdge styles border glyphs (edges are painted cell-by-cell by kit.Panel,
 // not via lipgloss Border, so widths stay exact).
@@ -265,6 +271,12 @@ func Brand() lipgloss.Style {
 // Hint styles keyboard hint fragments ("1-9 switch").
 func Hint() lipgloss.Style { return lipgloss.NewStyle().Foreground(Current.TextMuted) }
 
+// Keycap styles a single key fragment as a raised pill — distinct from
+// plain Hint so keys are findable at a glance (F-026 P7 statusline/help).
+func Keycap() lipgloss.Style {
+	return lipgloss.NewStyle().Background(Current.BgElevated).Foreground(Current.Text)
+}
+
 // HelpOverlay styles the help modal box.
 func HelpOverlay() lipgloss.Style {
 	return lipgloss.NewStyle().
@@ -274,13 +286,20 @@ func HelpOverlay() lipgloss.Style {
 		Padding(1, 2)
 }
 
-// Success / Warning / Danger semantic text styles.
+// Success / Warning / Danger / Info semantic text styles.
 func SuccessText() lipgloss.Style { return lipgloss.NewStyle().Foreground(Current.Success) }
 func WarningText() lipgloss.Style { return lipgloss.NewStyle().Foreground(Current.Warning) }
 func DangerText() lipgloss.Style  { return lipgloss.NewStyle().Foreground(Current.Danger) }
+func InfoText() lipgloss.Style    { return lipgloss.NewStyle().Foreground(Current.Info) }
+
+// AccentDimText styles secondary emphasis: badge counts, quiet accents.
+func AccentDimText() lipgloss.Style { return lipgloss.NewStyle().Foreground(Current.AccentDim) }
 
 // TextDim styles secondary text.
 func TextDim() lipgloss.Style { return lipgloss.NewStyle().Foreground(Current.TextDim) }
+
+// TextStyle styles primary text (the body fg; F-026 P1e transcripts).
+func TextStyle() lipgloss.Style { return lipgloss.NewStyle().Foreground(Current.Text) }
 
 // TextMuted styles hints, disabled and placeholder text.
 func TextMuted() lipgloss.Style { return lipgloss.NewStyle().Foreground(Current.TextMuted) }
@@ -347,7 +366,6 @@ var (
 	GlyphAt      = "@" // mention
 	GlyphBullet  = "•"
 	GlyphBusy    = "◐" // static activity indicator (reduced motion)
-	GlyphBranch  = ""  // nerd-font git branch
-	GlyphSpark   = ""  // agent activity
-	GlyphLogoBG  = "█" // logo block character
+	GlyphBranch  = "⎇" // git branch marker (F-026 P4 git panel)
+	GlyphSpark   = "✦" // agent activity / transcript agent author (F-026 P1e)
 )

@@ -69,7 +69,9 @@ func (t *Tabs) View() string {
 	}
 
 	line := padTo(theme.Brand().Render(" ◆ DHI ")+strings.Join(parts, theme.Hint().Render(theme.GlyphChevron)), t.Width)
-	return line
+	// Many surfaces or long labels clip with an ellipsis marker instead
+	// of overflowing the terminal width (F-026 P1).
+	return ellipsisClip(line, t.Width)
 }
 
 func clamp(v, lo, hi int) int {

@@ -8,7 +8,6 @@
                     │                                                                              │
                     │                                                                              │
                     │                                                                              │
-                    │                                                                              │
                                ╭─ › new session ───────────────────────────────────────╮            
                                │ opens a channel and an artifact folder                │            
                                │ ▌ name    ▏                                           │            
@@ -17,6 +16,7 @@
                                │                                                       │            
                                │ agents are mentioned by id · tab field · enter create │            
                                ╰───────────────────────────────────────────────────────╯            
+                                                                                                    
                     │                                                                              │
                     │                                                                              │
                     │                                                                              │

@@ -1,18 +1,105 @@
 # STATE — current position
 
-Updated: 2026-09-10 (session 19: M12 complete — coherent UX: bottom
-chrome, shaded zones, contextual statusline, responsive breakpoints)
+Updated: 2026-09-18 (session 22: M13 P0+P1 — F-026 spec, ADR-0015,
+theme tokens, display-cell width math, kit foundation upgrades)
 
 ## Where we are
 
-**M11 and M12 are complete: `make verify` green.** M12 delivered the
-coherence pass: every pane ends in a BgChrome HintBar (status left,
-keymap right — keymaps never render above content); all nav sidebars
-share kit.Rail (inset shade) including the new Settings left-rail IA;
-the statusline is contextual (mode chip + `surface › zone`, rebuilt
-per frame); surfaces fill the terminal with full-width stacks at
-middle widths; the board got status-colored lane dots and an
-ElevatedBg detail pane.
+**M13 (UI beauty/usefulness/interaction) started: P0+P1 landed on
+green `make verify`.** P0 wrote the F-026 plan spec + ADR-0015
+(zero new deps in the graph — chroma + go-runewidth promoted from
+indirect). P1 built the foundation: theme gained Info/AccentDim/
+Keycap/TextStyle + motion knobs + breakpoints (kit aliases); dead
+tokens deleted; ansi.Width + wide-rune-safe Clip (go-runewidth);
+kit gained Scroller/Scrollbar, List groups/Desc/ellipsis/flush
+badges, Rail glyph/own-row foot/scroll, Modal scroll+pinned error+
+ellipsis+shadow row, Panel footer, Form in-value cursor/shift+tab/
+paste, Transcript primitive, StatusLine overflow rule. Goldens
+regenerated deliberately (badge shift, modal +1 shadow row, visible
+"…" on clipped keymaps).
+
+## Session 22 gotchas (M13 P1)
+
+- **ansi.Width skips escapes itself** — callers may pass raw styled
+  strings; kit.runeWidth now delegates (call sites passing Strip()'d
+  strings still work — double-strip is harmless). ansi.Clip no longer
+  writes a wide rune that overflows the budget (strict fit).
+- **Modal content-sized height = len(body)+3 now** (the shadow row) —
+  boxes grew one row and re-centered; kit's modal_over_backdrop
+  golden covers one more backdrop row. Scroll (Scroll/ScrollTo)
+  requires Height set; the appended busy/error row stays PINNED
+  (window runs over Lines only).
+- **Rail foot is its OWN row now** — fixed-Height rails shrink the
+  row budget by foot (and title); overflow rows scroll with EnsureActive
+  keeping the active row visible and the ▲/▼ cue riding the foot.
+  No foot = no cue (rows budget-clip silently — F-025 F-026 boundary).
+- **kit.List.Inset desc shares the base segment** (a second style
+  inside base drops the row bg — the SGR gotcha); plain rows render
+  desc as its own muted segment. Badges sit flush-right (one-column
+  shift vs old trailing pad). Group rows: cursor skips them; when the
+  travel direction has no selectable row the cursor STAYS PUT.
+- **kit.Form backspace deletes before the cursor** (in-value rune
+  cursor, home/end/ctrl+d supported); paste arrives as the composed
+  key "paste:<text>" — surfaces translate bubbletea KeyMsg Paste.
+  Fields render focus-visible (inactive = dim) — styling-only, goldens
+  unchanged.
+- **Transcript is pure render** (View() []string; scroll stays with
+  the surface via Scroller). authorCol includes the thread tag so
+  thread rows keep the shared text column; the label ellipsis-clips
+  into the prefix budget. Markdown rides an injected seam (nil = raw
+  text); kit must NOT import internal/preview (tui depends on
+  service interfaces injected from cmd — preview.Render goes in main).
+- **kit.Transcript Rows() renamed View()** — field/method collision.
+- **WrapWords hard-breaks per-token** via go-runewidth per-rune
+  accumulation (blank paragraphs keep a blank row).
+- Theme lint: `TestNoRawColorsOutsideTheme` allows lipgloss.NewStyle
+  + token references; use the new helpers (theme.TextStyle(),
+  InfoText(), AccentDimText(), Keycap()) instead.
+- statusline.go dropped the ansi import (runeWidth skips escapes).
+- The verify FAIL on TestCLIRuntimeEndToEnd is the known CLI-stub
+  under-load flake — rerun isolated.
+
+## Just finished (M13 P1 — kit & theme foundation)
+
+- theme: Info (#60A5FA dark / #1D4ED8 light), AccentDim, Keycap
+  (BgElevated pill), InfoText/AccentDimText/TextStyle; MotionFrames
+  (2) + MotionInterval (100ms) — app.go adopts them; breakpoints
+  WCompact/WDock/WWide defined in theme, kit re-exports;
+  BorderFocused ≠ Accent (brighter cyan dark / more saturated light);
+  dead tokens deleted (base/AppFrame/PanelBorder/RadiusPad/GlyphLogoBG);
+  GlyphBranch "⎇" + GlyphSpark "✦" adopted with consumers spec'd
+  (P4 git panel, P1e transcript).
+- ansi: Width (display cells, escape-skipping) + wide-safe Clip;
+  kit.runeWidth delegates; go-runewidth direct dep.
+- kit: Scroller (Window/Scroll/EnsureVisible/Cues/Indicator/
+  Scrollbar) + ellipsisClip; List (Group rows skipped, inline Desc,
+  ellipsis titles, flush badges, Cues/Indicator/Scrollbar); Rail
+  (Glyph slot, own-row foot, overflow scroll + cue); Modal
+  (Scrollable + pinned state row + thumb track + ellipsis + shadow
+  row); Panel.SetFooter; HintBar ellipsis; StatusLine overflow
+  (center → hints from start → clip); Tabs width-clip; Form
+  (in-value cursor, shift+tab, paste, focus-visible fields);
+  Transcript (dividers, stamps, thread tags, WrapWords, markdown
+  seam).
+- Tests: kit/f026_test.go (form cursor/paste/delete, groups, scroller
+  window/scrollbar, modal windowing/pinned error, panel footer, rail
+  glyph/scroll, ellipsis) + transcript_test.go (layout/dividers/sep/
+  overflow, empty, markdown seam, WrapWords hard-break). Goldens
+  regenerated + reviewed (11 files, all deliberate).
+
+## Next up
+
+1. **M13 P2** — mouse foundation: enable wheel in app; nil-safe
+   Wheel/Click seams on surfaces (degrade like StatusContext); wheel
+   rides kit.Scroller; click on rails/lists/tabs/lanes/diff.
+2. **M13 P3** — workspace pass (P1 kit adoption: scrollers on all
+   sections, board width-proportional grid + badges + S/m keys,
+   channels composer-visible + post-failure flash + transcript via
+   kit.Transcript, repos info row + `e`, replay word-wrap, forms on
+   kit.Form, dedupe flash).
+3. **M13 P4–P8** — editor (chroma seam, floating popups, transcript,
+   find/replace), terminal ANSI, ideator/reviewer/settings sweep,
+   shell coherence, closeout. See F-026 for acceptance criteria.
 
 ## Session 19 gotchas (M12)
 
