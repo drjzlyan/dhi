@@ -214,6 +214,26 @@ func (m *Model) HandleKey(key string) bool {
 	}
 }
 
+// Wheel routes wheel events to the focused section (F-026 P2): three
+// rows per tick through the same key path as j/k; open dialogs and
+// forms never see the wheel.
+func (m *Model) Wheel(dy int) bool {
+	if dy == 0 || m.dlg != nil || m.form.open {
+		return false
+	}
+	key := "k"
+	if dy > 0 {
+		key = "j"
+	}
+	scrolled := false
+	for i := 0; i < 3; i++ {
+		if m.HandleKey(key) {
+			scrolled = true
+		}
+	}
+	return scrolled
+}
+
 func (m *Model) configKey(key string) bool {
 	switch key {
 	case "j", "down":

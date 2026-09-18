@@ -504,6 +504,27 @@ func (m *Model) HandleKey(key string) bool {
 	return m.sectionKey(key)
 }
 
+// Wheel routes wheel events to the focused section (F-026 P2): three
+// rows per tick through the same key path as j/k; forms and the
+// channels composer never see the wheel.
+func (m *Model) Wheel(dy int) bool {
+	if dy == 0 || m.ws == nil || m.form.kind != fNone ||
+		(m.pane != nil && m.pane.focus) {
+		return false
+	}
+	key := "k"
+	if dy > 0 {
+		key = "j"
+	}
+	scrolled := false
+	for i := 0; i < 3; i++ {
+		if m.HandleKey(key) {
+			scrolled = true
+		}
+	}
+	return scrolled
+}
+
 func (m *Model) sectionKey(key string) bool {
 	switch key {
 	case "[":

@@ -134,6 +134,27 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.Active().HandleKey(msg.String())
 		return a, nil
 
+	case tea.MouseWheelMsg:
+		if a.gateActive() {
+			return a, nil
+		}
+		m := msg.Mouse()
+		dy := -1
+		if m.Button == tea.MouseWheelDown {
+			dy = 1
+		}
+		if wh, ok := a.Active().(interface{ Wheel(dy int) bool }); ok {
+			wh.Wheel(dy)
+		}
+		return a, nil
+
+	case tea.MouseClickMsg:
+		if a.gateActive() {
+			return a, nil
+		}
+		m := msg.Mouse()
+		return a, a.handleClick(m.X, m.Y)
+
 	case transitionMsg:
 		if a.transLeft > 0 {
 			a.transLeft--
@@ -300,7 +321,34 @@ func (a *App) View() tea.View {
 	v := tea.NewView(a.compose())
 	v.AltScreen = true
 	v.BackgroundColor = theme.Current.Bg
+	// Click + wheel events reach the shell as MouseClickMsg/MouseWheelMsg
+	// (F-026 P2); the shell routes them to the tab bar and the active
+	// surface via narrow seams.
+	v.MouseMode = tea.MouseModeCellMotion
 	return v
+}
+
+// handleClick routes body-local clicks: the help overlay closes on any
+// click, row 0 hits the tab bar, else the active surface decides via
+// its Click seam (nil-safe — surfaces without mouse behavior ignore it).
+func (a *App) handleClick(x, y int) tea.Cmd {
+	if a.showHelp {
+		a.showHelp = false
+		return nil
+	}
+	if y == 0 {
+		if i, ok := a.tabs.Hit(x); ok {
+			a.selectSurface(i)
+		}
+		return nil
+	}
+	if y >= a.height-1 { // statusline: no action
+		return nil
+	}
+	if ch, ok := a.Active().(interface{ Click(x, y int) bool }); ok {
+		ch.Click(x, y-1)
+	}
+	return nil
 }
 
 func (a *App) compose() string {

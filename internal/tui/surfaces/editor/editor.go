@@ -219,6 +219,39 @@ func (m *Model) StatusContext() (string, string) {
 	return "files", ""
 }
 
+// Wheel routes wheel events to the focused pane (F-026 P2): three
+// rows per tick, synthesized through the same key path as j/k — mode
+// guards keep the wheel out of input surfaces (finder, composer,
+// terminal, rename/action prompts, insert mode).
+func (m *Model) Wheel(dy int) bool {
+	if dy == 0 {
+		return false
+	}
+	key := "k"
+	if dy > 0 {
+		key = "j"
+	}
+	switch {
+	case m.mode == modeFind || m.mode == modeSearchQuery:
+		return false
+	case m.chat != nil && m.chat.open && m.chat.focus:
+		return false
+	case m.drawerOpen && m.termFocus:
+		return false
+	case m.renameMode || m.actionOpen:
+		return false
+	case m.bufFocus && m.active() != nil && m.active().Mode() != textbuf.ModeNormal:
+		return false
+	}
+	scrolled := false
+	for i := 0; i < 3; i++ {
+		if m.HandleKey(key) {
+			scrolled = true
+		}
+	}
+	return scrolled
+}
+
 // Init starts the terminal and chat message pumps plus the workspace
 // roster watcher (live re-resolution without restart, P1).
 func (m *Model) Init() tea.Cmd {

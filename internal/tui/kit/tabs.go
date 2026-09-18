@@ -74,6 +74,28 @@ func (t *Tabs) View() string {
 	return ellipsisClip(line, t.Width)
 }
 
+// Hit returns the tab index under the tab-bar column x, using the same
+// layout math as View (brand prefix, separator, clipped tail). Mouse
+// click routing rides it (F-026 P2); -1 when x falls on no tab.
+func (t *Tabs) Hit(x int) (i int, ok bool) {
+	if x < 0 || len(t.Items) == 0 {
+		return -1, false
+	}
+	start := runeWidth(" ◆ DHI ")
+	for j, it := range t.Items {
+		label := strconv.Itoa(j+1) + " " + it.Label
+		end := start + runeWidth(" "+label+" ") + runeWidth(theme.GlyphChevron)
+		if x < end {
+			if x >= start {
+				return j, true
+			}
+			return -1, false
+		}
+		start = end
+	}
+	return -1, false
+}
+
 func clamp(v, lo, hi int) int {
 	if v < lo {
 		return lo
