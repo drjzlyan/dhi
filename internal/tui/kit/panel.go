@@ -155,10 +155,10 @@ func clip(s string, n int) string {
 	return ansi.Clip(s, n)
 }
 
-// ellipsisClip cuts s to at most n visible cells, appending "…" on the
+// ClipEllipsis cuts s to at most n visible cells, appending "…" on the
 // cell before the cut so truncation is visible, never silent (F-026).
 // n <= 1 returns "" (no room for content + marker).
-func ellipsisClip(s string, n int) string {
+func ClipEllipsis(s string, n int) string {
 	if n <= 1 {
 		return ""
 	}

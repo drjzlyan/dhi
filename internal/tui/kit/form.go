@@ -49,6 +49,46 @@ const (
 	FormCancel
 )
 
+// IsToggle reports whether the field cycles choices (left/right).
+func (fl Field) IsToggle() bool { return len(fl.Toggle) > 0 }
+
+// Cur reads the in-value rune cursor (surfaces rendering their own
+// field lines keep the cursor position exact).
+func (fl Field) Cur() int {
+	if fl.cur < 0 {
+		return 0
+	}
+	rs := []rune(fl.Value)
+	if fl.cur > len(rs) {
+		return len(rs)
+	}
+	return fl.cur
+}
+
+// CursorValue renders the value with the cursor block at the in-value
+// position (surfaces with custom field rows mirror Form.View).
+func (fl Field) CursorValue() string {
+	rs := []rune(fl.Value)
+	cur := fl.Cur()
+	out := string(rs[:cur]) + string(theme.GlyphCursor)
+	if cur < len(rs) {
+		out += string(rs[cur:])
+	}
+	return out
+}
+
+// Selected reports the effective value: the chosen toggle when the
+// field cycles, else the text value.
+func (fl Field) Selected() string {
+	if len(fl.Toggle) == 0 {
+		return fl.Value
+	}
+	if fl.sel >= 0 && fl.sel < len(fl.Toggle) {
+		return fl.Toggle[fl.sel]
+	}
+	return ""
+}
+
 // Form is the canonical dialog form (F-024): labeled fields, tab /
 // shift+tab to cycle, left/right cycle toggles or move the text
 // cursor, enter submits, esc cancels, busy swallows input. Submit
@@ -237,7 +277,7 @@ func (f *Form) View() []string {
 		if len(fl.Toggle) > 0 {
 			val = mark + "[" + fl.Toggle[fl.sel] + "]"
 		} else if active {
-			val = fl.cursorValue()
+			val = fl.CursorValue()
 		} else {
 			val = " " + fl.Value
 		}
@@ -251,20 +291,5 @@ func (f *Form) View() []string {
 		out = append(out, theme.DangerText().Render(theme.GlyphCross+" "+f.Err))
 	}
 	out = append(out, hint)
-	return out
-}
-
-// cursorValue renders the value with the cursor block at the in-value
-// position (end caret falls on the trailing block).
-func (fl *Field) cursorValue() string {
-	rs := []rune(fl.Value)
-	cur := fl.cur
-	if cur > len(rs) {
-		cur = len(rs)
-	}
-	out := string(rs[:cur]) + string(theme.GlyphCursor)
-	if cur < len(rs) {
-		out += string(rs[cur:])
-	}
 	return out
 }

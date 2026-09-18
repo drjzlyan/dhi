@@ -150,13 +150,13 @@ func TestViewRendersAllSectionsAndBounds(t *testing.T) {
 // typeInto focuses form field idx (replacing its contents) and types s.
 func typeInto(t *testing.T, m *Model, idx int, s string) {
 	t.Helper()
-	for i := 0; i < len(m.form.fields)*2 && m.form.cur != idx; i++ {
+	for i := 0; i < len(m.form.f.Fields)*2 && m.form.f.Cur() != idx; i++ {
 		m.HandleKey("tab")
 	}
-	if m.form.cur != idx {
-		t.Fatalf("cannot reach field %d (cur=%d)", idx, m.form.cur)
+	if m.form.f.Cur() != idx {
+		t.Fatalf("cannot reach field %d (cur=%d)", idx, m.form.f.Cur())
 	}
-	m.form.fields[idx].runes = nil // replace, not append to prefills
+	m.form.f.Fields[idx].Value = "" // replace, not append to prefills
 	for _, r := range s {
 		if !m.HandleKey(string(r)) {
 			t.Fatalf("field %d rejected rune %q", idx, string(r))
@@ -188,7 +188,7 @@ func TestRenameRepoFlow(t *testing.T) {
 	m.sec = secRepos
 	m.HandleKey("j") // beta
 	m.HandleKey("r")
-	m.form.fields[0].runes = []rune("aab")
+	m.form.f.Fields[0].Value = "aab"
 	m.HandleKey("enter")
 	if _, ok := ws.Member("aab"); !ok {
 		t.Fatalf("rename failed: %+v err=%q", ws.Members(), m.form.err)
@@ -295,7 +295,7 @@ func TestBoardFlows(t *testing.T) {
 	// Bind thread.
 	m.HandleKey("t")
 	typeInto(t, m, 0, "#general")
-	m.form.fields[1].runes = []rune("42")
+	m.form.f.Fields[1].Value = "42"
 	m.HandleKey("enter")
 	tk, _ = store.Get("fix-login")
 	if tk.ThreadChannel != "#general" || tk.ThreadID != 42 {

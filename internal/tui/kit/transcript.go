@@ -43,6 +43,8 @@ type TrnRow struct {
 type Transcript struct {
 	Rows     []TrnRow
 	Width    int
+	CursorAt int                                     // TrnRow index carrying the cursor marker; -1 = none
+	Tail     int                                     // visible lines; 0 = all; the window follows CursorAt
 	Markdown func(markdown string, width int) string // injected seam
 }
 
@@ -62,9 +64,10 @@ func (t *Transcript) authorW() int {
 	return clamp(w, 3, 40)
 }
 
-// textCol is the first text column (author + stamp + 2 spaces).
+// textCol is the first text column: author + stamp + slack, budgeted
+// so the cursor marker eats the slack — author labels never clip.
 func (t *Transcript) textCol() int {
-	col := t.authorW() + 7
+	col := t.authorW() + 8
 	if t.Width > 0 && col > t.Width-8 {
 		col = clamp(t.Width-8, 6, t.Width)
 	}
@@ -80,8 +83,13 @@ func (t *Transcript) View() []string {
 	col := t.textCol()
 	textW := clamp(t.Width-col-2, 4, t.Width)
 	var out []string
+	firstLineOf := make([]int, len(t.Rows))
 	prevDay := ""
-	for _, r := range t.Rows {
+	for ri, r := range t.Rows {
+		marker := ""
+		if ri == t.CursorAt {
+			marker = string(theme.GlyphCursor) + " "
+		}
 		if !r.At.IsZero() {
 			day := r.At.Format("Mon Jan 2")
 			if day != prevDay {
@@ -103,11 +111,18 @@ func (t *Transcript) View() []string {
 			stamp = r.At.Format("15:04")
 		}
 		// The label clips into the fixed prefix budget (thread tags
-		// included) so every row's text starts at the same column.
-		label := ellipsisClip(author, clamp(col-6, 1, col-6))
-		prefix := theme.TextMuted().Render(
-			padTo(label, col-6) + " " + stamp)
+		// included) so every row's text starts at the same column; the
+		// cursor marker eats two cells of the label budget so the row
+		// keeps the shared column.
+		labelW := col - 6
+		if marker != "" {
+			labelW = col - 8
+		}
+		label := ClipEllipsis(author, clamp(labelW, 1, col-6))
+		prefix := marker + theme.TextMuted().Render(
+			padTo(label, labelW)+" "+stamp)
 		indent := strings.Repeat(" ", col+2)
+		firstLineOf[ri] = len(out)
 		for i, tl := range t.textLines(r, textW) {
 			if i == 0 {
 				out = append(out, prefix+"  "+tl)
@@ -115,6 +130,25 @@ func (t *Transcript) View() []string {
 			}
 			out = append(out, indent+tl)
 		}
+	}
+
+	// Tail window: chats show the latest (F-026 P3). The window follows
+	// the cursor row's first line so `k`-nav into older messages keeps
+	// its target visible — a cursor can never vanish into the clipped
+	// block invisibly.
+	if t.Tail > 0 && t.Tail < len(out) {
+		from := clamp(len(out)-t.Tail, 0, len(out)-1)
+		if t.CursorAt >= 0 && t.CursorAt < len(firstLineOf) {
+			cur := clamp(firstLineOf[t.CursorAt], 0, len(out)-1)
+			if cur < from {
+				from = cur
+			}
+			if cur >= from+t.Tail {
+				from = cur - t.Tail + 1
+			}
+		}
+		to := clamp(from+t.Tail, 0, len(out))
+		out = out[from:to]
 	}
 	return out
 }
@@ -128,7 +162,7 @@ func (t *Transcript) textLines(r TrnRow, textW int) []string {
 			text = rendered
 		}
 	}
-	st := theme.TextStyle()
+	st := theme.TabActive() // human rows carry the selection accent
 	switch r.Kind {
 	case TrnAgent:
 		st = theme.Brand()

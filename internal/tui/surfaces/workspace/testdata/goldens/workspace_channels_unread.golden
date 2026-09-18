@@ -2,8 +2,11 @@
   BOARD                  2│ [#general ●2]                                                                    │
 ▌ CHANNELS               1│ ────────────────────────────────────────────────────────                         │
   REPOS                  2│ #general                                                                         │
-                          │ ▌ scout @you needs a decision on the plan                                        │
-                          │   muse @you second decision                                                      │
+                          │ ── Sat Sep 19 ──                                                                 │
+                          │ ▌ scout 04:03  @you needs a decision on the plan                                 │
+                          │ muse    04:03  @you second decision                                              │
+                          │                                                                                  │
+                          │ >   (i to type)                                                                  │
                           │                                                                                  │
                           │                                                                                  │
                           │                                                                                  │
@@ -27,8 +30,5 @@
                           │                                                                                  │
                           │                                                                                  │
                           │                                                                                  │
-                          │                                                                                  │
-                          │                                                                                  │
-                          │                                                                                  │
-                          │ i compose • j/k select • t thread • v profile • tab rail • ,/. channel           │
+                          │ i compose • j/k select • t thread • v profile • ,/. channel                      │
 [ ] sections              ╰──────────────────────────────────────────────────────────────────────────────────╯

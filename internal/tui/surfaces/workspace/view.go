@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"image/color"
 	"strings"
+	"time"
 
 	"charm.land/lipgloss/v2"
 
@@ -70,10 +71,17 @@ func (m *Model) railView(h int) string {
 	counts := m.sectionCounts()
 	rows := make([]kit.RailRow, 0, secCount)
 	for s := sectionID(0); s < secCount; s++ {
-		rows = append(rows, kit.RailRow{
-			Label: s.label(),
-			Count: fmt.Sprintf("%d", counts[s]),
-		})
+		row := kit.RailRow{Label: s.label()}
+		if counts[s] > 0 {
+			// The attention count carries the tint (F-026 P3): INBOX is
+			// the urgent channel — danger fg; the rest stay quiet.
+			if s == secInbox {
+				row.Badge = theme.DangerText().Render(itoa(counts[s]))
+			} else {
+				row.Count = itoa(counts[s])
+			}
+		}
+		rows = append(rows, row)
 	}
 	return (&kit.Rail{
 		Rows:   rows,
@@ -126,11 +134,14 @@ func (m *Model) mainPane(w, h int) string {
 }
 
 // statusFlash renders the outcome segment on the chrome bar: error >
-// warning hint > success flash (F-025 Part A).
+// warning hint > success flash (F-025 Part A). Channels post failures
+// surface through the pane's flash (F-011/F-026 P3).
 func (m *Model) statusFlash() string {
 	switch {
 	case m.form.err != "":
 		return theme.ChromeStatus(theme.Current.Danger).Render("✗ " + m.form.err)
+	case m.pane != nil && m.pane.flash != "":
+		return theme.ChromeStatus(theme.Current.Danger).Render("✗ " + m.pane.flash)
 	case m.inboxHint != "":
 		return theme.ChromeStatus(theme.Current.Warning).Render(m.inboxHint)
 	case m.form.flash != "":
@@ -145,18 +156,22 @@ func (m *Model) sectionHints() []string {
 	case secInbox:
 		return []string{"enter/o jump", "z snooze", "u unsnooze"}
 	case secBoard:
-		return []string{"h/l lane", "n new", "s status", "a assign", "o thread"}
+		if m.replay != nil {
+			return []string{"esc close", "j/k scroll", "g/G top/bottom"}
+		}
+		return []string{"h/l lane", "n new", "s/S status", "m move", "o thread"}
 	case secChannels:
 		return m.pane.hints()
 	case secRepos:
-		return []string{"a add", "r rename", "d remove"}
+		return []string{"a add", "r rename", "e editor", "d remove"}
 	}
 	return nil
 }
 
 // activeSectionFor renders the active section body with pane-aware
-// geometry (board and channels need real width/height). The run-replay
-// pane is modal: it replaces whatever section is active.
+// geometry (every section takes the real pane width — F-026 P3 ends
+// the m.width-based underfill). The run-replay pane is modal: it
+// replaces whatever section is active.
 func (m *Model) activeSectionFor(w, h int) string {
 	if m.replay != nil {
 		return m.replayBody()
@@ -166,8 +181,29 @@ func (m *Model) activeSectionFor(w, h int) string {
 		return m.boardBody(w, maxInt(h, 6))
 	case secChannels:
 		return strings.Join(m.pane.render(w, maxInt(h, 12)), "\n")
+	case secInbox:
+		return m.inboxBody(w)
+	case secRepos:
+		return m.reposBody(w)
 	default:
 		return m.activeSection()
+	}
+}
+
+// activeSection renders the compact-stack fallbacks (below WDock the
+// sections fill the full width; inbox/repos here stay width-aware).
+func (m *Model) activeSection() string {
+	if m.replay != nil {
+		return m.replayBody()
+	}
+	w := maxInt(m.width, 40)
+	switch m.sec {
+	case secInbox:
+		return m.inboxBody(w - 6)
+	case secRepos:
+		return m.reposBody(w - 6)
+	default:
+		return m.boardBody(w-6, maxInt(m.height-8, 8))
 	}
 }
 
@@ -182,27 +218,9 @@ func (m *Model) sectionStrip() string {
 			parts = append(parts, theme.TextDim().Render(label))
 		}
 	}
-	line := strings.Join(parts, theme.TextDim().Render(" · "))
-	flash := ""
-	if m.form.flash != "" {
-		flash = "   " + theme.SuccessText().Render(m.form.flash)
-	}
-	return line + flash
-}
-
-func (m *Model) activeSection() string {
-	if m.replay != nil {
-		return m.replayBody()
-	}
-	w := maxInt(m.width, 40)
-	switch m.sec {
-	case secInbox:
-		return m.inboxBody()
-	case secRepos:
-		return m.reposBody()
-	default:
-		return m.boardBody(w-6, maxInt(m.height-8, 8))
-	}
+	// Flash outcomes announce ONCE, on the chrome HintBar (F-026 P3 —
+	// the strip's second announcement is deleted).
+	return strings.Join(parts, theme.TextDim().Render(" · "))
 }
 
 // ---- BOARD (F-021) ----
@@ -242,10 +260,14 @@ func (m *Model) boardBody(w, h int) string {
 	if w >= kit.WWide {
 		detailW = boardDetailWidth
 	}
+	wrapW := w - 4
+	if detailW > 0 {
+		wrapW = detailW - 1
+	}
 	lanesH := h - len(out) // the warning/unavailable rows, if any
 	var detailLines []string
 	if tk, ok := m.boardSelected(g); ok {
-		detailLines = boardDetailLines(tk)
+		detailLines = boardDetailLines(tk, wrapW)
 	}
 	if detailW == 0 && len(detailLines) > 0 {
 		// -1: the lane header row above the Height body rows.
@@ -256,17 +278,18 @@ func (m *Model) boardBody(w, h int) string {
 	}
 
 	cols := make([]kit.Column, 4)
+	board := &kit.Columns{Cols: cols, Active: m.boardActive, Width: w - detailW, Height: lanesH}
 	for i, st := range tasks.Statuses {
+		laneW := board.LaneWidth(i)
 		rows := make([]string, 0, len(g[i]))
 		for _, tk := range g[i] {
-			rows = append(rows, boardCard(tk))
+			rows = append(rows, boardCard(tk, laneW))
 		}
 		cols[i] = kit.Column{
 			Title: string(st), Cursor: m.boardCur[i], Rows: rows,
 			Accent: boardStatusColor(i),
 		}
 	}
-	board := &kit.Columns{Cols: cols, Active: m.boardActive, Width: w - detailW, Height: lanesH}
 	lanes := board.View()
 
 	if detailW > 0 && len(detailLines) > 0 {
@@ -294,33 +317,66 @@ func (m *Model) boardBody(w, h int) string {
 	return strings.Join(out, "\n")
 }
 
-// boardCard renders one lane row: slug + title, assignee chip.
-func boardCard(tk tasks.Task) string {
+// boardCard renders one lane row proportional to the lane budget
+// (F-026 P3): slug, ellipsized title, assignee chip — no fixed pads;
+// the assignee drops first when the lane is too narrow for it.
+func boardCard(tk tasks.Task, laneW int) string {
 	title := tk.Title
 	if title == "" {
 		title = "-"
-	}
-	if len(title) > 18 {
-		title = title[:17] + "…"
 	}
 	who := tk.Assignee
 	if who == "" {
 		who = "unassigned"
 	}
-	return padTo(tk.Slug, 14) + padTo(title, 20) + theme.Hint().Render(who)
+	whoPart := ""
+	whoW := 0
+	if laneW >= 16 {
+		whoW = minInt(minInt(ansi.Width(who), 12), laneW/3)
+	}
+	slugW := clampInt(laneW-whoW-6, 4, 14)
+	titleW := clampInt(laneW-slugW-whoW-1, 4, 40)
+	if whoW > 0 {
+		gap := maxInt(laneW-slugW-titleW-whoW, 0)
+		whoPart = padTo(theme.Hint().Render(kit.ClipEllipsis(who, whoW)), whoW+gap)
+	}
+	row := padTo(kit.ClipEllipsis(tk.Slug, slugW-1), slugW) +
+		padTo(kit.ClipEllipsis(title, titleW-1), titleW)
+	if whoW == 0 {
+		row = padTo(row, laneW)
+	}
+	return row + whoPart
 }
 
-// boardDetailLines is the JIRA-issue fact block for the selected card.
-func boardDetailLines(tk tasks.Task) []string {
+func clampInt(v, lo, hi int) int {
+	if v < lo {
+		return lo
+	}
+	if v > hi {
+		return hi
+	}
+	return v
+}
+
+// boardDetailLines is the JIRA-issue fact block for the selected card;
+// wrapW word-wraps the title (F-026 P3 — long titles wrapped, never
+// silently clipped at the pane edge).
+func boardDetailLines(tk tasks.Task, wrapW int) []string {
 	who := tk.Assignee
 	if who == "" {
 		who = "unassigned"
 	}
 	lines := []string{
 		theme.Brand().Render(tk.Slug) + "  " + theme.Chip().Render(string(tk.Status)),
-		tk.Title,
-		theme.TextDim().Render("assignee " + who + " · team " + orDash(tk.Team)),
 	}
+	for _, l := range kit.WrapWords(tk.Title, clampInt(wrapW, 20, 72)) {
+		lines = append(lines, l)
+	}
+	if tk.Title == "" {
+		lines = append(lines, "-")
+	}
+	lines = append(lines,
+		theme.TextDim().Render("assignee "+who+" · team "+orDash(tk.Team)))
 	if tk.ThreadChannel != "" {
 		lines = append(lines, theme.Hint().Render("thread "+threadRef(tk.ThreadChannel, tk.ThreadID)))
 	}
@@ -368,7 +424,7 @@ func inboxGlyph(k inbox.ItemKind) string {
 	}
 }
 
-func (m *Model) inboxBody() string {
+func (m *Model) inboxBody(w int) string {
 	items := m.inboxItems()
 	c := &m.cursors[secInbox]
 	clampCursor(c, len(items))
@@ -381,28 +437,39 @@ func (m *Model) inboxBody() string {
 		out = append(out, theme.TextDim().Render("(nothing needs attention)"))
 		return strings.Join(out, "\n")
 	}
-	lines := maxInt(m.width-railWidth-12, 30)
+	lines := maxInt(w-4, 30)
 	gl := len([]rune(theme.GlyphCursor))
 	for i, it := range items {
 		snoozed := !it.Snoozed.IsZero()
-		// Snoozed rows stay visible but dim — even under the cursor
-		// (F-017: parked, not urgent).
+		// Snoozed rows stay visible but dim — even under the cursor —
+		// and carry the parked bullet glyph so the affordance is more
+		// than color (F-017; F-026 P3).
 		style := theme.TextDim()
 		if i == *c && !snoozed {
 			style = theme.TabActive()
 		}
+		glyph := inboxGlyph(it.Kind)
+		if snoozed {
+			glyph = theme.GlyphBullet
+		}
 		row := it.Row
+		// Relative stamps ride rows whose At is a real instant;
+		// approvals sort on a synthetic epoch and stay unstamped
+		// (ADR-0011: never guess).
+		if it.Kind != inbox.Approval && !it.At.IsZero() {
+			row += "  " + theme.Hint().Render("· "+timeAgo(it.At, m.now()))
+		}
 		if snoozed {
 			row += "  — snoozed until " + snoozeUntilText(it.Snoozed, m.now())
 		}
 		first := true
-		for _, ln := range wordWrap(row, lines) {
+		for _, ln := range kit.WrapWords(row, lines) {
 			if first {
 				prefix := strings.Repeat(" ", gl)
 				if i == *c {
 					prefix = theme.GlyphCursor + " "
 				}
-				out = append(out, prefix+style.Render(inboxGlyph(it.Kind)+" "+ln))
+				out = append(out, prefix+style.Render(glyph+" "+ln))
 				first = false
 			} else {
 				out = append(out, strings.Repeat(" ", gl+1)+style.Render(ln))
@@ -412,38 +479,27 @@ func (m *Model) inboxBody() string {
 	return strings.Join(out, "\n")
 }
 
-// wordWrap breaks s at word boundaries into width-or-less lines (F-016
-// inbox rows); a single word wider than width hard-breaks at width.
-func wordWrap(s string, width int) []string {
-	if width < 1 {
-		width = 1
+// timeAgo is the relative stamp used across rows (deterministic from
+// the injected now — table-tested).
+func timeAgo(at, now time.Time) string {
+	d := now.Sub(at)
+	if d < 0 {
+		d = 0
 	}
-	var out []string
-	for _, para := range strings.Split(s, "\n") {
-		line := ""
-		for _, f := range strings.Fields(para) {
-			cand := f
-			if line != "" {
-				cand = line + " " + f
-			}
-			if len([]rune(cand)) <= width {
-				line = cand
-				continue
-			}
-			if line != "" {
-				out = append(out, line)
-				line = ""
-			}
-			for len([]rune(f)) > width { // hard break
-				out = append(out, string([]rune(f)[:width]))
-				f = string([]rune(f)[width:])
-			}
-			line = f
-		}
-		out = append(out, line)
+	switch {
+	case d < time.Minute:
+		return "now"
+	case d < time.Hour:
+		return itoa(int(d/time.Minute)) + "m"
+	case d < 24*time.Hour:
+		return itoa(int(d/time.Hour)) + "h"
+	default:
+		return itoa(int(d/(24*time.Hour))) + "d"
 	}
-	return out
 }
+
+// wordWrap was the duplicated F-016 wrap; the shared kit.WrapWords
+// (word-boundary + hard-break contract) replaced it.
 
 func taskDetail(tk tasks.Task) string {
 	var parts []string
@@ -486,32 +542,35 @@ func threadRef(channel string, id int64) string {
 
 const nameCol = 14
 
-func cursorGlyph(active bool) string {
-	if active {
-		return theme.GlyphCursor + " "
-	}
-	return "  "
-}
-
 // ---- REPOS (member repos) ----
 
-func (m *Model) reposBody() string {
+const reposNameCol = 14
+
+// reposBody renders member rows on the inset shade (the section zone
+// reads like every other shaded block, F-026 P3): cursor, name, and a
+// path clipped into the real pane budget — not a fixed 46 cells.
+func (m *Model) reposBody(w int) string {
 	members := m.ws.Members()
 	c := m.cursors[secRepos]
 	clampCursor(&c, len(members))
 
+	inset := theme.InsetBg()
+	pathBudget := maxInt(w-reposNameCol-6, 12)
 	var rows []string
 	if len(members) == 0 {
-		rows = append(rows, theme.TextDim().Render("(none — press a to add one)"))
+		rows = append(rows, inset.Render(theme.TextMuted().Render(
+			padTo("(none — press a to add one)", maxInt(w-4, 12)))))
 	}
 	for i, mem := range members {
+		mark := "  "
 		style := theme.TextDim()
 		if i == c {
+			mark = theme.GlyphCursor + " "
 			style = theme.TabActive()
 		}
-		rows = append(rows, cursorGlyph(i == c)+
-			style.Render(padTo(mem.Name, nameCol))+
-			theme.Hint().Render(shorten(mem.Path, 46)))
+		rows = append(rows, inset.Render(
+			mark+style.Render(padTo(mem.Name, reposNameCol))+
+				theme.Hint().Render(kit.ClipEllipsis(shorten(mem.Path, pathBudget), pathBudget))))
 	}
 	return strings.Join(rows, "\n")
 }
@@ -535,15 +594,15 @@ func (m *Model) modalLines() []string {
 	case fTaskAttach:
 		hint := "creates .dhi/tasks/<slug>/<member> via hermetic git"
 		lines := []string{}
-		for i, fl := range f.fields {
-			lines = append(lines, m.fieldLine(fl, i == f.cur && !f.busy))
+		for i, fl := range f.fields() {
+			lines = append(lines, m.fieldLine(fl, i == f.curField() && !f.busy))
 		}
 		lines = append(lines, "", hintOrErr(f, hint))
 		return lines
 	case fTaskCommit:
 		lines := []string{}
-		for i, fl := range f.fields {
-			lines = append(lines, m.fieldLine(fl, i == f.cur && !f.busy))
+		for i, fl := range f.fields() {
+			lines = append(lines, m.fieldLine(fl, i == f.curField() && !f.busy))
 		}
 		lines = append(lines, "", hintOrErr(f, "commit message · enter save"))
 		return lines
@@ -557,13 +616,13 @@ func (m *Model) modalLines() []string {
 			"on disk is never deleted.", f)
 	}
 
-	lines := make([]string, 0, len(f.fields)*2)
+	lines := make([]string, 0, len(f.fields())*2)
 	if f.orig != "" && f.kind != fAdd {
 		lines = append(lines, theme.TextDim().Render("editing: "+f.target()))
 	}
-	for i, fl := range f.fields {
-		lines = append(lines, m.fieldLine(fl, i == f.cur && !f.busy))
-		if fl.isToggle() {
+	for i, fl := range f.fields() {
+		lines = append(lines, m.fieldLine(fl, i == f.curField() && !f.busy))
+		if fl.IsToggle() {
 			lines = append(lines, theme.TextDim().Render("      ←/→ switches mode"))
 		}
 	}
@@ -595,18 +654,22 @@ func confirmLines(question, l1, l2 string, f *formState) []string {
 
 func (m *Model) fieldLine(fl field, focused bool) string {
 	cursor := " "
-	value := fl.text()
-	if fl.isToggle() {
-		value = "< " + fl.toggleValue() + " >"
+	var value string
+	if fl.IsToggle() {
+		value = "< " + fl.Selected() + " >"
 	} else if focused {
-		value += "▏"
+		// Canonical cursor rendering (kit.Form contract): the block
+		// sits at the in-value position.
+		value = fl.CursorValue()
+	} else {
+		value = " " + fl.Value
 	}
 	style := theme.Hint()
 	if focused {
 		cursor = theme.GlyphCursor
 		style = theme.SuccessText()
 	}
-	return cursor + " " + style.Render(padTo(fl.label, 15)) + value
+	return cursor + " " + style.Render(padTo(fl.Label, 15)) + value
 }
 
 func hintOrErr(f *formState, hint string) string {
@@ -644,6 +707,8 @@ func modalTitle(k modalKind) string {
 		return "commit changes"
 	case fTaskPush:
 		return "push branch"
+	case fTaskMove:
+		return "move task"
 	}
 	return ""
 }
@@ -656,8 +721,8 @@ func shorten(p string, n int) string {
 }
 
 func padTo(s string, w int) string {
-	if rn := len([]rune(s)); rn < w {
-		return s + strings.Repeat(" ", w-rn)
+	if vis := ansi.Width(s); vis < w {
+		return s + strings.Repeat(" ", w-vis)
 	}
 	return s
 }

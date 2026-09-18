@@ -24,11 +24,18 @@ type Column struct {
 // background block with a header; the active lane's cursor row is
 // highlighted. App-agnostic — the board supplies statuses, the chat
 // could supply groups.
+//
+// F-026 P3: lane bodies scroll with the cursor (a lane taller than
+// Height keeps the cursor row visible; offset lives on the lane), and
+// LaneWidth exposes the per-lane budget so callers can pre-render
+// width-proportional rows.
 type Columns struct {
 	Cols   []Column
 	Active int // focused lane
 	Width  int // total width
 	Height int // visible rows below the headers; 0 = all
+
+	offsets map[int]int
 }
 
 // Left / Right / Up / Down move the active lane or its cursor, clamped.
@@ -55,6 +62,44 @@ func (c *Columns) move(d int) {
 		return
 	}
 	col.Cursor = clamp(col.Cursor+d, 0, len(col.Rows)-1)
+}
+
+// LaneWidth returns lane i's body width (the deterministic View math).
+func (c *Columns) LaneWidth(i int) int {
+	if len(c.Cols) == 0 {
+		return 0
+	}
+	laneW := c.Width / len(c.Cols)
+	if laneW < 8 {
+		laneW = 8
+	}
+	return laneW
+}
+
+// laneWindow returns the visible row window for lane i, following the
+// lane cursor (list semantics: the cursor can never vanish into a
+// clipped block — F-026 P3).
+func (c *Columns) laneWindow(i, rows int) (start, end int) {
+	col := &c.Cols[i]
+	vis := rows
+	if vis <= 0 {
+		return 0, len(col.Rows)
+	}
+	if len(col.Rows) <= vis {
+		return 0, len(col.Rows)
+	}
+	if c.offsets == nil {
+		c.offsets = map[int]int{}
+	}
+	off := c.offsets[i]
+	if col.Cursor < off {
+		off = col.Cursor
+	}
+	if col.Cursor >= off+vis {
+		off = col.Cursor - vis + 1
+	}
+	c.offsets[i] = off
+	return off, off + vis
 }
 
 // Selected returns the active lane index and its cursor row.
@@ -126,17 +171,17 @@ func (c *Columns) View() string {
 		for i := range c.Cols {
 			col := &c.Cols[i]
 			var row string
-			switch {
-			case y < len(col.Rows):
-				row = clip(col.Rows[y], laneW-1)
-				if i == c.Active && y == col.Cursor {
+			start, end := c.laneWindow(i, c.Height)
+			if len(col.Rows) == 0 && y == 0 {
+				row = inset.Render(clip(EmptyRow(), laneW-1))
+			} else if start+y < end && start+y < len(col.Rows) {
+				row = clip(col.Rows[start+y], laneW-1)
+				if i == c.Active && start+y == col.Cursor {
 					row = sel.Render(row)
 				} else {
 					row = inset.Render(row)
 				}
-			case len(col.Rows) == 0 && y == 0:
-				row = inset.Render(clip(EmptyRow(), laneW-1))
-			default:
+			} else {
 				row = inset.Render(strings.Repeat(" ", laneW-1))
 			}
 			cells = append(cells, padTo(row, laneW))

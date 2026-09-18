@@ -97,9 +97,7 @@ func (m *Model) inboxKey(key string) bool {
 				m.unsnoozeSelected(it) // z again = unpark
 			default:
 				m.snoozeTarget = it
-				m.form = formState{kind: fSnooze, fields: []field{
-					toggleField("until ", snoozePresets),
-				}}
+				m.form = openForm(fSnooze, "", toggleField("until ", snoozePresets))
 			}
 			return true
 		}

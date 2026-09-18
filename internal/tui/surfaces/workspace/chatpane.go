@@ -8,6 +8,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/agentkit/org"
 	"github.com/drjzlyan/dhi/internal/ansi"
+	"github.com/drjzlyan/dhi/internal/tui/kit"
 	"github.com/drjzlyan/dhi/internal/tui/theme"
 	"github.com/drjzlyan/dhi/internal/unread"
 )
@@ -52,7 +53,8 @@ type chatPane struct {
 	subCancel  func() // cancels the current channel subscription
 	subscribed string // channel currently subscribed
 
-	focus    bool // composer focused
+	focus    bool   // composer focused
+	flash    string // post-failure notice for the chrome bar (F-026 P3)
 	input    []rune
 	cursor   int   // selected message index (blurred navigation)
 	threadID int64 // 0 = channel view; else thread filter
@@ -131,7 +133,12 @@ func (p *chatPane) hints() []string {
 	if p.threadID != 0 {
 		return []string{"i reply in thread", "esc close"}
 	}
-	return []string{"i compose", "j/k select", "t thread", "v profile", "tab rail", ",/. channel"}
+	// tab is width-gated (the rail is a column only on wide floors) —
+	// never advertise an inert key (F-026 P3).
+	if p.lastWidth >= slackCtxMin {
+		return []string{"i compose", "j/k select", "t thread", "v profile", "tab rail", ",/. channel"}
+	}
+	return []string{"i compose", "j/k select", "t thread", "v profile", ",/. channel"}
 }
 
 func (p *chatPane) switchChannel(dir int) {
@@ -404,7 +411,8 @@ func (p *chatPane) composerKey(key string) bool {
 }
 
 // post persists the message and hands it to the turn handler so
-// @mentions (or DM addressees) trigger agent turns.
+// @mentions (or DM addressees) trigger agent turns. Failures surface on
+// the chrome bar (F-011: a dropped post is never silent — F-026 P3).
 func (p *chatPane) post(text string) {
 	posted, err := p.bus.Post(bus.Message{
 		Channel: p.channelName(),
@@ -413,8 +421,10 @@ func (p *chatPane) post(text string) {
 		Text:    text,
 	})
 	if err != nil {
+		p.flash = "post failed: " + err.Error()
 		return
 	}
+	p.flash = ""
 	if p.threadID != 0 {
 		p.markThreadRead(p.threadID)
 	} else {
@@ -521,52 +531,10 @@ func (p *chatPane) renderNarrow(width, height int) []string {
 		wrap = 20
 	}
 
-	type owned struct {
-		line  string
-		msgIx int
-	}
-	var flat []owned
-	for mi, msg := range history {
-		style := theme.TabActive()
-		if msg.Author != bus.Human {
-			style = theme.Brand()
-		}
-		tag := ""
-		if msg.Thread != 0 {
-			tag = theme.Hint().Render(" ↳")
-		}
-		prefix := style.Render(msg.Author) + tag + " "
-		for i, seg := range wrapWords(msg.Text, wrap) {
-			l := prefix + seg
-			if i > 0 {
-				l = "  " + seg
-			}
-			flat = append(flat, owned{line: l, msgIx: mi})
-		}
-	}
-	if len(flat) == 0 {
-		flat = append(flat, owned{line: theme.TextDim().Render(
-			"(no messages yet — press i and say hi, @mention an agent)")})
-	} else if over := len(flat) - body; over > 0 {
-		flat = flat[over:]
-	}
-	if p.cursor >= len(history) {
-		p.cursor = maxInt(len(history)-1, 0)
-	}
-	var rendered []string
-	for _, fl := range flat {
-		marker := "  "
-		if !p.focus && fl.msgIx == p.cursor {
-			marker = theme.GlyphCursor + " "
-		}
-		rendered = append(rendered, marker+fl.line)
-	}
-	lines = append(lines, rendered...)
+	lines = append(lines, p.transcriptRender(history, wrap, body)...)
 
 	lines = append(lines, "")
-	if p.focus {
-		lines = append(lines, theme.TabActive().Render("> "+string(p.input))+"▌")
-	}
+	lines = append(lines, p.composerRow())
 	return lines
 }
 
@@ -575,66 +543,57 @@ func (p *chatPane) renderNarrow(width, height int) []string {
 // a thread pane is open).
 func (p *chatPane) transcriptLines(width, height int, wide bool) []string {
 	history := p.navMsgs(wide)
-	wrap := width - 6
-	if wrap < 20 {
-		wrap = 20
-	}
-
 	var lines []string
-	composer := 2
 	header := p.channelName()
 	if p.threadID != 0 {
 		header += theme.Hint().Render("  · thread #" + itoa(int(p.threadID)))
 	}
 	lines = append(lines, theme.Brand().Render(header))
+	lines = append(lines, p.transcriptRender(history, width, height-3)...)
+	lines = append(lines, "")
+	lines = append(lines, p.composerRow())
+	return lines
+}
 
-	type owned struct {
-		line  string
-		msgIx int
+// composerRow is always rendered (F-026 P3): focused it owns the caret;
+// blurred it stays as the quiet typing affordance instead of vanishing.
+func (p *chatPane) composerRow() string {
+	if p.focus {
+		return theme.TabActive().Render("> "+string(p.input)) + "▌"
 	}
-	var flat []owned
-	for mi, msg := range history {
-		style := theme.TabActive()
-		if msg.Author != bus.Human {
-			style = theme.Brand()
-		}
-		tag := ""
-		if msg.Thread != 0 {
-			tag = theme.Hint().Render(" ↳")
-		}
-		prefix := style.Render(msg.Author) + tag + " "
-		for i, seg := range wrapWords(msg.Text, wrap) {
-			l := prefix + seg
-			if i > 0 {
-				l = "  " + seg
-			}
-			flat = append(flat, owned{line: l, msgIx: mi})
-		}
-	}
-	if len(flat) == 0 {
-		flat = append(flat, owned{line: theme.TextDim().Render(
-			"(no messages yet — press i and say hi, @mention an agent)")})
-	}
-	body := height - 1 - composer - 1
-	if over := len(flat) - body; over > 0 {
-		flat = flat[over:]
+	return theme.TextMuted().Render("> " + string(p.input) + "  (i to type)")
+}
+
+// transcriptRender renders the navigable message list through the
+// shared kit.Transcript (F-026 P3): day dividers, HH:MM stamps, thread
+// tags, word wrap, and a tail window that follows the message cursor.
+// Empty history renders the named empty state (caller's header aside).
+func (p *chatPane) transcriptRender(history []bus.Message, width, body int) []string {
+	if len(history) == 0 {
+		return []string{theme.TextDim().Render(
+			"(no messages yet — press i and say hi, @mention an agent)")}
 	}
 	if p.cursor >= len(history) {
 		p.cursor = maxInt(len(history)-1, 0)
 	}
-	for _, fl := range flat {
-		marker := "  "
-		if !p.focus && fl.msgIx == p.cursor {
-			marker = theme.GlyphCursor + " "
+	tr := &kit.Transcript{Width: width, Tail: body}
+	if !p.focus {
+		tr.CursorAt = p.cursor
+	}
+	for _, msg := range history {
+		row := kit.TrnRow{
+			Author: msg.Author,
+			Text:   msg.Text,
+			Thread: msg.Thread != 0,
+			At:     msg.At,
+			Kind:   kit.TrnAgent,
 		}
-		lines = append(lines, marker+fl.line)
+		if msg.Author == bus.Human {
+			row.Kind = kit.TrnHuman
+		}
+		tr.Rows = append(tr.Rows, row)
 	}
-
-	lines = append(lines, "")
-	if p.focus {
-		lines = append(lines, theme.TabActive().Render("> "+string(p.input))+"▌")
-	}
-	return lines
+	return tr.View()
 }
 
 // railLines renders the vertical channel sidebar: groups, unread
@@ -714,11 +673,18 @@ func (p *chatPane) contextLines(width, height int) []string {
 			}
 		}
 	default:
-		out := make([]string, height)
-		for i := range out {
-			out[i] = blank()
+		// The closed side pane is not a dead zone (F-026 P3): it names
+		// what opens it, then quiet blank rows on the elevated shade.
+		out := []string{
+			blank(),
+			blank(),
+			inset(theme.TextMuted().Render(" " + theme.GlyphSpark + " no thread open")),
+			inset(theme.TextMuted().Render("   t thread · v profile")),
 		}
-		return out
+		for len(out) < height {
+			out = append(out, blank())
+		}
+		return out[:height]
 	}
 
 	out := make([]string, 0, height)

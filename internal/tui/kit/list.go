@@ -138,14 +138,14 @@ func (l *List) View() string {
 			marker = theme.GlyphCursor + " "
 			st = theme.TabActive()
 		}
-		line := marker + ellipsisClip(it.Title, l.titleBudget())
+		line := marker + ClipEllipsis(it.Title, l.titleBudget())
 		if it.Desc != "" {
 			badgeW := 0
 			if it.Badge != "" {
 				badgeW = runeWidth("["+it.Badge+"]") + 1
 			}
 			if rem := clamp(l.Width-badgeW-runeWidth(line)-1, 0, l.Width); rem >= 3 {
-				line += " " + theme.TextMuted().Render(ellipsisClip(it.Desc, rem))
+				line += " " + theme.TextMuted().Render(ClipEllipsis(it.Desc, rem))
 			}
 		}
 		if it.Badge != "" {
@@ -183,11 +183,11 @@ func (l *List) insetRow(idx int, it Item) string {
 	if it.Badge != "" {
 		badgeW = runeWidth("["+it.Badge+"]") + 1
 	}
-	title := ellipsisClip(it.Title, clamp(l.Width-badgeW-2, 1, l.Width))
+	title := ClipEllipsis(it.Title, clamp(l.Width-badgeW-2, 1, l.Width))
 	line := marker + title
 	if it.Desc != "" {
 		if rem := clamp(l.Width-badgeW-runeWidth(line)-1, 0, l.Width); rem >= 3 {
-			line += " " + ellipsisClip(it.Desc, rem)
+			line += " " + ClipEllipsis(it.Desc, rem)
 		}
 	}
 	if it.Badge == "" {

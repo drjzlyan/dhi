@@ -181,10 +181,10 @@ func TestTaskCreatePRFlow(t *testing.T) {
 	if m2.form.kind != fTaskPR {
 		t.Fatalf("kind = %v", m2.form.kind)
 	}
-	if got := m2.form.fields[1].text(); got != "main" {
+	if got := m2.form.f.Fields[1].Value; got != "main" {
 		t.Errorf("base default = %q", got)
 	}
-	m2.form.fields[1].runes = []rune("master")
+	m2.form.f.Fields[1].Value = "master"
 	m2.submitForm()
 
 	msg := pumpEvent(t, m2)

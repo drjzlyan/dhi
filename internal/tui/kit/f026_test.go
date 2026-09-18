@@ -258,13 +258,13 @@ func TestRailGlyphAndScroll(t *testing.T) {
 }
 
 func TestEllipsisClipMarker(t *testing.T) {
-	if got := ellipsisClip("abcdef", 4); got != "abc…" {
+	if got := ClipEllipsis("abcdef", 4); got != "abc…" {
 		t.Fatalf("clip = %q", got)
 	}
-	if got := ellipsisClip("ab", 4); got != "ab" {
+	if got := ClipEllipsis("ab", 4); got != "ab" {
 		t.Fatalf("short clip = %q", got)
 	}
-	if got := ellipsisClip("abcdef", 1); got != "" {
+	if got := ClipEllipsis("abcdef", 1); got != "" {
 		t.Fatalf("tiny clip = %q", got)
 	}
 }

@@ -1,6 +1,6 @@
-  INBOX                  0╭─ › board ────────────────────────────────────────────────────────────────────────╮
-▌ BOARD                  1│ replay run-replay-test · cli:claude/opus · ok · 1.2s · $0.42      j/k scroll · g │
-  CHANNELS               0│ inspecting the login flow                                                        │
+  INBOX                   ╭─ › board ────────────────────────────────────────────────────────────────────────╮
+▌ BOARD                  1│ replay run-replay-test · cli:claude/opus · ok · 1.2s · $0.42                     │
+  CHANNELS                │ inspecting the login flow                                                        │
   REPOS                  2│ ❯ git status                                                                     │
                           │ ❯ cd repos/alpha && go test ./...                                                │
                           │ compile error: undefined: x                                                      │
@@ -30,5 +30,5 @@
                           │                                                                                  │
                           │                                                                                  │
                           │                                                                                  │
-                          │ h/l lane • n new • s status • a assign • o thread                                │
+                          │ esc close • j/k scroll • g/G top/bottom                                          │
 [ ] sections              ╰──────────────────────────────────────────────────────────────────────────────────╯

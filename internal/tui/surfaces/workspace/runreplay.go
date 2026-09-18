@@ -7,6 +7,7 @@ import (
 
 	"github.com/drjzlyan/dhi/internal/jsonl"
 	"github.com/drjzlyan/dhi/internal/tasks"
+	"github.com/drjzlyan/dhi/internal/tui/kit"
 	"github.com/drjzlyan/dhi/internal/tui/theme"
 )
 
@@ -142,7 +143,7 @@ func (rp *runReplay) render(width int) []string {
 		default:
 			line = detail // progress text and anything unknown
 		}
-		out = append(out, wrap(line, width)...)
+		out = append(out, kit.WrapWords(line, width)...)
 	}
 	if len(out) == 0 {
 		out = append(out, theme.TextDim().Render("(empty transcript — no events persisted)"))
@@ -151,6 +152,7 @@ func (rp *runReplay) render(width int) []string {
 }
 
 // body returns the replay header plus the scrolled transcript window.
+// Keys are advertised on the pane's HintBar (F-026 P3), not in-body.
 func (m *Model) replayBody() string {
 	rp := m.replay
 	if rp == nil {
@@ -160,12 +162,11 @@ func (m *Model) replayBody() string {
 	rp.refresh(width, height)
 
 	header := m.replayHeader()
-	help := theme.TextDim().Render("      j/k scroll · g top · G bottom · esc back")
 	from := minInt(rp.scroll, maxInt(len(rp.lines)-height, 0))
 	to := minInt(from+height, len(rp.lines))
 	var window []string
 	window = append(window, rp.lines[from:to]...)
-	lines := append([]string{header + help}, window...)
+	lines := append([]string{header}, window...)
 	return strings.Join(lines, "\n")
 }
 
@@ -220,19 +221,5 @@ func (m *Model) runStyle(s tasks.RunStatus) string {
 	return ""
 }
 
-// wrap breaks s into width-wide lines at rune boundaries so replay
-// bodies never overflow the panel.
-func wrap(s string, width int) []string {
-	if width < 1 {
-		width = 1
-	}
-	var out []string
-	for _, ln := range strings.Split(s, "\n") {
-		for len([]rune(ln)) > width {
-			out = append(out, string([]rune(ln)[:width]))
-			ln = string([]rune(ln)[width:])
-		}
-		out = append(out, ln)
-	}
-	return out
-}
+// wrap was the rune hard-break; the shared kit.WrapWords (word-boundary
+// wrap, F-026 P3) replaced it.

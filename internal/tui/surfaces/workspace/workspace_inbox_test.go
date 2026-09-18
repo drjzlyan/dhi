@@ -308,8 +308,8 @@ func TestSnoozeFormFlow(t *testing.T) {
 	if !m.HandleKey("z") {
 		t.Fatal("z not consumed")
 	}
-	if m.form.kind != fSnooze || len(m.form.fields) != 1 ||
-		m.form.fields[0].toggleValue() != "15m" {
+	if m.form.kind != fSnooze || len(m.form.f.Fields) != 1 ||
+		m.form.f.Fields[0].Selected() != "15m" {
 		t.Fatalf("z did not open the snooze form: %+v", m.form)
 	}
 	if !m.HandleKey("enter") {

@@ -88,12 +88,12 @@ func (s *StatusLine) View() string {
 		if w := runeWidth(left) + runeWidth(right); w > s.Width {
 			split := clamp(s.Width-runeWidth(right), 0, s.Width)
 			if split > 1 {
-				left = ellipsisClip(left, split)
+				left = ClipEllipsis(left, split)
 			} else {
 				left = ""
 			}
 			if runeWidth(left)+runeWidth(right) > s.Width {
-				right = ellipsisClip(right, s.Width-runeWidth(left))
+				right = ClipEllipsis(right, s.Width-runeWidth(left))
 			}
 		}
 	}

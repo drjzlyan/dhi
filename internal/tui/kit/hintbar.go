@@ -37,9 +37,9 @@ func HintBar(width int, status string, hints ...string) string {
 		gap = 2
 	}
 	full := strings.Join(hints, sep)
-	hintText := ellipsisClip(full, width-statusW-gap)
+	hintText := ClipEllipsis(full, width-statusW-gap)
 	if hintText == "" && status == "" {
-		hintText = ellipsisClip(full, width)
+		hintText = ClipEllipsis(full, width)
 	}
 	row := status
 	if status != "" && hintText != "" {

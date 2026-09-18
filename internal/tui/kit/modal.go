@@ -123,7 +123,7 @@ func (m *Modal) View() string {
 		row := ""
 		if y < winRows {
 			if y < len(visible) {
-				row = ellipsisClip(visible[y], innerRows)
+				row = ClipEllipsis(visible[y], innerRows)
 			}
 			if w := runeWidth(ansi.Strip(row)); w < innerRows {
 				row += strings.Repeat(" ", innerRows-w)
@@ -133,7 +133,7 @@ func (m *Modal) View() string {
 			}
 		} else {
 			// Pinned busy/error state rows.
-			row = ellipsisClip(body[len(body)-pinned+(y-winRows)], inner)
+			row = ClipEllipsis(body[len(body)-pinned+(y-winRows)], inner)
 			if w := runeWidth(ansi.Strip(row)); w < inner {
 				row += strings.Repeat(" ", inner-w)
 			}

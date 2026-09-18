@@ -25,6 +25,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/inbox"
 	"github.com/drjzlyan/dhi/internal/review"
 	"github.com/drjzlyan/dhi/internal/tasks"
+	"github.com/drjzlyan/dhi/internal/tui/kit"
 	"github.com/drjzlyan/dhi/internal/tui/surfaces"
 	"github.com/drjzlyan/dhi/internal/unread"
 	"github.com/drjzlyan/dhi/internal/workspace"
@@ -95,15 +96,16 @@ type Model struct {
 	armSeq     uint64 // autopilot tick-chain guard: exactly one in flight
 	cancelAuto func()
 
-	approvals    *tools.Approvals     // pending-approval queue (F-016 source)
-	unreadStore  *unread.Store        // read-mark store (F-017); nil = no bus
-	unreadErr    string               // store unavailable: named, never silent
-	unreadCounts map[string]int       // per-frame rail counts (syncUnread)
-	openChat     func() bool          // focus editor chat approvals (F-016 jump)
-	openReview   func(id string) bool // reviewer select (F-016 jump)
-	inboxHint    string               // last jump degrade hint (visible, never silent)
-	snoozeTarget inbox.Item           // item parked by the fSnooze form
-	snoozeChain  bool                 // expiry tick chain in flight (F-017)
+	approvals    *tools.Approvals          // pending-approval queue (F-016 source)
+	unreadStore  *unread.Store             // read-mark store (F-017); nil = no bus
+	unreadErr    string                    // store unavailable: named, never silent
+	unreadCounts map[string]int            // per-frame rail counts (syncUnread)
+	openChat     func() bool               // focus editor chat approvals (F-016 jump)
+	openReview   func(id string) bool      // reviewer select (F-016 jump)
+	openEditor   func(paths []string) bool // editor open-in-editor (repos `e`, F-026 P3)
+	inboxHint    string                    // last jump degrade hint (visible, never silent)
+	snoozeTarget inbox.Item                // item parked by the fSnooze form
+	snoozeChain  bool                      // expiry tick chain in flight (F-017)
 
 	events       chan wsEvent
 	cancelSub    func()
@@ -144,12 +146,13 @@ type Deps struct {
 	Runtime    turnHandler
 	Tasks      *tasks.Store
 	Roster     profiface.Roster
-	ReviewSvc  *review.Service      // nil = task PR creation unavailable
-	Approvals  *tools.Approvals     // nil = no pending-approval inbox source
-	Unread     *unread.Store        // shared read-mark store (F-017); opened here if nil
-	Autopilots *autopilot.Store     // shared with Settings (F-023); opened here if nil
-	OpenChat   func() bool          // focus editor chat (approval jump)
-	OpenReview func(id string) bool // reviewer select (in_review jump)
+	ReviewSvc  *review.Service           // nil = task PR creation unavailable
+	Approvals  *tools.Approvals          // nil = no pending-approval inbox source
+	Unread     *unread.Store             // shared read-mark store (F-017); opened here if nil
+	Autopilots *autopilot.Store          // shared with Settings (F-023); opened here if nil
+	OpenChat   func() bool               // focus editor chat (approval jump)
+	OpenReview func(id string) bool      // reviewer select (in_review jump)
+	OpenEditor func(paths []string) bool // editor open-in-editor (repos `e`)
 }
 
 // New returns the workspace model. A nil ws renders the not-a-workspace
@@ -176,6 +179,7 @@ func New(version string, ws *workspace.Workspace, d Deps) *Model {
 		m.approvals = d.Approvals
 		m.openChat = d.OpenChat
 		m.openReview = d.OpenReview
+		m.openEditor = d.OpenEditor
 		switch {
 		case d.Autopilots != nil:
 			m.autopilots = d.Autopilots // shared with Settings (F-023)
@@ -431,55 +435,71 @@ const (
 	fTaskPR
 	fTaskCommit
 	fTaskPush
+	fTaskMove
 	fSnooze
 )
 
-type field struct {
-	label  string
-	runes  []rune
-	toggle []string // non-empty: left/right/space cycles values
-	val    int      // selected toggle index
-}
-
-func (f *field) text() string { return string(f.runes) }
-
-func (f *field) cycle(dir int) {
-	if len(f.toggle) == 0 {
-		return
-	}
-	f.val = (f.val + dir + len(f.toggle)) % len(f.toggle)
-}
-
-func (f *field) toggleValue() string {
-	if len(f.toggle) == 0 {
-		return ""
-	}
-	return f.toggle[f.val]
-}
-
-// formState is the active modal (zero kind = none). Fields carry all
-// inputs; orig captures the entity being edited so renames of the name
-// buffer cannot detach the target.
-type formState struct {
-	kind   modalKind
-	orig   string
-	fields []field
-	cur    int
-	busy   bool
-	err    string
-	flash  string
-}
+// field is the canonical kit field: in-value cursor (left/right),
+// paste, shift+tab, focus-visible rendering ride kit.Form (F-026 P3a).
+type field = kit.Field
 
 func textField(label, value string) field {
-	return field{label: label, runes: []rune(value)}
+	return kit.NewTextField(label, value)
 }
 
 // toggleField is a cycling single-choice field (F-017 snooze presets).
 func toggleField(label string, opts []string) field {
-	return field{label: label, toggle: opts}
+	return kit.NewToggleField(label, opts, 0)
+}
+
+// toggleFieldAt opens the choice at a specific index (lane picker).
+func toggleFieldAt(label string, opts []string, initial int) field {
+	return kit.NewToggleField(label, opts, initial)
+}
+
+// formState is the active modal (zero kind = none). Inputs live in the
+// canonical kit.Form; orig captures the entity being edited so renames
+// of the name buffer cannot detach the target. err stays local (tests
+// assert it) and mirrors into the kit form for rendering.
+type formState struct {
+	kind  modalKind
+	orig  string
+	f     *kit.Form
+	busy  bool
+	err   string
+	flash string
+}
+
+func (fs *formState) fields() []field {
+	if fs.f == nil {
+		return nil
+	}
+	return fs.f.Fields
+}
+
+func (fs *formState) values() []string {
+	if fs.f == nil {
+		return nil
+	}
+	return fs.f.Values()
+}
+
+func (fs *formState) curField() int {
+	if fs.f == nil {
+		return 0
+	}
+	return fs.f.Cur()
 }
 
 func (fs *formState) target() string { return fs.orig }
+
+// openForm opens kind with the orig target and canonical kit fields
+// (confirm modals pass no fields).
+func openForm(kind modalKind, orig string, fields ...field) formState {
+	f := formState{kind: kind, orig: orig}
+	f.f = kit.NewForm("", fields...)
+	return f
+}
 
 // csv splits comma-separated entries and trims blanks.
 func csv(s string) []string {
@@ -526,6 +546,26 @@ func (m *Model) Wheel(dy int) bool {
 }
 
 func (m *Model) sectionKey(key string) bool {
+	// Run-replay pane (F-014/F-026): modal until esc, or a section
+	// switch which CLOSES it first (a hidden replay must not keep
+	// owning keys while the board renders beneath it).
+	if m.replay != nil {
+		switch key {
+		case "esc":
+			m.replay = nil
+			return true
+		case "[":
+			m.replay = nil
+			m.sec = (m.sec - 1 + secCount) % secCount
+			return true
+		case "]":
+			m.replay = nil
+			m.sec = (m.sec + 1) % secCount
+			return true
+		}
+		return m.replay.Key(key, m)
+	}
+
 	switch key {
 	case "[":
 		m.sec = (m.sec - 1 + secCount) % secCount
@@ -533,11 +573,6 @@ func (m *Model) sectionKey(key string) bool {
 	case "]":
 		m.sec = (m.sec + 1) % secCount
 		return true
-	}
-
-	// Run-replay pane (F-014): modal until esc or a section switch.
-	if m.replay != nil {
-		return m.replay.Key(key, m)
 	}
 
 	switch m.sec {
@@ -584,22 +619,28 @@ func (m *Model) reposKey(key string) bool {
 		}
 		return true
 	case "a", "n":
-		m.form = formState{kind: fAdd, fields: []field{
-			textField("name ", ""), textField("path ", ""),
-		}}
+		m.form = openForm(fAdd, "",
+			textField("name ", ""), textField("path ", ""))
 		return true
 	case "r", "enter":
 		if len(members) > 0 {
 			mem := members[*c]
-			m.form = formState{kind: fRename, orig: mem.Name,
-				fields: []field{textField("new  ", mem.Name)}}
+			m.form = openForm(fRename, mem.Name, textField("new  ", mem.Name))
 		}
 		return true
 	case "d", "delete":
 		if len(members) > 0 {
-			m.form = formState{kind: fRemoveConfirm, orig: members[*c].Name}
+			m.form = openForm(fRemoveConfirm, members[*c].Name)
 		}
 		return true
+	case "e":
+		if len(members) > 0 && m.openEditor != nil {
+			mem := members[*c]
+			if !m.openEditor([]string{mem.Path}) {
+				m.inboxHint = "editor unavailable — open " + mem.Name + " by hand"
+			}
+			return true
+		}
 	}
 	return false
 }
@@ -680,9 +721,8 @@ func (m *Model) boardKey(key string) bool {
 		// The board is inert without a selected card, but `n` always
 		// works and the board swallows navigation keys above.
 		if key == "n" && m.taskStore != nil {
-			m.form = formState{kind: fTaskNew, fields: []field{
-				textField("slug  ", ""), textField("title ", ""),
-			}}
+			m.form = openForm(fTaskNew, "",
+				textField("slug  ", ""), textField("title ", ""))
 			return true
 		}
 		return false
@@ -693,9 +733,8 @@ func (m *Model) boardKey(key string) bool {
 		if m.taskStore == nil {
 			return false
 		}
-		m.form = formState{kind: fTaskNew, fields: []field{
-			textField("slug  ", ""), textField("title ", ""),
-		}}
+		m.form = openForm(fTaskNew, "",
+			textField("slug  ", ""), textField("title ", ""))
 	case "s":
 		if m.taskStore != nil {
 			slug := tk.Slug
@@ -707,33 +746,33 @@ func (m *Model) boardKey(key string) bool {
 			// Focus follows the card into its new lane (the board is a
 			// kanban, not a list — selection never strands in the old
 			// column).
-			for li, col := range m.boardGroups() {
-				for ci, t2 := range col {
-					if t2.Slug == slug {
-						m.boardActive = li
-						m.boardCur[li] = ci
-						return true
-					}
-				}
+			m.followCardIntoLane(slug)
+		}
+	case "S":
+		if m.taskStore != nil {
+			if err := m.taskStore.SetStatus(tk.Slug, prevStatus(tk.Status)); err != nil {
+				m.flashErr(err.Error())
+				return true
 			}
+			m.followCardIntoLane(tk.Slug)
+		}
+	case "m":
+		if m.taskStore != nil {
+			m.form = openForm(fTaskMove, tk.Slug,
+				toggleFieldAt("lane ", statusLabels(), statusIndex(tk.Status)))
 		}
 	case "a":
-		m.form = formState{kind: fTaskAssign, orig: tk.Slug,
-			fields: []field{textField("assignee ", tk.Assignee)}}
+		m.form = openForm(fTaskAssign, tk.Slug, textField("assignee ", tk.Assignee))
 	case "w":
-		m.form = formState{kind: fTaskAttach, orig: tk.Slug,
-			fields: []field{
-				textField("member ", ""),
-				textField("branch ", "task/"+tk.Slug),
-			}}
+		m.form = openForm(fTaskAttach, tk.Slug,
+			textField("member ", ""),
+			textField("branch ", "task/"+tk.Slug))
 	case "t":
-		m.form = formState{kind: fTaskThread, orig: tk.Slug,
-			fields: []field{
-				textField("channel ", tk.ThreadChannel),
-				textField("thread# ", itoa(int(tk.ThreadID))),
-			}}
+		m.form = openForm(fTaskThread, tk.Slug,
+			textField("channel ", tk.ThreadChannel),
+			textField("thread# ", itoa(int(tk.ThreadID))))
 	case "x", "d":
-		m.form = formState{kind: fTaskRemoveConfirm, orig: tk.Slug}
+		m.form = openForm(fTaskRemoveConfirm, tk.Slug)
 	case "p":
 		switch {
 		case m.reviewSvc == nil:
@@ -741,25 +780,22 @@ func (m *Model) boardKey(key string) bool {
 		case len(tk.ChangeSets) == 0:
 			m.flashErr("card has no worktree — attach one first (w)")
 		default:
-			m.form = formState{kind: fTaskPR, orig: tk.Slug,
-				fields: []field{
-					textField("title ", tk.Title),
-					textField("base  ", "main"),
-				}}
+			m.form = openForm(fTaskPR, tk.Slug,
+				textField("title ", tk.Title),
+				textField("base  ", "main"))
 		}
 	case "c":
 		if m.taskStore == nil || len(tk.ChangeSets) == 0 {
 			m.flashErr("card has no worktree — attach one first (w)")
 			return true
 		}
-		m.form = formState{kind: fTaskCommit, orig: tk.Slug,
-			fields: []field{textField("message ", "")}}
+		m.form = openForm(fTaskCommit, tk.Slug, textField("message ", ""))
 	case "u":
 		if m.taskStore == nil || len(tk.ChangeSets) == 0 {
 			m.flashErr("card has no worktree — attach one first (w)")
 			return true
 		}
-		m.form = formState{kind: fTaskPush, orig: tk.Slug, fields: nil}
+		m.form = openForm(fTaskPush, tk.Slug)
 	case "r":
 		if run, ok := tk.NewestRun(); ok {
 			m.replay = openReplay(run)
@@ -802,6 +838,47 @@ func nextStatus(st tasks.Status) tasks.Status {
 	return tasks.Backlog
 }
 
+// prevStatus is the backward kanban move (`S`, F-026 P3).
+func prevStatus(st tasks.Status) tasks.Status {
+	for i, s := range tasks.Statuses {
+		if s == st {
+			return tasks.Statuses[(i-1+len(tasks.Statuses))%len(tasks.Statuses)]
+		}
+	}
+	return tasks.Backlog
+}
+
+// statusLabels is the lane-picker field order (tasks.Statuses).
+func statusLabels() []string {
+	out := make([]string, 0, len(tasks.Statuses))
+	for _, s := range tasks.Statuses {
+		out = append(out, string(s))
+	}
+	return out
+}
+
+func statusIndex(st tasks.Status) int {
+	for i, s := range tasks.Statuses {
+		if s == st {
+			return i
+		}
+	}
+	return 0
+}
+
+// followCardIntoLane puts the board cursor on the card's lane and row.
+func (m *Model) followCardIntoLane(slug string) {
+	for li, col := range m.boardGroups() {
+		for ci, t2 := range col {
+			if t2.Slug == slug {
+				m.boardActive = li
+				m.boardCur[li] = ci
+				return
+			}
+		}
+	}
+}
+
 // taskRows lists every card in store order.
 func (m *Model) taskRows() []tasks.Task {
 	if m.taskStore == nil {
@@ -817,6 +894,7 @@ func (m *Model) taskRows() []tasks.Task {
 
 func (m *Model) formKey(key string) bool {
 	f := &m.form
+	f.f.Busy = f.busy // kit focus-trap mirrors the async state
 	if f.busy {
 		return true // swallow while async work runs
 	}
@@ -840,38 +918,10 @@ func (m *Model) formKey(key string) bool {
 	case "enter":
 		m.submitForm()
 		return true
-	case "tab":
-		if len(f.fields) > 1 {
-			f.cur = (f.cur + 1) % len(f.fields)
-		}
-		return true
-	case "backspace":
-		buf := &f.fields[f.cur].runes
-		if len(*buf) > 0 {
-			*buf = (*buf)[:len(*buf)-1]
-		}
-		return true
-	case "left":
-		if f.fields[f.cur].isToggle() {
-			f.fields[f.cur].cycle(-1)
-			return true
-		}
-	case "right":
-		if f.fields[f.cur].isToggle() {
-			f.fields[f.cur].cycle(1)
-			return true
-		}
 	}
-	if !f.fields[f.cur].isToggle() {
-		if r := []rune(key); len(r) == 1 && r[0] >= 32 {
-			f.fields[f.cur].runes = append(f.fields[f.cur].runes, r[0])
-			return true
-		}
-	}
-	return false
+	f.f.HandleKey(key) // tab/shift+tab/backspace/left/right/runes/paste
+	return true        // the modal swallows everything else (focus trap)
 }
-
-func (fl *field) isToggle() bool { return len(fl.toggle) > 0 }
 
 func (m *Model) closeForm() {
 	flash := m.form.flash
@@ -882,8 +932,8 @@ func (m *Model) submitForm() {
 	f := &m.form
 	switch f.kind {
 	case fAdd:
-		name := strings.TrimSpace(f.fields[0].text())
-		loc := strings.TrimSpace(f.fields[1].text())
+		name := strings.TrimSpace(f.values()[0])
+		loc := strings.TrimSpace(f.values()[1])
 		if err := workspace.ValidateName(name); err != nil {
 			f.err = err.Error()
 			return
@@ -909,7 +959,7 @@ func (m *Model) submitForm() {
 		}
 		m.closeForm()
 	case fRename:
-		newName := strings.TrimSpace(f.fields[0].text())
+		newName := strings.TrimSpace(f.values()[0])
 		if newName == f.target() {
 			m.closeForm()
 			return
@@ -920,8 +970,8 @@ func (m *Model) submitForm() {
 		}
 		m.closeForm()
 	case fTaskNew:
-		slug := strings.TrimSpace(f.fields[0].text())
-		title := strings.TrimSpace(f.fields[1].text())
+		slug := strings.TrimSpace(f.values()[0])
+		title := strings.TrimSpace(f.values()[1])
 		if m.taskStore == nil {
 			f.err = "task store unavailable"
 			return
@@ -936,7 +986,7 @@ func (m *Model) submitForm() {
 			f.err = "task store unavailable"
 			return
 		}
-		if err := m.taskStore.Assign(f.orig, strings.TrimSpace(f.fields[0].text())); err != nil {
+		if err := m.taskStore.Assign(f.orig, strings.TrimSpace(f.values()[0])); err != nil {
 			f.err = err.Error()
 			return
 		}
@@ -946,8 +996,8 @@ func (m *Model) submitForm() {
 			f.err = "task store unavailable"
 			return
 		}
-		member := strings.TrimSpace(f.fields[0].text())
-		branch := strings.TrimSpace(f.fields[1].text())
+		member := strings.TrimSpace(f.values()[0])
+		branch := strings.TrimSpace(f.values()[1])
 		if err := m.taskStore.Attach(f.orig, member, branch, ""); err != nil {
 			f.err = err.Error()
 			return
@@ -958,17 +1008,17 @@ func (m *Model) submitForm() {
 			f.err = "task store unavailable"
 			return
 		}
-		channel := strings.TrimSpace(f.fields[0].text())
+		channel := strings.TrimSpace(f.values()[0])
 		tid := int64(0)
-		_, _ = fmt.Sscanf(strings.TrimSpace(f.fields[1].text()), "%d", &tid)
+		_, _ = fmt.Sscanf(strings.TrimSpace(f.values()[1]), "%d", &tid)
 		if err := m.taskStore.BindThread(f.orig, channel, tid); err != nil {
 			f.err = err.Error()
 			return
 		}
 		m.closeForm()
 	case fTaskPR:
-		title := strings.TrimSpace(f.fields[0].text())
-		base := strings.TrimSpace(f.fields[1].text())
+		title := strings.TrimSpace(f.values()[0])
+		base := strings.TrimSpace(f.values()[1])
 		if title == "" || base == "" {
 			f.err = "title and base required"
 			return
@@ -1002,7 +1052,7 @@ func (m *Model) submitForm() {
 			f.err = "task store unavailable"
 			return
 		}
-		message := strings.TrimSpace(f.fields[0].text())
+		message := strings.TrimSpace(f.values()[0])
 		if message == "" {
 			f.err = "commit message required"
 			return
@@ -1041,12 +1091,24 @@ func (m *Model) submitForm() {
 			m.send(ev)
 		}()
 		return
+	case fTaskMove:
+		if m.taskStore == nil {
+			f.err = "task store unavailable"
+			return
+		}
+		next := tasks.Status(f.values()[0])
+		if err := m.taskStore.SetStatus(f.orig, next); err != nil {
+			f.err = err.Error()
+			return
+		}
+		m.followCardIntoLane(f.orig)
+		m.closeForm()
 	case fSnooze:
 		if m.snoozeTarget.Kind != inbox.AgentMessage {
 			f.err = "snooze target lost — reopen with z"
 			return
 		}
-		m.snoozeSelected(m.snoozeTarget, f.fields[0].toggleValue())
+		m.snoozeSelected(m.snoozeTarget, f.values()[0])
 		m.closeForm()
 	}
 }

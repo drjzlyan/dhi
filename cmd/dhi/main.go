@@ -238,6 +238,12 @@ func runTUI() {
 				}
 				return appRef.SelectReviewer(id)
 			},
+			OpenEditor: func(paths []string) bool {
+				if appRef == nil {
+					return false
+				}
+				return appRef.OpenInEditor(paths)
+			},
 		}),
 		editor.New(version.Version, ws, edOpts...),
 		ideator.New(version.Version, ws, ideator.Deps{
