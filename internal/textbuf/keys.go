@@ -443,11 +443,71 @@ func (e *Editor) execCommand(cmd string) {
 		e.buf = b
 		e.reloaded = true
 	default:
+		if exSubstitute(e, cmd) {
+			return
+		}
 		if e.delegate != nil && e.delegate.ExecEx(e, cmd) {
 			return
 		}
 		e.message = "not an editor command: " + cmd
 	}
+}
+
+// exSubstitute implements `:s/pat/rep/[g]` (cursor line) and
+// `:%s/pat/rep/[g]` (whole buffer) — plain-substring replacement, `g`
+// replaces every occurrence on a line instead of the first (F-026 P4).
+// Returns false when cmd is not a substitute form.
+func exSubstitute(e *Editor, cmd string) bool {
+	all := false
+	rest := cmd
+	if strings.HasPrefix(rest, "%s") {
+		all = true
+		rest = rest[1:]
+	}
+	if !strings.HasPrefix(rest, "s/") && !strings.HasPrefix(rest, "s,") {
+		return false
+	}
+	sep := rest[1]
+	parts := strings.Split(rest[2:], string(sep))
+	if len(parts) < 2 || len(parts) > 3 {
+		e.message = "usage: s/pat/rep/[g]"
+		return true
+	}
+	pat, rep := parts[0], parts[1]
+	global := len(parts) == 3 && strings.Contains(parts[2], "g")
+	if pat == "" {
+		e.message = "empty pattern"
+		return true
+	}
+	replaced, n := e.buf.SubstituteAll(pat, rep, all, global)
+	if n == 0 {
+		e.message = "pattern not found: " + pat
+		return true
+	}
+	e.message = itoa(replaced) + " line(s) changed (" + itoa(n) + " hits)"
+	return true
+}
+
+func itoa(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	neg := n < 0
+	if neg {
+		n = -n
+	}
+	var b [20]byte
+	i := len(b)
+	for n > 0 {
+		i--
+		b[i] = byte('0' + n%10)
+		n /= 10
+	}
+	if neg {
+		i--
+		b[i] = '-'
+	}
+	return string(b[i:])
 }
 
 // Save writes to the bound path.

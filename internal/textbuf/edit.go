@@ -130,6 +130,7 @@ func (b *Buffer) yankRange(a, z Pos) string {
 // cursor at a (clamped). EOF-sentinel z (Line == LineCount()) deletes
 // through the last line.
 func (b *Buffer) deleteRange(a, z Pos) {
+	b.seq++
 	a, z = order(a, z)
 	_ = b.yankRange(a, z)
 	if a == z {
@@ -170,6 +171,7 @@ func (b *Buffer) deleteRange(a, z Pos) {
 
 // insertAt inserts s at pos; used for paste and change-completions.
 func (b *Buffer) insertAt(pos Pos, s string) {
+	b.seq++
 	old := b.cursor
 	b.cursor = b.clampPos(pos)
 	b.InsertString(s)

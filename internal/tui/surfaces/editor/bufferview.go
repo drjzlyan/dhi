@@ -7,9 +7,18 @@ import (
 
 	"charm.land/lipgloss/v2"
 
+	"github.com/drjzlyan/dhi/internal/ansi"
 	"github.com/drjzlyan/dhi/internal/textbuf"
+	"github.com/drjzlyan/dhi/internal/tui/kit"
 	"github.com/drjzlyan/dhi/internal/tui/theme"
 )
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
 
 // cursorStyle inverts the rune under the cursor; it carries no color so
 // the theme-only rule stays satisfied.
@@ -72,6 +81,9 @@ func (m *Model) bufferView() string {
 
 	var out []string
 	path := e.Path()
+	syntax := m.syntaxFor(e)
+	curLine := b.Cursor().Line
+	curCol := b.Cursor().Col
 	for l := top; l < end; l++ {
 		num := strconv.Itoa(l + 1)
 		plain := padLeft(num, gutW-len(num))
@@ -91,23 +103,25 @@ func (m *Model) bufferView() string {
 				selEnd = min(z.Col, len([]rune(text)))
 			}
 			text = markRange(text, selStart, selEnd)
-		} else if l == b.Cursor().Line {
+		} else if l == curLine {
 			text = withCursor(text, b.Cursor().Col)
+		} else if syntax != nil {
+			// Colorized lines keep the raw text underneath (F-026 P4);
+			// cursor and selection lines render plain so the rune-level
+			// inversion stays exact.
+			if st := syntax.styled(l); st != "" {
+				text = st
+			}
 		}
 		out = append(out, gutter+" "+text)
 	}
 
-	if comp := m.completionView(); len(comp) > 0 {
-		out = append(out, "")
-		out = append(out, comp...)
-	}
-	if acts := m.actionView(); len(acts) > 0 {
-		out = append(out, "")
-		out = append(out, acts...)
-	}
-	if hov := m.hoverView(); len(hov) > 0 {
-		out = append(out, "")
-		out = append(out, hov...)
+	if popup := m.popupRows(); len(popup) > 0 {
+		// F-026 P4: completions/code-actions/hover float as a bordered
+		// dialog anchored under the cursor cell — not plain rows
+		// appended below the buffer.
+		x := clampIdx(gutW+curCol, maxInt(m.width-railWidth-5, 20)-10)
+		out = m.floatPopup(out, popup, x, curLine, top)
 	}
 
 	cmd := e.CommandLine()
@@ -125,6 +139,65 @@ func (m *Model) bufferView() string {
 	}
 	out = append(out, "", cmd)
 	return strings.Join(out, "\n")
+}
+
+// popupRows picks the one open LSP popup (completions > code actions >
+// hover — the key interceptors make them mutually exclusive in practice).
+func (m *Model) popupRows() []string {
+	if rows := m.completionView(); len(rows) > 0 {
+		return rows
+	}
+	if rows := m.actionView(); len(rows) > 0 {
+		return rows
+	}
+	return m.hoverView()
+}
+
+// floatPopup paints a bordered dialog over the buffer rows: x = anchor
+// column (below the cursor line), the box covers to the right margin
+// so nothing outside it needs cell-level splicing. The box may extend
+// past short buffers — the panel pads those rows (clipping at its own
+// height budget).
+func (m *Model) floatPopup(base []string, rows []string, x, curLine, top int) []string {
+	if len(rows) == 0 || len(base) == 0 {
+		return base
+	}
+	avail := maxInt(m.width-railWidth-5, 20)
+	w := 0
+	for _, r := range rows {
+		if lw := ansi.Width(ansi.Strip(r)); lw > w {
+			w = lw
+		}
+	}
+	w = minInt(w+4, maxInt(avail-x, 10))
+	box := kit.Modal{Lines: rows, Width: w}
+	boxLines := strings.Split(box.View(), "\n")
+	y := clampIdx(curLine-top+1, maxInt(len(base)-len(boxLines), 0))
+	out := make([]string, len(base), len(base)+len(boxLines))
+	copy(out, base)
+	pad := strings.Repeat(" ", x)
+	for i, bl := range boxLines {
+		by := y + i
+		if by < len(out) {
+			out[by] = ansi.Clip(out[by], x) + bl
+			continue
+		}
+		out = append(out, pad+bl)
+	}
+	return out
+}
+
+// syntaxFor returns the active tab's highlighter, refreshed for the
+// current buffer state (F-026 P4; nil-safe).
+func (m *Model) syntaxFor(e *textbuf.Editor) *highlighter {
+	if m.activeTab >= 0 && m.activeTab < len(m.bufs) {
+		t := m.bufs[m.activeTab]
+		if t.ed == e && t.syntax != nil {
+			t.syntax.refresh(e.Buffer())
+			return t.syntax
+		}
+	}
+	return nil
 }
 
 // actionView renders the code-action popup rows (same slot as completions).

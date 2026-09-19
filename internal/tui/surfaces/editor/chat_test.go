@@ -116,7 +116,11 @@ func TestChatTurnReplyAppearsInTranscript(t *testing.T) {
 	}
 	h.openFocused()
 	view := plainView(h.m)
-	if !strings.Contains(view, "scout") || !strings.Contains(view, "All quiet on the western front.") {
+	// The sidebar wraps at its real width (F-026 P4): the reply may
+	// span lines — assert the content, not one contiguous layout.
+	if !strings.Contains(view, "scout") ||
+		!strings.Contains(view, "All quiet on the western") ||
+		!strings.Contains(view, "front.") {
 		t.Fatal("reply not rendered in sidebar")
 	}
 }

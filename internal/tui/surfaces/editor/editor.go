@@ -748,9 +748,10 @@ func (m *Model) cursorNode() *node {
 
 // bufTab is one open buffer with its display identity.
 type bufTab struct {
-	ed   *textbuf.Editor
-	vp   string
-	path string
+	ed     *textbuf.Editor
+	vp     string
+	path   string
+	syntax *highlighter // per-tab buffer colorizer (F-026 P4)
 }
 
 // active returns the focused tab's editor, or nil.
@@ -784,7 +785,7 @@ func (m *Model) open(n *node) {
 		return
 	}
 	be.SetCommandDelegate(m)
-	tab := &bufTab{ed: be, vp: m.openVPath, path: n.path}
+	tab := &bufTab{ed: be, vp: m.openVPath, path: n.path, syntax: &highlighter{path: n.path}}
 	m.bufs = append(m.bufs, tab)
 	m.activeTab = len(m.bufs) - 1
 	m.bufFocus = true

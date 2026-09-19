@@ -9,6 +9,8 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/agentkit/runtime"
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
+	"github.com/drjzlyan/dhi/internal/preview"
+	"github.com/drjzlyan/dhi/internal/tui/kit"
 	"github.com/drjzlyan/dhi/internal/tui/theme"
 	"github.com/drjzlyan/dhi/internal/unread"
 )
@@ -334,72 +336,39 @@ func channelLabel(ch string) string {
 	return ch
 }
 
-// transcript renders the most recent rows that fit maxRows.
+// transcript renders the most recent rows that fit maxRows through the
+// shared kit.Transcript (F-026 P4): day dividers, HH:MM stamps, author
+// styles, and code fences via the injected markdown seam (agents post
+// diffs and code — raw fences never render well).
 func (c *chatModel) transcript(maxRows int) []string {
 	history := c.bus.History(c.channelName(), 0)
 	if n := len(history); n > chatTranscriptN {
 		history = history[n-chatTranscriptN:]
 	}
-	var lines []string
-	for _, m := range history {
-		style := theme.TabActive()
-		if m.Author != bus.Human {
-			style = theme.Brand()
-		}
-		prefix := style.Render(m.Author)
-		for i, seg := range wrapWords(m.Text, chatWidth-6) {
-			if i == 0 {
-				lines = append(lines, prefix+" "+seg)
-				continue
-			}
-			lines = append(lines, "  "+seg)
-		}
-	}
-	if len(lines) == 0 {
+	if len(history) == 0 {
 		return []string{theme.TextDim().Render("(no messages yet — say hi or @mention an agent)")}
 	}
-	if over := len(lines) - maxRows; over > 0 {
-		lines = lines[over:]
-	}
-	return lines
-}
-
-// wrapWords wraps text to width on spaces (long words hard-split).
-func wrapWords(text string, width int) []string {
-	if width < 12 {
-		width = 12
-	}
-	var out []string
-	for _, para := range strings.Split(text, "\n") {
-		words := strings.Fields(para)
-		if len(words) == 0 {
-			out = append(out, "")
-			continue
-		}
-		cur := ""
-		flush := func() {
-			out = append(out, cur)
-			cur = ""
-		}
-		for _, w := range words {
-			switch {
-			case cur == "":
-				cur = w
-			case len([]rune(cur))+1+len([]rune(w)) <= width:
-				cur += " " + w
-			default:
-				flush()
-				cur = w
+	tr := &kit.Transcript{
+		// The panel's inner width (edges + padding) — the transcript
+		// wraps to what actually renders (F-026 P4).
+		Width: chatWidth - 4,
+		Markdown: func(md string, width int) string {
+			if out, err := preview.Render(md, width); err == nil {
+				return out
 			}
-			for len([]rune(cur)) > width { // hard-split oversized word
-				r := []rune(cur)
-				out = append(out, string(r[:width]))
-				cur = string(r[width:])
-			}
+			return md
+		},
+	}
+	for _, m := range history {
+		row := kit.TrnRow{Author: m.Author, Text: m.Text, At: m.At, Kind: kit.TrnAgent}
+		if m.Author == bus.Human {
+			row.Kind = kit.TrnHuman
 		}
-		if cur != "" || len(out) == 0 {
-			flush()
-		}
+		tr.Rows = append(tr.Rows, row)
+	}
+	out := tr.View()
+	if over := len(out) - maxRows; over > 0 {
+		out = out[over:]
 	}
 	return out
 }

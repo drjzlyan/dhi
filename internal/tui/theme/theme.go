@@ -295,6 +295,16 @@ func InfoText() lipgloss.Style    { return lipgloss.NewStyle().Foreground(Curren
 // AccentDimText styles secondary emphasis: badge counts, quiet accents.
 func AccentDimText() lipgloss.Style { return lipgloss.NewStyle().Foreground(Current.AccentDim) }
 
+// AccentText / Accent2Bold style primary token emphasis (syntax
+// functions on the accent, keywords bold violet — F-026 P4).
+func AccentText() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(Current.Accent).Bold(true)
+}
+
+func Accent2Bold() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(Current.Accent2).Bold(true)
+}
+
 // TextDim styles secondary text.
 func TextDim() lipgloss.Style { return lipgloss.NewStyle().Foreground(Current.TextDim) }
 

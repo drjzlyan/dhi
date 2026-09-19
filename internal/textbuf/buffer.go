@@ -34,6 +34,7 @@ type Buffer struct {
 	wantCol int      // sticky column for vertical motion
 
 	dirty bool
+	seq   uint64 // bumped on every text mutation; render caches key on it (F-026 P4)
 	undo  []snapshot
 	redo  []snapshot
 
@@ -99,6 +100,46 @@ func (b *Buffer) LineCount() int { return len(b.lines) }
 // Dirty reports unsaved changes.
 func (b *Buffer) Dirty() bool { return b.dirty }
 
+// Seq reads the text-mutation sequence: every render-time cache keyed
+// on the buffer content (the syntax highlighter, F-026 P4) bumps it on
+// each mutation.
+func (b *Buffer) Seq() uint64 { return b.seq }
+
+// SubstituteAll replaces plain-substring pat with rep: cursor line
+// only unless all; global replaces every occurrence on a line, else
+// the first. Returns (lines changed, hits). One undo group covers the
+// whole substitution.
+func (b *Buffer) SubstituteAll(pat, rep string, all, global bool) (lines, hits int) {
+	b.snapshotBefore()
+	start := 0
+	end := len(b.lines)
+	if !all {
+		start, end = b.cursor.Line, b.cursor.Line+1
+	}
+	for i := start; i < end; i++ {
+		line := b.lines[i]
+		idx := strings.Index(line, pat)
+		if idx < 0 {
+			continue
+		}
+		count := 0
+		if global {
+			count = strings.Count(line, pat)
+			b.lines[i] = strings.ReplaceAll(line, pat, rep)
+		} else {
+			count = 1
+			b.lines[i] = line[:idx] + rep + line[idx+len(pat):]
+		}
+		lines++
+		hits += count
+	}
+	if hits > 0 {
+		b.dirty = true
+		b.seq++
+	}
+	return lines, hits
+}
+
 // Cursor returns the current position.
 func (b *Buffer) Cursor() Pos { return b.cursor }
 
@@ -143,6 +184,7 @@ func (b *Buffer) clampCursor() { b.cursor = b.clampPos(b.cursor) }
 // undo group only the first edit snapshots, so a whole insert session
 // collapses into one undo step.
 func (b *Buffer) snapshotBefore() {
+	b.seq++
 	if b.groupDepth > 0 {
 		if b.groupMarked {
 			b.redo = nil
