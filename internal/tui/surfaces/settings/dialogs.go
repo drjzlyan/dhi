@@ -26,6 +26,9 @@ const (
 	dlgStdPreview
 	dlgAutoNew
 	dlgAutoDelete
+	dlgLibNew
+	dlgLibEdit
+	dlgLibDelete
 	dlgDisplay // read-only: profile, standards preview, last-run info
 )
 
@@ -103,6 +106,8 @@ func (m *Model) submitDialog() {
 		m.showStdPreview()
 	case dlgAutoNew:
 		m.submitAutoNew()
+	case dlgLibNew, dlgLibEdit:
+		m.submitLibrary()
 	}
 }
 
@@ -128,6 +133,8 @@ func (m *Model) submitConfirmDialog() {
 		}
 		m.closeDialog()
 		m.flash = "pack " + target + " uninstalled"
+	case dlgLibDelete:
+		m.submitLibraryDelete(target)
 	case dlgAutoDelete:
 		if m.d.Autopilots == nil {
 			m.closeDialog()

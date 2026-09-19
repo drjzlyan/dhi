@@ -1,10 +1,10 @@
   CONFIG        ╭─ › standards ──────────────────────────────────────────────────────────╮
   AGENTS        │ ▌ workspace       1 rules                                              │
-  TEAMS         │   scout           0 rules -                                            │
+  LIBRARY       │   scout           0 rules -                                            │
+  TEAMS         │                                                                        │
   PACKS         │                                                                        │
 ▌ STANDARDS     │                                                                        │
   AUTOPILOTS    │                                                                        │
-                │                                                                        │
                 │                                                                        │
                 │                                                                        │
                 │                                                                        │

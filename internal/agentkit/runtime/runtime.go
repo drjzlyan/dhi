@@ -17,6 +17,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/agentkit/clirun"
 	"github.com/drjzlyan/dhi/internal/agentkit/knowledge"
+	"github.com/drjzlyan/dhi/internal/agentkit/library"
 	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
 	"github.com/drjzlyan/dhi/internal/agentkit/memory"
 	"github.com/drjzlyan/dhi/internal/agentkit/org"
@@ -75,6 +76,19 @@ type Runtime struct {
 	mu     sync.Mutex
 	agents map[string]*entry
 	roster chan struct{} // pinged after every Reload
+
+	libOnce sync.Once
+	libRef  *library.Store
+}
+
+// lib lazily opens the behaviour library (nil-safe; a nil workspace
+// keeps it nil).
+func (r *Runtime) lib() *library.Store {
+	if r.cfg.WS == nil {
+		return nil
+	}
+	r.libOnce.Do(func() { r.libRef = library.Open(r.cfg.WS) })
+	return r.libRef
 }
 
 type entry struct {

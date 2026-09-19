@@ -1,10 +1,15 @@
-  CONFIG        ╭─ › agents ─────────────────────────────────────────────────────────────╮
-▌ AGENTS        │ ▌ scout       m-1           claude    2 tools                          │
-  LIBRARY       │   muse        archived                                                 │
-  TEAMS         │                                                                        │
-  PACKS         │                                                                        │
-  STANDARDS     │                                                                        │
-  AUTOPILOTS    │                                                                        │
+  CONFIG        ╭─ › library ────────────────────────────────────────────────────────────╮
+  AGENTS        │  ROLES                                                                 │
+▌ LIBRARY       │ ▌ fixer              builtin Fixes failing tasks end-to-end: reproduce │
+  TEAMS         │   planner            builtin Breaks goals into task cards with accepta │
+  PACKS         │   reviewer           builtin Reviews diffs and PRs: correctness, tests │
+  STANDARDS     │   scout              builtin Explores the codebase and reports finding │
+  AUTOPILOTS    │   scribe             builtin Keeps channels and tasks documented: summ │
+                │  SKILLS                                                                │
+                │   code-review        builtin A repeatable pass over any diff — correct │
+                │   docs               builtin Writing docs that a newcomer can act on   │
+                │   incident-triage    builtin First response for a failing system — con │
+                │   test-writing       builtin How to add tests that fail honestly and p │
                 │                                                                        │
                 │                                                                        │
                 │                                                                        │
@@ -17,10 +22,5 @@
                 │                                                                        │
                 │                                                                        │
                 │                                                                        │
-                │                                                                        │
-                │                                                                        │
-                │                                                                        │
-                │                                                                        │
-                │                                                                        │
-                │ n new • e edit • a archive • x delete • v profile • [ ] sections • ct… │
+                │ [ ] sections • ctrl+s write                                            │
                 ╰────────────────────────────────────────────────────────────────────────╯

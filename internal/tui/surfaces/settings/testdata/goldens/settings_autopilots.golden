@@ -1,10 +1,10 @@
   CONFIG        ╭─ › autopilots ─────────────────────────────────────────────────────────╮
   AGENTS        │   name                agent       schedule                    next-due │
-  TEAMS         │ ▌ Sweep               scout       daily 09:00                 09:00    │
+  LIBRARY       │ ▌ Sweep               scout       daily 09:00                 09:00    │
+  TEAMS         │                                                                        │
   PACKS         │                                                                        │
   STANDARDS     │                                                                        │
 ▌ AUTOPILOTS    │                                                                        │
-                │                                                                        │
                 │                                                                        │
                 │                                                                        │
                 │                                                                        │

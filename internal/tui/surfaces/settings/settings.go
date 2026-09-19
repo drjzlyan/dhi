@@ -16,6 +16,7 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
+	"github.com/drjzlyan/dhi/internal/agentkit/library"
 	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
 	"github.com/drjzlyan/dhi/internal/agentkit/org"
 	"github.com/drjzlyan/dhi/internal/agentkit/pack"
@@ -38,10 +39,14 @@ type Model struct {
 	sec      sectionID
 	cursor   int // CONFIG rows
 	agentCur int // AGENTS roster rows
+	libCur   int // LIBRARY listing rows
 	teamCur  int // TEAMS rows
 	packCur  int // PACKS rows
 	stdCur   int // STANDARDS rows
 	autoCur  int // AUTOPILOTS rows
+
+	detected map[string]string // runtime name → version ("" = not installed)
+	lib      *library.Store    // lazy snapshot of the behaviour library
 
 	form    agentForm // legacy agent modal (create/edit/source) — P5 folds into kit dialogs
 	dlg     *kit.Modal
@@ -69,6 +74,7 @@ type sectionID uint8
 const (
 	secConfig sectionID = iota
 	secAgents
+	secLibrary
 	secTeams
 	secPacks
 	secStandards
@@ -82,6 +88,8 @@ func (s sectionID) label() string {
 		return "CONFIG"
 	case secAgents:
 		return "AGENTS"
+	case secLibrary:
+		return "LIBRARY"
 	case secTeams:
 		return "TEAMS"
 	case secPacks:
@@ -107,6 +115,14 @@ type Deps struct {
 	WS   *workspace.Workspace
 	Org  *org.Org
 	CLIs []string // registered runtime names (form toggle options)
+	// Detect probes the registered CLIs on PATH (name → version, ""
+	// = not installed). The AGENTS runtime picker is detection-driven
+	// (F-027 P2): detected first, undetected last; nil = all dimmed.
+	Detect func() map[string]string
+	// Library is the behaviour library (F-027): roles + skills for
+	// the LIBRARY section and the agent form pickers. Nil degrades to
+	// a named empty section.
+	Library *library.Store
 	// Reload swaps the live runtime roster after a successful crew
 	// write; nil means changes apply on next launch (named in flash).
 	Reload func() error
@@ -201,6 +217,8 @@ func (m *Model) HandleKey(key string) bool {
 	switch m.sec {
 	case secAgents:
 		return m.agentsKey(key)
+	case secLibrary:
+		return m.libraryKey(key)
 	case secTeams:
 		return m.teamsKey(key)
 	case secPacks:
@@ -371,7 +389,7 @@ func (m *Model) agentsKey(key string) bool {
 		}
 		return true
 	case "n":
-		m.form = newAgentForm(m.d.CLIs)
+		m.form = newAgentForm(m.d.CLIs, m.detectedFirst(m.d.CLIs))
 		return true
 	case "g":
 		m.form = newSourceForm() // F-019: add from source (one flow)
@@ -382,7 +400,7 @@ func (m *Model) agentsKey(key string) bool {
 			if roster, err := org.LoadRoster(m.d.WS); err == nil {
 				for _, a := range roster {
 					if a.ID == rows[m.agentCur].id {
-						m.form = editAgentForm(a, m.d.CLIs)
+						m.form = m.editAgentForm(a, m.d.CLIs)
 						return true
 					}
 				}
@@ -494,7 +512,7 @@ func (f *agentForm) setErr(s string) {
 	}
 }
 
-func newAgentForm(clis []string) agentForm {
+func newAgentForm(clis []string, runtimeIdx int) agentForm {
 	if len(clis) == 0 {
 		clis = []string{"claude"}
 	}
@@ -504,10 +522,28 @@ func newAgentForm(clis []string) agentForm {
 		kit.NewTextField("name   ", ""),
 		kit.NewTextField("model  ", ""),
 		kit.NewTextField("system ", ""),
-		kit.NewToggleField("runtime", clis, 0),
+		kit.NewToggleField("runtime", clis, runtimeIdx),
 		kit.NewTextField("tools  ", ""),
+		kit.NewTextField("role   ", ""),
+		kit.NewTextField("skills ", ""),
 	)
 	return f
+}
+
+// detectedFirst orders the runtime picker detection-driven (F-027 P2):
+// the initial index preselects the first DETECTED runtime (registry
+// order), 0 when none are detected. The probe result caches on the
+// model so one form session costs one detection pass.
+func (m *Model) detectedFirst(clis []string) int {
+	if m.detected == nil && m.d.Detect != nil {
+		m.detected = m.d.Detect()
+	}
+	for i, c := range clis {
+		if m.detected != nil && m.detected[c] != "" {
+			return i
+		}
+	}
+	return 0
 }
 
 // newSourceForm is the F-019 one-flow input: a local path or a git URL,
@@ -518,8 +554,8 @@ func newSourceForm() agentForm {
 	return f
 }
 
-func editAgentForm(a *manifest.Agent, clis []string) agentForm {
-	f := newAgentForm(clis)
+func (m *Model) editAgentForm(a *manifest.Agent, clis []string) agentForm {
+	f := newAgentForm(clis, m.detectedFirst(clis))
 	f.orig = a.ID
 	// Reconstruct prefilled fields so the in-value cursor starts at the
 	// end of the prefill (direct Value writes leave cur at 0).
@@ -528,6 +564,8 @@ func editAgentForm(a *manifest.Agent, clis []string) agentForm {
 	f.f.Fields[2] = kit.NewTextField("model  ", a.Model)
 	f.f.Fields[3] = kit.NewTextField("system ", a.System)
 	f.f.Fields[5] = kit.NewTextField("tools  ", strings.Join(a.Tools, ", "))
+	f.f.Fields[6] = kit.NewTextField("role   ", a.Role)
+	f.f.Fields[7] = kit.NewTextField("skills ", strings.Join(a.Skills, ", "))
 	for i, c := range clis {
 		if c == a.Runtime {
 			f.f.Fields[4] = kit.NewToggleField("runtime", clis, i)
@@ -580,6 +618,13 @@ func (m *Model) submitAgent() {
 			tools = append(tools, t)
 		}
 	}
+	role := strings.TrimSpace(vals[6])
+	var skills []string
+	for _, s := range strings.Split(vals[7], ",") {
+		if s = strings.TrimSpace(s); s != "" {
+			skills = append(skills, s)
+		}
+	}
 	if f.orig != "" && id != f.orig {
 		f.setErr("id is immutable — archive this agent and create a new one")
 		return
@@ -587,6 +632,7 @@ func (m *Model) submitAgent() {
 	a := &manifest.Agent{
 		ID: id, Name: name, Model: model, System: system,
 		Runtime: runtime, Tools: tools,
+		Role: role, Skills: skills,
 	}
 	// Strict round-trip: Marshal → Parse names every validation error
 	// before anything touches disk.
@@ -848,6 +894,8 @@ func (m *Model) sectionPane(w, h int) string {
 	switch {
 	case m.sec == secAgents:
 		content = m.agentsView()
+	case m.sec == secLibrary:
+		content = strings.Split(m.libraryBody(w), "\n")
 	case m.sec == secTeams:
 		content = m.teamsView()
 	case m.sec == secPacks:

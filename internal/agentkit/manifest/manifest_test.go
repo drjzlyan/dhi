@@ -122,7 +122,7 @@ func TestParseErrors(t *testing.T) {
 	}{
 		{"bad id", "Big-Agent", "schema = 1\nname = \"n\"\nmodel = \"m\"\n", "bad agent id"},
 		{"unknown key", "a", "schema = 1\nname = \"n\"\nmodel = \"m\"\ntemperament = \"calm\"\n", "unknown key"},
-		{"bad schema", "a", "schema = 2\nname = \"n\"\nmodel = \"m\"\n", "schema 2"},
+		{"bad schema", "a", "schema = 3\nname = \"n\"\nmodel = \"m\"\n", "schema 3"},
 		{"missing name", "a", "schema = 1\nmodel = \"m\"\n", "name is required"},
 		{"missing model", "a", "schema = 1\nname = \"n\"\n", "model is required"},
 		{"missing runtime", "a", "schema = 1\nname = \"n\"\nmodel = \"m\"\n", "runtime"},

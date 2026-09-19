@@ -21,6 +21,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/agentkit/clirun"
 	"github.com/drjzlyan/dhi/internal/agentkit/knowledge"
+	"github.com/drjzlyan/dhi/internal/agentkit/library"
 	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
 	"github.com/drjzlyan/dhi/internal/agentkit/memory"
 	agentkitOrg "github.com/drjzlyan/dhi/internal/agentkit/org"
@@ -185,6 +186,7 @@ func runTUI() {
 	}
 	var wsAuto *autopilot.Store // one store shared by workspace + settings
 	var settingsDeps settingsview.Deps
+	var cliRegistry *clirun.Registry
 	if ws != nil {
 		company, oerr := agentkitOrg.Load(ws.Root)
 		if oerr == nil {
@@ -196,10 +198,13 @@ func runTUI() {
 			} else {
 				wsAuto = autoStore
 			}
+			cliRegistry = clirun.NewRegistry(exec.LookPath)
 			settingsDeps = settingsview.Deps{
 				WS:         ws,
 				Org:        company,
-				CLIs:       clirun.NewRegistry(exec.LookPath).Names(),
+				CLIs:       cliRegistry.Names(),
+				Detect:     cliRegistry.Detect,
+				Library:    library.Open(ws),
 				Reload:     reloadRoster,
 				Autopilots: autoStore,
 				Bus:        messageBus,

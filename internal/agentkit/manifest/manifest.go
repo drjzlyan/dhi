@@ -23,8 +23,10 @@ import (
 	"github.com/drjzlyan/dhi/internal/sandbox"
 )
 
-// SchemaVersion is the agent manifest schema this build understands.
-const SchemaVersion = 1
+// SchemaVersion is the agent manifest schema this build WRITES (F-027
+// spec v2). Parse still accepts schema 1 for back-compat — such files
+// load with an empty role/skills — but Marshal always emits v2.
+const SchemaVersion = 2
 
 var (
 	idRe      = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]*$`)
@@ -35,10 +37,16 @@ var (
 // Any other entry must be an mcp__<server>__<tool> reference resolved
 // against connected MCP servers at runtime. The F-020 toolbridge
 // actions (task cards + PRs) are builtins too — the work-facing moves
-// a human makes by hand.
+// a human makes by hand. The F-028 served tools (tasks/KB/memory/
+// channels/workspace search) are builtins as well: a manifest may
+// allowlist them now, and turn time refuses by name until/unless the
+// serving substrate actually offers them (ADR-0017).
 var BuiltinTools = []string{
 	"read", "write", "list", "search", "git_commit", "git_push",
 	"task_create", "task_status", "task_assign", "pr_open",
+	"task_list", "kb_search", "kb_contribute",
+	"memory_append", "memory_read_notes",
+	"channel_post", "channel_read", "workspace_search",
 }
 
 // IsBuiltinTool reports whether name is one of the native tools.
@@ -64,6 +72,13 @@ type Agent struct {
 	Model  string   // provider model identifier
 	System string   // system prompt ("")
 	Tools  []string // allowlisted tool refs; empty allows none
+
+	// Role and Skills reference the behaviour library (F-027/ADR-0016).
+	// Role is one slug (the job description: tools/policy defaults +
+	// system template); Skills are attached instruction documents.
+	// Dangling references load and turn fine — doctor warns by name.
+	Role   string
+	Skills []string
 
 	// Runtime selects the host CLI the agent runs on (F-013, ADR-0012,
 	// ADR-0013): a registered registry name such as "claude". It is
@@ -93,6 +108,8 @@ type file struct {
 	Model     string   `toml:"model"`
 	System    string   `toml:"system"`
 	Tools     []string `toml:"tools"`
+	Role      string   `toml:"role"`
+	Skills    []string `toml:"skills"`
 	PolicyRaw string   `toml:"policy_json"`
 	Runtime   string   `toml:"runtime"`
 	Timeout   string   `toml:"timeout"`
@@ -119,8 +136,8 @@ func Parse(id string, data []byte) (*Agent, error) {
 		sort.Strings(keys)
 		return nil, fmt.Errorf("agentkit/manifest: %s: unknown key(s): %s", id, strings.Join(keys, ", "))
 	}
-	if f.Schema != SchemaVersion {
-		return nil, fmt.Errorf("agentkit/manifest: %s: schema %d, want %d", id, f.Schema, SchemaVersion)
+	if f.Schema != 1 && f.Schema != SchemaVersion {
+		return nil, fmt.Errorf("agentkit/manifest: %s: schema %d, want 1 or %d", id, f.Schema, SchemaVersion)
 	}
 	a := &Agent{
 		ID:      id,
@@ -128,14 +145,34 @@ func Parse(id string, data []byte) (*Agent, error) {
 		Model:   strings.TrimSpace(f.Model),
 		System:  f.System,
 		Tools:   f.Tools,
+		Role:    strings.TrimSpace(f.Role),
+		Skills:  f.Skills,
 		Runtime: strings.TrimSpace(strings.ToLower(f.Runtime)),
 		Retries: f.Retries,
+	}
+	if f.Schema == 1 && (a.Role != "" || len(a.Skills) > 0) {
+		return nil, fmt.Errorf("agentkit/manifest: %s: role/skills require schema = 2", id)
 	}
 	if a.Name == "" {
 		return nil, fmt.Errorf("agentkit/manifest: %s: name is required", id)
 	}
 	if a.Model == "" {
 		return nil, fmt.Errorf("agentkit/manifest: %s: model is required", id)
+	}
+	if a.Role != "" && !idRe.MatchString(a.Role) {
+		return nil, fmt.Errorf("agentkit/manifest: %s: role %q is not a library slug (lowercase [a-z0-9._-])", id, a.Role)
+	}
+	seenSkill := map[string]bool{}
+	for i, s := range a.Skills {
+		s = strings.TrimSpace(s)
+		if !idRe.MatchString(s) {
+			return nil, fmt.Errorf("agentkit/manifest: %s: skills[%d]: %q is not a library slug (lowercase [a-z0-9._-])", id, i, s)
+		}
+		if seenSkill[s] {
+			return nil, fmt.Errorf("agentkit/manifest: %s: duplicate skill %q", id, s)
+		}
+		seenSkill[s] = true
+		a.Skills[i] = s
 	}
 	seen := map[string]bool{}
 	for i, t := range a.Tools {
@@ -228,6 +265,8 @@ func Marshal(a *Agent) ([]byte, error) {
 	f.Model = a.Model
 	f.System = a.System
 	f.Tools = append([]string(nil), a.Tools...)
+	f.Role = a.Role
+	f.Skills = append([]string(nil), a.Skills...)
 	f.Runtime = a.Runtime
 	f.Retries = a.Retries
 	if a.Timeout > 0 {
@@ -250,6 +289,7 @@ func Marshal(a *Agent) ([]byte, error) {
 	}
 	if back.Name != a.Name || back.Model != a.Model || back.System != a.System ||
 		strings.Join(back.Tools, ",") != strings.Join(a.Tools, ",") ||
+		back.Role != a.Role || strings.Join(back.Skills, ",") != strings.Join(a.Skills, ",") ||
 		back.Runtime != a.Runtime || back.Timeout != a.Timeout || back.Retries != a.Retries {
 		return nil, fmt.Errorf("agentkit/manifest: %s: marshal round-trip mismatch", a.ID)
 	}

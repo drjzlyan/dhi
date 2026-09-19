@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/drjzlyan/dhi/internal/agentkit/behavior"
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/agentkit/clirun"
 	"github.com/drjzlyan/dhi/internal/agentkit/standards"
@@ -234,7 +235,19 @@ func (r *Runtime) saveTranscript(events []clirun.StreamEvent, run tasks.Run) str
 // ctx drives the KB search (bounded retrieval, not part of the turn
 // timeout).
 func (r *Runtime) cliPrompt(ctx context.Context, e *entry, trigger bus.Message) (prompt, system string) {
-	system = strings.TrimSpace(e.m.System)
+	// F-027: the effective persona comes from the behaviour composer —
+	// manifest system + role template + attached skills — with the
+	// runtime-owned layers (grounding, actions, memory, KB, standards)
+	// appended after it, exactly as the Settings preview renders.
+	role, skills := behavior.Resolve(e.m, r.lib())
+	wsName := filepath.Base(r.cfg.WS.Root)
+	system = behavior.Compose(behavior.Input{
+		AgentID:        e.m.ID,
+		Workspace:      wsName,
+		ManifestSystem: e.m.System,
+		Role:           role,
+		Skills:         skills,
+	})
 	var members []string
 	for _, m := range r.cfg.WS.Members() {
 		members = append(members, m.Name)

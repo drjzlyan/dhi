@@ -1,10 +1,10 @@
   CONFIG        ╭─ › packs ──────────────────────────────────────────────────────────────╮
   AGENTS        │ (no packs installed — "i" to install from a path or git URL)           │
+  LIBRARY       │                                                                        │
   TEAMS         │                                                                        │
 ▌ PACKS         │                                                                        │
   STANDARDS     │                                                                        │
   AUTOPILOTS    │                                                                        │
-                │                                                                        │
                 │                                                                        │
                 │                                                                        │
                 │                                                                        │

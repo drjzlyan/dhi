@@ -39,6 +39,8 @@ const (
 	DirTasks      = ".dhi/tasks"
 	DirSessions   = ".dhi/sessions"
 	DirAutopilots = ".dhi/autopilots"
+	DirRoles      = ".dhi/roles"  // behaviour library: role cards (F-027)
+	DirSkills     = ".dhi/skills" // behaviour library: skill docs (F-027)
 )
 
 // Member is one repo registered in the workspace.
@@ -76,7 +78,7 @@ func Create(root string, names ...string) error {
 	if _, err := os.Stat(cfgPath); err == nil {
 		return fmt.Errorf("workspace: %s already exists", cfgPath)
 	}
-	for _, dir := range []string{DirAgents, DirMemory, DirKnowledge, DirChannels, DirTasks, DirSessions, DirAutopilots} {
+	for _, dir := range []string{DirAgents, DirMemory, DirKnowledge, DirChannels, DirTasks, DirSessions, DirAutopilots, DirRoles, DirSkills} {
 		if err := os.MkdirAll(filepath.Join(root, dir), 0o755); err != nil {
 			return fmt.Errorf("workspace: reserve %s: %w", dir, err)
 		}
