@@ -53,10 +53,9 @@ func TestStandardsLayersAndPreview(t *testing.T) {
 		t.Fatalf("mode = %q", ov.Mode)
 	}
 
-	// preview via v
+	// preview via v — the selected row previews directly (F-026 P6),
+	// no agent-id typing round-trip.
 	feed(m, "v")
-	typeDialog(m, "scout")
-	feed(m, "enter")
 	if m.dform != nil || m.dlg == nil || m.dkind != dlgDisplay {
 		t.Fatalf("preview did not open a display modal: %+v", m.dlg)
 	}

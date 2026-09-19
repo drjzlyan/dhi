@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
+	"github.com/drjzlyan/dhi/internal/tui/kit"
 	"github.com/drjzlyan/dhi/internal/tui/theme"
 )
 
@@ -11,8 +12,6 @@ import (
 // offset over the transcript. The session channel is the chat — no rail,
 // no thread drill-down; agent replies land top-level so the runtime's
 // History(ch, 0) context window sees the whole ideation conversation.
-const chatWrapPad = 8
-
 func (m *Model) chatHistory() []bus.Message {
 	sess, ok := m.openSession()
 	if !ok || m.bus == nil {
@@ -110,32 +109,20 @@ func (m *Model) chatBody(w, h int) string {
 	}
 	out = append(out, theme.Brand().Render(sess.Channel))
 
-	wrap := w - chatWrapPad
-	if wrap < 20 {
-		wrap = 20
-	}
-	type owned struct {
-		line  string
-		msgIx int
-	}
-	var flat []owned
-	for mi, msg := range m.chatHistory() {
-		style := theme.TabActive()
-		if msg.Author != busHuman {
-			style = theme.Brand()
+	// The transcript renders through the shared kit.Transcript (F-026
+	// P6): day dividers, stamps, author styles, shared wrap.
+	tr := &kit.Transcript{Width: w - 2}
+	for _, msg := range m.chatHistory() {
+		row := kit.TrnRow{Author: msg.Author, Text: msg.Text, At: msg.At, Kind: kit.TrnAgent}
+		if msg.Author == busHuman {
+			row.Kind = kit.TrnHuman
 		}
-		prefix := style.Render(msg.Author) + " "
-		for i, seg := range wrapWords(msg.Text, wrap-4) {
-			l := prefix + seg
-			if i > 0 {
-				l = "  " + seg
-			}
-			flat = append(flat, owned{line: l, msgIx: mi})
-		}
+		tr.Rows = append(tr.Rows, row)
 	}
+	flat := tr.View()
 	if len(flat) == 0 {
-		flat = append(flat, owned{line: theme.TextDim().Render(
-			"(no messages yet — i compose, @mention an invited agent)")})
+		flat = append(flat, theme.TextDim().Render(
+			"(no messages yet — i compose, @mention an invited agent)"))
 	}
 
 	body := h - 5 // header, channel, composer hint, input line, blank
@@ -148,7 +135,7 @@ func (m *Model) chatBody(w, h int) string {
 		m.chatScroll = maxInt(0, len(flat)-body)
 	}
 	for _, fl := range flat {
-		out = append(out, "  "+fl.line)
+		out = append(out, "  "+fl)
 	}
 	out = append(out, "")
 	if m.chatFocus {
@@ -159,44 +146,4 @@ func (m *Model) chatBody(w, h int) string {
 		out = append(out, theme.Hint().Render("i compose"))
 	}
 	return strings.Join(out, "\n")
-}
-
-// wrapWords wraps text to width on spaces (long words hard-split).
-func wrapWords(text string, width int) []string {
-	if width < 12 {
-		width = 12
-	}
-	var out []string
-	for _, para := range strings.Split(text, "\n") {
-		words := strings.Fields(para)
-		if len(words) == 0 {
-			out = append(out, "")
-			continue
-		}
-		cur := ""
-		flush := func() {
-			out = append(out, cur)
-			cur = ""
-		}
-		for _, w := range words {
-			switch {
-			case cur == "":
-				cur = w
-			case len([]rune(cur))+1+len([]rune(w)) <= width:
-				cur += " " + w
-			default:
-				flush()
-				cur = w
-			}
-			for len([]rune(cur)) > width { // hard-split oversized word
-				r := []rune(cur)
-				out = append(out, string(r[:width]))
-				cur = string(r[width:])
-			}
-		}
-		if cur != "" || len(out) == 0 {
-			flush()
-		}
-	}
-	return out
 }

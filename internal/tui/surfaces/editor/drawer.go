@@ -2,11 +2,11 @@ package editor
 
 import (
 	"context"
-	"path/filepath"
 	"github.com/drjzlyan/dhi/internal/term"
 	"github.com/drjzlyan/dhi/internal/tui/kit"
 	"github.com/drjzlyan/dhi/internal/tui/theme"
 	"github.com/drjzlyan/dhi/internal/vt"
+	"path/filepath"
 )
 
 const (

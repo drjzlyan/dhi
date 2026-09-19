@@ -1,6 +1,8 @@
 package reviewer
 
 import (
+	"github.com/drjzlyan/dhi/internal/ansi"
+
 	"fmt"
 	"strings"
 
@@ -30,8 +32,14 @@ type viewRow struct {
 	text        string // headers / binary notice
 }
 
-// diffRows flattens the open diff into logical rows for the active layout.
+// diffRows flattens the open diff into logical rows for the active
+// layout, cached on a cheap content fingerprint (F-026 P6 — the flatten
+// ran per keystroke before).
 func (m *Model) diffRows() []viewRow {
+	fp := m.diffFingerprint() + " review=" + m.openID
+	if fp == m.rowsFP && m.rowsCache != nil {
+		return m.rowsCache
+	}
 	var rows []viewRow
 	for fi := range m.files {
 		f := &m.files[fi]
@@ -58,7 +66,24 @@ func (m *Model) diffRows() []viewRow {
 			}
 		}
 	}
+	m.rowsFP = fp
+	m.rowsCache = rows
 	return rows
+}
+
+// diffFingerprint fingerprints the diff content cheaply (layout + file
+// shape) so the flatten cache invalidates without walking hunks.
+func (m *Model) diffFingerprint() string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "layout=%d n=%d", m.layout, len(m.files))
+	for fi := range m.files {
+		f := &m.files[fi]
+		fmt.Fprintf(&b, "|%s:%d", f.DisplayPath(), len(f.Hunks))
+		for hi := range f.Hunks {
+			fmt.Fprintf(&b, ":%d", len(f.Hunks[hi].Lines))
+		}
+	}
+	return b.String()
 }
 
 func (m *Model) rowAt(i int) *viewRow {
@@ -101,7 +126,7 @@ func (m *Model) renderDiff(w, h int, viewed map[string]bool) string {
 		case !ok:
 			return theme.TextDim().Render("(no review open — pick one under REVIEWS)")
 		case m.busy:
-			return theme.TabActive().Render("working…")
+			return theme.TabActive().Render(theme.GlyphBusy + " working…")
 		case m.opErr != "":
 			return theme.DangerText().Render(m.opErr)
 		case r.Done:
@@ -126,7 +151,7 @@ func (m *Model) renderDiff(w, h int, viewed map[string]bool) string {
 		case vrFileHeader:
 			lines = []string{m.fileHeaderText(row.file, viewed)}
 		case vrHunkHeader:
-			lines = []string{theme.Hint().Render(crop(row.text, bodyW))}
+			lines = []string{m.hunkHeader(row.text, bodyW)}
 		case vrBinary:
 			lines = []string{theme.TextDim().Render(crop(row.text, bodyW))}
 		case vrLineUnified:
@@ -169,6 +194,19 @@ func (m *Model) renderDiff(w, h int, viewed map[string]bool) string {
 	return strings.Join(out, "\n")
 }
 
+// hunkHeader styles the @@ range (violet) apart from the function
+// context (muted) so hunks scan (F-026 P6).
+func (m *Model) hunkHeader(text string, w int) string {
+	if i := strings.Index(text[3:], "@@ "); i >= 0 {
+		split := 3 + i + 2
+		rangePart := text[:split]
+		ctxPart := text[split:]
+		return theme.Accent2Bold().Render(crop(rangePart, w)) +
+			theme.TextMuted().Render(crop(ctxPart, maxInt(w-len(rangePart), 0)))
+	}
+	return theme.Accent2Bold().Render(crop(text, w))
+}
+
 func (m *Model) fileHeaderText(fi int, viewed map[string]bool) string {
 	f := m.files[fi]
 	adds, dels := f.Stat()
@@ -186,29 +224,42 @@ func (m *Model) fileHeaderText(fi int, viewed map[string]bool) string {
 	return header
 }
 
-// unifiedLine renders one diff line as [old][new]│text segments.
+// unifiedLine renders one diff line as [old][new]│text segments;
+// added/removed rows carry a background wash and context stays plain
+// (readable, F-026 P6).
 func (m *Model) unifiedLine(l *gitdiff.Line, w int) []string {
 	oldNo, newNo := "", ""
 	sign := " "
-	style := func() lipgloss.Style { return lipgloss.NewStyle() }
+	var style func() lipgloss.Style
+	var wash lipgloss.Style
 	switch l.Kind {
 	case gitdiff.Add:
 		newNo = itoaW(l.NewNo)
 		sign = "+"
 		style = theme.SuccessText
+		wash = theme.AddWash()
 	case gitdiff.Del:
 		oldNo = itoaW(l.OldNo)
 		sign = "-"
 		style = theme.DangerText
+		wash = theme.DelWash()
 	default:
 		oldNo = itoaW(l.OldNo)
 		newNo = itoaW(l.NewNo)
-		style = theme.TextDim
+		style = theme.TextStyle
 	}
 	gutter := theme.TextDim().Render(padLeft(oldNo, numCols)+" "+
 		padLeft(newNo, numCols)+" ") +
 		style().Render(sign+" ")
-	return wrapSegments(gutter, l.Text, style(), w-numCols*2-3)
+	seg := wrapSegments(gutter, l.Text, style(), w-numCols*2-3)
+	if l.Kind != gitdiff.Ctx {
+		// Full-row wash (the GitHub look): pad inside the style so the
+		// background fills the row; per-line render keeps widths exact.
+		for i := range seg {
+			seg[i] = wash.Render(padTo(seg[i], w))
+		}
+	}
+	return seg
 }
 
 // sideBySide renders old|new halves; missing sides become blank cells.
@@ -223,13 +274,14 @@ func (m *Model) sideBySide(left, right *gitdiff.Line, half int) []string {
 		if l == nil {
 			return []string{strings.Repeat(" ", half)}
 		}
-		style := theme.TextDim
+		style := theme.TextStyle
+		var wash lipgloss.Style
 		sign := " "
 		switch l.Kind {
 		case gitdiff.Add:
-			style, sign = theme.SuccessText, "+"
+			style, wash, sign = theme.SuccessText, theme.AddWash(), "+"
 		case gitdiff.Del:
-			style, sign = theme.DangerText, "-"
+			style, wash, sign = theme.DangerText, theme.DelWash(), "-"
 		}
 		no := l.NewNo
 		if no == 0 {
@@ -239,13 +291,17 @@ func (m *Model) sideBySide(left, right *gitdiff.Line, half int) []string {
 		body := wrapPlain(l.Text, textW)
 		out := make([]string, 0, len(body))
 		for i, b := range body {
+			row := ""
 			if i == 0 {
-				out = append(out, style().Render(gut)+style().Render(padTo(b, textW)))
+				row = style().Render(gut) + style().Render(padTo(b, textW))
 			} else {
-				out = append(out,
-					style().Render(strings.Repeat(" ", numCols+1))+
-						style().Render(padTo(b, textW)))
+				row = style().Render(strings.Repeat(" ", numCols+1)) +
+					style().Render(padTo(b, textW))
 			}
+			if l.Kind != gitdiff.Ctx {
+				row = wash.Render(padTo(row, half-1))
+			}
+			out = append(out, row)
 		}
 		return out
 	}
@@ -348,10 +404,11 @@ func crop(s string, w int) string {
 }
 
 func padTo(s string, w int) string {
-	if rn := len([]rune(s)); rn < w {
-		return s + strings.Repeat(" ", w-rn)
+	gap := w - ansi.Width(s)
+	if gap <= 0 {
+		return s
 	}
-	return s
+	return s + strings.Repeat(" ", gap)
 }
 
 func padLeft(s string, w int) string {

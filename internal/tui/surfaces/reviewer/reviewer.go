@@ -86,8 +86,11 @@ type Model struct {
 
 	form formState
 
-	composer   *composer // active comment input (nil = none)
-	threadOpen bool      // DIFF replaced by the thread view
+	composer *composer // active comment input (nil = none)
+
+	rowsCache  []viewRow // diffRows flatten cache (F-026 P6)
+	rowsFP     string
+	threadOpen bool // DIFF replaced by the thread view
 	threadFile string
 	threadCur  int
 	syncedAt   time.Time // last successful remote-comment import

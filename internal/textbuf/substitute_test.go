@@ -50,7 +50,9 @@ func TestExSubstitute(t *testing.T) {
 	e := NewEditor("cat sat\ncat\n")
 	// :s on the cursor line (first hit only).
 	e.Key(":")
-	for _, k := range []string{"s","/","c","a","t","/","d","o","g"} { e.Key(k) }
+	for _, k := range []string{"s", "/", "c", "a", "t", "/", "d", "o", "g"} {
+		e.Key(k)
+	}
 	e.Key("enter")
 	if got := e.Buffer().Line(0); got != "dog sat" {
 		t.Fatalf("cursor :s = %q", got)
@@ -61,14 +63,18 @@ func TestExSubstitute(t *testing.T) {
 	// Whole-buffer form; without g the second cat on a line survives.
 	e.Buffer().SetCursor(Pos{Line: 0, Col: 0})
 	e.Key(":")
-	for _, k := range []string{"%",  "s","/","c","a","t","/","d","o","g","/","g"} { e.Key(k) }
+	for _, k := range []string{"%", "s", "/", "c", "a", "t", "/", "d", "o", "g", "/", "g"} {
+		e.Key(k)
+	}
 	e.Key("enter")
 	if got := e.Buffer().Text(); strings.Contains(got, "cat") {
 		t.Fatalf("%%s left a cat: %q", got)
 	}
 	// Not-a-substitute falls through to the unknown-command path.
 	e.Key(":")
-	for _, k := range []string{"z","z","z"} { e.Key(k) }
+	for _, k := range []string{"z", "z", "z"} {
+		e.Key(k)
+	}
 	e.Key("enter")
 	if !strings.Contains(e.Message(), "not an editor command") {
 		t.Fatalf("unknown ex message = %q", e.Message())

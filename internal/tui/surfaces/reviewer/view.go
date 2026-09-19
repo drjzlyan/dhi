@@ -56,9 +56,14 @@ func (m *Model) dockedView() string {
 }
 
 func (m *Model) railView(h int) string {
+	counts := m.sectionCounts()
 	rows := make([]kit.RailRow, 0, secCount)
 	for s := sectionID(0); s < secCount; s++ {
-		rows = append(rows, kit.RailRow{Label: s.label()})
+		row := kit.RailRow{Label: s.label()}
+		if counts[s] > 0 {
+			row.Count = strconv.Itoa(counts[s])
+		}
+		rows = append(rows, row)
 	}
 	return (&kit.Rail{
 		Rows:   rows,
@@ -218,16 +223,23 @@ func (m *Model) reviewsBody(w int) string {
 		if i == c {
 			style = theme.TabActive()
 		}
-		state := string(r.Status)
-		if r.Posted {
-			state += " · posted"
+		// State chips carry semantic color (F-026 P6): posted success,
+		// discarded muted, pending warning — the state stops being
+		// one flat bracket string.
+		var chips []string
+		switch {
+		case r.Done:
+			chips = append(chips, theme.TextMuted().Render("discarded"))
+		default:
+			chips = append(chips, string(r.Status))
 		}
-		if r.Done {
-			state += " · discarded"
+		if r.Posted {
+			chips = append(chips, theme.SuccessText().Render("posted"))
 		}
 		if p := r.PendingCount(); p > 0 {
-			state += fmt.Sprintf(" · %d pending", p)
+			chips = append(chips, theme.WarningText().Render(itoa(p)+" pending"))
 		}
+		state := strings.Join(chips, " · ")
 		line := cursorGlyph(i == c) +
 			style.Render(padTo(crop(r.ID, 26), 28)) +
 			theme.Hint().Render(crop(r.Title+"  ["+state+"]", maxInt(w-32, 12)))

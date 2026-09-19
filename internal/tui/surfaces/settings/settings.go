@@ -445,35 +445,16 @@ func (m *Model) afterCrewWrite(err error, okMsg, altMsg string) {
 
 // ---- agent form ----
 
-type agentField struct {
-	label  string
-	value  string
-	toggle []string // non-empty: left/right cycles
-	val    int
-}
-
-func (f *agentField) text() string {
-	if len(f.toggle) > 0 {
-		return f.toggle[f.val]
-	}
-	return f.value
-}
-
-func (f *agentField) cycle(dir int) {
-	if len(f.toggle) == 0 {
-		return
-	}
-	f.val = (f.val + dir + len(f.toggle)) % len(f.toggle)
-}
-
+// agentForm is the create/edit modal over the canonical kit.Form
+// (F-026 P6 — the last legacy field system folds in: in-value cursor,
+// paste, shift+tab ride kit; err stays local for the tests).
 type agentForm struct {
-	open   bool
-	kind   formKind // formAgent | formSource
-	orig   string   // formAgent: "" = create; else the id being edited
-	cur    int
-	fields []agentField
-	err    string
-	busy   bool
+	open bool
+	kind formKind // formAgent | formSource
+	orig string   // formAgent: "" = create; else the id being edited
+	f    *kit.Form
+	busy bool
+	err  string
 }
 
 type formKind uint8
@@ -483,39 +464,73 @@ const (
 	formSource
 )
 
+func (f *agentForm) fields() []kit.Field {
+	if f.f == nil {
+		return nil
+	}
+	return f.f.Fields
+}
+
+func (f *agentForm) values() []string {
+	if f.f == nil {
+		return nil
+	}
+	return f.f.Values()
+}
+
+func (f *agentForm) cur() int {
+	if f.f == nil {
+		return 0
+	}
+	return f.f.Cur()
+}
+
+// setErr records the error locally (tests) and mirrors it into the
+// canonical form so the dialog renders it (F-026 P6).
+func (f *agentForm) setErr(s string) {
+	f.err = s
+	if f.f != nil {
+		f.f.SetError(s)
+	}
+}
+
 func newAgentForm(clis []string) agentForm {
 	if len(clis) == 0 {
 		clis = []string{"claude"}
 	}
-	return agentForm{open: true, kind: formAgent, fields: []agentField{
-		{label: "id     "},
-		{label: "name   "},
-		{label: "model  "},
-		{label: "system "},
-		{label: "runtime", toggle: clis},
-		{label: "tools  "},
-	}}
+	f := agentForm{open: true, kind: formAgent}
+	f.f = kit.NewForm("",
+		kit.NewTextField("id     ", ""),
+		kit.NewTextField("name   ", ""),
+		kit.NewTextField("model  ", ""),
+		kit.NewTextField("system ", ""),
+		kit.NewToggleField("runtime", clis, 0),
+		kit.NewTextField("tools  ", ""),
+	)
+	return f
 }
 
 // newSourceForm is the F-019 one-flow input: a local path or a git URL,
 // optionally with a #sub/path fragment scoping the import.
 func newSourceForm() agentForm {
-	return agentForm{open: true, kind: formSource, fields: []agentField{
-		{label: "source "},
-	}}
+	f := agentForm{open: true, kind: formSource}
+	f.f = kit.NewForm("", kit.NewTextField("source ", ""))
+	return f
 }
 
 func editAgentForm(a *manifest.Agent, clis []string) agentForm {
 	f := newAgentForm(clis)
 	f.orig = a.ID
-	f.fields[0].value = a.ID
-	f.fields[1].value = a.Name
-	f.fields[2].value = a.Model
-	f.fields[3].value = a.System
-	f.fields[5].value = strings.Join(a.Tools, ", ")
+	// Reconstruct prefilled fields so the in-value cursor starts at the
+	// end of the prefill (direct Value writes leave cur at 0).
+	f.f.Fields[0] = kit.NewTextField("id     ", a.ID)
+	f.f.Fields[1] = kit.NewTextField("name   ", a.Name)
+	f.f.Fields[2] = kit.NewTextField("model  ", a.Model)
+	f.f.Fields[3] = kit.NewTextField("system ", a.System)
+	f.f.Fields[5] = kit.NewTextField("tools  ", strings.Join(a.Tools, ", "))
 	for i, c := range clis {
 		if c == a.Runtime {
-			f.fields[4].val = i
+			f.f.Fields[4] = kit.NewToggleField("runtime", clis, i)
 			break
 		}
 	}
@@ -524,6 +539,7 @@ func editAgentForm(a *manifest.Agent, clis []string) agentForm {
 
 func (m *Model) formKey(key string) bool {
 	f := &m.form
+	f.f.Busy = f.busy
 	if f.busy {
 		return true // swallow while the import/clone runs
 	}
@@ -539,30 +555,9 @@ func (m *Model) formKey(key string) bool {
 			m.submitAgent()
 		}
 		return true
-	case "tab":
-		f.cur = (f.cur + 1) % len(f.fields)
-		return true
-	case "left":
-		f.fields[f.cur].cycle(-1)
-		return true
-	case "right":
-		f.fields[f.cur].cycle(1)
-		return true
-	case "backspace":
-		fld := &f.fields[f.cur]
-		if len(fld.toggle) == 0 && len(fld.value) > 0 {
-			fld.value = fld.value[:len(fld.value)-1]
-		}
-		return true
 	}
-	fld := &f.fields[f.cur]
-	if len(fld.toggle) == 0 {
-		if r := []rune(key); len(r) == 1 && r[0] >= 32 {
-			fld.value += key
-			return true
-		}
-	}
-	return true // the modal swallows everything else
+	f.f.HandleKey(key) // tab/shift+tab/left/right/backspace/runes/paste
+	return true        // the modal swallows everything else
 }
 
 // submitAgent validates via the manifest round-trip (the strict parse
@@ -570,22 +565,23 @@ func (m *Model) formKey(key string) bool {
 func (m *Model) submitAgent() {
 	f := &m.form
 	if m.d.WS == nil || m.d.Org == nil {
-		f.err = "agent management unavailable: not inside a workspace"
+		f.setErr("agent management unavailable: not inside a workspace")
 		return
 	}
-	id := strings.TrimSpace(f.fields[0].text())
-	name := strings.TrimSpace(f.fields[1].text())
-	model := strings.TrimSpace(f.fields[2].text())
-	system := strings.TrimSpace(f.fields[3].text())
-	runtime := f.fields[4].text()
+	vals := f.values()
+	id := strings.TrimSpace(vals[0])
+	name := strings.TrimSpace(vals[1])
+	model := strings.TrimSpace(vals[2])
+	system := strings.TrimSpace(vals[3])
+	runtime := vals[4]
 	var tools []string
-	for _, t := range strings.Split(f.fields[5].text(), ",") {
+	for _, t := range strings.Split(vals[5], ",") {
 		if t = strings.TrimSpace(t); t != "" {
 			tools = append(tools, t)
 		}
 	}
 	if f.orig != "" && id != f.orig {
-		f.err = "id is immutable — archive this agent and create a new one"
+		f.setErr("id is immutable — archive this agent and create a new one")
 		return
 	}
 	a := &manifest.Agent{
@@ -599,7 +595,7 @@ func (m *Model) submitAgent() {
 		_, err = manifest.Parse(a.ID, data)
 	}
 	if err != nil {
-		f.err = err.Error()
+		f.setErr(err.Error())
 		return
 	}
 	if f.orig == "" {
@@ -608,7 +604,7 @@ func (m *Model) submitAgent() {
 		err = m.d.Org.UpdateAgent(m.d.WS, a)
 	}
 	if err != nil {
-		f.err = err.Error()
+		f.setErr(err.Error())
 		return
 	}
 	f.open = false
@@ -633,16 +629,16 @@ func clampAgentCursor(c *int, n int) {
 func (m *Model) submitSource() {
 	f := &m.form
 	if m.d.WS == nil || m.d.Org == nil {
-		f.err = "agent import unavailable: not inside a workspace"
+		f.setErr("agent import unavailable: not inside a workspace")
 		return
 	}
-	src := strings.TrimSpace(f.fields[0].text())
+	src := strings.TrimSpace(f.values()[0])
 	if src == "" {
-		f.err = "path or git URL required"
+		f.setErr("path or git URL required")
 		return
 	}
 	f.busy = true
-	f.err = ""
+	f.setErr("")
 	go func(src string) {
 		summary, err := m.addFromSource(src)
 		ev := settingsEvent{msg: summary}
@@ -948,27 +944,13 @@ func (m *Model) agentsView() []string {
 // cursor field highlighted, the toggle shown bracketed, errors in danger.
 func (m *Model) formView() []string {
 	f := &m.form
-	out := make([]string, 0, len(f.fields)*2+3)
-	for i, fld := range f.fields {
-		cursor := "  "
-		style := theme.TextDim()
-		if i == f.cur {
-			cursor = theme.GlyphCursor + " "
-			style = theme.TabActive()
-		}
-		v := fld.text()
-		if len(fld.toggle) > 0 {
-			v = "[" + v + "]"
-		}
-		out = append(out, cursor+style.Render(padTo(fld.label, 8))+" "+v)
+	var out []string
+	if f.orig != "" {
+		out = append(out, theme.TextDim().Render("editing: "+f.orig))
 	}
-	out = append(out, "")
+	out = append(out, f.f.View()...)
 	if f.busy {
-		out = append(out, theme.WarningText().Render("working… (clone/import in flight)"))
-	} else if f.err != "" {
-		out = append(out, theme.DangerText().Render(f.err))
-	} else {
-		out = append(out, theme.Hint().Render("tab field · ←/→ cycle · ⏎ save · esc cancel"))
+		out = append(out[:len(out)-1], theme.WarningText().Render(theme.GlyphBusy+" working… (clone/import in flight)"))
 	}
 	return out
 }

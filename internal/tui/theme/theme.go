@@ -28,6 +28,8 @@ type Tokens struct {
 	BgChrome      color.Color // bottom chrome: hint bars, keymap rows (F-025)
 	BgSelection   color.Color // selected rows, highlighted ranges
 	BgOverlay     color.Color // modal backdrop dim layer
+	BgAdd         color.Color // diff added-line wash (F-026 P6)
+	BgDel         color.Color // diff deleted-line wash (F-026 P6)
 	Border        color.Color // unfocused borders, dividers
 	BorderFocused color.Color // focused element borders
 	Text          color.Color // primary text
@@ -61,6 +63,8 @@ func Dark() Tokens {
 		BgChrome:    c("#262F3E"),
 		BgSelection: c("#1B2739"),
 		BgOverlay:   c("#05070B"),
+		BgAdd:       c("#0D2B22"),
+		BgDel:       c("#2B1215"),
 		Border:      c("#232C3B"),
 		// BorderFocused is a brighter cyan than Accent so a focused
 		// edge reads as attention, not brand emphasis (F-026 P1).
@@ -96,6 +100,8 @@ func Light() Tokens {
 		BgChrome:      c("#E6E0D0"),
 		BgSelection:   c("#DCEFEF"),
 		BgOverlay:     c("#E3DED0"),
+		BgAdd:         c("#D9EBDD"),
+		BgDel:         c("#F3D9D9"),
 		Border:        c("#D8D2C4"),
 		BorderFocused: c("#0891B2"),
 		Text:          c("#1F2937"),
@@ -187,6 +193,16 @@ func InsetBg() lipgloss.Style {
 // near-black veil.
 func OverlayDim() lipgloss.Style {
 	return lipgloss.NewStyle().Background(Current.BgOverlay)
+}
+
+// AddWash / DelWash paint diff line backgrounds (F-026 P6): kind-first
+// coloring so added/removed blocks read at a glance.
+func AddWash() lipgloss.Style {
+	return lipgloss.NewStyle().Background(Current.BgAdd).Foreground(Current.Success)
+}
+
+func DelWash() lipgloss.Style {
+	return lipgloss.NewStyle().Background(Current.BgDel).Foreground(Current.Danger)
 }
 
 // ElevatedBg paints modal and context-pane bodies.

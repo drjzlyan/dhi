@@ -49,9 +49,19 @@ func (m *Model) openConfirmDialog(title, line, target string, kind dialogKind) {
 
 func (m *Model) openDisplayDialog(title string, lines []string) {
 	m.dform = nil
-	m.dlg = &kit.Modal{Title: title, Lines: lines}
+	// Display dialogs scroll: profiles and last-run dumps overflow any
+	// fixed height (F-026 P6 — silent 24-line truncation dies).
+	m.dlg = &kit.Modal{Title: title, Lines: lines, Scrollable: true,
+		Height: minInt(m.height-6, 30), Width: maxInt(m.width/2, 46)}
 	m.dkind = dlgDisplay
 	m.dtarget = ""
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func (m *Model) closeDialog() {

@@ -2,10 +2,12 @@ package ideator
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"charm.land/lipgloss/v2"
 
+	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/ideation"
 	"github.com/drjzlyan/dhi/internal/tui/branding"
 	"github.com/drjzlyan/dhi/internal/tui/kit"
@@ -52,9 +54,14 @@ func (m *Model) dockedView() string {
 }
 
 func (m *Model) railView(h int) string {
+	counts := m.sectionCounts()
 	rows := make([]kit.RailRow, 0, secCount)
 	for s := sectionID(0); s < secCount; s++ {
-		rows = append(rows, kit.RailRow{Label: s.label()})
+		row := kit.RailRow{Label: s.label()}
+		if counts[s] > 0 {
+			row.Count = itoa(counts[s])
+		}
+		rows = append(rows, row)
 	}
 	return (&kit.Rail{
 		Rows:   rows,
@@ -63,6 +70,27 @@ func (m *Model) railView(h int) string {
 		Height: h,
 		Foot:   "[ ] sections",
 	}).View()
+}
+
+// sectionCounts feeds the rail: sessions, artifacts, and the chat
+// agent-message count (F-026 P6 — the reviewer's computed-and-discarded
+// counts pattern ends here too).
+func (m *Model) sectionCounts() [secCount]int {
+	var c [secCount]int
+	if m.store != nil {
+		c[secSessions] = len(m.store.Sessions())
+		if s, ok := m.openSession(); ok {
+			c[secArtifacts] = len(s.Artifacts)
+			if m.bus != nil {
+				for _, msg := range m.bus.History(s.Channel, 0) {
+					if msg.Author != bus.Human {
+						c[secChat]++
+					}
+				}
+			}
+		}
+	}
+	return c
 }
 
 func (m *Model) mainPane(w, h int) string {
@@ -198,6 +226,24 @@ func (m *Model) sessionsBody(w int) string {
 	return strings.Join(out, "\n")
 }
 
+// sortedArtifacts orders a session's artifacts: draft (newest work)
+// → reviewed → approved → rejected last, path order within a status.
+func sortedArtifacts(arts []ideation.Artifact) []ideation.Artifact {
+	rank := map[ideation.ArtifactStatus]int{
+		ideation.StatusDraft: 0, ideation.StatusReviewed: 1,
+		ideation.StatusApproved: 2, ideation.StatusRejected: 3,
+	}
+	out := append([]ideation.Artifact{}, arts...)
+	sort.SliceStable(out, func(i, j int) bool {
+		ri, rj := rank[out[i].Status], rank[out[j].Status]
+		if ri != rj {
+			return ri < rj
+		}
+		return out[i].Path < out[j].Path
+	})
+	return out
+}
+
 func (m *Model) artifactsBody(w int) string {
 	var out []string
 	sess, ok := m.openSession()
@@ -205,7 +251,9 @@ func (m *Model) artifactsBody(w int) string {
 		out = append(out, theme.TextDim().Render("(no session open — pick one under SESSIONS)"))
 		return strings.Join(out, "\n")
 	}
-	arts := sess.Artifacts
+	// Active work first (F-026 P6): draft → reviewed → approved,
+	// rejected last; name order inside a status.
+	arts := sortedArtifacts(sess.Artifacts)
 	if len(arts) == 0 {
 		out = append(out, theme.TextDim().Render("(none yet — agents write into .dhi/sessions/"+sess.ID+"/)"))
 		return strings.Join(out, "\n")

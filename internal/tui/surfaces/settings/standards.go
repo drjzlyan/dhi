@@ -103,10 +103,21 @@ func (m *Model) standardsKey(key string) bool {
 			kit.NewTextField("rules (csv)", strings.Join(entries, ", ")))
 		return true
 	case "v":
-		if m.stdCur < len(rows) && rows[m.stdCur].kind == stdAgent {
-			m.openFormDialog("effective standards", dlgStdPreview, "",
-				kit.NewTextField("agent id", rows[m.stdCur].label))
-			return true
+		// v previews the SELECTED row directly (F-026 P6) — no agent-id
+		// typing round-trip.
+		if m.stdCur < len(rows) {
+			row := rows[m.stdCur]
+			switch row.kind {
+			case stdAgent:
+				m.previewStandards(row.label)
+				return true
+			case stdTeam:
+				m.previewStandards("#" + row.label)
+				return true
+			default:
+				m.previewStandards("")
+				return true
+			}
 		}
 	}
 	return false
@@ -166,6 +177,18 @@ func (m *Model) showStdPreview() {
 		return
 	}
 	id := strings.TrimSpace(f.Values()[0])
+	block := standards.Resolve(m.d.WS.Root, id, m.teamLookup())
+	m.openDisplayDialog("effective standards — "+orDash(id),
+		strings.Split(strings.TrimRight(block, "\n"), "\n"))
+}
+
+// previewStandards opens the effective block for id directly (the
+// standards `v` path — F-026 P6). Empty id = workspace layer.
+func (m *Model) previewStandards(id string) {
+	if m.d.WS == nil {
+		m.flash = "standards unavailable: not inside a workspace"
+		return
+	}
 	block := standards.Resolve(m.d.WS.Root, id, m.teamLookup())
 	m.openDisplayDialog("effective standards — "+orDash(id),
 		strings.Split(strings.TrimRight(block, "\n"), "\n"))

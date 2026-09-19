@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/drjzlyan/dhi/internal/review"
+	"github.com/drjzlyan/dhi/internal/tui/kit"
 	"github.com/drjzlyan/dhi/internal/tui/theme"
 )
 
@@ -285,9 +286,18 @@ func (m *Model) renderThreads(w, h int) string {
 		if i == m.threadCur {
 			style = theme.TabActive
 		}
-		out = append(out, cursorGlyph(i == m.threadCur)+
-			theme.TextDim().Render(mark+" "+c.Author+" ")+
-			style().Render(crop(c.Text, maxInt(w-14, 8))))
+		// Comment text word-wraps into the pane with the author as the
+		// hanging prefix (F-026 P6 — one-line crops hid the content).
+		prefix := cursorGlyph(i == m.threadCur) +
+			theme.TextDim().Render(mark+" "+c.Author+" ")
+		indent := strings.Repeat(" ", 10)
+		for j, seg := range kit.WrapWords(c.Text, maxInt(w-12, 8)) {
+			if j == 0 {
+				out = append(out, prefix+style().Render(seg))
+				continue
+			}
+			out = append(out, indent+style().Render(seg))
+		}
 	}
 	return strings.Join(out[:minInt(len(out), h)], "\n")
 }

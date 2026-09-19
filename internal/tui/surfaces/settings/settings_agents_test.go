@@ -11,6 +11,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/ansi"
 	dhisettings "github.com/drjzlyan/dhi/internal/settings"
 	"github.com/drjzlyan/dhi/internal/testutil/golden"
+	"github.com/drjzlyan/dhi/internal/tui/kit"
 	"github.com/drjzlyan/dhi/internal/tui/theme"
 	"github.com/drjzlyan/dhi/internal/workspace"
 )
@@ -59,7 +60,7 @@ func settingsDefaults() dhisettings.Config {
 
 func typeFields(m *Model, vals ...string) {
 	for i, v := range vals {
-		for m.form.cur != i {
+		for m.form.cur() != i {
 			feed(m, "tab")
 		}
 		for _, r := range v {
@@ -129,7 +130,7 @@ func TestAgentsCreateValidationErrors(t *testing.T) {
 	// Unknown runtime is named (type past the toggle).
 	feed(m, "esc", "n")
 	typeFields(m, "scout", "Scout", "m-1", "", "", "")
-	m.form.fields[4].toggle = []string{"nope"}
+	m.form.f.Fields[4] = kit.NewToggleField("runtime", []string{"nope"}, 0)
 	feed(m, "enter")
 	if !strings.Contains(m.form.err, "runtime") {
 		t.Fatalf("bad runtime not named: %q", m.form.err)
@@ -146,10 +147,10 @@ func TestAgentsEditArchiveRestoreDelete(t *testing.T) {
 
 	// Edit: rename + model change; id is immutable.
 	feed(m, "e")
-	if m.form.orig != "scout" || m.form.fields[1].value != "Scout" {
+	if m.form.orig != "scout" || m.form.f.Fields[1].Value != "Scout" {
 		t.Fatalf("edit prefill wrong: %+v", m.form)
 	}
-	for m.form.cur != 1 {
+	for m.form.cur() != 1 {
 		feed(m, "tab")
 	}
 	for range "Scout v2" {
@@ -171,7 +172,7 @@ func TestAgentsEditArchiveRestoreDelete(t *testing.T) {
 	feed(m, "e")
 	feed(m, "enter") // unchanged id submits fine
 	feed(m, "e")
-	m.form.fields[0].value = "other"
+	m.form.f.Fields[0].Value = "other"
 	feed(m, "enter")
 	if !strings.Contains(m.form.err, "id is immutable") {
 		t.Fatalf("immutable id err = %q", m.form.err)
