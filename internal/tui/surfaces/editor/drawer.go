@@ -3,12 +3,10 @@ package editor
 import (
 	"context"
 	"path/filepath"
-	"strings"
-
-	"github.com/drjzlyan/dhi/internal/ansi"
 	"github.com/drjzlyan/dhi/internal/term"
 	"github.com/drjzlyan/dhi/internal/tui/kit"
 	"github.com/drjzlyan/dhi/internal/tui/theme"
+	"github.com/drjzlyan/dhi/internal/vt"
 )
 
 const (
@@ -19,11 +17,10 @@ const (
 
 // termTab is one drawer tab bound to a working directory.
 type termTab struct {
-	sess    *term.Session
-	dir     string
-	lines   []string // ANSI-stripped scrollback
-	partial string   // bytes after the last newline
-	exited  bool
+	sess   *term.Session
+	dir    string
+	screen *vt.Screen // ANSI-aware scrollback (F-026 P5)
+	exited bool
 }
 
 // ToggleDrawer opens/closes/focus-blurs the terminal drawer (ctrl+t):
@@ -56,12 +53,12 @@ func (m *Model) ensureTermTabs() {
 func (m *Model) newTermTab(dir, label string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	sess, err := term.Start(ctx, term.Options{Dir: dir, Label: label, Env: m.termEnv})
-	t := &termTab{sess: sess, dir: dir}
+	t := &termTab{sess: sess, dir: dir, screen: vt.New(scrollbackCap)}
 	m.terms = append(m.terms, t)
 	m.cancelTerms = append(m.cancelTerms, cancel)
 	if err != nil {
 		t.exited = true
-		t.lines = append(t.lines, theme.DangerText().Render(err.Error()))
+		t.screen.Feed([]byte("\x1b[31m" + err.Error() + "\x1b[0m\n"))
 		return
 	}
 	go m.pumpTerm(len(m.terms)-1, sess, m.termMsgs)
@@ -79,37 +76,34 @@ func (m *Model) ingestTermChunk(idx int, chunk []byte) {
 	if idx < 0 || idx >= len(m.terms) {
 		return
 	}
-	t := m.terms[idx]
-	text := t.partial + ansi.Strip(string(chunk))
-	t.partial = ""
-	text = strings.TrimSuffix(text, "\r")
-	parts := strings.Split(text, "\n")
-	t.partial = parts[len(parts)-1]
-	t.lines = append(t.lines, parts[:len(parts)-1]...)
-	if len(t.lines) > scrollbackCap {
-		t.lines = t.lines[len(t.lines)-scrollbackCap:]
-	}
+	m.terms[idx].screen.Feed(chunk)
 }
 
 func (m *Model) termExited(idx int) {
 	if idx >= 0 && idx < len(m.terms) && !m.terms[idx].exited {
 		m.terms[idx].exited = true
-		m.terms[idx].lines = append(m.terms[idx].lines,
-			theme.Hint().Render("[process exited]"))
+		m.terms[idx].screen.Feed([]byte("\x1b[2m[process exited]\x1b[0m\n"))
 	}
 }
 
-// drawerView renders the bottom terminal panel.
+// drawerView renders the bottom terminal panel. The scrollback keeps
+// SGR colors and honors cursor moves (F-026 P5); rows clip to the
+// pane width with styles intact.
 func (m *Model) drawerView() string {
 	h := min(drawerHeight, maxInt(m.height/3, 4))
 	var body []string
 	if m.activeTerm < len(m.terms) {
 		t := m.terms[m.activeTerm]
-		viewRows := h - 3
-		start := maxInt(0, len(t.lines)-viewRows)
-		body = append(body, t.lines[start:]...)
-		if t.partial != "" {
-			body = append(body, t.partial+"_")
+		inner := maxInt(m.width-railWidth-5, 20)
+		body = t.screen.Lines(inner, h-2)
+		if !t.exited {
+			// Live-cell prompt marker: fresh rows get their own "_",
+			// the running line carries it at the cursor.
+			if t.screen.Pending() {
+				body = append(body, "_")
+			} else if len(body) > 0 {
+				body[len(body)-1] += "_"
+			}
 		}
 	}
 	for len(body) < h-2 {
