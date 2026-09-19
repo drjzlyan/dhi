@@ -1,0 +1,70 @@
+package clirun
+
+import (
+	"strings"
+	"testing"
+)
+
+// TestSystemReachesEveryAdapter pins the M14 P1 contract: the system
+// block reaches EVERY runtime — claude via --append-system-prompt, the
+// rest via the shared tagged prompt shape. A missing system delivery is
+// the bug this suite exists for (the gap that silently dropped persona
+// + grounding + standards on five of six runtimes).
+func TestSystemReachesEveryAdapter(t *testing.T) {
+	for _, c := range allAdapters() {
+		argv := strings.Join(c.BuildArgs(RunInput{
+			Prompt: "do the thing", System: "PERSONA-MARKER",
+		}), "\x00")
+		if !strings.Contains(argv, "PERSONA-MARKER") {
+			t.Errorf("%s: system block never reaches argv: %q", c.Name, argv)
+		}
+	}
+}
+
+// TestPromptWithSystemShape pins the tagged delivery shape.
+func TestPromptWithSystemShape(t *testing.T) {
+	if got := PromptWithSystem("", "just prompt"); got != "just prompt" {
+		t.Fatalf("empty system = %q", got)
+	}
+	want := "<dhi-system>\npersona\n</dhi-system>\n\njust prompt"
+	if got := PromptWithSystem("persona", "just prompt"); got != want {
+		t.Fatalf("with system = %q, want %q", got, want)
+	}
+}
+
+// TestStdinDeliveryAdapters pins which adapters own a verified stdin
+// path: claude and codex yes (their contracts name it), the rest no —
+// oversized prompts refuse by name on those, never E2BIG.
+func TestStdinDeliveryAdapters(t *testing.T) {
+	reg := map[string]bool{}
+	for _, c := range allAdapters() {
+		reg[c.Name] = c.StdinOK
+	}
+	if !reg["claude"] || !reg["codex"] {
+		t.Fatalf("claude/codex must support stdin: %v", reg)
+	}
+	for _, n := range []string{"opencode", "gemini", "copilot", "cursor"} {
+		if reg[n] {
+			t.Fatalf("%s claims stdin without a verified contract", n)
+		}
+	}
+}
+
+// TestClaudeStdinShape pins the oversized argv: `-p` with no prompt
+// argument (claude reads stdin), no giant arg anywhere.
+func TestClaudeStdinShape(t *testing.T) {
+	argv := Claude.BuildArgs(RunInput{Stdin: "big blob"})
+	joined := strings.Join(argv, "\x00")
+	if strings.Contains(joined, "big blob") {
+		t.Fatalf("stdin blob leaked into argv: %q", joined)
+	}
+	if argv[0] != "-p" {
+		t.Fatalf("argv[0] = %q", argv[0])
+	}
+}
+
+func TestMaxPromptArgBudget(t *testing.T) {
+	if MaxPromptArg() < 64<<10 || MaxPromptArg() > 128<<10 {
+		t.Fatalf("budget %d outside the sane band", MaxPromptArg())
+	}
+}

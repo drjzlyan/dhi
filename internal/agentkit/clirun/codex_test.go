@@ -22,12 +22,14 @@ func TestCodexBuildArgs(t *testing.T) {
 	c := Codex
 	in := RunInput{Prompt: "fix the bug", System: "sys", Model: "gpt-5", Workdir: "/ws/member"}
 	got := c.BuildArgs(in)
+	// M14 P1: codex has no verified system flag, so the system block
+	// rides ahead of the prompt in the shared tagged shape.
 	want := []string{
 		"exec", "--json", "--skip-git-repo-check", "-C", "/ws/member",
 		"-m", "gpt-5",
 		"--sandbox", "danger-full-access",
 		"--dangerously-bypass-approvals-and-sandbox",
-		"fix the bug",
+		"<dhi-system>\nsys\n</dhi-system>\n\nfix the bug",
 	}
 	if len(got) != len(want) {
 		t.Fatalf("argv = %v, want %v", got, want)
@@ -39,6 +41,11 @@ func TestCodexBuildArgs(t *testing.T) {
 	}
 	if c.Bin != "codex" || c.Tested == "" || c.Name != "codex" {
 		t.Fatalf("adapter identity: %+v", c)
+	}
+	// Oversized delivery: the stdin shape drops the prompt arg for "-".
+	stdin := c.BuildArgs(RunInput{Prompt: "", Stdin: "big blob", Workdir: "/ws/member"})
+	if last := stdin[len(stdin)-1]; last != "-" {
+		t.Fatalf("stdin argv tail = %q, want \"-\"", last)
 	}
 }
 

@@ -20,7 +20,9 @@ import (
 
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/agentkit/clirun"
+	"github.com/drjzlyan/dhi/internal/agentkit/knowledge"
 	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
+	"github.com/drjzlyan/dhi/internal/agentkit/memory"
 	agentkitOrg "github.com/drjzlyan/dhi/internal/agentkit/org"
 	agentkitRuntime "github.com/drjzlyan/dhi/internal/agentkit/runtime"
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
@@ -158,7 +160,7 @@ func runTUI() {
 		// under .dhi/agents/. Guards carry the audited OS-sandbox
 		// adapter (nil here is impossible: the audit blocked first).
 		if messageBus != nil {
-			agentRT = newAgentRuntime(ws, messageBus, decision.Sandbox, termEnv, taskStore, reviewSvc)
+			agentRT = newAgentRuntime(ws, messageBus, decision.Sandbox, termEnv, taskStore, reviewSvc, rgSearcher)
 			if agentRT != nil {
 				edOpts = append(edOpts, editor.WithChat(agentRT))
 			}
@@ -433,8 +435,10 @@ func openBus(ws *workspace.Workspace) *bus.Bus {
 
 // newAgentRuntime wires the turn engine onto an existing bus; nil means
 // no crew (no roster, or a broken one). Org + layered coding standards
-// ride along when their sidecar files parse; broken ones degrade.
-func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cliEnv []string, taskStore *tasks.Store, reviewSvc *review.Service) *agentkitRuntime.Runtime {
+// ride along when their sidecar files parse; broken ones degrade. Agent
+// memory + the knowledge base join the turn loop (M14 P1): persistent
+// context in, review-gated contributions out.
+func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cliEnv []string, taskStore *tasks.Store, reviewSvc *review.Service, kbSearcher search.Searcher) *agentkitRuntime.Runtime {
 	roster, err := manifest.LoadDir(filepath.Join(ws.Root, workspace.DirAgents))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "dhi: agent roster:", err)
@@ -447,6 +451,14 @@ func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cl
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "dhi: org registry:", err)
 	}
+	var memStore *memory.Store
+	var kbStore knowledge.KnowledgeStore
+	if mem, kbErr := knowledge.Open(ws, knowledge.Review, kbSearcher); kbErr == nil {
+		kbStore = mem
+	} else {
+		fmt.Fprintln(os.Stderr, "dhi: knowledge base:", kbErr)
+	}
+	memStore = memory.Open(ws)
 	rt, err := agentkitRuntime.New(agentkitRuntime.Config{
 		WS:        ws,
 		Bus:       b,
@@ -462,6 +474,8 @@ func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cl
 		Org:       company,
 		Standards: true,
 		Sandbox:   sb,
+		Memory:    memStore,
+		Knowledge: kbStore,
 		// F-020 pr_open: the review service opens task PRs; gh missing
 		// refuses by name at dispatch.
 		PR: func(ctx context.Context, member, branch, title, base string) (string, error) {

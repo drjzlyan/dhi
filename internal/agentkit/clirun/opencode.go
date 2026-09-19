@@ -63,12 +63,17 @@ var OpenCode = &CLI{
 		if in.Workdir != "" {
 			args = append(args, "--title", safeTitle(in.Workdir, "dhi"))
 		}
-		args = append(args, in.Prompt)
+		// No verified system-prompt flag on `run`: the system block
+		// rides ahead of the prompt in the shared tagged shape (M14 P1;
+		// live-verify checklist: switch to a native flag if one lands).
+		args = append(args, PromptWithSystem(in.System, in.Prompt))
 		return args
 	},
 	ParseStream: opencodeParseStream,
 	Finalize:    opencodeFinalize,
 	Version:     opencodeVersion,
+	// StdinOK stays false: no verified stdin prompt path on `run` —
+	// oversized prompts refuse by name (ADR-0011).
 }
 
 // opencodeItem is the union shape of one run JSONL line.

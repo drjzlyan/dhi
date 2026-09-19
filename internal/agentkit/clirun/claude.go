@@ -28,13 +28,25 @@ var Claude = &CLI{
 		return []string{filepath.Join(home, ".claude")}
 	},
 	BuildArgs: func(in RunInput) []string {
-		args := []string{
-			"-p", in.Prompt,
+		args := []string{"-p"}
+		if in.Stdin != "" {
+			// Oversized delivery: `claude -p` with no prompt argument
+			// reads the prompt from stdin; the system block rides
+			// inside the streamed blob (PromptWithSystem shape).
+			args = append(args,
+				"--output-format", "stream-json",
+				"--verbose",
+				"--permission-mode", "bypassPermissions", // OS sandbox is the boundary (ADR-0012 §3)
+				"--max-turns", "50",
+			)
+			return args
+		}
+		args = append(args, in.Prompt,
 			"--output-format", "stream-json",
 			"--verbose",
 			"--permission-mode", "bypassPermissions", // OS sandbox is the boundary (ADR-0012 §3)
 			"--max-turns", "50",
-		}
+		)
 		if in.System != "" {
 			args = append(args, "--append-system-prompt", in.System)
 		}
@@ -49,6 +61,9 @@ var Claude = &CLI{
 	ParseStream: claudeParseStream,
 	Finalize:    claudeFinalize,
 	Version:     claudeVersion,
+	// StdinOK: `claude -p` with no prompt argument consumes stdin —
+	// live-verified on 2.1.177.
+	StdinOK: true,
 }
 
 func allAdapters() []*CLI {

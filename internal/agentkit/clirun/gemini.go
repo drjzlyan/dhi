@@ -65,7 +65,11 @@ var Gemini = &CLI{
 	},
 	BuildArgs: func(in RunInput) []string {
 		args := []string{
-			"-p", in.Prompt,
+			// No verified system-prompt flag: the system block rides
+			// ahead of the prompt in the shared tagged shape (M14 P1;
+			// live-verify checklist: switch to a native flag if one
+			// lands). The prompt stays the first positional arg.
+			"-p", PromptWithSystem(in.System, in.Prompt),
 			"--output-format", "stream-json",
 			"--yolo", // auto-approve tools; OS sandbox is the boundary
 		}

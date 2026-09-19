@@ -60,8 +60,12 @@ var CursorAgent = &CLI{
 		return []string{filepath.Join(home, ".cursor")}
 	},
 	BuildArgs: func(in RunInput) []string {
+		// No verified system-prompt flag: the system block rides ahead
+		// of the prompt in the shared tagged shape (M14 P1; live-verify
+		// checklist: switch to a native flag if one lands). The prompt
+		// stays the first positional arg.
 		args := []string{
-			"-p", in.Prompt,
+			"-p", PromptWithSystem(in.System, in.Prompt),
 			"--output-format", "stream-json",
 			"--force",
 			"--trust",

@@ -29,7 +29,11 @@ import (
 // The manifest's `runtime` key is the exec authorization; the OS sandbox
 // — from the same Guard seam every exec uses — is the boundary.
 func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message) error {
-	prompt, system := r.cliPrompt(e, trigger)
+	// The KB retrieval rides the turn context but must not inherit a
+	// timeout that would cut the run short: bounded by the caller's
+	// context here, before the manifest timeout arms (the timeout
+	// governs the CLI run, not context assembly).
+	prompt, system := r.cliPrompt(ctx, e, trigger)
 	workdir := r.cliWorkdir(trigger)
 
 	if e.m.Timeout > 0 {
@@ -86,6 +90,24 @@ func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Messag
 		TokensIn: -1, TokensOut: -1,
 	}
 
+	// Oversized delivery (M14 P1): when the assembled system+prompt
+	// exceeds the argv budget, prompt delivery moves to stdin where the
+	// adapter has a verified path; adapters without one refuse by name
+	// instead of dying on E2BIG (ADR-0011). The stdin blob carries the
+	// shared tagged shape so the system block survives the move.
+	stdin := ""
+	if len(prompt)+len(system) > clirun.MaxPromptArg() {
+		if !e.cli.StdinOK {
+			run.Status = tasks.RunError
+			run.Error = fmt.Sprintf(
+				"assembled prompt exceeds the argv budget (%d KiB) and %s has no verified stdin delivery — shorten the thread history or the system block",
+				clirun.MaxPromptArg()>>10, e.cli.Name)
+			return run
+		}
+		stdin = clirun.PromptWithSystem(system, prompt)
+		prompt, system = "", ""
+	}
+
 	// The sandbox Wrap contract is binary-first: argv[0] is the CLI and
 	// the result is the COMPLETE command line to exec (Noop returns it
 	// unchanged; seatbelt/bubblewrap prepend their wrapper and a `--`
@@ -95,7 +117,7 @@ func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Messag
 	// and the reply came back as plain text (no stream-json at all).
 	argv := append([]string{e.cliPath}, e.cli.BuildArgs(clirun.RunInput{
 		Prompt: prompt, System: system,
-		Model: e.m.Model, Workdir: workdir,
+		Model: e.m.Model, Workdir: workdir, Stdin: stdin,
 	})...)
 	wrapped, err := e.guard.Sandbox.Wrap(argv)
 	if err != nil {
@@ -107,6 +129,9 @@ func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Messag
 	cmd := exec.CommandContext(ctx, wrapped[0], wrapped[1:]...)
 	cmd.Dir = workdir
 	cmd.Env = r.cliEnv(e.cli)
+	if stdin != "" {
+		cmd.Stdin = strings.NewReader(stdin)
+	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		run.Status = tasks.RunError
@@ -204,9 +229,11 @@ func (r *Runtime) saveTranscript(events []clirun.StreamEvent, run tasks.Run) str
 }
 
 // cliPrompt flattens the trigger + recent history into a headless CLI
-// prompt and assembles the system block (grounding + standards), mirroring
-// the in-house prompt() but as text a CLI accepts.
-func (r *Runtime) cliPrompt(e *entry, trigger bus.Message) (prompt, system string) {
+// prompt and assembles the system block (grounding + memory + KB hits +
+// standards), mirroring the in-house prompt() but as text a CLI accepts.
+// ctx drives the KB search (bounded retrieval, not part of the turn
+// timeout).
+func (r *Runtime) cliPrompt(ctx context.Context, e *entry, trigger bus.Message) (prompt, system string) {
 	system = strings.TrimSpace(e.m.System)
 	var members []string
 	for _, m := range r.cfg.WS.Members() {
@@ -221,6 +248,8 @@ func (r *Runtime) cliPrompt(e *entry, trigger bus.Message) (prompt, system strin
 			strings.Join(actions, ", ") + ". Each runs after the human approves it; " +
 			"the result arrives as a reply in this thread."
 	}
+	system += r.memoryBlock(e.m.ID)
+	system += r.knowledgeBlock(ctx, trigger.Text)
 	if r.cfg.Standards {
 		system += "\n\n" + standards.Resolve(r.cfg.WS.Root, e.m.ID, r.teamLookup())
 	}
@@ -251,6 +280,57 @@ func (r *Runtime) cliPrompt(e *entry, trigger bus.Message) (prompt, system strin
 		b.WriteString("\n\nEarlier in this thread:\n- " + strings.Join(earlier, "\n- "))
 	}
 	return b.String(), system
+}
+
+// memoryBlock renders the agent's persistent context (M14 P1): the
+// journal tail and the notes file. Unavailable memory degrades with a
+// named line inside the block — the agent knows its memory is dark,
+// never silent.
+func (r *Runtime) memoryBlock(agentID string) string {
+	if r.cfg.Memory == nil {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("\n\nYour memory (persistent across turns):")
+	journal, err := r.cfg.Memory.Journal(agentID, 8)
+	if err != nil {
+		b.WriteString("\n- journal unavailable: " + err.Error())
+	} else if len(journal) > 0 {
+		b.WriteString("\nRecent journal:")
+		for _, en := range journal {
+			b.WriteString("\n- [" + en.Kind + "] " + truncateRunes(en.Text, 200))
+		}
+	} else {
+		b.WriteString("\n- (journal empty — record durable lessons as you learn them)")
+	}
+	notes, err := r.cfg.Memory.ReadNotes(agentID)
+	if err != nil {
+		b.WriteString("\n- notes unavailable: " + err.Error())
+	} else if strings.TrimSpace(notes) != "" {
+		b.WriteString("\nNotes:\n" + truncateRunes(strings.TrimSpace(notes), 1500))
+	}
+	return b.String()
+}
+
+// knowledgeBlock retrieves KB entries relevant to the trigger (M14 P1).
+// Search failure degrades with a named line; no hits render nothing.
+func (r *Runtime) knowledgeBlock(ctx context.Context, query string) string {
+	if r.cfg.Knowledge == nil || strings.TrimSpace(query) == "" {
+		return ""
+	}
+	hits, err := r.cfg.Knowledge.Search(ctx, query, 3)
+	if err != nil {
+		return "\n\nKnowledge base unavailable: " + err.Error()
+	}
+	if len(hits) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("\n\nRelevant knowledge base entries:")
+	for _, h := range hits {
+		b.WriteString("\n- " + truncateRunes(h.Snippet, 300))
+	}
+	return b.String()
 }
 
 // cliWorkdir picks the run cwd: the task card's first changeset worktree

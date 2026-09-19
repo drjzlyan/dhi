@@ -74,13 +74,26 @@ var Codex = &CLI{
 			// double-wrap or pause on interactive approval prompts.
 			"--sandbox", "danger-full-access",
 			"--dangerously-bypass-approvals-and-sandbox",
-			in.Prompt,
 		)
+		if in.Stdin != "" {
+			// Oversized delivery: `codex exec -` reads the prompt from
+			// stdin (0.147 contract; live-verify checklist item).
+			args = append(args, "-")
+			return args
+		}
+		// No verified system-prompt flag in exec mode: the system block
+		// rides ahead of the prompt in the shared tagged shape (M14 P1;
+		// live-verify checklist: switch to a native flag if one lands).
+		// The prompt stays the final positional arg.
+		args = append(args, PromptWithSystem(in.System, in.Prompt))
 		return args
 	},
 	ParseStream: codexParseStream,
 	Finalize:    codexFinalize,
 	Version:     codexVersion,
+	// StdinOK: `codex exec -` consumes stdin (documented contract;
+	// live-verify on the next real run).
+	StdinOK: true,
 }
 
 // codexItem is the union shape of one exec JSONL line.

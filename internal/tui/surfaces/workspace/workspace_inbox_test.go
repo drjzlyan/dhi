@@ -47,6 +47,9 @@ func seedInbox(t *testing.T, m *Model) {
 	m.taskStore = ts
 
 	if b, err := bus.Open(m.ws); err == nil {
+		// Pinned clock: transcript stamps stay deterministic (F-026 P3).
+		pinned := time.Date(2026, 9, 19, 10, 0, 0, 0, time.UTC)
+		b.Now = func() time.Time { return pinned }
 		m.bus = b
 		m.pane = newChatPane(b, m.rt, m.org)
 		m.refreshPaneRail()

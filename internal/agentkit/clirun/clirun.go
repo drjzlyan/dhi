@@ -52,6 +52,33 @@ type RunInput struct {
 	System  string // grounding + standards block ("" = none)
 	Model   string // "" = the CLI's default model
 	Workdir string // run cwd (the task worktree); "" = inherit
+	// Stdin overrides argv delivery (F-014 M14 P1): when non-empty the
+	// adapter emits a stdin-reading argv and the runner feeds this as
+	// the process stdin. The runner sets it only when the assembled
+	// system+prompt exceeds maxPromptArg and the adapter declares
+	// StdinOK; adapters without verified stdin delivery refuse by name
+	// (ADR-0011) instead of dying on E2BIG.
+	Stdin string
+}
+
+// maxPromptArg is the largest single argv element DHI will build
+// (Linux MAX_ARG_STRLEN is 128 KiB; 96 KiB leaves env headroom).
+// Beyond it, prompt delivery moves to stdin where the adapter
+// supports it.
+const maxPromptArg = 96 << 10
+
+// MaxPromptArg exports the argv budget for the runner's overflow
+// decision (one constant, two packages).
+func MaxPromptArg() int { return maxPromptArg }
+
+// PromptWithSystem is the shared delivery shape for adapters without
+// a system-prompt flag: the system block rides ahead of the prompt
+// inside explicit tags every model treats as instructions.
+func PromptWithSystem(system, prompt string) string {
+	if strings.TrimSpace(system) == "" {
+		return prompt
+	}
+	return "<dhi-system>\n" + system + "\n</dhi-system>\n\n" + prompt
 }
 
 // CLI is one adapter: the complete declaration of how DHI engages one
@@ -75,6 +102,11 @@ type CLI struct {
 	Finalize func(final string) (string, Usage, error)
 	// Version probes `path --version` and extracts the version token.
 	Version func(ctx context.Context, path string) (string, error)
+	// StdinOK reports whether the adapter has a verified stdin prompt
+	// path (the runner may move oversized prompts off argv). Adapters
+	// without one refuse by name at spawn (ADR-0011) — the E2BIG death
+	// is never the fallback.
+	StdinOK bool
 }
 
 // Registry is the declared set of runtimes. Adapters are compiled in;

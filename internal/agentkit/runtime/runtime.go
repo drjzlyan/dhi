@@ -16,7 +16,9 @@ import (
 
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/agentkit/clirun"
+	"github.com/drjzlyan/dhi/internal/agentkit/knowledge"
 	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
+	"github.com/drjzlyan/dhi/internal/agentkit/memory"
 	"github.com/drjzlyan/dhi/internal/agentkit/org"
 	"github.com/drjzlyan/dhi/internal/agentkit/standards"
 	"github.com/drjzlyan/dhi/internal/agentkit/toolbridge"
@@ -58,6 +60,13 @@ type Config struct {
 	// PR opens a PR for a task's branch (F-020 pr_open; the review
 	// service in main). nil = pr_open refuses by name.
 	PR toolbridge.PRSeam
+	// Memory gives agents persistent context across turns (M14 P1):
+	// the journal tail and notes ride the system block. Nil = no
+	// memory injection (the block names it, never silent).
+	Memory *memory.Store
+	// Knowledge retrieves workspace KB hits relevant to the trigger
+	// (M14 P1). Nil = no KB injection (named, never silent).
+	Knowledge knowledge.KnowledgeStore
 }
 
 // Runtime manages rostered agents and executes their turns.
