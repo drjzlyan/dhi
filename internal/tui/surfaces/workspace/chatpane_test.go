@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/agentkit/org"
@@ -41,6 +42,10 @@ func newPaneFixture(t *testing.T) (*chatPane, *workspace.Workspace, *org.Org, *s
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Pinned clock: transcript stamps and dividers stay deterministic
+	// across minute boundaries (F-026 P3 stamps made this load-bearing).
+	pinned := time.Date(2026, 9, 19, 10, 0, 0, 0, time.UTC)
+	b.Now = func() time.Time { return pinned }
 	o, err := org.Load(root)
 	if err != nil {
 		t.Fatal(err)

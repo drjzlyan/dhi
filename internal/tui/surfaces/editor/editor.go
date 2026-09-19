@@ -252,6 +252,40 @@ func (m *Model) Wheel(dy int) bool {
 	return scrolled
 }
 
+// HelpSections feeds the shell's contextual help (F-026 P7): the live
+// mode's keys, wording matching the editor's own hint rows.
+func (m *Model) HelpSections() [][2]string {
+	out := [][2]string{
+		{"enter", "open the selected file"},
+		{"/", "find a file"},
+		{"s", "search the workspace (ripgrep)"},
+	}
+	switch {
+	case m.chat != nil && m.chat.open && m.chat.focus:
+		out = append(out,
+			[2]string{"enter", "send to the crew"},
+			[2]string{"ctrl+f", "apply the suggestion block"})
+	case m.drawerOpen && m.termFocus:
+		out = append(out,
+			[2]string{"ctrl+t", "blur/close the drawer"},
+			[2]string{"alt+1..9", "switch terminal tab"})
+	case m.gitOpen && m.gitFocus:
+		out = append(out,
+			[2]string{"s/S/u", "stage · unstage"},
+			[2]string{"c", "commit"})
+	case m.bufFocus && m.active() != nil:
+		out = append(out,
+			[2]string{"i / esc", "insert · back to normal"},
+			[2]string{":w :q :wq :e", "save · quit · reload"},
+			[2]string{"K gr ga", "hover · rename · code actions"},
+			[2]string{"ctrl+g", "markdown preview"},
+			[2]string{":s/old/new/[g]", "replace"})
+	case m.mode == modeResults:
+		out = append(out, [2]string{"enter", "jump to the hit"})
+	}
+	return out
+}
+
 // Init starts the terminal and chat message pumps plus the workspace
 // roster watcher (live re-resolution without restart, P1).
 func (m *Model) Init() tea.Cmd {

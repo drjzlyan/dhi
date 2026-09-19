@@ -337,6 +337,23 @@ func (m *Model) sectionKey(key string) bool {
 	}
 }
 
+// HelpSections feeds the shell's contextual help (F-026 P7).
+func (m *Model) HelpSections() [][2]string {
+	out := [][2]string{
+		{"[ / ]", "switch sections"},
+		{"j / k", "move the cursor"},
+	}
+	for _, h := range m.sectionHints() {
+		parts := strings.SplitN(h, " ", 2)
+		if len(parts) != 2 {
+			out = append(out, [2]string{h, ""})
+			continue
+		}
+		out = append(out, [2]string{parts[0], parts[1]})
+	}
+	return out
+}
+
 func clampCursor(c *int, n int) {
 	if *c >= n {
 		*c = maxInt(n-1, 0)

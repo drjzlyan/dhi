@@ -64,7 +64,16 @@ func (s *StatusLine) View() string {
 			if i > 0 {
 				right += hint.Render(theme.GlyphBullet)
 			}
-			right += hint.Render(" " + h + " ")
+			// Keycap the key fragment; the description stays muted
+			// (F-026 P7 — keys read at a glance).
+			key, desc := h, ""
+			if i := strings.Index(h, " "); i > 0 {
+				key, desc = h[:i], h[i+1:]
+			}
+			right += theme.Keycap().Render(" " + key + " ")
+			if desc != "" {
+				right += hint.Render(" " + desc + " ")
+			}
 		}
 		return right
 	}

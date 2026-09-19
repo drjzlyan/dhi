@@ -107,6 +107,9 @@ type Model struct {
 	snoozeTarget inbox.Item                // item parked by the fSnooze form
 	snoozeChain  bool                      // expiry tick chain in flight (F-017)
 
+	chromeSeen string    // last chrome flash content (toast dedupe, F-026 P7)
+	chromeAt   time.Time // when that content first appeared
+
 	events       chan wsEvent
 	cancelSub    func()
 	cancelOrg    func()
@@ -543,6 +546,24 @@ func (m *Model) Wheel(dy int) bool {
 		}
 	}
 	return scrolled
+}
+
+// HelpSections feeds the shell's contextual help (F-026 P7): the
+// active section's live keymap — the same wording as its chrome bar.
+func (m *Model) HelpSections() [][2]string {
+	hints := m.sectionHints()
+	out := make([][2]string, 0, len(hints)+2)
+	out = append(out, [2]string{"[ / ]", "switch sections"})
+	out = append(out, [2]string{"j / k", "move the cursor"})
+	for _, h := range hints {
+		parts := strings.SplitN(h, " ", 2)
+		if len(parts) != 2 {
+			out = append(out, [2]string{h, ""})
+			continue
+		}
+		out = append(out, [2]string{parts[0], parts[1]})
+	}
+	return out
 }
 
 func (m *Model) sectionKey(key string) bool {

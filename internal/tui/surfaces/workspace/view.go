@@ -133,21 +133,40 @@ func (m *Model) mainPane(w, h int) string {
 	return kit.Overlay(strings.Split(pane, "\n"), box.View(), w, h)
 }
 
+// flashTTL is how long a chrome flash stays visible (F-026 P7 toast
+// semantics: outcomes announce, then leave — no permanent furniture).
+const flashTTL = 4 * time.Second
+
 // statusFlash renders the outcome segment on the chrome bar: error >
-// warning hint > success flash (F-025 Part A). Channels post failures
-// surface through the pane's flash (F-011/F-026 P3).
+// warning hint > success flash (F-025 Part A). Messages expire
+// flashTTL after they first appear; identical content keeps its
+// original stamp (no restart), so a stable state clears itself.
 func (m *Model) statusFlash() string {
+	msg := ""
+	var fg color.Color
 	switch {
 	case m.form.err != "":
-		return theme.ChromeStatus(theme.Current.Danger).Render("✗ " + m.form.err)
+		msg, fg = "✗ "+m.form.err, theme.Current.Danger
 	case m.pane != nil && m.pane.flash != "":
-		return theme.ChromeStatus(theme.Current.Danger).Render("✗ " + m.pane.flash)
+		msg, fg = "✗ "+m.pane.flash, theme.Current.Danger
 	case m.inboxHint != "":
-		return theme.ChromeStatus(theme.Current.Warning).Render(m.inboxHint)
+		msg, fg = m.inboxHint, theme.Current.Warning
 	case m.form.flash != "":
-		return theme.ChromeStatus(theme.Current.Success).Render("✓ " + m.form.flash)
+		msg, fg = "✓ "+m.form.flash, theme.Current.Success
 	}
-	return ""
+	if msg == "" {
+		m.chromeSeen = ""
+		return ""
+	}
+	now := m.now()
+	if msg != m.chromeSeen {
+		m.chromeSeen = msg
+		m.chromeAt = now
+	}
+	if now.Sub(m.chromeAt) > flashTTL {
+		return ""
+	}
+	return theme.ChromeStatus(fg).Render(msg)
 }
 
 // sectionHints is the active section's keymap for the chrome bar.

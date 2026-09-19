@@ -69,6 +69,18 @@ type Bus struct {
 	nextID int64
 	subs   map[string]map[int]chan Message
 	subSeq int
+
+	// Now stamps message timestamps; nil = wall clock. Tests pin it so
+	// transcript renders (HH:MM stamps, day dividers) stay deterministic.
+	Now func() time.Time
+}
+
+// now returns the stamped timestamp source (injected clock or wall).
+func (b *Bus) now() time.Time {
+	if b.Now != nil {
+		return b.Now()
+	}
+	return time.Now()
 }
 
 // Open replays persisted history from ws's .dhi/channels/ tree (seeding
@@ -193,7 +205,7 @@ func (b *Bus) Post(m Message) (Message, error) {
 	b.mu.Lock()
 	b.nextID++
 	m.ID = b.nextID
-	m.At = time.Now()
+	m.At = b.now()
 	b.mu.Unlock()
 
 	if err := jsonl.Append(path, m); err != nil {

@@ -415,18 +415,41 @@ func (a *App) buildStatus() *kit.StatusLine {
 	return sl
 }
 
+// helpProvider is the contextual-help seam (F-026 P7): surfaces with
+// it contribute their live key sections (the same wording as their
+// chrome HintBar); surfaces without it get globals only.
+type helpProvider interface {
+	HelpSections() [][2]string // (keys, description) pairs, current context
+}
+
 func (a *App) helpView() string {
+	n := len(a.surfaces)
 	rows := [][2]string{
-		{"1-5", "jump between views"},
+		{fmt.Sprintf("1-%d", n), "jump between views"},
 		{"tab / shift+tab", "cycle views"},
 		{"?", "toggle this help"},
 		{"ctrl+c", "quit DHI"},
 	}
 	lines := []string{theme.Brand().Render("DHI — global keys"), ""}
 	for _, r := range rows {
-		lines = append(lines, "  "+theme.TabActive().Render(padKey(r[0]))+"  "+theme.TextDim().Render(r[1]))
+		lines = append(lines, "  "+keycap(r[0])+"  "+theme.TextDim().Render(r[1]))
+	}
+	if hp, ok := a.Active().(helpProvider); ok {
+		secs := hp.HelpSections()
+		if len(secs) > 0 {
+			lines = append(lines, "",
+				theme.TabActive().Render(a.Active().Meta().Title+" — here"), "")
+			for _, r := range secs {
+				lines = append(lines, "  "+keycap(r[0])+"  "+theme.TextDim().Render(r[1]))
+			}
+		}
 	}
 	return theme.HelpOverlay().Render(strings.Join(lines, "\n"))
+}
+
+// keycap renders one key fragment as a raised pill (F-026 P7).
+func keycap(k string) string {
+	return theme.Keycap().Render(padKey(k))
 }
 
 func padKey(k string) string { return fmt.Sprintf("%-16s", k) }
