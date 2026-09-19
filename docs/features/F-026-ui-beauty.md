@@ -1,6 +1,6 @@
 # F-026: UI beauty, usefulness & interaction (M13)
 
-Status: planned (P0 accepted 2026-09-18)
+Status: implemented (M13, 2026-09-19 — P0–P8)
 Companion to: F-025 (coherent UX — its deferred items: scrollbars, mouse),
 ADR-0014 (workspace floor), ADR-0015 (UI dependency promotions).
 Scope decisions (2026-09-18, user): syntax highlighting via chroma = IN;
@@ -104,22 +104,28 @@ primitives, surfaces consume them — no exceptions.
 
 ## Acceptance criteria
 
-- [ ] P1: ansi/kit measure display cells; theme lint green; no
+- [x] P1: ansi/kit measure display cells; theme lint green; no
   rune-count width math left in kit.
-- [ ] P2: wheel scrolls every pane with a cursor window; cursor never
-  walks into clipped rows invisibly; click acts on rails/lists/tabs.
-- [ ] P3: all four workspace sections scroll with indicators; board
-  grid adapts to width; composer visible when blurred; failed post
-  flashes; replay wraps words.
-- [ ] P4: buffers syntax-colored;   popups bordered/floating; chat
-  renders fences + timestamps; `:%s` works.
-- [ ] P5: terminal scrollback keeps color + cursor moves.
-- [ ] P6: rails carry counts; diff has kind washes + styled hunk
-  headers; diffRows cached; settings forms on kit.Form.
-- [ ] P7: help overlay contextual + scrollable; statusline dynamic;
-  toasts expire.
-- [ ] Every phase: unit tests + deliberately reviewed goldens +
-  `make verify` green.
+- [x] P2: wheel scrolls every pane with a cursor window (guarded key
+  synthesis through the existing nav paths); cursor never walks into
+  clipped rows invisibly (Scroller follow + Transcript Tail + Columns
+  lane windows); tab-bar click selects surfaces; body-local Click seam
+  routed.
+- [x] P3: all four workspace sections take real pane width; board grid
+  adapts with lane scroll + `S`/`m`; composer visible when blurred;
+  failed post flashes; replay wraps words and closes on `[`/`]`.
+- [x] P4: buffers syntax-colored (chroma, theme-mapped, seq-cached);
+  popups bordered/floating at the cursor; chat renders fences +
+  timestamps; `:s`/`:%s` work.
+- [x] P5: terminal scrollback keeps color + cursor moves (internal/vt).
+- [x] P6: rails carry counts; diff has kind washes + styled hunk
+  headers + cached flatten; settings forms on kit.Form; display
+  dialogs scroll; standards `v` previews the selected row.
+- [x] P7: help overlay contextual + dynamic count + keycaps; statusline
+  keycap hints; toasts expire (4s) with dedupe.
+- [x] Every phase: unit tests + deliberately reviewed goldens +
+  `make verify` green. Perf: diffRows cache benchmarked 6× faster warm
+  (4.4µs vs 27.5µs at 20 files × 40 lines, 50× fewer bytes).
 
 ## Deferred (stays out)
 

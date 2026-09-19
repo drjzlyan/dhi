@@ -595,7 +595,7 @@ statusline, full-width narrow stacks).
       editor files rail rows inset-shaded (kit.List.Inset)
 - [x] P6 — full golden regeneration + closeout docs
 
-## M13 — UI beauty, usefulness & interaction *(F-026)* [~]
+## M13 — UI beauty, usefulness & interaction *(F-026)* ✅ (2026-09-19)
 
 Status: in progress (P0–P1 landed 2026-09-18). User scope decisions:
 syntax highlighting via chroma = IN; terminal ANSI scrollback = IN;
@@ -619,12 +619,42 @@ go-runewidth promoted from indirect (ADR-0015).
       focus-visible fields; kit.Transcript (day dividers, stamps,
       thread tags, shared WrapWords, injected markdown seam) —
       contract tests in kit/f026_test.go + transcript_test.go
-- [ ] P2 — interaction & mouse foundation (Wheel/Click seams)
-- [ ] P3 — workspace pass (scrollers, board grid, channels transcript,
-      repos info, replay, forms on kit.Form)
-- [ ] P4 — editor pass (chroma buffers, floating popups, transcript,
-      find/replace)
-- [ ] P5 — terminal ANSI scrollback
-- [ ] P6 — ideator/reviewer/settings consistency sweep
-- [ ] P7 — shell coherence (contextual help, statusline, toasts)
-- [ ] P8 — closeout (goldens reviewed, perf benches, docs)
+- [x] P2 — interaction & mouse foundation: MouseModeCellMotion on the
+      shell View; click closes help, row 0 hits the tab bar
+      (kit.Tabs.Hit), statusline row inert, else the nil-safe
+      Wheel/Click seams (documented in surfaces/surface.go); all five
+      surfaces implement Wheel (3 rows/tick through the j/k path,
+      guarded against input surfaces)
+- [x] P3 — workspace pass: formState wraps kit.Form (in-value cursor,
+      paste, shift+tab; field = kit.Field); board width-proportional
+      cards via Columns.LaneWidth + lane scroll + `S` backward status +
+      `m` lane picker + wrapped detail titles; inbox/repos take real
+      pane width with relative stamps + parked-bullet snooze + inset
+      repos zone + `e` open-in-editor (OpenEditor seam); channels
+      through kit.Transcript (dividers/stamps/thread tags/Tail window
+      following the cursor) + always-visible composer + post-failure
+      flash + spark empty state + width-gated tab-rail hint; replay
+      word-wrapped, [/] close-then-switch; strip flash deduped; INBOX
+      rail count tinted danger
+- [x] P4 — editor pass: chroma syntax highlighting (ADR-0015 seam,
+      theme-mapped kinds, textbuf.Buffer.Seq cache, cursor/visual lines
+      plain); LSP popups float as bordered kit.Modal anchored at the
+      cursor (extending past short buffers); chat sidebar on
+      kit.Transcript (fences via preview.Render, stamps, wrap at the
+      real inner width); ex `:s` + `:%s` via Buffer.SubstituteAll
+      (one undo group)
+- [x] P5 — terminal ANSI scrollback: internal/vt (raw SGR passthrough,
+      cursor moves, EL/ED, OSC swallowed, lazy growth + cap); drawer
+      renders the tail window with styles intact + live-cell prompt
+      marker
+- [x] P6 — ideator/reviewer/settings sweep: rail counts everywhere;
+      review state chips; diff add/del washes (BgAdd/BgDel) + de-dimmed
+      context + violet hunk ranges + diffRows fingerprint cache
+      (benchmarked 6× warm); ideator artifacts sorted + CHAT on
+      kit.Transcript; settings display dialogs scroll, agent/source
+      forms on kit.Form, standards `v` previews the selected row
+- [x] P7 — shell coherence: contextual help (helpProvider seam,
+      dynamic 1-N, keycaps), statusline keycap hints, flash toasts
+      (4s expiry, dedupe), bus injectable Now clock (goldens
+      deterministic)
+- [x] P8 — closeout: diff-cache bench, goldens reviewed, docs

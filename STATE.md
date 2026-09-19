@@ -1,105 +1,179 @@
 # STATE — current position
 
-Updated: 2026-09-18 (session 22: M13 P0+P1 — F-026 spec, ADR-0015,
-theme tokens, display-cell width math, kit foundation upgrades)
+Updated: 2026-09-19 (session 22: M13 complete — P0–P8, UI
+beauty/usefulness/interaction across all five surfaces)
 
 ## Where we are
 
-**M13 (UI beauty/usefulness/interaction) started: P0+P1 landed on
-green `make verify`.** P0 wrote the F-026 plan spec + ADR-0015
-(zero new deps in the graph — chroma + go-runewidth promoted from
-indirect). P1 built the foundation: theme gained Info/AccentDim/
-Keycap/TextStyle + motion knobs + breakpoints (kit aliases); dead
-tokens deleted; ansi.Width + wide-rune-safe Clip (go-runewidth);
-kit gained Scroller/Scrollbar, List groups/Desc/ellipsis/flush
-badges, Rail glyph/own-row foot/scroll, Modal scroll+pinned error+
-ellipsis+shadow row, Panel footer, Form in-value cursor/shift+tab/
-paste, Transcript primitive, StatusLine overflow rule. Goldens
-regenerated deliberately (badge shift, modal +1 shadow row, visible
-"…" on clipped keymaps).
+**M13 is complete: `make verify` green.** P0 wrote F-026 + ADR-0015
+(chroma + go-runewidth promoted from indirect — zero new deps). P1
+rebuilt the foundation: display-cell width math (ansi.Width), theme
+Info/AccentDim/Keycap/washes/motion knobs/breakpoints-in-theme, kit
+Scroller/Scrollbar + List/Rail/Modal/Panel/Form/StatusLine/Tabs
+upgrades + the shared Transcript primitive. P2 enabled mouse
+(wheel + tab-bar click + nil-safe surface seams). P3 reworked the
+workspace (kit.Form forms, width-proportional board with S/m keys,
+lane scroll, width-aware inbox/repos, kit.Transcript channels floor
+with always-visible composer + failure flash, replay close-then-
+switch). P4 colorized editor buffers (chroma → theme mapping, seq-
+cached), floated LSP popups at the cursor, moved the chat sidebar
+onto Transcript, added `:s`/`:%s`. P5 built internal/vt (ANSI-aware
+terminal scrollback). P6 swept reviewer/ideator/settings (rail counts,
+diff washes + hunk headers + cached flatten, kit.Form settings forms,
+scrollable display dialogs, standards `v`). P7 delivered contextual
+help + keycap statusline + 4s flash toasts + a pinned bus clock. P8
+benchmarked the diff cache and closed the docs.
 
-## Session 22 gotchas (M13 P1)
+## Session 22 gotchas (M13)
 
-- **ansi.Width skips escapes itself** — callers may pass raw styled
-  strings; kit.runeWidth now delegates (call sites passing Strip()'d
-  strings still work — double-strip is harmless). ansi.Clip no longer
-  writes a wide rune that overflows the budget (strict fit).
-- **Modal content-sized height = len(body)+3 now** (the shadow row) —
-  boxes grew one row and re-centered; kit's modal_over_backdrop
-  golden covers one more backdrop row. Scroll (Scroll/ScrollTo)
-  requires Height set; the appended busy/error row stays PINNED
-  (window runs over Lines only).
-- **Rail foot is its OWN row now** — fixed-Height rails shrink the
-  row budget by foot (and title); overflow rows scroll with EnsureActive
-  keeping the active row visible and the ▲/▼ cue riding the foot.
-  No foot = no cue (rows budget-clip silently — F-025 F-026 boundary).
-- **kit.List.Inset desc shares the base segment** (a second style
-  inside base drops the row bg — the SGR gotcha); plain rows render
-  desc as its own muted segment. Badges sit flush-right (one-column
-  shift vs old trailing pad). Group rows: cursor skips them; when the
-  travel direction has no selectable row the cursor STAYS PUT.
-- **kit.Form backspace deletes before the cursor** (in-value rune
-  cursor, home/end/ctrl+d supported); paste arrives as the composed
-  key "paste:<text>" — surfaces translate bubbletea KeyMsg Paste.
-  Fields render focus-visible (inactive = dim) — styling-only, goldens
-  unchanged.
-- **Transcript is pure render** (View() []string; scroll stays with
-  the surface via Scroller). authorCol includes the thread tag so
-  thread rows keep the shared text column; the label ellipsis-clips
-  into the prefix budget. Markdown rides an injected seam (nil = raw
-  text); kit must NOT import internal/preview (tui depends on
-  service interfaces injected from cmd — preview.Render goes in main).
-- **kit.Transcript Rows() renamed View()** — field/method collision.
-- **WrapWords hard-breaks per-token** via go-runewidth per-rune
-  accumulation (blank paragraphs keep a blank row).
-- Theme lint: `TestNoRawColorsOutsideTheme` allows lipgloss.NewStyle
-  + token references; use the new helpers (theme.TextStyle(),
-  InfoText(), AccentDimText(), Keycap()) instead.
-- statusline.go dropped the ansi import (runeWidth skips escapes).
-- The verify FAIL on TestCLIRuntimeEndToEnd is the known CLI-stub
-  under-load flake — rerun isolated.
+- **ansi.Width skips escapes itself** — raw styled strings measure the
+  same as stripped ones; kit.runeWidth delegates. ansi.Clip is strict
+  (a wide rune that would overflow is not written).
+- **kit.Modal content height = len(body)+3** (the shadow row). Scroll
+  needs Height set; the appended busy/error row stays PINNED outside
+  the scroll window. Rail foot is its OWN row (fixed-Height rails
+  shrink the row budget; overflow scrolls with the cue riding the
+  foot). List group rows are never the cursor — no selectable row in
+  the travel direction means the cursor STAYS PUT.
+- **kit.Form in-value cursor**: NewTextField prefill sets cur=len —
+  DIRECT `.Value = x` writes leave cur at 0 (settings editAgentForm
+  reconstructs fields for this reason). Backspace deletes BEFORE the
+  cursor; paste arrives as the composed key "paste:<text>".
+- **kit.Transcript**: View() []string (rows field/method collision
+  renamed); textCol = authorW+8 so the cursor marker eats SLACK, not
+  the author label; Tail windows by LINE with cursor-follow so `k`-nav
+  never vanishes; human rows carry TabActive (matches the workspace
+  convention); markdown rides an injected seam — kit must NOT import
+  internal/preview.
+- **Mouse**: MouseModeCellMotion set on the shell's tea.View; surface
+  coords are body-local (row 1 of the screen = body row 0). Wheel
+  synthesizes j/k ×3 through HandleKey with guards (finder, composer,
+  terminal, rename/action, insert mode, forms, dialogs never see it).
+- **chroma seam** (editor/syntax.go — the ONLY chroma import): kinds →
+  theme tokens, never chroma hexes; whole-buffer lex cached on
+  textbuf.Buffer.Seq (bumped in snapshotBefore/insertAt/deleteRange —
+  NOT a version check against 0, the highlighter carries a done flag);
+  cursor/visual lines render plain so rune inversion stays exact;
+  unknown lexer/oversize = plain, never fake-colored.
+- **floatPopup** covers to the right margin (no cell-splicing) and
+  EXTENDS past short buffers (appending rows the panel pads) — the
+  first version broke the LSP popup test by clipping the box to a
+  2-row base.
+- **internal/vt**: SGR passes through INLINE (colors are session
+  content, not chrome); newline grows history LAZILY (a trailing \n
+  leaves the cursor unmaterialized → Pending() → the "_" prompt
+  marker lands on its own row); ESC+charset is 3 bytes (ESC ( B).
+- **bus.Now** (injectable clock) — pins transcript stamps in goldens;
+  wall-clock minute boundaries made this load-bearing.
+- **statusFlash toasts**: 4s TTL from FIRST appearance; identical
+  content keeps its stamp (dedupe); form-internal errors stay
+  persistent (validation feedback, not a toast).
+- **diffRows cache** keyed by layout+file-shape fingerprint + openID —
+  the fingerprint alone let two same-shaped reviews alias stale row
+  pointers. Benchmarked: warm 4.4µs vs cold 27.5µs (20 files × 40
+  lines).
+- **theme lint** allows lipgloss.NewStyle + token refs; use
+  TextStyle/InfoText/AccentDimText/AccentText/Accent2Bold/Keycap/
+  AddWash/DelWash. lipgloss.Style is NOT comparable — flag a wash with
+  a bool or compare Kind, never `style == lipgloss.Style{}`.
+- Verify FAIL on TestCLIRuntimeEndToEnd = the known CLI-stub flake —
+  rerun isolated.
 
-## Just finished (M13 P1 — kit & theme foundation)
+## Gotchas carried (still load-bearing)
 
-- theme: Info (#60A5FA dark / #1D4ED8 light), AccentDim, Keycap
-  (BgElevated pill), InfoText/AccentDimText/TextStyle; MotionFrames
-  (2) + MotionInterval (100ms) — app.go adopts them; breakpoints
-  WCompact/WDock/WWide defined in theme, kit re-exports;
-  BorderFocused ≠ Accent (brighter cyan dark / more saturated light);
-  dead tokens deleted (base/AppFrame/PanelBorder/RadiusPad/GlyphLogoBG);
-  GlyphBranch "⎇" + GlyphSpark "✦" adopted with consumers spec'd
-  (P4 git panel, P1e transcript).
-- ansi: Width (display cells, escape-skipping) + wide-safe Clip;
-  kit.runeWidth delegates; go-runewidth direct dep.
-- kit: Scroller (Window/Scroll/EnsureVisible/Cues/Indicator/
-  Scrollbar) + ellipsisClip; List (Group rows skipped, inline Desc,
-  ellipsis titles, flush badges, Cues/Indicator/Scrollbar); Rail
-  (Glyph slot, own-row foot, overflow scroll + cue); Modal
-  (Scrollable + pinned state row + thumb track + ellipsis + shadow
-  row); Panel.SetFooter; HintBar ellipsis; StatusLine overflow
-  (center → hints from start → clip); Tabs width-clip; Form
-  (in-value cursor, shift+tab, paste, focus-visible fields);
-  Transcript (dividers, stamps, thread tags, WrapWords, markdown
-  seam).
-- Tests: kit/f026_test.go (form cursor/paste/delete, groups, scroller
-  window/scrollbar, modal windowing/pinned error, panel footer, rail
-  glyph/scroll, ellipsis) + transcript_test.go (layout/dividers/sep/
-  overflow, empty, markdown seam, WrapWords hard-break). Goldens
-  regenerated + reviewed (11 files, all deliberate).
+1. go-git Push needs a REGISTERED remote; fixtures use bare local origins.
+2. Test fakes must fully implement seams; event pumps must NOT re-arm.
+3. Read form fields BEFORE closeForm(); waitReply before
+   crew.Handle — mirror assertions come from the reply message, not a
+   provider call log (the Mock's call log is gone with the engine).
+4. bus.History(ch,0) excludes threaded rows.
+5. requestTurn must call crew.Handle SYNCHRONOUSLY.
+6. Policy rules are ROOT-RELATIVE (ADR-0010); glamor renders H2 `## `.
+7. macOS /var→/private/var EvalSymlinks.
+8. g-chords are editor-owned; WorkspaceEdit bottom-up; LSP flows
+   guard on client.
+9. Seatbelt deny-default profiles need the system allows (/System,
+   /usr/lib, dyld caches, mach-lookup) or wrapped processes die
+   cryptically; network stays policy-engine territory. M8 adds
+   per-CLI StateRoots to the rw set — same system-allow list applies.
+10. sandbox.go's Sandbox interface (Name/Wrap) is load-bearing —
+    never redesign it casually; adapters implement it as-is.
+11. runtime guards deny-all by policy default: Guard.Exec tests need
+    an explicit exec allow in policy_json.
+12. fuzzy.Match and Index.Rank share matchRunes so scores can't drift.
+13. Gates that start work from a keypress MUST queue through TakeCmd.
+14. `go run` of internal packages from /tmp fails ("use of internal
+    package not allowed"); drive via a transient file INSIDE the
+    repo, delete after. `go build ./cmd/dhi` drops a `dhi` binary in
+    cwd — remember to delete it.
+15. Settings layer semantics: zero values in a fileLayer mean UNSET
+    (bools needing explicit-false use *bool); strict load rejects
+    unknown keys per-layer before merge.
+16. doctor must stay runnable on broken installs: use
+    settings.LoadBestEffort anywhere diagnostics read configs.
+17. runtime.New REQUIRES Config.Sandbox; test harnesses inject
+    sandbox.Noop{} explicitly.
+18. lipgloss multi-line Render re-pads lines to the longest — style
+    multi-line content line-by-line or goldens break (theme.Faint).
+19. `theme.Motion` is a variable, not a function (F-012).
+20. Manifest Parse takes id from the filename stem; strict decode
+    rejects undecoded keys — new manifest keys must land in the
+    file struct + validation + round-trip test together.
+21. sandbox.Sandbox.Wrap's contract is BINARY-FIRST: argv[0] is the
+    wrapped program and the return value is the COMPLETE command
+    line (`[wrapper…, --, argv…]`). Never prepend the CLI path after
+    wrapping — the session-20 agent bug was exactly that (wrapper
+    bits became claude's prompt args → "malformed final line").
+    recordingSandbox.lastArg asserts the invariant.
+22. runtime.extendSandboxForRoster merges each rostered CLI's
+    StateRoots + binary tree (dir, resolved-symlink dir + parent) via
+    sandbox.RootExtender BEFORE guards are built, in New and live
+    Reload — claude lives under ~/.local and writes ~/.claude, the
+    workspace jail alone denies its exec (exit 71, silent).
+23. Seatbelt reads are broad by design (bun/node CLIs touch fonts/
+    tz/certs; per-CLI enumeration aborts cryptically, SIGABRT no
+    stderr): `(allow file-read*)` + explicit credential denies
+    (~/.ssh, ~/.gnupg, ~/.aws, ~/.kube, gcloud, azure, .netrc — deny
+    wins in SBPL). Writes + exec stay deny-default jailed. Tightening
+    = deliberate future ADR, never casual.
+24. Live agent verification: `DHI_SMOKE_CLAUDE=1 go test
+    ./internal/agentkit/runtime/ -run TestLiveClaudeSeatbeltSmoke`
+    (real claude 2.1.177 through the real seatbelt; expect a PONG
+    result event). Gate-style like DHI_SMOKE_GIT/DHI_SMOKE_NET.
+
+## Just finished (session 22 — M13 complete)
+
+- Commits: 2f9afa1 (P0+P1), 6139991 (P2), 3a9b501 (P3), 9cec472 (P4),
+  6497037 (P5), 9f32a32 (P6), b6169e7 (P7), P8 closeout in flight.
+- Working tree: only the untracked `.dhi/agents/dev/` runtime state.
+- Next actions: the deferred backlog below.
+
+## Open questions for user
+
+- Wave-3 CLIs (cursor-agent, copilot, gemini) aren't installed on the
+  dev machine — do you have accounts/installs for live verification,
+  or should wave 3 stay fixture-only until you install them?
+
 
 ## Next up
 
-1. **M13 P2** — mouse foundation: enable wheel in app; nil-safe
-   Wheel/Click seams on surfaces (degrade like StatusContext); wheel
-   rides kit.Scroller; click on rails/lists/tabs/lanes/diff.
-2. **M13 P3** — workspace pass (P1 kit adoption: scrollers on all
-   sections, board width-proportional grid + badges + S/m keys,
-   channels composer-visible + post-failure flash + transcript via
-   kit.Transcript, repos info row + `e`, replay word-wrap, forms on
-   kit.Form, dedupe flash).
-3. **M13 P4–P8** — editor (chroma seam, floating popups, transcript,
-   find/replace), terminal ANSI, ideator/reviewer/settings sweep,
-   shell coherence, closeout. See F-026 for acceptance criteria.
+1. **Wave-3 live verify** (needs installs): once cursor-agent/copilot/
+   gemini are on the machine, run a real task per adapter, fill each
+   adapter's live-verify checklist + set `Tested`, then doctor reports
+   OK. Until then the adapters stay fixture-first and doctor marks a
+   detected version untested (FAIL), never a guess.
+2. **(Deferred, F-026)** interactive find/replace panel (per-match
+   confirm — the ex `:s`/`:%s` path shipped); tab-strip kind glyphs;
+   click adoption inside surfaces (rails/lists/lanes — the seam
+   exists); editor wheel in insert mode.
+3. **(Deferred, F-017)** snooze-expiry push notifications, per-message
+   read granularity, multi-human read states, bulk "mark all read";
+   inbox items from autopilot completions / doctor regressions.
+4. **(Deferred, F-020)** MCP-style third-party tool registries;
+   per-agent env/secrets editing in Settings; a curated remote agent
+   registry for F-019 discovery.
+5. **(Deferred, M11)** board drag-free reordering beyond `m`;
+   doctor rows for the new settings sections.
 
 ## Session 19 gotchas (M12)
 
