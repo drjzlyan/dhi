@@ -334,3 +334,32 @@ func (failingKB) Approve(id string) (knowledge.Entry, error) {
 
 // compile-time guard: the registry seam is what tests stub.
 var _ = clirun.NewRegistry
+
+// TestServeToolsProjectFileExcluded pins the cursor delivery: the
+// per-turn config lands at <worktree>/.cursor/mcp.json, is git-excluded
+// so no commit captures it, and both vanish on stop.
+func TestServeToolsProjectFileExcluded(t *testing.T) {
+	h := newHarnessMulti(t, docTools("cursor-agent", `"memory_append"`),
+		map[string]string{"cursor-agent": silentStub})
+	h.rt.cfg.Memory = memory.Open(h.ws)
+	serve := h.rt.serveTools(h.rt.agents["scout"], bus.Message{Channel: "#general"})
+	if serve == nil {
+		t.Fatal("no serve session for cursor-agent")
+	}
+	path := filepath.Join(h.ws.Root, ".cursor", "mcp.json")
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("project config not written: %v", err)
+	}
+	exclude := filepath.Join(h.ws.Root, ".git", "info", "exclude")
+	ex, _ := os.ReadFile(exclude)
+	if !strings.Contains(string(ex), "/.cursor/mcp.json") {
+		t.Fatalf("project config not git-excluded:\n%s", ex)
+	}
+	serve.stop()
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("project config survived stop: %v", err)
+	}
+	if ex2, _ := os.ReadFile(exclude); strings.Contains(string(ex2), "/.cursor/mcp.json") {
+		t.Fatalf("exclude line not cleaned:\n%s", ex2)
+	}
+}

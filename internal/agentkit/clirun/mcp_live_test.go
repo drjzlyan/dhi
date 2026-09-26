@@ -193,3 +193,53 @@ func TestLiveCodexMCP(t *testing.T) {
 		t.Fatalf("codex did not call the served tool; output:\n%s", out)
 	}
 }
+
+// TestLiveCursorMCP is the live-verify for the cursor-agent MCP wiring:
+// a project .cursor/mcp.json + --approve-mcps must register DHI's
+// loopback server and the agent must call the served tool.
+//
+//	DHI_LIVE_MCP=1 go test ./internal/agentkit/clirun/ -run TestLiveCursorMCP -v
+func TestLiveCursorMCP(t *testing.T) {
+	if os.Getenv("DHI_LIVE_MCP") == "" {
+		t.Skip("set DHI_LIVE_MCP=1 to run the real cursor-agent MCP verification (costs tokens)")
+	}
+	path, err := exec.LookPath("cursor-agent")
+	if err != nil {
+		t.Skip("cursor-agent not installed")
+	}
+	h := &probeHandler{called: make(chan string, 1)}
+	endpoint, stop, err := mcp.ServeLoopback(h)
+	if err != nil {
+		t.Fatalf("ServeLoopback: %v", err)
+	}
+	defer stop()
+	work := t.TempDir()
+	proj := filepath.Join(work, ".cursor")
+	if err := os.MkdirAll(proj, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(proj, "mcp.json"), []byte(CursorAgent.MCPConfigFile(endpoint)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Second)
+	defer cancel()
+	argv := CursorAgent.BuildArgs(RunInput{
+		Prompt: "Call the MCP tool named echo_probe with text=\"HELLO\" (server dhi), then reply with its output.",
+		MCPURL: endpoint, Workdir: work,
+	})
+	cmd := exec.CommandContext(ctx, path, argv...)
+	cmd.Dir = work
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("cursor-agent run: %v\n%s", err, out)
+	}
+	select {
+	case got := <-h.called:
+		t.Logf("LIVE-VERIFIED: cursor-agent called DHI's served tool with args %s", got)
+		if !strings.Contains(got, "HELLO") {
+			t.Fatalf("tool called with unexpected args: %s", got)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatalf("cursor-agent did not call the served tool; output:\n%s", out)
+	}
+}

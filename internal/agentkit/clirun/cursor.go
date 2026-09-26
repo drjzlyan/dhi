@@ -45,7 +45,7 @@ import (
 var CursorAgent = &CLI{
 	Name:   "cursor-agent",
 	Bin:    "cursor-agent",
-	Tested: "", // pinned once live-verified (not installed 2026-09-09)
+	Tested: "2026.09.26", // live-verified 2026-09-26
 	// EXACT declared pass-through: the Cursor API key + standard config
 	// roots. Nothing else crosses (ADR-0012 §4).
 	EnvPass: []string{
@@ -76,31 +76,60 @@ var CursorAgent = &CLI{
 		if in.Workdir != "" {
 			args = append(args, "--workspace", in.Workdir)
 		}
+		if in.MCPURL != "" {
+			// Auto-approve the served MCP server without a prompt.
+			args = append(args, "--approve-mcps")
+		}
 		return args
 	},
 	ParseStream: cursorParseStream,
 	Finalize:    cursorFinalize,
 	Version:     cursorVersion,
+	// MCPOK: cursor-agent reads a project-local .cursor/mcp.json (no
+	// argv/env override), so the runtime writes it into the worktree and
+	// git-excludes it; live-verified 2026-09-26 on 2026.09.26.
+	MCPOK: true,
+	MCPConfigFile: func(endpoint string) string {
+		return fmt.Sprintf(`{"mcpServers":{"dhi":{"url":%q}}}`, endpoint)
+	},
+	MCPProjectFile: ".cursor/mcp.json",
 }
 
-// cursorItem is the union shape of one stream-json line.
+// cursorItem is the union shape of one stream-json line. Live-verified
+// 2026-09-26 against cursor-agent 2026.09.26: assistant text is nested
+// under message.content[], `result` carries the final text + camelCase
+// usage, and thinking deltas ride their own subtype (ignored).
 type cursorItem struct {
-	Type     string `json:"type"`
-	Subtype  string `json:"subtype"`
-	Text     string `json:"text"`
-	Content  string `json:"content"`
-	Tool     string `json:"tool"`
-	Title    string `json:"title"`
-	Error    string `json:"error"`
-	Duration int    `json:"duration"`
+	Type    string `json:"type"`
+	Subtype string `json:"subtype"`
+	IsError bool   `json:"is_error"`
+	Result  string `json:"result"`
+	Text    string `json:"text"`
+	Message struct {
+		Role    string `json:"role"`
+		Content []struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		} `json:"content"`
+	} `json:"message"`
+	Tool  string `json:"tool"`
+	Title string `json:"title"`
+	Error string `json:"error"`
+	Usage struct {
+		InputTokens  int `json:"inputTokens"`
+		OutputTokens int `json:"outputTokens"`
+	} `json:"usage"`
 }
 
 // cursorStop is the normalized terminal payload the parser hands
-// Finalize: the documented result event carries no summary text, so the
-// parser stitches the last assistant message onto it.
+// Finalize: the result event carries the final text and usage; the
+// parser stitches the last assistant message when it does not.
 type cursorStop struct {
 	Type        string `json:"type"` // "cursor.result"
 	LastMessage string `json:"last_message"`
+	IsError     bool   `json:"is_error"`
+	TokensIn    int    `json:"tokens_in"`
+	TokensOut   int    `json:"tokens_out"`
 }
 
 func cursorParseStream(r io.Reader) <-chan StreamEvent {
@@ -116,7 +145,14 @@ func cursorParseStream(r io.Reader) <-chan StreamEvent {
 			}
 			switch it.Type {
 			case "result":
-				stop := cursorStop{Type: "cursor.result", LastMessage: lastText}
+				msg := strings.TrimSpace(it.Result)
+				if msg == "" {
+					msg = lastText
+				}
+				stop := cursorStop{
+					Type: "cursor.result", LastMessage: msg, IsError: it.IsError,
+					TokensIn: it.Usage.InputTokens, TokensOut: it.Usage.OutputTokens,
+				}
 				b, err := json.Marshal(stop)
 				if err != nil {
 					ch <- StreamEvent{Kind: EventError, Detail: "cursor-agent: marshal final"}
@@ -124,10 +160,16 @@ func cursorParseStream(r io.Reader) <-chan StreamEvent {
 				}
 				ch <- StreamEvent{Kind: EventFinal, Detail: string(b)}
 			case "assistant":
-				text := strings.TrimSpace(it.Text)
-				if it.Content != "" {
-					text = strings.TrimSpace(it.Content)
+				if it.Message.Role == "user" {
+					continue
 				}
+				var sb strings.Builder
+				for _, part := range it.Message.Content {
+					if part.Type == "text" {
+						sb.WriteString(part.Text)
+					}
+				}
+				text := strings.TrimSpace(sb.String())
 				if text != "" {
 					lastText = text
 					ch <- StreamEvent{Kind: EventProgress, Detail: truncate(text, 200)}
@@ -152,15 +194,25 @@ func cursorParseStream(r io.Reader) <-chan StreamEvent {
 	return ch
 }
 
-// cursorFinalize parses the stitched terminal payload. Until live
-// verification places tokens/cost, usage stays unknown (-1) and HasCost
-// false.
+// cursorFinalize parses the terminal payload: a non-success result fails
+// the run; tokens come from the result usage; cost is absent (HasCost
+// false — cursor reports none).
 func cursorFinalize(final string) (string, Usage, error) {
 	var stop cursorStop
 	if err := json.Unmarshal([]byte(final), &stop); err != nil {
 		return "", Usage{}, fmt.Errorf("clirun/cursor-agent: final: %w", err)
 	}
-	return strings.TrimSpace(stop.LastMessage), Usage{TokensIn: -1, TokensOut: -1}, nil
+	if stop.IsError {
+		return "", Usage{}, fmt.Errorf("clirun/cursor-agent: run ended with an error")
+	}
+	u := Usage{TokensIn: stop.TokensIn, TokensOut: stop.TokensOut}
+	if stop.TokensIn == 0 {
+		u.TokensIn = -1
+	}
+	if stop.TokensOut == 0 {
+		u.TokensOut = -1
+	}
+	return strings.TrimSpace(stop.LastMessage), u, nil
 }
 
 // cursorVersion extracts the version token from `cursor-agent --version`.
@@ -169,8 +221,17 @@ func cursorVersion(ctx context.Context, path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if v := firstVersionToken(out); v != "" {
-		return v, nil
+	// cursor reports "2026.09.26-dd393fe" (date + build hash): keep the
+	// numeric date token, drop the hash.
+	for _, f := range strings.Fields(out) {
+		f = strings.TrimPrefix(f, "v")
+		f = strings.TrimSuffix(f, ",")
+		if i := strings.IndexByte(f, '-'); i > 0 {
+			f = f[:i]
+		}
+		if isVersionLike(f) {
+			return f, nil
+		}
 	}
 	return "", fmt.Errorf("clirun/cursor-agent: no version in %q", truncate(out, 60))
 }

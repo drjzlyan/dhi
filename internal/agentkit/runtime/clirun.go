@@ -298,6 +298,32 @@ func (r *Runtime) serveTools(e *entry, trigger bus.Message) *serveSession {
 		return nil
 	}
 	sess := &serveSession{endpoint: endpoint, stop: stop}
+	// Project-file adapters (cursor) need the config inside the worktree
+	// at a fixed relative path; write it there and git-exclude it so the
+	// agent's own commits never pick it up.
+	if e.cli.MCPProjectFile != "" && e.cli.MCPConfigFile != nil {
+		dir := r.cliWorkdir(trigger)
+		path := filepath.Join(dir, e.cli.MCPProjectFile)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err == nil {
+			if werr := os.WriteFile(path, []byte(e.cli.MCPConfigFile(endpoint)), 0o644); werr == nil {
+				unexclude := excludeFromGit(dir, e.cli.MCPProjectFile)
+				sess.configPath = path
+				sess.stop = func() {
+					_ = os.Remove(path)
+					unexclude()
+					stop()
+				}
+				return sess
+			}
+		}
+		stop()
+		_, _ = r.cfg.Bus.Post(bus.Message{
+			Channel: trigger.Channel, Thread: trigger.Thread,
+			Author: e.m.ID,
+			Text:   "IDE tools unavailable this turn: cannot write " + e.cli.MCPProjectFile,
+		})
+		return nil
+	}
 	// File-delivered adapters get a temp config; inline adapters
 	// (codex) take the endpoint straight on argv.
 	if e.cli.MCPConfigFile != nil {
@@ -608,4 +634,55 @@ func (r *Runtime) allowedActions(e *entry) []string {
 		}
 	}
 	return out
+}
+
+// excludeFromGit appends a worktree-relative path to the repo's
+// info/exclude (the worktree's gitdir) so the agent's commits never
+// capture a per-turn file, returning a cleanup that removes the line.
+// Best-effort: on any failure it returns a no-op rather than blocking
+// the turn.
+func excludeFromGit(worktree, rel string) func() {
+	noop := func() {}
+	gitDir := filepath.Join(worktree, ".git")
+	if fi, err := os.Stat(gitDir); err == nil && !fi.IsDir() {
+		b, err := os.ReadFile(gitDir)
+		if err != nil {
+			return noop
+		}
+		const prefix = "gitdir:"
+		line := strings.TrimSpace(string(b))
+		if !strings.HasPrefix(line, prefix) {
+			return noop
+		}
+		gd := strings.TrimSpace(strings.TrimPrefix(line, prefix))
+		if !filepath.IsAbs(gd) {
+			gd = filepath.Join(worktree, gd)
+		}
+		gitDir = gd
+	}
+	ex := filepath.Join(gitDir, "info", "exclude")
+	pattern := "/" + filepath.ToSlash(rel)
+	_ = os.MkdirAll(filepath.Dir(ex), 0o755)
+	if orig, err := os.ReadFile(ex); err == nil && strings.Contains(string(orig), pattern) {
+		return noop
+	}
+	f, err := os.OpenFile(ex, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		return noop
+	}
+	_, _ = f.WriteString(pattern + "\n")
+	_ = f.Close()
+	return func() {
+		cur, err := os.ReadFile(ex)
+		if err != nil {
+			return
+		}
+		var kept []string
+		for _, l := range strings.Split(string(cur), "\n") {
+			if strings.TrimSpace(l) != pattern {
+				kept = append(kept, l)
+			}
+		}
+		_ = os.WriteFile(ex, []byte(strings.Join(kept, "\n")), 0o644)
+	}
 }

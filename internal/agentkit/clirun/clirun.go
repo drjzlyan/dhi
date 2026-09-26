@@ -126,6 +126,11 @@ type CLI struct {
 	// MCPConfigEnv names the env var that points the CLI at that config
 	// file ("" = the adapter takes it via argv instead).
 	MCPConfigEnv string
+	// MCPProjectFile names a worktree-relative path the CLI reads for
+	// project-local MCP config (cursor: ".cursor/mcp.json"). When set,
+	// the runtime writes the config there (and git-excludes it) instead
+	// of a temp dir — the CLI offers no argv/env override.
+	MCPProjectFile string
 	// MCPConfigArgs returns argv additions that register the endpoint
 	// (nil = the adapter takes it via env instead). It receives both
 	// the temp config path and the raw endpoint: file-based adapters
