@@ -10,6 +10,13 @@ import (
 	"github.com/drjzlyan/dhi/internal/mcp"
 )
 
+// GitCLI is the narrow git-CLI seam the diff tool needs (go-git has no
+// patch producer). Satisfied by *gitcore.Runner — the hermetic git
+// binary with its declared env.
+type GitCLI interface {
+	Run(ctx context.Context, dir string, args ...string) (string, string, error)
+}
+
 // gitTools is the read-only git surface (F-030 P1). It operates on the
 // turn's working directory — the task worktree when the trigger is bound
 // to one, else the workspace root — through the same go-git path the
@@ -124,6 +131,94 @@ func (d Deps) gitTools() []tool {
 				fmt.Fprintf(&b, "current: %s\n", cur)
 				fmt.Fprintf(&b, "branches: %s\n", strings.Join(branches, ", "))
 				return b.String(), nil
+			},
+		},
+		{
+			info: mcp.ToolInfo{
+				Name:        "git_diff",
+				Description: "Show the working-tree diff. Args: {\"staged\": false}. Empty output means no changes.",
+				InputSchema: json.RawMessage(`{"type":"object","properties":{"staged":{"type":"boolean"}},"additionalProperties":false}`),
+			},
+			parse: func(raw json.RawMessage) (any, error) {
+				var a struct {
+					Staged bool `json:"staged"`
+				}
+				if err := args(raw, &a); err != nil {
+					return nil, err
+				}
+				return a, nil
+			},
+			exec: func(ctx context.Context, dec any) (string, error) {
+				if d.Git == nil {
+					return "", fmt.Errorf("git CLI unavailable (run bootstrap)")
+				}
+				if strings.TrimSpace(d.Workdir) == "" {
+					return "", fmt.Errorf("no working directory for this turn")
+				}
+				argv := []string{"diff", "--no-color"}
+				if dec.(struct {
+					Staged bool `json:"staged"`
+				}).Staged {
+					argv = append(argv, "--staged")
+				}
+				out, _, err := d.Git.Run(ctx, d.Workdir, argv...)
+				if err != nil {
+					return "", err
+				}
+				if strings.TrimSpace(out) == "" {
+					return "(no changes)\n", nil
+				}
+				return out, nil
+			},
+		},
+		{
+			info: mcp.ToolInfo{
+				Name:        "git_commit",
+				Description: "Stage all changes and commit them as the user's git identity. Args: {\"message\": \"...\"}. Mutating: crosses approvals. Refuses with nothing staged.",
+				InputSchema: json.RawMessage(`{"type":"object","required":["message"],"properties":{"message":{"type":"string"}},"additionalProperties":false}`),
+			},
+			mutate: true,
+			parse: func(raw json.RawMessage) (any, error) {
+				var a struct {
+					Message string `json:"message"`
+				}
+				if err := args(raw, &a); err != nil {
+					return nil, err
+				}
+				if strings.TrimSpace(a.Message) == "" {
+					return nil, fmt.Errorf("commit message is required")
+				}
+				// Validate the target repo before spending an approval.
+				if _, err := open(); err != nil {
+					return nil, err
+				}
+				return a, nil
+			},
+			exec: func(ctx context.Context, dec any) (string, error) {
+				repo, err := open()
+				if err != nil {
+					return "", err
+				}
+				if d.Identity == nil {
+					return "", fmt.Errorf("%w", gitcore.ErrIdentityUnset)
+				}
+				id, err := d.Identity(ctx)
+				if err != nil {
+					return "", err
+				}
+				if err := repo.Stage("."); err != nil {
+					return "", err
+				}
+				hash, err := repo.Commit(gitcore.CommitOptions{
+					Message: dec.(struct {
+						Message string `json:"message"`
+					}).Message,
+					Author: id.Name, Email: id.Email,
+				})
+				if err != nil {
+					return "", err
+				}
+				return "committed " + hash[:min(7, len(hash))], nil
 			},
 		},
 	}

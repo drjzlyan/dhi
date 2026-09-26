@@ -247,9 +247,9 @@ func TestServeToolsConfigForMCPAdapter(t *testing.T) {
 // served slug never starts the endpoint (the dhi-action fallback stays).
 func TestNoServedToolsNoSession(t *testing.T) {
 	h := newHarness(t, baseDoc())
-	// Narrow the allowlist to a non-served builtin (the fs tools are
-	// served as of M15 P1; git_commit is not).
-	h.rt.agents["scout"].m.Tools = []string{"git_commit"}
+	// Narrow the allowlist to a non-served builtin (the fs + git
+	// tools are served as of M15 P1; git_push is not).
+	h.rt.agents["scout"].m.Tools = []string{"git_push"}
 	if s := h.rt.serveTools(h.rt.agents["scout"], bus.Message{Channel: "#general"}); s != nil {
 		s.stop()
 		t.Fatal("started a tool session with no served slug in the allowlist")

@@ -112,6 +112,7 @@ func runTUI() {
 	var rgSearcher search.Searcher
 	var termEnv []string
 	var identityFn gitcore.IdentityFunc
+	var gitRunner *gitcore.Runner
 	if toolRoot != "" {
 		mgr := toolchain.New(toolRoot)
 		// Terminal sessions run with DHI's hermetic PATH. When the
@@ -127,6 +128,11 @@ func runTUI() {
 			return gitcore.ResolveIdentity(ctx, gitcore.NewRunner(mgr.GitBin(), mgr.GitIdentityEnv(nil)))
 		}
 		edOpts = append(edOpts, editor.WithIdentity(identityFn))
+		// Hermetic git runner backs the served git_diff tool (M15 P1);
+		// absent git leaves it nil and the tool refuses by name.
+		if r, err := gitcore.ResolveRunner(mgr); err == nil {
+			gitRunner = r
+		}
 		if _, err := os.Stat(filepath.Join(toolRoot, "bin", "rg")); err == nil {
 			rgSearcher = search.Ripgrep{Bin: filepath.Join(toolRoot, "bin", "rg")}
 		}
@@ -171,7 +177,7 @@ func runTUI() {
 		// under .dhi/agents/. Guards carry the audited OS-sandbox
 		// adapter (nil here is impossible: the audit blocked first).
 		if messageBus != nil {
-			agentRT = newAgentRuntime(ws, messageBus, decision.Sandbox, termEnv, cfg.Engine, taskStore, reviewSvc, rgSearcher)
+			agentRT = newAgentRuntime(ws, messageBus, decision.Sandbox, termEnv, cfg.Engine, gitRunner, identityFn, taskStore, reviewSvc, rgSearcher)
 			if agentRT != nil {
 				edOpts = append(edOpts, editor.WithChat(agentRT))
 			}
@@ -453,7 +459,7 @@ func openBus(ws *workspace.Workspace) *bus.Bus {
 // ride along when their sidecar files parse; broken ones degrade. Agent
 // memory + the knowledge base join the turn loop (M14 P1): persistent
 // context in, review-gated contributions out.
-func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cliEnv []string, defaultEngine string, taskStore *tasks.Store, reviewSvc *review.Service, kbSearcher search.Searcher) *agentkitRuntime.Runtime {
+func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cliEnv []string, defaultEngine string, gitRunner *gitcore.Runner, identityFn gitcore.IdentityFunc, taskStore *tasks.Store, reviewSvc *review.Service, kbSearcher search.Searcher) *agentkitRuntime.Runtime {
 	roster, err := manifest.LoadDir(filepath.Join(ws.Root, workspace.DirAgents))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "dhi: agent roster:", err)

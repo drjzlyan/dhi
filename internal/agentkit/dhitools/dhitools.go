@@ -24,6 +24,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
 	"github.com/drjzlyan/dhi/internal/agentkit/memory"
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
+	"github.com/drjzlyan/dhi/internal/gitcore"
 	"github.com/drjzlyan/dhi/internal/mcp"
 	"github.com/drjzlyan/dhi/internal/sandbox"
 	"github.com/drjzlyan/dhi/internal/search"
@@ -43,6 +44,8 @@ type Deps struct {
 	WS        *workspace.Workspace
 	Search    search.Searcher
 	Approvals *tools.Approvals
+	Git       GitCLI               // git CLI for git_diff; nil refuses the diff tool
+	Identity  gitcore.IdentityFunc // commit identity; nil refuses git_commit
 
 	// Channel/Thread are the trigger context: channel_read/post
 	// default to the thread the turn started from.
@@ -71,7 +74,7 @@ type tool struct {
 // from the same list (one source of truth).
 var servedSlugs = []string{
 	"read", "write", "patch", "list", "glob",
-	"git_status", "git_log", "git_branch",
+	"git_status", "git_log", "git_branch", "git_diff", "git_commit",
 	"task_list", "task_create", "task_status", "task_assign",
 	"kb_search", "kb_contribute",
 	"memory_append", "memory_read_notes", "memory_write_notes",

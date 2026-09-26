@@ -39,8 +39,9 @@ sandbox (network deny-by-default, no free-form shell).
 - Search: `search` (ripgrep fan-out, read-only).
 - Git: `git_status`, `git_diff`, `git_log`, `git_branch`, `git_commit`,
   `git_push` — write operations cross approvals and the active workflow.
-  **Landed:** `git_status`/`git_log`/`git_branch` (read-only, on the
-  turn's workdir); `git_diff` + mutating `git_commit`/`git_push` remain.
+  **Landed:** `git_status`/`git_log`/`git_branch`/`git_diff` (read-only,
+  on the turn's workdir) and mutating `git_commit` (approval-gated,
+  authored by the user's resolved identity); `git_push` remains.
 - Editor/LSP: `editor_open`, `editor_reveal`, `editor_apply_edit`,
   `lsp_hover`, `lsp_definition`, `lsp_references`, `lsp_rename`,
   `lsp_code_action`. Edits apply through the same WorkspaceEdit path the

@@ -272,6 +272,8 @@ func (r *Runtime) serveTools(e *entry, trigger bus.Message) *serveSession {
 		WS:        r.cfg.WS,
 		Search:    r.cfg.Search,
 		Approvals: r.cfg.Approvals,
+		Git:       r.cfg.Git,
+		Identity:  r.cfg.Identity,
 		Channel:   trigger.Channel,
 		Thread:    trigger.Thread,
 		Workdir:   r.cliWorkdir(trigger),

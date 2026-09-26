@@ -82,8 +82,8 @@ func writeAgent(t *testing.T, root, id, runtime, tools string) {
 // served tool.
 func TestAgentToolsIdle(t *testing.T) {
 	root := wsFixture(t)
-	// git_commit is not a served slug (the fs tools are, as of M15 P1).
-	writeAgent(t, root, "scout", "claude", `"git_commit"`)
+	// git_push is not a served slug (the fs + git tools are, as of M15 P1).
+	writeAgent(t, root, "scout", "claude", `"git_push"`)
 	got := AgentTools(root)
 	if len(got) != 1 || got[0].Name != "agent-tools" || got[0].Status != OK {
 		t.Fatalf("checks = %+v", got)

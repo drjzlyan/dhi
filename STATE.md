@@ -270,10 +270,10 @@ catalog).
 1. **M15 P1 — IDE tool catalog** (F-030), *in progress*: filesystem set
    (`read`/`list`/`glob` read-only + `write`/`patch` approval-gated,
    VPath-jailed, `dhitools/fs.go`) and read-only git
-   (`git_status`/`git_log`/`git_branch` on the turn workdir,
-   `dhitools/git.go`) landed. Next: `git_diff` + mutating git
-   (`git_commit`/`git_push`), editor/LSP, allowlisted `run`,
-   `ask_human`, product-store reads.
+   (`git_status`/`git_log`/`git_branch`/`git_diff`, plus mutating
+   `git_commit` authored by the user identity, `dhitools/git.go`)
+   landed. Next: `git_push`, allowlisted `run`, `ask_human`,
+   product-store reads, then the editor/LSP seam ADR (option c).
 2. **M15 P2–P3 — capability scopes, MCP-for-all**:
    fs/search/git/editor/LSP/run tools; scopes + grant-memory approvals;
    MCP verified for every shipped adapter; sandbox tightened (network

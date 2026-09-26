@@ -24,6 +24,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/standards"
 	"github.com/drjzlyan/dhi/internal/agentkit/toolbridge"
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
+	"github.com/drjzlyan/dhi/internal/gitcore"
 	"github.com/drjzlyan/dhi/internal/sandbox"
 	"github.com/drjzlyan/dhi/internal/search"
 	"github.com/drjzlyan/dhi/internal/tasks"
@@ -76,6 +77,12 @@ type Config struct {
 	// Search backs the workspace_search IDE tool (F-028); nil omits
 	// the tool from the served surface.
 	Search search.Searcher
+	// Git is the hermetic git CLI runner backing git_diff (M15 P1); nil
+	// makes the diff tool refuse by name (never a host fallback).
+	Git *gitcore.Runner
+	// Identity resolves the user's git identity for git_commit (F-029);
+	// nil makes the commit tool refuse by name.
+	Identity gitcore.IdentityFunc
 }
 
 // Runtime manages rostered agents and executes their turns.
