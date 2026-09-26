@@ -14,9 +14,11 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/behavior"
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/agentkit/clirun"
+	"github.com/drjzlyan/dhi/internal/agentkit/dhitools"
 	"github.com/drjzlyan/dhi/internal/agentkit/standards"
 	"github.com/drjzlyan/dhi/internal/agentkit/toolbridge"
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
+	"github.com/drjzlyan/dhi/internal/mcp"
 	"github.com/drjzlyan/dhi/internal/sandbox"
 	"github.com/drjzlyan/dhi/internal/tasks"
 )
@@ -34,8 +36,14 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message) er
 	// timeout that would cut the run short: bounded by the caller's
 	// context here, before the manifest timeout arms (the timeout
 	// governs the CLI run, not context assembly).
-	prompt, system := r.cliPrompt(ctx, e, trigger)
+	serve := r.serveTools(e, trigger)
+	prompt, system := r.cliPrompt(ctx, e, trigger, serve != nil)
 	workdir := r.cliWorkdir(trigger)
+	mcpConfig := ""
+	if serve != nil {
+		defer serve.stop()
+		mcpConfig = serve.configPath
+	}
 
 	if e.m.Timeout > 0 {
 		var cancel context.CancelFunc
@@ -45,7 +53,7 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message) er
 
 	var lastErr error
 	for attempt := 0; ; attempt++ {
-		run := r.cliSpawnOnce(ctx, e, trigger, prompt, system, workdir, attempt)
+		run := r.cliSpawnOnce(ctx, e, trigger, prompt, system, workdir, attempt, mcpConfig)
 		r.recordRun(trigger, run)
 
 		if run.Status == tasks.RunOK {
@@ -82,7 +90,7 @@ var cliRetryBackoff = 30 * time.Second
 // cliSpawnOnce runs a single attempt: spawn the wrapped CLI, stream the
 // transcript into the trigger thread, persist the event JSONL, finalize,
 // and return the run record.
-func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Message, prompt, system, workdir string, attempt int) tasks.Run {
+func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Message, prompt, system, workdir string, attempt int, mcpConfig string) tasks.Run {
 	started := time.Now().UTC()
 	run := tasks.Run{
 		ID: runID(started), Agent: e.m.ID,
@@ -118,7 +126,7 @@ func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Messag
 	// and the reply came back as plain text (no stream-json at all).
 	argv := append([]string{e.cliPath}, e.cli.BuildArgs(clirun.RunInput{
 		Prompt: prompt, System: system,
-		Model: e.m.Model, Workdir: workdir, Stdin: stdin,
+		Model: e.m.Model, Workdir: workdir, Stdin: stdin, MCPConfig: mcpConfig,
 	})...)
 	wrapped, err := e.guard.Sandbox.Wrap(argv)
 	if err != nil {
@@ -229,12 +237,92 @@ func (r *Runtime) saveTranscript(events []clirun.StreamEvent, run tasks.Run) str
 	return p
 }
 
+// serveSession is one per-turn IDE-tools server (nil when the agent
+// allowlist carries no served tools, or the adapter has no verified
+// MCP wiring — the dhi-action fallback stays for those).
+type serveSession struct {
+	configPath string // temp MCP config file for the adapter
+	stop       func()
+}
+
+// serveTools starts the loopback IDE-tools endpoint for agents whose
+// allowlist includes served tools on an MCP-capable adapter. The
+// endpoint lives exactly as long as the turn (ADR-0017: no daemon);
+// the temp config dies with it.
+func (r *Runtime) serveTools(e *entry, trigger bus.Message) *serveSession {
+	if r.cfg.WS == nil || e.cli == nil || !e.cli.MCPOK {
+		return nil
+	}
+	any := false
+	for _, t := range e.m.Tools {
+		if dhitools.Serves(t) {
+			any = true
+			break
+		}
+	}
+	if !any {
+		return nil
+	}
+	handler := dhitools.Deps{
+		Agent:     e.m,
+		Tasks:     r.cfg.Tasks,
+		KB:        r.cfg.Knowledge,
+		Memory:    r.cfg.Memory,
+		Bus:       r.cfg.Bus,
+		WS:        r.cfg.WS,
+		Search:    r.cfg.Search,
+		Approvals: r.cfg.Approvals,
+		Channel:   trigger.Channel,
+		Thread:    trigger.Thread,
+	}.Handler()
+	if len(handler.Tools()) == 0 {
+		return nil
+	}
+	endpoint, stop, err := mcp.ServeLoopback(handler)
+	if err != nil {
+		// Named degrade, never silent: the turn proceeds on the
+		// dhi-action fallback and the thread sees why (F-011).
+		_, _ = r.cfg.Bus.Post(bus.Message{
+			Channel: trigger.Channel, Thread: trigger.Thread,
+			Author: e.m.ID,
+			Text:   "IDE tools unavailable this turn: " + err.Error(),
+		})
+		return nil
+	}
+	tmp, err := os.CreateTemp("", "dhi-mcp-*.json")
+	if err != nil {
+		stop()
+		_, _ = r.cfg.Bus.Post(bus.Message{
+			Channel: trigger.Channel, Thread: trigger.Thread,
+			Author: e.m.ID,
+			Text:   "IDE tools unavailable this turn: " + err.Error(),
+		})
+		return nil
+	}
+	cfg := fmt.Sprintf(`{"mcpServers":{"dhi":{"type":"http","url":%q}}}`, endpoint)
+	if _, err := tmp.WriteString(cfg); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmp.Name())
+		stop()
+		return nil
+	}
+	_ = tmp.Close()
+	return &serveSession{
+		configPath: tmp.Name(),
+		stop: func() {
+			_ = os.Remove(tmp.Name())
+			stop()
+		},
+	}
+}
+
 // cliPrompt flattens the trigger + recent history into a headless CLI
 // prompt and assembles the system block (grounding + memory + KB hits +
 // standards), mirroring the in-house prompt() but as text a CLI accepts.
 // ctx drives the KB search (bounded retrieval, not part of the turn
-// timeout).
-func (r *Runtime) cliPrompt(ctx context.Context, e *entry, trigger bus.Message) (prompt, system string) {
+// timeout). mcp=true suppresses the dhi-action advertising — the MCP
+// tools/list carries the contract for those adapters (F-028).
+func (r *Runtime) cliPrompt(ctx context.Context, e *entry, trigger bus.Message, mcp bool) (prompt, system string) {
 	// F-027: the effective persona comes from the behaviour composer —
 	// manifest system + role template + attached skills — with the
 	// runtime-owned layers (grounding, actions, memory, KB, standards)
@@ -255,11 +343,13 @@ func (r *Runtime) cliPrompt(ctx context.Context, e *entry, trigger bus.Message) 
 	grounding := "\n\nFiles are addressed as <member>/<rel-path>. Members: " + strings.Join(members, ", ")
 	grounding += "\nThe reserved workspace dotdir is addressed as .dhi/<rel-path>; ideation artifacts belong under .dhi/sessions/<session>/<file>."
 	system += grounding
-	if actions := r.allowedActions(e); len(actions) > 0 {
-		system += "\n\nDHI actions: end your reply with a fenced ```dhi-action block to request one. " +
-			"Shape: {\"action\": \"<name>\", \"args\": {...}}. Valid names: " +
-			strings.Join(actions, ", ") + ". Each runs after the human approves it; " +
-			"the result arrives as a reply in this thread."
+	if !mcp {
+		if actions := r.allowedActions(e); len(actions) > 0 {
+			system += "\n\nDHI actions: end your reply with a fenced ```dhi-action block to request one. " +
+				"Shape: {\"action\": \"<name>\", \"args\": {...}}. Valid names: " +
+				strings.Join(actions, ", ") + ". Each runs after the human approves it; " +
+				"the result arrives as a reply in this thread."
+		}
 	}
 	system += r.memoryBlock(e.m.ID)
 	system += r.knowledgeBlock(ctx, trigger.Text)

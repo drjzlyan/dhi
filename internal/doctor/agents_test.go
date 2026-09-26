@@ -69,3 +69,55 @@ func TestAgentsBrokenManifestFails(t *testing.T) {
 		t.Fatalf("checks = %+v, want single fail", got)
 	}
 }
+
+func writeAgent(t *testing.T, root, id, runtime, tools string) {
+	t.Helper()
+	doc := "schema = 1\nname = \"S\"\nmodel = \"m\"\nruntime = \"" + runtime + "\"\ntools = [" + tools + "]\n"
+	if err := os.WriteFile(filepath.Join(root, workspace.DirAgents, id+".toml"), []byte(doc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestAgentToolsIdle pins the single ok row when no agent allowlists a
+// served tool.
+func TestAgentToolsIdle(t *testing.T) {
+	root := wsFixture(t)
+	writeAgent(t, root, "scout", "claude", `"read","write"`)
+	got := AgentTools(root)
+	if len(got) != 1 || got[0].Name != "agent-tools" || got[0].Status != OK {
+		t.Fatalf("checks = %+v", got)
+	}
+	if !strings.Contains(got[0].Detail, "idle") {
+		t.Errorf("detail = %q, want idle", got[0].Detail)
+	}
+}
+
+// TestAgentToolsServingOnMCPAdapter pins the ok row naming the agent
+// and adapter when the allowlist intersects the served set.
+func TestAgentToolsServingOnMCPAdapter(t *testing.T) {
+	root := wsFixture(t)
+	writeAgent(t, root, "scout", "claude", `"memory_append","task_list"`)
+	got := AgentTools(root)
+	if len(got) != 1 || got[0].Status != OK {
+		t.Fatalf("checks = %+v", got)
+	}
+	if !strings.Contains(got[0].Detail, "scout (claude, 2 tool(s))") {
+		t.Errorf("detail = %q", got[0].Detail)
+	}
+}
+
+// TestAgentToolsFallbackWarns pins the named warn: a served allowlist on
+// a runtime without verified MCP wiring keeps the dhi-action fallback,
+// and the row says so.
+func TestAgentToolsFallbackWarns(t *testing.T) {
+	root := wsFixture(t)
+	writeAgent(t, root, "scout", "opencode", `"memory_append"`)
+	got := AgentTools(root)
+	if len(got) != 1 || got[0].Name != "agent-tools" {
+		t.Fatalf("checks = %+v, want one agent-tools row", got)
+	}
+	if got[0].Status != Warn || !strings.Contains(got[0].Detail, "opencode") ||
+		!strings.Contains(got[0].Detail, "fallback") {
+		t.Fatalf("warn row = %+v", got[0])
+	}
+}

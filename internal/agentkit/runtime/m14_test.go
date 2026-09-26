@@ -203,13 +203,111 @@ func TestOversizedPromptRidesStdin(t *testing.T) {
 	}
 }
 
+// docTools renders a manifest allowing an explicit tool set on a runtime
+// (the F-028 served-tool tests vary both).
+func docTools(runtime, tools string) string {
+	return `schema = 1
+name = "Scout"
+model = "m"
+runtime = "` + runtime + `"
+system = "You scout."
+tools = [` + tools + `]
+policy_json = """{"rules":[{"op":"read","path":"**","effect":"allow"}]}"""
+`
+}
+
+// TestServeToolsConfigForMCPAdapter pins F-028/ADR-0017: an agent whose
+// allowlist intersects the served set on an MCP-capable adapter gets a
+// per-turn loopback session with a generated http MCP config; the temp
+// config dies with the turn.
+func TestServeToolsConfigForMCPAdapter(t *testing.T) {
+	h := newHarness(t, docTools("claude", `"memory_append"`))
+	h.rt.cfg.Memory = memory.Open(h.ws)
+	serve := h.rt.serveTools(h.rt.agents["scout"], bus.Message{Channel: "#general"})
+	if serve == nil {
+		t.Fatal("no serve session for a served allowlist on an MCP-capable adapter")
+	}
+	raw, err := os.ReadFile(serve.configPath)
+	if err != nil {
+		t.Fatalf("read generated config: %v", err)
+	}
+	cfg := string(raw)
+	if !strings.Contains(cfg, `"dhi"`) || !strings.Contains(cfg, `"type":"http"`) ||
+		!strings.Contains(cfg, "127.0.0.1") {
+		t.Fatalf("generated MCP config = %s", cfg)
+	}
+	path := serve.configPath
+	serve.stop()
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("temp config survived stop: %v", err)
+	}
+}
+
+// TestNoServedToolsNoSession pins the negative: an allowlist with no
+// served slug never starts the endpoint (the dhi-action fallback stays).
+func TestNoServedToolsNoSession(t *testing.T) {
+	h := newHarness(t, baseDoc()) // read/write/list only
+	if s := h.rt.serveTools(h.rt.agents["scout"], bus.Message{Channel: "#general"}); s != nil {
+		s.stop()
+		t.Fatal("started a tool session with no served slug in the allowlist")
+	}
+}
+
+// TestNonMCPAdapterKeepsFallback pins the adapter gate: a served slug on
+// a runtime without verified MCP wiring serves nothing (fallback).
+func TestNonMCPAdapterKeepsFallback(t *testing.T) {
+	h := newHarnessMulti(t, docTools("opencode", `"memory_append"`),
+		map[string]string{"opencode": silentStub})
+	h.rt.cfg.Memory = memory.Open(h.ws)
+	if s := h.rt.serveTools(h.rt.agents["scout"], bus.Message{Channel: "#general"}); s != nil {
+		s.stop()
+		t.Fatal("served MCP tools to an adapter without verified wiring")
+	}
+}
+
+// TestTurnWiresMCPConfigToClaude pins the spawn wiring end-to-end:
+// claude gets --mcp-config <temp> --strict-mcp-config, and the
+// dhi-action contract is suppressed in the system block (MCP carries it).
+func TestTurnWiresMCPConfigToClaude(t *testing.T) {
+	h := newHarness(t, docTools("claude", `"memory_append"`))
+	h.rt.cfg.Memory = memory.Open(h.ws)
+	trig := mustPost(t, h, bus.Message{Channel: "#general", Author: bus.Human, Text: "@scout note something"})
+	if err := h.rt.Turn(context.Background(), "scout", trig); err != nil {
+		t.Fatalf("turn: %v", err)
+	}
+	args := readArgs(t, h)
+	sawConfig, sawStrict := false, false
+	var system string
+	for i, a := range args {
+		switch a {
+		case "--mcp-config":
+			sawConfig = true
+			if i+1 >= len(args) || args[i+1] == "" {
+				t.Fatal("--mcp-config without a path argument")
+			}
+		case "--strict-mcp-config":
+			sawStrict = true
+		case "--append-system-prompt":
+			if i+1 < len(args) {
+				system = args[i+1]
+			}
+		}
+	}
+	if !sawConfig || !sawStrict {
+		t.Fatalf("claude argv missing MCP wiring (config=%v strict=%v): %q", sawConfig, sawStrict, args)
+	}
+	if strings.Contains(system, "dhi-action") {
+		t.Fatalf("system block still advertises dhi-action while MCP serves the tools:\n%s", system)
+	}
+}
+
 // TestCliPromptMemoryDegradeNamesIt pins the named degrade: a KB
 // search failure surfaces inside the block, never silently dropped.
 func TestCliPromptMemoryDegradeNamesIt(t *testing.T) {
 	h := newHarness(t, baseDoc())
 	h.rt.cfg.Knowledge = failingKB{}
 	prompt, system := h.rt.cliPrompt(context.Background(), h.rt.agents["scout"],
-		bus.Message{Channel: "#general", Author: bus.Human, Text: "hello"})
+		bus.Message{Channel: "#general", Author: bus.Human, Text: "hello"}, false)
 	if !strings.Contains(system, "Knowledge base unavailable") {
 		t.Fatalf("named KB degrade missing:\n%s", system)
 	}

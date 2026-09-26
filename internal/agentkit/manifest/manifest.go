@@ -45,7 +45,7 @@ var BuiltinTools = []string{
 	"read", "write", "list", "search", "git_commit", "git_push",
 	"task_create", "task_status", "task_assign", "pr_open",
 	"task_list", "kb_search", "kb_contribute",
-	"memory_append", "memory_read_notes",
+	"memory_append", "memory_read_notes", "memory_write_notes",
 	"channel_post", "channel_read", "workspace_search",
 }
 

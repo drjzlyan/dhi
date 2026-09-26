@@ -66,6 +66,10 @@ func (h *HTTP) write(payload []byte) error {
 		h.mu.Unlock()
 	}
 	switch {
+	case resp.StatusCode == http.StatusAccepted:
+		// Notifications (e.g. notifications/initialized) get 202 with no
+		// body; nothing is pending, so there is nothing to deliver.
+		return nil
 	case resp.StatusCode != http.StatusOK:
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		return fmt.Errorf("mcp/http: status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))

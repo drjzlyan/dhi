@@ -50,6 +50,12 @@ var Claude = &CLI{
 		if in.System != "" {
 			args = append(args, "--append-system-prompt", in.System)
 		}
+		if in.MCPConfig != "" {
+			// IDE tools (F-028): the generated config registers DHI's
+			// loopback MCP endpoint; strict keeps the user's own MCP
+			// servers out of the agent run (nothing crosses).
+			args = append(args, "--mcp-config", in.MCPConfig, "--strict-mcp-config")
+		}
 		if in.Model != "" {
 			args = append(args, "--model", in.Model)
 		}
@@ -64,6 +70,9 @@ var Claude = &CLI{
 	// StdinOK: `claude -p` with no prompt argument consumes stdin —
 	// live-verified on 2.1.177.
 	StdinOK: true,
+	// MCPOK: --mcp-config with an http-type server is a documented
+	// Claude Code feature; live-verify checklist in the F-028 smoke.
+	MCPOK: true,
 }
 
 func allAdapters() []*CLI {

@@ -24,6 +24,7 @@ import (
 	agentkitStandards "github.com/drjzlyan/dhi/internal/agentkit/standards"
 
 	"github.com/drjzlyan/dhi/internal/agentkit/clirun"
+	"github.com/drjzlyan/dhi/internal/agentkit/dhitools"
 	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
 	"github.com/drjzlyan/dhi/internal/agentkit/org"
 	"github.com/drjzlyan/dhi/internal/gitcore"
@@ -69,6 +70,7 @@ func Run(toolRoot, wsRoot string) Report {
 	r.Checks = append(r.Checks, Workspace(wsRoot)...)
 	r.Checks = append(r.Checks, Config(wsRoot)...)
 	r.Checks = append(r.Checks, Agents(wsRoot)...)
+	r.Checks = append(r.Checks, AgentTools(wsRoot)...)
 	r.Checks = append(r.Checks, Standards(wsRoot)...)
 	r.Checks = append(r.Checks, Runtimes()...)
 	r.Checks = append(r.Checks, Tasks(wsRoot)...)
@@ -328,6 +330,58 @@ func Runtimes() []Check {
 	return checks
 }
 
+// AgentTools reports the IDE-tools capability (F-028/ADR-0017): the
+// runtime serves DHI's own tools (tasks/KB/memory/channels/search) to
+// agents over a per-turn loopback MCP endpoint. Exactly one row: ok
+// when idle or when every agent that allowlists a served tool is on an
+// adapter with verified MCP wiring; warn naming each agent whose
+// runtime lacks it (its dhi-action fallback stays).
+func AgentTools(wsRoot string) []Check {
+	if wsRoot == "" {
+		return nil
+	}
+	roster, err := manifest.LoadDir(filepath.Join(wsRoot, workspace.DirAgents))
+	if err != nil || len(roster) == 0 {
+		return nil // roster health is Agents()'s row
+	}
+	reg := clirun.NewRegistry(lookPath)
+	var ready, fallback []string
+	for _, a := range roster {
+		served := 0
+		for _, t := range a.Tools {
+			if dhitools.Serves(t) {
+				served++
+			}
+		}
+		if served == 0 {
+			continue
+		}
+		if c, ok := reg.Get(a.Runtime); ok && c.MCPOK {
+			ready = append(ready, fmt.Sprintf("%s (%s, %d tool(s))", a.ID, a.Runtime, served))
+			continue
+		}
+		fallback = append(fallback, fmt.Sprintf(
+			"%s allows %d IDE tool(s) but runtime %q has no verified MCP wiring",
+			a.ID, served, a.Runtime))
+	}
+	switch {
+	case len(ready) == 0 && len(fallback) == 0:
+		return []Check{{Name: "agent-tools", Status: OK,
+			Detail: "no agent allowlists IDE tools (serving idle)"}}
+	case len(fallback) == 0:
+		return []Check{{Name: "agent-tools", Status: OK,
+			Detail: "serving to " + strings.Join(ready, "; ")}}
+	default:
+		parts := fallback
+		if len(ready) > 0 {
+			parts = append([]string{"serving to " + strings.Join(ready, ", ")}, fallback...)
+		}
+		return []Check{{Name: "agent-tools", Status: Warn,
+			Detail: strings.Join(parts, "; ") + " (dhi-action fallback retained)"}}
+	}
+}
+
+// joinIDs renders a roster's ids for one-line details.
 func joinIDs(roster []*manifest.Agent) string {
 	ids := make([]string, 0, len(roster))
 	for _, a := range roster {

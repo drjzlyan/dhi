@@ -50,6 +50,7 @@ func seedInbox(t *testing.T, m *Model) {
 		// Pinned clock: transcript stamps stay deterministic (F-026 P3).
 		pinned := time.Date(2026, 9, 19, 10, 0, 0, 0, time.UTC)
 		b.Now = func() time.Time { return pinned }
+		m.now = func() time.Time { return pinned } // inbox relative stamps ride the same clock
 		m.bus = b
 		m.pane = newChatPane(b, m.rt, m.org)
 		m.refreshPaneRail()

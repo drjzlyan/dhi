@@ -481,6 +481,7 @@ func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cl
 		Sandbox:   sb,
 		Memory:    memStore,
 		Knowledge: kbStore,
+		Search:    kbSearcher,
 		// F-020 pr_open: the review service opens task PRs; gh missing
 		// refuses by name at dispatch.
 		PR: func(ctx context.Context, member, branch, title, base string) (string, error) {

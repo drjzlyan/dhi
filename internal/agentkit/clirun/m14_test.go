@@ -68,3 +68,40 @@ func TestMaxPromptArgBudget(t *testing.T) {
 		t.Fatalf("budget %d outside the sane band", MaxPromptArg())
 	}
 }
+
+// TestMCPConfigWiring pins the F-028 adapter contract: only the
+// MCP-capable adapter (claude) emits the config flags; adapters without
+// verified wiring ignore MCPConfig entirely (their dhi-action fallback
+// stays the contract).
+func TestMCPConfigWiring(t *testing.T) {
+	for _, c := range allAdapters() {
+		argv := strings.Join(c.BuildArgs(RunInput{
+			Prompt: "p", MCPConfig: "/tmp/dhi-mcp.json",
+		}), "\x00")
+		if c.Name == "claude" {
+			if !strings.Contains(argv, "--mcp-config") || !strings.Contains(argv, "/tmp/dhi-mcp.json") {
+				t.Errorf("claude argv missing --mcp-config: %q", argv)
+			}
+			if !strings.Contains(argv, "--strict-mcp-config") {
+				t.Errorf("claude argv missing --strict-mcp-config: %q", argv)
+			}
+			continue
+		}
+		if strings.Contains(argv, "/tmp/dhi-mcp.json") {
+			t.Errorf("%s leaked an unverified MCP config into argv: %q", c.Name, argv)
+		}
+	}
+}
+
+// TestMCPCapabilityDeclared pins which adapters claim verified MCP
+// wiring: claude today; the rest stay fallback until their live-verify
+// checklist is filled (ADR-0011/ADR-0017).
+func TestMCPCapabilityDeclared(t *testing.T) {
+	reg := map[string]bool{}
+	for _, c := range allAdapters() {
+		reg[c.Name] = c.MCPOK
+	}
+	if !reg["claude"] {
+		t.Fatal("claude must declare MCP wiring")
+	}
+}

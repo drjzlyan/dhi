@@ -52,6 +52,10 @@ type RunInput struct {
 	System  string // grounding + standards block ("" = none)
 	Model   string // "" = the CLI's default model
 	Workdir string // run cwd (the task worktree); "" = inherit
+	// MCPConfig names a temp config file registering DHI's IDE-tools
+	// server (F-028/ADR-0017). Adapters with a verified MCP flag wire
+	// it; others ignore it (their dhi-action fallback stays).
+	MCPConfig string
 	// Stdin overrides argv delivery (F-014 M14 P1): when non-empty the
 	// adapter emits a stdin-reading argv and the runner feeds this as
 	// the process stdin. The runner sets it only when the assembled
@@ -107,6 +111,11 @@ type CLI struct {
 	// without one refuse by name at spawn (ADR-0011) — the E2BIG death
 	// is never the fallback.
 	StdinOK bool
+	// MCPOK reports whether the adapter has a verified MCP-server
+	// wiring (F-028): the runtime serves DHI's IDE tools to these
+	// adapters over a per-turn loopback endpoint. Adapters without it
+	// keep the dhi-action fallback contract.
+	MCPOK bool
 }
 
 // Registry is the declared set of runtimes. Adapters are compiled in;

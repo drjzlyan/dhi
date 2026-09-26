@@ -658,3 +658,56 @@ go-runewidth promoted from indirect (ADR-0015).
       (4s expiry, dedupe), bus injectable Now clock (goldens
       deterministic)
 - [x] P8 — closeout: diff-cache bench, goldens reviewed, docs
+
+## M14 — Agent specs v2, IDE tools, user identity *(the user's crew, deepened)*
+
+Status: in progress (P0–P3 landed; P4 identity pending). User goal:
+define an agent entirely in the IDE (role + skills + library), give
+every runtime mid-turn access to DHI's own tools, and make the user's
+identity the only one that crosses outward. Design decisions: ADR-0016
+(agent spec v2 + library format), ADR-0017 (internal tool-serving
+substrate), ADR-0018 (loopback serving supersedes the helper process).
+
+- [x] P0 — specs F-027/F-028/F-029 + ADR-0016/0017, 2026-09-19
+- [x] P1 — system block on every runtime: persona + grounding + the
+      actions contract reach all six adapters (claude keeps
+      `--append-system-prompt`; the rest get the shared
+      `<dhi-system>` tagged shape via `PromptWithSystem`); oversized
+      assembles move to stdin where verified (claude/codex), else
+      refuse by name (ADR-0011); memory journal tail + notes + up to
+      three rg-scored KB hits ride the block, named on read failure —
+      landed 2026-09-19
+- [x] P2 — agent spec v2 + behaviour library (F-027): manifest
+      `schema=2` adds `role` + `skills` (v1 loads unchanged, strict
+      decode intact); `internal/agentkit/library` (roles
+      `.dhi/roles/*.toml`, skills `.dhi/skills/*.md`, embedded builtin
+      library, local shadow, named malformed warnings, strict writes);
+      `internal/agentkit/behavior` the one composer (manifest → role →
+      skills, token substitution, empty parts vanish) wired into
+      `cliPrompt`; Settings LIBRARY section (grouped listing, preview,
+      author/edit/delete) + AGENTS role/skills fields + detection-driven
+      runtime picker — landed 2026-09-19
+- [x] P3 — IDE tools for agents (F-028, ADR-0017/0018): `internal/mcp`
+      gains the inbound handler (initialize / tools/list / tools/call)
+      on the kept conn codec + stdio and streamable-HTTP transports;
+      `internal/agentkit/dhitools` is the allowlist-gated tool surface
+      (task_list/create/status/assign, kb_search/contribute,
+      memory_append/read_notes/write_notes, channel_read/post,
+      workspace_search), mutating tools crossing the one
+      `tools.Approvals` queue; the runtime serves it from the DHI
+      process over a per-turn `127.0.0.1` loopback endpoint and hands
+      claude the generated `--mcp-config … --strict-mcp-config`; the
+      `dhi-action` advertisement is suppressed for MCP-served turns;
+      `doctor` gains one `agent-tools` row (ok / warn-with-reason) —
+      landed 2026-09-24
+- [ ] P4 — strict user identity (F-029): one gitcore identity resolver
+      (refuse by name when unset), task-card + editor commits use it,
+      external-PR comments drop agent handles, the PR-body DHI footer
+      is dropped, doctor gains an `identity` row
+
+Deferred: MCP wiring for cursor/copilot/gemini (fixture-first until
+their live-verify checklists are filled — claude is first-class today);
+file read/write/list as served tools; MCP over HTTP between DHI
+instances; skill scripts; remote-only library browsing; removal of the
+`dhi-action` fallback once every targeted adapter is MCP-verified.
+

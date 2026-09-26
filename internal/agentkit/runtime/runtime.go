@@ -25,6 +25,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/toolbridge"
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
 	"github.com/drjzlyan/dhi/internal/sandbox"
+	"github.com/drjzlyan/dhi/internal/search"
 	"github.com/drjzlyan/dhi/internal/tasks"
 	"github.com/drjzlyan/dhi/internal/workspace"
 )
@@ -68,6 +69,9 @@ type Config struct {
 	// Knowledge retrieves workspace KB hits relevant to the trigger
 	// (M14 P1). Nil = no KB injection (named, never silent).
 	Knowledge knowledge.KnowledgeStore
+	// Search backs the workspace_search IDE tool (F-028); nil omits
+	// the tool from the served surface.
+	Search search.Searcher
 }
 
 // Runtime manages rostered agents and executes their turns.

@@ -1,28 +1,58 @@
 # STATE — current position
 
-Updated: 2026-09-19 (session 22: M13 complete — P0–P8, UI
-beauty/usefulness/interaction across all five surfaces)
+Updated: 2026-09-26 (session 24: M14 P3 complete — IDE tools for agents
+over a per-turn loopback MCP endpoint; `make verify` green)
 
 ## Where we are
 
-**M13 is complete: `make verify` green.** P0 wrote F-026 + ADR-0015
-(chroma + go-runewidth promoted from indirect — zero new deps). P1
-rebuilt the foundation: display-cell width math (ansi.Width), theme
-Info/AccentDim/Keycap/washes/motion knobs/breakpoints-in-theme, kit
-Scroller/Scrollbar + List/Rail/Modal/Panel/Form/StatusLine/Tabs
-upgrades + the shared Transcript primitive. P2 enabled mouse
-(wheel + tab-bar click + nil-safe surface seams). P3 reworked the
-workspace (kit.Form forms, width-proportional board with S/m keys,
-lane scroll, width-aware inbox/repos, kit.Transcript channels floor
-with always-visible composer + failure flash, replay close-then-
-switch). P4 colorized editor buffers (chroma → theme mapping, seq-
-cached), floated LSP popups at the cursor, moved the chat sidebar
-onto Transcript, added `:s`/`:%s`. P5 built internal/vt (ANSI-aware
-terminal scrollback). P6 swept reviewer/ideator/settings (rail counts,
-diff washes + hunk headers + cached flatten, kit.Form settings forms,
-scrollable display dialogs, standards `v`). P7 delivered contextual
-help + keycap statusline + 4s flash toasts + a pinned bus clock. P8
-benchmarked the diff cache and closed the docs.
+**M14 P0–P3 are complete; `make verify` green.** P0 wrote F-027/F-028/
+F-029 + ADR-0016/0017. P1 made the system block reach EVERY runtime
+(persona + grounding + actions; memory journal/notes + KB hits);
+oversized assembles ride stdin where verified, else refuse by name. P2
+shipped agent spec v2 (`role`/`skills`), the library store + builtin
+library, the behaviour composer wired into `cliPrompt`, and the Settings
+LIBRARY section + detection-driven runtime picker. P3 shipped F-028: the
+`internal/mcp` inbound server (Handler + stdio + streamable-HTTP),
+`internal/agentkit/dhitools` (12 allowlist-gated tools, approvals for
+mutations), per-turn in-process loopback serving wired to claude via
+`--mcp-config … --strict-mcp-config`, and one `doctor agent-tools` row.
+ADR-0018 records the loopback-over-helper decision. P4 (F-029 user
+identity) is the remaining M14 phase.
+
+### Session 24 gotchas (M14 P3)
+
+- **Serving is in-process; approvals are why.** ADR-0017 named a
+  `dhi __toolserve` stdio child, but the approvals queue is in-memory
+  and the human answers it in the TUI — a child process would need its
+  own queue. ADR-0018 supersedes that with `mcp.ServeLoopback` (HTTP on
+  an ephemeral 127.0.0.1 port) started per turn. `mcp.ServeStdio` is
+  kept in reserve for stdio-only adapters; no `dhi` subcommand exists.
+- **The MCP HTTP client must accept `202`.** `HTTPHandler` answers
+  notifications (`notifications/initialized`) with 202; the client's
+  `write` originally treated any non-200 as an error and handshakes
+  broke. 202 = accepted, nothing pending.
+- **Nil `serveSession` must not be dereferenced.** `serveTools` returns
+  nil when the allowlist has no served slug or the adapter lacks
+  `MCPOK`; `cliTurn` now captures `mcpConfig` behind a nil guard
+  instead of `defer serve.stop()` / `serve.configPath` (which panics).
+- **`MCPOK` is the per-adapter gate.** Only claude declares verified
+  MCP wiring today; codex/opencode/gemini/copilot/cursor ignore
+  `MCPConfig` entirely and keep the `dhi-action` fallback. `MCPConfig`
+  reaches argv only on claude (`--mcp-config … --strict-mcp-config`).
+- **`dhi-action` is suppressed per turn when MCP serves.** `cliPrompt`
+  takes an `mcp bool`; the bridge contract is advertised only when
+  serving is off (avoids double contracts).
+- **Served slugs are one source of truth.** `dhitools.Serves(name)` /
+  `ServedTools()` drive both the runtime's serving decision and the
+  doctor row; `memory_write_notes` was missing from `manifest.
+  BuiltinTools` and had to be added (allowlist validation).
+- **Doctor `agent-tools` is one row**: OK when idle or all interested
+  agents are MCP-capable; Warn naming each agent on a non-MCP runtime.
+- **Latent inbox-golden time bomb fixed.** `seedInbox` pinned `b.Now`
+  but not `m.now`, so relative stamps drifted from "now" to "6d" a few
+  days after the golden was written. Pin `m.now` to the same instant as
+  `b.Now` in any fixture that renders relative time.
+
 
 ## Session 22 gotchas (M13)
 
@@ -141,39 +171,49 @@ benchmarked the diff cache and closed the docs.
     (real claude 2.1.177 through the real seatbelt; expect a PONG
     result event). Gate-style like DHI_SMOKE_GIT/DHI_SMOKE_NET.
 
-## Just finished (session 22 — M13 complete)
+## Just finished (session 24 — M14 P3 complete)
 
-- Commits: 2f9afa1 (P0+P1), 6139991 (P2), 3a9b501 (P3), 9cec472 (P4),
-  6497037 (P5), 9f32a32 (P6), b6169e7 (P7), P8 closeout in flight.
-- Working tree: only the untracked `.dhi/agents/dev/` runtime state.
-- Next actions: the deferred backlog below.
+- Commits: M14 P0 58ab4b1, P1 fc75c76, P2 2ea8efc (all pushed to
+  local main, ahead of origin). P3 (this session) is in the working
+  tree, uncommitted: `internal/mcp/server.go`, `internal/agentkit/
+  dhitools/`, runtime serving + doctor row + ADR-0018 + F-028/ROADMAP/
+  STATE updates.
+- `make verify` green (yes — the race suite runs).
+- Next: M14 P4 (F-029 user identity), then the deferred backlog below.
 
 ## Open questions for user
 
 - Wave-3 CLIs (cursor-agent, copilot, gemini) aren't installed on the
   dev machine — do you have accounts/installs for live verification,
-  or should wave 3 stay fixture-only until you install them?
-
+  or should wave 3 stay fixture-only until you install them? (Also
+  blocks their MCP wiring — claude is the only first-class adapter.)
 
 ## Next up
 
-1. **Wave-3 live verify** (needs installs): once cursor-agent/copilot/
+1. **M14 P4 — user identity (F-029)**: gitcore identity resolver (named
+   refusal when unset), task-card + editor commits use it, external-PR
+   comment bullets drop agent handles, PR-body DHI footer dropped,
+   doctor `identity` row.
+2. **Wave-3 live verify** (needs installs): once cursor-agent/copilot/
    gemini are on the machine, run a real task per adapter, fill each
    adapter's live-verify checklist + set `Tested`, then doctor reports
    OK. Until then the adapters stay fixture-first and doctor marks a
    detected version untested (FAIL), never a guess.
-2. **(Deferred, F-026)** interactive find/replace panel (per-match
+3. **MCP wiring for the other adapters** (codex/opencode/gemini/copilot/
+   cursor): fill each live-verify checklist then set `MCPOK` + the
+   adapter's config injection (ADR-0018; claude done).
+4. **(Deferred, F-026)** interactive find/replace panel (per-match
    confirm — the ex `:s`/`:%s` path shipped); tab-strip kind glyphs;
    click adoption inside surfaces (rails/lists/lanes — the seam
    exists); editor wheel in insert mode.
-3. **(Deferred, F-017)** snooze-expiry push notifications, per-message
+5. **(Deferred, F-017)** snooze-expiry push notifications, per-message
    read granularity, multi-human read states, bulk "mark all read";
    inbox items from autopilot completions / doctor regressions.
-4. **(Deferred, F-020)** MCP-style third-party tool registries;
-   per-agent env/secrets editing in Settings; a curated remote agent
-   registry for F-019 discovery.
-5. **(Deferred, M11)** board drag-free reordering beyond `m`;
-   doctor rows for the new settings sections.
+6. **(Deferred, F-027)** packs shipping roles/skills; effective-prompt
+   preview (`v`) byte-exact check. **(Deferred, F-020)** MCP-style
+   third-party tool registries; per-agent env/secrets editing.
+7. **(Deferred, M11)** board drag-free reordering beyond `m`; doctor
+   rows for the new settings sections.
 
 ## Session 19 gotchas (M12)
 
