@@ -62,22 +62,31 @@ catalog).
   inline argv (`-c mcp_servers.dhi.url="…"`).
 - **Live-verified end-to-end** (agent really calls a served tool
   through DHI's loopback server): claude ✓, opencode ✓, codex ✓,
-  cursor-agent ✓. Repro: `DHI_LIVE_MCP=1 go test
+  cursor-agent ✓, copilot ✓. Repro: `DHI_LIVE_MCP=1 go test
   ./internal/agentkit/clirun/ -run
-  'TestLive(Claude|OpenCode|Codex|Cursor)MCP' -v` (real runs, real
-  tokens). `MCPOK` flipped only for those four.
+  'TestLive(Claude|OpenCode|Codex|Cursor|Copilot)MCP' -v` (real runs,
+  real tokens). `MCPOK` flipped only for those five; antigravity stays
+  on the fallback by decision.
 - **cursor-agent**: parser was wrong vs its real stream (text nests
   under `message.content[]`; usage is camelCase `inputTokens`; thinking
   deltas on their own subtype) — fixed + live-verified (Tested
   2026.09.26); MCP delivered as a worktree `.cursor/mcp.json` +
   `--approve-mcps`, git-excluded via `excludeFromGit` (info/exclude,
   removed on stop — decision: worktree + git-exclude).
-- **Pending adapters**: copilot (fixture-first: flags `-s`/`--no-ask-user`/
-  `--output-format=json` unverified; workspace `.mcp.json`/`.github/mcp.json`
-  config, `--allow-all-tools`; `copilot mcp list` did not surface a
-  workspace server — needs a live session to confirm), antigravity
-  (`agy mcp add` persists to the user's state; needs a per-turn override
-  or throwaway config home). Both are their own live-verify units.
+- **copilot**: parser/flags fixed against its real envelope (terminal
+  is `result` with top-level `exitCode`; tools are
+  `tool.execution_start`/`tool.execution_complete`; assistant text in
+  `assistant.message`), live-verified 1.0.88; MCP via worktree
+  `.mcp.json` + git-exclude + `--allow-all-tools --disable-builtin-mcps`
+  (workspace `.mcp.json` IS loaded even though `copilot mcp list` does
+  not surface it).
+- **antigravity left on the fallback by decision (2026-09-26).** `agy`'s
+  MCP list lives only in the user-global `~/.gemini/config/mcp_config.json`;
+  project `.antigravitycli/*` is ignored and no env relocates it
+  (`ANTIGRAVITY_APP_DATA_DIR`, `CASCADE_GLOBAL_CONFIG_OVERRIDE` tried).
+  Wiring would require mutating the user's global config each turn →
+  deferred; `MCPOK=false` by choice, not gap. Revisit with a mirror-HOME
+  or transient-register design.
 - Known flakes (pass isolated): `TestCLIRuntimeEndToEnd`,
   `TestMemoryAndKBReachTheSystemBlock`, clirun `TestDetect`.
 - Untracked `.dhi/agents/dev/` exists — do NOT commit.
