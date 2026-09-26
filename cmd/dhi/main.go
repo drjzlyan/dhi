@@ -494,11 +494,11 @@ func (b *editorBridge) resolve(paths []string) ([]string, error) {
 	return out, nil
 }
 
-func (b *editorBridge) call(ctx context.Context, op string, paths []string) error {
+func (b *editorBridge) send(ctx context.Context, req app.EditorRequest) error {
 	if b.prog == nil {
 		return fmt.Errorf("editor unavailable (UI not started)")
 	}
-	req := app.EditorRequest{Op: op, Paths: paths, Reply: make(chan app.EditorReply, 1)}
+	req.Reply = make(chan app.EditorReply, 1)
 	b.prog.Send(req)
 	select {
 	case r := <-req.Reply:
@@ -516,7 +516,7 @@ func (b *editorBridge) Open(ctx context.Context, paths []string) error {
 	if err != nil {
 		return err
 	}
-	return b.call(ctx, "open", abs)
+	return b.send(ctx, app.EditorRequest{Op: "open", Paths: abs})
 }
 
 func (b *editorBridge) Reveal(ctx context.Context, path string) error {
@@ -524,7 +524,18 @@ func (b *editorBridge) Reveal(ctx context.Context, path string) error {
 	if err != nil {
 		return err
 	}
-	return b.call(ctx, "reveal", abs)
+	return b.send(ctx, app.EditorRequest{Op: "reveal", Paths: abs})
+}
+
+func (b *editorBridge) Apply(ctx context.Context, path, old, new string, all bool) error {
+	abs, err := b.resolve([]string{path})
+	if err != nil {
+		return err
+	}
+	if len(abs) == 0 {
+		return fmt.Errorf("path is required")
+	}
+	return b.send(ctx, app.EditorRequest{Op: "apply", Path: abs[0], Old: old, New: new, All: all})
 }
 
 // execRunner implements dhitools.CommandRunner: a hermetic-env child

@@ -10,6 +10,7 @@ import (
 type fakeEditor struct {
 	opened   []string
 	revealed string
+	applied  [4]string
 	err      error
 }
 
@@ -19,6 +20,10 @@ func (f *fakeEditor) Open(_ context.Context, paths []string) error {
 }
 func (f *fakeEditor) Reveal(_ context.Context, path string) error {
 	f.revealed = path
+	return f.err
+}
+func (f *fakeEditor) Apply(_ context.Context, path, old, new string, _ bool) error {
+	f.applied = [4]string{path, old, new, ""}
 	return f.err
 }
 
@@ -70,6 +75,31 @@ func TestEditorToolsRefuseEmptyArgs(t *testing.T) {
 	out, isErr := call(h, t, "editor_open", `{"paths":[]}`)
 	if !isErr || !strings.Contains(out, "path") {
 		t.Fatalf("empty open = %q isErr=%v", out, isErr)
+	}
+}
+
+func TestEditorApplyEditRoutesThroughSeam(t *testing.T) {
+	f, m := newFixture(t, "editor_apply_edit")
+	fe := &fakeEditor{}
+	h := Deps{Agent: m, WS: f.ws, Editor: fe, Approvals: f.approvals}.Handler()
+	resolve := callAsync(h, "editor_apply_edit", `{"path":"api/main.go","old":"a","new":"b"}`, f)
+	if out, isErr := resolve(t); isErr {
+		t.Fatalf("apply refused: %s", out)
+	}
+	if fe.applied[0] != "api/main.go" || fe.applied[1] != "a" || fe.applied[2] != "b" {
+		t.Fatalf("applied = %v", fe.applied)
+	}
+}
+
+func TestEditorApplyEditRefusesEmptyOldBeforeApproval(t *testing.T) {
+	f, m := newFixture(t, "editor_apply_edit")
+	h := Deps{Agent: m, WS: f.ws, Editor: &fakeEditor{}, Approvals: f.approvals}.Handler()
+	out, isErr := call(h, t, "editor_apply_edit", `{"path":"api/main.go","old":"","new":"b"}`)
+	if !isErr || !strings.Contains(out, "old text") {
+		t.Fatalf("empty old = %q isErr=%v", out, isErr)
+	}
+	if len(f.approvals.List()) != 0 {
+		t.Fatal("malformed apply parked an approval")
 	}
 }
 

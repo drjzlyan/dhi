@@ -5,6 +5,7 @@
 package textbuf
 
 import (
+	"fmt"
 	"os"
 	"strings"
 )
@@ -104,6 +105,29 @@ func (b *Buffer) Dirty() bool { return b.dirty }
 // on the buffer content (the syntax highlighter, F-026 P4) bumps it on
 // each mutation.
 func (b *Buffer) Seq() uint64 { return b.seq }
+
+// ReplaceText replaces the plain substring old with new across the whole
+// buffer (one undo step). It refuses an empty old, a missing old, and an
+// ambiguous old (more than one occurrence) unless all. Returns the count.
+func (b *Buffer) ReplaceText(old, new string, all bool) (int, error) {
+	if old == "" {
+		return 0, fmt.Errorf("empty old text")
+	}
+	text := b.Text()
+	count := strings.Count(text, old)
+	switch {
+	case count == 0:
+		return 0, fmt.Errorf("old text not found")
+	case count > 1 && !all:
+		return 0, fmt.Errorf("old text appears %d times (set replace_all or narrow it)", count)
+	}
+	b.snapshotBefore()
+	b.lines = strings.Split(strings.ReplaceAll(text, old, new), "\n")
+	b.clampCursor()
+	b.dirty = true
+	b.seq++
+	return count, nil
+}
 
 // SubstituteAll replaces plain-substring pat with rep: cursor line
 // only unless all; global replaces every occurrence on a line, else

@@ -46,10 +46,11 @@ sandbox (network deny-by-default, no free-form shell).
 - Editor/LSP: `editor_open`, `editor_reveal`, `editor_apply_edit`,
   `lsp_hover`, `lsp_definition`, `lsp_references`, `lsp_rename`,
   `lsp_code_action`. Edits apply through the same WorkspaceEdit path the
-  human uses (bottom-up, one undo group). **Landed:** `editor_open`/
-  `editor_reveal` via the ADR-0023 seam (runtime asks, app routes on the
-  UI loop; VPaths resolved by the bridge; nil seam refuses by name).
-  `editor_apply_edit` + LSP verbs remain on the same seam.
+  human uses (bottom-up, one undo group). **Landed:** `editor_open`/`editor_reveal`/
+  `editor_apply_edit` via the ADR-0023 seam (runtime asks, app routes on
+  the UI loop; VPaths resolved by the bridge; edits go through the live
+  buffer when open, else the file; nil seam refuses by name). LSP verbs
+  remain on the same seam.
 - Product: tasks CRUD, `kb_search`/`kb_contribute`, `memory_*`,
   `channel_read`/`channel_post`, ideation `session_*`/`artifact_*`,
   board/PR/review reads. **Landed:** `ideation_list`/`ideation_read`

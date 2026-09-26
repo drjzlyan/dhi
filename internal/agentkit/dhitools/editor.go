@@ -16,6 +16,10 @@ import (
 type EditorAPI interface {
 	Open(ctx context.Context, paths []string) error
 	Reveal(ctx context.Context, path string) error
+	// Apply replaces exact text in a file: through the live buffer when
+	// the file is open (one undo step), else the file on disk. The seam
+	// refuses absent/ambiguous matches unless all.
+	Apply(ctx context.Context, path, old, new string, all bool) error
 }
 
 // editorTools is the editor navigation surface (F-030 P1, ADR-0023).
@@ -89,5 +93,46 @@ func (d Deps) editorTools() []tool {
 				return "revealed " + dec.(string), nil
 			},
 		},
+		{
+			info: mcp.ToolInfo{
+				Name:        "editor_apply_edit",
+				Description: "Replace exact text in a file through the editor (live buffer when open, one undo step). Args: {\"path\": \"<member>/<rel>\", \"old\": \"...\", \"new\": \"...\", \"replace_all\": false}. Refuses absent/ambiguous matches. Mutating: crosses approvals.",
+				InputSchema: json.RawMessage(`{"type":"object","required":["path","old","new"],"properties":{"path":{"type":"string"},"old":{"type":"string"},"new":{"type":"string"},"replace_all":{"type":"boolean"}},"additionalProperties":false}`),
+			},
+			mutate: true,
+			parse: func(raw json.RawMessage) (any, error) {
+				var a struct {
+					Path       string `json:"path"`
+					Old        string `json:"old"`
+					New        string `json:"new"`
+					ReplaceAll bool   `json:"replace_all"`
+				}
+				if err := args(raw, &a); err != nil {
+					return nil, err
+				}
+				if strings.TrimSpace(a.Path) == "" {
+					return nil, fmt.Errorf("path is required")
+				}
+				if a.Old == "" {
+					return nil, fmt.Errorf("old text is required")
+				}
+				return applyPlan{path: a.Path, old: a.Old, new: a.New, all: a.ReplaceAll}, nil
+			},
+			exec: func(ctx context.Context, dec any) (string, error) {
+				if d.Editor == nil {
+					return "", fmt.Errorf("editor unavailable (no editor surface this session)")
+				}
+				p := dec.(applyPlan)
+				if err := d.Editor.Apply(ctx, p.path, p.old, p.new, p.all); err != nil {
+					return "", err
+				}
+				return "applied edit to " + p.path, nil
+			},
+		},
 	}
+}
+
+type applyPlan struct {
+	path, old, new string
+	all            bool
 }

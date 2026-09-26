@@ -100,8 +100,13 @@ func (a *App) Init() tea.Cmd {
 // Update loop (ADR-0023): the runtime's editor seam sends it and blocks
 // on Reply. Paths are absolute; the seam resolves VPaths before sending.
 type EditorRequest struct {
-	Op    string // "open" | "reveal"
+	Op    string // "open" | "reveal" | "apply"
 	Paths []string
+	// Path/Old/New/All carry an "apply" edit.
+	Path  string
+	Old   string
+	New   string
+	All   bool
 	Reply chan EditorReply
 }
 
@@ -118,6 +123,8 @@ func (a *App) handleEditorRequest(r EditorRequest) {
 		if !a.OpenInEditor(r.Paths) {
 			errStr = "editor could not open the requested path(s)"
 		}
+	case "apply":
+		errStr = a.applyInEditor(r.Path, r.Old, r.New, r.All)
 	default:
 		errStr = "unknown editor request " + r.Op
 	}
@@ -286,6 +293,27 @@ func (a *App) OpenInEditor(paths []string) bool {
 		return opened > 0
 	}
 	return false
+}
+
+// applyInEditor routes an agent edit to the editor surface (ADR-0023);
+// "" means success, else a named error.
+func (a *App) applyInEditor(abs, old, new string, all bool) string {
+	for _, s := range a.surfaces {
+		if s.Meta().ID != "editor" {
+			continue
+		}
+		ap, ok := s.(interface {
+			ApplyReplace(string, string, string, bool) error
+		})
+		if !ok {
+			return "editor cannot apply edits"
+		}
+		if err := ap.ApplyReplace(abs, old, new, all); err != nil {
+			return err.Error()
+		}
+		return ""
+	}
+	return "editor surface unavailable"
 }
 
 // FocusEditorChat opens the editor's chat sidebar focused (the F-016

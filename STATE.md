@@ -282,9 +282,10 @@ catalog).
    `git_commit` authored by the user identity, `dhitools/git.go`) and
    ideation reads, `run` (fixed safe set), and `ask_human` landed.
    ADR-0023 (editor/LSP tool seam) implemented for `editor_open`/
-   `editor_reveal` (runtime EditorAPI seam → `editorBridge` in cmd/dhi
-   resolves VPaths → `app.EditorRequest` on the UI loop → reply). Next:
-   `editor_apply_edit` + LSP verbs on the same seam. Decisions:
+   `editor_reveal`/`editor_apply_edit` (runtime EditorAPI seam →
+   `editorBridge` in cmd/dhi resolves VPaths → `app.EditorRequest` on the
+   UI loop → reply; apply edits the live buffer via textbuf.ReplaceText,
+   else the file). Next: LSP verbs on the same seam. Decisions:
    `run` uses a fixed safe set now + per-agent commands at M16;
    `ask_human` posts to the thread; `git_push` dropped in favor of the
    M16 PR step.

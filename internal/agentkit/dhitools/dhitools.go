@@ -81,7 +81,7 @@ var servedSlugs = []string{
 	"git_status", "git_log", "git_branch", "git_diff", "git_commit",
 	"ideation_list", "ideation_read",
 	"run", "ask_human",
-	"editor_open", "editor_reveal",
+	"editor_open", "editor_reveal", "editor_apply_edit",
 	"task_list", "task_create", "task_status", "task_assign",
 	"kb_search", "kb_contribute",
 	"memory_append", "memory_read_notes", "memory_write_notes",

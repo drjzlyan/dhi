@@ -7,6 +7,8 @@ package editor
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -1281,6 +1283,38 @@ func (m *Model) searchView() string {
 }
 
 // applySuggestion inserts text at the cursor of the active buffer, if any.
+// ApplyReplace edits a file the way the editor would: through the live
+// buffer when the file is open (one undo step, saved by the human),
+// else the file on disk. Refuses absent/ambiguous matches unless all
+// (ADR-0023 editor_apply_edit).
+func (m *Model) ApplyReplace(abs, old, new string, all bool) error {
+	for _, t := range m.bufs {
+		if t.path == abs {
+			_, err := t.ed.Buffer().ReplaceText(old, new, all)
+			return err
+		}
+	}
+	data, err := os.ReadFile(abs)
+	if err != nil {
+		return err
+	}
+	content := string(data)
+	count := strings.Count(content, old)
+	switch {
+	case count == 0:
+		return fmt.Errorf("old text not found in %s", abs)
+	case count > 1 && !all:
+		return fmt.Errorf("old text appears %d times in %s (set replace_all or narrow it)", count, abs)
+	}
+	var replaced string
+	if all {
+		replaced = strings.ReplaceAll(content, old, new)
+	} else {
+		replaced = strings.Replace(content, old, new, 1)
+	}
+	return os.WriteFile(abs, []byte(replaced), 0o644)
+}
+
 func (m *Model) applySuggestion(text string) {
 	e := m.active()
 	if e == nil || text == "" {

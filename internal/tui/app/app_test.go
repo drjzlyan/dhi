@@ -377,12 +377,18 @@ func TestGateKeyCommandDrained(t *testing.T) {
 // the ADR-0023 bridge routes to).
 type openEditorStub struct {
 	stubSurface
-	opened [][]string
+	opened  [][]string
+	applied [4]string
 }
 
 func (s *openEditorStub) OpenPaths(paths ...string) int {
 	s.opened = append(s.opened, paths)
 	return len(paths)
+}
+
+func (s *openEditorStub) ApplyReplace(path, old, new string, all bool) error {
+	s.applied = [4]string{path, old, new, ""}
+	return nil
 }
 
 func TestEditorRequestRoutesToEditorSurface(t *testing.T) {
@@ -416,5 +422,30 @@ func TestEditorRequestUnopenableRefuses(t *testing.T) {
 	a.Update(EditorRequest{Op: "open", Paths: []string{"/tmp/x"}, Reply: reply})
 	if r := <-reply; r.Err == "" {
 		t.Fatal("unopenable path must reply with an error")
+	}
+}
+
+func TestEditorRequestApplyEditRoutes(t *testing.T) {
+	theme.SwapForTest(t, theme.Dark())
+	ed := &openEditorStub{stubSurface: stubSurface{id: "editor", title: "Editor"}}
+	a := New("test", &stubSurface{id: "home", title: "Home"}, ed)
+	a.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+
+	reply := make(chan EditorReply, 1)
+	a.Update(EditorRequest{Op: "apply", Path: "/tmp/x", Old: "a", New: "b", Reply: reply})
+	if r := <-reply; r.Err != "" {
+		t.Fatalf("apply err = %q", r.Err)
+	}
+	if ed.applied[0] != "/tmp/x" || ed.applied[1] != "a" || ed.applied[2] != "b" {
+		t.Fatalf("applied = %v", ed.applied)
+	}
+
+	// A plain stub editor has no ApplyReplace → the request refuses.
+	a2 := New("test", &stubSurface{id: "home", title: "Home"}, &stubSurface{id: "editor", title: "Editor"})
+	a2.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	reply2 := make(chan EditorReply, 1)
+	a2.Update(EditorRequest{Op: "apply", Path: "/tmp/x", Old: "a", New: "b", Reply: reply2})
+	if r := <-reply2; r.Err == "" {
+		t.Fatal("apply without an editor API must refuse")
 	}
 }
