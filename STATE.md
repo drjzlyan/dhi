@@ -275,7 +275,15 @@ catalog).
 
 ## Next up
 
-1. **M15 P1 — IDE tool catalog** (F-030), *in progress*: filesystem set
+1. **P3 — MCP-for-all (F-030)**: installs now: claude 2.1.274, codex
+   0.147.0, opencode 1.18.25; cursor/copilot/gemini still absent. Both
+   installed natives expose MCP config — codex via `-c key=value`
+   (config override) and `codex mcp`, opencode via its config file /
+   `OPENCODE_CONFIG` (already in EnvPass) / `opencode mcp add`. Wiring
+   each needs a live-verify run (loopback server + tool call through the
+   seatbelt) before `MCPOK` flips — never fabricate it. Then P3's
+   sandbox network for MCP servers.
+2. **M15 P1 — IDE tool catalog** (F-030), *complete*: filesystem set
    (`read`/`list`/`glob` read-only + `write`/`patch` approval-gated,
    VPath-jailed, `dhitools/fs.go`) and read-only git
    (`git_status`/`git_log`/`git_branch`/`git_diff`, plus mutating
