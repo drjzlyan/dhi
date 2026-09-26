@@ -32,9 +32,10 @@ sandbox (network deny-by-default, no free-form shell).
 ## Part B — the IDE tool catalog
 
 - Filesystem: `read`, `write`, `patch`, `list`, `glob` — jailed by VPath
-  and member roots (no escape, symlink-aware). **Landed:** `read`, `list`,
-  `glob` (read-only; VPath-jailed, 1 MiB read cap, 200-match glob cap).
-  `write`/`patch` remain (mutating, approval-gated).
+  and member roots (no escape, symlink-aware). **Landed:** all five.
+  Read-only tools cap (1 MiB read, 200-match glob); `write` and `patch`
+  are mutating and cross approvals; `patch` refuses absent/ambiguous
+  matches unless `replace_all`.
 - Search: `search` (ripgrep fan-out, read-only).
 - Git: `git_status`, `git_diff`, `git_log`, `git_branch`, `git_commit`,
   `git_push` — write operations cross approvals and the active workflow.

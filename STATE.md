@@ -267,10 +267,11 @@ catalog).
 
 ## Next up
 
-1. **M15 P1 — IDE tool catalog** (F-030), *in progress*: `read`/`list`/
-   `glob` landed (VPath-jailed, read-only, `internal/agentkit/dhitools/
-   fs.go`). Next: `write`/`patch` (mutating, approval-gated), then git,
-   editor/LSP, allowlisted `run`, `ask_human`, and product-store reads.
+1. **M15 P1 — IDE tool catalog** (F-030), *in progress*: the filesystem
+   set landed — `read`/`list`/`glob` (read-only) + `write`/`patch`
+   (mutating, approval-gated), all VPath-jailed (`internal/agentkit/
+   dhitools/fs.go`). Next: git, editor/LSP, allowlisted `run`,
+   `ask_human`, and product-store reads.
 2. **M15 P2–P3 — capability scopes, MCP-for-all**:
    fs/search/git/editor/LSP/run tools; scopes + grant-memory approvals;
    MCP verified for every shipped adapter; sandbox tightened (network

@@ -751,8 +751,9 @@ selectable; cursor/copilot/gemini join once installed + MCP-verified.
       editor/LSP open/reveal/apply-edit/hover/definition/references/
       rename/code-action, tasks/KB/memory/channels/ideation/board reads,
       allowlisted `run`, `ask_human`
-      — landed `read`/`list`/`glob` (VPath-jailed, read-only) 2026-09-26;
-      `write`/`patch` + git/editor/LSP/`run`/`ask_human` remain
+      — landed the filesystem set `read`/`list`/`glob` (read-only) +
+      `write`/`patch` (mutating, approval-gated), all VPath-jailed,
+      2026-09-26; git/editor/LSP/`run`/`ask_human` remain
 - [ ] P2 — capability scopes (`read/write/exec/network/git/push/admin` ×
       auto|ask|deny, manifest→team→workspace) + grant-memory approvals;
       every mutation recorded in the run

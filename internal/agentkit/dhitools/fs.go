@@ -29,6 +29,18 @@ type globArgs struct {
 	Pattern string `json:"pattern"`
 }
 
+// writePlan/patchPlan carry the parsed, VPath-resolved target so a bad
+// path refuses BEFORE the approval gate (no human prompt for a schema
+// error), and exec never re-resolves (no TOCTOU on the jail decision).
+type writePlan struct {
+	path, abs, content string
+}
+
+type patchPlan struct {
+	path, abs, old, new string
+	all                 bool
+}
+
 // fsTools is the filesystem read surface (F-030 P1): paths are VPaths
 // resolved through the workspace jail, so an agent addresses files the
 // same way the IDE does and can never escape a member.
@@ -166,6 +178,99 @@ func (d Deps) fsTools() []tool {
 				b.WriteString("\n")
 			}
 			return b.String(), nil
+		},
+	})
+	out = append(out, tool{
+		info: mcp.ToolInfo{
+			Name:        "write",
+			Description: "Write a workspace file (create or overwrite; parent dirs are created). Args: {\"path\": \"<member>/<rel-path>\", \"content\": \"...\"}. Mutating: crosses approvals.",
+			InputSchema: json.RawMessage(`{"type":"object","required":["path","content"],"properties":{"path":{"type":"string"},"content":{"type":"string"}},"additionalProperties":false}`),
+		},
+		mutate: true,
+		parse: func(raw json.RawMessage) (any, error) {
+			var a struct {
+				Path    string `json:"path"`
+				Content string `json:"content"`
+			}
+			if err := args(raw, &a); err != nil {
+				return nil, err
+			}
+			if strings.TrimSpace(a.Path) == "" {
+				return nil, fmt.Errorf("path is required")
+			}
+			abs, err := d.resolveVPath(a.Path)
+			if err != nil {
+				return nil, err
+			}
+			return writePlan{path: a.Path, abs: abs, content: a.Content}, nil
+		},
+		exec: func(_ context.Context, dec any) (string, error) {
+			p := dec.(writePlan)
+			if info, err := os.Stat(p.abs); err == nil && info.IsDir() {
+				return "", fmt.Errorf("%s is a directory", p.path)
+			}
+			if err := os.MkdirAll(filepath.Dir(p.abs), 0o755); err != nil {
+				return "", fmt.Errorf("%s: %w", p.path, err)
+			}
+			if err := os.WriteFile(p.abs, []byte(p.content), 0o644); err != nil {
+				return "", fmt.Errorf("%s: %w", p.path, err)
+			}
+			return fmt.Sprintf("wrote %s (%d bytes)", p.path, len(p.content)), nil
+		},
+	})
+	out = append(out, tool{
+		info: mcp.ToolInfo{
+			Name:        "patch",
+			Description: "Replace exact text in a workspace file. Args: {\"path\": \"<member>/<rel-path>\", \"old\": \"...\", \"new\": \"...\", \"replace_all\": false}. Refuses when `old` is absent or ambiguous unless replace_all. Mutating: crosses approvals.",
+			InputSchema: json.RawMessage(`{"type":"object","required":["path","old","new"],"properties":{"path":{"type":"string"},"old":{"type":"string"},"new":{"type":"string"},"replace_all":{"type":"boolean"}},"additionalProperties":false}`),
+		},
+		mutate: true,
+		parse: func(raw json.RawMessage) (any, error) {
+			var a struct {
+				Path       string `json:"path"`
+				Old        string `json:"old"`
+				New        string `json:"new"`
+				ReplaceAll bool   `json:"replace_all"`
+			}
+			if err := args(raw, &a); err != nil {
+				return nil, err
+			}
+			if strings.TrimSpace(a.Path) == "" {
+				return nil, fmt.Errorf("path is required")
+			}
+			if a.Old == "" {
+				return nil, fmt.Errorf("old text is required (empty `old` would match everywhere)")
+			}
+			abs, err := d.resolveVPath(a.Path)
+			if err != nil {
+				return nil, err
+			}
+			return patchPlan{path: a.Path, abs: abs, old: a.Old, new: a.New, all: a.ReplaceAll}, nil
+		},
+		exec: func(_ context.Context, dec any) (string, error) {
+			p := dec.(patchPlan)
+			data, err := os.ReadFile(p.abs)
+			if err != nil {
+				return "", fmt.Errorf("%s: %w", p.path, err)
+			}
+			content := string(data)
+			count := strings.Count(content, p.old)
+			switch {
+			case count == 0:
+				return "", fmt.Errorf("old text not found in %s", p.path)
+			case count > 1 && !p.all:
+				return "", fmt.Errorf("old text appears %d times in %s (set replace_all or narrow it)", count, p.path)
+			}
+			var replaced string
+			if p.all {
+				replaced = strings.ReplaceAll(content, p.old, p.new)
+			} else {
+				replaced = strings.Replace(content, p.old, p.new, 1)
+			}
+			if err := os.WriteFile(p.abs, []byte(replaced), 0o644); err != nil {
+				return "", fmt.Errorf("%s: %w", p.path, err)
+			}
+			return fmt.Sprintf("patched %s (%d replacement(s))", p.path, count), nil
 		},
 	})
 	return out

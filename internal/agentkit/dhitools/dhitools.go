@@ -65,7 +65,7 @@ type tool struct {
 // on when an agent's allowlist intersects it; doctor reports capability
 // from the same list (one source of truth).
 var servedSlugs = []string{
-	"read", "list", "glob",
+	"read", "write", "patch", "list", "glob",
 	"task_list", "task_create", "task_status", "task_assign",
 	"kb_search", "kb_contribute",
 	"memory_append", "memory_read_notes", "memory_write_notes",
