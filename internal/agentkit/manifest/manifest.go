@@ -78,7 +78,8 @@ var (
 // allowlist them now, and turn time refuses by name until/unless the
 // serving substrate actually offers them (ADR-0017).
 var BuiltinTools = []string{
-	"read", "write", "patch", "list", "glob", "search", "git_commit", "git_push",
+	"read", "write", "patch", "list", "glob", "search",
+	"git_status", "git_log", "git_branch", "git_diff", "git_commit", "git_push",
 	"task_create", "task_status", "task_assign", "pr_open",
 	"task_list", "kb_search", "kb_contribute",
 	"memory_append", "memory_read_notes", "memory_write_notes",

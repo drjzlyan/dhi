@@ -274,6 +274,7 @@ func (r *Runtime) serveTools(e *entry, trigger bus.Message) *serveSession {
 		Approvals: r.cfg.Approvals,
 		Channel:   trigger.Channel,
 		Thread:    trigger.Thread,
+		Workdir:   r.cliWorkdir(trigger),
 	}.Handler()
 	if len(handler.Tools()) == 0 {
 		return nil

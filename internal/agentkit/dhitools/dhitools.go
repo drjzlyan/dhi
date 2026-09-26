@@ -48,6 +48,11 @@ type Deps struct {
 	// default to the thread the turn started from.
 	Channel string
 	Thread  int64
+
+	// Workdir is the turn's working directory (the task worktree when the
+	// trigger is bound to one, else the workspace root). The git tools
+	// operate here.
+	Workdir string
 }
 
 // tool is one served tool's declaration + handler. Args parse in two
@@ -66,6 +71,7 @@ type tool struct {
 // from the same list (one source of truth).
 var servedSlugs = []string{
 	"read", "write", "patch", "list", "glob",
+	"git_status", "git_log", "git_branch",
 	"task_list", "task_create", "task_status", "task_assign",
 	"kb_search", "kb_contribute",
 	"memory_append", "memory_read_notes", "memory_write_notes",
@@ -100,6 +106,7 @@ func (d Deps) Handler() mcp.Handler {
 	}
 	var all []tool
 	all = append(all, d.fsTools()...)
+	all = append(all, d.gitTools()...)
 	all = append(all, d.taskTools()...)
 	all = append(all, d.kbTools()...)
 	all = append(all, d.memoryTools()...)
