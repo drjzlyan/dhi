@@ -12,6 +12,15 @@ structured teammates: agents with skills, memory, and shared knowledge who can
 be chatted with, assigned tasks, asked for reviews, and watched as they work —
 across one repo or twenty microservices at once.
 
+DHI is the **host**; a detected host CLI is the **engine** (chosen globally or
+per agent). Every agent works through DHI's declared IDE tools — the same
+editor, git, board, channels, and ideation the human uses — under declared
+capability scopes, feature workflows, and approvals. There is no free-form
+shell and no unapproved mutation: the crew works *inside* the IDE, and every
+step is visible and reversible. Because a host CLI keeps its own native tools,
+this containment is best-effort; an in-house API engine is the recorded path to
+a hard guarantee.
+
 ## Personas
 
 | Persona | Needs |
@@ -38,22 +47,36 @@ across one repo or twenty microservices at once.
 ## Core journeys (drive milestone scope)
 
 1. **Pair program** — open editor + chat pane; agent sees current buffer/diff;
-   suggestions apply directly into the buffer. *(M3)*
+   edits apply through the same undo-group path the human uses. *(M3, M20)*
 2. **Delegate** — post a task to `#team-backend`; planner agent splits it;
-   workers claim subtasks in isolated worktrees; lead watches threads. *(M4)*
-3. **Review** — request review of PR-42 or current feature worktree; DHI spins
+   workers claim subtasks in isolated worktrees; lead watches live progress in
+   the thread. *(M4, M20)*
+3. **Work a feature** — a workflow creates the worktree, the agent implements
+   test-first, tests must pass before a PR, review gates the merge. *(M16)*
+4. **Review** — request review of PR-42 or current feature worktree; DHI spins
    up a review worktree; hunk-level comments; "ask agent" on any thread. *(M5)*
-4. **Ideate** — canvas pane with markdown preview; diagram-skilled and
-   planning-skilled agents contribute artifacts; export to issues later. *(M6)*
-5. **Install expertise** — marketplace pack = skills + MCP servers + knowledge;
-   installed agents appear in roster and teams. *(M4)*
+5. **Ideate** — a moderated round-table (1:1, group, breakout) over a shared
+   canvas of markdown/mermaid artifacts the human and agents edit live. *(M18)*
+6. **Cross projects** — one task changes several member repos; a declared
+   dependency edge turns a change in A into a proposed change in B. *(M17)*
+7. **Install expertise** — a pack ships agents, roles, skills, standards,
+   workflows, and MCP servers from a signed registry; MCP servers run sandboxed
+   under scope. *(M19)*
 
 ## Product principles
 
+- **Tools over shell:** agents work through declared IDE tools, never a
+  free-form shell; network is deny-by-default and every mutation is approved.
+  Containment is best-effort while a host CLI is the engine — stated, not hidden.
 - **Worktree-first:** features, tasks, and reviews are isolated by default;
   merging back is an explicit act.
 - **Human-in-the-loop always:** agents propose; humans approve destructive or
   shared-boundary actions (knowledge contributions default to review mode).
+- **Declared authority:** an agent's scopes (`read/write/exec/network/git/
+  push/admin`) are configured, visible, and auditable; nothing is ambient.
+- **How we work is configurable:** standards say what good code is; workflows
+  say how a feature is done here — both shared, layered, and enforced at DHI's
+  seams.
 - **Terminal-native performance:** everything keyboard-driven; no hidden web views.
 - **Deterministic where it counts:** reproducible toolchain, replayable test scenarios.
 
