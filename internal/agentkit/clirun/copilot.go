@@ -48,7 +48,7 @@ import (
 var Copilot = &CLI{
 	Name:   "copilot",
 	Bin:    "copilot",
-	Tested: "", // pinned once live-verified (not installed 2026-09-09)
+	Tested: "1.0.88", // live-verified 2026-09-26
 	// EXACT declared pass-through: the Copilot token + standard config
 	// roots. Nothing else crosses (ADR-0012 §4).
 	EnvPass: []string{
@@ -72,21 +72,42 @@ var Copilot = &CLI{
 			"-s",
 			"--no-ask-user",
 			"--output-format=json",
+			// Headless tool runs must not stall on an approval prompt;
+			// the OS sandbox is the boundary (ADR-0012 §3).
+			"--allow-all-tools",
 		}
 		if in.Model != "" {
 			args = append(args, "--model", in.Model)
+		}
+		if in.MCPURL != "" {
+			// Containment: drop copilot's built-in GitHub MCP server so
+			// the agent's only non-native surface is DHI's endpoint.
+			args = append(args, "--disable-builtin-mcps")
 		}
 		return args
 	},
 	ParseStream: copilotParseStream,
 	Finalize:    copilotFinalize,
 	Version:     copilotVersion,
+	// MCPOK: copilot loads a workspace .mcp.json (project-local); the
+	// runtime writes it into the worktree + git-excludes it;
+	// live-verified 2026-09-26 on 1.0.88.
+	MCPOK: true,
+	MCPConfigFile: func(endpoint string) string {
+		return fmt.Sprintf(`{"mcpServers":{"dhi":{"type":"http","url":%q}}}`, endpoint)
+	},
+	MCPProjectFile: ".mcp.json",
 }
 
 // copilotItem is the union shape of one JSONL envelope line.
+// Live-verified 2026-09-26 against copilot 1.0.88: the terminal event is
+// `result` (top-level exitCode); tools are `tool.execution_start` /
+// `tool.execution_complete`; assistant text is `assistant.message`
+// (data.content + data.toolRequests).
 type copilotItem struct {
-	Type string `json:"type"`
-	Data struct {
+	Type     string `json:"type"`
+	ExitCode int    `json:"exitCode"`
+	Data     struct {
 		Content      string `json:"content"`
 		ToolRequests []struct {
 			Name      string `json:"name"`
@@ -97,8 +118,12 @@ type copilotItem struct {
 		OutputTokens int    `json:"outputTokens"`
 		InputTokens  int    `json:"inputTokens"`
 		Name         string `json:"name"`
-		Result       any    `json:"result"`
-		Usage        any    `json:"usage"`
+		ToolName     string `json:"toolName"`
+		Success      bool   `json:"success"`
+		Result       struct {
+			Content string `json:"content"`
+		} `json:"result"`
+		Usage any `json:"usage"`
 	} `json:"data"`
 	Error any `json:"error"`
 }
@@ -107,8 +132,9 @@ type copilotItem struct {
 // Finalize: last assistant message + any reported tokens (copilot has
 // no cost).
 type copilotStop struct {
-	Type        string `json:"type"` // "copilot.session.termination"
+	Type        string `json:"type"` // "copilot.result"
 	LastMessage string `json:"last_message"`
+	ExitCode    int    `json:"exit_code"`
 	Tokens      struct {
 		Input  int `json:"input"`
 		Output int `json:"output"`
@@ -127,8 +153,8 @@ func copilotParseStream(r io.Reader) <-chan StreamEvent {
 				continue
 			}
 			switch it.Type {
-			case "session.termination", "session.shutdown":
-				stop := copilotStop{Type: "copilot.session.termination", LastMessage: lastText}
+			case "result":
+				stop := copilotStop{Type: "copilot.result", LastMessage: lastText, ExitCode: it.ExitCode}
 				stop.Tokens.Input = it.Data.InputTokens
 				stop.Tokens.Output = it.Data.OutputTokens
 				b, err := json.Marshal(stop)
@@ -143,19 +169,25 @@ func copilotParseStream(r io.Reader) <-chan StreamEvent {
 					ch <- StreamEvent{Kind: EventProgress, Detail: truncate(t, 200)}
 				}
 				for _, tr := range it.Data.ToolRequests {
-					name := tr.Name
-					if name == "" {
-						name = tr.Arguments.Command
+					label := tr.Name
+					if cmd := strings.TrimSpace(tr.Arguments.Command); cmd != "" {
+						label += ": " + cmd
 					}
-					if name != "" {
-						ch <- StreamEvent{Kind: EventCommand, Detail: "tool: " + truncate(name, 160)}
+					if label != "" {
+						ch <- StreamEvent{Kind: EventCommand, Detail: "tool: " + truncate(label, 160)}
 					}
 				}
-			case "tool.execution_end":
-				if it.Data.Result != nil {
-					if s, ok := it.Data.Result.(string); ok && !strings.EqualFold(s, "success") && !strings.Contains(s, "success") {
-						ch <- StreamEvent{Kind: EventError, Detail: "tool " + it.Data.Name + ": " + truncate(s, 160)}
+			case "tool.execution_complete":
+				if !it.Data.Success {
+					msg := it.Data.Name
+					if msg == "" {
+						msg = it.Data.ToolName
 					}
+					detail := strings.TrimSpace(it.Data.Result.Content)
+					if detail == "" {
+						detail = "failed"
+					}
+					ch <- StreamEvent{Kind: EventError, Detail: "tool " + msg + ": " + truncate(detail, 160)}
 				}
 			case "error":
 				ch <- StreamEvent{Kind: EventError, Detail: truncate(fmt.Sprintf("%v", it.Error), 160)}
@@ -173,6 +205,9 @@ func copilotFinalize(final string) (string, Usage, error) {
 	if err := json.Unmarshal([]byte(final), &stop); err != nil {
 		return "", Usage{}, fmt.Errorf("clirun/copilot: final: %w", err)
 	}
+	if stop.ExitCode != 0 {
+		return "", Usage{}, fmt.Errorf("clirun/copilot: run ended with exit %d", stop.ExitCode)
+	}
 	u := Usage{TokensIn: stop.Tokens.Input, TokensOut: stop.Tokens.Output}
 	if stop.Tokens.Input == 0 {
 		u.TokensIn = -1
@@ -189,8 +224,13 @@ func copilotVersion(ctx context.Context, path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if v := firstVersionToken(out); v != "" {
-		return v, nil
+	// "GitHub Copilot CLI 1.0.88." — drop the trailing period.
+	for _, f := range strings.Fields(out) {
+		f = strings.TrimPrefix(f, "v")
+		f = strings.Trim(f, ".,")
+		if isVersionLike(f) {
+			return f, nil
+		}
 	}
 	return "", fmt.Errorf("clirun/copilot: no version in %q", truncate(out, 60))
 }

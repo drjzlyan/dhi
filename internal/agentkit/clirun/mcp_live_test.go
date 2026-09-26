@@ -243,3 +243,49 @@ func TestLiveCursorMCP(t *testing.T) {
 		t.Fatalf("cursor-agent did not call the served tool; output:\n%s", out)
 	}
 }
+
+// TestLiveCopilotMCP is the live-verify for the copilot MCP wiring:
+// a project .mcp.json (+ --allow-all-tools, builtins disabled) must
+// register DHI's loopback server and the agent must call the served tool.
+//
+//	DHI_LIVE_MCP=1 go test ./internal/agentkit/clirun/ -run TestLiveCopilotMCP -v
+func TestLiveCopilotMCP(t *testing.T) {
+	if os.Getenv("DHI_LIVE_MCP") == "" {
+		t.Skip("set DHI_LIVE_MCP=1 to run the real copilot MCP verification (costs tokens)")
+	}
+	path, err := exec.LookPath("copilot")
+	if err != nil {
+		t.Skip("copilot not installed")
+	}
+	h := &probeHandler{called: make(chan string, 1)}
+	endpoint, stop, err := mcp.ServeLoopback(h)
+	if err != nil {
+		t.Fatalf("ServeLoopback: %v", err)
+	}
+	defer stop()
+	work := t.TempDir()
+	if err := os.WriteFile(filepath.Join(work, ".mcp.json"), []byte(Copilot.MCPConfigFile(endpoint)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Second)
+	defer cancel()
+	argv := Copilot.BuildArgs(RunInput{
+		Prompt: "Call the MCP tool named echo_probe with text=\"HELLO\" (server dhi), then reply with its output.",
+		MCPURL: endpoint, Workdir: work,
+	})
+	cmd := exec.CommandContext(ctx, path, argv...)
+	cmd.Dir = work
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("copilot run: %v\n%s", err, out)
+	}
+	select {
+	case got := <-h.called:
+		t.Logf("LIVE-VERIFIED: copilot called DHI's served tool with args %s", got)
+		if !strings.Contains(got, "HELLO") {
+			t.Fatalf("tool called with unexpected args: %s", got)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatalf("copilot did not call the served tool; output:\n%s", out)
+	}
+}

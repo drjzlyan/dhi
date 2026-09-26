@@ -6,17 +6,16 @@ import (
 	"testing"
 )
 
-// copilotFixture matches the documented JSONL envelope (session-store
-// shaped; github/copilot-cli#52): user/assistant messages with
-// toolRequests, tool execution start/end, session.termination with
-// usage.
-const copilotFixture = `{"type":"session.start","data":{"id":"s1"}}
+// copilotFixture matches the LIVE-CAPTURED JSONL envelope (copilot
+// 1.0.88): assistant.message with toolRequests, tool.execution_start /
+// tool.execution_complete, and a terminal `result` carrying exitCode.
+const copilotFixture = `{"type":"session.auto_mode_resolved","data":{"chosenModel":"gpt-6-luna"}}
 {"type":"user.message","data":{"content":"how many go files?"}}
-{"type":"assistant.message","data":{"content":"Let me look.","outputTokens":20,"inputTokens":100,"toolRequests":[{"name":"find","arguments":{"command":"find . -name '*.go'"}}]}}
-{"type":"tool.execution_start","data":{"name":"find","result":null}}
-{"type":"tool.execution_end","data":{"name":"find","result":"success"}}
-{"type":"assistant.message","data":{"content":"Found 3 Go files.","outputTokens":12,"inputTokens":30}}
-{"type":"session.termination","data":{"inputTokens":150,"outputTokens":35}}
+{"type":"assistant.message","data":{"content":"Let me look.","toolRequests":[{"name":"bash","arguments":{"command":"find . -name '*.go'"}}]}}
+{"type":"tool.execution_start","data":{"toolName":"bash","arguments":{"command":"find . -name '*.go'"}}}
+{"type":"tool.execution_complete","data":{"toolName":"bash","success":true,"result":{"content":"3 files"}}}
+{"type":"assistant.message","data":{"content":"Found 3 Go files."}}
+{"type":"result","exitCode":0,"usage":{"premiumRequests":1}}
 `
 
 func TestCopilotBuildArgs(t *testing.T) {
@@ -26,10 +25,18 @@ func TestCopilotBuildArgs(t *testing.T) {
 		"-s",
 		"--no-ask-user",
 		"--output-format=json",
+		"--allow-all-tools",
 		"--model", "gpt-5",
 	}
 	if strings.Join(got, " ") != strings.Join(want, " ") {
 		t.Fatalf("argv = %v, want %v", got, want)
+	}
+}
+
+func TestCopilotBuildArgsMCP(t *testing.T) {
+	got := Copilot.BuildArgs(RunInput{Prompt: "p", MCPURL: "http://127.0.0.1:1/mcp"})
+	if !containsStr(got, "--disable-builtin-mcps") {
+		t.Fatalf("MCP run must drop builtin servers for containment: %v", got)
 	}
 }
 
@@ -64,19 +71,15 @@ func TestCopilotParseStreamAndFinalize(t *testing.T) {
 	if sum != "Found 3 Go files." {
 		t.Fatalf("summary = %q", sum)
 	}
-	if u.TokensIn != 150 || u.TokensOut != 35 {
-		t.Fatalf("usage = %+v", u)
-	}
-	if u.HasCost || u.CostUSD != 0 {
-		t.Fatalf("copilot must have no cost: %+v", u)
+	if u.TokensIn != -1 || u.TokensOut != -1 || u.HasCost {
+		t.Fatalf("copilot reports no token total here → unknown, no cost: %+v", u)
 	}
 }
 
 func TestCopilotToolFailure(t *testing.T) {
 	fix := `{"type":"assistant.message","data":{"content":"running"}}
-{"type":"tool.execution_end","data":{"name":"make","result":"error: exit 2 boom"}}
-{"type":"assistant.message","data":{"content":"oops"}}
-{"type":"session.termination","data":{}}`
+{"type":"tool.execution_complete","data":{"toolName":"bash","success":false,"result":{"content":"exit 2 boom"}}}
+{"type":"result","exitCode":0}`
 	var errs []string
 	for _, e := range parse(Copilot, fix) {
 		if e.Kind == EventError {
@@ -88,23 +91,40 @@ func TestCopilotToolFailure(t *testing.T) {
 	}
 }
 
-func TestCopilotLiveVerifyGating(t *testing.T) {
-	if Copilot.Tested != "" {
-		t.Fatalf("Tested must be empty pre-live-verification, got %q", Copilot.Tested)
+func TestCopilotNonZeroExitFails(t *testing.T) {
+	fix := `{"type":"assistant.message","data":{"content":"working"}}
+{"type":"result","exitCode":1}`
+	var final string
+	for _, e := range parse(Copilot, fix) {
+		if e.Kind == EventFinal {
+			final = e.Detail
+		}
 	}
-	if len(Copilot.EnvPass) == 0 || !containsStr(Copilot.EnvPass, "COPILOT_GITHUB_TOKEN") {
+	if _, _, err := Copilot.Finalize(final); err == nil {
+		t.Fatal("non-zero exit must fail Finalize")
+	}
+}
+
+func TestCopilotLiveVerified(t *testing.T) {
+	if Copilot.Tested == "" {
+		t.Fatal("copilot was live-verified on 1.0.88; Tested must be set")
+	}
+	if !containsStr(Copilot.EnvPass, "COPILOT_GITHUB_TOKEN") {
 		t.Fatalf("EnvPass must declare COPILOT_GITHUB_TOKEN: %v", Copilot.EnvPass)
+	}
+	if Copilot.MCPProjectFile != ".mcp.json" {
+		t.Fatalf("copilot MCP delivery must be a project file: %q", Copilot.MCPProjectFile)
 	}
 }
 
 func TestCopilotVersion(t *testing.T) {
 	dir := t.TempDir()
-	path := writeStub(t, dir, "copilot", "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo \"0.1.7\"; fi\n")
+	path := writeStub(t, dir, "copilot", "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo \"GitHub Copilot CLI 1.0.88.\"; fi\n")
 	v, err := Copilot.Version(context.Background(), path)
 	if err != nil {
 		t.Fatalf("Version: %v", err)
 	}
-	if v != "0.1.7" {
+	if v != "1.0.88" {
 		t.Fatalf("version = %q", v)
 	}
 }

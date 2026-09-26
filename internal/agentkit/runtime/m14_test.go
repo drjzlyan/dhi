@@ -259,8 +259,8 @@ func TestNoServedToolsNoSession(t *testing.T) {
 // TestNonMCPAdapterKeepsFallback pins the adapter gate: a served slug on
 // a runtime without verified MCP wiring serves nothing (fallback).
 func TestNonMCPAdapterKeepsFallback(t *testing.T) {
-	h := newHarnessMulti(t, docTools("copilot", `"memory_append"`),
-		map[string]string{"copilot": silentStub})
+	h := newHarnessMulti(t, docTools("antigravity", `"memory_append"`),
+		map[string]string{"agy": silentStub})
 	h.rt.cfg.Memory = memory.Open(h.ws)
 	if s := h.rt.serveTools(h.rt.agents["scout"], bus.Message{Channel: "#general"}); s != nil {
 		s.stop()

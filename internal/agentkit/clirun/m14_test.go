@@ -110,8 +110,10 @@ func TestMCPCapabilityDeclared(t *testing.T) {
 	for _, c := range allAdapters() {
 		reg[c.Name] = c.MCPOK
 	}
-	if !reg["claude"] || !reg["opencode"] || !reg["codex"] || !reg["cursor-agent"] {
-		t.Fatalf("claude+opencode+codex+cursor-agent must declare MCP wiring: %v", reg)
+	for _, n := range []string{"claude", "opencode", "codex", "cursor-agent", "copilot"} {
+		if !reg[n] {
+			t.Fatalf("%s must declare MCP wiring: %v", n, reg)
+		}
 	}
 }
 
