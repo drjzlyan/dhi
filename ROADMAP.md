@@ -755,7 +755,8 @@ selectable; cursor/copilot/gemini join once installed + MCP-verified.
       `write`/`patch` (mutating, approval-gated), all VPath-jailed, and
       the git set `git_status`/`git_log`/`git_branch`/`git_diff`
       (read-only) + `git_commit` (mutating, identity, approval-gated),
-      2026-09-26; `git_push`, editor/LSP, `run`, `ask_human` remain
+      and ideation reads `ideation_list`/`ideation_read`, 2026-09-26;
+      `git_push`, editor/LSP, `run`, `ask_human` remain
 - [ ] P2 — capability scopes (`read/write/exec/network/git/push/admin` ×
       auto|ask|deny, manifest→team→workspace) + grant-memory approvals;
       every mutation recorded in the run

@@ -84,6 +84,7 @@ var BuiltinTools = []string{
 	"task_list", "kb_search", "kb_contribute",
 	"memory_append", "memory_read_notes", "memory_write_notes",
 	"channel_post", "channel_read", "workspace_search",
+	"ideation_list", "ideation_read",
 }
 
 // IsBuiltinTool reports whether name is one of the native tools.

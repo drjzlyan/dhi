@@ -25,6 +25,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/toolbridge"
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
 	"github.com/drjzlyan/dhi/internal/gitcore"
+	"github.com/drjzlyan/dhi/internal/ideation"
 	"github.com/drjzlyan/dhi/internal/sandbox"
 	"github.com/drjzlyan/dhi/internal/search"
 	"github.com/drjzlyan/dhi/internal/tasks"
@@ -83,6 +84,8 @@ type Config struct {
 	// Identity resolves the user's git identity for git_commit (F-029);
 	// nil makes the commit tool refuse by name.
 	Identity gitcore.IdentityFunc
+	// Sessions backs the ideation read tools (M15 P1); nil omits them.
+	Sessions *ideation.Store
 }
 
 // Runtime manages rostered agents and executes their turns.

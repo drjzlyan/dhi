@@ -271,9 +271,10 @@ catalog).
    (`read`/`list`/`glob` read-only + `write`/`patch` approval-gated,
    VPath-jailed, `dhitools/fs.go`) and read-only git
    (`git_status`/`git_log`/`git_branch`/`git_diff`, plus mutating
-   `git_commit` authored by the user identity, `dhitools/git.go`)
-   landed. Next: `git_push`, allowlisted `run`, `ask_human`,
-   product-store reads, then the editor/LSP seam ADR (option c).
+   `git_commit` authored by the user identity, `dhitools/git.go`) and
+   ideation reads (`dhitools/ideation.go`) landed. Next: the editor/LSP
+   seam ADR, plus three forks to settle before `git_push`/`run`/
+   `ask_human` (push auth, run allowlist source, ask_human mechanism).
 2. **M15 P2–P3 — capability scopes, MCP-for-all**:
    fs/search/git/editor/LSP/run tools; scopes + grant-memory approvals;
    MCP verified for every shipped adapter; sandbox tightened (network

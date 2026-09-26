@@ -177,7 +177,7 @@ func runTUI() {
 		// under .dhi/agents/. Guards carry the audited OS-sandbox
 		// adapter (nil here is impossible: the audit blocked first).
 		if messageBus != nil {
-			agentRT = newAgentRuntime(ws, messageBus, decision.Sandbox, termEnv, cfg.Engine, gitRunner, identityFn, taskStore, reviewSvc, rgSearcher)
+			agentRT = newAgentRuntime(ws, messageBus, decision.Sandbox, termEnv, cfg.Engine, gitRunner, identityFn, sessionStore, taskStore, reviewSvc, rgSearcher)
 			if agentRT != nil {
 				edOpts = append(edOpts, editor.WithChat(agentRT))
 			}
@@ -459,7 +459,7 @@ func openBus(ws *workspace.Workspace) *bus.Bus {
 // ride along when their sidecar files parse; broken ones degrade. Agent
 // memory + the knowledge base join the turn loop (M14 P1): persistent
 // context in, review-gated contributions out.
-func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cliEnv []string, defaultEngine string, gitRunner *gitcore.Runner, identityFn gitcore.IdentityFunc, taskStore *tasks.Store, reviewSvc *review.Service, kbSearcher search.Searcher) *agentkitRuntime.Runtime {
+func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cliEnv []string, defaultEngine string, gitRunner *gitcore.Runner, identityFn gitcore.IdentityFunc, sessionStore *ideation.Store, taskStore *tasks.Store, reviewSvc *review.Service, kbSearcher search.Searcher) *agentkitRuntime.Runtime {
 	roster, err := manifest.LoadDir(filepath.Join(ws.Root, workspace.DirAgents))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "dhi: agent roster:", err)

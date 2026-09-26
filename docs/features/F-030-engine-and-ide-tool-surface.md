@@ -48,7 +48,9 @@ sandbox (network deny-by-default, no free-form shell).
   human uses (bottom-up, one undo group).
 - Product: tasks CRUD, `kb_search`/`kb_contribute`, `memory_*`,
   `channel_read`/`channel_post`, ideation `session_*`/`artifact_*`,
-  board/PR/review reads.
+  board/PR/review reads. **Landed:** `ideation_list`/`ideation_read`
+  (read-only; artifact write rides the file tools under
+  `.dhi/sessions/`).
 - Execution: `run` — **allowlisted** commands only (build/test/lint/git),
   OS-sandboxed, workflow-scoped, no free-form shell.
 - Meta: `ask_human` (an explicit question into the approvals surface).
