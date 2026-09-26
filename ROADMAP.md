@@ -748,7 +748,7 @@ gemini join once installed + MCP-verified.
       `engine`, `runtime.Config.DefaultEngine` + `engineName`, doctor
       resolves the inherited engine; `dhi-action` removal stays at P3
       (parity)
-- [~] P1 — IDE tool catalog: fs read/write/patch/list/glob, search, git,
+- [x] P1 — IDE tool catalog: fs read/write/patch/list/glob, search, git,
       editor/LSP open/reveal/apply-edit/hover/definition/references/
       rename/code-action, tasks/KB/memory/channels/ideation/board reads,
       allowlisted `run`, `ask_human`
@@ -758,9 +758,9 @@ gemini join once installed + MCP-verified.
       (read-only) + `git_commit` (mutating, identity, approval-gated),
       ideation reads `ideation_list`/`ideation_read`, `run` (fixed safe
       set, no shell) + `ask_human`, and `editor_open`/`editor_reveal`/`editor_apply_edit`
-      via the ADR-0023 seam, 2026-09-26. Remaining: LSP verbs (same
-      seam) and per-agent `run` commands (M16). `git_push` dropped in
-      favor of the M16 PR step
+      and the LSP verbs, all via the ADR-0023 seam, 2026-09-26. Catalog
+      complete: per-agent `run` commands land with M16; `git_push`
+      dropped in favor of the M16 PR step
 - [ ] P2 — capability scopes (`read/write/exec/network/git/push/admin` ×
       auto|ask|deny, manifest→team→workspace) + grant-memory approvals;
       every mutation recorded in the run

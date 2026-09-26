@@ -285,7 +285,10 @@ catalog).
    `editor_reveal`/`editor_apply_edit` (runtime EditorAPI seam →
    `editorBridge` in cmd/dhi resolves VPaths → `app.EditorRequest` on the
    UI loop → reply; apply edits the live buffer via textbuf.ReplaceText,
-   else the file). Next: LSP verbs on the same seam. Decisions:
+   else the file). and the LSP verbs (hover/definition/references/rename/code_action;
+   rename applies a WorkspaceEdit; all off-loop/async) — M15 P1 catalog
+   complete. Next: P2 capability scopes, then P3 MCP-for-all + sandbox.
+   Decisions:
    `run` uses a fixed safe set now + per-agent commands at M16;
    `ask_human` posts to the thread; `git_push` dropped in favor of the
    M16 PR step.

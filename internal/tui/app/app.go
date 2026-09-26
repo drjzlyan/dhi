@@ -3,6 +3,7 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"strings"
@@ -103,21 +104,42 @@ type EditorRequest struct {
 	Op    string // "open" | "reveal" | "apply"
 	Paths []string
 	// Path/Old/New/All carry an "apply" edit.
-	Path  string
-	Old   string
-	New   string
-	All   bool
+	Path string
+	Old  string
+	New  string
+	All  bool
+	// Op "lsp" carries the LSP verb + position/argument.
+	LSPOp string
+	Line  int
+	Col   int
+	Arg   string
 	Reply chan EditorReply
 }
 
 // EditorReply is the result of an EditorRequest.
 type EditorReply struct {
-	Err string
+	Text string // "lsp" results
+	Err  string
 }
 
 // handleEditorRequest performs one agent editor action on the UI loop.
 func (a *App) handleEditorRequest(r EditorRequest) {
 	var errStr string
+	// LSP calls can block on the server, so they run off the UI loop and
+	// answer on the reply channel when done (ADR-0023).
+	if r.Op == "lsp" {
+		go func(req EditorRequest) {
+			text, err := a.lspInEditor(req)
+			reply := EditorReply{Text: text}
+			if err != nil {
+				reply.Err = err.Error()
+			}
+			if req.Reply != nil {
+				req.Reply <- reply
+			}
+		}(r)
+		return
+	}
 	switch r.Op {
 	case "open", "reveal":
 		if !a.OpenInEditor(r.Paths) {
@@ -131,6 +153,23 @@ func (a *App) handleEditorRequest(r EditorRequest) {
 	if r.Reply != nil {
 		r.Reply <- EditorReply{Err: errStr}
 	}
+}
+
+// lspInEditor routes one LSP verb to the editor surface (ADR-0023).
+func (a *App) lspInEditor(r EditorRequest) (string, error) {
+	for _, s := range a.surfaces {
+		if s.Meta().ID != "editor" {
+			continue
+		}
+		caller, ok := s.(interface {
+			LSPCall(context.Context, string, string, int, int, string) (string, error)
+		})
+		if !ok {
+			return "", fmt.Errorf("editor cannot serve LSP requests")
+		}
+		return caller.LSPCall(context.Background(), r.LSPOp, r.Path, r.Line, r.Col, r.Arg)
+	}
+	return "", fmt.Errorf("editor surface unavailable")
 }
 
 // Update routes messages: gate → global keys → surface keys; broadcast

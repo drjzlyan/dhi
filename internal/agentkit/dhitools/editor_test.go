@@ -11,6 +11,12 @@ type fakeEditor struct {
 	opened   []string
 	revealed string
 	applied  [4]string
+	lspOp    string
+	lspPath  string
+	lspLine  int
+	lspCol   int
+	lspArg   string
+	lspText  string
 	err      error
 }
 
@@ -25,6 +31,10 @@ func (f *fakeEditor) Reveal(_ context.Context, path string) error {
 func (f *fakeEditor) Apply(_ context.Context, path, old, new string, _ bool) error {
 	f.applied = [4]string{path, old, new, ""}
 	return f.err
+}
+func (f *fakeEditor) LSP(_ context.Context, op, path string, line, col int, arg string) (string, error) {
+	f.lspOp, f.lspPath, f.lspLine, f.lspCol, f.lspArg = op, path, line, col, arg
+	return f.lspText, f.err
 }
 
 func TestEditorToolsServed(t *testing.T) {
@@ -109,5 +119,60 @@ func TestEditorSeamErrorSurfaces(t *testing.T) {
 	out, isErr := call(h, t, "editor_reveal", `{"path":"api/main.go"}`)
 	if !isErr || !strings.Contains(out, "editor busy") {
 		t.Fatalf("seam error = %q isErr=%v", out, isErr)
+	}
+}
+
+func TestLSPToolsServed(t *testing.T) {
+	for _, s := range []string{"lsp_hover", "lsp_definition", "lsp_references", "lsp_rename", "lsp_code_action"} {
+		if !Serves(s) {
+			t.Fatalf("%s is not a served slug", s)
+		}
+	}
+}
+
+func TestLSPHoverRoutesThroughSeam(t *testing.T) {
+	f, m := newFixture(t, "lsp_hover")
+	fe := &fakeEditor{lspText: "func foo()"}
+	h := Deps{Agent: m, WS: f.ws, Editor: fe, Approvals: f.approvals}.Handler()
+	out, isErr := call(h, t, "lsp_hover", `{"path":"api/main.go","line":3,"col":5}`)
+	if isErr || !strings.Contains(out, "func foo") {
+		t.Fatalf("hover = %q isErr=%v", out, isErr)
+	}
+	if fe.lspOp != "hover" || fe.lspPath != "api/main.go" || fe.lspLine != 3 || fe.lspCol != 5 {
+		t.Fatalf("seam got op=%q path=%q line=%d col=%d", fe.lspOp, fe.lspPath, fe.lspLine, fe.lspCol)
+	}
+}
+
+func TestLSPRenameRequiresNewNameBeforeApproval(t *testing.T) {
+	f, m := newFixture(t, "lsp_rename")
+	h := Deps{Agent: m, WS: f.ws, Editor: &fakeEditor{}, Approvals: f.approvals}.Handler()
+	out, isErr := call(h, t, "lsp_rename", `{"path":"api/main.go","line":1,"col":1}`)
+	if !isErr || !strings.Contains(out, "new_name") {
+		t.Fatalf("rename no-arg = %q isErr=%v", out, isErr)
+	}
+	if len(f.approvals.List()) != 0 {
+		t.Fatal("malformed rename parked an approval")
+	}
+}
+
+func TestLSPRenameRoutesWithApproval(t *testing.T) {
+	f, m := newFixture(t, "lsp_rename")
+	fe := &fakeEditor{lspText: "renamed across 2 file(s)"}
+	h := Deps{Agent: m, WS: f.ws, Editor: fe, Approvals: f.approvals}.Handler()
+	resolve := callAsync(h, "lsp_rename", `{"path":"api/main.go","line":1,"col":1,"new_name":"Bar"}`, f)
+	if out, isErr := resolve(t); isErr || !strings.Contains(out, "renamed") {
+		t.Fatalf("rename = %q isErr=%v", out, isErr)
+	}
+	if fe.lspOp != "rename" || fe.lspArg != "Bar" {
+		t.Fatalf("seam got op=%q arg=%q", fe.lspOp, fe.lspArg)
+	}
+}
+
+func TestLSPToolsRefuseWithoutSeam(t *testing.T) {
+	f, m := newFixture(t, "lsp_hover")
+	h := Deps{Agent: m, WS: f.ws, Approvals: f.approvals}.Handler()
+	out, isErr := call(h, t, "lsp_hover", `{"path":"api/main.go","line":0,"col":0}`)
+	if !isErr || !strings.Contains(out, "editor unavailable") {
+		t.Fatalf("no-seam hover = %q isErr=%v", out, isErr)
 	}
 }

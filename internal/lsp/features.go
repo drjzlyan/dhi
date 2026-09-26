@@ -124,6 +124,53 @@ func trimFences(s string) string {
 	return strings.Join(out, "\n")
 }
 
+// Location is a definition/reference target.
+type Location struct {
+	URI   string `json:"uri"`
+	Range Range  `json:"range"`
+}
+
+// PathFor resolves a location's URI to a filesystem path.
+func (l Location) PathFor() string { return uriToPath(l.URI) }
+
+// Definition returns the definition location(s) at a position.
+func (c *Client) Definition(path string, line, col int) ([]Location, error) {
+	return c.locations("textDocument/definition", path, line, col, nil)
+}
+
+// References returns references to the symbol at a position.
+func (c *Client) References(path string, line, col int) ([]Location, error) {
+	return c.locations("textDocument/references", path, line, col,
+		map[string]any{"context": map[string]any{"includeDeclaration": true}})
+}
+
+// locations handles the Location | []Location result shapes.
+func (c *Client) locations(method, path string, line, col int, extra map[string]any) ([]Location, error) {
+	params := map[string]any{
+		"textDocument": map[string]any{"uri": pathToURI(path)},
+		"position":     map[string]any{"line": line, "character": col},
+	}
+	for k, v := range extra {
+		params[k] = v
+	}
+	var raw json.RawMessage
+	if err := c.call(method, params, &raw); err != nil {
+		return nil, err
+	}
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil, nil
+	}
+	var one Location
+	if err := json.Unmarshal(raw, &one); err == nil && one.URI != "" {
+		return []Location{one}, nil
+	}
+	var many []Location
+	if err := json.Unmarshal(raw, &many); err != nil {
+		return nil, fmt.Errorf("lsp: %s result: %w", method, err)
+	}
+	return many, nil
+}
+
 // Hover requests documentation at a position.
 func (c *Client) Hover(path string, line, col int) (*Hover, error) {
 	var raw json.RawMessage

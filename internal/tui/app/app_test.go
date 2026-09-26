@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"slices"
 	"strings"
 	"testing"
@@ -379,6 +380,7 @@ type openEditorStub struct {
 	stubSurface
 	opened  [][]string
 	applied [4]string
+	lspOp   string
 }
 
 func (s *openEditorStub) OpenPaths(paths ...string) int {
@@ -389,6 +391,11 @@ func (s *openEditorStub) OpenPaths(paths ...string) int {
 func (s *openEditorStub) ApplyReplace(path, old, new string, all bool) error {
 	s.applied = [4]string{path, old, new, ""}
 	return nil
+}
+
+func (s *openEditorStub) LSPCall(_ context.Context, op, path string, line, col int, arg string) (string, error) {
+	s.lspOp = op
+	return "func content", nil
 }
 
 func TestEditorRequestRoutesToEditorSurface(t *testing.T) {
@@ -447,5 +454,22 @@ func TestEditorRequestApplyEditRoutes(t *testing.T) {
 	a2.Update(EditorRequest{Op: "apply", Path: "/tmp/x", Old: "a", New: "b", Reply: reply2})
 	if r := <-reply2; r.Err == "" {
 		t.Fatal("apply without an editor API must refuse")
+	}
+}
+
+func TestEditorRequestLSPRoutes(t *testing.T) {
+	theme.SwapForTest(t, theme.Dark())
+	ed := &openEditorStub{stubSurface: stubSurface{id: "editor", title: "Editor"}}
+	a := New("test", &stubSurface{id: "home", title: "Home"}, ed)
+	a.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+
+	reply := make(chan EditorReply, 1)
+	a.Update(EditorRequest{Op: "lsp", LSPOp: "hover", Path: "/tmp/x", Line: 1, Col: 2, Reply: reply})
+	r := <-reply
+	if r.Err != "" || !strings.Contains(r.Text, "func") {
+		t.Fatalf("lsp reply = %+v", r)
+	}
+	if ed.lspOp != "hover" {
+		t.Fatalf("lspOp = %q", ed.lspOp)
 	}
 }

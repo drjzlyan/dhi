@@ -20,6 +20,10 @@ type EditorAPI interface {
 	// the file is open (one undo step), else the file on disk. The seam
 	// refuses absent/ambiguous matches unless all.
 	Apply(ctx context.Context, path, old, new string, all bool) error
+	// LSP serves one language-server verb (hover|definition|references|
+	// rename|code_action) at a 0-based position, returning text. rename
+	// applies a WorkspaceEdit; code_action lists actions.
+	LSP(ctx context.Context, op, path string, line, col int, arg string) (string, error)
 }
 
 // editorTools is the editor navigation surface (F-030 P1, ADR-0023).
@@ -135,4 +139,77 @@ func (d Deps) editorTools() []tool {
 type applyPlan struct {
 	path, old, new string
 	all            bool
+}
+
+type lspPlan struct {
+	op, path  string
+	line, col int
+	arg       string
+}
+
+// lspSpecs are the language-server tools served on the ADR-0023 seam.
+var lspSpecs = []struct {
+	name, op, desc string
+	mutate         bool
+	needsArg       bool
+}{
+	{"lsp_hover", "hover", "Hover documentation at a position. Args: {\"path\",\"line\",\"col\"} (0-based).", false, false},
+	{"lsp_definition", "definition", "Go-to-definition. Args: {\"path\",\"line\",\"col\"}.", false, false},
+	{"lsp_references", "references", "Find references. Args: {\"path\",\"line\",\"col\"}.", false, false},
+	{"lsp_rename", "rename", "Rename the symbol at a position (applies a WorkspaceEdit). Args: {\"path\",\"line\",\"col\",\"new_name\"}. Mutating: crosses approvals.", true, true},
+	{"lsp_code_action", "code_action", "List code actions at a position. Args: {\"path\",\"line\",\"col\"}.", false, false},
+}
+
+func (d Deps) lspTools() []tool {
+	if d.WS == nil {
+		return nil
+	}
+	out := make([]tool, 0, len(lspSpecs))
+	for _, spec := range lspSpecs {
+		spec := spec
+		out = append(out, tool{
+			info: mcp.ToolInfo{
+				Name:        spec.name,
+				Description: spec.desc,
+				InputSchema: json.RawMessage(`{"type":"object","required":["path","line","col"],"properties":{"path":{"type":"string"},"line":{"type":"integer"},"col":{"type":"integer"},"new_name":{"type":"string"}},"additionalProperties":false}`),
+			},
+			mutate: spec.mutate,
+			parse: func(raw json.RawMessage) (any, error) {
+				var a struct {
+					Path    string `json:"path"`
+					Line    int    `json:"line"`
+					Col     int    `json:"col"`
+					NewName string `json:"new_name"`
+				}
+				if err := args(raw, &a); err != nil {
+					return nil, err
+				}
+				if strings.TrimSpace(a.Path) == "" {
+					return nil, fmt.Errorf("path is required")
+				}
+				if a.Line < 0 || a.Col < 0 {
+					return nil, fmt.Errorf("line and col must be >= 0")
+				}
+				if spec.needsArg && strings.TrimSpace(a.NewName) == "" {
+					return nil, fmt.Errorf("new_name is required for %s", spec.op)
+				}
+				return lspPlan{op: spec.op, path: a.Path, line: a.Line, col: a.Col, arg: a.NewName}, nil
+			},
+			exec: func(ctx context.Context, dec any) (string, error) {
+				if d.Editor == nil {
+					return "", fmt.Errorf("editor unavailable (no editor surface this session)")
+				}
+				p := dec.(lspPlan)
+				text, err := d.Editor.LSP(ctx, p.op, p.path, p.line, p.col, p.arg)
+				if err != nil {
+					return "", err
+				}
+				if strings.TrimSpace(text) == "" {
+					return "(no result)", nil
+				}
+				return text, nil
+			},
+		})
+	}
+	return out
 }

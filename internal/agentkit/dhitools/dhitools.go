@@ -82,6 +82,7 @@ var servedSlugs = []string{
 	"ideation_list", "ideation_read",
 	"run", "ask_human",
 	"editor_open", "editor_reveal", "editor_apply_edit",
+	"lsp_hover", "lsp_definition", "lsp_references", "lsp_rename", "lsp_code_action",
 	"task_list", "task_create", "task_status", "task_assign",
 	"kb_search", "kb_contribute",
 	"memory_append", "memory_read_notes", "memory_write_notes",
@@ -120,6 +121,7 @@ func (d Deps) Handler() mcp.Handler {
 	all = append(all, d.ideationTools()...)
 	all = append(all, d.miscTools()...)
 	all = append(all, d.editorTools()...)
+	all = append(all, d.lspTools()...)
 	all = append(all, d.taskTools()...)
 	all = append(all, d.kbTools()...)
 	all = append(all, d.memoryTools()...)

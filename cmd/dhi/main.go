@@ -494,20 +494,20 @@ func (b *editorBridge) resolve(paths []string) ([]string, error) {
 	return out, nil
 }
 
-func (b *editorBridge) send(ctx context.Context, req app.EditorRequest) error {
+func (b *editorBridge) request(ctx context.Context, req app.EditorRequest) (app.EditorReply, error) {
 	if b.prog == nil {
-		return fmt.Errorf("editor unavailable (UI not started)")
+		return app.EditorReply{}, fmt.Errorf("editor unavailable (UI not started)")
 	}
 	req.Reply = make(chan app.EditorReply, 1)
 	b.prog.Send(req)
 	select {
 	case r := <-req.Reply:
 		if r.Err != "" {
-			return fmt.Errorf("%s", r.Err)
+			return r, fmt.Errorf("%s", r.Err)
 		}
-		return nil
+		return r, nil
 	case <-ctx.Done():
-		return ctx.Err()
+		return app.EditorReply{}, ctx.Err()
 	}
 }
 
@@ -516,7 +516,8 @@ func (b *editorBridge) Open(ctx context.Context, paths []string) error {
 	if err != nil {
 		return err
 	}
-	return b.send(ctx, app.EditorRequest{Op: "open", Paths: abs})
+	_, err = b.request(ctx, app.EditorRequest{Op: "open", Paths: abs})
+	return err
 }
 
 func (b *editorBridge) Reveal(ctx context.Context, path string) error {
@@ -524,7 +525,8 @@ func (b *editorBridge) Reveal(ctx context.Context, path string) error {
 	if err != nil {
 		return err
 	}
-	return b.send(ctx, app.EditorRequest{Op: "reveal", Paths: abs})
+	_, err = b.request(ctx, app.EditorRequest{Op: "reveal", Paths: abs})
+	return err
 }
 
 func (b *editorBridge) Apply(ctx context.Context, path, old, new string, all bool) error {
@@ -535,7 +537,20 @@ func (b *editorBridge) Apply(ctx context.Context, path, old, new string, all boo
 	if len(abs) == 0 {
 		return fmt.Errorf("path is required")
 	}
-	return b.send(ctx, app.EditorRequest{Op: "apply", Path: abs[0], Old: old, New: new, All: all})
+	_, err = b.request(ctx, app.EditorRequest{Op: "apply", Path: abs[0], Old: old, New: new, All: all})
+	return err
+}
+
+func (b *editorBridge) LSP(ctx context.Context, op, path string, line, col int, arg string) (string, error) {
+	abs, err := b.resolve([]string{path})
+	if err != nil {
+		return "", err
+	}
+	if len(abs) == 0 {
+		return "", fmt.Errorf("path is required")
+	}
+	r, err := b.request(ctx, app.EditorRequest{Op: "lsp", LSPOp: op, Path: abs[0], Line: line, Col: col, Arg: arg})
+	return r.Text, err
 }
 
 // execRunner implements dhitools.CommandRunner: a hermetic-env child

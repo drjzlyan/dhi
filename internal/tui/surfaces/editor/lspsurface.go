@@ -477,3 +477,72 @@ func (m *Model) currentGitRootOrFirst() string {
 	}
 	return ""
 }
+
+// LSPCall serves one agent-requested LSP operation synchronously,
+// returning a text result (ADR-0023). rename and code_action have
+// effects; the tool layer gates them with approvals.
+func (m *Model) LSPCall(_ context.Context, op, abs string, line, col int, arg string) (string, error) {
+	c := m.lspClient()
+	if c == nil {
+		return "", fmt.Errorf("LSP unavailable (gopls not running)")
+	}
+	switch op {
+	case "hover":
+		h, err := c.Hover(abs, line, col)
+		if err != nil {
+			return "", err
+		}
+		if h == nil || strings.TrimSpace(h.Contents) == "" {
+			return "(no hover info)", nil
+		}
+		return h.Contents, nil
+	case "definition", "references":
+		var locs []lsp.Location
+		var err error
+		if op == "definition" {
+			locs, err = c.Definition(abs, line, col)
+		} else {
+			locs, err = c.References(abs, line, col)
+		}
+		if err != nil {
+			return "", err
+		}
+		if len(locs) == 0 {
+			return "(none found)", nil
+		}
+		var b strings.Builder
+		for _, l := range locs {
+			fmt.Fprintf(&b, "%s:%d:%d\n", l.PathFor(), l.Range.Start.Line+1, l.Range.Start.Character+1)
+		}
+		return b.String(), nil
+	case "rename":
+		if strings.TrimSpace(arg) == "" {
+			return "", fmt.Errorf("new name is required for rename")
+		}
+		edit, err := c.Rename(abs, line, col, arg)
+		if err != nil {
+			return "", err
+		}
+		if edit == nil || len(edit.Files) == 0 {
+			return "(no edits)", nil
+		}
+		m.applyWorkspaceEdit(edit)
+		return fmt.Sprintf("renamed across %d file(s)", len(edit.Files)), nil
+	case "code_action":
+		rng := lsp.Range{Start: lsp.Position{Line: line, Character: col}, End: lsp.Position{Line: line, Character: col}}
+		actions, err := c.CodeAction(abs, rng, nil)
+		if err != nil {
+			return "", err
+		}
+		if len(actions) == 0 {
+			return "(no code actions)", nil
+		}
+		var b strings.Builder
+		for _, a := range actions {
+			fmt.Fprintf(&b, "- %s\n", a.Title)
+		}
+		return b.String(), nil
+	default:
+		return "", fmt.Errorf("unknown LSP op %q", op)
+	}
+}

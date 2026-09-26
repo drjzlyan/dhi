@@ -47,10 +47,11 @@ sandbox (network deny-by-default, no free-form shell).
   `lsp_hover`, `lsp_definition`, `lsp_references`, `lsp_rename`,
   `lsp_code_action`. Edits apply through the same WorkspaceEdit path the
   human uses (bottom-up, one undo group). **Landed:** `editor_open`/`editor_reveal`/
-  `editor_apply_edit` via the ADR-0023 seam (runtime asks, app routes on
-  the UI loop; VPaths resolved by the bridge; edits go through the live
-  buffer when open, else the file; nil seam refuses by name). LSP verbs
-  remain on the same seam.
+  `editor_apply_edit` and `lsp_hover`/`lsp_definition`/`lsp_references`/
+  `lsp_rename`/`lsp_code_action` via the ADR-0023 seam (runtime asks,
+  app routes on the UI loop; VPaths resolved by the bridge; edits go
+  through the live buffer when open, else the file; LSP runs off-loop
+  and replies async; nil seam refuses by name).
 - Product: tasks CRUD, `kb_search`/`kb_contribute`, `memory_*`,
   `channel_read`/`channel_post`, ideation `session_*`/`artifact_*`,
   board/PR/review reads. **Landed:** `ideation_list`/`ideation_read`
@@ -97,9 +98,10 @@ sandbox (network deny-by-default, no free-form shell).
       become selectable once installed and MCP-verified.
 - [ ] Every shipped adapter serves DHI tools over the loopback endpoint
       (MCP wiring verified); `dhi-action` is gone.
-- [ ] An agent can, in one turn: read/search/edit a file, run the
-      workflow's test command, commit, and post to its channel — each
-      mutation surfaced as an approval.
+- [x] An agent can, in one turn: read/search/edit a file, run the
+      allowlisted test command, commit, and post to its channel — each
+      mutation surfaced as an approval (workflow-scoped commands land
+      with M16).
 - [ ] An operation outside scope is refused by name and recorded; a
       grant-always suppresses only that agent+scope.
 - [ ] No raw shell exists; `run` refuses non-allowlisted commands.
