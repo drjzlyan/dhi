@@ -61,15 +61,23 @@ catalog).
   (`OPENCODE_CONFIG`, merges with the user's global config), codex
   inline argv (`-c mcp_servers.dhi.url="…"`).
 - **Live-verified end-to-end** (agent really calls a served tool
-  through DHI's loopback server): claude ✓, opencode ✓, codex ✓.
-  Repro: `DHI_LIVE_MCP=1 go test ./internal/agentkit/clirun/ -run
-  'TestLive(Claude|OpenCode|Codex)MCP' -v` (real runs, real tokens).
-  `MCPOK` flipped only for those three.
-- **Pending adapters**: cursor-agent (writes project `.cursor/mcp.json`
-  + `--approve-mcps`; open design Q — where to write it without
-  polluting the worktree's commits), copilot (config surface TBD),
-  antigravity (`agy mcp add` persists to the user's state; needs a
-  per-turn override or throwaway config home).
+  through DHI's loopback server): claude ✓, opencode ✓, codex ✓,
+  cursor-agent ✓. Repro: `DHI_LIVE_MCP=1 go test
+  ./internal/agentkit/clirun/ -run
+  'TestLive(Claude|OpenCode|Codex|Cursor)MCP' -v` (real runs, real
+  tokens). `MCPOK` flipped only for those four.
+- **cursor-agent**: parser was wrong vs its real stream (text nests
+  under `message.content[]`; usage is camelCase `inputTokens`; thinking
+  deltas on their own subtype) — fixed + live-verified (Tested
+  2026.09.26); MCP delivered as a worktree `.cursor/mcp.json` +
+  `--approve-mcps`, git-excluded via `excludeFromGit` (info/exclude,
+  removed on stop — decision: worktree + git-exclude).
+- **Pending adapters**: copilot (fixture-first: flags `-s`/`--no-ask-user`/
+  `--output-format=json` unverified; workspace `.mcp.json`/`.github/mcp.json`
+  config, `--allow-all-tools`; `copilot mcp list` did not surface a
+  workspace server — needs a live session to confirm), antigravity
+  (`agy mcp add` persists to the user's state; needs a per-turn override
+  or throwaway config home). Both are their own live-verify units.
 - Known flakes (pass isolated): `TestCLIRuntimeEndToEnd`,
   `TestMemoryAndKBReachTheSystemBlock`, clirun `TestDetect`.
 - Untracked `.dhi/agents/dev/` exists — do NOT commit.
