@@ -7,6 +7,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -20,6 +21,7 @@ import (
 
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/agentkit/clirun"
+	"github.com/drjzlyan/dhi/internal/agentkit/dhitools"
 	"github.com/drjzlyan/dhi/internal/agentkit/knowledge"
 	"github.com/drjzlyan/dhi/internal/agentkit/library"
 	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
@@ -113,6 +115,7 @@ func runTUI() {
 	var termEnv []string
 	var identityFn gitcore.IdentityFunc
 	var gitRunner *gitcore.Runner
+	var runRunner dhitools.CommandRunner
 	if toolRoot != "" {
 		mgr := toolchain.New(toolRoot)
 		// Terminal sessions run with DHI's hermetic PATH. When the
@@ -133,6 +136,7 @@ func runTUI() {
 		if r, err := gitcore.ResolveRunner(mgr); err == nil {
 			gitRunner = r
 		}
+		runRunner = execRunner{env: termEnv, timeout: 5 * time.Minute}
 		if _, err := os.Stat(filepath.Join(toolRoot, "bin", "rg")); err == nil {
 			rgSearcher = search.Ripgrep{Bin: filepath.Join(toolRoot, "bin", "rg")}
 		}
@@ -177,7 +181,7 @@ func runTUI() {
 		// under .dhi/agents/. Guards carry the audited OS-sandbox
 		// adapter (nil here is impossible: the audit blocked first).
 		if messageBus != nil {
-			agentRT = newAgentRuntime(ws, messageBus, decision.Sandbox, termEnv, cfg.Engine, gitRunner, identityFn, sessionStore, taskStore, reviewSvc, rgSearcher)
+			agentRT = newAgentRuntime(ws, messageBus, decision.Sandbox, termEnv, cfg.Engine, gitRunner, identityFn, sessionStore, runRunner, taskStore, reviewSvc, rgSearcher)
 			if agentRT != nil {
 				edOpts = append(edOpts, editor.WithChat(agentRT))
 			}
@@ -459,7 +463,32 @@ func openBus(ws *workspace.Workspace) *bus.Bus {
 // ride along when their sidecar files parse; broken ones degrade. Agent
 // memory + the knowledge base join the turn loop (M14 P1): persistent
 // context in, review-gated contributions out.
-func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cliEnv []string, defaultEngine string, gitRunner *gitcore.Runner, identityFn gitcore.IdentityFunc, sessionStore *ideation.Store, taskStore *tasks.Store, reviewSvc *review.Service, kbSearcher search.Searcher) *agentkitRuntime.Runtime {
+// execRunner implements dhitools.CommandRunner: a hermetic-env child
+// process (no shell) with a wall-clock timeout and capped output. The
+// allowlist policy lives in dhitools; this only executes vetted argv.
+type execRunner struct {
+	env     []string
+	timeout time.Duration
+}
+
+func (r execRunner) Run(ctx context.Context, dir string, argv []string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, r.timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	cmd.Dir = dir
+	cmd.Env = r.env
+	cmd.WaitDelay = 500 * time.Millisecond
+	var buf bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &buf, &buf
+	err := cmd.Run()
+	out := buf.String()
+	if len(out) > 1<<20 {
+		out = out[:1<<20] + "\n(output truncated)\n"
+	}
+	return out, err
+}
+
+func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cliEnv []string, defaultEngine string, gitRunner *gitcore.Runner, identityFn gitcore.IdentityFunc, sessionStore *ideation.Store, runRunner dhitools.CommandRunner, taskStore *tasks.Store, reviewSvc *review.Service, kbSearcher search.Searcher) *agentkitRuntime.Runtime {
 	roster, err := manifest.LoadDir(filepath.Join(ws.Root, workspace.DirAgents))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "dhi: agent roster:", err)
@@ -502,6 +531,14 @@ func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cl
 		Memory:        memStore,
 		Knowledge:     kbStore,
 		Search:        kbSearcher,
+		// M15 P1 tool seams: the hermetic git runner (git_diff), the F-029
+		// identity resolver (git_commit), the shared ideation store
+		// (ideation_*), and the allowlisted command runner (`run`). A nil
+		// seam makes its tool refuse by name — never a host fallback.
+		Git:      gitRunner,
+		Identity: identityFn,
+		Sessions: sessionStore,
+		Run:      runRunner,
 		// F-020 pr_open: the review service opens task PRs; gh missing
 		// refuses by name at dispatch.
 		PR: func(ctx context.Context, member, branch, title, base string) (string, error) {

@@ -85,6 +85,7 @@ var BuiltinTools = []string{
 	"memory_append", "memory_read_notes", "memory_write_notes",
 	"channel_post", "channel_read", "workspace_search",
 	"ideation_list", "ideation_read",
+	"run", "ask_human",
 }
 
 // IsBuiltinTool reports whether name is one of the native tools.

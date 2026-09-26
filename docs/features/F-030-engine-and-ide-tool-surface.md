@@ -1,7 +1,8 @@
 # F-030: Engine inversion & the IDE tool surface
 
-Status: in progress (M15; P0 engine seam + P1 filesystem read tools
-landed 2026-09-26) · Companion to: ADR-0019 (DHI owns the loop, CLI
+Status: in progress (M15; P0 engine seam + P1 fs/git/ideation/run/
+ask_human landed 2026-09-26; editor/LSP via ADR-0023 next) · Companion
+to: ADR-0019 (DHI owns the loop, CLI
 is the engine), ADR-0011 (no silent fallbacks), ADR-0018 (loopback
 serving), F-028 (the first tool surface). Product rule: agents work the
 way the IDE works — through declared tools, under declared authority.
@@ -52,8 +53,12 @@ sandbox (network deny-by-default, no free-form shell).
   (read-only; artifact write rides the file tools under
   `.dhi/sessions/`).
 - Execution: `run` — **allowlisted** commands only (build/test/lint/git),
-  OS-sandboxed, workflow-scoped, no free-form shell.
+  OS-sandboxed, workflow-scoped, no free-form shell. **Landed:** a fixed
+  safe set (`go build/test/vet/fmt`, `rg`), no shell, approval-gated;
+  the per-agent/per-workflow command list arrives with M16.
 - Meta: `ask_human` (an explicit question into the approvals surface).
+  **Landed:** posts the question to the turn's thread (the human answers
+  next turn; the approvals queue stays strictly for permission).
 
 ## Part C — capability scopes & approvals
 

@@ -48,6 +48,7 @@ type Deps struct {
 	Git       GitCLI               // git CLI for git_diff; nil refuses the diff tool
 	Identity  gitcore.IdentityFunc // commit identity; nil refuses git_commit
 	Sessions  *ideation.Store      // ideation read tools; nil omits them
+	Run       CommandRunner        // allowlisted command runner; nil refuses `run`
 
 	// Channel/Thread are the trigger context: channel_read/post
 	// default to the thread the turn started from.
@@ -78,6 +79,7 @@ var servedSlugs = []string{
 	"read", "write", "patch", "list", "glob",
 	"git_status", "git_log", "git_branch", "git_diff", "git_commit",
 	"ideation_list", "ideation_read",
+	"run", "ask_human",
 	"task_list", "task_create", "task_status", "task_assign",
 	"kb_search", "kb_contribute",
 	"memory_append", "memory_read_notes", "memory_write_notes",
@@ -114,6 +116,7 @@ func (d Deps) Handler() mcp.Handler {
 	all = append(all, d.fsTools()...)
 	all = append(all, d.gitTools()...)
 	all = append(all, d.ideationTools()...)
+	all = append(all, d.miscTools()...)
 	all = append(all, d.taskTools()...)
 	all = append(all, d.kbTools()...)
 	all = append(all, d.memoryTools()...)

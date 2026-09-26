@@ -16,6 +16,7 @@ import (
 
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/agentkit/clirun"
+	"github.com/drjzlyan/dhi/internal/agentkit/dhitools"
 	"github.com/drjzlyan/dhi/internal/agentkit/knowledge"
 	"github.com/drjzlyan/dhi/internal/agentkit/library"
 	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
@@ -86,6 +87,9 @@ type Config struct {
 	Identity gitcore.IdentityFunc
 	// Sessions backs the ideation read tools (M15 P1); nil omits them.
 	Sessions *ideation.Store
+	// Run executes the `run` tool's allowlisted commands (M15 P1); nil
+	// makes the tool refuse by name.
+	Run dhitools.CommandRunner
 }
 
 // Runtime manages rostered agents and executes their turns.

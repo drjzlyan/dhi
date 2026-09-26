@@ -79,6 +79,14 @@ catalog).
 - **Settings `engine` is `omitempty`** so a default empty engine does
   not appear in saved config; validation is format-only
   (`cli:<slug>`), registration is checked by runtime/doctor.
+- **Served-tool seams must be wired in `cmd/dhi`'s Config literal,
+  not just in `serveTools`.** A scripted replace meant to add
+  `Git`/`Identity`/`Sessions` to `newAgentRuntime`'s Config silently
+  no-matched (different field alignment), so production served those
+  tools with nil seams (silent refusal) while every unit test — which
+  builds `Deps` directly — stayed green. When adding a served tool:
+  edit the Config literal explicitly and grep it back; tests that build
+  `Deps` by hand do NOT cover main's wiring.
 
 ### Session 24 gotchas (M14 P3)
 
@@ -272,9 +280,12 @@ catalog).
    VPath-jailed, `dhitools/fs.go`) and read-only git
    (`git_status`/`git_log`/`git_branch`/`git_diff`, plus mutating
    `git_commit` authored by the user identity, `dhitools/git.go`) and
-   ideation reads (`dhitools/ideation.go`) landed. Next: the editor/LSP
-   seam ADR, plus three forks to settle before `git_push`/`run`/
-   `ask_human` (push auth, run allowlist source, ask_human mechanism).
+   ideation reads, `run` (fixed safe set), and `ask_human` landed.
+   ADR-0023 (editor/LSP tool seam: runtime asks, app routes) written.
+   Next: implement the editor/LSP tools per ADR-0023. Decisions:
+   `run` uses a fixed safe set now + per-agent commands at M16;
+   `ask_human` posts to the thread; `git_push` dropped in favor of the
+   M16 PR step.
 2. **M15 P2–P3 — capability scopes, MCP-for-all**:
    fs/search/git/editor/LSP/run tools; scopes + grant-memory approvals;
    MCP verified for every shipped adapter; sandbox tightened (network

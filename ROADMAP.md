@@ -734,11 +734,12 @@ log. See [product.md](docs/product.md) for the vision.
 
 ## M15 — Engine inversion & IDE tool surface (F-030) *(next)*
 
-Status: in progress (P0 landed 2026-09-26). ADR-0019 (supersedes
-ADR-0012/0013). The host CLI becomes the engine; DHI owns the loop, the
-tools, and the authority. Adapter selectability follows detection: only
-CLIs installed on the machine (claude/codex/opencode today) are
-selectable; cursor/copilot/gemini join once installed + MCP-verified.
+Status: in progress (P0 + P1 mostly landed 2026-09-26). ADR-0019
+(supersedes ADR-0012/0013) + ADR-0023 (editor/LSP tool seam). The host
+CLI becomes the engine; DHI owns the loop, the tools, and the authority.
+Adapter selectability follows detection: only CLIs installed on the
+machine (claude/codex/opencode today) are selectable; cursor/copilot/
+gemini join once installed + MCP-verified.
 
 - [x] P0 — engine seam `engine = "cli:<name>"` (workspace default +
       per-agent override, strict), manifest schema 3; adapters become
@@ -755,8 +756,10 @@ selectable; cursor/copilot/gemini join once installed + MCP-verified.
       `write`/`patch` (mutating, approval-gated), all VPath-jailed, and
       the git set `git_status`/`git_log`/`git_branch`/`git_diff`
       (read-only) + `git_commit` (mutating, identity, approval-gated),
-      and ideation reads `ideation_list`/`ideation_read`, 2026-09-26;
-      `git_push`, editor/LSP, `run`, `ask_human` remain
+      ideation reads `ideation_list`/`ideation_read`, and `run`
+      (fixed safe set, no shell) + `ask_human`, 2026-09-26. Remaining:
+      editor/LSP tools (ADR-0023) and per-agent `run` commands (M16).
+      `git_push` dropped in favor of the M16 PR step
 - [ ] P2 — capability scopes (`read/write/exec/network/git/push/admin` ×
       auto|ask|deny, manifest→team→workspace) + grant-memory approvals;
       every mutation recorded in the run
