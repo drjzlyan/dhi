@@ -13,6 +13,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 
+	"github.com/drjzlyan/dhi/internal/agentkit/scopes"
 	"github.com/drjzlyan/dhi/internal/tui/theme"
 )
 
@@ -64,10 +65,13 @@ type Config struct {
 	// Engine is the workspace default engine (ADR-0019), "cli:<name>".
 	// Empty means agents must name an engine in their manifest; an agent
 	// that omits `engine` inherits this one.
-	Engine   string   `toml:"engine,omitempty"`
-	Editor   Editor   `toml:"editor"`
-	Terminal Terminal `toml:"terminal"`
-	Security Security `toml:"security"`
+	Engine string `toml:"engine,omitempty"`
+	// Scopes is the workspace capability layer (F-030 P2): scope→effect
+	// overrides applied under team and agent scopes.
+	Scopes   map[string]string `toml:"scopes,omitempty"`
+	Editor   Editor            `toml:"editor"`
+	Terminal Terminal          `toml:"terminal"`
+	Security Security          `toml:"security"`
 }
 
 // Defaults returns the built-in baseline every layer merges onto.
@@ -85,7 +89,9 @@ func Defaults() Config {
 func Known() []string {
 	return []string{"schema", "theme", "reduced_motion", "engine", "editor",
 		"terminal", "security", "editor.tab_width", "editor.line_numbers",
-		"terminal.scrollback", "security.sandbox"}
+		"terminal.scrollback", "security.sandbox",
+		"scopes.read", "scopes.write", "scopes.exec", "scopes.network",
+		"scopes.git", "scopes.push", "scopes.admin"}
 }
 
 // Load merges defaults ← user ← workspace. Missing files are fine;
@@ -144,6 +150,14 @@ func validate(c Config) error {
 		return fmt.Errorf("settings: security.sandbox %q (want %q or %q)",
 			c.Security.Sandbox, SandboxAuto, SandboxOff)
 	}
+	for name, eff := range c.Scopes {
+		if _, err := scopes.ParseScope(name); err != nil {
+			return fmt.Errorf("settings: scopes.%s: %w", name, err)
+		}
+		if _, err := scopes.ParseEffect(eff); err != nil {
+			return fmt.Errorf("settings: scopes.%s: %w", name, err)
+		}
+	}
 	if c.Engine != "" {
 		kind, name, ok := strings.Cut(strings.TrimSpace(c.Engine), ":")
 		if !ok || kind != "cli" || !engineNameRe.MatchString(name) {
@@ -171,10 +185,11 @@ func LoadBestEffort(userPath, wsPath string) (Config, error) {
 // fileLayer decodes one TOML document; pointers distinguish "unset"
 // from false/zero so later layers only override what they set.
 type fileLayer struct {
-	Schema        int    `toml:"schema"`
-	Theme         string `toml:"theme"`
-	ReducedMotion *bool  `toml:"reduced_motion"`
-	Engine        string `toml:"engine"`
+	Schema        int               `toml:"schema"`
+	Theme         string            `toml:"theme"`
+	ReducedMotion *bool             `toml:"reduced_motion"`
+	Engine        string            `toml:"engine"`
+	Scopes        map[string]string `toml:"scopes"`
 	Editor        struct {
 		TabWidth    int   `toml:"tab_width"`
 		LineNumbers *bool `toml:"line_numbers"`
@@ -199,6 +214,9 @@ func (f fileLayer) mergeInto(dst *Config) {
 	}
 	if f.Engine != "" {
 		dst.Engine = strings.TrimSpace(f.Engine)
+	}
+	if f.Scopes != nil {
+		dst.Scopes = f.Scopes
 	}
 	if f.Editor.TabWidth != 0 {
 		dst.Editor.TabWidth = f.Editor.TabWidth

@@ -94,6 +94,9 @@ type Config struct {
 	// Editor is the app-owned editor seam (ADR-0023); nil makes the
 	// editor/LSP tools refuse by name.
 	Editor dhitools.EditorAPI
+	// WorkspaceScopes is the workspace capability layer (F-030 P2):
+	// resolved under team and agent scopes.
+	WorkspaceScopes scopes.Set
 }
 
 // Runtime manages rostered agents and executes their turns.
@@ -245,6 +248,9 @@ func (r *Runtime) engineName(m *manifest.Agent) (string, error) {
 // org; an invalid entry is skipped (never a silent grant).
 func (r *Runtime) agentScopes(m *manifest.Agent) scopes.Set {
 	layers := []scopes.Set{scopes.Default()}
+	if len(r.cfg.WorkspaceScopes) > 0 {
+		layers = append(layers, r.cfg.WorkspaceScopes)
+	}
 	if r.cfg.Org != nil {
 		for _, slug := range r.cfg.Org.TeamsOf(m.ID) {
 			t, ok := r.cfg.Org.Team(slug)

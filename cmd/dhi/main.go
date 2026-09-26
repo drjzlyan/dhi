@@ -28,6 +28,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/memory"
 	agentkitOrg "github.com/drjzlyan/dhi/internal/agentkit/org"
 	agentkitRuntime "github.com/drjzlyan/dhi/internal/agentkit/runtime"
+	"github.com/drjzlyan/dhi/internal/agentkit/scopes"
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
 	"github.com/drjzlyan/dhi/internal/autopilot"
 	"github.com/drjzlyan/dhi/internal/boot"
@@ -116,6 +117,17 @@ func runTUI() {
 	var identityFn gitcore.IdentityFunc
 	var gitRunner *gitcore.Runner
 	var runRunner dhitools.CommandRunner
+	// Workspace capability layer (F-030 P2); settings validates the
+	// names/effects, so a parse miss leaves the value out (never a grant).
+	wsScopes := scopes.Set{}
+	for name, eff := range cfg.Scopes {
+		sc, err1 := scopes.ParseScope(name)
+		e, err2 := scopes.ParseEffect(eff)
+		if err1 == nil && err2 == nil {
+			wsScopes[sc] = e
+		}
+	}
+
 	// editorBridge routes agent editor actions onto the UI loop
 	// (ADR-0023); its program is attached once the TUI is created.
 	editorBridge := &editorBridge{ws: ws}
@@ -184,7 +196,7 @@ func runTUI() {
 		// under .dhi/agents/. Guards carry the audited OS-sandbox
 		// adapter (nil here is impossible: the audit blocked first).
 		if messageBus != nil {
-			agentRT = newAgentRuntime(ws, messageBus, decision.Sandbox, termEnv, cfg.Engine, gitRunner, identityFn, sessionStore, runRunner, editorBridge, taskStore, reviewSvc, rgSearcher)
+			agentRT = newAgentRuntime(ws, messageBus, decision.Sandbox, termEnv, cfg.Engine, gitRunner, identityFn, sessionStore, runRunner, editorBridge, wsScopes, taskStore, reviewSvc, rgSearcher)
 			if agentRT != nil {
 				edOpts = append(edOpts, editor.WithChat(agentRT))
 			}
@@ -578,7 +590,7 @@ func (r execRunner) Run(ctx context.Context, dir string, argv []string) (string,
 	return out, err
 }
 
-func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cliEnv []string, defaultEngine string, gitRunner *gitcore.Runner, identityFn gitcore.IdentityFunc, sessionStore *ideation.Store, runRunner dhitools.CommandRunner, editor dhitools.EditorAPI, taskStore *tasks.Store, reviewSvc *review.Service, kbSearcher search.Searcher) *agentkitRuntime.Runtime {
+func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cliEnv []string, defaultEngine string, gitRunner *gitcore.Runner, identityFn gitcore.IdentityFunc, sessionStore *ideation.Store, runRunner dhitools.CommandRunner, editor dhitools.EditorAPI, workspaceScopes scopes.Set, taskStore *tasks.Store, reviewSvc *review.Service, kbSearcher search.Searcher) *agentkitRuntime.Runtime {
 	roster, err := manifest.LoadDir(filepath.Join(ws.Root, workspace.DirAgents))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "dhi: agent roster:", err)
@@ -625,11 +637,12 @@ func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cl
 		// identity resolver (git_commit), the shared ideation store
 		// (ideation_*), and the allowlisted command runner (`run`). A nil
 		// seam makes its tool refuse by name — never a host fallback.
-		Git:      gitRunner,
-		Identity: identityFn,
-		Sessions: sessionStore,
-		Run:      runRunner,
-		Editor:   editor,
+		Git:             gitRunner,
+		Identity:        identityFn,
+		Sessions:        sessionStore,
+		Run:             runRunner,
+		Editor:          editor,
+		WorkspaceScopes: workspaceScopes,
 		// F-020 pr_open: the review service opens task PRs; gh missing
 		// refuses by name at dispatch.
 		PR: func(ctx context.Context, member, branch, title, base string) (string, error) {

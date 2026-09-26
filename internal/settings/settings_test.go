@@ -3,6 +3,7 @@ package settings
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -100,7 +101,7 @@ func TestRoundTripAndSanitize(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if back != cfg {
+	if !reflect.DeepEqual(back, cfg) {
 		t.Errorf("round trip mismatch:\n%+v\n%+v", back, cfg)
 	}
 
@@ -128,7 +129,7 @@ func TestRoundTripAndSanitize(t *testing.T) {
 		t.Fatal(err)
 	}
 	back2, err := Load(p, "")
-	if err != nil || back2 != good {
+	if err != nil || !reflect.DeepEqual(back2, good) {
 		t.Fatalf("good file failed: %v %+v", err, back2)
 	}
 }
@@ -180,7 +181,7 @@ func TestUnknownKeysRefuseBoot(t *testing.T) {
 	if berr == nil {
 		t.Fatal("best-effort must still report the error")
 	}
-	if cfg != Defaults() {
+	if !reflect.DeepEqual(cfg, Defaults()) {
 		t.Errorf("best-effort config = %+v, want defaults", cfg)
 	}
 }
@@ -341,5 +342,28 @@ func TestEngineSetting(t *testing.T) {
 	if _, err := Load(write("schema = 1\nengine = \"claude\"\n"), ""); err == nil ||
 		!strings.Contains(err.Error(), "engine") {
 		t.Fatalf("bad engine err = %v", err)
+	}
+}
+
+func TestWorkspaceScopes(t *testing.T) {
+	dir := t.TempDir()
+	write := func(doc string) string {
+		p := filepath.Join(dir, "config.toml")
+		if err := os.WriteFile(p, []byte(doc), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	cfg, err := Load(write("schema = 1\n[scopes]\nwrite = \"deny\"\npush = \"auto\"\n"), "")
+	if err != nil || cfg.Scopes["write"] != "deny" || cfg.Scopes["push"] != "auto" {
+		t.Fatalf("scopes = %v err = %v", cfg.Scopes, err)
+	}
+	// Unknown scope key refuses.
+	if _, err := Load(write("schema = 1\n[scopes]\nroot = \"auto\"\n"), ""); err == nil {
+		t.Fatal("bad scope key must refuse")
+	}
+	// Unknown effect refuses.
+	if _, err := Load(write("schema = 1\n[scopes]\nwrite = \"maybe\"\n"), ""); err == nil {
+		t.Fatal("bad effect must refuse")
 	}
 }

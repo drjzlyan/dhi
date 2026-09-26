@@ -72,3 +72,14 @@ func TestAgentScopesLayering(t *testing.T) {
 		t.Fatalf("read default changed: %q", got.EffectFor(scopes.Read))
 	}
 }
+
+func TestWorkspaceScopeLayer(t *testing.T) {
+	r := &Runtime{cfg: Config{WorkspaceScopes: scopes.Set{scopes.Write: scopes.Deny}}}
+	if got := r.agentScopes(&manifest.Agent{ID: "a"}); got.EffectFor(scopes.Write) != scopes.Deny {
+		t.Fatalf("workspace scope not applied: %q", got.EffectFor(scopes.Write))
+	}
+	over := &manifest.Agent{ID: "a", Scopes: scopes.Set{scopes.Write: scopes.Auto}}
+	if got := r.agentScopes(over); got.EffectFor(scopes.Write) != scopes.Auto {
+		t.Fatalf("manifest must beat workspace: %q", got.EffectFor(scopes.Write))
+	}
+}
