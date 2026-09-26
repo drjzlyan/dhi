@@ -1,6 +1,7 @@
 package editor
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -38,6 +39,10 @@ func makeAlphaRepo(t *testing.T, m *Model) {
 func TestGitPanelStageAndCommit(t *testing.T) {
 	m := newEditor(t)
 	makeAlphaRepo(t, m)
+	// F-029: the panel commits as the user's resolved git identity.
+	m.gitIdentity = func(context.Context) (gitcore.Identity, error) {
+		return gitcore.Identity{Name: "Ada", Email: "ada@example.com"}, nil
+	}
 
 	feed(m, "enter", "down", "down", "enter") // open app.go in buffer
 	if !strings.Contains(plainView(m), "NORMAL") {
@@ -83,10 +88,30 @@ func TestGitPanelStageAndCommit(t *testing.T) {
 	if len(log) != 2 || log[0].Message != "panel commit" {
 		t.Fatalf("log = %+v", log)
 	}
+	if log[0].Author != "Ada" {
+		t.Fatalf("commit author = %q, want the resolved identity", log[0].Author)
+	}
 	for _, f := range m.gitEntries {
 		if f.Staged {
 			t.Errorf("entry still staged after commit: %+v", f)
 		}
+	}
+}
+
+func TestGitPanelCommitRefusesWithoutIdentity(t *testing.T) {
+	m := newEditor(t)
+	makeAlphaRepo(t, m)
+	m.loadGit()
+	if m.gitRepo == nil {
+		t.Fatal("no git repo loaded")
+	}
+	// No identity resolver installed: the commit path must refuse by
+	// name, never invent an author (F-029).
+	m.gitInput = []rune("x")
+	m.gitInputMode = true
+	m.handleCommitInput("enter")
+	if !strings.Contains(m.gitErr, "user.name") {
+		t.Fatalf("gitErr = %q, want an identity refusal", m.gitErr)
 	}
 }
 

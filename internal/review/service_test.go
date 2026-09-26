@@ -24,6 +24,7 @@ type fakeGH struct {
 	diff           string
 	prCalls        int
 	created        []string // repo|title|base|head
+	body           string   // last PR body
 	reviewComments []RemoteComment
 	issueComments  []RemoteComment
 }
@@ -40,8 +41,9 @@ func (f *fakeGH) Diff(_ context.Context, _, _ string) (string, error) { return f
 func (f *fakeGH) PostComment(context.Context, string, string, string) error {
 	return fmt.Errorf("not implemented in fake")
 }
-func (f *fakeGH) CreatePR(_ context.Context, repo, title, _, base, head string) (PRMeta, error) {
+func (f *fakeGH) CreatePR(_ context.Context, repo, title, body, base, head string) (PRMeta, error) {
 	f.created = append(f.created, strings.Join([]string{repo, title, base, head}, "|"))
+	f.body = body
 	return PRMeta{Number: 7, Title: title, URL: "https://github.com/acme/api/pull/7", BaseRef: base}, nil
 }
 func (f *fakeGH) PostReviewComment(context.Context, string, string, string, string, int, string, string, int64) error {
@@ -384,6 +386,30 @@ func TestCreatePRForBranchPushesAndCreates(t *testing.T) {
 	ref, err := originRepo.Reference(plumbing.ReferenceName("refs/heads/task/feat-1"), true)
 	if err != nil || ref.Hash().String() != head {
 		t.Fatalf("origin ref = %v err=%v", ref, err)
+	}
+}
+
+func TestCreatePRForBranchBodyHasNoDHIFooter(t *testing.T) {
+	w, st, fg, memPath, head, _ := bareFixture(t)
+	svc := NewService(w, st, nil, fg)
+	mr, err := git.PlainOpen(memPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := mr.Storer.SetReference(plumbing.NewHashReference(
+		plumbing.ReferenceName("refs/heads/task/feat-2"), plumbing.NewHash(head))); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.CreatePRForBranch(context.Background(),
+		"api", "task/feat-2", "Add feat", "master"); err != nil {
+		t.Fatalf("CreatePRForBranch: %v", err)
+	}
+	if strings.Contains(fg.body, "DHI's Reviewer floor") ||
+		strings.Contains(fg.body, "Reviewed with DHI") {
+		t.Fatalf("PR body must carry no DHI footer:\n%s", fg.body)
+	}
+	if fg.body == "" {
+		t.Fatal("PR body unexpectedly empty")
 	}
 }
 

@@ -318,3 +318,28 @@ func TestApplySwapsLiveTheme(t *testing.T) {
 		t.Error("unknown theme changed the active one")
 	}
 }
+
+func TestEngineSetting(t *testing.T) {
+	dir := t.TempDir()
+	write := func(doc string) string {
+		t.Helper()
+		p := filepath.Join(dir, "config.toml")
+		if err := os.WriteFile(p, []byte(doc), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	cfg, err := Load(write("schema = 1\nengine = \"cli:claude\"\n"), "")
+	if err != nil || cfg.Engine != "cli:claude" {
+		t.Fatalf("engine = %q err = %v", cfg.Engine, err)
+	}
+	// A typo'd key still refuses (strict, ADR-0011).
+	if _, err := Load(write("schema = 1\nengin = \"cli:claude\"\n"), ""); err == nil {
+		t.Fatal("unknown key must refuse")
+	}
+	// A malformed engine refuses naming the key.
+	if _, err := Load(write("schema = 1\nengine = \"claude\"\n"), ""); err == nil ||
+		!strings.Contains(err.Error(), "engine") {
+		t.Fatalf("bad engine err = %v", err)
+	}
+}

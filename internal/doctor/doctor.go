@@ -67,6 +67,7 @@ func Run(toolRoot, wsRoot string) Report {
 	var r Report
 	r.Checks = append(r.Checks, Toolchain(toolRoot)...)
 	r.Checks = append(r.Checks, Git(toolRoot)...)
+	r.Checks = append(r.Checks, Identity(toolRoot)...)
 	r.Checks = append(r.Checks, Workspace(wsRoot)...)
 	r.Checks = append(r.Checks, Config(wsRoot)...)
 	r.Checks = append(r.Checks, Agents(wsRoot)...)
@@ -217,6 +218,35 @@ func gitChecks(version, root string) []Check {
 		Detail: fmt.Sprintf("hermetic git %s", got)}}
 }
 
+// Identity reports the user's git identity (F-029): OK when user.name
+// and user.email resolve through the hermetic git binary under the host
+// config, Warn (naming the exact fix) when unset. Silent while git is
+// not installed — the Git suite already covers that. Unset is a Warn,
+// not a Fail: the IDE boots and agents run; commit paths refuse at use
+// with the same message (ADR-0011, "refused capability surfaces at use").
+func Identity(toolRoot string) []Check {
+	mf, err := toolchain.Embedded()
+	if err != nil {
+		return nil
+	}
+	if _, ok := mf.Tools["git"]; !ok {
+		return nil
+	}
+	m := toolchain.New(toolRoot)
+	if _, err := os.Stat(m.GitBin()); err != nil {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	r := gitcore.NewRunner(m.GitBin(), m.GitIdentityEnv(nil))
+	id, err := gitcore.ResolveIdentity(ctx, r)
+	if err != nil {
+		return []Check{{Name: "identity", Status: Warn, Detail: err.Error()}}
+	}
+	return []Check{{Name: "identity", Status: OK,
+		Detail: fmt.Sprintf("%s <%s>", id.Name, id.Email)}}
+}
+
 // Workspace probes the DHI workspace at root (skipped with a warning
 // when root is not a workspace).
 func Workspace(root string) []Check {
@@ -345,6 +375,13 @@ func AgentTools(wsRoot string) []Check {
 		return nil // roster health is Agents()'s row
 	}
 	reg := clirun.NewRegistry(lookPath)
+	// Resolve the workspace default engine so agents that inherit it are
+	// measured against the engine they will actually run on (ADR-0019);
+	// best-effort, since doctor must run on a broken install.
+	defEngine := ""
+	if best, _ := settings.LoadBestEffort("", filepath.Join(wsRoot, ".dhi", "config.toml")); true {
+		defEngine = best.Engine
+	}
 	var ready, fallback []string
 	for _, a := range roster {
 		served := 0
@@ -356,13 +393,25 @@ func AgentTools(wsRoot string) []Check {
 		if served == 0 {
 			continue
 		}
-		if c, ok := reg.Get(a.Runtime); ok && c.MCPOK {
-			ready = append(ready, fmt.Sprintf("%s (%s, %d tool(s))", a.ID, a.Runtime, served))
+		eng := a.Runtime
+		if eng == "" {
+			if name, err := manifest.ParseEngine(defEngine); err == nil {
+				eng = name
+			}
+		}
+		if eng == "" {
+			fallback = append(fallback, fmt.Sprintf(
+				"%s allows %d IDE tool(s) but declares no engine and no workspace default",
+				a.ID, served))
+			continue
+		}
+		if c, ok := reg.Get(eng); ok && c.MCPOK {
+			ready = append(ready, fmt.Sprintf("%s (%s, %d tool(s))", a.ID, eng, served))
 			continue
 		}
 		fallback = append(fallback, fmt.Sprintf(
-			"%s allows %d IDE tool(s) but runtime %q has no verified MCP wiring",
-			a.ID, served, a.Runtime))
+			"%s allows %d IDE tool(s) but engine %q has no verified MCP wiring",
+			a.ID, served, eng))
 	}
 	switch {
 	case len(ready) == 0 && len(fallback) == 0:

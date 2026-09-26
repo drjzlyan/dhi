@@ -174,6 +174,9 @@ type Store struct {
 	attach AttachFn
 	detach DetachFn
 	now    func() time.Time
+	// identity resolves the user's git identity for commits (F-029); nil
+	// refuses by name.
+	identity gitcore.IdentityFunc
 }
 
 // Change announces one committed task mutation.
@@ -658,8 +661,18 @@ func (s *Store) Subscribe() (<-chan Change, func()) {
 	}
 }
 
+// SetIdentity installs the git identity resolver used by Commit (F-029).
+// A nil resolver (the default) makes Commit refuse by name.
+func (s *Store) SetIdentity(fn gitcore.IdentityFunc) {
+	s.mu.Lock()
+	s.identity = fn
+	s.mu.Unlock()
+}
+
 // Commit stages all changes and creates a commit in the task's first
-// changeset worktree. Returns the new commit SHA.
+// changeset worktree. Returns the new commit SHA. Commits are authored
+// by the user's resolved git identity (F-029); no synthetic identity
+// exists.
 func (s *Store) Commit(slug, message string) error {
 	if message == "" {
 		return fmt.Errorf("tasks: commit message required")
@@ -667,6 +680,7 @@ func (s *Store) Commit(slug, message string) error {
 	s.mu.RLock()
 	t, ok := s.tasks[slug]
 	attach := s.attach
+	identity := s.identity
 	s.mu.RUnlock()
 	if !ok {
 		return fmt.Errorf("tasks: unknown task %q", slug)
@@ -679,6 +693,13 @@ func (s *Store) Commit(slug, message string) error {
 	if attach == nil {
 		return fmt.Errorf("tasks: worktree seam unavailable")
 	}
+	if identity == nil {
+		return fmt.Errorf("tasks: commit: %w", gitcore.ErrIdentityUnset)
+	}
+	id, err := identity(context.Background())
+	if err != nil {
+		return fmt.Errorf("tasks: commit: %w", err)
+	}
 	repo, err := gitcore.Open(absWorkdir)
 	if err != nil {
 		return fmt.Errorf("tasks: commit: open repo: %w", err)
@@ -686,7 +707,7 @@ func (s *Store) Commit(slug, message string) error {
 	if err := repo.Stage("."); err != nil {
 		return fmt.Errorf("tasks: commit: stage: %w", err)
 	}
-	if _, err := repo.Commit(gitcore.CommitOptions{Message: message, Author: "you", Email: "you@dhi"}); err != nil {
+	if _, err := repo.Commit(gitcore.CommitOptions{Message: message, Author: id.Name, Email: id.Email}); err != nil {
 		return fmt.Errorf("tasks: commit: %w", err)
 	}
 	return nil

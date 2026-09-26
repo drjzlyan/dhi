@@ -661,7 +661,7 @@ go-runewidth promoted from indirect (ADR-0015).
 
 ## M14 — Agent specs v2, IDE tools, user identity *(the user's crew, deepened)*
 
-Status: in progress (P0–P3 landed; P4 identity pending). User goal:
+Status: complete (P0–P4 landed; P4 identity 2026-09-26). User goal:
 define an agent entirely in the IDE (role + skills + library), give
 every runtime mid-turn access to DHI's own tools, and make the user's
 identity the only one that crosses outward. Design decisions: ADR-0016
@@ -700,14 +700,127 @@ substrate), ADR-0018 (loopback serving supersedes the helper process).
       `dhi-action` advertisement is suppressed for MCP-served turns;
       `doctor` gains one `agent-tools` row (ok / warn-with-reason) —
       landed 2026-09-24
-- [ ] P4 — strict user identity (F-029): one gitcore identity resolver
-      (refuse by name when unset), task-card + editor commits use it,
-      external-PR comments drop agent handles, the PR-body DHI footer
-      is dropped, doctor gains an `identity` row
+- [x] P4 — strict user identity (F-029): one gitcore identity resolver
+      (`ResolveIdentity`, refuse by name when unset), task-card +
+      editor commits use it, external-PR comments drop agent handles,
+      the PR-body DHI footer is dropped, doctor gains an `identity` row
+      — landed 2026-09-26
 
 Deferred: MCP wiring for cursor/copilot/gemini (fixture-first until
 their live-verify checklists are filled — claude is first-class today);
 file read/write/list as served tools; MCP over HTTP between DHI
 instances; skill scripts; remote-only library browsing; removal of the
 `dhi-action` fallback once every targeted adapter is MCP-verified.
+
+---
+
+## North star — the virtual workspace
+
+Design decisions locked 2026-09-26 (the planning session); ADR-0019
+supersedes ADR-0012/0013. The product: a single user and many agents
+work the same IDE on many projects at once. The user chooses a detected
+host CLI as the **engine** (globally, or per agent); DHI is the **host**
+that declares every tool, authority, workflow, and record. Agents work
+only through DHI's IDE tool surface — no free-form shell, network
+deny-by-default — so "the crew works inside the IDE" is auditable.
+**Containment is best-effort while a CLI is the engine** (a CLI keeps
+its native tools); the `api:` engine kind is the recorded path to a hard
+guarantee.
+
+Pillars: engine inversion + IDE tool surface · feature workflows ·
+cross-project work + dependency graph · ideation round-table + canvas ·
+pack registry + MCP install · dashboard/editor/Slack depth + live work
+log. See [product.md](docs/product.md) for the vision.
+
+## M15 — Engine inversion & IDE tool surface (F-030) *(next)*
+
+Status: in progress (P0 landed 2026-09-26). ADR-0019 (supersedes
+ADR-0012/0013). The host CLI becomes the engine; DHI owns the loop, the
+tools, and the authority. Adapter selectability follows detection: only
+CLIs installed on the machine (claude/codex/opencode today) are
+selectable; cursor/copilot/gemini join once installed + MCP-verified.
+
+- [x] P0 — engine seam `engine = "cli:<name>"` (workspace default +
+      per-agent override, strict), manifest schema 3; adapters become
+      engine declarations; `dhi-action` removed at parity
+      — manifest `ParseEngine`/`EngineString` + schema 3, settings
+      `engine`, `runtime.Config.DefaultEngine` + `engineName`, doctor
+      resolves the inherited engine; `dhi-action` removal stays at P3
+      (parity)
+- [ ] P1 — IDE tool catalog: fs read/write/patch/list/glob, search, git,
+      editor/LSP open/reveal/apply-edit/hover/definition/references/
+      rename/code-action, tasks/KB/memory/channels/ideation/board reads,
+      allowlisted `run`, `ask_human`
+- [ ] P2 — capability scopes (`read/write/exec/network/git/push/admin` ×
+      auto|ask|deny, manifest→team→workspace) + grant-memory approvals;
+      every mutation recorded in the run
+- [ ] P3 — MCP tool serving verified for **all six** adapters; sandbox
+      tightened (network deny-by-default, declared origins, exec
+      sandboxed); doctor `agent-tools` row with the containment caveat
+- [ ] Deferred: `api:<provider>` engine kind (hard guarantee / offline)
+
+## M16 — Feature workflows (F-031)
+
+Status: planned. ADR-0020. Steps bound to seams, layered like standards;
+builtin `feature` workflow with hard blocks (worktree-before-commit,
+tests-pass-before-PR) and an exception-approval review gate.
+
+- [ ] `internal/agentkit/workflow` store: strict decode, layered
+      resolve, per-task active workflow, named malformed refusal
+- [ ] Builtin `feature` workflow: worktree → implement (TDD guidance) →
+      test → commit → push → open PR → review; hard blocks + recorded
+      bypasses
+- [ ] Settings WORKFLOWS section + board active-step display; packs may
+      ship workflows; doctor `workflows` row
+
+## M17 — Cross-project work & dependency graph (F-032)
+
+Status: planned. ADR-0021. Honor all task changesets; declared
+`[[dependency]]` edges; propagation as an accept/decline proposal.
+
+- [ ] Multi-changeset tasks: worktree per member, commit/push/PR across
+      all, per-member failure named
+- [ ] `workspace.toml` `[[dependency]] from/to/kind` + workspace
+      dependency view
+- [ ] Propagation proposals (accept/decline) on a declared edge; no
+      auto-create; doctor dangling-member warning
+
+## M18 — Ideation round-table & canvas (F-033)
+
+Status: planned. Moderator + turn grants; 1:1/group/breakout; markdown +
+mermaid artifacts edited live; agents may propose (not open) sessions.
+
+- [ ] Session model (moderator, participants, mode, parent) + floor
+      protocol (ordered, replayable); agents address each other
+- [ ] Canvas: mermaid/markdown artifacts writable via tools, live
+      preview, content-hash status reset
+- [ ] IDEATOR surface: SESSIONS · PARTICIPANTS · CANVAS · TRANSCRIPT,
+      floor indicator, nested breakouts; `propose session` request
+
+## M19 — Pack registry & MCP install (F-034)
+
+Status: planned. ADR-0022. Packs ship agents/roles/skills/standards/
+workflows/MCP configs; signed git registry; external MCP under
+sandbox/scope/keychain/approvals.
+
+- [ ] Pack kinds extended, all-before-write, provenance + exact
+      uninstall; `internal/agentkit/library` reads pack entries
+- [ ] Signed git index: digest/signature verify, cache, offline browse;
+      Settings MARKETPLACE browse/search/install
+- [ ] Outbound MCP client revived + policy-gated: per-agent allowlist,
+      sandbox, declared origins, keychain creds, approval-gated calls;
+      doctor registry/provenance/posture rows
+
+## M20 — Depth & cohesion (F-035)
+
+Status: planned. Board Jira depth (labels/priority/epic/due/filters/
+bulk/swimlanes); editor↔agent co-editing (edit tools + indicator);
+Slack depth (search/reactions/edits/pins/actions); live work log in the
+task thread.
+
+- [ ] Board depth + filters/bulk
+- [ ] Editor co-editing via F-030 tools + active-editing indicator
+- [ ] Channel search/reactions/edits/per-message actions
+- [ ] Live work log: a running task streams progress into its thread;
+      replay remains the durable record
 

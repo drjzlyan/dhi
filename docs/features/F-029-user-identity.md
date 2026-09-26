@@ -1,6 +1,6 @@
 # F-029: Strict user identity — the office is private, the work is the user's
 
-Status: planned (M14 P0 accepted 2026-09-19)
+Status: implemented (M14 P4, 2026-09-26)
 Companion to: F-005 (reviewer ownership-split, R4), ADR-0012 (host
 agent CLIs), ADR-0011 (no silent fallbacks).
 Product rule: inside the IDE agents collaborate; everything that
@@ -46,15 +46,24 @@ account; that stays, with no attribution ever added.
 
 ## Acceptance criteria
 
-- [ ] A task-card commit and an editor commit on a machine with git
-      identity set produce commits authored by that identity (table-
-      tested against a fixture config).
-- [ ] With no git identity, commit paths refuse naming the fix, and
-      doctor reports the same.
-- [ ] An external-PR consolidated comment contains no agent id; the
+- [x] A task-card commit and an editor commit on a machine with git
+      identity set produce commits authored by that identity
+      (`gitcore.ResolveIdentity` + `tasks.Store.SetIdentity` +
+      `editor.WithIdentity`; table-tested against stub git shims).
+- [x] With no git identity, commit paths refuse naming the fix, and
+      doctor reports the same message (`identity` row: Warn when unset,
+      OK naming the identity when set — never a Fail on absence, since
+      the IDE still boots and agents run; ADR-0011 use-time refusal).
+- [x] An external-PR consolidated comment contains no agent id; the
       PR body contains no DHI footer.
-- [ ] No attribution is added to any outbound GitHub text.
-- [ ] `make verify` green per phase.
+- [x] No attribution is added to any outbound GitHub text.
+- [x] `make verify` green per phase.
+
+Implementation note: `gitcore.ResolveIdentity` reads the user's git
+config through the hermetic git binary under the HOST config path
+(`toolchain.Manager.GitIdentityEnv`), not the managed hermetic config
+which has no `[user]` section — the named exception that makes outward
+work the user's (ADR-0021-era product rule).
 
 ## Deferred
 

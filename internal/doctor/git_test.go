@@ -111,3 +111,52 @@ func TestGitChecksBranches(t *testing.T) {
 		}
 	})
 }
+
+// identityShim installs a stub git at root/bin/git whose `config --get`
+// answers (or refuses) user.name/user.email.
+func identityShim(t *testing.T, root, name, email string) {
+	t.Helper()
+	shimDir := filepath.Join(root, "bin")
+	if err := os.MkdirAll(shimDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	script := "#!/bin/sh\n"
+	if name != "" {
+		script += "if [ \"$3\" = user.name ]; then echo " + name + "; exit 0; fi\n"
+	}
+	if email != "" {
+		script += "if [ \"$3\" = user.email ]; then echo " + email + "; exit 0; fi\n"
+	}
+	script += "exit 1\n"
+	if err := os.WriteFile(filepath.Join(shimDir, "git"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestIdentityRow(t *testing.T) {
+	mf, err := toolchain.Embedded()
+	if err != nil {
+		t.Fatalf("embedded registry: %v", err)
+	}
+	if _, ok := mf.Tools["git"]; !ok {
+		t.Skip("git pin not flipped; identity row stays silent")
+	}
+
+	t.Run("set reports OK", func(t *testing.T) {
+		root := t.TempDir()
+		identityShim(t, root, "Ada", "ada@example.com")
+		c, ok := statusOf(Identity(root), "identity")
+		if !ok || c.Status != OK || !strings.Contains(c.Detail, "Ada") {
+			t.Errorf("set = %+v (found=%v)", c, ok)
+		}
+	})
+
+	t.Run("unset warns naming the fix", func(t *testing.T) {
+		root := t.TempDir()
+		identityShim(t, root, "", "")
+		c, ok := statusOf(Identity(root), "identity")
+		if !ok || c.Status != Warn || !strings.Contains(c.Detail, "user.name") {
+			t.Errorf("unset = %+v (found=%v)", c, ok)
+		}
+	})
+}

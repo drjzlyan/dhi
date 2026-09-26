@@ -122,7 +122,7 @@ func TestParseErrors(t *testing.T) {
 	}{
 		{"bad id", "Big-Agent", "schema = 1\nname = \"n\"\nmodel = \"m\"\n", "bad agent id"},
 		{"unknown key", "a", "schema = 1\nname = \"n\"\nmodel = \"m\"\ntemperament = \"calm\"\n", "unknown key"},
-		{"bad schema", "a", "schema = 3\nname = \"n\"\nmodel = \"m\"\n", "schema 3"},
+		{"bad schema", "a", "schema = 4\nname = \"n\"\nmodel = \"m\"\n", "schema 4"},
 		{"missing name", "a", "schema = 1\nmodel = \"m\"\n", "name is required"},
 		{"missing model", "a", "schema = 1\nname = \"n\"\n", "model is required"},
 		{"missing runtime", "a", "schema = 1\nname = \"n\"\nmodel = \"m\"\n", "runtime"},
@@ -148,6 +148,87 @@ func TestParseErrors(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestEngineSchema3(t *testing.T) {
+	t.Run("explicit engine", func(t *testing.T) {
+		doc := "schema = 3\nname = \"E\"\nmodel = \"m\"\nengine = \"cli:claude\"\n"
+		a, err := Parse("e", []byte(doc))
+		if err != nil {
+			t.Fatalf("Parse: %v", err)
+		}
+		if a.Engine != "cli:claude" || a.Runtime != "claude" || !a.UsesCLIRuntime() {
+			t.Fatalf("engine = %q runtime = %q", a.Engine, a.Runtime)
+		}
+	})
+
+	t.Run("no engine inherits the default", func(t *testing.T) {
+		doc := "schema = 3\nname = \"E\"\nmodel = \"m\"\n"
+		a, err := Parse("e", []byte(doc))
+		if err != nil {
+			t.Fatalf("Parse: %v", err)
+		}
+		if a.Engine != "" || a.Runtime != "" {
+			t.Fatalf("inherit should leave engine/runtime empty: %q/%q", a.Engine, a.Runtime)
+		}
+	})
+
+	t.Run("legacy runtime accepted as synonym", func(t *testing.T) {
+		doc := "schema = 3\nname = \"E\"\nmodel = \"m\"\nruntime = \"codex\"\n"
+		a, err := Parse("e", []byte(doc))
+		if err != nil {
+			t.Fatalf("Parse: %v", err)
+		}
+		if a.Engine != "cli:codex" || a.Runtime != "codex" {
+			t.Fatalf("engine = %q runtime = %q", a.Engine, a.Runtime)
+		}
+	})
+
+	t.Run("engine and runtime together refuse", func(t *testing.T) {
+		doc := "schema = 3\nname = \"E\"\nmodel = \"m\"\nengine = \"cli:claude\"\nruntime = \"codex\"\n"
+		if _, err := Parse("e", []byte(doc)); err == nil || !strings.Contains(err.Error(), "not both") {
+			t.Fatalf("err = %v, want a set-one refusal", err)
+		}
+	})
+
+	t.Run("unknown cli engine refuses", func(t *testing.T) {
+		doc := "schema = 3\nname = \"E\"\nmodel = \"m\"\nengine = \"cli:nope\"\n"
+		if _, err := Parse("e", []byte(doc)); err == nil || !strings.Contains(err.Error(), "unknown CLI") {
+			t.Fatalf("err = %v, want unknown-CLI refusal", err)
+		}
+	})
+
+	t.Run("api engine kind refuses as not built", func(t *testing.T) {
+		doc := "schema = 3\nname = \"E\"\nmodel = \"m\"\nengine = \"api:anthropic\"\n"
+		if _, err := Parse("e", []byte(doc)); err == nil || !strings.Contains(err.Error(), "not built") {
+			t.Fatalf("err = %v, want api-not-built refusal", err)
+		}
+	})
+
+	t.Run("engine requires schema 3", func(t *testing.T) {
+		doc := "schema = 2\nname = \"E\"\nmodel = \"m\"\nruntime = \"claude\"\nengine = \"cli:claude\"\n"
+		if _, err := Parse("e", []byte(doc)); err == nil || !strings.Contains(err.Error(), "schema") {
+			t.Fatalf("err = %v, want schema-gate refusal", err)
+		}
+	})
+
+	t.Run("marshal round-trips engine", func(t *testing.T) {
+		a, err := Parse("e", []byte("schema = 3\nname = \"E\"\nmodel = \"m\"\nengine = \"cli:claude\"\n"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, err := Marshal(a)
+		if err != nil {
+			t.Fatalf("Marshal: %v", err)
+		}
+		back, err := Parse("e", data)
+		if err != nil {
+			t.Fatalf("Parse(marshal): %v", err)
+		}
+		if back.Engine != "cli:claude" || back.Runtime != "claude" {
+			t.Fatalf("round-trip engine = %q runtime = %q", back.Engine, back.Runtime)
+		}
+	})
 }
 
 func TestLoadDir(t *testing.T) {

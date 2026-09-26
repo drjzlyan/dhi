@@ -111,6 +111,7 @@ func runTUI() {
 	var edOpts []editor.Option
 	var rgSearcher search.Searcher
 	var termEnv []string
+	var identityFn gitcore.IdentityFunc
 	if toolRoot != "" {
 		mgr := toolchain.New(toolRoot)
 		// Terminal sessions run with DHI's hermetic PATH. When the
@@ -118,6 +119,14 @@ func runTUI() {
 		// naming the fix — it never leaks the host PATH (ADR-0011).
 		termEnv = mgr.Env(nil)
 		edOpts = append(edOpts, editor.WithTermEnv(termEnv))
+		// F-029: one identity resolver, read from the user's git config
+		// (host path) through the hermetic git binary. It is nil when the
+		// toolchain is absent, which makes every commit path refuse by
+		// name rather than invent an author.
+		identityFn = func(ctx context.Context) (gitcore.Identity, error) {
+			return gitcore.ResolveIdentity(ctx, gitcore.NewRunner(mgr.GitBin(), mgr.GitIdentityEnv(nil)))
+		}
+		edOpts = append(edOpts, editor.WithIdentity(identityFn))
 		if _, err := os.Stat(filepath.Join(toolRoot, "bin", "rg")); err == nil {
 			rgSearcher = search.Ripgrep{Bin: filepath.Join(toolRoot, "bin", "rg")}
 		}
@@ -139,6 +148,7 @@ func runTUI() {
 		messageBus = openBus(ws)
 		if ts, err := tasks.Open(ws); err == nil {
 			taskStore = ts
+			taskStore.SetIdentity(identityFn)
 			wireTaskSeam(ws, ts)
 		}
 		reviewSvc = openReviewService(ws)
@@ -161,7 +171,7 @@ func runTUI() {
 		// under .dhi/agents/. Guards carry the audited OS-sandbox
 		// adapter (nil here is impossible: the audit blocked first).
 		if messageBus != nil {
-			agentRT = newAgentRuntime(ws, messageBus, decision.Sandbox, termEnv, taskStore, reviewSvc, rgSearcher)
+			agentRT = newAgentRuntime(ws, messageBus, decision.Sandbox, termEnv, cfg.Engine, taskStore, reviewSvc, rgSearcher)
 			if agentRT != nil {
 				edOpts = append(edOpts, editor.WithChat(agentRT))
 			}
@@ -443,7 +453,7 @@ func openBus(ws *workspace.Workspace) *bus.Bus {
 // ride along when their sidecar files parse; broken ones degrade. Agent
 // memory + the knowledge base join the turn loop (M14 P1): persistent
 // context in, review-gated contributions out.
-func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cliEnv []string, taskStore *tasks.Store, reviewSvc *review.Service, kbSearcher search.Searcher) *agentkitRuntime.Runtime {
+func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cliEnv []string, defaultEngine string, taskStore *tasks.Store, reviewSvc *review.Service, kbSearcher search.Searcher) *agentkitRuntime.Runtime {
 	roster, err := manifest.LoadDir(filepath.Join(ws.Root, workspace.DirAgents))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "dhi: agent roster:", err)
@@ -473,15 +483,19 @@ func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cl
 		// these, resolved on the host PATH. Absent CLIs refuse roster
 		// agents that declare them, and doctor names the installation —
 		// never a fallback.
-		CLIs:      clirun.NewRegistry(exec.LookPath),
-		CLIEnv:    cliEnv,
-		Tasks:     taskStore,
-		Org:       company,
-		Standards: true,
-		Sandbox:   sb,
-		Memory:    memStore,
-		Knowledge: kbStore,
-		Search:    kbSearcher,
+		CLIs: clirun.NewRegistry(exec.LookPath),
+		// DefaultEngine is the workspace default (ADR-0019): an agent
+		// that omits `engine` inherits it; with none set the agent
+		// refuses by name at build time.
+		DefaultEngine: defaultEngine,
+		CLIEnv:        cliEnv,
+		Tasks:         taskStore,
+		Org:           company,
+		Standards:     true,
+		Sandbox:       sb,
+		Memory:        memStore,
+		Knowledge:     kbStore,
+		Search:        kbSearcher,
 		// F-020 pr_open: the review service opens task PRs; gh missing
 		// refuses by name at dispatch.
 		PR: func(ctx context.Context, member, branch, title, base string) (string, error) {

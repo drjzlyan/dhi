@@ -23,10 +23,46 @@ import (
 	"github.com/drjzlyan/dhi/internal/sandbox"
 )
 
-// SchemaVersion is the agent manifest schema this build WRITES (F-027
-// spec v2). Parse still accepts schema 1 for back-compat — such files
-// load with an empty role/skills — but Marshal always emits v2.
-const SchemaVersion = 2
+// SchemaVersion is the agent manifest schema this build WRITES
+// (F-030 spec v3). Parse still accepts schema 1 (no role/skills) and
+// schema 2 (role/skills, `runtime`) for back-compat — such files load
+// with their engine derived from `runtime` — but Marshal always emits
+// v3.
+const SchemaVersion = 3
+
+// EngineCLIPrefix marks a CLI engine declaration: the host CLI is the
+// inference engine (ADR-0019).
+const EngineCLIPrefix = "cli:"
+
+// EngineString renders a CLI name as an engine declaration.
+func EngineString(cliName string) string { return EngineCLIPrefix + cliName }
+
+// ParseEngine validates an engine declaration ("cli:<name>") and returns
+// the CLI name. The empty string is a valid engine meaning "inherit the
+// workspace default". An unknown CLI, an unknown kind, or the not-built
+// `api:` kind refuses by name (ADR-0011).
+func ParseEngine(engine string) (string, error) {
+	e := strings.TrimSpace(strings.ToLower(engine))
+	if e == "" {
+		return "", nil
+	}
+	kind, name, ok := strings.Cut(e, ":")
+	if !ok || name == "" {
+		return "", fmt.Errorf("engine %q must be \"cli:<name>\"", engine)
+	}
+	switch kind {
+	case "cli":
+		if !clirun.IsCLIRuntime(name) {
+			return "", fmt.Errorf("engine %q: unknown CLI (valid: %s)",
+				engine, strings.Join(clirun.CLINames(), ", "))
+		}
+		return name, nil
+	case "api":
+		return "", fmt.Errorf("engine %q: the api engine kind is not built yet (use cli:<name>)", engine)
+	default:
+		return "", fmt.Errorf("engine %q: unknown kind %q (want cli)", engine, kind)
+	}
+}
 
 var (
 	idRe      = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]*$`)
@@ -80,13 +116,13 @@ type Agent struct {
 	Role   string
 	Skills []string
 
-	// Runtime selects the host CLI the agent runs on (F-013, ADR-0012,
-	// ADR-0013): a registered registry name such as "claude". It is
-	// required — DHI ships no turn engine of its own any more, so a
-	// manifest without a registered runtime is invalid. Secrets reach
-	// the agent only through the adapter's declared env pass-through
-	// (env credentials are declared, never ambient).
-	Runtime string        // registered host CLI name; required
+	// Engine is the full engine declaration (ADR-0019), e.g.
+	// "cli:claude". Empty means "inherit the workspace default engine".
+	// Runtime is the resolved CLI name (the convenience consumers use);
+	// it mirrors Engine and is empty exactly when Engine is empty.
+	Engine  string // "cli:<name>" or "" (inherit default)
+	Runtime string // resolved CLI name ("claude"); "" = inherit default
+
 	Timeout time.Duration // max wall time per run; 0 = no limit
 	Retries int           // retries on transient CLI failure; 0 = none
 
@@ -111,6 +147,7 @@ type file struct {
 	Role      string   `toml:"role"`
 	Skills    []string `toml:"skills"`
 	PolicyRaw string   `toml:"policy_json"`
+	Engine    string   `toml:"engine"`
 	Runtime   string   `toml:"runtime"`
 	Timeout   string   `toml:"timeout"`
 	Retries   int      `toml:"retries"`
@@ -136,8 +173,8 @@ func Parse(id string, data []byte) (*Agent, error) {
 		sort.Strings(keys)
 		return nil, fmt.Errorf("agentkit/manifest: %s: unknown key(s): %s", id, strings.Join(keys, ", "))
 	}
-	if f.Schema != 1 && f.Schema != SchemaVersion {
-		return nil, fmt.Errorf("agentkit/manifest: %s: schema %d, want 1 or %d", id, f.Schema, SchemaVersion)
+	if f.Schema < 1 || f.Schema > SchemaVersion {
+		return nil, fmt.Errorf("agentkit/manifest: %s: schema %d, want 1..%d", id, f.Schema, SchemaVersion)
 	}
 	a := &Agent{
 		ID:      id,
@@ -147,7 +184,6 @@ func Parse(id string, data []byte) (*Agent, error) {
 		Tools:   f.Tools,
 		Role:    strings.TrimSpace(f.Role),
 		Skills:  f.Skills,
-		Runtime: strings.TrimSpace(strings.ToLower(f.Runtime)),
 		Retries: f.Retries,
 	}
 	if f.Schema == 1 && (a.Role != "" || len(a.Skills) > 0) {
@@ -194,9 +230,13 @@ func Parse(id string, data []byte) (*Agent, error) {
 		}
 		a.policy = p
 	}
-	if !clirun.ValidRuntimeStatic(a.Runtime) {
-		return nil, fmt.Errorf("agentkit/manifest: %s: runtime %q is not a registered host CLI (valid: %s)",
-			id, a.Runtime, clirunRuntimeList())
+	cliName, err := resolveEngine(f)
+	if err != nil {
+		return nil, fmt.Errorf("agentkit/manifest: %s: %w", id, err)
+	}
+	a.Runtime = cliName
+	if cliName != "" {
+		a.Engine = EngineString(cliName)
 	}
 	if f.Timeout != "" {
 		d, err := time.ParseDuration(f.Timeout)
@@ -211,13 +251,40 @@ func Parse(id string, data []byte) (*Agent, error) {
 	return a, nil
 }
 
-// clirunRuntimeList renders the registered CLI names for error text.
-func clirunRuntimeList() string {
-	names := clirun.CLINames()
-	if len(names) == 0 {
-		return ""
+// resolveEngine maps the on-disk engine/runtime declarations to a
+// resolved CLI name ("" = inherit the workspace default).
+//
+//   - schema 1/2: `runtime` is required and must be a registered CLI
+//     (F-013 contract, preserved); `engine` refuses.
+//   - schema 3: `engine = "cli:<name>"` is the declaration; the legacy
+//     `runtime` is accepted as a synonym, but setting both refuses
+//     (ambiguous). Neither set = inherit the workspace default.
+func resolveEngine(f file) (string, error) {
+	eng := strings.TrimSpace(f.Engine)
+	run := strings.TrimSpace(strings.ToLower(f.Runtime))
+	if f.Schema < 3 {
+		if eng != "" {
+			return "", fmt.Errorf("engine requires schema = %d", SchemaVersion)
+		}
+		if run == "" {
+			return "", fmt.Errorf("runtime is required (schema %d)", f.Schema)
+		}
+		if !clirun.IsCLIRuntime(run) {
+			return "", fmt.Errorf("runtime %q is not a registered host CLI (valid: %s)",
+				run, strings.Join(clirun.CLINames(), ", "))
+		}
+		return run, nil
 	}
-	return ", " + strings.Join(names, ", ")
+	switch {
+	case eng != "" && run != "":
+		return "", fmt.Errorf("set engine or runtime, not both")
+	case eng != "":
+		return ParseEngine(eng)
+	case run != "":
+		return ParseEngine(EngineString(run))
+	default:
+		return "", nil // inherit the workspace default engine
+	}
 }
 
 // LoadDir loads every *.toml under dir as one agent, requiring each
@@ -267,7 +334,14 @@ func Marshal(a *Agent) ([]byte, error) {
 	f.Tools = append([]string(nil), a.Tools...)
 	f.Role = a.Role
 	f.Skills = append([]string(nil), a.Skills...)
-	f.Runtime = a.Runtime
+	// Emit the engine; derive it from Runtime when only the CLI name is
+	// set (callers that predate the engine field keep working).
+	switch {
+	case a.Engine != "":
+		f.Engine = a.Engine
+	case a.Runtime != "":
+		f.Engine = EngineString(a.Runtime)
+	}
 	f.Retries = a.Retries
 	if a.Timeout > 0 {
 		f.Timeout = a.Timeout.String()
@@ -287,10 +361,23 @@ func Marshal(a *Agent) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("agentkit/manifest: %s: marshal self-check: %w", a.ID, err)
 	}
+	// Callers may set only Runtime (the CLI name) or only Engine; the
+	// round trip always yields both, so compare against the derived pair.
+	wantEngine := a.Engine
+	if wantEngine == "" && a.Runtime != "" {
+		wantEngine = EngineString(a.Runtime)
+	}
+	wantRuntime := a.Runtime
+	if wantRuntime == "" && a.Engine != "" {
+		if name, perr := ParseEngine(a.Engine); perr == nil {
+			wantRuntime = name
+		}
+	}
 	if back.Name != a.Name || back.Model != a.Model || back.System != a.System ||
 		strings.Join(back.Tools, ",") != strings.Join(a.Tools, ",") ||
 		back.Role != a.Role || strings.Join(back.Skills, ",") != strings.Join(a.Skills, ",") ||
-		back.Runtime != a.Runtime || back.Timeout != a.Timeout || back.Retries != a.Retries {
+		back.Engine != wantEngine || back.Runtime != wantRuntime ||
+		back.Timeout != a.Timeout || back.Retries != a.Retries {
 		return nil, fmt.Errorf("agentkit/manifest: %s: marshal round-trip mismatch", a.ID)
 	}
 	return data.Bytes(), nil

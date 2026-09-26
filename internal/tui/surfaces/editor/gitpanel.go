@@ -1,6 +1,7 @@
 package editor
 
 import (
+	"context"
 	"os"
 	"strings"
 
@@ -144,8 +145,20 @@ func (m *Model) handleCommitInput(key string) bool {
 		if msg == "" || m.gitRepo == nil {
 			return true
 		}
+		// F-029: commits are authored by the user's resolved git
+		// identity; a missing resolver or an unset identity refuses
+		// with the named fix, never a synthetic author.
+		if m.gitIdentity == nil {
+			m.gitErr = gitcore.ErrIdentityUnset.Error()
+			return true
+		}
+		id, err := m.gitIdentity(context.Background())
+		if err != nil {
+			m.gitErr = err.Error()
+			return true
+		}
 		hash, err := m.gitRepo.Commit(gitcore.CommitOptions{
-			Message: msg, Author: "dhi", Email: "dhi@local",
+			Message: msg, Author: id.Name, Email: id.Email,
 		})
 		if err != nil {
 			m.gitErr = err.Error()

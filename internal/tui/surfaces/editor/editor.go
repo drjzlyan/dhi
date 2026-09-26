@@ -78,6 +78,12 @@ func WithUnread(us *unread.Store) Option {
 	}
 }
 
+// WithIdentity installs the git identity resolver used by the git
+// panel's commit path (F-029). A nil resolver refuses by name.
+func WithIdentity(fn gitcore.IdentityFunc) Option {
+	return func(m *Model) { m.gitIdentity = fn }
+}
+
 // Model is the Editor surface.
 type Model struct {
 	version string
@@ -121,6 +127,7 @@ type Model struct {
 	gitTab       int // 0 status, 1 log
 	gitCursor    int
 	gitRepo      *gitcore.Repo
+	gitIdentity  gitcore.IdentityFunc // F-029 commit identity; nil refuses
 	gitEntries   []gitcore.FileStatus
 	gitLog       []gitcore.CommitEntry
 	gitErr       string

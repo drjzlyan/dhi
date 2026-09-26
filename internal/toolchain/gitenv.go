@@ -55,6 +55,17 @@ func (m *Manager) GitEnv(base []string) []string {
 	)
 }
 
+// GitIdentityEnv returns the environment for reading the USER's git
+// identity: the host environment (so HOME and the user's global config
+// apply, with the hermetic shim first on PATH). It deliberately omits
+// the ADR-0009 hardening — GIT_CONFIG_GLOBAL/NOSYSTEM are not forced —
+// so `git config --get user.name` reads ~/.gitconfig. This is the named
+// exception that makes outward work the user's (F-029); DHI-driven git
+// operations still use GitEnv.
+func (m *Manager) GitIdentityEnv(base []string) []string {
+	return m.Env(base)
+}
+
 // EnsureGitConfig materializes the managed global git config targeted
 // by GitEnv: deterministic default branch and an empty hooks dir, so
 // neither user hooks nor defaults leak into agent operations. Missing

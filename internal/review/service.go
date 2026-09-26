@@ -249,7 +249,9 @@ func (s *Service) CreatePRForBranch(ctx context.Context, memberName, branch, tit
 	if err := s.pushBranch(ctx, mem.Path, branch); err != nil {
 		return PRMeta{}, err
 	}
-	body := fmt.Sprintf("Created from DHI worktree `%s`.\n\n_Reviewed with DHI's Reviewer floor._", branch)
+	// F-029: no DHI footer crosses to the outside; the branch line is
+	// context for the user's own PR.
+	body := fmt.Sprintf("Created from DHI worktree `%s`.", branch)
 	meta, err := s.gh.CreatePR(ctx, repoURL, title, body, base, branch)
 	if err != nil {
 		return PRMeta{}, err
@@ -665,13 +667,14 @@ func (s *Service) publishConsolidated(ctx context.Context, repo, num string, r R
 			if c.Pending || strings.TrimSpace(c.Text) == "" {
 				continue
 			}
-			author := c.Author
 			text := c.Text
-			// Strip agent attribution markers
+			// Strip agent attribution markers, then drop the handle
+			// entirely: F-029 makes the body read as the user's own
+			// summary with no agent id anywhere.
 			text = strings.ReplaceAll(text, "_DHI agent @", "")
 			text = strings.TrimSuffix(text, "_")
 			text = strings.TrimSpace(text)
-			fmt.Fprintf(&b, "- **%s**: %s\n", author, text)
+			fmt.Fprintf(&b, "- %s\n", text)
 		}
 	}
 	if !hasContent {

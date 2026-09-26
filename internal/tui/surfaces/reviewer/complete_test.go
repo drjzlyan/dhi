@@ -133,6 +133,11 @@ func TestPostToPRExternalPublishesConsolidated(t *testing.T) {
 	if strings.Contains(fgh.body, "_DHI agent") {
 		t.Fatalf("external PR must not expose agent attribution:\n%s", fgh.body)
 	}
+	// F-029: no agent handle in any bullet — the body reads as the
+	// user's own summary.
+	if strings.Contains(fgh.body, "- **") {
+		t.Fatalf("external PR bullets must carry no agent handle:\n%s", fgh.body)
+	}
 	if strings.Contains(fgh.body, "old nit") || strings.Contains(fgh.body, "draft") {
 		t.Fatalf("resolved/pending threads must not be posted:\n%s", fgh.body)
 	}

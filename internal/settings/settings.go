@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -57,12 +58,16 @@ const (
 // Config is the full typed schema; zero values never leak — Load starts
 // from Defaults.
 type Config struct {
-	Schema        int      `toml:"schema"`
-	Theme         string   `toml:"theme"`
-	ReducedMotion bool     `toml:"reduced_motion"`
-	Editor        Editor   `toml:"editor"`
-	Terminal      Terminal `toml:"terminal"`
-	Security      Security `toml:"security"`
+	Schema        int    `toml:"schema"`
+	Theme         string `toml:"theme"`
+	ReducedMotion bool   `toml:"reduced_motion"`
+	// Engine is the workspace default engine (ADR-0019), "cli:<name>".
+	// Empty means agents must name an engine in their manifest; an agent
+	// that omits `engine` inherits this one.
+	Engine   string   `toml:"engine,omitempty"`
+	Editor   Editor   `toml:"editor"`
+	Terminal Terminal `toml:"terminal"`
+	Security Security `toml:"security"`
 }
 
 // Defaults returns the built-in baseline every layer merges onto.
@@ -78,8 +83,8 @@ func Defaults() Config {
 
 // Known reports the accepted top-level keys (for doctor warnings).
 func Known() []string {
-	return []string{"schema", "theme", "reduced_motion", "editor", "terminal",
-		"security", "editor.tab_width", "editor.line_numbers",
+	return []string{"schema", "theme", "reduced_motion", "engine", "editor",
+		"terminal", "security", "editor.tab_width", "editor.line_numbers",
 		"terminal.scrollback", "security.sandbox"}
 }
 
@@ -139,8 +144,18 @@ func validate(c Config) error {
 		return fmt.Errorf("settings: security.sandbox %q (want %q or %q)",
 			c.Security.Sandbox, SandboxAuto, SandboxOff)
 	}
+	if c.Engine != "" {
+		kind, name, ok := strings.Cut(strings.TrimSpace(c.Engine), ":")
+		if !ok || kind != "cli" || !engineNameRe.MatchString(name) {
+			return fmt.Errorf("settings: engine %q must be \"cli:<name>\" (lowercase [a-z0-9._-])", c.Engine)
+		}
+	}
 	return nil
 }
+
+// engineNameRe matches a valid engine CLI name (registration is checked
+// by the runtime and doctor, which own the adapter registry).
+var engineNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]*$`)
 
 // LoadBestEffort returns defaults merged with whatever parsed, plus the
 // first error — for diagnostics (doctor) that must report ON a broken
@@ -159,6 +174,7 @@ type fileLayer struct {
 	Schema        int    `toml:"schema"`
 	Theme         string `toml:"theme"`
 	ReducedMotion *bool  `toml:"reduced_motion"`
+	Engine        string `toml:"engine"`
 	Editor        struct {
 		TabWidth    int   `toml:"tab_width"`
 		LineNumbers *bool `toml:"line_numbers"`
@@ -180,6 +196,9 @@ func (f fileLayer) mergeInto(dst *Config) {
 	}
 	if f.ReducedMotion != nil {
 		dst.ReducedMotion = *f.ReducedMotion
+	}
+	if f.Engine != "" {
+		dst.Engine = strings.TrimSpace(f.Engine)
 	}
 	if f.Editor.TabWidth != 0 {
 		dst.Editor.TabWidth = f.Editor.TabWidth

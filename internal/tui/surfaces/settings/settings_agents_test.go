@@ -127,13 +127,13 @@ func TestAgentsCreateValidationErrors(t *testing.T) {
 	if !strings.Contains(m.form.err, "teleport") {
 		t.Fatalf("unknown tool not named: %q", m.form.err)
 	}
-	// Unknown runtime is named (type past the toggle).
+	// Unknown engine/CLI is named with the offending value (F-030).
 	feed(m, "esc", "n")
 	typeFields(m, "scout", "Scout", "m-1", "", "", "")
 	m.form.f.Fields[4] = kit.NewToggleField("runtime", []string{"nope"}, 0)
 	feed(m, "enter")
-	if !strings.Contains(m.form.err, "runtime") {
-		t.Fatalf("bad runtime not named: %q", m.form.err)
+	if !strings.Contains(m.form.err, "nope") {
+		t.Fatalf("bad engine not named: %q", m.form.err)
 	}
 }
 

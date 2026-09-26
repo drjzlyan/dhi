@@ -1,23 +1,84 @@
 # STATE — current position
 
-Updated: 2026-09-26 (session 24: M14 P3 complete — IDE tools for agents
-over a per-turn loopback MCP endpoint; `make verify` green)
+Updated: 2026-09-26 (session 25: full product planning re-base + M14
+P4 complete (strict user identity) + M15 P0 landed (engine inversion);
+`make verify` green)
 
 ## Where we are
 
-**M14 P0–P3 are complete; `make verify` green.** P0 wrote F-027/F-028/
-F-029 + ADR-0016/0017. P1 made the system block reach EVERY runtime
-(persona + grounding + actions; memory journal/notes + KB hits);
-oversized assembles ride stdin where verified, else refuse by name. P2
-shipped agent spec v2 (`role`/`skills`), the library store + builtin
-library, the behaviour composer wired into `cliPrompt`, and the Settings
-LIBRARY section + detection-driven runtime picker. P3 shipped F-028: the
-`internal/mcp` inbound server (Handler + stdio + streamable-HTTP),
-`internal/agentkit/dhitools` (12 allowlist-gated tools, approvals for
-mutations), per-turn in-process loopback serving wired to claude via
-`--mcp-config … --strict-mcp-config`, and one `doctor agent-tools` row.
-ADR-0018 records the loopback-over-helper decision. P4 (F-029 user
-identity) is the remaining M14 phase.
+**M14 is complete (P0–P4); `make verify` green.** P4 shipped F-029:
+`gitcore.ResolveIdentity` (one resolver, reads the user's git config
+through the hermetic binary under the HOST config path via
+`Manager.GitIdentityEnv`; named refusal `ErrIdentityUnset` when unset),
+injected into `tasks.Store.SetIdentity` and `editor.WithIdentity` so
+task-card + editor commits are authored by the user's real identity;
+external-PR consolidated comments drop agent handles and the PR-body
+DHI footer is gone; doctor gains an `identity` row (Warn when unset
+naming the fix, OK naming the identity — never Fail on absence).
+
+**The roadmap was re-based beyond M14.** A full design session locked
+the "virtual workspace" north star and planned M15–M20 (see ROADMAP
+"North star"): M15 engine inversion + IDE tool surface, M16 feature
+workflows, M17 cross-project work, M18 ideation round-table, M19 pack
+registry + MCP install, M20 depth & cohesion. New ADRs **0019–0022**
+(0019 supersedes 0012/0013: DHI owns the loop, the host CLI is the
+engine) and feature specs **F-030–F-035**.
+
+**M15 P0 landed (engine inversion).** Manifest schema 3 adds
+`engine = "cli:<name>"` (optional; empty = inherit the workspace
+default) via `manifest.ParseEngine`/`EngineString`; `runtime` stays as
+a synonym for schema 1/2 and refuses alongside `engine`; the `api:`
+kind refuses as not-built. Settings gained a strict `engine` default;
+`runtime.Config.DefaultEngine` + `runtime.engineName` resolve the
+effective engine, refusing by name when neither is set; doctor
+`agent-tools` resolves the inherited engine. Adapter selectability
+follows detection — claude/codex/opencode today; cursor/copilot/gemini
+join once installed and MCP-verified. Next: M15 P1 (the IDE tool
+catalog).
+
+### Session 25 gotchas (planning re-base + M14 P4)
+
+- **Identity reads use the HOST git env, not the hermetic one.** The
+  managed hermetic config (`GitEnv`) has no `[user]` section by design
+  (ADR-0009), so `ResolveIdentity` builds a Runner with
+  `Manager.GitIdentityEnv(nil)` (= `Env(nil)`): the user's HOME/global
+  config apply, the hermetic shim is still first on PATH. Never route
+  identity reads through `ResolveRunner`/`GitEnv` — they'd report unset
+  on a machine that has a perfectly good git config.
+- **Doctor `identity` is Warn, not Fail, when unset.** The IDE boots and
+  agents run; commit paths refuse at use with the SAME message
+  (ADR-0011 "refused capability surfaces at use"). The F-029 spec's
+  "fails when a commit path would refuse" is read as the use-time
+  refusal, not the doctor row.
+- **Commit paths refuse when the resolver is nil.** `tasks.Store.Commit`
+  checks `identity == nil` BEFORE opening the repo, and the editor panel
+  does the same — the refusal names `git config --global user.name`, so
+  tests assert on that substring, not a generic error.
+- **`fakeGH.CreatePR` now captures the body** (service_test) — the
+  signature has a `body` param between title and base; the old fake
+  ignored it. Any new GH fake must keep all six params.
+- **External-PR bullets are now plain `- text`** (no `**author**:`); the
+  reviewer external-publish test asserts `- **` is absent.
+- **Planning re-base conventions**: ADRs append-only (0019 supersedes
+  0012/0013, does not edit them); feature specs F-030–F-035 match the
+  ROADMAP milestones M15–M20; product.md carries the vision/principles.
+- Known flakes under full `make verify` remain: the CLI-stub e2e
+  (`TestCLIRuntimeEndToEnd`), clirun `TestDetect`, and occasional
+  runtime-package timeouts; all pass isolated with `-race` — rerun
+  before treating as real.
+- **Engine resolution precedence (M15 P0)**: `manifest.Agent.Runtime`
+  is the resolved CLI name and is empty exactly when the engine is
+  inherited. `runtime.engineName` is the single resolver (manifest
+  engine → workspace default → named refusal); `buildEntry` and
+  `extendSandboxForRoster` both go through it, so a roster with no
+  engine metadata still admits sandbox roots correctly.
+- **Marshal derives the engine pair**: callers may set only `Runtime`
+  or only `Engine`; `Marshal` computes `wantEngine`/`wantRuntime` for
+  the round-trip check, so partial structs still marshal (this bit
+  org/pack/settings tests when it was first missed).
+- **Settings `engine` is `omitempty`** so a default empty engine does
+  not appear in saved config; validation is format-only
+  (`cli:<slug>`), registration is checked by runtime/doctor.
 
 ### Session 24 gotchas (M14 P3)
 
@@ -171,6 +232,21 @@ identity) is the remaining M14 phase.
     (real claude 2.1.177 through the real seatbelt; expect a PONG
     result event). Gate-style like DHI_SMOKE_GIT/DHI_SMOKE_NET.
 
+## Just finished (session 25 — planning re-base + M14 P4)
+
+- Full design session (grilling) locked the "virtual workspace" north
+  star and produced: ADR-0019–0022, F-030–F-035, ROADMAP "North star" +
+  M15–M20, product.md vision/principles update.
+- M14 P4 shipped (F-029): `internal/gitcore/identity.go`,
+  `Manager.GitIdentityEnv`, `tasks.Store.SetIdentity`, editor
+  `WithIdentity`, review PR-body/bullet changes, doctor `identity` row,
+  and tests across gitcore/tasks/doctor/review/editor/reviewer.
+- M15 P0 (engine inversion) landed the same session: manifest schema 3
+  + engine seam, settings `engine` default, runtime resolution, doctor.
+- `make verify` green (the CLI-stub e2e flaked once under load, passed
+  isolated and on rerun — known).
+- Next: M15 P1 (the IDE tool catalog).
+
 ## Just finished (session 24 — M14 P3 complete)
 
 - Commits: M14 P0 58ab4b1, P1 fc75c76, P2 2ea8efc (all pushed to
@@ -183,37 +259,28 @@ identity) is the remaining M14 phase.
 
 ## Open questions for user
 
-- Wave-3 CLIs (cursor-agent, copilot, gemini) aren't installed on the
-  dev machine — do you have accounts/installs for live verification,
-  or should wave 3 stay fixture-only until you install them? (Also
-  blocks their MCP wiring — claude is the only first-class adapter.)
+- Resolved 2026-09-26: work with the CLIs detected on the machine
+  (claude/codex/opencode); cursor/copilot/gemini can be installed during
+  implementation. An adapter is selectable as an engine only when it is
+  both installed and MCP-verified; until then manifests naming it refuse
+  by name (no fixture-first shipping).
 
 ## Next up
 
-1. **M14 P4 — user identity (F-029)**: gitcore identity resolver (named
-   refusal when unset), task-card + editor commits use it, external-PR
-   comment bullets drop agent handles, PR-body DHI footer dropped,
-   doctor `identity` row.
-2. **Wave-3 live verify** (needs installs): once cursor-agent/copilot/
-   gemini are on the machine, run a real task per adapter, fill each
-   adapter's live-verify checklist + set `Tested`, then doctor reports
-   OK. Until then the adapters stay fixture-first and doctor marks a
-   detected version untested (FAIL), never a guess.
-3. **MCP wiring for the other adapters** (codex/opencode/gemini/copilot/
-   cursor): fill each live-verify checklist then set `MCPOK` + the
-   adapter's config injection (ADR-0018; claude done).
-4. **(Deferred, F-026)** interactive find/replace panel (per-match
-   confirm — the ex `:s`/`:%s` path shipped); tab-strip kind glyphs;
-   click adoption inside surfaces (rails/lists/lanes — the seam
-   exists); editor wheel in insert mode.
-5. **(Deferred, F-017)** snooze-expiry push notifications, per-message
-   read granularity, multi-human read states, bulk "mark all read";
-   inbox items from autopilot completions / doctor regressions.
-6. **(Deferred, F-027)** packs shipping roles/skills; effective-prompt
-   preview (`v`) byte-exact check. **(Deferred, F-020)** MCP-style
-   third-party tool registries; per-agent env/secrets editing.
-7. **(Deferred, M11)** board drag-free reordering beyond `m`; doctor
-   rows for the new settings sections.
+1. **M15 P1 — IDE tool catalog** (F-030): fs read/write/patch/list/glob,
+   search, git, editor/LSP, tasks/KB/memory/channels/ideation/board,
+   allowlisted `run`, `ask_human`. (P0 engine seam done.)
+2. **M15 P2–P3 — capability scopes, MCP-for-all**:
+   fs/search/git/editor/LSP/run tools; scopes + grant-memory approvals;
+   MCP verified for every shipped adapter; sandbox tightened (network
+   deny-by-default); doctor `agent-tools` with the containment caveat.
+3. **M16–M20** per ROADMAP: workflows → cross-project → ideation
+   round-table → registry/MCP install → depth & cohesion.
+4. **Wave-3 live verify + MCP wiring** fold into M15 (they are no longer
+   a separate deferred track): an adapter without verified MCP wiring is
+   not a selectable engine.
+5. **(Deferred, F-026/F-017/F-027/F-020/M11)** as before — now absorbed
+   into M20 depth or the M19 registry where they overlap.
 
 ## Session 19 gotchas (M12)
 

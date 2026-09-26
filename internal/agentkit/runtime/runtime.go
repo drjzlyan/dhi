@@ -43,9 +43,13 @@ type Config struct {
 	// for agents (F-010). Nil means Noop: path-jail + policy only.
 	Sandbox sandbox.Sandbox
 	// CLIs is the host CLI runtime registry (F-013, ADR-0012). Every
-	// rostered agent's `runtime` resolves against it; nil refuses all
+	// rostered agent's engine resolves against it; nil refuses all
 	// agents at build time (strict, no silent fallback).
 	CLIs *clirun.Registry
+	// DefaultEngine is the workspace default engine (ADR-0019),
+	// "cli:<name>". Agents whose manifest declares no engine inherit it;
+	// when it is also empty such agents refuse at build time by name.
+	DefaultEngine string
 	// CLIEnv is the base environment for CLI spawns (hermetic toolchain
 	// PATH and the like). The executor extends it with each CLI's
 	// declared pass-through — the exact set, nothing else (ADR-0012 §4).
@@ -164,14 +168,18 @@ func (r *Runtime) extendSandboxForRoster(roster []*manifest.Agent) error {
 		extras = append(extras, p)
 	}
 	for _, m := range roster {
-		c, ok := r.cfg.CLIs.Get(m.Runtime)
+		name, err := r.engineName(m)
+		if err != nil {
+			continue // buildEntry names the missing engine precisely
+		}
+		c, ok := r.cfg.CLIs.Get(name)
 		if !ok {
 			continue // buildEntry names the unknown runtime precisely
 		}
 		for _, root := range c.StateRoot() {
 			add(root)
 		}
-		path, err := r.cfg.CLIs.Path(m.Runtime)
+		path, err := r.cfg.CLIs.Path(name)
 		if err != nil {
 			continue // same: the missing binary is the entry's named error
 		}
@@ -192,21 +200,59 @@ func (r *Runtime) extendSandboxForRoster(roster []*manifest.Agent) error {
 	return nil
 }
 
+// engineName resolves an agent's effective CLI engine: the manifest's
+// engine/runtime when declared, else the workspace default engine, else
+// a named refusal (ADR-0019, ADR-0011). Empty is never a silent
+// fallback.
+func (r *Runtime) engineName(m *manifest.Agent) (string, error) {
+	if m.Runtime != "" {
+		return m.Runtime, nil
+	}
+	def := strings.TrimSpace(r.cfg.DefaultEngine)
+	if def == "" {
+		return "", fmt.Errorf("no engine: set `engine = \"cli:<name>\"` in the manifest or a default `engine` in settings")
+	}
+	name, err := manifest.ParseEngine(def)
+	if err != nil {
+		return "", fmt.Errorf("default engine: %w", err)
+	}
+	if name == "" {
+		return "", fmt.Errorf("no engine: settings default engine is empty")
+	}
+	return name, nil
+}
+
+// AgentEngine reports the CLI engine an agent resolves to (effective),
+// for diagnostics and profile display.
+func (r *Runtime) AgentEngine(id string) (string, bool) {
+	r.mu.Lock()
+	e, ok := r.agents[id]
+	r.mu.Unlock()
+	if !ok {
+		return "", false
+	}
+	return e.cli.Name, true
+}
+
 // buildEntry wires one agent's host CLI and OS-sandbox guard. The
-// manifest's `runtime` key is the exec authorization; the guard wraps
-// every CLI spawn through the same OS-sandbox seam every other exec uses
-// (ADR-0012 §3).
+// manifest's `engine` (or the workspace default) is the exec
+// authorization; the guard wraps every CLI spawn through the same
+// OS-sandbox seam every other exec uses (ADR-0012 §3).
 func (r *Runtime) buildEntry(m *manifest.Agent, jailRoots []string) (*entry, error) {
 	if r.cfg.CLIs == nil {
-		return nil, fmt.Errorf("runtime: %s: runtime %q needs a CLI registry (config.CLIs is nil)", m.ID, m.Runtime)
+		return nil, fmt.Errorf("runtime: %s: engine %q needs a CLI registry (config.CLIs is nil)", m.ID, m.Engine)
 	}
-	c, ok := r.cfg.CLIs.Get(m.Runtime)
-	if !ok {
-		return nil, fmt.Errorf("runtime: %s: unknown CLI runtime %q", m.ID, m.Runtime)
-	}
-	path, err := r.cfg.CLIs.Path(m.Runtime)
+	name, err := r.engineName(m)
 	if err != nil {
-		return nil, fmt.Errorf("runtime: %s: %w (install %s to use this runtime)", m.ID, err, c.Bin)
+		return nil, fmt.Errorf("runtime: %s: %w", m.ID, err)
+	}
+	c, ok := r.cfg.CLIs.Get(name)
+	if !ok {
+		return nil, fmt.Errorf("runtime: %s: unknown CLI runtime %q", m.ID, name)
+	}
+	path, err := r.cfg.CLIs.Path(name)
+	if err != nil {
+		return nil, fmt.Errorf("runtime: %s: %w (install %s to use this engine)", m.ID, err, c.Bin)
 	}
 	var policy *sandbox.Policy
 	if m.Policy() != nil {
