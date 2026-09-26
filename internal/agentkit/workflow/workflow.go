@@ -31,6 +31,43 @@ const SchemaVersion = 1
 // Dir is the workflow definitions directory under the workspace root.
 const Dir = ".dhi/workflows"
 
+// DefaultFile names the workspace default-workflow document.
+const DefaultFile = ".dhi/workflows.toml"
+
+type defaultDoc struct {
+	Schema  int    `toml:"schema"`
+	Default string `toml:"default"`
+}
+
+// WorkspaceDefault returns the workspace-level default workflow slug, or
+// "" when unset. A malformed file refuses by name (ADR-0011).
+func WorkspaceDefault(root string) (string, error) {
+	path := filepath.Join(root, DefaultFile)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", nil
+		}
+		return "", fmt.Errorf("workflow: read %s: %w", DefaultFile, err)
+	}
+	var d defaultDoc
+	md, err := toml.Decode(string(data), &d)
+	if err != nil {
+		return "", fmt.Errorf("workflow: parse %s: %w", DefaultFile, err)
+	}
+	if und := md.Undecoded(); len(und) > 0 {
+		return "", fmt.Errorf("workflow: unknown key(s) in %s", DefaultFile)
+	}
+	if d.Schema != SchemaVersion {
+		return "", fmt.Errorf("workflow: %s schema %d, want %d", DefaultFile, d.Schema, SchemaVersion)
+	}
+	slug := strings.TrimSpace(d.Default)
+	if slug != "" && !slugRe.MatchString(slug) {
+		return "", fmt.Errorf("workflow: %s default %q is not a slug", DefaultFile, slug)
+	}
+	return slug, nil
+}
+
 // Gates control what a step does when its condition is unmet.
 const (
 	GateWarn    = "warn"               // guidance only; never blocks

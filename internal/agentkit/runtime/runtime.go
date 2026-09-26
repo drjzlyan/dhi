@@ -26,6 +26,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/standards"
 	"github.com/drjzlyan/dhi/internal/agentkit/toolbridge"
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
+	"github.com/drjzlyan/dhi/internal/agentkit/workflow"
 	"github.com/drjzlyan/dhi/internal/gitcore"
 	"github.com/drjzlyan/dhi/internal/ideation"
 	"github.com/drjzlyan/dhi/internal/sandbox"
@@ -67,6 +68,10 @@ type Config struct {
 	// Standards injects layered coding instructions into every turn's
 	// system prompt (built-ins apply even without a document).
 	Standards bool
+	// Workflows resolves and injects the agent's active feature workflow
+	// (F-031) and enforces its gates at DHI's seams. A malformed
+	// workflow definition refuses the turn by name (ADR-0011).
+	Workflows bool
 	// PR opens a PR for a task's branch (F-020 pr_open; the review
 	// service in main). nil = pr_open refuses by name.
 	PR toolbridge.PRSeam
@@ -431,8 +436,49 @@ func (r *Runtime) Turn(ctx context.Context, agentID string, trigger bus.Message)
 			return fmt.Errorf("runtime: %s: %w", agentID, err)
 		}
 	}
+	// Strict (ADR-0020): a malformed workflow definition refuses the turn
+	// by name rather than silently falling back to the builtin.
+	if r.cfg.Workflows {
+		if _, _, err := r.activeWorkflow(e.m); err != nil {
+			return fmt.Errorf("runtime: %s: %w", agentID, err)
+		}
+	}
 
 	return r.cliTurn(ctx, e, trigger)
+}
+
+// activeWorkflow resolves the agent's active feature workflow (F-031),
+// most specific first: agent manifest → each team → workspace default →
+// builtin `feature`. It returns the slug and the loaded definition. A
+// malformed local definition or a named-but-missing slug refuses.
+func (r *Runtime) activeWorkflow(m *manifest.Agent) (string, *workflow.Definition, error) {
+	var prec []string
+	if m != nil && strings.TrimSpace(m.Workflow) != "" {
+		prec = append(prec, m.Workflow)
+	}
+	if r.cfg.Org != nil && m != nil {
+		for _, slug := range r.cfg.Org.TeamsOf(m.ID) {
+			if t, ok := r.cfg.Org.Team(slug); ok && strings.TrimSpace(t.Workflow) != "" {
+				prec = append(prec, t.Workflow)
+			}
+		}
+	}
+	def, err := workflow.WorkspaceDefault(r.cfg.WS.Root)
+	if err != nil {
+		return "", nil, err
+	}
+	if def != "" {
+		prec = append(prec, def)
+	}
+	slug, err := workflow.Resolve(r.cfg.WS.Root, prec)
+	if err != nil {
+		return "", nil, err
+	}
+	wd, err := workflow.Load(r.cfg.WS.Root, slug)
+	if err != nil {
+		return "", nil, err
+	}
+	return slug, wd, nil
 }
 
 // teamLookup adapts the org registry for standards resolution; nil org

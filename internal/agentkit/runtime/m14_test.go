@@ -310,7 +310,7 @@ func TestCliPromptMemoryDegradeNamesIt(t *testing.T) {
 	h := newHarness(t, baseDoc())
 	h.rt.cfg.Knowledge = failingKB{}
 	prompt, system := h.rt.cliPrompt(context.Background(), h.rt.agents["scout"],
-		bus.Message{Channel: "#general", Author: bus.Human, Text: "hello"}, false)
+		bus.Message{Channel: "#general", Author: bus.Human, Text: "hello"}, false, "")
 	if !strings.Contains(system, "Knowledge base unavailable") {
 		t.Fatalf("named KB degrade missing:\n%s", system)
 	}

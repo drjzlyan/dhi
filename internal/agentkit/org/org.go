@@ -31,10 +31,11 @@ var nameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]*$`)
 
 // Team is one organizational unit.
 type Team struct {
-	Name    string            // slug
-	Lead    string            // member id ("you" or agent id); "" = none yet
-	Members []string          // sorted agent ids
-	Scopes  map[string]string // capability overrides (F-030 P2); nil = none
+	Name     string            // slug
+	Lead     string            // member id ("you" or agent id); "" = none yet
+	Members  []string          // sorted agent ids
+	Scopes   map[string]string // capability overrides (F-030 P2); nil = none
+	Workflow string            // default feature workflow slug (F-031); "" = none
 }
 
 func (t Team) clone() Team {
@@ -56,9 +57,10 @@ type file struct {
 }
 
 type team struct {
-	Lead    string            `toml:"lead"`
-	Members []string          `toml:"members"`
-	Scopes  map[string]string `toml:"scopes"`
+	Lead     string            `toml:"lead"`
+	Members  []string          `toml:"members"`
+	Scopes   map[string]string `toml:"scopes"`
+	Workflow string            `toml:"workflow"`
 }
 
 // Org is the loaded company registry; safe for concurrent use.
@@ -117,6 +119,12 @@ func Load(root string) (*Org, error) {
 	}
 	for slug, t := range f.Teams {
 		tm := Team{Name: slug, Lead: strings.TrimSpace(t.Lead)}
+		if wf := strings.TrimSpace(t.Workflow); wf != "" {
+			if !nameRe.MatchString(wf) {
+				return nil, fmt.Errorf("org: team %q workflow %q is not a slug", slug, wf)
+			}
+			tm.Workflow = wf
+		}
 		if len(t.Scopes) > 0 {
 			tm.Scopes = map[string]string{}
 			for k, v := range t.Scopes {
@@ -228,6 +236,34 @@ func (o *Org) UpdateTeam(slug, lead string, members []string) error {
 		return fmt.Errorf("org: unknown team %q", slug)
 	}
 	tm.Scopes = prev.Scopes // updates never silently drop capability overrides
+	tm.Workflow = prev.Workflow
+	next := o.snapshotTeams()
+	next[slug] = tm
+	o.mu.Unlock()
+
+	if err := o.save(next); err != nil {
+		return err
+	}
+	o.commit(func(teams map[string]Team) { teams[slug] = tm },
+		Change{Kind: TeamUpdated, Team: slug})
+	return nil
+}
+
+// SetTeamWorkflow sets a team's default feature workflow (F-031); an
+// empty string clears it. A non-slug value refuses.
+func (o *Org) SetTeamWorkflow(slug, wf string) error {
+	wf = strings.TrimSpace(wf)
+	if wf != "" && !nameRe.MatchString(wf) {
+		return fmt.Errorf("org: workflow %q is not a slug", wf)
+	}
+	o.mu.Lock()
+	tm, exists := o.teams[slug]
+	if !exists {
+		o.mu.Unlock()
+		return fmt.Errorf("org: unknown team %q", slug)
+	}
+	tm = tm.clone()
+	tm.Workflow = wf
 	next := o.snapshotTeams()
 	next[slug] = tm
 	o.mu.Unlock()
@@ -299,7 +335,7 @@ func (o *Org) snapshotTeams() map[string]Team {
 func (o *Org) save(candidate map[string]Team) error {
 	f := file{Schema: SchemaVersion, Teams: map[string]team{}}
 	for slug, t := range candidate {
-		f.Teams[slug] = team{Lead: t.Lead, Members: t.Members, Scopes: t.Scopes}
+		f.Teams[slug] = team{Lead: t.Lead, Members: t.Members, Scopes: t.Scopes, Workflow: t.Workflow}
 	}
 	path := filepath.Join(o.root, File)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

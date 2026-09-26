@@ -18,6 +18,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/standards"
 	"github.com/drjzlyan/dhi/internal/agentkit/toolbridge"
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
+	"github.com/drjzlyan/dhi/internal/agentkit/workflow"
 	"github.com/drjzlyan/dhi/internal/mcp"
 	"github.com/drjzlyan/dhi/internal/sandbox"
 	"github.com/drjzlyan/dhi/internal/tasks"
@@ -37,7 +38,17 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message) er
 	// context here, before the manifest timeout arms (the timeout
 	// governs the CLI run, not context assembly).
 	serve := r.serveTools(e, trigger)
-	prompt, system := r.cliPrompt(ctx, e, trigger, serve != nil)
+	wfText := ""
+	if r.cfg.Workflows {
+		_, wd, err := r.activeWorkflow(e.m)
+		if err != nil {
+			return err
+		}
+		if wd != nil {
+			wfText = workflow.Render(wd)
+		}
+	}
+	prompt, system := r.cliPrompt(ctx, e, trigger, serve != nil, wfText)
 	workdir := r.cliWorkdir(trigger)
 	mcpConfig, mcpEndpoint := "", ""
 	if serve != nil {
@@ -360,7 +371,7 @@ func (r *Runtime) serveTools(e *entry, trigger bus.Message) *serveSession {
 // ctx drives the KB search (bounded retrieval, not part of the turn
 // timeout). mcp=true suppresses the dhi-action advertising — the MCP
 // tools/list carries the contract for those adapters (F-028).
-func (r *Runtime) cliPrompt(ctx context.Context, e *entry, trigger bus.Message, mcp bool) (prompt, system string) {
+func (r *Runtime) cliPrompt(ctx context.Context, e *entry, trigger bus.Message, mcp bool, wfText string) (prompt, system string) {
 	// F-027: the effective persona comes from the behaviour composer —
 	// manifest system + role template + attached skills — with the
 	// runtime-owned layers (grounding, actions, memory, KB, standards)
@@ -393,6 +404,9 @@ func (r *Runtime) cliPrompt(ctx context.Context, e *entry, trigger bus.Message, 
 	system += r.knowledgeBlock(ctx, trigger.Text)
 	if r.cfg.Standards {
 		system += "\n\n" + standards.Resolve(r.cfg.WS.Root, e.m.ID, r.teamLookup())
+	}
+	if wfText != "" {
+		system += "\n\n" + wfText
 	}
 
 	var b strings.Builder

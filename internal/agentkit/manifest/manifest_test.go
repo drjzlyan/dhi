@@ -122,7 +122,7 @@ func TestParseErrors(t *testing.T) {
 	}{
 		{"bad id", "Big-Agent", "schema = 1\nname = \"n\"\nmodel = \"m\"\n", "bad agent id"},
 		{"unknown key", "a", "schema = 1\nname = \"n\"\nmodel = \"m\"\ntemperament = \"calm\"\n", "unknown key"},
-		{"bad schema", "a", "schema = 5\nname = \"n\"\nmodel = \"m\"\n", "schema 5"},
+		{"bad schema", "a", "schema = 6\nname = \"n\"\nmodel = \"m\"\n", "schema 6"},
 		{"missing name", "a", "schema = 1\nmodel = \"m\"\n", "name is required"},
 		{"missing model", "a", "schema = 1\nname = \"n\"\n", "model is required"},
 		{"missing runtime", "a", "schema = 1\nname = \"n\"\nmodel = \"m\"\n", "runtime"},
@@ -339,4 +339,39 @@ func TestScopesSchema4(t *testing.T) {
 			t.Fatalf("round-trip scopes = %v", back.Scopes)
 		}
 	})
+}
+
+func TestWorkflowSchema5(t *testing.T) {
+	a, err := Parse("e", []byte("schema = 5\nname = \"E\"\nmodel = \"m\"\nengine = \"cli:claude\"\nworkflow = \"ci\"\n"))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if a.Workflow != "ci" {
+		t.Fatalf("workflow = %q", a.Workflow)
+	}
+	data, err := Marshal(a)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	back, err := Parse("e", data)
+	if err != nil {
+		t.Fatalf("Parse(marshal): %v", err)
+	}
+	if back.Workflow != "ci" {
+		t.Fatalf("round-trip workflow = %q", back.Workflow)
+	}
+}
+
+func TestWorkflowRequiresSchema5(t *testing.T) {
+	doc := "schema = 4\nname = \"E\"\nmodel = \"m\"\nengine = \"cli:claude\"\nworkflow = \"ci\"\n"
+	if _, err := Parse("e", []byte(doc)); err == nil || !strings.Contains(err.Error(), "schema") {
+		t.Fatalf("workflow under schema 4 must refuse: %v", err)
+	}
+}
+
+func TestBadWorkflowSlugRefuses(t *testing.T) {
+	doc := "schema = 5\nname = \"E\"\nmodel = \"m\"\nengine = \"cli:claude\"\nworkflow = \"Bad Slug\"\n"
+	if _, err := Parse("e", []byte(doc)); err == nil || !strings.Contains(err.Error(), "workflow") {
+		t.Fatalf("bad workflow slug must refuse: %v", err)
+	}
 }

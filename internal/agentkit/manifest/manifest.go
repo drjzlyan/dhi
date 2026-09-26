@@ -25,11 +25,11 @@ import (
 )
 
 // SchemaVersion is the agent manifest schema this build WRITES
-// (F-030 spec v3). Parse still accepts schema 1 (no role/skills) and
-// schema 2 (role/skills, `runtime`) for back-compat — such files load
-// with their engine derived from `runtime` — but Marshal always emits
-// v3.
-const SchemaVersion = 4
+// (F-031: + workflow). Parse still accepts schema 1 (no role/skills),
+// schema 2 (role/skills, `runtime`), 3 (engine), and 4 (scopes) for
+// back-compat — such files load with their engine derived from
+// `runtime` — but Marshal always emits the current version.
+const SchemaVersion = 5
 
 // EngineCLIPrefix marks a CLI engine declaration: the host CLI is the
 // inference engine (ADR-0019).
@@ -133,6 +133,10 @@ type Agent struct {
 	// falls back to scopes.Default() at enforcement time.
 	Scopes scopes.Set
 
+	// Workflow names the agent's default feature workflow slug (F-031);
+	// empty inherits the team/workspace default, then builtin `feature`.
+	Workflow string
+
 	Timeout time.Duration // max wall time per run; 0 = no limit
 	Retries int           // retries on transient CLI failure; 0 = none
 
@@ -159,6 +163,7 @@ type file struct {
 	PolicyRaw string            `toml:"policy_json"`
 	Engine    string            `toml:"engine"`
 	Scopes    map[string]string `toml:"scopes"`
+	Workflow  string            `toml:"workflow"`
 	Runtime   string            `toml:"runtime"`
 	Timeout   string            `toml:"timeout"`
 	Retries   int               `toml:"retries"`
@@ -248,6 +253,15 @@ func Parse(id string, data []byte) (*Agent, error) {
 	a.Scopes = declared
 	if f.Schema < 4 && len(f.Scopes) > 0 {
 		return nil, fmt.Errorf("agentkit/manifest: %s: scopes require schema = %d", id, SchemaVersion)
+	}
+	a.Workflow = strings.TrimSpace(f.Workflow)
+	if a.Workflow != "" {
+		if !idRe.MatchString(a.Workflow) {
+			return nil, fmt.Errorf("agentkit/manifest: %s: workflow %q is not a slug (lowercase [a-z0-9._-])", id, a.Workflow)
+		}
+		if f.Schema < 5 {
+			return nil, fmt.Errorf("agentkit/manifest: %s: workflow requires schema = %d", id, SchemaVersion)
+		}
 	}
 	cliName, err := resolveEngine(f)
 	if err != nil {
@@ -387,6 +401,7 @@ func Marshal(a *Agent) ([]byte, error) {
 			f.Scopes[string(sc)] = string(eff)
 		}
 	}
+	f.Workflow = a.Workflow
 	f.Retries = a.Retries
 	if a.Timeout > 0 {
 		f.Timeout = a.Timeout.String()

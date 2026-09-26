@@ -644,6 +644,7 @@ func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cl
 		Tasks:         taskStore,
 		Org:           company,
 		Standards:     true,
+		Workflows:     true,
 		Sandbox:       sb,
 		Memory:        memStore,
 		Knowledge:     kbStore,

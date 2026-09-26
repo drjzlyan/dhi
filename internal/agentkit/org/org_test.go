@@ -188,3 +188,33 @@ write = "deny"
 		t.Fatalf("scopes dropped on update: %+v", tm2)
 	}
 }
+
+func TestTeamWorkflowPersistsAndSurvivesUpdate(t *testing.T) {
+	o, root := setupOrg(t)
+	if err := o.CreateTeam("platform", "you", []string{"alice"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := o.SetTeamWorkflow("platform", "ci"); err != nil {
+		t.Fatalf("SetTeamWorkflow: %v", err)
+	}
+	reloaded, err := Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tm, _ := reloaded.Team("platform"); tm.Workflow != "ci" {
+		t.Fatalf("workflow not persisted: %+v", tm)
+	}
+	// A membership update must not drop the workflow default.
+	if err := o.UpdateTeam("platform", "you", []string{"alice", "bob"}); err != nil {
+		t.Fatal(err)
+	}
+	if tm, _ := o.Team("platform"); tm.Workflow != "ci" {
+		t.Fatalf("update dropped workflow: %+v", tm)
+	}
+	if err := o.SetTeamWorkflow("platform", "Bad Slug"); err == nil {
+		t.Fatal("bad workflow slug must refuse")
+	}
+	if err := o.SetTeamWorkflow("ghost", "ci"); err == nil {
+		t.Fatal("unknown team must refuse")
+	}
+}
