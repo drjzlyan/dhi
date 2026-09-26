@@ -1,8 +1,8 @@
 # STATE — current position
 
-Updated: 2026-09-26 (session 25: full product planning re-base + M14
-P4 complete (strict user identity) + M15 P0 landed (engine inversion);
-`make verify` green)
+Updated: 2026-09-26 (session 26: M15 P1/P2 landed; P3 MCP serving +
+live-verified end-to-end for claude/opencode/codex; gemini adapter
+replaced by antigravity (`agy`); `make verify` green)
 
 ## Where we are
 
@@ -35,6 +35,44 @@ effective engine, refusing by name when neither is set; doctor
 follows detection — claude/codex/opencode today; cursor/copilot/gemini
 join once installed and MCP-verified. Next: M15 P1 (the IDE tool
 catalog).
+
+### Session 26 (M15 P3 — MCP tool serving; adapter swap)
+
+- **Gemini adapter deleted** (deprecated); **antigravity (`agy`)**
+  adapter added and live-verified on 1.2.11. `agy -p <prompt>
+  --output-format stream-json --dangerously-skip-permissions`; events
+  `init` / `step_update` (state, step_type user_input|agent_response|
+  tool, text_delta, tool_info.parameters.CommandLine, usage) / `result`
+  (status SUCCESS|…, response, usage). State root ~/.gemini/
+  antigravity-cli (+ ~/.cache/antigravity). Registry now: antigravity,
+  claude, codex, copilot, cursor-agent, opencode.
+- **MCP loopback server was the real P3 blocker** (`internal/mcp`):
+  POST-only + protocol 2024-11-05 made streamable-HTTP clients silently
+  drop every served tool. Fixed: GET SSE stream held open for the
+  session; POST replies SSE-framed when the client Accepts
+  text/event-stream; ProtocolVersion `2025-11-25`; ToolInfo now emits
+  lowercase keys (`name`/`description`/`inputSchema`); rpc `error`
+  omitempty. Diagnosed by replaying opencode's real requests.
+- **MCP delivery seam generalized** (`clirun.CLI`): `MCPConfigFile`
+  (optional) + `MCPConfigEnv` + `MCPConfigArgs(configPath, endpoint)`;
+  `RunInput.MCPURL`; runtime `serveTools` threads path+endpoint and
+  writes a file only when the adapter declares one. Deliveries: claude
+  file+argv (`--mcp-config … --strict-mcp-config`), opencode env file
+  (`OPENCODE_CONFIG`, merges with the user's global config), codex
+  inline argv (`-c mcp_servers.dhi.url="…"`).
+- **Live-verified end-to-end** (agent really calls a served tool
+  through DHI's loopback server): claude ✓, opencode ✓, codex ✓.
+  Repro: `DHI_LIVE_MCP=1 go test ./internal/agentkit/clirun/ -run
+  'TestLive(Claude|OpenCode|Codex)MCP' -v` (real runs, real tokens).
+  `MCPOK` flipped only for those three.
+- **Pending adapters**: cursor-agent (writes project `.cursor/mcp.json`
+  + `--approve-mcps`; open design Q — where to write it without
+  polluting the worktree's commits), copilot (config surface TBD),
+  antigravity (`agy mcp add` persists to the user's state; needs a
+  per-turn override or throwaway config home).
+- Known flakes (pass isolated): `TestCLIRuntimeEndToEnd`,
+  `TestMemoryAndKBReachTheSystemBlock`, clirun `TestDetect`.
+- Untracked `.dhi/agents/dev/` exists — do NOT commit.
 
 ### Session 25 gotchas (planning re-base + M14 P4)
 
