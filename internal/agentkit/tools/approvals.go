@@ -17,8 +17,15 @@ type Approval struct {
 	Op     sandbox.Op
 	Target string // vpath or other display target
 	Reason string // policy explanation
+	Scope  string // capability scope (F-030 P2); "" = no grant-memory
 
-	verdict chan bool
+	verdict chan decision
+}
+
+// decision is a human verdict: allow/deny plus whether to remember it.
+type decision struct {
+	allow  bool
+	always bool
 }
 
 // Approvals is the pending-approval queue shared by all agents in a
@@ -31,6 +38,7 @@ type Approvals struct {
 	pending   []*Approval
 	OnRequest func(*Approval)
 	changes   chan struct{}
+	grants    map[string]bool // agent|scope → always-allow (F-030 P2)
 }
 
 // NewApprovals returns an empty queue.
@@ -62,12 +70,23 @@ func (a *Approvals) signal() {
 // seam UIs, guards, and the future CLI permission-prompt bridge use to
 // surface an operator prompt.
 func (a *Approvals) Ask(ctx context.Context, agent string, op sandbox.Op, target, reason string) error {
+	return a.AskScope(ctx, agent, "", op, target, reason)
+}
+
+// AskScope is Ask with a capability scope (F-030 P2): a "grant always"
+// verdict records an agent+scope grant so subsequent asks skip the
+// prompt. An empty scope never grants.
+func (a *Approvals) AskScope(ctx context.Context, agent, scope string, op sandbox.Op, target, reason string) error {
+	if scope != "" && a.granted(agent, scope) {
+		return nil
+	}
 	ap := &Approval{
 		Agent:   agent,
 		Op:      op,
 		Target:  target,
 		Reason:  reason,
-		verdict: make(chan bool, 1),
+		Scope:   scope,
+		verdict: make(chan decision, 1),
 	}
 	a.mu.Lock()
 	a.seq++
@@ -80,15 +99,35 @@ func (a *Approvals) Ask(ctx context.Context, agent string, op sandbox.Op, target
 	}
 	a.signal()
 	select {
-	case allow := <-ap.verdict:
-		if !allow {
+	case d := <-ap.verdict:
+		if !d.allow {
 			return fmt.Errorf("denied by operator: %s %s", op, target)
+		}
+		if d.always && scope != "" {
+			a.grant(agent, scope)
 		}
 		return nil
 	case <-ctx.Done():
 		a.remove(ap.ID)
 		return ctx.Err()
 	}
+}
+
+func grantKey(agent, scope string) string { return agent + "|" + scope }
+
+func (a *Approvals) granted(agent, scope string) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.grants[grantKey(agent, scope)]
+}
+
+func (a *Approvals) grant(agent, scope string) {
+	a.mu.Lock()
+	if a.grants == nil {
+		a.grants = map[string]bool{}
+	}
+	a.grants[grantKey(agent, scope)] = true
+	a.mu.Unlock()
 }
 
 // List snapshots pending approvals oldest-first.
@@ -131,7 +170,31 @@ func (a *Approvals) Resolve(id int, allow bool) bool {
 	if found == nil {
 		return false
 	}
-	found.verdict <- allow
+	found.verdict <- decision{allow: allow}
+	close(found.verdict)
+	return true
+}
+
+// ResolveAlways allows the approval and, when it carries a scope,
+// records an agent+scope grant so future asks skip the prompt.
+func (a *Approvals) ResolveAlways(id int) bool {
+	a.mu.Lock()
+	var found *Approval
+	kept := a.pending[:0]
+	for _, ap := range a.pending {
+		if ap.ID == id {
+			found = ap
+			continue
+		}
+		kept = append(kept, ap)
+	}
+	a.pending = kept
+	a.signal()
+	a.mu.Unlock()
+	if found == nil {
+		return false
+	}
+	found.verdict <- decision{allow: true, always: true}
 	close(found.verdict)
 	return true
 }

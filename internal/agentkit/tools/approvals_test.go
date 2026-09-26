@@ -112,3 +112,36 @@ func TestApprovalCancelRemovesPending(t *testing.T) {
 		}
 	}
 }
+
+func TestGrantAlwaysSkipsNextAsk(t *testing.T) {
+	a := NewApprovals()
+	req := make(chan *Approval, 1)
+	a.OnRequest = func(ap *Approval) { req <- ap }
+	done := make(chan error, 1)
+	go func() {
+		done <- a.AskScope(context.Background(), "scout", "write", sandbox.OpWrite, "t", "r")
+	}()
+	ap := <-req
+	if ap.Scope != "write" {
+		t.Fatalf("scope = %q", ap.Scope)
+	}
+	if !a.ResolveAlways(ap.ID) {
+		t.Fatal("ResolveAlways failed")
+	}
+	if err := <-done; err != nil {
+		t.Fatalf("first ask: %v", err)
+	}
+	// Granted: the second ask returns immediately with no prompt parked.
+	if err := a.AskScope(context.Background(), "scout", "write", sandbox.OpWrite, "t", "r"); err != nil {
+		t.Fatalf("granted ask: %v", err)
+	}
+	if len(a.List()) != 0 {
+		t.Fatal("granted scope still parked a prompt")
+	}
+	// A different scope still prompts (and a cancelled ctx proves it).
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := a.AskScope(ctx, "scout", "push", sandbox.OpWrite, "t", "r"); err == nil {
+		t.Fatal("cancelled ask should return the ctx error")
+	}
+}

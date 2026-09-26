@@ -185,7 +185,7 @@ func (h *handler) CallTool(ctx context.Context, name string, raw json.RawMessage
 			// The human's y/n: blocks until resolved or ctx ends — the
 			// TUI answers through the same queue as every other gated op
 			// (F-028 Part A). A denial keeps its named reason.
-			if err := h.deps.Approvals.Ask(ctx, h.deps.Agent.ID, sandbox.OpExec,
+			if err := h.deps.Approvals.AskScope(ctx, h.deps.Agent.ID, string(sc), sandbox.OpExec,
 				"tool "+name, "agent-requested DHI tool ("+string(sc)+")"); err != nil {
 				return err.Error(), true, nil
 			}

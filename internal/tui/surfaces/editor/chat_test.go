@@ -236,3 +236,32 @@ func TestChatUnreadBadgeRenders(t *testing.T) {
 		t.Fatalf("badge missing from header:\n%s", out)
 	}
 }
+
+func TestChatGrantAlways(t *testing.T) {
+	h := newChatEditor(t, "ok")
+	done := make(chan error, 1)
+	go func() {
+		done <- h.apprs.AskScope(context.Background(),
+			"scout", "write", sandbox.OpWrite, "alpha/docs/n.md", "policy asks")
+	}()
+	h.openFocused()
+	deadline := time.After(2 * time.Second)
+	for len(h.apprs.List()) == 0 {
+		select {
+		case <-h.apprs.Changes():
+		case <-deadline:
+			t.Fatal("approval never surfaced")
+		}
+	}
+	h.m.HandleKey("a") // grant always
+	if err := <-done; err != nil {
+		t.Fatalf("approval errored: %v", err)
+	}
+	// Granted: a second ask in the same scope does not park.
+	if err := h.apprs.AskScope(context.Background(), "scout", "write", sandbox.OpWrite, "t", "r"); err != nil {
+		t.Fatalf("granted ask: %v", err)
+	}
+	if len(h.apprs.List()) != 0 {
+		t.Fatal("granted scope still parked a prompt")
+	}
+}

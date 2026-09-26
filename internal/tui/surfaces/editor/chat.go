@@ -234,14 +234,21 @@ func (c *chatModel) handleKey(key string, apply func(string)) bool {
 			}
 		}
 		return true
-	case "y":
-		if list := c.apprs.List(); len(list) > 0 {
-			c.apprs.Resolve(list[0].ID, true)
+	case "y", "n", "a":
+		// Approval answers only when one is pending (F-030 P2 adds `a` =
+		// grant-always); otherwise these are ordinary composer letters.
+		list := c.apprs.List()
+		if len(list) == 0 {
+			c.input = append(c.input, []rune(key)...)
+			return true
 		}
-		return true
-	case "n":
-		if list := c.apprs.List(); len(list) > 0 {
+		switch key {
+		case "y":
+			c.apprs.Resolve(list[0].ID, true)
+		case "n":
 			c.apprs.Resolve(list[0].ID, false)
+		case "a":
+			c.apprs.ResolveAlways(list[0].ID)
 		}
 		return true
 	case "enter":
@@ -310,7 +317,7 @@ func (c *chatModel) view(h int) string {
 	lines = append(lines, c.transcript(transcriptH)...)
 
 	if list := c.apprs.List(); len(list) > 0 {
-		lines = append(lines, "", theme.DangerText().Render("approvals — y allow · n deny"))
+		lines = append(lines, "", theme.DangerText().Render("approvals — y allow · n deny · a always"))
 		for i, a := range list {
 			if i >= 3 {
 				lines = append(lines, theme.TextDim().Render(itoa(len(list)-i)+" more…"))
