@@ -112,12 +112,12 @@ func TestAgentToolsServingOnMCPAdapter(t *testing.T) {
 // and the row says so.
 func TestAgentToolsFallbackWarns(t *testing.T) {
 	root := wsFixture(t)
-	writeAgent(t, root, "scout", "opencode", `"memory_append"`)
+	writeAgent(t, root, "scout", "codex", `"memory_append"`)
 	got := AgentTools(root)
 	if len(got) != 1 || got[0].Name != "agent-tools" {
 		t.Fatalf("checks = %+v, want one agent-tools row", got)
 	}
-	if got[0].Status != Warn || !strings.Contains(got[0].Detail, "opencode") ||
+	if got[0].Status != Warn || !strings.Contains(got[0].Detail, "codex") ||
 		!strings.Contains(got[0].Detail, "fallback") {
 		t.Fatalf("warn row = %+v", got[0])
 	}

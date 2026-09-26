@@ -15,14 +15,17 @@ import (
 	"sync"
 )
 
-// ProtocolVersion is the MCP revision this client speaks.
-const ProtocolVersion = "2024-11-05"
+// ProtocolVersion is the MCP revision this client/server speaks. The
+// streamable-HTTP revision is required by modern host CLIs (opencode,
+// claude): advertising 2024-11-05 makes them fall back to the legacy
+// HTTP+SSE transport, which hangs against this POST+GET server.
+const ProtocolVersion = "2025-11-25"
 
 // ToolInfo describes one tool exposed by a server.
 type ToolInfo struct {
-	Name        string
-	Description string
-	InputSchema json.RawMessage
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	InputSchema json.RawMessage `json:"inputSchema"`
 }
 
 // Caller is the transport-neutral surface agents consume.
@@ -59,7 +62,7 @@ type rpcResponse struct {
 	JSONRPC string          `json:"jsonrpc"`
 	ID      int64           `json:"id"`
 	Result  json.RawMessage `json:"result"`
-	Error   *rpcError       `json:"error"`
+	Error   *rpcError       `json:"error,omitempty"`
 }
 
 // conn serializes request writes and correlates replies by id. It is

@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strings"
 )
 
 // Handler is the server-side tool provider: one MCP server's brain.
@@ -125,6 +126,25 @@ func ServeStdio(r io.Reader, w io.Writer, h Handler) error {
 // answered with single application/json bodies (notifications → 202).
 func HTTPHandler(h Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Streamable-HTTP clients (opencode, claude) open a GET SSE
+		// stream for server-initiated messages. DHI's server sends
+		// none, but a 405 here makes clients treat the endpoint as
+		// dead and silently drop every served tool, so we hold the
+		// stream open for the session's lifetime instead.
+		if r.Method == http.MethodGet {
+			if !strings.Contains(r.Header.Get("accept"), "text/event-stream") {
+				http.Error(w, "GET requires Accept: text/event-stream", http.StatusMethodNotAllowed)
+				return
+			}
+			w.Header().Set("content-type", "text/event-stream")
+			w.Header().Set("cache-control", "no-cache")
+			w.WriteHeader(http.StatusOK)
+			if f, ok := w.(http.Flusher); ok {
+				f.Flush()
+			}
+			<-r.Context().Done()
+			return
+		}
 		if r.Method != http.MethodPost {
 			http.Error(w, "POST only", http.StatusMethodNotAllowed)
 			return
@@ -141,6 +161,21 @@ func HTTPHandler(h Handler) http.Handler {
 		}
 		if reply == nil {
 			w.WriteHeader(http.StatusAccepted)
+			return
+		}
+		// Streamable-HTTP clients that accept SSE require the POST
+		// reply framed as an SSE `message` event (opencode rejects a
+		// bare JSON body and times out). Clients that ask for only
+		// application/json get a plain body.
+		if strings.Contains(r.Header.Get("accept"), "text/event-stream") {
+			w.Header().Set("content-type", "text/event-stream")
+			w.Header().Set("cache-control", "no-cache")
+			_, _ = w.Write([]byte("event: message\ndata: "))
+			_, _ = w.Write(reply)
+			_, _ = w.Write([]byte("\n\n"))
+			if f, ok := w.(http.Flusher); ok {
+				f.Flush()
+			}
 			return
 		}
 		w.Header().Set("content-type", "application/json")

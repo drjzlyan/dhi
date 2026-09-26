@@ -116,6 +116,36 @@ type CLI struct {
 	// adapters over a per-turn loopback endpoint. Adapters without it
 	// keep the dhi-action fallback contract.
 	MCPOK bool
+	// MCPConfigFile renders the temp config file body that registers
+	// DHI's loopback endpoint in the adapter's own format (required
+	// when MCPOK).
+	MCPConfigFile func(endpoint string) string
+	// MCPConfigEnv names the env var that points the CLI at that config
+	// file ("" = the adapter takes it via argv instead).
+	MCPConfigEnv string
+	// MCPConfigArgs returns argv additions that reference the config
+	// file (nil = the adapter takes it via env instead).
+	MCPConfigArgs func(configPath string) []string
+}
+
+// MCPEnv returns the env additions that point this CLI at configPath
+// (nil when the adapter takes its config via argv, or when there is
+// no per-turn config).
+func (c *CLI) MCPEnv(configPath string) []string {
+	if configPath == "" || c.MCPConfigEnv == "" {
+		return nil
+	}
+	return []string{c.MCPConfigEnv + "=" + configPath}
+}
+
+// MCPArgs returns the argv additions that point this CLI at configPath
+// (nil when the adapter takes its config via env, or when there is no
+// per-turn config).
+func (c *CLI) MCPArgs(configPath string) []string {
+	if configPath == "" || c.MCPConfigArgs == nil {
+		return nil
+	}
+	return c.MCPConfigArgs(configPath)
 }
 
 // Registry is the declared set of runtimes. Adapters are compiled in;

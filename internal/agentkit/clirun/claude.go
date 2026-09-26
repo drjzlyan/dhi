@@ -50,12 +50,10 @@ var Claude = &CLI{
 		if in.System != "" {
 			args = append(args, "--append-system-prompt", in.System)
 		}
-		if in.MCPConfig != "" {
-			// IDE tools (F-028): the generated config registers DHI's
-			// loopback MCP endpoint; strict keeps the user's own MCP
-			// servers out of the agent run (nothing crosses).
-			args = append(args, "--mcp-config", in.MCPConfig, "--strict-mcp-config")
-		}
+		// IDE tools (F-028): the generated config registers DHI's
+		// loopback MCP endpoint; strict keeps the user's own MCP
+		// servers out of the agent run (nothing crosses).
+		args = append(args, claudeMCPArgs(in.MCPConfig)...)
 		if in.Model != "" {
 			args = append(args, "--model", in.Model)
 		}
@@ -72,7 +70,20 @@ var Claude = &CLI{
 	StdinOK: true,
 	// MCPOK: --mcp-config with an http-type server is a documented
 	// Claude Code feature; live-verify checklist in the F-028 smoke.
-	MCPOK: true,
+	MCPOK:         true,
+	MCPConfigFile: claudeMCPConfigFile,
+	MCPConfigArgs: claudeMCPArgs,
+}
+
+func claudeMCPConfigFile(endpoint string) string {
+	return fmt.Sprintf(`{"mcpServers":{"dhi":{"type":"http","url":%q}}}`, endpoint)
+}
+
+func claudeMCPArgs(configPath string) []string {
+	if configPath == "" {
+		return nil
+	}
+	return []string{"--mcp-config", configPath, "--strict-mcp-config"}
 }
 
 func allAdapters() []*CLI {

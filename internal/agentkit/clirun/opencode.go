@@ -74,6 +74,20 @@ var OpenCode = &CLI{
 	Version:     opencodeVersion,
 	// StdinOK stays false: no verified stdin prompt path on `run` —
 	// oversized prompts refuse by name (ADR-0011).
+	//
+	// MCPOK: OPENCODE_CONFIG points at a per-turn config that MERGES
+	// into the user's global config (verified 2026-09-26 on 1.18.25:
+	// `opencode debug config` lists both). So DHI's `dhi` server joins
+	// the run while the user's providers/auth survive — but their own
+	// global MCP servers stay visible too (no strict flag observed);
+	// that containment caveat is carried on the doctor row.
+	MCPOK:        true,
+	MCPConfigEnv: "OPENCODE_CONFIG",
+	MCPConfigFile: func(endpoint string) string {
+		return fmt.Sprintf(
+			`{"$schema":"https://opencode.ai/config.json","mcp":{"dhi":{"type":"remote","url":%q,"enabled":true}}}`,
+			endpoint)
+	},
 }
 
 // opencodeItem is the union shape of one run JSONL line.

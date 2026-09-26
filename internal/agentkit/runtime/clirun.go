@@ -137,7 +137,7 @@ func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Messag
 
 	cmd := exec.CommandContext(ctx, wrapped[0], wrapped[1:]...)
 	cmd.Dir = workdir
-	cmd.Env = r.cliEnv(e.cli)
+	cmd.Env = r.cliEnv(e.cli, mcpConfig)
 	if stdin != "" {
 		cmd.Stdin = strings.NewReader(stdin)
 	}
@@ -250,7 +250,7 @@ type serveSession struct {
 // endpoint lives exactly as long as the turn (ADR-0017: no daemon);
 // the temp config dies with it.
 func (r *Runtime) serveTools(e *entry, trigger bus.Message) *serveSession {
-	if r.cfg.WS == nil || e.cli == nil || !e.cli.MCPOK {
+	if r.cfg.WS == nil || e.cli == nil || !e.cli.MCPOK || e.cli.MCPConfigFile == nil {
 		return nil
 	}
 	any := false
@@ -305,7 +305,7 @@ func (r *Runtime) serveTools(e *entry, trigger bus.Message) *serveSession {
 		})
 		return nil
 	}
-	cfg := fmt.Sprintf(`{"mcpServers":{"dhi":{"type":"http","url":%q}}}`, endpoint)
+	cfg := e.cli.MCPConfigFile(endpoint)
 	if _, err := tmp.WriteString(cfg); err != nil {
 		_ = tmp.Close()
 		_ = os.Remove(tmp.Name())
@@ -457,12 +457,24 @@ func (r *Runtime) cliWorkdir(trigger bus.Message) string {
 // cliEnv assembles the spawn environment: the hermetic base (toolchain
 // PATH etc.) extended by the CLI's EXACT declared pass-through. Nothing
 // else crosses (ADR-0012 §4) — an auditable, fixed set.
-func (r *Runtime) cliEnv(c *clirun.CLI) []string {
+func (r *Runtime) cliEnv(c *clirun.CLI, mcpConfig string) []string {
 	env := append([]string(nil), r.cfg.CLIEnv...)
 	for _, k := range c.EnvPass {
 		if v, ok := os.LookupEnv(k); ok {
 			env = append(env, k+"="+v)
 		}
+	}
+	// A per-turn MCP config must override any pass-through value of the
+	// same key: the turn's loopback endpoint, never the user's.
+	for _, kv := range c.MCPEnv(mcpConfig) {
+		key := kv[:strings.IndexByte(kv, '=')]
+		kept := env[:0]
+		for _, e := range env {
+			if !strings.HasPrefix(e, key+"=") {
+				kept = append(kept, e)
+			}
+		}
+		env = append(kept, kv)
 	}
 	return env
 }

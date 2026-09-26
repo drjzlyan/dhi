@@ -111,8 +111,15 @@ sandbox (network deny-by-default, no free-form shell).
       copilot become selectable once installed and MCP-verified. The
       deprecated Gemini CLI was replaced by Antigravity (`agy`, live-
       verified 2026-09-26 on 1.2.11).
-- [ ] Every shipped adapter serves DHI tools over the loopback endpoint
-      (MCP wiring verified); `dhi-action` is gone.
+- [~] Every shipped adapter serves DHI tools over the loopback endpoint
+      (MCP wiring verified); `dhi-action` is gone. Landed: claude
+      (--mcp-config, argv) + opencode (OPENCODE_CONFIG, env), both
+      live-verified end-to-end 2026-09-26 (a real tool call through
+      DHI's loopback server). Pending: codex/cursor/copilot/antigravity.
+      The streamable-HTTP server was fixed in the same pass (GET SSE
+      stream + SSE-framed POST replies + `2025-11-25` protocol +
+      lowercase tool keys) — the legacy handler made opencode drop
+      every served tool.
 - [x] An agent can, in one turn: read/search/edit a file, run the
       allowlisted test command, commit, and post to its channel — each
       mutation surfaced as an approval (workflow-scoped commands land
