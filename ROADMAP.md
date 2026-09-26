@@ -778,17 +778,25 @@ verified 2026-09-26 on 1.2.11 (replaces the gemini adapter).
 
 ## M16 — Feature workflows (F-031)
 
-Status: planned. ADR-0020. Steps bound to seams, layered like standards;
+Status: in progress (store + builtin + layering + hard-block gates
+landed 2026-09-26; Settings/board surface + review bypass pending).
+ADR-0020. Steps bound to seams, layered like standards;
 builtin `feature` workflow with hard blocks (worktree-before-commit,
 tests-pass-before-PR) and an exception-approval review gate.
 
-- [ ] `internal/agentkit/workflow` store: strict decode, layered
+- [x] `internal/agentkit/workflow` store: strict decode, layered
       resolve, per-task active workflow, named malformed refusal
-- [ ] Builtin `feature` workflow: worktree → implement (TDD guidance) →
+      (landed 2026-09-26: P0 store + builtin; P1 resolve
+      agent→team→workspace→builtin with manifest schema 5 `workflow`
+      and org team `workflow`; per-task active slug recorded)
+- [~] Builtin `feature` workflow: worktree → implement (TDD guidance) →
       test → commit → push → open PR → review; hard blocks + recorded
-      bypasses
+      bypasses. Landed: worktree-before-commit and tests-before-PR
+      enforced at the git_commit and pr_open seams (durable task
+      state); pending: exception-approval review bypass routed through
+      the approvals queue and recorded in the run.
 - [ ] Settings WORKFLOWS section + board active-step display; packs may
-      ship workflows; doctor `workflows` row
+      ship workflows. (doctor `workflows` row landed.)
 
 ## M17 — Cross-project work & dependency graph (F-032)
 

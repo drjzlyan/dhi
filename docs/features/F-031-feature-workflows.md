@@ -45,16 +45,24 @@ a suggestion the agent may skip.
 
 ## Acceptance criteria
 
-- [ ] The builtin `feature` workflow refuses a commit with no worktree
-      and a PR with failing tests, naming the step and the fix.
+- [x] The builtin `feature` workflow refuses a commit with no worktree
+      and a PR with failing tests, naming the step and the fix. (P1/P2:
+      `dhitools` git_commit calls `Deps.Gate("git:commit")`;
+      `toolbridge` prOpen calls `Bridge.Gate(slug,"pr")`; progress is
+      durable task state — `Worktree` from the card's changesets,
+      `TestsPass` set when the served `run` sees a passing `go test`.)
 - [ ] An `exception-approval` step routes through the approvals queue and
-      records the bypass + reason in the run.
-- [ ] Workflows layer builtin→workspace→team→agent; a malformed
-      definition refuses by name.
+      records the bypass + reason in the run. (Not yet: the `review`
+      step's exception-approval gate is modelled but no seam consumes
+      it.)
+- [x] Workflows layer builtin→workspace→team→agent; a malformed
+      definition refuses by name. (P0/P1: `workflow.Resolve` precedence
+      agent manifest → org teams → `.dhi/workflows.toml` default →
+      builtin; malformed refuses at `Turn` and at `activeWorkflow`.)
 - [ ] Settings authors a workflow through a strict round-trip form.
-- [ ] `doctor` warns on malformed workflows, dangling seams, and tasks
-      whose active workflow is missing.
-- [ ] `make verify` green per phase.
+- [x] `doctor` warns on malformed workflows, dangling seams, and tasks
+      whose active workflow is missing. (P2: `Workflows(wsRoot)` row.)
+- [x] `make verify` green per phase.
 
 ## Deferred
 

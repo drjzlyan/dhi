@@ -1,8 +1,9 @@
 # STATE — current position
 
-Updated: 2026-09-26 (session 26: M15 P1/P2 landed; P3 MCP serving +
-live-verified end-to-end for claude/opencode/codex; gemini adapter
-replaced by antigravity (`agy`); `make verify` green)
+Updated: 2026-09-26 (session 27: M16 feature workflows P0–P2 landed —
+store/builtin/layering + hard-block gates at the commit/PR seams +
+doctor row; M15 complete with MCP serving for five adapters;
+`make verify` green)
 
 ## Where we are
 
@@ -35,6 +36,35 @@ effective engine, refusing by name when neither is set; doctor
 follows detection — claude/codex/opencode today; cursor/copilot/gemini
 join once installed and MCP-verified. Next: M15 P1 (the IDE tool
 catalog).
+
+### Session 27 (M16 — feature workflows P0–P2)
+
+- **P0 `internal/agentkit/workflow`**: strict TOML decode of
+  `.dhi/workflows/<slug>.toml`; builtin `feature`
+  (worktree_create → implement → test → commit → push → open_pr →
+  review); gates warn|block|exception-approval; `CheckGate(seam,Progress)`
+  with the ADR's exact hard blocks (worktree→commit, tests→PR);
+  `Available`/`Load`/`Resolve`/`Render`. 15 tests.
+- **P1 layering + injection**: manifest schema 5 `workflow = "<slug>"`
+  (agent layer), org team `workflow` + `SetTeamWorkflow` (team layer),
+  `.dhi/workflows.toml` `default` (workspace layer), builtin last;
+  malformed refuses at `Turn`; the resolved workflow's guidance is
+  appended to the CLI system block; the active slug is recorded on the
+  task card.
+- **P2 enforcement**: `dhitools.Deps.Gate` refuses `git_commit` with no
+  worktree; `toolbridge.Bridge.Gate(taskSlug,"pr")` refuses a PR while
+  tests haven't passed. Progress is DURABLE task state:
+  `Progress.Worktree` from the card's changesets, `Progress.TestsPass`
+  set when the served `run` observes a passing `go test` (OnRun →
+  `tasks.SetTestsPass`). `doctor` gains a `workflows` row (malformed
+  FAIL; dangling agent/team/task slug WARN).
+- **Pending (P3 surface)**: Settings WORKFLOWS authoring form, board
+  active-step display, packs shipping workflows, and the
+  `exception-approval` review bypass routed through the approvals queue
+  + recorded in the run.
+- `make verify` green (known flakes unchanged: TestCLIRuntimeEndToEnd,
+  TestMemoryAndKBReachTheSystemBlock, clirun TestDetect). Untracked
+  `.dhi/agents/dev/` — do NOT commit.
 
 ### Session 26 (M15 P3 — MCP tool serving; adapter swap)
 
