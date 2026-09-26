@@ -765,8 +765,9 @@ gemini join once installed + MCP-verified.
       auto|ask|deny, manifest→team→workspace) + grant-memory approvals;
       every mutation recorded in the run
       — core landed 2026-09-26: scopes package + manifest schema 4
-      `[scopes]` + scope-driven dhitools gate; team/workspace layering,
-      grant-memory, Settings editor remain
+      `[scopes]` + scope-driven dhitools gate + team layering
+      (org team scopes); workspace scopes, grant-memory, Settings editor
+      remain
 - [ ] P3 — MCP tool serving verified for **all six** adapters; sandbox
       tightened (network deny-by-default, declared origins, exec
       sandboxed); doctor `agent-tools` row with the containment caveat

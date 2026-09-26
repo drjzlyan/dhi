@@ -31,14 +31,21 @@ var nameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]*$`)
 
 // Team is one organizational unit.
 type Team struct {
-	Name    string   // slug
-	Lead    string   // member id ("you" or agent id); "" = none yet
-	Members []string // sorted agent ids
+	Name    string            // slug
+	Lead    string            // member id ("you" or agent id); "" = none yet
+	Members []string          // sorted agent ids
+	Scopes  map[string]string // capability overrides (F-030 P2); nil = none
 }
 
 func (t Team) clone() Team {
 	out := t
 	out.Members = append([]string(nil), t.Members...)
+	if t.Scopes != nil {
+		out.Scopes = make(map[string]string, len(t.Scopes))
+		for k, v := range t.Scopes {
+			out.Scopes[k] = v
+		}
+	}
 	return out
 }
 
@@ -49,8 +56,9 @@ type file struct {
 }
 
 type team struct {
-	Lead    string   `toml:"lead"`
-	Members []string `toml:"members"`
+	Lead    string            `toml:"lead"`
+	Members []string          `toml:"members"`
+	Scopes  map[string]string `toml:"scopes"`
 }
 
 // Org is the loaded company registry; safe for concurrent use.
@@ -109,6 +117,12 @@ func Load(root string) (*Org, error) {
 	}
 	for slug, t := range f.Teams {
 		tm := Team{Name: slug, Lead: strings.TrimSpace(t.Lead)}
+		if len(t.Scopes) > 0 {
+			tm.Scopes = map[string]string{}
+			for k, v := range t.Scopes {
+				tm.Scopes[k] = v
+			}
+		}
 		seen := map[string]bool{}
 		for _, m := range t.Members {
 			m = strings.TrimSpace(m)
@@ -208,10 +222,12 @@ func (o *Org) UpdateTeam(slug, lead string, members []string) error {
 	tm.Name = slug
 
 	o.mu.Lock()
-	if _, exists := o.teams[slug]; !exists {
+	prev, exists := o.teams[slug]
+	if !exists {
 		o.mu.Unlock()
 		return fmt.Errorf("org: unknown team %q", slug)
 	}
+	tm.Scopes = prev.Scopes // updates never silently drop capability overrides
 	next := o.snapshotTeams()
 	next[slug] = tm
 	o.mu.Unlock()
@@ -283,7 +299,7 @@ func (o *Org) snapshotTeams() map[string]Team {
 func (o *Org) save(candidate map[string]Team) error {
 	f := file{Schema: SchemaVersion, Teams: map[string]team{}}
 	for slug, t := range candidate {
-		f.Teams[slug] = team{Lead: t.Lead, Members: t.Members}
+		f.Teams[slug] = team{Lead: t.Lead, Members: t.Members, Scopes: t.Scopes}
 	}
 	path := filepath.Join(o.root, File)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

@@ -157,3 +157,34 @@ func TestConcurrentReadersAndWriters(t *testing.T) {
 	}
 	<-done
 }
+
+func TestTeamScopesParseAndPreserve(t *testing.T) {
+	_, root := setupOrg(t)
+	doc := `schema = 1
+[teams.backend]
+lead = "alice"
+members = ["alice", "bob"]
+[teams.backend.scopes]
+write = "deny"
+`
+	if err := os.WriteFile(filepath.Join(root, File), []byte(doc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	reloaded, err := Load(root)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	tm, ok := reloaded.Team("backend")
+	if !ok || tm.Scopes["write"] != "deny" {
+		t.Fatalf("team = %+v", tm)
+	}
+	// UpdateTeam preserves the declared scopes.
+	if err := reloaded.UpdateTeam("backend", "alice", []string{"alice", "carol"}); err != nil {
+		t.Fatalf("UpdateTeam: %v", err)
+	}
+	back, _ := Load(root)
+	tm2, _ := back.Team("backend")
+	if tm2.Scopes["write"] != "deny" {
+		t.Fatalf("scopes dropped on update: %+v", tm2)
+	}
+}

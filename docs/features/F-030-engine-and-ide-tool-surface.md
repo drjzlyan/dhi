@@ -72,8 +72,9 @@ sandbox (network deny-by-default, no free-form shell).
   refuses by name. **Landed (core):** `internal/agentkit/scopes` (Scope/
   Effect/Set/ToolScope/Resolve), manifest schema 4 `[scopes]`, and the
   dhitools gate now denies/asks/allows by scope (replacing the `mutate`
-  flag). Team/workspace layering, grant-memory, and the Settings scopes
-  editor remain.
+  flag). Team layering landed (org `[teams.<slug>.scopes]`, preserved on
+  update, resolved default→team→manifest); workspace-level scopes,
+  grant-memory, and the Settings scopes editor remain.
 - Every mutating scope crosses the single approvals queue; answers
   `grant once` / `grant always` / `deny`; grant-memory is workspace-
   scoped and auditable. Every decision is recorded in the run.

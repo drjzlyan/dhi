@@ -22,6 +22,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
 	"github.com/drjzlyan/dhi/internal/agentkit/memory"
 	"github.com/drjzlyan/dhi/internal/agentkit/org"
+	"github.com/drjzlyan/dhi/internal/agentkit/scopes"
 	"github.com/drjzlyan/dhi/internal/agentkit/standards"
 	"github.com/drjzlyan/dhi/internal/agentkit/toolbridge"
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
@@ -237,6 +238,38 @@ func (r *Runtime) engineName(m *manifest.Agent) (string, error) {
 		return "", fmt.Errorf("no engine: settings default engine is empty")
 	}
 	return name, nil
+}
+
+// agentScopes resolves an agent's effective capability set (F-030 P2):
+// default → team(s) → manifest, later wins. Team scopes are validated by
+// org; an invalid entry is skipped (never a silent grant).
+func (r *Runtime) agentScopes(m *manifest.Agent) scopes.Set {
+	layers := []scopes.Set{scopes.Default()}
+	if r.cfg.Org != nil {
+		for _, slug := range r.cfg.Org.TeamsOf(m.ID) {
+			t, ok := r.cfg.Org.Team(slug)
+			if !ok || len(t.Scopes) == 0 {
+				continue
+			}
+			layer := scopes.Set{}
+			for name, eff := range t.Scopes {
+				sc, err := scopes.ParseScope(name)
+				if err != nil {
+					continue
+				}
+				e, err := scopes.ParseEffect(eff)
+				if err != nil {
+					continue
+				}
+				layer[sc] = e
+			}
+			layers = append(layers, layer)
+		}
+	}
+	if len(m.Scopes) > 0 {
+		layers = append(layers, m.Scopes)
+	}
+	return scopes.Resolve(layers...)
 }
 
 // AgentEngine reports the CLI engine an agent resolves to (effective),
