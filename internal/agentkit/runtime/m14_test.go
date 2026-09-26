@@ -246,7 +246,10 @@ func TestServeToolsConfigForMCPAdapter(t *testing.T) {
 // TestNoServedToolsNoSession pins the negative: an allowlist with no
 // served slug never starts the endpoint (the dhi-action fallback stays).
 func TestNoServedToolsNoSession(t *testing.T) {
-	h := newHarness(t, baseDoc()) // read/write/list only
+	h := newHarness(t, baseDoc())
+	// Narrow the allowlist to a non-served builtin (read/list/glob are
+	// served as of M15 P1; write is not).
+	h.rt.agents["scout"].m.Tools = []string{"write"}
 	if s := h.rt.serveTools(h.rt.agents["scout"], bus.Message{Channel: "#general"}); s != nil {
 		s.stop()
 		t.Fatal("started a tool session with no served slug in the allowlist")

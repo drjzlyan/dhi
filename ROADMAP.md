@@ -747,10 +747,12 @@ selectable; cursor/copilot/gemini join once installed + MCP-verified.
       `engine`, `runtime.Config.DefaultEngine` + `engineName`, doctor
       resolves the inherited engine; `dhi-action` removal stays at P3
       (parity)
-- [ ] P1 — IDE tool catalog: fs read/write/patch/list/glob, search, git,
+- [~] P1 — IDE tool catalog: fs read/write/patch/list/glob, search, git,
       editor/LSP open/reveal/apply-edit/hover/definition/references/
       rename/code-action, tasks/KB/memory/channels/ideation/board reads,
       allowlisted `run`, `ask_human`
+      — landed `read`/`list`/`glob` (VPath-jailed, read-only) 2026-09-26;
+      `write`/`patch` + git/editor/LSP/`run`/`ask_human` remain
 - [ ] P2 — capability scopes (`read/write/exec/network/git/push/admin` ×
       auto|ask|deny, manifest→team→workspace) + grant-memory approvals;
       every mutation recorded in the run

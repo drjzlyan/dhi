@@ -82,7 +82,8 @@ func writeAgent(t *testing.T, root, id, runtime, tools string) {
 // served tool.
 func TestAgentToolsIdle(t *testing.T) {
 	root := wsFixture(t)
-	writeAgent(t, root, "scout", "claude", `"read","write"`)
+	// write is not a served slug (read/list/glob are, as of M15 P1).
+	writeAgent(t, root, "scout", "claude", `"write"`)
 	got := AgentTools(root)
 	if len(got) != 1 || got[0].Name != "agent-tools" || got[0].Status != OK {
 		t.Fatalf("checks = %+v", got)

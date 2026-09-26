@@ -1,7 +1,7 @@
 # F-030: Engine inversion & the IDE tool surface
 
-Status: in progress (M15; P0 engine seam landed 2026-09-26) · Companion
-to: ADR-0019 (DHI owns the loop, CLI
+Status: in progress (M15; P0 engine seam + P1 filesystem read tools
+landed 2026-09-26) · Companion to: ADR-0019 (DHI owns the loop, CLI
 is the engine), ADR-0011 (no silent fallbacks), ADR-0018 (loopback
 serving), F-028 (the first tool surface). Product rule: agents work the
 way the IDE works — through declared tools, under declared authority.
@@ -32,7 +32,9 @@ sandbox (network deny-by-default, no free-form shell).
 ## Part B — the IDE tool catalog
 
 - Filesystem: `read`, `write`, `patch`, `list`, `glob` — jailed by VPath
-  and member roots (no escape, symlink-aware).
+  and member roots (no escape, symlink-aware). **Landed:** `read`, `list`,
+  `glob` (read-only; VPath-jailed, 1 MiB read cap, 200-match glob cap).
+  `write`/`patch` remain (mutating, approval-gated).
 - Search: `search` (ripgrep fan-out, read-only).
 - Git: `git_status`, `git_diff`, `git_log`, `git_branch`, `git_commit`,
   `git_push` — write operations cross approvals and the active workflow.
