@@ -282,8 +282,15 @@ const (
 	rowTabWidth
 	rowLineNumbers
 	rowScrollback
-	rowCount
+	rowScopesBase // then 7 capability-scope rows (F-030 P2)
+	rowCount      = rowScopesBase + 7
 )
+
+// scopeRowNames orders the settings scope rows.
+var scopeRowNames = []string{"read", "write", "exec", "network", "git", "push", "admin"}
+
+// scopeEffects is the cycle order for a scope row.
+var scopeEffects = []string{"auto", "ask", "deny"}
 
 // cycle applies one modification step and persists + applies live.
 func (m *Model) cycle(dir int) {
@@ -312,6 +319,22 @@ func (m *Model) cycle(dir int) {
 		step := 500 * dir
 		if m.cfg.Terminal.Scrollback+step >= 100 {
 			m.cfg.Terminal.Scrollback += step
+		}
+	default:
+		if m.cursor >= rowScopesBase {
+			name := scopeRowNames[m.cursor-rowScopesBase]
+			if m.cfg.Scopes == nil {
+				m.cfg.Scopes = map[string]string{}
+			}
+			cur := m.cfg.Scopes[name]
+			idx := -1
+			for i, e := range scopeEffects {
+				if e == cur {
+					idx = i
+					break
+				}
+			}
+			m.cfg.Scopes[name] = scopeEffects[(idx+dir+2*len(scopeEffects))%len(scopeEffects)]
 		}
 	}
 	m.applyAndPersist()
@@ -964,7 +987,7 @@ func (m *Model) formTitle() string {
 }
 
 func (m *Model) configView() []string {
-	return []string{
+	rows := []string{
 		settingRow(m.cursor == rowTheme, "theme",
 			valueText(m.cfg.Theme)),
 		settingRow(m.cursor == rowReducedMotion, "reduced_motion",
@@ -976,6 +999,14 @@ func (m *Model) configView() []string {
 		settingRow(m.cursor == rowScrollback, "terminal.scrollback",
 			valueText(itoa(m.cfg.Terminal.Scrollback))),
 	}
+	for i, name := range scopeRowNames {
+		val := m.cfg.Scopes[name]
+		if val == "" {
+			val = "default"
+		}
+		rows = append(rows, settingRow(m.cursor == rowScopesBase+i, "scopes."+name, valueText(val)))
+	}
+	return rows
 }
 
 func (m *Model) agentsView() []string {

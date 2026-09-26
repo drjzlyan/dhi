@@ -291,7 +291,9 @@ catalog).
    schema 4 `[scopes]`, scope-driven dhitools gate). Team layering landed (org team scopes). Workspace scopes landed (settings `[scopes]`, resolved
    default→workspace→team→manifest). Doctor `authority` row added. `run` network posture landed (DHI-served denied by default;
    host CLIs keep network per decision). Grant-memory landed (approvals `a`).
-   Next: P2 Settings scopes editor, then P3
+   Settings scopes editor landed —
+   P2 complete. Next: P3 MCP-for-all (blocked on the user installing
+   cursor/copilot/gemini) + doctor containment caveat.
    MCP-for-all + sandbox. Decisions:
    `run` uses a fixed safe set now + per-agent commands at M16;
    `ask_human` posts to the thread; `git_push` dropped in favor of the

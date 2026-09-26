@@ -124,3 +124,31 @@ func feed(m *Model, keys ...string) {
 		m.HandleKey(k)
 	}
 }
+
+func TestScopesEditorCyclesAndPersists(t *testing.T) {
+	m, path := newSurface(t)
+	m.cursor = rowScopesBase + 1 // scopes.write
+	m.cycle(1)
+	if m.cfg.Scopes["write"] != "auto" {
+		t.Fatalf("write = %q, want auto", m.cfg.Scopes["write"])
+	}
+	m.cycle(1)
+	if m.cfg.Scopes["write"] != "ask" {
+		t.Fatalf("write = %q, want ask", m.cfg.Scopes["write"])
+	}
+	m.cycle(1)
+	if m.cfg.Scopes["write"] != "deny" {
+		t.Fatalf("write = %q, want deny", m.cfg.Scopes["write"])
+	}
+	m.cycle(1) // wraps to auto
+	if m.cfg.Scopes["write"] != "auto" {
+		t.Fatalf("write = %q, want wrap to auto", m.cfg.Scopes["write"])
+	}
+	data, err := os.ReadFile(path)
+	if err != nil || !strings.Contains(string(data), `write = "auto"`) {
+		t.Fatalf("config not persisted: %v\n%s", err, data)
+	}
+	if !strings.Contains(ansi.Strip(m.View()), "scopes.write") {
+		t.Error("scope row not rendered")
+	}
+}

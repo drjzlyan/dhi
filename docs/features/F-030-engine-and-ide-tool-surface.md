@@ -76,7 +76,8 @@ sandbox (network deny-by-default, no free-form shell).
   update, resolved default→team→manifest); workspace scopes via settings `[scopes]`
   (resolved default→workspace→team→manifest); grant-memory landed (approvals `a` =
   allow-always per agent+scope; typed elsewhere in the composer). The
-  Settings scopes editor remains. Doctor gains an `authority` row listing
+  Settings scopes editor landed (CONFIG rows cycle each scope
+  auto→ask→deny, persisted live). P2 complete. Doctor gains an `authority` row listing
   each agent's non-default effects.
 - Every mutating scope crosses the single approvals queue; answers
   `grant once` / `grant always` / `deny`; grant-memory is workspace-
