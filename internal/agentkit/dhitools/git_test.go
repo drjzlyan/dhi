@@ -240,3 +240,22 @@ func TestGitCommitRefusesNothingStaged(t *testing.T) {
 		t.Fatalf("clean commit = %q isErr=%v, want nothing-staged refusal", out, isErr)
 	}
 }
+
+func TestGitCommitBlockedByWorkflow(t *testing.T) {
+	f, m := newFixture(t, "git_commit")
+	api := memberDir(t, f.ws, "api")
+	initRepo(t, api)
+	writeFile(t, api, "a.go", "package a // v2\n")
+	h := Deps{
+		Agent: m, WS: f.ws, Workdir: api, Identity: testIdentity(), Approvals: f.approvals,
+		Gate: func(seam string) []string {
+			if seam == "git:commit" {
+				return []string{"step worktree_create requires a worktree first"}
+			}
+			return nil
+		},
+	}.Handler()
+	if out, isErr := call(h, t, "git_commit", `{"message":"v2"}`); !isErr || !strings.Contains(out, "workflow blocks commit") {
+		t.Fatalf("workflow-blocked commit = %q isErr=%v", out, isErr)
+	}
+}

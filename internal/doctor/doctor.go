@@ -22,6 +22,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/tasks"
 
 	agentkitStandards "github.com/drjzlyan/dhi/internal/agentkit/standards"
+	agentkitWorkflow "github.com/drjzlyan/dhi/internal/agentkit/workflow"
 
 	"github.com/drjzlyan/dhi/internal/agentkit/clirun"
 	"github.com/drjzlyan/dhi/internal/agentkit/dhitools"
@@ -75,6 +76,7 @@ func Run(toolRoot, wsRoot string) Report {
 	r.Checks = append(r.Checks, AgentTools(wsRoot)...)
 	r.Checks = append(r.Checks, Authority(wsRoot)...)
 	r.Checks = append(r.Checks, Standards(wsRoot)...)
+	r.Checks = append(r.Checks, Workflows(wsRoot)...)
 	r.Checks = append(r.Checks, Runtimes()...)
 	r.Checks = append(r.Checks, Tasks(wsRoot)...)
 	r.Checks = append(r.Checks, RunStore(wsRoot)...)
@@ -857,4 +859,56 @@ func Sandbox(mode string) []Check {
 		return []Check{{Name: "sandbox/adapter", Status: Fail,
 			Detail: fmt.Sprintf("unknown mode %q — boot refuses on strict settings", mode)}}
 	}
+}
+
+// Workflows reports the F-031 workflow layer: malformed definitions, and
+// agents/teams/tasks whose declared active workflow is missing. The
+// builtin `feature` workflow always exists, so an empty workspace is OK.
+func Workflows(wsRoot string) []Check {
+	if wsRoot == "" {
+		return nil
+	}
+	avail, err := agentkitWorkflow.Available(wsRoot)
+	if err != nil {
+		return []Check{{Name: "workflows", Status: Fail,
+			Detail: err.Error() + " (turns refuse until fixed)"}}
+	}
+	known := map[string]bool{}
+	for _, s := range avail {
+		known[s] = true
+	}
+	var warnings []string
+
+	roster, rerr := manifest.LoadDir(filepath.Join(wsRoot, workspace.DirAgents))
+	if rerr == nil {
+		for _, a := range roster {
+			if a.Workflow != "" && !known[a.Workflow] {
+				warnings = append(warnings, "agent "+a.ID+": workflow "+a.Workflow+" not found")
+			}
+		}
+	}
+	if o, oerr := org.Load(wsRoot); oerr == nil {
+		for _, t := range o.Teams() {
+			if t.Workflow != "" && !known[t.Workflow] {
+				warnings = append(warnings, "team "+t.Name+": workflow "+t.Workflow+" not found")
+			}
+		}
+	}
+	if ws, werr := workspace.Load(wsRoot); werr == nil {
+		if store, terr := tasks.Open(ws); terr == nil {
+			for _, t := range store.List() {
+				if t.Workflow != "" && !known[t.Workflow] {
+					warnings = append(warnings, "task "+t.Slug+": workflow "+t.Workflow+" not found")
+				}
+			}
+		}
+	}
+
+	sort.Strings(warnings)
+	if len(warnings) > 0 {
+		return []Check{{Name: "workflows", Status: Warn,
+			Detail: strings.Join(warnings, "; ") + " (they run on the builtin feature workflow)"}}
+	}
+	return []Check{{Name: "workflows", Status: OK,
+		Detail: fmt.Sprintf("%d workflow(s) available: %s", len(avail), strings.Join(avail, ", "))}}
 }

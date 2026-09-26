@@ -481,6 +481,89 @@ func (r *Runtime) activeWorkflow(m *manifest.Agent) (string, *workflow.Definitio
 	return slug, wd, nil
 }
 
+// workflowEnforcer builds the F-031 gate + run-observer for a turn's
+// served tools. The gate evaluates the agent's active workflow against
+// the task's real progress; the observer learns that the declared test
+// command passed (tests-before-PR). Both nil when workflows are off or
+// the workflow cannot be resolved (a malformed one is refused at Turn).
+func (r *Runtime) workflowEnforcer(m *manifest.Agent, trigger bus.Message) (gate func(string) []string, onRun func([]string, error)) {
+	if !r.cfg.Workflows {
+		return nil, nil
+	}
+	_, def, err := r.activeWorkflow(m)
+	if err != nil || def == nil {
+		return nil, nil
+	}
+	task, hasTask := r.taskFor(trigger)
+	taskSlug := ""
+	if hasTask {
+		taskSlug = task.Slug
+	}
+	// progress reads the task fresh each call so gates see durable state
+	// (a worktree attached or tests passing during the turn).
+	progress := func() workflow.Progress {
+		p := workflow.Progress{}
+		if t, ok := r.taskFor(trigger); ok {
+			p.Worktree = len(t.ChangeSets) > 0
+			p.TestsPass = t.TestsPass
+		}
+		return p
+	}
+	gate = func(seam string) []string {
+		return verdictReasons(def.CheckGate(seam, progress()))
+	}
+	onRun = func(argv []string, runErr error) {
+		if runErr == nil && len(argv) >= 2 && argv[0] == "go" && argv[1] == "test" && taskSlug != "" {
+			_ = r.cfg.Tasks.SetTestsPass(taskSlug, true)
+		}
+	}
+	return gate, onRun
+}
+
+// taskWorkflowGate builds a gate for a task from its durable workflow
+// state (worktree + tests-pass) and the agent's active workflow. Used at
+// seams that run outside a served-tool turn (the PR action).
+func (r *Runtime) taskWorkflowGate(m *manifest.Agent, task tasks.Task) func(string) []string {
+	if !r.cfg.Workflows {
+		return nil
+	}
+	_, def, err := r.activeWorkflow(m)
+	if err != nil || def == nil {
+		return nil
+	}
+	p := workflow.Progress{Worktree: len(task.ChangeSets) > 0, TestsPass: task.TestsPass}
+	return func(seam string) []string { return verdictReasons(def.CheckGate(seam, p)) }
+}
+
+func verdictReasons(vs []workflow.Verdict) []string {
+	if len(vs) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(vs))
+	for _, v := range vs {
+		out = append(out, v.Reason)
+	}
+	return out
+}
+
+// taskFor returns the task bound to the trigger's thread.
+func (r *Runtime) taskFor(trigger bus.Message) (tasks.Task, bool) {
+	if r.cfg.Tasks == nil {
+		return tasks.Task{}, false
+	}
+	return r.cfg.Tasks.FindByThread(trigger.Channel, trigger.Thread)
+}
+
+// taskHasWorktree reports whether the task bound to the trigger has an
+// attached worktree (its commit/PR actions must happen there).
+func (r *Runtime) taskHasWorktree(trigger bus.Message) bool {
+	if r.cfg.Tasks == nil {
+		return false
+	}
+	t, ok := r.cfg.Tasks.FindByThread(trigger.Channel, trigger.Thread)
+	return ok && len(t.ChangeSets) > 0
+}
+
 // teamLookup adapts the org registry for standards resolution; nil org
 // yields a lookup that matches nothing.
 func (r *Runtime) teamLookup() standards.TeamLookup {

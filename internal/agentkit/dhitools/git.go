@@ -187,6 +187,11 @@ func (d Deps) gitTools() []tool {
 				if strings.TrimSpace(a.Message) == "" {
 					return nil, fmt.Errorf("commit message is required")
 				}
+				// Workflow gate (F-031): worktree-before-commit is a hard
+				// block; refuse before spending an approval.
+				if reasons := d.checkGate("git:commit"); len(reasons) > 0 {
+					return nil, fmt.Errorf("workflow blocks commit: %s", strings.Join(reasons, "; "))
+				}
 				// Validate the target repo before spending an approval.
 				if _, err := open(); err != nil {
 					return nil, err

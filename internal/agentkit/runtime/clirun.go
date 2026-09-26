@@ -40,12 +40,17 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message) er
 	serve := r.serveTools(e, trigger)
 	wfText := ""
 	if r.cfg.Workflows {
-		_, wd, err := r.activeWorkflow(e.m)
+		slug, wd, err := r.activeWorkflow(e.m)
 		if err != nil {
 			return err
 		}
 		if wd != nil {
 			wfText = workflow.Render(wd)
+		}
+		if r.cfg.Tasks != nil {
+			if t, ok := r.cfg.Tasks.FindByThread(trigger.Channel, trigger.Thread); ok {
+				_ = r.cfg.Tasks.SetWorkflow(t.Slug, slug)
+			}
 		}
 	}
 	prompt, system := r.cliPrompt(ctx, e, trigger, serve != nil, wfText)
@@ -276,6 +281,7 @@ func (r *Runtime) serveTools(e *entry, trigger bus.Message) *serveSession {
 	if !any {
 		return nil
 	}
+	gate, onRun := r.workflowEnforcer(e.m, trigger)
 	handler := dhitools.Deps{
 		Agent:     e.m,
 		Tasks:     r.cfg.Tasks,
@@ -290,6 +296,8 @@ func (r *Runtime) serveTools(e *entry, trigger bus.Message) *serveSession {
 		Sessions:  r.cfg.Sessions,
 		Editor:    r.cfg.Editor,
 		Scopes:    r.agentScopes(e.m),
+		Gate:      gate,
+		OnRun:     onRun,
 		Channel:   trigger.Channel,
 		Thread:    trigger.Thread,
 		Workdir:   r.cliWorkdir(trigger),
@@ -623,6 +631,18 @@ func (r *Runtime) bridge(e *entry) *toolbridge.Bridge {
 		Tasks:  r.cfg.Tasks,
 		OpenPR: r.cfg.PR,
 		Allow:  func(agentID, action string) bool { return allow[action] },
+	}
+	if r.cfg.Workflows && r.cfg.Tasks != nil {
+		b.Gate = func(slug, seam string) []string {
+			t, ok := r.cfg.Tasks.Get(slug)
+			if !ok {
+				return nil
+			}
+			if g := r.taskWorkflowGate(e.m, t); g != nil {
+				return g(seam)
+			}
+			return nil
+		}
 	}
 	if approvals != nil {
 		b.Approve = func(ctx context.Context, agentID, detail string) error {

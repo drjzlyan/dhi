@@ -8,6 +8,7 @@ import (
 
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/agentkit/workflow"
+	"github.com/drjzlyan/dhi/internal/tasks"
 	"github.com/drjzlyan/dhi/internal/workspace"
 )
 
@@ -90,3 +91,54 @@ func TestWorkflowGuidanceReachesSystem(t *testing.T) {
 		t.Fatalf("workflow guidance missing from system block:\n%s", system)
 	}
 }
+
+func TestWorkflowEnforcerCommitGateAndRunObservation(t *testing.T) {
+	h := newHarness(t, baseDoc())
+	h.rt.cfg.Workflows = true
+	ts, err := tasks.Open(h.ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.rt.cfg.Tasks = ts
+	if err := ts.Create("t1", "T", "scout", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := ts.BindThread("t1", "#general", 7); err != nil {
+		t.Fatal(err)
+	}
+	trig := bus.Message{Channel: "#general", Thread: 7}
+	gate, onRun := h.rt.workflowEnforcer(h.rt.agents["scout"].m, trig)
+	if gate == nil || onRun == nil {
+		t.Fatal("enforcer must be built when workflows are on")
+	}
+	if r := gate("git:commit"); len(r) == 0 {
+		t.Fatal("commit must be blocked while the task has no worktree")
+	}
+	if err := ts.RecordChangeSet("t1", tasks.ChangeSet{Member: "api", Branch: "task/t1", Path: "repo"}); err != nil {
+		t.Fatal(err)
+	}
+	if r := gate("git:commit"); len(r) != 0 {
+		t.Fatalf("commit with a worktree must pass: %v", r)
+	}
+	// A failing test run must not record tests-pass.
+	onRun([]string{"go", "test", "./..."}, errBoom{})
+	if got, _ := ts.Get("t1"); got.TestsPass {
+		t.Fatal("failed run must not mark tests passed")
+	}
+	onRun([]string{"go", "test", "./..."}, nil)
+	if got, _ := ts.Get("t1"); !got.TestsPass {
+		t.Fatal("passing go test must record tests-pass durably")
+	}
+	_ = ts.SetTestsPass("t1", false)
+	if r := gate("pr"); len(r) == 0 {
+		t.Fatal("PR must be blocked while tests have not passed")
+	}
+	_ = ts.SetTestsPass("t1", true)
+	if r := gate("pr"); len(r) != 0 {
+		t.Fatalf("PR must pass once tests passed: %v", r)
+	}
+}
+
+type errBoom struct{}
+
+func (errBoom) Error() string { return "boom" }

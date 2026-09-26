@@ -77,7 +77,11 @@ func (d Deps) miscTools() []tool {
 					set = scopes.Default()
 				}
 				allowNet := set.EffectFor(scopes.Network) == scopes.Auto
-				out, err := d.Run.Run(ctx, d.Workdir, dec.(runPlan).argv, allowNet)
+				argv := dec.(runPlan).argv
+				out, err := d.Run.Run(ctx, d.Workdir, argv, allowNet)
+				if d.OnRun != nil {
+					d.OnRun(argv, err)
+				}
 				if err != nil {
 					// Preserve the command's own output for the agent.
 					if strings.TrimSpace(out) != "" {

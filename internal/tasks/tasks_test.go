@@ -289,3 +289,24 @@ func TestSetPRPersistence(t *testing.T) {
 		t.Fatalf("reloaded = %+v", got)
 	}
 }
+
+func TestWorkflowAndTestsPassPersist(t *testing.T) {
+	s, ws := setupStore(t)
+	if err := s.Create("feat-x", "Feature X", "alice", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetWorkflow("feat-x", "ci"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetTestsPass("feat-x", true); err != nil {
+		t.Fatal(err)
+	}
+	reloaded, err := Open(ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok := reloaded.Get("feat-x")
+	if !ok || got.Workflow != "ci" || !got.TestsPass {
+		t.Fatalf("workflow/tests not persisted: %+v (ok=%v)", got, ok)
+	}
+}

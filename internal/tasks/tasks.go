@@ -78,6 +78,12 @@ type Task struct {
 	ChangeSets []ChangeSet
 	Runs       []Run // turn history; append-only (F-013)
 
+	// Workflow is the active feature workflow slug (F-031), and TestsPass
+	// records that the declared test command last passed — the durable
+	// signals the workflow gates read (tests-before-PR).
+	Workflow  string
+	TestsPass bool
+
 	PRNumber int    // GitHub PR created from this card's branch (0 = none)
 	PRURL    string // PR URL once created
 
@@ -147,6 +153,8 @@ type file struct {
 	ThreadID      int64       `toml:"thread_id"`
 	ChangeSets    []ChangeSet `toml:"changeset"`
 	Runs          []Run       `toml:"run"`
+	Workflow      string      `toml:"workflow,omitempty"`
+	TestsPass     bool        `toml:"tests_pass,omitempty"`
 	PRNumber      int         `toml:"pr_number,omitempty"`
 	PRURL         string      `toml:"pr_url,omitempty"`
 	CreatedAt     time.Time   `toml:"created_at"`
@@ -273,6 +281,8 @@ func parseCard(path, slug string) (Task, error) {
 		ThreadID:      f.ThreadID,
 		ChangeSets:    f.ChangeSets,
 		Runs:          f.Runs,
+		Workflow:      f.Workflow,
+		TestsPass:     f.TestsPass,
 		PRNumber:      f.PRNumber,
 		PRURL:         f.PRURL,
 		CreatedAt:     f.CreatedAt,
@@ -377,6 +387,17 @@ func (s *Store) SetStatus(slug string, st Status) error {
 		return fmt.Errorf("tasks: bad status %q", st)
 	}
 	return s.mutate(slug, func(t *Task) { t.Status = st })
+}
+
+// SetWorkflow records the task's active feature workflow slug (F-031).
+func (s *Store) SetWorkflow(slug, wf string) error {
+	return s.mutate(slug, func(t *Task) { t.Workflow = wf })
+}
+
+// SetTestsPass records whether the task's declared test command passed
+// (F-031 tests-before-PR gate).
+func (s *Store) SetTestsPass(slug string, ok bool) error {
+	return s.mutate(slug, func(t *Task) { t.TestsPass = ok })
 }
 
 // Assign sets (or clears, "") the assignee.
@@ -594,7 +615,8 @@ func writeCard(path string, t Task) error {
 		PRNumber: t.PRNumber, PRURL: t.PRURL,
 		ChangeSets: t.ChangeSets,
 		Runs:       t.Runs,
-		CreatedAt:  t.CreatedAt, UpdatedAt: t.UpdatedAt,
+		Workflow:   t.Workflow, TestsPass: t.TestsPass,
+		CreatedAt: t.CreatedAt, UpdatedAt: t.UpdatedAt,
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("tasks: write: %w", err)

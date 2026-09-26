@@ -76,6 +76,10 @@ type Bridge struct {
 	// Approve parks a mutating action on the approvals seam (nil = the
 	// action runs without a prompt — test and read-only contexts only).
 	Approve func(ctx context.Context, agentID, detail string) error
+	// Gate enforces the active feature workflow (F-031) at a seam for a
+	// task, returning refusal reasons (nil = allowed). nil = no
+	// enforcement.
+	Gate func(taskSlug, seam string) []string
 }
 
 // taskCreateArgs is the strict task_create shape.
@@ -196,6 +200,12 @@ func (b *Bridge) taskAssign(ctx context.Context, agentID string, a taskAssignArg
 func (b *Bridge) prOpen(ctx context.Context, agentID string, a prOpenArgs) (string, error) {
 	if b.OpenPR == nil {
 		return "", fmt.Errorf("pr_open unavailable: no review seam wired")
+	}
+	// Workflow gate (F-031): tests-before-PR is a hard block.
+	if b.Gate != nil {
+		if reasons := b.Gate(a.Slug, "pr"); len(reasons) > 0 {
+			return "", fmt.Errorf("workflow blocks PR: %s", strings.Join(reasons, "; "))
+		}
 	}
 	detail := fmt.Sprintf("pr_open %s (%s)", a.Slug, a.Title)
 	if err := b.approve(ctx, agentID, detail); err != nil {

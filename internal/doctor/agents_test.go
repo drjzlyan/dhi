@@ -143,3 +143,35 @@ func TestAuthorityDefaults(t *testing.T) {
 		t.Fatalf("authority = %+v (found=%v)", c, ok)
 	}
 }
+
+func TestWorkflowsDoctor(t *testing.T) {
+	root := wsFixture(t)
+
+	c, ok := statusOf(Workflows(root), "workflows")
+	if !ok || c.Status != OK {
+		t.Fatalf("default workflows row = %+v (found=%v)", c, ok)
+	}
+
+	// A dangling active workflow warns by name.
+	doc := "schema = 5\nname = \"S\"\nmodel = \"m\"\nengine = \"cli:claude\"\nworkflow = \"ghost\"\n"
+	if err := os.WriteFile(filepath.Join(root, workspace.DirAgents, "scout.toml"), []byte(doc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c, _ = statusOf(Workflows(root), "workflows")
+	if c.Status != Warn || !strings.Contains(c.Detail, "ghost") {
+		t.Fatalf("dangling workflow row = %+v", c)
+	}
+
+	// A malformed definition fails by name.
+	dir := filepath.Join(root, workspace.DHIDir, "workflows")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "broken.toml"), []byte("schema = 99\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c, _ = statusOf(Workflows(root), "workflows")
+	if c.Status != Fail || !strings.Contains(c.Detail, "broken") {
+		t.Fatalf("malformed workflow row = %+v", c)
+	}
+}

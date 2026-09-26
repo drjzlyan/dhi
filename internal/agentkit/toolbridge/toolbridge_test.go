@@ -158,3 +158,28 @@ func TestPROpenRefusals(t *testing.T) {
 		t.Fatalf("pr_open = %q, %v (member@branch %q)", res, err, got)
 	}
 }
+
+func TestPROpenBlockedByWorkflowGate(t *testing.T) {
+	ts := testStore(t)
+	_ = ts.Create("x", "X", "scout", "")
+	_ = ts.RecordChangeSet("x", tasks.ChangeSet{Member: "api", Branch: "task/x", Path: "repo"})
+	opened := false
+	b := &Bridge{
+		Tasks:  ts,
+		OpenPR: func(context.Context, string, string, string, string) (string, error) { opened = true; return "PR", nil },
+		Gate: func(slug, seam string) []string {
+			if seam == "pr" {
+				return []string{"step test requires run:test to pass"}
+			}
+			return nil
+		},
+	}
+	_, err := b.Dispatch(context.Background(), "scout", Request{Action: ActionPROpen,
+		Args: []byte(`{"slug":"x","title":"T","base":"main"}`)})
+	if err == nil || !strings.Contains(err.Error(), "workflow blocks PR") {
+		t.Fatalf("gated PR = %v", err)
+	}
+	if opened {
+		t.Fatal("gated PR must not reach the seam")
+	}
+}

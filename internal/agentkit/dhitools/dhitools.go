@@ -53,6 +53,16 @@ type Deps struct {
 	Editor    EditorAPI            // app-owned editor seam (ADR-0023); nil refuses editor tools
 	Scopes    scopes.Set           // capability effects; nil = scopes.Default()
 
+	// Gate enforces the active feature workflow (F-031) at a seam: it
+	// returns the refusal reasons for acting on seam ("git:commit",
+	// "pr", …), or nil when the action is allowed. nil disables workflow
+	// enforcement for this turn.
+	Gate func(seam string) []string
+	// OnRun observes an allowlisted `run` outcome so the workflow can
+	// learn that the declared test command passed (tests-before-PR).
+	// nil = no observation.
+	OnRun func(argv []string, err error)
+
 	// Channel/Thread are the trigger context: channel_read/post
 	// default to the thread the turn started from.
 	Channel string
@@ -62,6 +72,15 @@ type Deps struct {
 	// trigger is bound to one, else the workspace root). The git tools
 	// operate here.
 	Workdir string
+}
+
+// checkGate returns the active workflow's refusal reasons for acting on
+// seam (nil when no workflow is enforced this turn).
+func (d Deps) checkGate(seam string) []string {
+	if d.Gate == nil {
+		return nil
+	}
+	return d.Gate(seam)
 }
 
 // tool is one served tool's declaration + handler. Args parse in two
