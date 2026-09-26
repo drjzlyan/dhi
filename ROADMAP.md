@@ -756,10 +756,11 @@ gemini join once installed + MCP-verified.
       `write`/`patch` (mutating, approval-gated), all VPath-jailed, and
       the git set `git_status`/`git_log`/`git_branch`/`git_diff`
       (read-only) + `git_commit` (mutating, identity, approval-gated),
-      ideation reads `ideation_list`/`ideation_read`, and `run`
-      (fixed safe set, no shell) + `ask_human`, 2026-09-26. Remaining:
-      editor/LSP tools (ADR-0023) and per-agent `run` commands (M16).
-      `git_push` dropped in favor of the M16 PR step
+      ideation reads `ideation_list`/`ideation_read`, `run` (fixed safe
+      set, no shell) + `ask_human`, and `editor_open`/`editor_reveal` via
+      the ADR-0023 seam, 2026-09-26. Remaining: `editor_apply_edit` + LSP
+      verbs (same seam) and per-agent `run` commands (M16). `git_push`
+      dropped in favor of the M16 PR step
 - [ ] P2 — capability scopes (`read/write/exec/network/git/push/admin` ×
       auto|ask|deny, manifest→team→workspace) + grant-memory approvals;
       every mutation recorded in the run

@@ -96,10 +96,44 @@ func (a *App) Init() tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
+// EditorRequest is an agent-requested editor action routed through the
+// Update loop (ADR-0023): the runtime's editor seam sends it and blocks
+// on Reply. Paths are absolute; the seam resolves VPaths before sending.
+type EditorRequest struct {
+	Op    string // "open" | "reveal"
+	Paths []string
+	Reply chan EditorReply
+}
+
+// EditorReply is the result of an EditorRequest.
+type EditorReply struct {
+	Err string
+}
+
+// handleEditorRequest performs one agent editor action on the UI loop.
+func (a *App) handleEditorRequest(r EditorRequest) {
+	var errStr string
+	switch r.Op {
+	case "open", "reveal":
+		if !a.OpenInEditor(r.Paths) {
+			errStr = "editor could not open the requested path(s)"
+		}
+	default:
+		errStr = "unknown editor request " + r.Op
+	}
+	if r.Reply != nil {
+		r.Reply <- EditorReply{Err: errStr}
+	}
+}
+
 // Update routes messages: gate → global keys → surface keys; broadcast
 // resizes.
 func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case EditorRequest:
+		a.handleEditorRequest(msg)
+		return a, nil
+
 	case tea.WindowSizeMsg:
 		a.width, a.height = msg.Width, msg.Height
 		for _, s := range a.surfaces {

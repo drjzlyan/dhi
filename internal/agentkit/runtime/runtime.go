@@ -90,6 +90,9 @@ type Config struct {
 	// Run executes the `run` tool's allowlisted commands (M15 P1); nil
 	// makes the tool refuse by name.
 	Run dhitools.CommandRunner
+	// Editor is the app-owned editor seam (ADR-0023); nil makes the
+	// editor/LSP tools refuse by name.
+	Editor dhitools.EditorAPI
 }
 
 // Runtime manages rostered agents and executes their turns.

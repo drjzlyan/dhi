@@ -372,3 +372,49 @@ func TestGateKeyCommandDrained(t *testing.T) {
 		t.Fatalf("drain count %d", g.taken)
 	}
 }
+
+// openEditorStub records OpenPaths calls (the editor surface contract
+// the ADR-0023 bridge routes to).
+type openEditorStub struct {
+	stubSurface
+	opened [][]string
+}
+
+func (s *openEditorStub) OpenPaths(paths ...string) int {
+	s.opened = append(s.opened, paths)
+	return len(paths)
+}
+
+func TestEditorRequestRoutesToEditorSurface(t *testing.T) {
+	theme.SwapForTest(t, theme.Dark())
+	ed := &openEditorStub{stubSurface: stubSurface{id: "editor", title: "Editor"}}
+	a := New("test", &stubSurface{id: "home", title: "Home"}, ed)
+	a.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+
+	reply := make(chan EditorReply, 1)
+	a.Update(EditorRequest{Op: "open", Paths: []string{"/tmp/x"}, Reply: reply})
+	if r := <-reply; r.Err != "" {
+		t.Fatalf("open err = %q", r.Err)
+	}
+	if len(ed.opened) != 1 || ed.opened[0][0] != "/tmp/x" {
+		t.Fatalf("opened = %v", ed.opened)
+	}
+
+	reply2 := make(chan EditorReply, 1)
+	a.Update(EditorRequest{Op: "bogus", Reply: reply2})
+	if r := <-reply2; r.Err == "" {
+		t.Fatal("unknown editor op must reply with an error")
+	}
+}
+
+func TestEditorRequestUnopenableRefuses(t *testing.T) {
+	theme.SwapForTest(t, theme.Dark())
+	// The plain stub editor has no OpenPaths, so the request refuses.
+	a := New("test", &stubSurface{id: "home", title: "Home"}, &stubSurface{id: "editor", title: "Editor"})
+	a.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	reply := make(chan EditorReply, 1)
+	a.Update(EditorRequest{Op: "open", Paths: []string{"/tmp/x"}, Reply: reply})
+	if r := <-reply; r.Err == "" {
+		t.Fatal("unopenable path must reply with an error")
+	}
+}

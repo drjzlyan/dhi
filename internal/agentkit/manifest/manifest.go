@@ -86,6 +86,8 @@ var BuiltinTools = []string{
 	"channel_post", "channel_read", "workspace_search",
 	"ideation_list", "ideation_read",
 	"run", "ask_human",
+	"editor_open", "editor_reveal", "editor_apply_edit",
+	"lsp_hover", "lsp_definition", "lsp_references", "lsp_rename", "lsp_code_action",
 }
 
 // IsBuiltinTool reports whether name is one of the native tools.

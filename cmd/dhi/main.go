@@ -116,6 +116,9 @@ func runTUI() {
 	var identityFn gitcore.IdentityFunc
 	var gitRunner *gitcore.Runner
 	var runRunner dhitools.CommandRunner
+	// editorBridge routes agent editor actions onto the UI loop
+	// (ADR-0023); its program is attached once the TUI is created.
+	editorBridge := &editorBridge{ws: ws}
 	if toolRoot != "" {
 		mgr := toolchain.New(toolRoot)
 		// Terminal sessions run with DHI's hermetic PATH. When the
@@ -181,7 +184,7 @@ func runTUI() {
 		// under .dhi/agents/. Guards carry the audited OS-sandbox
 		// adapter (nil here is impossible: the audit blocked first).
 		if messageBus != nil {
-			agentRT = newAgentRuntime(ws, messageBus, decision.Sandbox, termEnv, cfg.Engine, gitRunner, identityFn, sessionStore, runRunner, taskStore, reviewSvc, rgSearcher)
+			agentRT = newAgentRuntime(ws, messageBus, decision.Sandbox, termEnv, cfg.Engine, gitRunner, identityFn, sessionStore, runRunner, editorBridge, taskStore, reviewSvc, rgSearcher)
 			if agentRT != nil {
 				edOpts = append(edOpts, editor.WithChat(agentRT))
 			}
@@ -310,6 +313,7 @@ func runTUI() {
 	}
 
 	p := tea.NewProgram(a)
+	editorBridge.prog = p
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintln(os.Stderr, "dhi:", err)
 		os.Exit(1)
@@ -463,6 +467,66 @@ func openBus(ws *workspace.Workspace) *bus.Bus {
 // ride along when their sidecar files parse; broken ones degrade. Agent
 // memory + the knowledge base join the turn loop (M14 P1): persistent
 // context in, review-gated contributions out.
+// editorBridge implements dhitools.EditorAPI (ADR-0023): it resolves
+// VPaths through the workspace jail, sends an app.EditorRequest onto the
+// UI loop, and blocks for the reply (or ctx). A nil program refuses.
+type editorBridge struct {
+	ws   *workspace.Workspace
+	prog interface{ Send(tea.Msg) }
+}
+
+func (b *editorBridge) resolve(paths []string) ([]string, error) {
+	if b.ws == nil {
+		return nil, fmt.Errorf("editor unavailable (no workspace)")
+	}
+	out := make([]string, 0, len(paths))
+	for _, p := range paths {
+		v, err := workspace.ParseVPath(p)
+		if err != nil {
+			return nil, err
+		}
+		abs, err := b.ws.Resolve(v)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, abs)
+	}
+	return out, nil
+}
+
+func (b *editorBridge) call(ctx context.Context, op string, paths []string) error {
+	if b.prog == nil {
+		return fmt.Errorf("editor unavailable (UI not started)")
+	}
+	req := app.EditorRequest{Op: op, Paths: paths, Reply: make(chan app.EditorReply, 1)}
+	b.prog.Send(req)
+	select {
+	case r := <-req.Reply:
+		if r.Err != "" {
+			return fmt.Errorf("%s", r.Err)
+		}
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (b *editorBridge) Open(ctx context.Context, paths []string) error {
+	abs, err := b.resolve(paths)
+	if err != nil {
+		return err
+	}
+	return b.call(ctx, "open", abs)
+}
+
+func (b *editorBridge) Reveal(ctx context.Context, path string) error {
+	abs, err := b.resolve([]string{path})
+	if err != nil {
+		return err
+	}
+	return b.call(ctx, "reveal", abs)
+}
+
 // execRunner implements dhitools.CommandRunner: a hermetic-env child
 // process (no shell) with a wall-clock timeout and capped output. The
 // allowlist policy lives in dhitools; this only executes vetted argv.
@@ -488,7 +552,7 @@ func (r execRunner) Run(ctx context.Context, dir string, argv []string) (string,
 	return out, err
 }
 
-func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cliEnv []string, defaultEngine string, gitRunner *gitcore.Runner, identityFn gitcore.IdentityFunc, sessionStore *ideation.Store, runRunner dhitools.CommandRunner, taskStore *tasks.Store, reviewSvc *review.Service, kbSearcher search.Searcher) *agentkitRuntime.Runtime {
+func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cliEnv []string, defaultEngine string, gitRunner *gitcore.Runner, identityFn gitcore.IdentityFunc, sessionStore *ideation.Store, runRunner dhitools.CommandRunner, editor dhitools.EditorAPI, taskStore *tasks.Store, reviewSvc *review.Service, kbSearcher search.Searcher) *agentkitRuntime.Runtime {
 	roster, err := manifest.LoadDir(filepath.Join(ws.Root, workspace.DirAgents))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "dhi: agent roster:", err)
@@ -539,6 +603,7 @@ func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cl
 		Identity: identityFn,
 		Sessions: sessionStore,
 		Run:      runRunner,
+		Editor:   editor,
 		// F-020 pr_open: the review service opens task PRs; gh missing
 		// refuses by name at dispatch.
 		PR: func(ctx context.Context, member, branch, title, base string) (string, error) {
