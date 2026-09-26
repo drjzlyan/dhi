@@ -493,7 +493,8 @@ func AgentTools(wsRoot string) []Check {
 			Detail: "no agent allowlists IDE tools (serving idle)"}}
 	case len(fallback) == 0:
 		return []Check{{Name: "agent-tools", Status: OK,
-			Detail: "serving to " + strings.Join(ready, "; ")}}
+			Detail: "serving to " + strings.Join(ready, "; ") +
+				" (containment: native CLI tools are best-effort only)"}}
 	default:
 		parts := fallback
 		if len(ready) > 0 {

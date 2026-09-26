@@ -292,8 +292,9 @@ catalog).
    default→workspace→team→manifest). Doctor `authority` row added. `run` network posture landed (DHI-served denied by default;
    host CLIs keep network per decision). Grant-memory landed (approvals `a`).
    Settings scopes editor landed —
-   P2 complete. Next: P3 MCP-for-all (blocked on the user installing
-   cursor/copilot/gemini) + doctor containment caveat.
+   P2 complete. Next: P3 MCP-for-all (blocked on
+   the user installing cursor/copilot/gemini + live MCP verification).
+   Doctor containment caveat landed.
    MCP-for-all + sandbox. Decisions:
    `run` uses a fixed safe set now + per-agent commands at M16;
    `ask_human` posts to the thread; `git_push` dropped in favor of the
