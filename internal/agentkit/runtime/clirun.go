@@ -39,10 +39,10 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message) er
 	serve := r.serveTools(e, trigger)
 	prompt, system := r.cliPrompt(ctx, e, trigger, serve != nil)
 	workdir := r.cliWorkdir(trigger)
-	mcpConfig := ""
+	mcpConfig, mcpEndpoint := "", ""
 	if serve != nil {
 		defer serve.stop()
-		mcpConfig = serve.configPath
+		mcpConfig, mcpEndpoint = serve.configPath, serve.endpoint
 	}
 
 	if e.m.Timeout > 0 {
@@ -53,7 +53,7 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message) er
 
 	var lastErr error
 	for attempt := 0; ; attempt++ {
-		run := r.cliSpawnOnce(ctx, e, trigger, prompt, system, workdir, attempt, mcpConfig)
+		run := r.cliSpawnOnce(ctx, e, trigger, prompt, system, workdir, attempt, mcpConfig, mcpEndpoint)
 		r.recordRun(trigger, run)
 
 		if run.Status == tasks.RunOK {
@@ -90,7 +90,7 @@ var cliRetryBackoff = 30 * time.Second
 // cliSpawnOnce runs a single attempt: spawn the wrapped CLI, stream the
 // transcript into the trigger thread, persist the event JSONL, finalize,
 // and return the run record.
-func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Message, prompt, system, workdir string, attempt int, mcpConfig string) tasks.Run {
+func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Message, prompt, system, workdir string, attempt int, mcpConfig, mcpEndpoint string) tasks.Run {
 	started := time.Now().UTC()
 	run := tasks.Run{
 		ID: runID(started), Agent: e.m.ID,
@@ -126,7 +126,8 @@ func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Messag
 	// and the reply came back as plain text (no stream-json at all).
 	argv := append([]string{e.cliPath}, e.cli.BuildArgs(clirun.RunInput{
 		Prompt: prompt, System: system,
-		Model: e.m.Model, Workdir: workdir, Stdin: stdin, MCPConfig: mcpConfig,
+		Model: e.m.Model, Workdir: workdir, Stdin: stdin,
+		MCPConfig: mcpConfig, MCPURL: mcpEndpoint,
 	})...)
 	wrapped, err := e.guard.Sandbox.Wrap(argv)
 	if err != nil {
@@ -241,7 +242,8 @@ func (r *Runtime) saveTranscript(events []clirun.StreamEvent, run tasks.Run) str
 // allowlist carries no served tools, or the adapter has no verified
 // MCP wiring — the dhi-action fallback stays for those).
 type serveSession struct {
-	configPath string // temp MCP config file for the adapter
+	configPath string // temp MCP config file ("" for inline adapters)
+	endpoint   string // the loopback URL the adapter must reach
 	stop       func()
 }
 
@@ -250,7 +252,7 @@ type serveSession struct {
 // endpoint lives exactly as long as the turn (ADR-0017: no daemon);
 // the temp config dies with it.
 func (r *Runtime) serveTools(e *entry, trigger bus.Message) *serveSession {
-	if r.cfg.WS == nil || e.cli == nil || !e.cli.MCPOK || e.cli.MCPConfigFile == nil {
+	if r.cfg.WS == nil || e.cli == nil || !e.cli.MCPWired() {
 		return nil
 	}
 	any := false
@@ -295,31 +297,35 @@ func (r *Runtime) serveTools(e *entry, trigger bus.Message) *serveSession {
 		})
 		return nil
 	}
-	tmp, err := os.CreateTemp("", "dhi-mcp-*.json")
-	if err != nil {
-		stop()
-		_, _ = r.cfg.Bus.Post(bus.Message{
-			Channel: trigger.Channel, Thread: trigger.Thread,
-			Author: e.m.ID,
-			Text:   "IDE tools unavailable this turn: " + err.Error(),
-		})
-		return nil
-	}
-	cfg := e.cli.MCPConfigFile(endpoint)
-	if _, err := tmp.WriteString(cfg); err != nil {
-		_ = tmp.Close()
-		_ = os.Remove(tmp.Name())
-		stop()
-		return nil
-	}
-	_ = tmp.Close()
-	return &serveSession{
-		configPath: tmp.Name(),
-		stop: func() {
+	sess := &serveSession{endpoint: endpoint, stop: stop}
+	// File-delivered adapters get a temp config; inline adapters
+	// (codex) take the endpoint straight on argv.
+	if e.cli.MCPConfigFile != nil {
+		tmp, err := os.CreateTemp("", "dhi-mcp-*.json")
+		if err != nil {
+			stop()
+			_, _ = r.cfg.Bus.Post(bus.Message{
+				Channel: trigger.Channel, Thread: trigger.Thread,
+				Author: e.m.ID,
+				Text:   "IDE tools unavailable this turn: " + err.Error(),
+			})
+			return nil
+		}
+		if _, err := tmp.WriteString(e.cli.MCPConfigFile(endpoint)); err != nil {
+			_ = tmp.Close()
 			_ = os.Remove(tmp.Name())
 			stop()
-		},
+			return nil
+		}
+		_ = tmp.Close()
+		path := tmp.Name()
+		sess.configPath = path
+		sess.stop = func() {
+			_ = os.Remove(path)
+			stop()
+		}
 	}
+	return sess
 }
 
 // cliPrompt flattens the trigger + recent history into a headless CLI

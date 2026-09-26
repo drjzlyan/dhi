@@ -56,6 +56,9 @@ type RunInput struct {
 	// server (F-028/ADR-0017). Adapters with a verified MCP flag wire
 	// it; others ignore it (their dhi-action fallback stays).
 	MCPConfig string
+	// MCPURL is the loopback endpoint the per-turn config file carries;
+	// argv-delivered adapters (codex) reference it directly.
+	MCPURL string
 	// Stdin overrides argv delivery (F-014 M14 P1): when non-empty the
 	// adapter emits a stdin-reading argv and the runner feeds this as
 	// the process stdin. The runner sets it only when the assembled
@@ -117,15 +120,23 @@ type CLI struct {
 	// keep the dhi-action fallback contract.
 	MCPOK bool
 	// MCPConfigFile renders the temp config file body that registers
-	// DHI's loopback endpoint in the adapter's own format (required
-	// when MCPOK).
+	// DHI's loopback endpoint in the adapter's own format. Optional:
+	// argv-delivered adapters (codex) need no file.
 	MCPConfigFile func(endpoint string) string
 	// MCPConfigEnv names the env var that points the CLI at that config
 	// file ("" = the adapter takes it via argv instead).
 	MCPConfigEnv string
-	// MCPConfigArgs returns argv additions that reference the config
-	// file (nil = the adapter takes it via env instead).
-	MCPConfigArgs func(configPath string) []string
+	// MCPConfigArgs returns argv additions that register the endpoint
+	// (nil = the adapter takes it via env instead). It receives both
+	// the temp config path and the raw endpoint: file-based adapters
+	// reference the path, inline adapters reference the URL.
+	MCPConfigArgs func(configPath, endpoint string) []string
+}
+
+// MCPWired reports whether the adapter declares a complete per-turn MCP
+// injection (a delivery path exists).
+func (c *CLI) MCPWired() bool {
+	return c.MCPOK && (c.MCPConfigFile != nil || c.MCPConfigEnv != "" || c.MCPConfigArgs != nil)
 }
 
 // MCPEnv returns the env additions that point this CLI at configPath
@@ -138,14 +149,14 @@ func (c *CLI) MCPEnv(configPath string) []string {
 	return []string{c.MCPConfigEnv + "=" + configPath}
 }
 
-// MCPArgs returns the argv additions that point this CLI at configPath
-// (nil when the adapter takes its config via env, or when there is no
-// per-turn config).
-func (c *CLI) MCPArgs(configPath string) []string {
-	if configPath == "" || c.MCPConfigArgs == nil {
+// MCPArgs returns the argv additions that register the endpoint (nil
+// when the adapter takes its config via env, or when there is no
+// per-turn endpoint).
+func (c *CLI) MCPArgs(configPath, endpoint string) []string {
+	if endpoint == "" || c.MCPConfigArgs == nil {
 		return nil
 	}
-	return c.MCPConfigArgs(configPath)
+	return c.MCPConfigArgs(configPath, endpoint)
 }
 
 // Registry is the declared set of runtimes. Adapters are compiled in;

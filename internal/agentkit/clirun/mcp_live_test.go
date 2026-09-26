@@ -150,3 +150,46 @@ func TestLiveClaudeMCP(t *testing.T) {
 		t.Fatalf("claude did not call the served tool; output:\n%s", out)
 	}
 }
+
+// TestLiveCodexMCP is the live-verify for the codex MCP wiring:
+// `-c mcp_servers.dhi.url=...` must register DHI's loopback server and
+// the agent must actually call the served tool.
+//
+//	DHI_LIVE_MCP=1 go test ./internal/agentkit/clirun/ -run TestLiveCodexMCP -v
+func TestLiveCodexMCP(t *testing.T) {
+	if os.Getenv("DHI_LIVE_MCP") == "" {
+		t.Skip("set DHI_LIVE_MCP=1 to run the real codex MCP verification (costs tokens)")
+	}
+	path, err := exec.LookPath("codex")
+	if err != nil {
+		t.Skip("codex not installed")
+	}
+	h := &probeHandler{called: make(chan string, 1)}
+	endpoint, stop, err := mcp.ServeLoopback(h)
+	if err != nil {
+		t.Fatalf("ServeLoopback: %v", err)
+	}
+	defer stop()
+	work := t.TempDir()
+	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Second)
+	defer cancel()
+	argv := Codex.BuildArgs(RunInput{
+		Prompt: "Call the MCP tool named echo_probe with text=\"HELLO\" (server dhi), then reply with its output.",
+		MCPURL: endpoint, Workdir: work,
+	})
+	cmd := exec.CommandContext(ctx, path, argv...)
+	cmd.Dir = work
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("codex run: %v\n%s", err, out)
+	}
+	select {
+	case got := <-h.called:
+		t.Logf("LIVE-VERIFIED: codex called DHI's served tool with args %s", got)
+		if !strings.Contains(got, "HELLO") {
+			t.Fatalf("tool called with unexpected args: %s", got)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatalf("codex did not call the served tool; output:\n%s", out)
+	}
+}

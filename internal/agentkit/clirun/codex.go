@@ -75,6 +75,9 @@ var Codex = &CLI{
 			"--sandbox", "danger-full-access",
 			"--dangerously-bypass-approvals-and-sandbox",
 		)
+		// IDE tools (F-028): register DHI's loopback endpoint inline via
+		// `-c mcp_servers.dhi.url=...` (no config file needed).
+		args = append(args, CodexMCPArgs(in.MCPConfig, in.MCPURL)...)
 		if in.Stdin != "" {
 			// Oversized delivery: `codex exec -` reads the prompt from
 			// stdin (0.147 contract; live-verify checklist item).
@@ -94,6 +97,20 @@ var Codex = &CLI{
 	// StdinOK: `codex exec -` consumes stdin (documented contract;
 	// live-verify on the next real run).
 	StdinOK: true,
+	// MCPOK: `-c mcp_servers.dhi.url=...` registers the loopback
+	// endpoint inline; live-verified 2026-09-26 on 0.147.0 (a real
+	// tool call through the loopback server).
+	MCPOK:         true,
+	MCPConfigArgs: CodexMCPArgs,
+}
+
+// CodexMCPArgs builds the inline `-c` override registering DHI's
+// endpoint (codex parses the value as TOML, hence the quoted string).
+func CodexMCPArgs(_, endpoint string) []string {
+	if endpoint == "" {
+		return nil
+	}
+	return []string{"-c", fmt.Sprintf("mcp_servers.dhi.url=%q", endpoint)}
 }
 
 // codexItem is the union shape of one exec JSONL line.

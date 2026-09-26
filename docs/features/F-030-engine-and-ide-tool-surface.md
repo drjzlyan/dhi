@@ -113,9 +113,11 @@ sandbox (network deny-by-default, no free-form shell).
       verified 2026-09-26 on 1.2.11).
 - [~] Every shipped adapter serves DHI tools over the loopback endpoint
       (MCP wiring verified); `dhi-action` is gone. Landed: claude
-      (--mcp-config, argv) + opencode (OPENCODE_CONFIG, env), both
+      (--mcp-config, file+argv), opencode (OPENCODE_CONFIG, env file),
+      codex (`-c mcp_servers.dhi.url=`, inline argv) — all
       live-verified end-to-end 2026-09-26 (a real tool call through
-      DHI's loopback server). Pending: codex/cursor/copilot/antigravity.
+      DHI's loopback server). Pending: cursor-agent (`--approve-mcps`
+      + project `.cursor/mcp.json`), copilot, antigravity (`agy mcp`).
       The streamable-HTTP server was fixed in the same pass (GET SSE
       stream + SSE-framed POST replies + `2025-11-25` protocol +
       lowercase tool keys) — the legacy handler made opencode drop

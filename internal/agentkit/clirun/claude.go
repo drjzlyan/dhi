@@ -53,7 +53,7 @@ var Claude = &CLI{
 		// IDE tools (F-028): the generated config registers DHI's
 		// loopback MCP endpoint; strict keeps the user's own MCP
 		// servers out of the agent run (nothing crosses).
-		args = append(args, claudeMCPArgs(in.MCPConfig)...)
+		args = append(args, claudeMCPArgs(in.MCPConfig, in.MCPURL)...)
 		if in.Model != "" {
 			args = append(args, "--model", in.Model)
 		}
@@ -79,7 +79,7 @@ func claudeMCPConfigFile(endpoint string) string {
 	return fmt.Sprintf(`{"mcpServers":{"dhi":{"type":"http","url":%q}}}`, endpoint)
 }
 
-func claudeMCPArgs(configPath string) []string {
+func claudeMCPArgs(configPath, _ string) []string {
 	if configPath == "" {
 		return nil
 	}

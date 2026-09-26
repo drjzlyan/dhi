@@ -76,30 +76,28 @@ func TestMaxPromptArgBudget(t *testing.T) {
 // leak the path into argv (their dhi-action fallback stays otherwise).
 func TestMCPConfigWiring(t *testing.T) {
 	const path = "/tmp/dhi-mcp.json"
+	const url = "http://127.0.0.1:1/mcp"
 	for _, c := range allAdapters() {
-		argv := strings.Join(c.BuildArgs(RunInput{Prompt: "p", MCPConfig: path}), "\x00")
+		argv := strings.Join(c.BuildArgs(RunInput{Prompt: "p", MCPConfig: path, MCPURL: url}), "\x00")
 		if !c.MCPOK {
 			if c.MCPConfigFile != nil || c.MCPConfigEnv != "" || c.MCPConfigArgs != nil {
 				t.Errorf("%s declares MCP wiring without MCPOK", c.Name)
 			}
-			if strings.Contains(argv, path) {
-				t.Errorf("%s leaked an unverified MCP config into argv: %q", c.Name, argv)
+			if strings.Contains(argv, path) || strings.Contains(argv, url) {
+				t.Errorf("%s leaked an unverified MCP wiring into argv: %q", c.Name, argv)
 			}
 			continue
 		}
-		// Complete injection: a renderer, and a delivery path.
-		if c.MCPConfigFile == nil {
-			t.Errorf("%s: MCPOK without MCPConfigFile", c.Name)
-		}
-		if c.MCPConfigEnv == "" && c.MCPConfigArgs == nil {
-			t.Errorf("%s: MCPOK with no delivery (env or args)", c.Name)
+		// Complete injection: at least one delivery path.
+		if !c.MCPWired() {
+			t.Errorf("%s: MCPOK without any wiring", c.Name)
 		}
 		if c.MCPConfigArgs != nil {
-			if !strings.Contains(argv, path) {
-				t.Errorf("%s argv missing the MCP config path: %q", c.Name, argv)
+			if !strings.Contains(argv, path) && !strings.Contains(argv, url) {
+				t.Errorf("%s argv missing MCP wiring (path or url): %q", c.Name, argv)
 			}
-		} else if strings.Contains(argv, path) {
-			t.Errorf("%s is env-delivered but leaked the path into argv: %q", c.Name, argv)
+		} else if strings.Contains(argv, path) || strings.Contains(argv, url) {
+			t.Errorf("%s is env-delivered but leaked wiring into argv: %q", c.Name, argv)
 		}
 	}
 }
@@ -112,8 +110,20 @@ func TestMCPCapabilityDeclared(t *testing.T) {
 	for _, c := range allAdapters() {
 		reg[c.Name] = c.MCPOK
 	}
-	if !reg["claude"] || !reg["opencode"] {
-		t.Fatalf("claude+opencode must declare MCP wiring: %v", reg)
+	if !reg["claude"] || !reg["opencode"] || !reg["codex"] {
+		t.Fatalf("claude+opencode+codex must declare MCP wiring: %v", reg)
+	}
+}
+
+// TestCodexMCPArgs pins the inline `-c` override shape (TOML string).
+func TestCodexMCPArgs(t *testing.T) {
+	got := Codex.MCPArgs("", "http://127.0.0.1:5/mcp")
+	want := []string{"-c", `mcp_servers.dhi.url="http://127.0.0.1:5/mcp"`}
+	if strings.Join(got, "\x00") != strings.Join(want, "\x00") {
+		t.Fatalf("codex MCP args = %q, want %q", got, want)
+	}
+	if Codex.MCPArgs("", "") != nil {
+		t.Fatal("empty endpoint must yield nil args")
 	}
 }
 
