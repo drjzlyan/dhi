@@ -44,7 +44,7 @@ echo '{"type":"result","subtype":"success","is_error":false,"result":"Done: two 
 func TestRegistryBasics(t *testing.T) {
 	r := NewRegistry(nil)
 	names := r.Names()
-	wantNames := []string{"claude", "codex", "copilot", "cursor-agent", "gemini", "opencode"}
+	wantNames := []string{"antigravity", "claude", "codex", "copilot", "cursor-agent", "opencode"}
 	if len(names) != len(wantNames) {
 		t.Fatalf("Names = %v, want %v", names, wantNames)
 	}
@@ -64,7 +64,7 @@ func TestRegistryBasics(t *testing.T) {
 	}
 	for name, want := range map[string]bool{
 		"": false, "anthropic": false, "claude": true, "codex": true,
-		"opencode": true, "cursor-agent": true, "copilot": true, "gemini": true,
+		"opencode": true, "cursor-agent": true, "copilot": true, "antigravity": true,
 		"Claude": false, "nope": false,
 	} {
 		if got := r.ValidRuntime(name); got != want {

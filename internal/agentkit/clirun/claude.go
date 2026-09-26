@@ -76,7 +76,7 @@ var Claude = &CLI{
 }
 
 func allAdapters() []*CLI {
-	return []*CLI{Claude, Codex, OpenCode, CursorAgent, Copilot, Gemini}
+	return []*CLI{Claude, Codex, OpenCode, CursorAgent, Copilot, Antigravity}
 }
 
 // claudeContentBlock is one piece of a message's content array.

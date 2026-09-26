@@ -107,8 +107,10 @@ sandbox (network deny-by-default, no free-form shell).
       settings `engine` default, `runtime.Config.DefaultEngine` +
       `engineName` resolution, doctor `agent-tools` resolves the
       inherited engine. Adapters remain selectable only when detected on
-      the machine (claude/codex/opencode today); cursor/copilot/gemini
-      become selectable once installed and MCP-verified.
+      the machine (claude/codex/opencode/antigravity today); cursor/
+      copilot become selectable once installed and MCP-verified. The
+      deprecated Gemini CLI was replaced by Antigravity (`agy`, live-
+      verified 2026-09-26 on 1.2.11).
 - [ ] Every shipped adapter serves DHI tools over the loopback endpoint
       (MCP wiring verified); `dhi-action` is gone.
 - [x] An agent can, in one turn: read/search/edit a file, run the

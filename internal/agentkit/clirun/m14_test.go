@@ -43,7 +43,7 @@ func TestStdinDeliveryAdapters(t *testing.T) {
 	if !reg["claude"] || !reg["codex"] {
 		t.Fatalf("claude/codex must support stdin: %v", reg)
 	}
-	for _, n := range []string{"opencode", "gemini", "copilot", "cursor"} {
+	for _, n := range []string{"opencode", "antigravity", "copilot", "cursor"} {
 		if reg[n] {
 			t.Fatalf("%s claims stdin without a verified contract", n)
 		}

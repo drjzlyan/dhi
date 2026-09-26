@@ -706,7 +706,7 @@ substrate), ADR-0018 (loopback serving supersedes the helper process).
       the PR-body DHI footer is dropped, doctor gains an `identity` row
       — landed 2026-09-26
 
-Deferred: MCP wiring for cursor/copilot/gemini (fixture-first until
+Deferred: MCP wiring for cursor/copilot/antigravity (fixture-first until
 their live-verify checklists are filled — claude is first-class today);
 file read/write/list as served tools; MCP over HTTP between DHI
 instances; skill scripts; remote-only library browsing; removal of the
@@ -738,8 +738,9 @@ Status: in progress (P0 + P1 mostly landed 2026-09-26). ADR-0019
 (supersedes ADR-0012/0013) + ADR-0023 (editor/LSP tool seam). The host
 CLI becomes the engine; DHI owns the loop, the tools, and the authority.
 Adapter selectability follows detection: only CLIs installed on the
-machine (claude/codex/opencode today) are selectable; cursor/copilot/
-gemini join once installed + MCP-verified.
+machine are selectable; cursor/copilot join once installed +
+MCP-verified. Gemini deprecated → Antigravity (`agy`) adapter live-
+verified 2026-09-26 on 1.2.11 (replaces the gemini adapter).
 
 - [x] P0 — engine seam `engine = "cli:<name>"` (workspace default +
       per-agent override, strict), manifest schema 3; adapters become
