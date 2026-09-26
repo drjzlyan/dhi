@@ -85,8 +85,12 @@ sandbox (network deny-by-default, no free-form shell).
 
 ## Part D — sandbox & containment
 
-- Network deny-by-default; declared origins per scope/workflow. Exec and
-  any external MCP server run under the OS sandbox. Seatbelt/bwrap
+- Network deny-by-default for DHI-served children; declared origins
+  per scope. **Landed:** the `run` tool is network-denied via the OS
+  sandbox when the `network` scope is not `auto` (seatbelt `deny
+  network*`, bwrap `--unshare-net`); host agent CLIs keep network
+  (they must reach their vendors). A Noop sandbox cannot deny, so `run`
+  refuses rather than leak. Seatbelt/bwrap
   profiles gain declared-network roots.
 - Containment is documented as best-effort; the `api:` engine kind
   remains designed-not-built.

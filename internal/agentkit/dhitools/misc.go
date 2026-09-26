@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
+	"github.com/drjzlyan/dhi/internal/agentkit/scopes"
 	"github.com/drjzlyan/dhi/internal/mcp"
 )
 
@@ -14,7 +15,7 @@ import (
 // by a hermetic-env exec adapter wired in cmd/dhi; the allowlist policy
 // lives here, never in the runner.
 type CommandRunner interface {
-	Run(ctx context.Context, dir string, argv []string) (string, error)
+	Run(ctx context.Context, dir string, argv []string, allowNetwork bool) (string, error)
 }
 
 // runAllow is the fixed command allowlist for the `run` tool (F-030 P1):
@@ -71,7 +72,12 @@ func (d Deps) miscTools() []tool {
 				if strings.TrimSpace(d.Workdir) == "" {
 					return "", fmt.Errorf("no working directory for this turn")
 				}
-				out, err := d.Run.Run(ctx, d.Workdir, dec.(runPlan).argv)
+				set := d.Scopes
+				if set == nil {
+					set = scopes.Default()
+				}
+				allowNet := set.EffectFor(scopes.Network) == scopes.Auto
+				out, err := d.Run.Run(ctx, d.Workdir, dec.(runPlan).argv, allowNet)
 				if err != nil {
 					// Preserve the command's own output for the agent.
 					if strings.TrimSpace(out) != "" {

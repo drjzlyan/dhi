@@ -22,6 +22,13 @@ type Noop struct{}
 // Name implements Sandbox.
 func (Noop) Name() string { return "noop" }
 
+// NetworkPolicy is implemented by adapters that can wrap a command with
+// an explicit network posture (F-030 P2). Noop cannot deny network, so
+// callers must refuse rather than silently allow when it is absent.
+type NetworkPolicy interface {
+	WrapNetwork(argv []string, allow bool) ([]string, error)
+}
+
 // RootExtender is implemented by adapters whose rw roots can grow after
 // construction. The agent runtime uses it to admit each rostered CLI's
 // state + binary roots before the first spawn (claude lives under

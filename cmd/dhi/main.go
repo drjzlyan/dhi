@@ -151,7 +151,7 @@ func runTUI() {
 		if r, err := gitcore.ResolveRunner(mgr); err == nil {
 			gitRunner = r
 		}
-		runRunner = execRunner{env: termEnv, timeout: 5 * time.Minute}
+		runRunner = execRunner{env: termEnv, timeout: 5 * time.Minute, sandbox: decision.Sandbox}
 		if _, err := os.Stat(filepath.Join(toolRoot, "bin", "rg")); err == nil {
 			rgSearcher = search.Ripgrep{Bin: filepath.Join(toolRoot, "bin", "rg")}
 		}
@@ -571,11 +571,26 @@ func (b *editorBridge) LSP(ctx context.Context, op, path string, line, col int, 
 type execRunner struct {
 	env     []string
 	timeout time.Duration
+	sandbox sandbox.Sandbox
 }
 
-func (r execRunner) Run(ctx context.Context, dir string, argv []string) (string, error) {
+func (r execRunner) Run(ctx context.Context, dir string, argv []string, allowNetwork bool) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, r.timeout)
 	defer cancel()
+	// F-030 P2: DHI-served children are network-denied by default via the
+	// OS sandbox; a Noop/absent adapter cannot deny, so we refuse rather
+	// than silently leak (network is a declared scope).
+	if !allowNetwork {
+		np, ok := r.sandbox.(sandbox.NetworkPolicy)
+		if !ok {
+			return "", fmt.Errorf("run: network denied by scope but no OS sandbox can enforce it")
+		}
+		wrapped, werr := np.WrapNetwork(argv, false)
+		if werr != nil {
+			return "", werr
+		}
+		argv = wrapped
+	}
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	cmd.Dir = dir
 	cmd.Env = r.env

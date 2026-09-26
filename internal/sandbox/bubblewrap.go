@@ -10,9 +10,10 @@ import (
 // writable, ro roots read-only. Network stays shared (policy-engine
 // territory, ADR-0006); everything else is namespaced away.
 type Bubblewrap struct {
-	bin string
-	rw  []string
-	ro  []string
+	bin          string
+	rw           []string
+	ro           []string
+	allowNetwork bool
 }
 
 // bwrapSystemDirs are re-bound read-only so linked binaries, loaders,
@@ -22,6 +23,12 @@ var bwrapSystemDirs = []string{"/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc"
 // NewBubblewrap builds the adapter around a bwrap binary path. rw roots
 // bind writable; ro roots bind read-only. Roots must be absolute.
 func NewBubblewrap(bin string, rw, ro []string) (*Bubblewrap, error) {
+	return NewBubblewrapNetwork(bin, rw, ro, true)
+}
+
+// NewBubblewrapNetwork builds a bubblewrap adapter that either shares
+// the network namespace (allow) or unshares it (deny) — F-030 P2.
+func NewBubblewrapNetwork(bin string, rw, ro []string, allowNetwork bool) (*Bubblewrap, error) {
 	if bin == "" {
 		return nil, fmt.Errorf("sandbox: bubblewrap: empty binary path")
 	}
@@ -33,7 +40,7 @@ func NewBubblewrap(bin string, rw, ro []string) (*Bubblewrap, error) {
 			return nil, fmt.Errorf("sandbox: bubblewrap: root %q is not absolute", r)
 		}
 	}
-	return &Bubblewrap{bin: bin, rw: rw, ro: ro}, nil
+	return &Bubblewrap{bin: bin, rw: rw, ro: ro, allowNetwork: allowNetwork}, nil
 }
 
 // WithExtraRoots implements RootExtender: a new Bubblewrap binding the
@@ -54,7 +61,7 @@ func (b *Bubblewrap) WithExtraRoots(rw []string) (Sandbox, error) {
 		seen[r] = true
 		merged = append(merged, r)
 	}
-	return NewBubblewrap(b.bin, merged, b.ro)
+	return NewBubblewrapNetwork(b.bin, merged, b.ro, b.allowNetwork)
 }
 
 // Name implements Sandbox.
@@ -65,13 +72,39 @@ func (b *Bubblewrap) Wrap(argv []string) ([]string, error) {
 	if len(argv) == 0 {
 		return nil, fmt.Errorf("sandbox: empty argv")
 	}
+	net := "--share-net"
+	if !b.allowNetwork {
+		net = "--unshare-net"
+	}
 	out := make([]string, 0, len(argv)+len(b.rw)*2+len(b.ro)*2+len(bwrapSystemDirs)*2+8)
 	out = append(out, b.bin,
-		"--unshare-all", "--share-net", "--die-with-parent",
+		"--unshare-all", net, "--die-with-parent",
 		"--dev-bind", "/dev", "/dev",
 		"--proc", "/proc",
 		"--tmpfs", "/tmp",
 	)
+	for _, d := range bwrapSystemDirs {
+		out = append(out, "--ro-bind", d, d)
+	}
+	for _, r := range b.rw {
+		out = append(out, "--bind", r, r)
+	}
+	for _, r := range b.ro {
+		out = append(out, "--ro-bind", r, r)
+	}
+	return append(out, argv...), nil
+}
+
+// WrapNetwork implements NetworkPolicy: it binds with the requested
+// network posture for one invocation.
+func (b *Bubblewrap) WrapNetwork(argv []string, allow bool) ([]string, error) {
+	net := "--share-net"
+	if !allow {
+		net = "--unshare-net"
+	}
+	out := make([]string, 0, len(argv)+len(b.rw)*2+len(b.ro)*2+len(bwrapSystemDirs)*2+8)
+	out = append(out, b.bin, "--unshare-all", net, "--die-with-parent",
+		"--dev-bind", "/dev", "/dev", "--proc", "/proc", "--tmpfs", "/tmp")
 	for _, d := range bwrapSystemDirs {
 		out = append(out, "--ro-bind", d, d)
 	}

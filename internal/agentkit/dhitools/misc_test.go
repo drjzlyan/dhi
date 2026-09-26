@@ -10,17 +10,19 @@ import (
 
 // fakeRunner records a command run for the `run` tool.
 type fakeRunner struct {
-	called bool
-	dir    string
-	argv   []string
-	out    string
-	err    error
+	called  bool
+	dir     string
+	argv    []string
+	network bool
+	out     string
+	err     error
 }
 
-func (f *fakeRunner) Run(_ context.Context, dir string, argv []string) (string, error) {
+func (f *fakeRunner) Run(_ context.Context, dir string, argv []string, allowNetwork bool) (string, error) {
 	f.called = true
 	f.dir = dir
 	f.argv = argv
+	f.network = allowNetwork
 	return f.out, f.err
 }
 
@@ -154,5 +156,28 @@ func TestScopeAutoSkipsApproval(t *testing.T) {
 	out, isErr := call(h, t, "write", `{"path":"api/auto.go","content":"x\n"}`)
 	if isErr {
 		t.Fatalf("auto write refused: %s", out)
+	}
+}
+
+func TestRunNetworkPostureFromScope(t *testing.T) {
+	f, m := newFixture(t, "run")
+	// Default network scope is deny → allowNetwork false.
+	fr := &fakeRunner{out: "ok"}
+	h := Deps{Agent: m, WS: f.ws, Workdir: "/tmp/wd", Run: fr, Approvals: f.approvals}.Handler()
+	if _, isErr := callAsync(h, "run", `{"program":"go","args":["test"]}`, f)(t); isErr {
+		t.Fatal("run refused")
+	}
+	if fr.network {
+		t.Fatal("default network scope must deny (allowNetwork false)")
+	}
+	// network=auto → allowNetwork true.
+	fr2 := &fakeRunner{out: "ok"}
+	h2 := Deps{Agent: m, WS: f.ws, Workdir: "/tmp/wd", Run: fr2, Approvals: f.approvals,
+		Scopes: map[scopes.Scope]scopes.Effect{scopes.Exec: scopes.Ask, scopes.Network: scopes.Auto}}.Handler()
+	if _, isErr := callAsync(h2, "run", `{"program":"go","args":["test"]}`, f)(t); isErr {
+		t.Fatal("run refused (network auto)")
+	}
+	if !fr2.network {
+		t.Fatal("network=auto must allow the network")
 	}
 }

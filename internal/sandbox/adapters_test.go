@@ -201,3 +201,31 @@ func TestGuardExecWrapsThroughAdapter(t *testing.T) {
 		t.Fatalf("wrapped = %v", wrapped)
 	}
 }
+
+func TestNetworkPosture(t *testing.T) {
+	seat, err := NewSeatbeltNetwork("sandbox-exec", []string{"/ws"}, nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(seat.Profile(), "(deny network*)") {
+		t.Fatalf("deny profile missing: %s", seat.Profile())
+	}
+	argv, err := seat.WrapNetwork([]string{"go", "test"}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.Join(argv, " "), "(allow network*)") {
+		t.Fatalf("WrapNetwork(allow) argv = %v", argv)
+	}
+
+	bw, err := NewBubblewrapNetwork("bwrap", []string{"/ws"}, nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a, _ := bw.Wrap([]string{"x"}); !strings.Contains(strings.Join(a, " "), "--unshare-net") {
+		t.Fatalf("bwrap deny argv = %v", a)
+	}
+	if a, _ := bw.WrapNetwork([]string{"x"}, true); !strings.Contains(strings.Join(a, " "), "--share-net") {
+		t.Fatalf("bwrap allow argv = %v", a)
+	}
+}
