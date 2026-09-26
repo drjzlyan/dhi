@@ -122,3 +122,24 @@ func TestAgentToolsFallbackWarns(t *testing.T) {
 		t.Fatalf("warn row = %+v", got[0])
 	}
 }
+
+func TestAuthorityReportsOverrides(t *testing.T) {
+	root := wsFixture(t)
+	doc := "schema = 4\nname = \"S\"\nmodel = \"m\"\nengine = \"cli:claude\"\n[scopes]\nwrite = \"deny\"\n"
+	if err := os.WriteFile(filepath.Join(root, workspace.DirAgents, "scout.toml"), []byte(doc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c, ok := statusOf(Authority(root), "authority")
+	if !ok || c.Status != OK || !strings.Contains(c.Detail, "scout: write=deny") {
+		t.Fatalf("authority = %+v (found=%v)", c, ok)
+	}
+}
+
+func TestAuthorityDefaults(t *testing.T) {
+	root := wsFixture(t)
+	writeAgent(t, root, "scout", "claude", "")
+	c, ok := statusOf(Authority(root), "authority")
+	if !ok || !strings.Contains(c.Detail, "default capability scopes") {
+		t.Fatalf("authority = %+v (found=%v)", c, ok)
+	}
+}

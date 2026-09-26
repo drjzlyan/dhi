@@ -75,7 +75,8 @@ sandbox (network deny-by-default, no free-form shell).
   flag). Team layering landed (org `[teams.<slug>.scopes]`, preserved on
   update, resolved default→team→manifest); workspace scopes via settings `[scopes]`
   (resolved default→workspace→team→manifest); grant-memory and the
-  Settings scopes editor remain.
+  Settings scopes editor remain. Doctor gains an `authority` row listing
+  each agent's non-default effects.
 - Every mutating scope crosses the single approvals queue; answers
   `grant once` / `grant always` / `deny`; grant-memory is workspace-
   scoped and auditable. Every decision is recorded in the run.

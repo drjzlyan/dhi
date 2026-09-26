@@ -289,7 +289,7 @@ catalog).
    rename applies a WorkspaceEdit; all off-loop/async) — M15 P1 catalog
    complete. P2 core landed (`internal/agentkit/scopes`, manifest
    schema 4 `[scopes]`, scope-driven dhitools gate). Team layering landed (org team scopes). Workspace scopes landed (settings `[scopes]`, resolved
-   default→workspace→team→manifest). Next: P2 grant-memory + Settings
+   default→workspace→team→manifest). Doctor `authority` row added. Next: P2 grant-memory + Settings
    scopes editor, then P3
    MCP-for-all + sandbox. Decisions:
    `run` uses a fixed safe set now + per-agent commands at M16;

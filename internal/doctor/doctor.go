@@ -27,6 +27,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/dhitools"
 	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
 	"github.com/drjzlyan/dhi/internal/agentkit/org"
+	"github.com/drjzlyan/dhi/internal/agentkit/scopes"
 	"github.com/drjzlyan/dhi/internal/gitcore"
 	"github.com/drjzlyan/dhi/internal/settings"
 	"github.com/drjzlyan/dhi/internal/toolchain"
@@ -72,6 +73,7 @@ func Run(toolRoot, wsRoot string) Report {
 	r.Checks = append(r.Checks, Config(wsRoot)...)
 	r.Checks = append(r.Checks, Agents(wsRoot)...)
 	r.Checks = append(r.Checks, AgentTools(wsRoot)...)
+	r.Checks = append(r.Checks, Authority(wsRoot)...)
 	r.Checks = append(r.Checks, Standards(wsRoot)...)
 	r.Checks = append(r.Checks, Runtimes()...)
 	r.Checks = append(r.Checks, Tasks(wsRoot)...)
@@ -245,6 +247,78 @@ func Identity(toolRoot string) []Check {
 	}
 	return []Check{{Name: "identity", Status: OK,
 		Detail: fmt.Sprintf("%s <%s>", id.Name, id.Email)}}
+}
+
+// Authority reports each agent's effective capability scopes (F-030
+// P2): default → workspace (settings [scopes]) → team → manifest. OK
+// always; the detail lists non-default effects by agent.
+func Authority(wsRoot string) []Check {
+	if wsRoot == "" {
+		return nil
+	}
+	roster, err := manifest.LoadDir(filepath.Join(wsRoot, workspace.DirAgents))
+	if err != nil || len(roster) == 0 {
+		return nil
+	}
+	wsScopes := scopes.Set{}
+	if best, _ := settings.LoadBestEffort("", filepath.Join(wsRoot, ".dhi", "config.toml")); true {
+		for name, eff := range best.Scopes {
+			sc, e1 := scopes.ParseScope(name)
+			e, e2 := scopes.ParseEffect(eff)
+			if e1 == nil && e2 == nil {
+				wsScopes[sc] = e
+			}
+		}
+	}
+	var company *org.Org
+	if o, lerr := org.Load(wsRoot); lerr == nil {
+		company = o
+	}
+	def := scopes.Default()
+	order := []scopes.Scope{scopes.Read, scopes.Write, scopes.Exec, scopes.Network, scopes.Git, scopes.Push, scopes.Admin}
+	var overrides []string
+	for _, a := range roster {
+		layers := []scopes.Set{def}
+		if len(wsScopes) > 0 {
+			layers = append(layers, wsScopes)
+		}
+		if company != nil {
+			for _, slug := range company.TeamsOf(a.ID) {
+				t, ok := company.Team(slug)
+				if !ok || len(t.Scopes) == 0 {
+					continue
+				}
+				l := scopes.Set{}
+				for n, e := range t.Scopes {
+					sc, e1 := scopes.ParseScope(n)
+					ef, e2 := scopes.ParseEffect(e)
+					if e1 == nil && e2 == nil {
+						l[sc] = ef
+					}
+				}
+				layers = append(layers, l)
+			}
+		}
+		if len(a.Scopes) > 0 {
+			layers = append(layers, a.Scopes)
+		}
+		eff := scopes.Resolve(layers...)
+		var parts []string
+		for _, sc := range order {
+			if eff.EffectFor(sc) != def.EffectFor(sc) {
+				parts = append(parts, string(sc)+"="+string(eff.EffectFor(sc)))
+			}
+		}
+		if len(parts) > 0 {
+			overrides = append(overrides, a.ID+": "+strings.Join(parts, " "))
+		}
+	}
+	if len(overrides) == 0 {
+		return []Check{{Name: "authority", Status: OK,
+			Detail: "all agents use default capability scopes"}}
+	}
+	return []Check{{Name: "authority", Status: OK,
+		Detail: "non-default scopes — " + strings.Join(overrides, "; ")}}
 }
 
 // Workspace probes the DHI workspace at root (skipped with a warning
