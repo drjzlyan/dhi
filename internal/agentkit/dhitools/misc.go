@@ -42,7 +42,6 @@ func (d Deps) miscTools() []tool {
 				Description: "Run an allowlisted hermetic command (go build/test/vet/fmt, rg). No shell. Args: {\"program\":\"go\",\"args\":[\"test\",\"./...\"]}. Mutating: crosses approvals.",
 				InputSchema: json.RawMessage(`{"type":"object","required":["program"],"properties":{"program":{"type":"string"},"args":{"type":"array","items":{"type":"string"}}},"additionalProperties":false}`),
 			},
-			mutate: true,
 			parse: func(raw json.RawMessage) (any, error) {
 				var a struct {
 					Program string   `json:"program"`

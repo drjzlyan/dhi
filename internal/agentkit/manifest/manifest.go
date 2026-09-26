@@ -20,6 +20,7 @@ import (
 	"github.com/BurntSushi/toml"
 
 	"github.com/drjzlyan/dhi/internal/agentkit/clirun"
+	"github.com/drjzlyan/dhi/internal/agentkit/scopes"
 	"github.com/drjzlyan/dhi/internal/sandbox"
 )
 
@@ -28,7 +29,7 @@ import (
 // schema 2 (role/skills, `runtime`) for back-compat — such files load
 // with their engine derived from `runtime` — but Marshal always emits
 // v3.
-const SchemaVersion = 3
+const SchemaVersion = 4
 
 // EngineCLIPrefix marks a CLI engine declaration: the host CLI is the
 // inference engine (ADR-0019).
@@ -128,6 +129,10 @@ type Agent struct {
 	Engine  string // "cli:<name>" or "" (inherit default)
 	Runtime string // resolved CLI name ("claude"); "" = inherit default
 
+	// Scopes is the agent's declared capability set (F-030 P2); nil/empty
+	// falls back to scopes.Default() at enforcement time.
+	Scopes scopes.Set
+
 	Timeout time.Duration // max wall time per run; 0 = no limit
 	Retries int           // retries on transient CLI failure; 0 = none
 
@@ -144,18 +149,19 @@ func (a *Agent) UsesCLIRuntime() bool { return clirun.IsCLIRuntime(a.Runtime) }
 
 // file is the on-disk TOML shape of one agent manifest.
 type file struct {
-	Schema    int      `toml:"schema"`
-	Name      string   `toml:"name"`
-	Model     string   `toml:"model"`
-	System    string   `toml:"system"`
-	Tools     []string `toml:"tools"`
-	Role      string   `toml:"role"`
-	Skills    []string `toml:"skills"`
-	PolicyRaw string   `toml:"policy_json"`
-	Engine    string   `toml:"engine"`
-	Runtime   string   `toml:"runtime"`
-	Timeout   string   `toml:"timeout"`
-	Retries   int      `toml:"retries"`
+	Schema    int               `toml:"schema"`
+	Name      string            `toml:"name"`
+	Model     string            `toml:"model"`
+	System    string            `toml:"system"`
+	Tools     []string          `toml:"tools"`
+	Role      string            `toml:"role"`
+	Skills    []string          `toml:"skills"`
+	PolicyRaw string            `toml:"policy_json"`
+	Engine    string            `toml:"engine"`
+	Scopes    map[string]string `toml:"scopes"`
+	Runtime   string            `toml:"runtime"`
+	Timeout   string            `toml:"timeout"`
+	Retries   int               `toml:"retries"`
 }
 
 // Parse decodes and strictly validates one agent manifest. The id comes
@@ -235,6 +241,14 @@ func Parse(id string, data []byte) (*Agent, error) {
 		}
 		a.policy = p
 	}
+	declared, err := parseScopes(f.Scopes)
+	if err != nil {
+		return nil, fmt.Errorf("agentkit/manifest: %s: %w", id, err)
+	}
+	a.Scopes = declared
+	if f.Schema < 4 && len(f.Scopes) > 0 {
+		return nil, fmt.Errorf("agentkit/manifest: %s: scopes require schema = %d", id, SchemaVersion)
+	}
 	cliName, err := resolveEngine(f)
 	if err != nil {
 		return nil, fmt.Errorf("agentkit/manifest: %s: %w", id, err)
@@ -254,6 +268,26 @@ func Parse(id string, data []byte) (*Agent, error) {
 		return nil, fmt.Errorf("agentkit/manifest: %s: retries %d must not be negative", id, a.Retries)
 	}
 	return a, nil
+}
+
+// parseScopes validates the manifest's declared scope effects.
+func parseScopes(raw map[string]string) (scopes.Set, error) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	out := scopes.Set{}
+	for name, eff := range raw {
+		sc, err := scopes.ParseScope(name)
+		if err != nil {
+			return nil, err
+		}
+		e, err := scopes.ParseEffect(eff)
+		if err != nil {
+			return nil, err
+		}
+		out[sc] = e
+	}
+	return out, nil
 }
 
 // resolveEngine maps the on-disk engine/runtime declarations to a
@@ -347,6 +381,12 @@ func Marshal(a *Agent) ([]byte, error) {
 	case a.Runtime != "":
 		f.Engine = EngineString(a.Runtime)
 	}
+	if len(a.Scopes) > 0 {
+		f.Scopes = map[string]string{}
+		for sc, eff := range a.Scopes {
+			f.Scopes[string(sc)] = string(eff)
+		}
+	}
 	f.Retries = a.Retries
 	if a.Timeout > 0 {
 		f.Timeout = a.Timeout.String()
@@ -382,10 +422,23 @@ func Marshal(a *Agent) ([]byte, error) {
 		strings.Join(back.Tools, ",") != strings.Join(a.Tools, ",") ||
 		back.Role != a.Role || strings.Join(back.Skills, ",") != strings.Join(a.Skills, ",") ||
 		back.Engine != wantEngine || back.Runtime != wantRuntime ||
+		!scopesEqual(back.Scopes, a.Scopes) ||
 		back.Timeout != a.Timeout || back.Retries != a.Retries {
 		return nil, fmt.Errorf("agentkit/manifest: %s: marshal round-trip mismatch", a.ID)
 	}
 	return data.Bytes(), nil
+}
+
+func scopesEqual(a, b scopes.Set) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k, v := range a {
+		if b[k] != v {
+			return false
+		}
+	}
+	return true
 }
 
 // WriteFile validates-then-writes <dir>/<id>.toml atomically. The file

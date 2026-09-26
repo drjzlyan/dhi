@@ -186,7 +186,6 @@ func (d Deps) fsTools() []tool {
 			Description: "Write a workspace file (create or overwrite; parent dirs are created). Args: {\"path\": \"<member>/<rel-path>\", \"content\": \"...\"}. Mutating: crosses approvals.",
 			InputSchema: json.RawMessage(`{"type":"object","required":["path","content"],"properties":{"path":{"type":"string"},"content":{"type":"string"}},"additionalProperties":false}`),
 		},
-		mutate: true,
 		parse: func(raw json.RawMessage) (any, error) {
 			var a struct {
 				Path    string `json:"path"`
@@ -224,7 +223,6 @@ func (d Deps) fsTools() []tool {
 			Description: "Replace exact text in a workspace file. Args: {\"path\": \"<member>/<rel-path>\", \"old\": \"...\", \"new\": \"...\", \"replace_all\": false}. Refuses when `old` is absent or ambiguous unless replace_all. Mutating: crosses approvals.",
 			InputSchema: json.RawMessage(`{"type":"object","required":["path","old","new"],"properties":{"path":{"type":"string"},"old":{"type":"string"},"new":{"type":"string"},"replace_all":{"type":"boolean"}},"additionalProperties":false}`),
 		},
-		mutate: true,
 		parse: func(raw json.RawMessage) (any, error) {
 			var a struct {
 				Path       string `json:"path"`

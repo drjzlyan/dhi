@@ -103,7 +103,6 @@ func (d Deps) editorTools() []tool {
 				Description: "Replace exact text in a file through the editor (live buffer when open, one undo step). Args: {\"path\": \"<member>/<rel>\", \"old\": \"...\", \"new\": \"...\", \"replace_all\": false}. Refuses absent/ambiguous matches. Mutating: crosses approvals.",
 				InputSchema: json.RawMessage(`{"type":"object","required":["path","old","new"],"properties":{"path":{"type":"string"},"old":{"type":"string"},"new":{"type":"string"},"replace_all":{"type":"boolean"}},"additionalProperties":false}`),
 			},
-			mutate: true,
 			parse: func(raw json.RawMessage) (any, error) {
 				var a struct {
 					Path       string `json:"path"`
@@ -150,14 +149,13 @@ type lspPlan struct {
 // lspSpecs are the language-server tools served on the ADR-0023 seam.
 var lspSpecs = []struct {
 	name, op, desc string
-	mutate         bool
 	needsArg       bool
 }{
-	{"lsp_hover", "hover", "Hover documentation at a position. Args: {\"path\",\"line\",\"col\"} (0-based).", false, false},
-	{"lsp_definition", "definition", "Go-to-definition. Args: {\"path\",\"line\",\"col\"}.", false, false},
-	{"lsp_references", "references", "Find references. Args: {\"path\",\"line\",\"col\"}.", false, false},
-	{"lsp_rename", "rename", "Rename the symbol at a position (applies a WorkspaceEdit). Args: {\"path\",\"line\",\"col\",\"new_name\"}. Mutating: crosses approvals.", true, true},
-	{"lsp_code_action", "code_action", "List code actions at a position. Args: {\"path\",\"line\",\"col\"}.", false, false},
+	{"lsp_hover", "hover", "Hover documentation at a position. Args: {\"path\",\"line\",\"col\"} (0-based).", false},
+	{"lsp_definition", "definition", "Go-to-definition. Args: {\"path\",\"line\",\"col\"}.", false},
+	{"lsp_references", "references", "Find references. Args: {\"path\",\"line\",\"col\"}.", false},
+	{"lsp_rename", "rename", "Rename the symbol at a position (applies a WorkspaceEdit). Args: {\"path\",\"line\",\"col\",\"new_name\"}. Mutating: crosses approvals.", true},
+	{"lsp_code_action", "code_action", "List code actions at a position. Args: {\"path\",\"line\",\"col\"}.", false},
 }
 
 func (d Deps) lspTools() []tool {
@@ -173,7 +171,6 @@ func (d Deps) lspTools() []tool {
 				Description: spec.desc,
 				InputSchema: json.RawMessage(`{"type":"object","required":["path","line","col"],"properties":{"path":{"type":"string"},"line":{"type":"integer"},"col":{"type":"integer"},"new_name":{"type":"string"}},"additionalProperties":false}`),
 			},
-			mutate: spec.mutate,
 			parse: func(raw json.RawMessage) (any, error) {
 				var a struct {
 					Path    string `json:"path"`

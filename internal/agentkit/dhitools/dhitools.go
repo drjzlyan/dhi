@@ -23,6 +23,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/knowledge"
 	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
 	"github.com/drjzlyan/dhi/internal/agentkit/memory"
+	"github.com/drjzlyan/dhi/internal/agentkit/scopes"
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
 	"github.com/drjzlyan/dhi/internal/gitcore"
 	"github.com/drjzlyan/dhi/internal/ideation"
@@ -50,6 +51,7 @@ type Deps struct {
 	Sessions  *ideation.Store      // ideation read tools; nil omits them
 	Run       CommandRunner        // allowlisted command runner; nil refuses `run`
 	Editor    EditorAPI            // app-owned editor seam (ADR-0023); nil refuses editor tools
+	Scopes    scopes.Set           // capability effects; nil = scopes.Default()
 
 	// Channel/Thread are the trigger context: channel_read/post
 	// default to the thread the turn started from.
@@ -67,10 +69,9 @@ type Deps struct {
 // refused without parking a pointless human prompt (F-028: the y/n is
 // for real effects, never for schema errors); exec runs after.
 type tool struct {
-	info   mcp.ToolInfo
-	mutate bool // crosses approvals
-	parse  func(raw json.RawMessage) (any, error)
-	exec   func(ctx context.Context, decoded any) (string, error)
+	info  mcp.ToolInfo
+	parse func(raw json.RawMessage) (any, error)
+	exec  func(ctx context.Context, decoded any) (string, error)
 }
 
 // servedSlugs is the F-028 IDE-tools surface. The runtime turns serving
@@ -166,16 +167,26 @@ func (h *handler) CallTool(ctx context.Context, name string, raw json.RawMessage
 		if perr != nil {
 			return perr.Error(), true, nil // schema refusal, no approval spent
 		}
-		if t.mutate {
+		// Capability scope decides enforcement (F-030 P2): deny refuses
+		// by name, ask crosses approvals, auto runs. A nil set is the
+		// default (reads free, mutations ask, dangerous denied).
+		set := h.deps.Scopes
+		if set == nil {
+			set = scopes.Default()
+		}
+		sc := scopes.ToolScope(name)
+		switch set.EffectFor(sc) {
+		case scopes.Deny:
+			return "tool " + name + " denied by capability scope (" + string(sc) + ")", true, nil
+		case scopes.Ask:
 			if h.deps.Approvals == nil {
 				return "tool " + name + " unavailable: approvals queue not configured", true, nil
 			}
-			// The human's y/n: blocks until resolved or ctx ends —
-			// the TUI answers through the same queue as every other
-			// gated op (F-028 Part A). A denial keeps its named
-			// reason as the tool's content.
+			// The human's y/n: blocks until resolved or ctx ends — the
+			// TUI answers through the same queue as every other gated op
+			// (F-028 Part A). A denial keeps its named reason.
 			if err := h.deps.Approvals.Ask(ctx, h.deps.Agent.ID, sandbox.OpExec,
-				"tool "+name, "agent-requested DHI tool"); err != nil {
+				"tool "+name, "agent-requested DHI tool ("+string(sc)+")"); err != nil {
 				return err.Error(), true, nil
 			}
 		}
@@ -235,7 +246,6 @@ func (d Deps) taskTools() []tool {
 			Description: "Create a task card. Args: {\"slug\": \"short-kebab-id\", \"title\": \"what and why\"}.",
 			InputSchema: json.RawMessage(`{"type":"object","required":["slug","title"],"properties":{"slug":{"type":"string"},"title":{"type":"string"}},"additionalProperties":false}`),
 		},
-		mutate: true,
 		parse: func(raw json.RawMessage) (any, error) {
 			var a struct {
 				Slug  string `json:"slug"`
@@ -263,7 +273,6 @@ func (d Deps) taskTools() []tool {
 			Description: "Move a task card to another lane. Args: {\"slug\": \"...\", \"status\": \"backlog|active|in-review|done\"}.",
 			InputSchema: json.RawMessage(`{"type":"object","required":["slug","status"],"properties":{"slug":{"type":"string"},"status":{"type":"string"}},"additionalProperties":false}`),
 		},
-		mutate: true,
 		parse: func(raw json.RawMessage) (any, error) {
 			var a struct {
 				Slug   string `json:"slug"`
@@ -291,7 +300,6 @@ func (d Deps) taskTools() []tool {
 			Description: "Assign a task card to an agent id (or clear with \"\"). Args: {\"slug\": \"...\", \"assignee\": \"...\"}.",
 			InputSchema: json.RawMessage(`{"type":"object","required":["slug","assignee"],"properties":{"slug":{"type":"string"},"assignee":{"type":"string"}},"additionalProperties":false}`),
 		},
-		mutate: true,
 		parse: func(raw json.RawMessage) (any, error) {
 			var a struct {
 				Slug     string `json:"slug"`
@@ -364,7 +372,6 @@ func (d Deps) kbTools() []tool {
 			Description: "Contribute a knowledge base entry (lands in the review queue; the human approves publication). Args: {\"title\": \"...\", \"body\": \"...\", \"tags\": [\"...\"]}.",
 			InputSchema: json.RawMessage(`{"type":"object","required":["title","body"],"properties":{"title":{"type":"string"},"body":{"type":"string"},"tags":{"type":"array","items":{"type":"string"}}},"additionalProperties":false}`),
 		},
-		mutate: true,
 		parse: func(raw json.RawMessage) (any, error) {
 			var a struct {
 				Title string   `json:"title"`
@@ -536,7 +543,6 @@ func (d Deps) channelTools() []tool {
 			Description: "Post a message to a channel (default: this turn's thread). Args: {\"text\": \"...\", \"channel\": \"...\" (optional)}.",
 			InputSchema: json.RawMessage(`{"type":"object","required":["text"],"properties":{"text":{"type":"string"},"channel":{"type":"string"}},"additionalProperties":false}`),
 		},
-		mutate: true,
 		parse: func(raw json.RawMessage) (any, error) {
 			var a struct {
 				Text    string `json:"text"`

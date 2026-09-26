@@ -761,9 +761,12 @@ gemini join once installed + MCP-verified.
       and the LSP verbs, all via the ADR-0023 seam, 2026-09-26. Catalog
       complete: per-agent `run` commands land with M16; `git_push`
       dropped in favor of the M16 PR step
-- [ ] P2 — capability scopes (`read/write/exec/network/git/push/admin` ×
+- [~] P2 — capability scopes (`read/write/exec/network/git/push/admin` ×
       auto|ask|deny, manifest→team→workspace) + grant-memory approvals;
       every mutation recorded in the run
+      — core landed 2026-09-26: scopes package + manifest schema 4
+      `[scopes]` + scope-driven dhitools gate; team/workspace layering,
+      grant-memory, Settings editor remain
 - [ ] P3 — MCP tool serving verified for **all six** adapters; sandbox
       tightened (network deny-by-default, declared origins, exec
       sandboxed); doctor `agent-tools` row with the containment caveat

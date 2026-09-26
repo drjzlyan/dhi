@@ -122,7 +122,7 @@ func TestParseErrors(t *testing.T) {
 	}{
 		{"bad id", "Big-Agent", "schema = 1\nname = \"n\"\nmodel = \"m\"\n", "bad agent id"},
 		{"unknown key", "a", "schema = 1\nname = \"n\"\nmodel = \"m\"\ntemperament = \"calm\"\n", "unknown key"},
-		{"bad schema", "a", "schema = 4\nname = \"n\"\nmodel = \"m\"\n", "schema 4"},
+		{"bad schema", "a", "schema = 5\nname = \"n\"\nmodel = \"m\"\n", "schema 5"},
 		{"missing name", "a", "schema = 1\nmodel = \"m\"\n", "name is required"},
 		{"missing model", "a", "schema = 1\nname = \"n\"\n", "model is required"},
 		{"missing runtime", "a", "schema = 1\nname = \"n\"\nmodel = \"m\"\n", "runtime"},
@@ -291,4 +291,52 @@ func TestLoadDirMissing(t *testing.T) {
 	if len(roster) != 0 {
 		t.Errorf("roster = %d, want 0", len(roster))
 	}
+}
+
+func TestScopesSchema4(t *testing.T) {
+	t.Run("parse effects", func(t *testing.T) {
+		doc := "schema = 4\nname = \"E\"\nmodel = \"m\"\nengine = \"cli:claude\"\n[scopes]\nwrite = \"deny\"\npush = \"auto\"\n"
+		a, err := Parse("e", []byte(doc))
+		if err != nil {
+			t.Fatalf("Parse: %v", err)
+		}
+		if a.Scopes["write"] != "deny" || a.Scopes["push"] != "auto" {
+			t.Fatalf("scopes = %v", a.Scopes)
+		}
+	})
+	t.Run("bad scope refuses", func(t *testing.T) {
+		doc := "schema = 4\nname = \"E\"\nmodel = \"m\"\nengine = \"cli:claude\"\n[scopes]\nroot = \"auto\"\n"
+		if _, err := Parse("e", []byte(doc)); err == nil || !strings.Contains(err.Error(), "scope") {
+			t.Fatalf("err = %v", err)
+		}
+	})
+	t.Run("bad effect refuses", func(t *testing.T) {
+		doc := "schema = 4\nname = \"E\"\nmodel = \"m\"\nengine = \"cli:claude\"\n[scopes]\nwrite = \"maybe\"\n"
+		if _, err := Parse("e", []byte(doc)); err == nil || !strings.Contains(err.Error(), "effect") {
+			t.Fatalf("err = %v", err)
+		}
+	})
+	t.Run("scopes require schema 4", func(t *testing.T) {
+		doc := "schema = 3\nname = \"E\"\nmodel = \"m\"\nengine = \"cli:claude\"\n[scopes]\nwrite = \"deny\"\n"
+		if _, err := Parse("e", []byte(doc)); err == nil || !strings.Contains(err.Error(), "schema") {
+			t.Fatalf("err = %v", err)
+		}
+	})
+	t.Run("marshal round-trips scopes", func(t *testing.T) {
+		a, err := Parse("e", []byte("schema = 4\nname = \"E\"\nmodel = \"m\"\nengine = \"cli:claude\"\n[scopes]\nwrite = \"deny\"\n"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, err := Marshal(a)
+		if err != nil {
+			t.Fatalf("Marshal: %v", err)
+		}
+		back, err := Parse("e", data)
+		if err != nil {
+			t.Fatalf("Parse(marshal): %v", err)
+		}
+		if back.Scopes["write"] != "deny" {
+			t.Fatalf("round-trip scopes = %v", back.Scopes)
+		}
+	})
 }

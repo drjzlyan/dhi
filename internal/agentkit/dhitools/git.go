@@ -177,7 +177,6 @@ func (d Deps) gitTools() []tool {
 				Description: "Stage all changes and commit them as the user's git identity. Args: {\"message\": \"...\"}. Mutating: crosses approvals. Refuses with nothing staged.",
 				InputSchema: json.RawMessage(`{"type":"object","required":["message"],"properties":{"message":{"type":"string"}},"additionalProperties":false}`),
 			},
-			mutate: true,
 			parse: func(raw json.RawMessage) (any, error) {
 				var a struct {
 					Message string `json:"message"`

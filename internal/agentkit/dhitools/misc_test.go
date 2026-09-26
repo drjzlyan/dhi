@@ -3,6 +3,7 @@ package dhitools
 import (
 	"context"
 	"errors"
+	"github.com/drjzlyan/dhi/internal/agentkit/scopes"
 	"strings"
 	"testing"
 )
@@ -127,5 +128,31 @@ func TestAskHumanRefusesWithoutChannel(t *testing.T) {
 	out, isErr := call(h, t, "ask_human", `{"question":"hi"}`)
 	if !isErr || !strings.Contains(out, "channel") {
 		t.Fatalf("no-channel ask = %q isErr=%v", out, isErr)
+	}
+}
+
+func TestScopeDenyRefusesByName(t *testing.T) {
+	f, m := newFixture(t, "task_create")
+	h := Deps{Agent: m, WS: f.ws, Tasks: f.tasks, Approvals: f.approvals,
+		Scopes: map[scopes.Scope]scopes.Effect{scopes.Write: scopes.Deny},
+	}.Handler()
+	out, isErr := call(h, t, "task_create", `{"slug":"x","title":"y"}`)
+	if !isErr || !strings.Contains(out, "denied by capability scope") {
+		t.Fatalf("deny = %q isErr=%v", out, isErr)
+	}
+	if len(f.approvals.List()) != 0 {
+		t.Fatal("denied tool parked an approval")
+	}
+}
+
+func TestScopeAutoSkipsApproval(t *testing.T) {
+	f, m := newFixture(t, "write")
+	h := Deps{Agent: m, WS: f.ws, Approvals: f.approvals,
+		Scopes: map[scopes.Scope]scopes.Effect{scopes.Write: scopes.Auto},
+	}.Handler()
+	// No approval parked: the call returns synchronously.
+	out, isErr := call(h, t, "write", `{"path":"api/auto.go","content":"x\n"}`)
+	if isErr {
+		t.Fatalf("auto write refused: %s", out)
 	}
 }
