@@ -644,7 +644,7 @@ func writeCard(path string, t Task) error {
 		ChangeSets: t.ChangeSets,
 		Runs:       t.Runs,
 		Workflow:   t.Workflow, TestsPass: t.TestsPass,
-		Bypasses: t.Bypasses,
+		Bypasses:  t.Bypasses,
 		CreatedAt: t.CreatedAt, UpdatedAt: t.UpdatedAt,
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
