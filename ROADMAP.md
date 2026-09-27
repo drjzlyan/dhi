@@ -789,14 +789,17 @@ tests-pass-before-PR) and an exception-approval review gate.
       (landed 2026-09-26: P0 store + builtin; P1 resolve
       agent→team→workspace→builtin with manifest schema 5 `workflow`
       and org team `workflow`; per-task active slug recorded)
-- [~] Builtin `feature` workflow: worktree → implement (TDD guidance) →
+- [x] Builtin `feature` workflow: worktree → implement (TDD guidance) →
       test → commit → push → open PR → review; hard blocks + recorded
-      bypasses. Landed: worktree-before-commit and tests-before-PR
-      enforced at the git_commit and pr_open seams (durable task
-      state); pending: exception-approval review bypass routed through
-      the approvals queue and recorded in the run.
-- [ ] Settings WORKFLOWS section + board active-step display; packs may
-      ship workflows. (doctor `workflows` row landed.)
+      bypasses. (worktree-before-commit and tests-before-PR enforced at
+      the git_commit and pr_open seams on durable task state; the review
+      exception-approval routes through the approvals queue and records
+      a `Bypass{Step,Reason,At}` on the card.)
+- [x] Settings WORKFLOWS section + board active-step display; packs may
+      ship workflows; doctor `workflows` row. (Settings browses/authors
+      (strict form)/sets the workspace default/previews; the board shows
+      the active workflow + next enforced step; packs ship validated,
+      provenance-tracked workflows; doctor reports malformed/dangling.)
 
 ## M17 — Cross-project work & dependency graph (F-032)
 

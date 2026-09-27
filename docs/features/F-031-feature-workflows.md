@@ -51,15 +51,20 @@ a suggestion the agent may skip.
       `toolbridge` prOpen calls `Bridge.Gate(slug,"pr")`; progress is
       durable task state — `Worktree` from the card's changesets,
       `TestsPass` set when the served `run` sees a passing `go test`.)
-- [ ] An `exception-approval` step routes through the approvals queue and
-      records the bypass + reason in the run. (Not yet: the `review`
-      step's exception-approval gate is modelled but no seam consumes
-      it.)
+- [x] An `exception-approval` step routes through the approvals queue and
+      records the bypass + reason in the run. (P3: completing a task
+      crosses the `review` exception — the bypass routes through
+      `Bridge.approve` and is recorded as a `tasks.Bypass{Step,Reason,At}`
+      on the card, which also clears the step thereafter. A declined
+      bypass refuses and never completes the task.)
 - [x] Workflows layer builtin→workspace→team→agent; a malformed
       definition refuses by name. (P0/P1: `workflow.Resolve` precedence
       agent manifest → org teams → `.dhi/workflows.toml` default →
       builtin; malformed refuses at `Turn` and at `activeWorkflow`.)
-- [ ] Settings authors a workflow through a strict round-trip form.
+- [x] Settings authors a workflow through a strict round-trip form. (P3:
+      WORKFLOWS section browses builtin/local, authors a new definition
+      via `n` (validated by `workflow.Save` before it lands), sets/clears
+      the workspace default via `d`, and previews steps via `v`.)
 - [x] `doctor` warns on malformed workflows, dangling seams, and tasks
       whose active workflow is missing. (P2: `Workflows(wsRoot)` row.)
 - [x] `make verify` green per phase.

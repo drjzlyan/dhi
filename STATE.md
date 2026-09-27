@@ -58,10 +58,23 @@ catalog).
   set when the served `run` observes a passing `go test` (OnRun →
   `tasks.SetTestsPass`). `doctor` gains a `workflows` row (malformed
   FAIL; dangling agent/team/task slug WARN).
-- **Pending (P3 surface)**: Settings WORKFLOWS authoring form, board
-  active-step display, packs shipping workflows, and the
-  `exception-approval` review bypass routed through the approvals queue
-  + recorded in the run.
+- **P3 landed (all four M16 items complete)**:
+  - exception-approval review bypass: completing a task (`task_status →
+    done`) crosses the `review` step; the bypass routes through the
+    approvals queue and is recorded as `tasks.Bypass{Step,Reason,At}`
+    (declining refuses). `Progress.Reviewed` = any recorded bypass.
+  - packs ship workflows: `pack.toml` `workflows = [...]`, validated
+    with `workflow.Parse` before any file lands, written to
+    `.dhi/workflows/`, provenance-tracked, removed on uninstall,
+    conflict-refused against non-owned files.
+  - Settings WORKFLOWS section: browse builtin/local, `n` authors a new
+    definition via the strict form (`workflow.Save` validates), `d`
+    toggles the workspace default, `v` previews steps. New goldens
+    regenerated (rail entry).
+  - board: `boardWorkflowLine` shows the task's active workflow + next
+    enforced step (or complete/missing).
+  - `workflow.Save`/`SaveDefault`/`NewDefinition`/`NextStep`/`Parse`
+    write+inspect API added.
 - `make verify` green (known flakes unchanged: TestCLIRuntimeEndToEnd,
   TestMemoryAndKBReachTheSystemBlock, clirun TestDetect). Untracked
   `.dhi/agents/dev/` — do NOT commit.
