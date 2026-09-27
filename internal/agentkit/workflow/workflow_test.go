@@ -224,3 +224,40 @@ func TestNextStep(t *testing.T) {
 		t.Fatalf("complete workflow still reports a step: %+v", s)
 	}
 }
+
+func TestSaveAndRoundTrip(t *testing.T) {
+	root := t.TempDir()
+	d := NewDefinition("hotfix", "Hotfix")
+	if err := Save(root, d); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	back, err := Load(root, "hotfix")
+	if err != nil {
+		t.Fatalf("Load(saved): %v", err)
+	}
+	if back.Slug != "hotfix" || back.Title != "Hotfix" || len(back.Steps) != 1 {
+		t.Fatalf("round-trip = %+v", back)
+	}
+	// A malformed definition is never persisted.
+	bad := &Definition{Schema: 1, Slug: "bad", Steps: []Step{{ID: "x", Gate: "block", Bind: "none"}}}
+	if err := Save(root, bad); err == nil {
+		t.Fatal("Save must refuse a malformed definition")
+	}
+	if _, err := os.Stat(filepath.Join(root, Dir, "bad.toml")); !os.IsNotExist(err) {
+		t.Fatal("malformed definition must not land on disk")
+	}
+}
+
+func TestSaveDefaultRoundTrip(t *testing.T) {
+	root := t.TempDir()
+	if err := SaveDefault(root, "feature"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := WorkspaceDefault(root)
+	if err != nil || got != "feature" {
+		t.Fatalf("default = %q %v", got, err)
+	}
+	if err := SaveDefault(root, "Bad Slug"); err == nil {
+		t.Fatal("bad default slug must refuse")
+	}
+}

@@ -24,6 +24,7 @@ const (
 	dlgPackUninstall
 	dlgStdLayer
 	dlgStdPreview
+	dlgWorkflowNew
 	dlgAutoNew
 	dlgAutoDelete
 	dlgLibNew
@@ -104,6 +105,8 @@ func (m *Model) submitDialog() {
 		m.submitStdLayer()
 	case dlgStdPreview:
 		m.showStdPreview()
+	case dlgWorkflowNew:
+		m.submitWorkflowNew()
 	case dlgAutoNew:
 		m.submitAutoNew()
 	case dlgLibNew, dlgLibEdit:

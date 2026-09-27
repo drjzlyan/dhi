@@ -4,8 +4,8 @@
   TEAMS         │   planner            builtin Breaks goals into task cards with accepta │
   PACKS         │   reviewer           builtin Reviews diffs and PRs: correctness, tests │
   STANDARDS     │   scout              builtin Explores the codebase and reports finding │
-  AUTOPILOTS    │   scribe             builtin Keeps channels and tasks documented: summ │
-                │  SKILLS                                                                │
+  WORKFLOWS     │   scribe             builtin Keeps channels and tasks documented: summ │
+  AUTOPILOTS    │  SKILLS                                                                │
                 │   code-review        builtin A repeatable pass over any diff — correct │
                 │   docs               builtin Writing docs that a newcomer can act on   │
                 │   incident-triage    builtin First response for a failing system — con │

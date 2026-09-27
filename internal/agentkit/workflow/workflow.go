@@ -199,6 +199,82 @@ func Available(root string) ([]string, error) {
 	return sortedSlugs(set), nil
 }
 
+// NewDefinition builds a minimal authoring template: a title and one
+// guidance step. The step is GateWarn/SeamNone so the template validates
+// and can be extended in the file.
+func NewDefinition(slug, title string) *Definition {
+	return &Definition{
+		Schema: SchemaVersion,
+		Slug:   slug,
+		Title:  title,
+		Steps: []Step{{
+			ID: "implement", Title: "Implement",
+			Guidance: "Describe what this workflow's implementation step should do.",
+			Gate:     GateWarn, Bind: SeamNone,
+		}},
+	}
+}
+
+// Save validates and writes a local workflow definition atomically. It
+// refuses a malformed definition, so the UI can never persist one.
+func Save(root string, d *Definition) error {
+	if d == nil || !slugRe.MatchString(d.Slug) {
+		return fmt.Errorf("workflow: bad slug")
+	}
+	if err := validate(d, d.Slug); err != nil {
+		return err
+	}
+	dir := filepath.Join(root, Dir)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("workflow: %w", err)
+	}
+	var buf strings.Builder
+	if err := toml.NewEncoder(&buf).Encode(d); err != nil {
+		return fmt.Errorf("workflow: encode %s: %w", d.Slug, err)
+	}
+	return writeAtomic(filepath.Join(dir, d.Slug+".toml"), []byte(buf.String()))
+}
+
+// SaveDefault writes the workspace default-workflow document (empty slug
+// clears it).
+func SaveDefault(root, slug string) error {
+	slug = strings.TrimSpace(slug)
+	if slug != "" && !slugRe.MatchString(slug) {
+		return fmt.Errorf("workflow: default %q is not a slug", slug)
+	}
+	var buf strings.Builder
+	if err := toml.NewEncoder(&buf).Encode(defaultDoc{Schema: SchemaVersion, Default: slug}); err != nil {
+		return fmt.Errorf("workflow: encode %s: %w", DefaultFile, err)
+	}
+	return writeAtomic(filepath.Join(root, DefaultFile), []byte(buf.String()))
+}
+
+func writeAtomic(path string, data []byte) error {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("workflow: %w", err)
+	}
+	tmp, err := os.CreateTemp(dir, ".workflow-*")
+	if err != nil {
+		return fmt.Errorf("workflow: write: %w", err)
+	}
+	name := tmp.Name()
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(name)
+		return fmt.Errorf("workflow: write: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(name)
+		return fmt.Errorf("workflow: write: %w", err)
+	}
+	if err := os.Rename(name, path); err != nil {
+		_ = os.Remove(name)
+		return fmt.Errorf("workflow: write: %w", err)
+	}
+	return nil
+}
+
 // Parse decodes and validates one workflow definition from raw TOML with
 // the intended filename stem slug (used by packs before a file lands).
 func Parse(slug string, data []byte) (*Definition, error) {

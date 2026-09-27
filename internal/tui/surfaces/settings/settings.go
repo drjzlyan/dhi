@@ -43,6 +43,7 @@ type Model struct {
 	teamCur  int // TEAMS rows
 	packCur  int // PACKS rows
 	stdCur   int // STANDARDS rows
+	wfCur    int // WORKFLOWS rows
 	autoCur  int // AUTOPILOTS rows
 
 	detected map[string]string // runtime name → version ("" = not installed)
@@ -78,6 +79,7 @@ const (
 	secTeams
 	secPacks
 	secStandards
+	secWorkflows
 	secAutopilots
 	secCount
 )
@@ -96,6 +98,8 @@ func (s sectionID) label() string {
 		return "PACKS"
 	case secStandards:
 		return "STANDARDS"
+	case secWorkflows:
+		return "WORKFLOWS"
 	case secAutopilots:
 		return "AUTOPILOTS"
 	default:
@@ -225,6 +229,8 @@ func (m *Model) HandleKey(key string) bool {
 		return m.packsKey(key)
 	case secStandards:
 		return m.standardsKey(key)
+	case secWorkflows:
+		return m.workflowsKey(key)
 	case secAutopilots:
 		return m.autopilotsKey(key)
 	default:
@@ -925,6 +931,8 @@ func (m *Model) sectionPane(w, h int) string {
 		content = m.packsView()
 	case m.sec == secStandards:
 		content = m.standardsView()
+	case m.sec == secWorkflows:
+		content = m.workflowsView()
 	case m.sec == secAutopilots:
 		content = m.autopilotsView()
 	default:
@@ -968,6 +976,8 @@ func (m *Model) sectionHints() []string {
 		sec = []string{"i install", "x uninstall"}
 	case secStandards:
 		sec = []string{"w workspace", "t team", "g agent", "v preview"}
+	case secWorkflows:
+		sec = []string{"n new", "d default", "v preview"}
 	case secAutopilots:
 		sec = []string{"n new", "e arm/pause", "r run now", "x remove"}
 	}
