@@ -88,6 +88,18 @@ func reason(s Step) string {
 	}
 }
 
+// NextStep returns the first enforced (block/exception-approval) step
+// still unmet for p, or false when every enforced step is cleared. Used
+// by the board to show where a task stands.
+func NextStep(d *Definition, p Progress) (Step, bool) {
+	for _, s := range d.Steps {
+		if s.Gate != GateWarn && !Satisfied(s, p) {
+			return s, true
+		}
+	}
+	return Step{}, false
+}
+
 // Render formats a workflow's guidance as the prompt block appended to an
 // agent's system prompt for a feature turn. Only guidance and titles ride
 // here; the gates are enforced at their seams, not promised to the model.

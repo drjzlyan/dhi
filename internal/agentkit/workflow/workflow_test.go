@@ -211,3 +211,16 @@ func TestRenderNamesStepsAndGates(t *testing.T) {
 		}
 	}
 }
+
+func TestNextStep(t *testing.T) {
+	d := Builtin()
+	if s, ok := NextStep(d, Progress{}); !ok || s.ID != "worktree_create" {
+		t.Fatalf("fresh task next step = %+v ok=%v", s, ok)
+	}
+	if s, ok := NextStep(d, Progress{Worktree: true}); !ok || s.ID != "test" {
+		t.Fatalf("post-worktree next step = %+v ok=%v", s, ok)
+	}
+	if s, ok := NextStep(d, Progress{Worktree: true, TestsPass: true, Reviewed: true}); ok {
+		t.Fatalf("complete workflow still reports a step: %+v", s)
+	}
+}

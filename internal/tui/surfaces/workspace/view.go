@@ -8,6 +8,7 @@ import (
 
 	"charm.land/lipgloss/v2"
 
+	"github.com/drjzlyan/dhi/internal/agentkit/workflow"
 	"github.com/drjzlyan/dhi/internal/ansi"
 	"github.com/drjzlyan/dhi/internal/inbox"
 	"github.com/drjzlyan/dhi/internal/tasks"
@@ -286,7 +287,11 @@ func (m *Model) boardBody(w, h int) string {
 	lanesH := h - len(out) // the warning/unavailable rows, if any
 	var detailLines []string
 	if tk, ok := m.boardSelected(g); ok {
-		detailLines = boardDetailLines(tk, wrapW)
+		root := ""
+		if m.ws != nil {
+			root = m.ws.Root
+		}
+		detailLines = boardDetailLines(tk, wrapW, root)
 	}
 	if detailW == 0 && len(detailLines) > 0 {
 		// -1: the lane header row above the Height body rows.
@@ -380,7 +385,7 @@ func clampInt(v, lo, hi int) int {
 // boardDetailLines is the JIRA-issue fact block for the selected card;
 // wrapW word-wraps the title (F-026 P3 — long titles wrapped, never
 // silently clipped at the pane edge).
-func boardDetailLines(tk tasks.Task, wrapW int) []string {
+func boardDetailLines(tk tasks.Task, wrapW int, wsRoot string) []string {
 	who := tk.Assignee
 	if who == "" {
 		who = "unassigned"
@@ -418,7 +423,31 @@ func boardDetailLines(tk tasks.Task, wrapW int) []string {
 		lines = append(lines, theme.TextDim().Render(
 			fmt.Sprintf("%d runs · %s", len(tk.Runs), rl.CostText())))
 	}
+	if line, ok := boardWorkflowLine(tk, wsRoot); ok {
+		lines = append(lines, line)
+	}
 	return lines
+}
+
+// boardWorkflowLine shows a task's active feature workflow and where it
+// stands (F-031): the next enforced step, or "complete".
+func boardWorkflowLine(tk tasks.Task, wsRoot string) (string, bool) {
+	if tk.Workflow == "" || wsRoot == "" {
+		return "", false
+	}
+	def, err := workflow.Load(wsRoot, tk.Workflow)
+	if err != nil {
+		return theme.Hint().Render("workflow " + tk.Workflow + " (missing)"), true
+	}
+	p := workflow.Progress{
+		Worktree:  len(tk.ChangeSets) > 0,
+		TestsPass: tk.TestsPass,
+		Reviewed:  len(tk.Bypasses) > 0,
+	}
+	if s, ok := workflow.NextStep(def, p); ok {
+		return theme.Hint().Render(fmt.Sprintf("workflow %s · next: %s (%s)", tk.Workflow, s.ID, s.Gate)), true
+	}
+	return theme.SuccessText().Render("workflow " + tk.Workflow + " · complete"), true
 }
 
 func orDash(s string) string {
