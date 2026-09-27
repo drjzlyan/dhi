@@ -177,8 +177,27 @@ func (b *Bridge) taskStatus(ctx context.Context, agentID string, a taskStatusArg
 	if err := b.approve(ctx, agentID, detail); err != nil {
 		return "", err
 	}
+	// Workflow review gate (F-031): completing a task crosses the
+	// exception-approval review step. If it is unmet, the bypass routes
+	// through the approvals queue and is recorded on the card — never a
+	// silent skip.
+	bypassed := ""
+	if b.Gate != nil && tasks.Status(strings.TrimSpace(a.Status)) == tasks.Done {
+		if reasons := b.Gate(a.Slug, "review"); len(reasons) > 0 {
+			bypassed = strings.Join(reasons, "; ")
+			if err := b.approve(ctx, agentID, "bypass review: "+bypassed); err != nil {
+				return "", err
+			}
+		}
+	}
 	if err := b.Tasks.SetStatus(a.Slug, tasks.Status(a.Status)); err != nil {
 		return "", err
+	}
+	if bypassed != "" {
+		if err := b.Tasks.RecordBypass(a.Slug, "review", bypassed); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("task %s → %s (review bypass recorded: %s)", a.Slug, a.Status, bypassed), nil
 	}
 	return fmt.Sprintf("task %s → %s", a.Slug, a.Status), nil
 }

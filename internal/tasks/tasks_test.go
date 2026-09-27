@@ -310,3 +310,21 @@ func TestWorkflowAndTestsPassPersist(t *testing.T) {
 		t.Fatalf("workflow/tests not persisted: %+v (ok=%v)", got, ok)
 	}
 }
+
+func TestRecordBypassNeedsStepAndReason(t *testing.T) {
+	s, ws := setupStore(t)
+	if err := s.Create("feat-y", "Feature Y", "alice", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RecordBypass("feat-y", "review", ""); err == nil {
+		t.Fatal("empty reason must refuse")
+	}
+	if err := s.RecordBypass("feat-y", "review", "shipping hotfix"); err != nil {
+		t.Fatal(err)
+	}
+	reloaded, _ := Open(ws)
+	got, _ := reloaded.Get("feat-y")
+	if len(got.Bypasses) != 1 || got.Bypasses[0].Reason != "shipping hotfix" {
+		t.Fatalf("bypass not persisted: %+v", got.Bypasses)
+	}
+}

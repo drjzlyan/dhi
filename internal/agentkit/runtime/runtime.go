@@ -506,6 +506,7 @@ func (r *Runtime) workflowEnforcer(m *manifest.Agent, trigger bus.Message) (gate
 		if t, ok := r.taskFor(trigger); ok {
 			p.Worktree = len(t.ChangeSets) > 0
 			p.TestsPass = t.TestsPass
+			p.Reviewed = len(t.Bypasses) > 0
 		}
 		return p
 	}
@@ -531,7 +532,11 @@ func (r *Runtime) taskWorkflowGate(m *manifest.Agent, task tasks.Task) func(stri
 	if err != nil || def == nil {
 		return nil
 	}
-	p := workflow.Progress{Worktree: len(task.ChangeSets) > 0, TestsPass: task.TestsPass}
+	p := workflow.Progress{
+		Worktree:  len(task.ChangeSets) > 0,
+		TestsPass: task.TestsPass,
+		Reviewed:  len(task.Bypasses) > 0,
+	}
 	return func(seam string) []string { return verdictReasons(def.CheckGate(seam, p)) }
 }
 

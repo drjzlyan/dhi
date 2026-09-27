@@ -56,6 +56,14 @@ func ValidStatus(s Status) bool {
 	return false
 }
 
+// Bypass is one approved workflow exception: the step that was skipped
+// (or cleared by exception) and the reason the human gave.
+type Bypass struct {
+	Step   string    `toml:"step"`
+	Reason string    `toml:"reason"`
+	At     time.Time `toml:"at"`
+}
+
 // ChangeSet binds one member repo to the task via a linked worktree.
 type ChangeSet struct {
 	Member string `toml:"member"`
@@ -83,6 +91,11 @@ type Task struct {
 	// signals the workflow gates read (tests-before-PR).
 	Workflow  string
 	TestsPass bool
+
+	// Bypasses records explicit, approved workflow exceptions (F-031):
+	// each names the step skipped and why. A bypass is never silent —
+	// it exists only because a human approved it through the queue.
+	Bypasses []Bypass
 
 	PRNumber int    // GitHub PR created from this card's branch (0 = none)
 	PRURL    string // PR URL once created
@@ -155,6 +168,7 @@ type file struct {
 	Runs          []Run       `toml:"run"`
 	Workflow      string      `toml:"workflow,omitempty"`
 	TestsPass     bool        `toml:"tests_pass,omitempty"`
+	Bypasses      []Bypass    `toml:"bypass,omitempty"`
 	PRNumber      int         `toml:"pr_number,omitempty"`
 	PRURL         string      `toml:"pr_url,omitempty"`
 	CreatedAt     time.Time   `toml:"created_at"`
@@ -283,6 +297,7 @@ func parseCard(path, slug string) (Task, error) {
 		Runs:          f.Runs,
 		Workflow:      f.Workflow,
 		TestsPass:     f.TestsPass,
+		Bypasses:      f.Bypasses,
 		PRNumber:      f.PRNumber,
 		PRURL:         f.PRURL,
 		CreatedAt:     f.CreatedAt,
@@ -398,6 +413,19 @@ func (s *Store) SetWorkflow(slug, wf string) error {
 // (F-031 tests-before-PR gate).
 func (s *Store) SetTestsPass(slug string, ok bool) error {
 	return s.mutate(slug, func(t *Task) { t.TestsPass = ok })
+}
+
+// RecordBypass appends an approved workflow exception (F-031). A step
+// and a reason are required — a silent bypass is not representable.
+func (s *Store) RecordBypass(slug, step, reason string) error {
+	step = strings.TrimSpace(step)
+	reason = strings.TrimSpace(reason)
+	if step == "" || reason == "" {
+		return fmt.Errorf("tasks: bypass needs a step and a reason")
+	}
+	return s.mutate(slug, func(t *Task) {
+		t.Bypasses = append(t.Bypasses, Bypass{Step: step, Reason: reason, At: time.Now().UTC()})
+	})
 }
 
 // Assign sets (or clears, "") the assignee.
@@ -616,6 +644,7 @@ func writeCard(path string, t Task) error {
 		ChangeSets: t.ChangeSets,
 		Runs:       t.Runs,
 		Workflow:   t.Workflow, TestsPass: t.TestsPass,
+		Bypasses: t.Bypasses,
 		CreatedAt: t.CreatedAt, UpdatedAt: t.UpdatedAt,
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

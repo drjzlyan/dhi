@@ -2,6 +2,7 @@ package toolbridge
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -181,5 +182,63 @@ func TestPROpenBlockedByWorkflowGate(t *testing.T) {
 	}
 	if opened {
 		t.Fatal("gated PR must not reach the seam")
+	}
+}
+
+func TestReviewBypassRoutesThroughApprovalsAndRecords(t *testing.T) {
+	ts := testStore(t)
+	_ = ts.Create("x", "X", "scout", "")
+	var prompts []string
+	b := &Bridge{
+		Tasks: ts,
+		Approve: func(ctx context.Context, agentID, detail string) error {
+			prompts = append(prompts, detail)
+			return nil
+		},
+		Gate: func(slug, seam string) []string {
+			if seam == "review" {
+				return []string{"step review needs an explicit approval"}
+			}
+			return nil
+		},
+	}
+	res, err := b.Dispatch(context.Background(), "scout", Request{Action: ActionTaskStatus,
+		Args: []byte(`{"slug":"x","status":"done"}`)})
+	if err != nil {
+		t.Fatalf("Dispatch: %v", err)
+	}
+	if !strings.Contains(res, "bypass recorded") {
+		t.Fatalf("result = %q", res)
+	}
+	if len(prompts) != 2 || !strings.Contains(prompts[1], "bypass review") {
+		t.Fatalf("approvals prompts = %v, want a review-bypass prompt", prompts)
+	}
+	got, _ := ts.Get("x")
+	if got.Status != tasks.Done || len(got.Bypasses) != 1 || got.Bypasses[0].Step != "review" {
+		t.Fatalf("bypass not recorded: %+v", got)
+	}
+}
+
+func TestReviewBypassDeniedLeavesTask(t *testing.T) {
+	ts := testStore(t)
+	_ = ts.Create("y", "Y", "scout", "")
+	calls := 0
+	b := &Bridge{
+		Tasks: ts,
+		Approve: func(ctx context.Context, agentID, detail string) error {
+			calls++
+			if strings.Contains(detail, "bypass review") {
+				return errors.New("human declined")
+			}
+			return nil
+		},
+		Gate: func(string, string) []string { return []string{"unmet review"} },
+	}
+	if _, err := b.Dispatch(context.Background(), "scout", Request{Action: ActionTaskStatus,
+		Args: []byte(`{"slug":"y","status":"done"}`)}); err == nil {
+		t.Fatal("declined bypass must refuse")
+	}
+	if got, _ := ts.Get("y"); got.Status == tasks.Done || len(got.Bypasses) != 0 {
+		t.Fatalf("declined bypass must not complete the task: %+v", got)
 	}
 }
