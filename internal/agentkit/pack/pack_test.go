@@ -219,3 +219,83 @@ func TestInstallFromGitLocalPath(t *testing.T) {
 		t.Fatalf("result = %+v", res)
 	}
 }
+
+const ciWorkflowDoc = `schema = 1
+slug = "ci"
+title = "CI"
+[[step]]
+id = "worktree_create"
+title = "Worktree"
+gate = "block"
+bind = "worktree"
+`
+
+func TestInstallShipsWorkflows(t *testing.T) {
+	ws := setupWS(t)
+	root := fixturePack(t, "flowpack")
+	wf := filepath.Join(root, "workflows")
+	if err := os.MkdirAll(wf, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(wf, "ci.toml"), []byte(ciWorkflowDoc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	spec := "schema = 1\nname = \"flowpack\"\nversion = \"0.1.0\"\nagents = [\"agents/alice.toml\"]\nworkflows = [\"workflows/ci.toml\"]\n"
+	if err := os.WriteFile(filepath.Join(root, "pack.toml"), []byte(spec), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	in := &Installer{WS: ws}
+	res, err := in.Install(context.Background(), root)
+	if err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	if len(res.Workflows) != 1 || res.Workflows[0] != "ci" {
+		t.Fatalf("result workflows = %v", res.Workflows)
+	}
+	if _, err := os.Stat(filepath.Join(ws.Root, ".dhi", "workflows", "ci.toml")); err != nil {
+		t.Fatalf("workflow not installed: %v", err)
+	}
+
+	// A second pack claiming the same workflow refuses.
+	if err := in.Uninstall("flowpack"); err != nil {
+		t.Fatalf("Uninstall: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(ws.Root, ".dhi", "workflows", "ci.toml")); !os.IsNotExist(err) {
+		t.Fatalf("workflow survived uninstall: %v", err)
+	}
+}
+
+func TestInstallRefusesMalformedWorkflow(t *testing.T) {
+	ws := setupWS(t)
+	root := fixturePack(t, "badflow")
+	wf := filepath.Join(root, "workflows")
+	os.MkdirAll(wf, 0o755)
+	os.WriteFile(filepath.Join(wf, "ci.toml"), []byte("schema = 99\n"), 0o644)
+	spec := "schema = 1\nname = \"badflow\"\nagents = [\"agents/alice.toml\"]\nworkflows = [\"workflows/ci.toml\"]\n"
+	os.WriteFile(filepath.Join(root, "pack.toml"), []byte(spec), 0o644)
+	in := &Installer{WS: ws}
+	if _, err := in.Install(context.Background(), root); err == nil || !strings.Contains(err.Error(), "ci") {
+		t.Fatalf("malformed workflow must refuse by name: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(ws.Root, ".dhi", "workflows", "ci.toml")); !os.IsNotExist(err) {
+		t.Fatal("malformed workflow must not land")
+	}
+}
+
+func TestPackWorkflowConflictRefuses(t *testing.T) {
+	ws := setupWS(t)
+	// A pre-existing workflow owned by no pack blocks a pack claiming it.
+	os.MkdirAll(filepath.Join(ws.Root, ".dhi", "workflows"), 0o755)
+	os.WriteFile(filepath.Join(ws.Root, ".dhi", "workflows", "ci.toml"), []byte(ciWorkflowDoc), 0o644)
+	root := fixturePack(t, "flowpack")
+	wf := filepath.Join(root, "workflows")
+	os.MkdirAll(wf, 0o755)
+	os.WriteFile(filepath.Join(wf, "ci.toml"), []byte(ciWorkflowDoc), 0o644)
+	spec := "schema = 1\nname = \"flowpack\"\nagents = [\"agents/alice.toml\"]\nworkflows = [\"workflows/ci.toml\"]\n"
+	os.WriteFile(filepath.Join(root, "pack.toml"), []byte(spec), 0o644)
+	in := &Installer{WS: ws}
+	if _, err := in.Install(context.Background(), root); err == nil || !strings.Contains(err.Error(), "another source") {
+		t.Fatalf("conflict must refuse: %v", err)
+	}
+}

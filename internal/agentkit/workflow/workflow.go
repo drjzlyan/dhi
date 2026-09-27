@@ -199,6 +199,31 @@ func Available(root string) ([]string, error) {
 	return sortedSlugs(set), nil
 }
 
+// Parse decodes and validates one workflow definition from raw TOML with
+// the intended filename stem slug (used by packs before a file lands).
+func Parse(slug string, data []byte) (*Definition, error) {
+	if !slugRe.MatchString(slug) {
+		return nil, fmt.Errorf("workflow: bad slug %q", slug)
+	}
+	var d Definition
+	md, err := toml.Decode(string(data), &d)
+	if err != nil {
+		return nil, fmt.Errorf("workflow: parse %s: %w", slug, err)
+	}
+	if und := md.Undecoded(); len(und) > 0 {
+		keys := make([]string, 0, len(und))
+		for _, k := range und {
+			keys = append(keys, k.String())
+		}
+		sort.Strings(keys)
+		return nil, fmt.Errorf("workflow: unknown key(s) in %s: %s", slug, strings.Join(keys, ", "))
+	}
+	if err := validate(&d, slug); err != nil {
+		return nil, err
+	}
+	return &d, nil
+}
+
 // Load returns the workflow named slug: the builtin for BuiltinSlug, or
 // the local definition. It refuses a malformed file by name and a
 // missing slug with a named error (never a silent builtin fallback).

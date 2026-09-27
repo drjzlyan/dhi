@@ -18,6 +18,7 @@ import (
 	"github.com/BurntSushi/toml"
 
 	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
+	"github.com/drjzlyan/dhi/internal/agentkit/workflow"
 	"github.com/drjzlyan/dhi/internal/gitcore"
 	"github.com/drjzlyan/dhi/internal/workspace"
 )
@@ -37,6 +38,7 @@ type Spec struct {
 	Version     string
 	Description string
 	Agents      []string // repo-relative manifest paths, sorted
+	Workflows   []string // repo-relative workflow paths, sorted (F-031/ADR-0022)
 }
 
 type specFile struct {
@@ -45,6 +47,7 @@ type specFile struct {
 	Version     string   `toml:"version"`
 	Description string   `toml:"description"`
 	Agents      []string `toml:"agents"`
+	Workflows   []string `toml:"workflows"`
 }
 
 // ReadSpec decodes and validates <dir>/pack.toml strictly.
@@ -72,21 +75,23 @@ func ReadSpec(dir string) (*Spec, error) {
 	if !nameRe.MatchString(f.Name) {
 		return nil, fmt.Errorf("pack: bad name %q (lowercase [a-z0-9._-])", f.Name)
 	}
-	if len(f.Agents) == 0 {
-		return nil, fmt.Errorf("pack: no agents listed")
+	if len(f.Agents) == 0 && len(f.Workflows) == 0 {
+		return nil, fmt.Errorf("pack: lists no agents or workflows")
 	}
 	s := &Spec{Schema: f.Schema, Name: f.Name, Version: f.Version,
-		Description: f.Description, Agents: f.Agents}
+		Description: f.Description, Agents: f.Agents, Workflows: f.Workflows}
 	sort.Strings(s.Agents)
+	sort.Strings(s.Workflows)
 	return s, nil
 }
 
 // Result summarizes one successful install/update.
 type Result struct {
-	Pack    string
-	Version string
-	Agents  []string // ids written, sorted
-	Updated bool     // provenance entry existed before
+	Pack      string
+	Version   string
+	Agents    []string // ids written, sorted
+	Workflows []string // workflow slugs written, sorted
+	Updated   bool     // provenance entry existed before
 }
 
 // Installer writes packs into ws's roster.
@@ -106,6 +111,7 @@ type PackRec struct {
 	Version     string    `json:"version,omitempty"`
 	InstalledAt time.Time `json:"installed_at"`
 	Agents      []string  `json:"agents"`
+	Workflows   []string  `json:"workflows,omitempty"`
 }
 
 func (in *Installer) provPath() string {
@@ -210,6 +216,29 @@ func (in *Installer) Install(ctx context.Context, source string) (*Result, error
 		agents = append(agents, a)
 	}
 
+	// Workflows ship as .dhi/workflows/<slug>.toml files, validated in
+	// full before any file lands (ADR-0022 third-party trust).
+	wfDir := filepath.Join(in.WS.Root, filepath.FromSlash(workflow.Dir))
+	type wfItem struct {
+		slug string
+		data []byte
+	}
+	var wfs []wfItem
+	for _, rel := range spec.Workflows {
+		if strings.Contains(rel, "..") || filepath.IsAbs(rel) {
+			return nil, fmt.Errorf("pack: workflow path %q escapes the pack", rel)
+		}
+		data, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(rel)))
+		if err != nil {
+			return nil, fmt.Errorf("pack: %s: %w", rel, err)
+		}
+		slug := strings.TrimSuffix(filepath.Base(rel), ".toml")
+		if _, err := workflow.Parse(slug, data); err != nil {
+			return nil, fmt.Errorf("pack: %s: %w", rel, err)
+		}
+		wfs = append(wfs, wfItem{slug: slug, data: data})
+	}
+
 	prov, err := in.readProvenance()
 	if err != nil {
 		return nil, err
@@ -219,15 +248,25 @@ func (in *Installer) Install(ctx context.Context, source string) (*Result, error
 	for _, id := range prev.Agents {
 		owned[id] = true
 	}
+	ownedWf := map[string]bool{}
+	for _, s := range prev.Workflows {
+		ownedWf[s] = true
+	}
 	var conflicts []string
 	for _, a := range agents {
 		path := filepath.Join(rosterDir, a.ID+".toml")
 		if _, err := os.Stat(path); err == nil && !owned[a.ID] {
-			conflicts = append(conflicts, a.ID)
+			conflicts = append(conflicts, "agent "+a.ID)
+		}
+	}
+	for _, w := range wfs {
+		path := filepath.Join(wfDir, w.slug+".toml")
+		if _, err := os.Stat(path); err == nil && !ownedWf[w.slug] {
+			conflicts = append(conflicts, "workflow "+w.slug)
 		}
 	}
 	if len(conflicts) > 0 {
-		return nil, fmt.Errorf("pack: agent(s) %s already exist and belong to another source",
+		return nil, fmt.Errorf("pack: %s already exist and belong to another source",
 			strings.Join(conflicts, ", "))
 	}
 
@@ -242,16 +281,30 @@ func (in *Installer) Install(ctx context.Context, source string) (*Result, error
 		ids = append(ids, a.ID)
 	}
 	sort.Strings(ids)
+	wfSlugs := make([]string, 0, len(wfs))
+	if len(wfs) > 0 {
+		if err := os.MkdirAll(wfDir, 0o755); err != nil {
+			return nil, err
+		}
+		for _, w := range wfs {
+			if err := os.WriteFile(filepath.Join(wfDir, w.slug+".toml"), w.data, 0o644); err != nil {
+				return nil, fmt.Errorf("pack: write workflow %s: %w", w.slug, err)
+			}
+			wfSlugs = append(wfSlugs, w.slug)
+		}
+		sort.Strings(wfSlugs)
+	}
 	prov.Packs[spec.Name] = PackRec{
 		Source:      source,
 		Version:     spec.Version,
 		InstalledAt: time.Now(),
 		Agents:      ids,
+		Workflows:   wfSlugs,
 	}
 	if err := in.writeProvenance(prov); err != nil {
 		return nil, err
 	}
-	return &Result{Pack: spec.Name, Version: spec.Version, Agents: ids, Updated: updating}, nil
+	return &Result{Pack: spec.Name, Version: spec.Version, Agents: ids, Workflows: wfSlugs, Updated: updating}, nil
 }
 
 // Uninstall removes exactly the recorded agents of packName; unknown
@@ -268,6 +321,13 @@ func (in *Installer) Uninstall(packName string) error {
 	rosterDir := filepath.Join(in.WS.Root, workspace.DirAgents)
 	for _, id := range rec.Agents {
 		if err := os.Remove(filepath.Join(rosterDir, id+".toml")); err != nil &&
+			!os.IsNotExist(err) {
+			return err
+		}
+	}
+	wfDir := filepath.Join(in.WS.Root, filepath.FromSlash(workflow.Dir))
+	for _, slug := range rec.Workflows {
+		if err := os.Remove(filepath.Join(wfDir, slug+".toml")); err != nil &&
 			!os.IsNotExist(err) {
 			return err
 		}
