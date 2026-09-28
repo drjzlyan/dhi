@@ -155,8 +155,49 @@ func TestPROpenRefusals(t *testing.T) {
 	}
 	res, err := b.Dispatch(ctx, "scout", Request{Action: ActionPROpen,
 		Args: []byte(`{"slug":"x","title":"T","base":"main"}`)})
-	if err != nil || res != "PR #1" || got != "api@task/x" {
+	if err != nil || res != "api: PR #1" || got != "api@task/x" {
 		t.Fatalf("pr_open = %q, %v (member@branch %q)", res, err, got)
+	}
+}
+
+func TestPROpenCoversAllChangesets(t *testing.T) {
+	ts := testStore(t)
+	_ = ts.Create("multi", "Multi", "scout", "")
+	_ = ts.RecordChangeSet("multi", tasks.ChangeSet{Member: "api", Branch: "task/m", Path: "r1"})
+	_ = ts.RecordChangeSet("multi", tasks.ChangeSet{Member: "web", Branch: "task/m", Path: "r2"})
+	var calls []string
+	b := &Bridge{Tasks: ts, OpenPR: func(_ context.Context, member, branch, title, base string) (string, error) {
+		calls = append(calls, member+"@"+branch)
+		return "PR-" + member, nil
+	}}
+	res, err := b.Dispatch(context.Background(), "scout", Request{Action: ActionPROpen,
+		Args: []byte(`{"slug":"multi","title":"T","base":"main"}`)})
+	if err != nil {
+		t.Fatalf("Dispatch: %v", err)
+	}
+	if strings.Join(calls, ",") != "api@task/m,web@task/m" {
+		t.Fatalf("calls = %v", calls)
+	}
+	if !strings.Contains(res, "api: PR-api") || !strings.Contains(res, "web: PR-web") {
+		t.Fatalf("result = %q", res)
+	}
+}
+
+func TestPROpenNamesMemberFailure(t *testing.T) {
+	ts := testStore(t)
+	_ = ts.Create("mixed", "Mixed", "scout", "")
+	_ = ts.RecordChangeSet("mixed", tasks.ChangeSet{Member: "api", Branch: "b", Path: "r1"})
+	_ = ts.RecordChangeSet("mixed", tasks.ChangeSet{Member: "web", Branch: "b", Path: "r2"})
+	b := &Bridge{Tasks: ts, OpenPR: func(_ context.Context, member, branch, title, base string) (string, error) {
+		if member == "web" {
+			return "", errors.New("no remote")
+		}
+		return "PR", nil
+	}}
+	_, err := b.Dispatch(context.Background(), "scout", Request{Action: ActionPROpen,
+		Args: []byte(`{"slug":"mixed","title":"T","base":"main"}`)})
+	if err == nil || !strings.Contains(err.Error(), "web") {
+		t.Fatalf("member failure must be named: %v", err)
 	}
 }
 

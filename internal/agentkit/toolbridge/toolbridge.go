@@ -230,7 +230,8 @@ func (b *Bridge) prOpen(ctx context.Context, agentID string, a prOpenArgs) (stri
 	if err := b.approve(ctx, agentID, detail); err != nil {
 		return "", err
 	}
-	// The task card's first changeset carries member + branch.
+	// F-032: every changeset gets its own PR on its own branch; a member
+	// that fails is named, never silently skipped.
 	t, ok := b.Tasks.Get(a.Slug)
 	if !ok {
 		return "", fmt.Errorf("unknown task %q", a.Slug)
@@ -238,8 +239,22 @@ func (b *Bridge) prOpen(ctx context.Context, agentID string, a prOpenArgs) (stri
 	if len(t.ChangeSets) == 0 {
 		return "", fmt.Errorf("task %s has no worktree — attach one first (w)", a.Slug)
 	}
-	cs := t.ChangeSets[0]
-	return b.OpenPR(ctx, cs.Member, cs.Branch, a.Title, a.Base)
+	var opened, failures []string
+	for _, cs := range t.ChangeSets {
+		res, err := b.OpenPR(ctx, cs.Member, cs.Branch, a.Title, a.Base)
+		if err != nil {
+			failures = append(failures, cs.Member+": "+err.Error())
+			continue
+		}
+		opened = append(opened, cs.Member+": "+res)
+	}
+	if len(failures) > 0 {
+		if len(opened) > 0 {
+			return strings.Join(opened, "; "), fmt.Errorf("pr_open failed for %s", strings.Join(failures, "; "))
+		}
+		return "", fmt.Errorf("pr_open failed for %s", strings.Join(failures, "; "))
+	}
+	return strings.Join(opened, "; "), nil
 }
 
 func (b *Bridge) approve(ctx context.Context, agentID, detail string) error {

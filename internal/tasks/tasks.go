@@ -720,10 +720,11 @@ func (s *Store) SetIdentity(fn gitcore.IdentityFunc) {
 	s.mu.Unlock()
 }
 
-// Commit stages all changes and creates a commit in the task's first
-// changeset worktree. Returns the new commit SHA. Commits are authored
-// by the user's resolved git identity (F-029); no synthetic identity
-// exists.
+// Commit stages all changes and creates a commit in EVERY changeset
+// worktree (F-032: cross-project work is one piece of work). Each member
+// commits on its own branch; a per-member failure is named, never
+// silently skipped — the members that did commit stay committed.
+// Commits are authored by the user's resolved git identity (F-029).
 func (s *Store) Commit(slug, message string) error {
 	if message == "" {
 		return fmt.Errorf("tasks: commit message required")
@@ -739,8 +740,6 @@ func (s *Store) Commit(slug, message string) error {
 	if len(t.ChangeSets) == 0 {
 		return fmt.Errorf("tasks: %s has no worktrees", slug)
 	}
-	cs := t.ChangeSets[0]
-	absWorkdir := filepath.Join(s.ws.Root, cs.Path)
 	if attach == nil {
 		return fmt.Errorf("tasks: worktree seam unavailable")
 	}
@@ -751,20 +750,30 @@ func (s *Store) Commit(slug, message string) error {
 	if err != nil {
 		return fmt.Errorf("tasks: commit: %w", err)
 	}
-	repo, err := gitcore.Open(absWorkdir)
-	if err != nil {
-		return fmt.Errorf("tasks: commit: open repo: %w", err)
+	var failures []string
+	for _, cs := range t.ChangeSets {
+		absWorkdir := filepath.Join(s.ws.Root, cs.Path)
+		repo, err := gitcore.Open(absWorkdir)
+		if err != nil {
+			failures = append(failures, cs.Member+": open repo: "+err.Error())
+			continue
+		}
+		if err := repo.Stage("."); err != nil {
+			failures = append(failures, cs.Member+": stage: "+err.Error())
+			continue
+		}
+		if _, err := repo.Commit(gitcore.CommitOptions{Message: message, Author: id.Name, Email: id.Email}); err != nil {
+			failures = append(failures, cs.Member+": "+err.Error())
+		}
 	}
-	if err := repo.Stage("."); err != nil {
-		return fmt.Errorf("tasks: commit: stage: %w", err)
-	}
-	if _, err := repo.Commit(gitcore.CommitOptions{Message: message, Author: id.Name, Email: id.Email}); err != nil {
-		return fmt.Errorf("tasks: commit: %w", err)
+	if len(failures) > 0 {
+		return fmt.Errorf("tasks: commit failed for %s", strings.Join(failures, "; "))
 	}
 	return nil
 }
 
-// PushBranch pushes the first changeset's branch to origin.
+// PushBranch pushes every changeset's branch to origin, naming any member
+// that fails rather than stopping silently.
 func (s *Store) PushBranch(slug string) error {
 	s.mu.RLock()
 	t, ok := s.tasks[slug]
@@ -775,15 +784,21 @@ func (s *Store) PushBranch(slug string) error {
 	if len(t.ChangeSets) == 0 {
 		return fmt.Errorf("tasks: %s has no worktrees", slug)
 	}
-	cs := t.ChangeSets[0]
-	absWorkdir := filepath.Join(s.ws.Root, cs.Path)
-	repo, err := gitcore.Open(absWorkdir)
-	if err != nil {
-		return fmt.Errorf("tasks: push: open repo: %w", err)
+	var failures []string
+	for _, cs := range t.ChangeSets {
+		absWorkdir := filepath.Join(s.ws.Root, cs.Path)
+		repo, err := gitcore.Open(absWorkdir)
+		if err != nil {
+			failures = append(failures, cs.Member+": open repo: "+err.Error())
+			continue
+		}
+		refspec := "refs/heads/" + cs.Branch + ":refs/heads/" + cs.Branch
+		if err := repo.Push(context.Background(), "", refspec, nil); err != nil {
+			failures = append(failures, cs.Member+": "+err.Error())
+		}
 	}
-	refspec := "refs/heads/" + cs.Branch + ":refs/heads/" + cs.Branch
-	if err := repo.Push(context.Background(), "", refspec, nil); err != nil {
-		return fmt.Errorf("tasks: push: %w", err)
+	if len(failures) > 0 {
+		return fmt.Errorf("tasks: push failed for %s", strings.Join(failures, "; "))
 	}
 	return nil
 }
