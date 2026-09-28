@@ -1023,6 +1023,19 @@ func (m *Model) submitForm() {
 			f.err = err.Error()
 			return
 		}
+		// Cross-project propagation (F-032): changing this member may
+		// affect declared dependents — seed visible, accept/decline
+		// proposals; nothing is auto-created.
+		if m.ws != nil {
+			var seeds []tasks.Propagation
+			for _, d := range m.ws.DependentsOf(member) {
+				seeds = append(seeds, tasks.Propagation{FromMember: d.From, ToMember: d.To, Kind: d.Kind})
+			}
+			if err := m.taskStore.SeedPropagations(f.orig, seeds); err != nil {
+				f.err = err.Error()
+				return
+			}
+		}
 		m.closeForm()
 	case fTaskThread:
 		if m.taskStore == nil {

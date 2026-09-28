@@ -167,3 +167,24 @@ func TestMessageQuoteTruncated(t *testing.T) {
 		t.Fatalf("row not truncated: %q (len %d)", items[0].Row, len(items[0].Row))
 	}
 }
+
+func TestDependencyProposalItem(t *testing.T) {
+	tk := tasks.Task{Slug: "feat", Title: "Feat", Status: tasks.Active,
+		Propagations: []tasks.Propagation{
+			{FromMember: "api", ToMember: "web", Kind: "api", Decision: tasks.PropPending},
+			{FromMember: "api", ToMember: "cli", Kind: "build", Decision: tasks.PropDeclined},
+		}}
+	items := Build(nil, nil, []tasks.Task{tk})
+	var deps []Item
+	for _, it := range items {
+		if it.Kind == Dependency {
+			deps = append(deps, it)
+		}
+	}
+	if len(deps) != 1 || deps[0].ToMember != "web" || deps[0].DepKind != "api" {
+		t.Fatalf("dependency items = %+v", deps)
+	}
+	if !strings.Contains(deps[0].Row, "api → web") {
+		t.Fatalf("row = %q", deps[0].Row)
+	}
+}

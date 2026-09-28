@@ -64,6 +64,26 @@ type Bypass struct {
 	At     time.Time `toml:"at"`
 }
 
+// Propagation decisions (F-032). A proposal is pending until a human
+// accepts (creating a linked task) or declines (creating nothing).
+const (
+	PropPending  = "pending"
+	PropAccepted = "accepted"
+	PropDeclined = "declined"
+)
+
+// Propagation is one cross-project proposal: changing FromMember may
+// affect ToMember through Kind. Decision is pending|accepted|declined;
+// CreatedSlug names the accepted task, if any.
+type Propagation struct {
+	FromMember  string    `toml:"from_member"`
+	ToMember    string    `toml:"to_member"`
+	Kind        string    `toml:"kind"`
+	Decision    string    `toml:"decision"`
+	CreatedSlug string    `toml:"created_slug,omitempty"`
+	At          time.Time `toml:"at"`
+}
+
 // ChangeSet binds one member repo to the task via a linked worktree.
 type ChangeSet struct {
 	Member string `toml:"member"`
@@ -96,6 +116,11 @@ type Task struct {
 	// each names the step skipped and why. A bypass is never silent —
 	// it exists only because a human approved it through the queue.
 	Bypasses []Bypass
+
+	// Propagations records cross-project proposals (F-032): when this
+	// task touches member A and a declared edge A→B exists, a pending
+	// proposal appears for B. Nothing is created until accepted.
+	Propagations []Propagation
 
 	PRNumber int    // GitHub PR created from this card's branch (0 = none)
 	PRURL    string // PR URL once created
@@ -157,22 +182,23 @@ type Run struct {
 
 // file is the on-disk TOML shape.
 type file struct {
-	Schema        int         `toml:"schema"`
-	Title         string      `toml:"title"`
-	Status        Status      `toml:"status"`
-	Assignee      string      `toml:"assignee"`
-	Team          string      `toml:"team"`
-	ThreadChannel string      `toml:"thread_channel"`
-	ThreadID      int64       `toml:"thread_id"`
-	ChangeSets    []ChangeSet `toml:"changeset"`
-	Runs          []Run       `toml:"run"`
-	Workflow      string      `toml:"workflow,omitempty"`
-	TestsPass     bool        `toml:"tests_pass,omitempty"`
-	Bypasses      []Bypass    `toml:"bypass,omitempty"`
-	PRNumber      int         `toml:"pr_number,omitempty"`
-	PRURL         string      `toml:"pr_url,omitempty"`
-	CreatedAt     time.Time   `toml:"created_at"`
-	UpdatedAt     time.Time   `toml:"updated_at"`
+	Schema        int           `toml:"schema"`
+	Title         string        `toml:"title"`
+	Status        Status        `toml:"status"`
+	Assignee      string        `toml:"assignee"`
+	Team          string        `toml:"team"`
+	ThreadChannel string        `toml:"thread_channel"`
+	ThreadID      int64         `toml:"thread_id"`
+	ChangeSets    []ChangeSet   `toml:"changeset"`
+	Runs          []Run         `toml:"run"`
+	Workflow      string        `toml:"workflow,omitempty"`
+	TestsPass     bool          `toml:"tests_pass,omitempty"`
+	Bypasses      []Bypass      `toml:"bypass,omitempty"`
+	Propagations  []Propagation `toml:"propagation,omitempty"`
+	PRNumber      int           `toml:"pr_number,omitempty"`
+	PRURL         string        `toml:"pr_url,omitempty"`
+	CreatedAt     time.Time     `toml:"created_at"`
+	UpdatedAt     time.Time     `toml:"updated_at"`
 }
 
 // AttachFn creates one linked worktree and returns its path relative to
@@ -285,6 +311,16 @@ func parseCard(path, slug string) (Task, error) {
 			return Task{}, fmt.Errorf("tasks: %s: run %d: %w", slug, i, perr)
 		}
 	}
+	for i, p := range f.Propagations {
+		if p.FromMember == "" || p.ToMember == "" {
+			return Task{}, fmt.Errorf("tasks: %s: propagation %d needs from/to members", slug, i)
+		}
+		switch p.Decision {
+		case PropPending, PropAccepted, PropDeclined:
+		default:
+			return Task{}, fmt.Errorf("tasks: %s: propagation %d bad decision %q", slug, i, p.Decision)
+		}
+	}
 	return Task{
 		Slug:          slug,
 		Title:         strings.TrimSpace(f.Title),
@@ -298,6 +334,7 @@ func parseCard(path, slug string) (Task, error) {
 		Workflow:      f.Workflow,
 		TestsPass:     f.TestsPass,
 		Bypasses:      f.Bypasses,
+		Propagations:  f.Propagations,
 		PRNumber:      f.PRNumber,
 		PRURL:         f.PRURL,
 		CreatedAt:     f.CreatedAt,
@@ -426,6 +463,75 @@ func (s *Store) RecordBypass(slug, step, reason string) error {
 	return s.mutate(slug, func(t *Task) {
 		t.Bypasses = append(t.Bypasses, Bypass{Step: step, Reason: reason, At: time.Now().UTC()})
 	})
+}
+
+// SeedPropagations records pending cross-project proposals (F-032) for
+// edges from this task's changed members. An existing (from,to,kind)
+// entry is left untouched, so re-seeding never duplicates or resurrects
+// a decided proposal.
+func (s *Store) SeedPropagations(slug string, seeds []Propagation) error {
+	if len(seeds) == 0 {
+		return nil
+	}
+	return s.mutate(slug, func(t *Task) {
+		for _, seed := range seeds {
+			if seed.FromMember == "" || seed.ToMember == "" {
+				continue
+			}
+			dup := false
+			for _, p := range t.Propagations {
+				if p.FromMember == seed.FromMember && p.ToMember == seed.ToMember && p.Kind == seed.Kind {
+					dup = true
+					break
+				}
+			}
+			if dup {
+				continue
+			}
+			t.Propagations = append(t.Propagations, Propagation{
+				FromMember: seed.FromMember, ToMember: seed.ToMember, Kind: seed.Kind,
+				Decision: PropPending, At: time.Now().UTC(),
+			})
+		}
+	})
+}
+
+// DecidePropagation resolves the pending proposal to toMember: accepted
+// (naming the created task) or declined (creating nothing).
+func (s *Store) DecidePropagation(slug, toMember, decision, createdSlug string) error {
+	if decision != PropAccepted && decision != PropDeclined {
+		return fmt.Errorf("tasks: decision must be %s or %s", PropAccepted, PropDeclined)
+	}
+	found := false
+	err := s.mutate(slug, func(t *Task) {
+		for i := range t.Propagations {
+			p := &t.Propagations[i]
+			if p.ToMember == toMember && p.Decision == PropPending {
+				p.Decision = decision
+				p.CreatedSlug = createdSlug
+				found = true
+				return
+			}
+		}
+	})
+	if err != nil {
+		return err
+	}
+	if !found {
+		return fmt.Errorf("tasks: %s has no pending proposal to %q", slug, toMember)
+	}
+	return nil
+}
+
+// PendingPropagations returns the unresolved proposals on a task.
+func (t Task) PendingPropagations() []Propagation {
+	var out []Propagation
+	for _, p := range t.Propagations {
+		if p.Decision == PropPending {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // Assign sets (or clears, "") the assignee.
@@ -644,7 +750,7 @@ func writeCard(path string, t Task) error {
 		ChangeSets: t.ChangeSets,
 		Runs:       t.Runs,
 		Workflow:   t.Workflow, TestsPass: t.TestsPass,
-		Bypasses:  t.Bypasses,
+		Bypasses: t.Bypasses, Propagations: t.Propagations,
 		CreatedAt: t.CreatedAt, UpdatedAt: t.UpdatedAt,
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

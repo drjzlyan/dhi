@@ -25,11 +25,12 @@ type ItemKind string
 const (
 	Approval     ItemKind = "approval"
 	RunFailed    ItemKind = "run_failed"
+	Dependency   ItemKind = "dependency"
 	InReview     ItemKind = "in_review"
 	AgentMessage ItemKind = "agent_message"
 )
 
-var rank = map[ItemKind]int{Approval: 0, RunFailed: 1, InReview: 2, AgentMessage: 3}
+var rank = map[ItemKind]int{Approval: 0, RunFailed: 1, Dependency: 2, InReview: 3, AgentMessage: 4}
 
 // Item is one row of the inbox. Row is the display text (label + payload,
 // no glyph); the rest is jump payload for the owning surfaces.
@@ -56,6 +57,12 @@ type Item struct {
 	TaskTitle string
 	Run       tasks.Run // run_failed jump target (zero value when none)
 	ReviewID  string
+
+	// Dependency proposal (F-032): changing FromMember may affect
+	// ToMember through Kind; accepting creates a linked task in ToMember.
+	FromMember string
+	ToMember   string
+	DepKind    string
 }
 
 // Build is the pure aggregation: a deterministic, severity-then-age
@@ -75,6 +82,9 @@ func Build(apprs []*tools.Approval, msgs []unread.Item, ts []tasks.Task) []Item 
 		}
 		if tk.Status == tasks.InReview {
 			out = append(out, reviewItem(tk))
+		}
+		for _, p := range tk.PendingPropagations() {
+			out = append(out, dependencyItem(tk, p))
 		}
 	}
 	sort.SliceStable(out, func(i, j int) bool {
@@ -152,6 +162,23 @@ func reviewItem(tk tasks.Task) Item {
 		At:        tk.UpdatedAt,
 		Row: fmt.Sprintf("in review  %s — %s, %d runs · %s",
 			tk.Slug, who, rl.Runs, rl.CostText()),
+	}
+}
+
+// dependencyItem surfaces a pending cross-project proposal (F-032): the
+// task changed FromMember and a declared edge points at ToMember.
+func dependencyItem(tk tasks.Task, p tasks.Propagation) Item {
+	return Item{
+		Kind:       Dependency,
+		TaskSlug:   tk.Slug,
+		TaskTitle:  tk.Title,
+		Assignee:   tk.Assignee,
+		FromMember: p.FromMember,
+		ToMember:   p.ToMember,
+		DepKind:    p.Kind,
+		At:         tk.UpdatedAt,
+		Row: fmt.Sprintf("cross-project  %s: %s → %s (%s) — accept to open a task in %s",
+			tk.Slug, p.FromMember, p.ToMember, p.Kind, p.ToMember),
 	}
 }
 

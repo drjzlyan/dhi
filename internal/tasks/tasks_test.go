@@ -328,3 +328,39 @@ func TestRecordBypassNeedsStepAndReason(t *testing.T) {
 		t.Fatalf("bypass not persisted: %+v", got.Bypasses)
 	}
 }
+
+func TestPropagationSeedDecide(t *testing.T) {
+	s, ws := setupStore(t)
+	if err := s.Create("feat-p", "Prop", "alice", ""); err != nil {
+		t.Fatal(err)
+	}
+	seeds := []Propagation{
+		{FromMember: "api", ToMember: "web", Kind: "api"},
+		{FromMember: "api", ToMember: "web", Kind: "api"}, // duplicate ignored
+	}
+	if err := s.SeedPropagations("feat-p", seeds); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := s.Get("feat-p")
+	if n := len(got.PendingPropagations()); n != 1 {
+		t.Fatalf("pending = %d, want 1", n)
+	}
+	if err := s.DecidePropagation("feat-p", "web", PropAccepted, "feat-web"); err != nil {
+		t.Fatalf("Decide: %v", err)
+	}
+	reloaded, _ := Open(ws)
+	got, _ = reloaded.Get("feat-p")
+	if len(got.PendingPropagations()) != 0 || got.Propagations[0].Decision != PropAccepted ||
+		got.Propagations[0].CreatedSlug != "feat-web" {
+		t.Fatalf("after accept: %+v", got.Propagations)
+	}
+	// Re-seeding never resurrects a decided proposal.
+	_ = s.SeedPropagations("feat-p", seeds)
+	got, _ = s.Get("feat-p")
+	if len(got.PendingPropagations()) != 0 {
+		t.Fatal("decided proposal was resurrected")
+	}
+	if err := s.DecidePropagation("feat-p", "web", PropDeclined, ""); err == nil {
+		t.Fatal("no pending proposal → must refuse")
+	}
+}

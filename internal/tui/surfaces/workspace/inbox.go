@@ -86,6 +86,12 @@ func (m *Model) inboxKey(key string) bool {
 			m.inboxJump(it)
 			return true
 		}
+	case "a", "x":
+		if *c < len(items) && items[*c].Kind == inbox.Dependency {
+			m.decideProposal(items[*c], key == "a")
+			return true
+		}
+		return false
 	case "z":
 		if *c < len(items) {
 			it := items[*c]
@@ -111,6 +117,38 @@ func (m *Model) inboxKey(key string) bool {
 		}
 	}
 	return false
+}
+
+// decideProposal accepts (creating a linked task in ToMember) or
+// declines a cross-project proposal (F-032). Accepting never weakens
+// isolation: the new task is a normal, workflow-bound card.
+func (m *Model) decideProposal(it inbox.Item, accept bool) {
+	if m.taskStore == nil {
+		m.inboxHint = "task store unavailable"
+		return
+	}
+	if !accept {
+		if err := m.taskStore.DecidePropagation(it.TaskSlug, it.ToMember, tasks.PropDeclined, ""); err != nil {
+			m.inboxHint = err.Error()
+			return
+		}
+		m.inboxHint = "declined cross-project proposal to " + it.ToMember
+		return
+	}
+	slug := "dep-" + it.TaskSlug + "-" + it.ToMember
+	if len(slug) > 48 {
+		slug = slug[:48]
+	}
+	title := fmt.Sprintf("Propagate %s change to %s (%s)", it.FromMember, it.ToMember, it.DepKind)
+	if err := m.taskStore.Create(slug, title, "", ""); err != nil {
+		m.inboxHint = err.Error()
+		return
+	}
+	if err := m.taskStore.DecidePropagation(it.TaskSlug, it.ToMember, tasks.PropAccepted, slug); err != nil {
+		m.inboxHint = err.Error()
+		return
+	}
+	m.inboxHint = "created " + slug + " for " + it.ToMember
 }
 
 // inboxJump routes one item to its owning surface. A missing seam or
