@@ -1,9 +1,9 @@
-  SESSIONS         1╭─ › artifacts ────────────────────────────────────────────────────────────────╮
-▌ ARTIFACTS        1│ ▌ design.md                                         ○ draft                  │
-  PREVIEW           │                                                                              │
-  CHAT              │                                                                              │
+  SESSIONS         1╭─ › canvas ───────────────────────────────────────────────────────────────────╮
+  PARTICIPANTS      │ ideas  canvas · live preview · e edit in editor                              │
+▌ CANVAS           1│ ▌ design.md                                         ○ draft                  │
+  TRANSCRIPT        │                                                                              │
                     │                                                                              │
-                    │                                                                              │
+                    │    v1                                                                        │
                     │                                                                              │
                     │                                                                              │
                     │                                                                              │
@@ -26,5 +26,5 @@
                     │                                                                              │
                     │                                                                              │
                     │                                                                              │
-                    │ enter preview • s scan • v reviewed • a approve • r reject                   │
+                    │ j/k select • J/K scroll • s scan • v/a/r review • e edit                     │
 [ ] sections        ╰──────────────────────────────────────────────────────────────────────────────╯

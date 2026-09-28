@@ -1,8 +1,12 @@
-// Package ideator is DHI's ideation floor (F-004): SESSIONS (ideation
-// sessions), ARTIFACTS (the open session's read-only artifact tree) and
-// PREVIEW (rendered markdown or raw text) — switched with [ ].
-// Session chat, agent dispatch and the reject→revision loop layer onto
-// this skeleton in later phases. The Ideator never edits files.
+// Package ideator is DHI's ideation floor (F-004, F-033): SESSIONS (the
+// round-table roster, nested breakouts and pending agent proposals),
+// PARTICIPANTS (the invited set, the moderator and the floor),
+// CANVAS (the artifact list plus the live markdown/mermaid preview) and
+// TRANSCRIPT (the ordered, replayable session channel) — switched with
+// [ ]. Sessions carry a mode (1:1 | group | breakout), an optional
+// moderator and a recorded turn order; agents may only propose a session,
+// never open one. The Ideator never edits repo files: canvas edits ride
+// the artifact tools or the injected editor seam.
 package ideator
 
 import (
@@ -21,6 +25,10 @@ import (
 // opTimeout bounds every async service call.
 const opTimeout = 5 * time.Minute
 
+// roundTableMaxTurns caps automatic floor hand-offs so a pair of agents
+// addressing each other can never loop forever (F-033 Part A).
+const roundTableMaxTurns = 24
+
 // crew is the narrow runtime seam: dispatch turns + roster ids.
 // *runtime.Runtime satisfies it; tests use scripted fakes.
 type crew interface {
@@ -33,9 +41,9 @@ type sectionID uint8
 
 const (
 	secSessions sectionID = iota
-	secArtifacts
-	secPreview
-	secChat
+	secParticipants
+	secCanvas
+	secTranscript
 	secCount
 )
 
@@ -43,12 +51,12 @@ func (s sectionID) label() string {
 	switch s {
 	case secSessions:
 		return "SESSIONS"
-	case secArtifacts:
-		return "ARTIFACTS"
-	case secPreview:
-		return "PREVIEW"
+	case secParticipants:
+		return "PARTICIPANTS"
+	case secCanvas:
+		return "CANVAS"
 	default:
-		return "CHAT"
+		return "TRANSCRIPT"
 	}
 }
 
@@ -67,8 +75,7 @@ type Model struct {
 	busy   bool   // an async op is running
 	opErr  string
 
-	previewTop int // preview viewport top (lines)
-	scroll     int
+	previewTop int // canvas preview viewport top (lines)
 
 	form formState
 
@@ -79,8 +86,9 @@ type Model struct {
 	storeCancel func()
 	cancelBus   func()
 
-	bus  *bus.Bus
-	crew crew
+	bus          *bus.Bus
+	crew         crew
+	openInEditor func(paths []string) bool
 
 	events chan ideEvent
 }
@@ -102,23 +110,26 @@ const (
 
 // Deps carries the services this surface operates. A nil Store degrades
 // every section to visible "unavailable" rows; nil Bus/Crew disable the
-// agent-participation keys with visible messages.
+// agent-participation keys with visible messages; a nil OpenInEditor
+// degrades the canvas "open" key to a named hint.
 type Deps struct {
-	Store *ideation.Store
-	Bus   *bus.Bus
-	Crew  crew
+	Store        *ideation.Store
+	Bus          *bus.Bus
+	Crew         crew
+	OpenInEditor func(paths []string) bool
 }
 
 // New returns the ideator model. A nil ws renders the empty state with
 // all keys inert.
 func New(version string, ws *workspace.Workspace, d Deps) *Model {
 	return &Model{
-		version: version,
-		ws:      ws,
-		store:   d.Store,
-		bus:     d.Bus,
-		crew:    d.Crew,
-		events:  make(chan ideEvent, 16),
+		version:      version,
+		ws:           ws,
+		store:        d.Store,
+		bus:          d.Bus,
+		crew:         d.Crew,
+		openInEditor: d.OpenInEditor,
+		events:       make(chan ideEvent, 16),
 	}
 }
 
@@ -172,7 +183,7 @@ func (m *Model) Resize(w, h int) {
 }
 
 // Update resolves async results: pings re-render; bus traffic mirrors
-// into the store (artifact authorship claims).
+// into the store (authorship claims + the floor protocol).
 func (m *Model) Update(msg tea.Msg) tea.Cmd {
 	switch ev := msg.(type) {
 	case ideEvent:
@@ -184,14 +195,14 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 				m.form.err = ev.err
 			} else {
 				m.closeFormWithFlash("session " + ev.id + " created")
-				for i, s := range m.sessions() {
-					if s.ID == ev.id {
+				for i, row := range m.sessionRows() {
+					if row.sess != nil && row.sess.ID == ev.id {
 						m.cursors[secSessions] = i
 						break
 					}
 				}
 				m.open(ev.id)
-				m.sec = secArtifacts
+				m.sec = secCanvas
 			}
 		case evBus:
 			m.mirrorBus(ev.msg)
@@ -211,7 +222,7 @@ func (m *Model) sessions() []ideation.Session {
 }
 
 func (m *Model) openSession() (ideation.Session, bool) {
-	if m.openID == "" {
+	if m.openID == "" || m.store == nil {
 		return ideation.Session{}, false
 	}
 	return m.store.Get(m.openID)
@@ -221,8 +232,9 @@ func (m *Model) openSession() (ideation.Session, bool) {
 func (m *Model) open(id string) {
 	m.openID = id
 	m.previewTop = 0
-	m.scroll = 0
-	m.cursors[secArtifacts] = 0
+	m.cursors[secCanvas] = 0
+	m.cursors[secParticipants] = 0
+	m.chatScroll = 0
 	if m.store != nil {
 		if err := m.store.Scan(id); err != nil {
 			m.opErr = err.Error()
@@ -262,13 +274,47 @@ func (m *Model) artifacts() []ideation.Artifact {
 	return s.Artifacts
 }
 
-// artifactRelAt maps the ARTIFACTS cursor to a recorded artifact path.
+// artifactRelAt maps the CANVAS cursor to a recorded artifact path.
 func (m *Model) artifactRelAt(i int) (string, bool) {
 	arts := m.artifacts()
 	if i < 0 || i >= len(arts) {
 		return "", false
 	}
 	return arts[i].Path, true
+}
+
+// sessionRow is one SESSIONS row: a pending proposal or a session (a
+// breakout carries depth 1 and renders nested under its parent).
+type sessionRow struct {
+	proposal *ideation.Proposal
+	sess     *ideation.Session
+	depth    int
+}
+
+// sessionRows builds the flattened SESSIONS list: pending proposals
+// first, then top-level sessions each followed by their breakouts.
+func (m *Model) sessionRows() []sessionRow {
+	var rows []sessionRow
+	if m.store == nil {
+		return rows
+	}
+	pend := m.store.PendingProposals()
+	for i := range pend {
+		p := pend[i]
+		rows = append(rows, sessionRow{proposal: &p})
+	}
+	for _, s := range m.sessions() {
+		if s.Parent != "" {
+			continue // rendered under its parent
+		}
+		sess := s
+		rows = append(rows, sessionRow{sess: &sess})
+		for _, b := range m.store.Breakouts(s.ID) {
+			br := b
+			rows = append(rows, sessionRow{sess: &br, depth: 1})
+		}
+	}
+	return rows
 }
 
 // ---- key routing ----
@@ -280,7 +326,7 @@ func (m *Model) HandleKey(key string) bool {
 	if m.form.kind != fNone {
 		return m.formKey(key)
 	}
-	if m.sec == secChat && m.chatFocus {
+	if m.sec == secTranscript && m.chatFocus {
 		return m.chatComposerKey(key)
 	}
 	return m.sectionKey(key)
@@ -291,7 +337,7 @@ func (m *Model) HandleKey(key string) bool {
 // forms never see the wheel.
 func (m *Model) Wheel(dy int) bool {
 	if dy == 0 || m.ws == nil || m.form.kind != fNone ||
-		(m.sec == secChat && m.chatFocus) {
+		(m.sec == secTranscript && m.chatFocus) {
 		return false
 	}
 	key := "k"
@@ -326,11 +372,11 @@ func (m *Model) sectionKey(key string) bool {
 	}
 
 	switch m.sec {
-	case secArtifacts:
-		return m.artifactsKey(key)
-	case secPreview:
-		return m.previewKey(key)
-	case secChat:
+	case secParticipants:
+		return m.participantsKey(key)
+	case secCanvas:
+		return m.canvasKey(key)
+	case secTranscript:
 		return m.chatKey(key)
 	default:
 		return m.sessionsKey(key)
@@ -364,7 +410,7 @@ func clampCursor(c *int, n int) {
 }
 
 func (m *Model) sessionsKey(key string) bool {
-	rows := m.sessions()
+	rows := m.sessionRows()
 	c := &m.cursors[secSessions]
 	clampCursor(c, len(rows))
 	switch key {
@@ -386,31 +432,61 @@ func (m *Model) sessionsKey(key string) bool {
 			textField("name   ", ""),
 			textField("topic  ", ""),
 			textField("agents ", firstAgent(m)+" (comma-separated)"),
+			toggleField("mode   ", sessionModes),
 		}}
+		return true
+	case "b":
+		if m.store == nil {
+			return false
+		}
+		if sel := selSession(rows, *c); sel == nil || sel.ID == "" {
+			return false
+		} else {
+			m.form = formState{kind: fNewBreakout, parent: sel.ID, fields: []field{
+				textField("name   ", ""),
+				textField("topic  ", ""),
+				textField("agents ", "(blank = inherit)"),
+			}}
+		}
 		return true
 	case "enter", "v":
 		if sel := selSession(rows, *c); sel != nil {
 			m.open(sel.ID)
-			m.sec = secArtifacts
+			m.sec = secCanvas
 		}
 		return true
-	case "x":
-		if sel := selSession(rows, *c); sel != nil {
-			m.form = formState{kind: fRemoveConfirm, orig: sel.ID}
+	case "a", "x":
+		if *c < len(rows) && rows[*c].proposal != nil {
+			if key == "a" {
+				m.acceptProposal(*rows[*c].proposal)
+			} else {
+				m.declineProposal(*rows[*c].proposal)
+			}
 			return true
+		}
+		if key == "x" {
+			if sel := selSession(rows, *c); sel != nil {
+				m.form = formState{kind: fRemoveConfirm, orig: sel.ID}
+				return true
+			}
 		}
 	}
 	return false
 }
 
-func (m *Model) artifactsKey(key string) bool {
-	_, ok := m.openSession()
-	c := &m.cursors[secArtifacts]
-	arts := m.artifacts()
-	clampCursor(c, len(arts))
+// sessionModes is the create-form mode toggle order.
+var sessionModes = []string{string(ideation.ModeGroup), string(ideation.ModeOneOnOne)}
+
+func (m *Model) participantsKey(key string) bool {
+	if _, ok := m.openSession(); !ok {
+		return false
+	}
+	n := len(m.participantRows())
+	c := &m.cursors[secParticipants]
+	clampCursor(c, n)
 	switch key {
 	case "j", "down":
-		if *c < len(arts)-1 {
+		if *c < n-1 {
 			*c++
 		}
 		return true
@@ -419,21 +495,156 @@ func (m *Model) artifactsKey(key string) bool {
 			*c--
 		}
 		return true
-	case "enter", "\t", "l":
-		if ok && *c < len(arts) {
-			m.previewTop = 0
-			m.sec = secPreview
+	case "f":
+		if agent, ok := m.participantAt(*c); ok {
+			if agent == "" {
+				m.grantOnly("")
+			} else {
+				m.giveFloor(agent)
+			}
 		}
 		return true
+	case "m":
+		if m.store == nil {
+			return false
+		}
+		target := ""
+		if *c > 0 {
+			agent, ok := m.participantAt(*c)
+			if !ok {
+				return false
+			}
+			target = agent
+		}
+		if err := m.store.SetModerator(m.openID, target); err != nil {
+			m.opErr = err.Error()
+		} else if target == "" {
+			m.closeFormWithFlash("the user moderates " + m.openID)
+		} else {
+			m.closeFormWithFlash(target + " moderates " + m.openID)
+		}
+		return true
+	case "a":
+		if m.store == nil {
+			return false
+		}
+		m.form = formState{kind: fAddParticipant, fields: []field{
+			textField("agent  ", "scout (comma-separated)"),
+		}}
+		return true
+	case "x":
+		if *c == 0 {
+			return true // the moderator slot is not removable
+		}
+		if agent, ok := m.participantAt(*c); ok {
+			m.form = formState{kind: fRemoveParticipant, orig: agent}
+			return true
+		}
+	}
+	return false
+}
+
+// participantRows is [moderator-slot] + participants, excluding the
+// moderator from the agent rows so a moderator-agent is not listed twice.
+// Index 0 is the moderator: "you" when the user moderates, else the
+// moderator's id.
+func (m *Model) participantRows() []string {
+	sess, ok := m.openSession()
+	if !ok {
+		return nil
+	}
+	rows := []string{moderatorName(sess)}
+	for _, a := range sess.Agents {
+		if a == sess.Moderator {
+			continue
+		}
+		rows = append(rows, a)
+	}
+	return rows
+}
+
+// participantAt maps a PARTICIPANTS cursor to an agent id ("" = the
+// user/moderator slot).
+func (m *Model) participantAt(i int) (string, bool) {
+	sess, ok := m.openSession()
+	if !ok || i < 0 {
+		return "", false
+	}
+	if i == 0 {
+		return sess.Moderator, true
+	}
+	agents := make([]string, 0, len(sess.Agents))
+	for _, a := range sess.Agents {
+		if a == sess.Moderator {
+			continue
+		}
+		agents = append(agents, a)
+	}
+	if i-1 < len(agents) {
+		return agents[i-1], true
+	}
+	return "", false
+}
+
+func (m *Model) canvasKey(key string) bool {
+	arts := m.artifacts()
+	c := &m.cursors[secCanvas]
+	clampCursor(c, len(arts))
+	var rel string
+	var hasRel bool
+	switch key {
+	case "j", "down":
+		if *c < len(arts)-1 {
+			*c++
+			m.previewTop = 0
+			m.clampPreview()
+		}
+		return true
+	case "k", "up":
+		if *c > 0 {
+			*c--
+			m.previewTop = 0
+			m.clampPreview()
+		}
+		return true
+	case "J":
+		m.previewTop++
+		m.clampPreview()
+		return true
+	case "K":
+		if m.previewTop > 0 {
+			m.previewTop--
+		}
+		return true
+	case "g":
+		m.previewTop = 0
+		return true
+	case "G":
+		m.previewTop = maxInt(0, len(m.previewLines())-m.previewHeight())
+		return true
 	case "s":
-		if ok {
+		if m.store != nil {
 			if err := m.store.Scan(m.openID); err != nil {
 				m.opErr = err.Error()
 			} else {
 				m.closeFormWithFlash("scanned " + m.openID)
 			}
+		}
+		return true
+	case "e":
+		rel, hasRel = m.artifactRelAt(*c)
+		if !hasRel {
 			return true
 		}
+		if m.openInEditor == nil {
+			m.opErr = "open in editor unavailable"
+			return true
+		}
+		abs := m.store.ArtifactPath(m.openID, rel)
+		if !m.openInEditor([]string{abs}) {
+			m.opErr = "open in editor refused"
+		}
+		return true
 	case "v":
 		if rel, ok := m.artifactRelAt(*c); ok {
 			if err := m.store.MarkReviewed(m.openID, rel); err != nil {
@@ -461,37 +672,21 @@ func (m *Model) artifactsKey(key string) bool {
 	return false
 }
 
-func (m *Model) previewKey(key string) bool {
-	switch key {
-	case "j", "down":
-		m.previewTop++
-		m.clampPreview()
-		return true
-	case "k", "up":
-		if m.previewTop > 0 {
-			m.previewTop--
-		}
-		return true
-	case "g":
-		m.previewTop = 0
-		return true
-	case "G":
-		m.previewTop = maxInt(0, len(m.previewLines())-m.previewHeight())
-		return true
-	case "\t", "h":
-		m.sec = secArtifacts
-		return true
-	}
-	return false
-}
-
-func (m *Model) createSession(name, topic string, agents []string) {
+func (m *Model) createSession(name, topic string, agents []string, mode ideation.SessionMode, parent string) {
 	if m.store == nil {
 		return
 	}
 	m.busy = true
 	go func() {
-		sess, err := m.store.Create(name, topic, agents)
+		var sess ideation.Session
+		var err error
+		if parent != "" {
+			sess, err = m.store.CreateBreakout(parent, name, topic, agents)
+		} else {
+			sess, err = m.store.CreateSession(ideation.CreateOptions{
+				Name: name, Topic: topic, Mode: mode, Agents: agents,
+			})
+		}
 		ev := ideEvent{kind: evCreated}
 		if err != nil {
 			ev.err = err.Error()
@@ -500,6 +695,46 @@ func (m *Model) createSession(name, topic string, agents []string) {
 		}
 		m.send(ev)
 	}()
+}
+
+// acceptProposal opens the proposed session/breakout and records the
+// slug on the proposal. Only the human can do this (F-033 acceptance 3).
+func (m *Model) acceptProposal(p ideation.Proposal) {
+	if m.store == nil {
+		return
+	}
+	var sess ideation.Session
+	var err error
+	if p.Mode == ideation.ModeBreakout {
+		sess, err = m.store.CreateBreakout(p.Parent, p.Name, p.Topic, p.Participants)
+	} else {
+		sess, err = m.store.CreateSession(ideation.CreateOptions{
+			Name: p.Name, Topic: p.Topic, Mode: p.Mode, Agents: p.Participants,
+		})
+	}
+	if err != nil {
+		m.opErr = err.Error()
+		return
+	}
+	if err := m.store.Decision(p.ID, ideation.ProposalAccepted, sess.ID); err != nil {
+		m.opErr = err.Error()
+		return
+	}
+	m.open(sess.ID)
+	m.sec = secCanvas
+	m.closeFormWithFlash("opened " + sess.ID + " (proposal #" + itoa(p.ID) + ")")
+}
+
+// declineProposal creates nothing and marks the proposal decided.
+func (m *Model) declineProposal(p ideation.Proposal) {
+	if m.store == nil {
+		return
+	}
+	if err := m.store.Decision(p.ID, ideation.ProposalDeclined, ""); err != nil {
+		m.opErr = err.Error()
+		return
+	}
+	m.closeFormWithFlash("declined proposal #" + itoa(p.ID))
 }
 
 func (m *Model) removeSession(id string) {
@@ -513,12 +748,60 @@ func (m *Model) removeSession(id string) {
 	if m.openID == id {
 		m.openID = ""
 	}
-	clampCursor(&m.cursors[secSessions], len(m.sessions()))
+	clampCursor(&m.cursors[secSessions], len(m.sessionRows()))
 }
 
-func selSession(rows []ideation.Session, i int) *ideation.Session {
-	if i < len(rows) {
-		return &rows[i]
+// grantOnly records a floor grant (or release) without dispatching.
+func (m *Model) grantOnly(speaker string) {
+	sess, ok := m.openSession()
+	if !ok || m.store == nil {
+		return
+	}
+	if sess.CurrentSpeaker() == speaker {
+		return
+	}
+	var err error
+	if speaker == "" {
+		err = m.store.ReleaseFloor(sess.ID)
+	} else {
+		err = m.store.GrantFloor(sess.ID, speaker)
+	}
+	if err != nil {
+		m.opErr = err.Error()
+	}
+}
+
+// giveFloor records a grant and dispatches one turn to the speaker. The
+// floor grant is not written to the transcript (the turn order is on the
+// session card); the synthetic trigger carries the @mention the runtime
+// needs to route the turn.
+func (m *Model) giveFloor(speaker string) {
+	m.opErr = ""
+	if speaker == "" {
+		m.grantOnly("")
+		return
+	}
+	sess, ok := m.openSession()
+	if !ok || m.store == nil {
+		return
+	}
+	if sess.CurrentSpeaker() == speaker {
+		return
+	}
+	m.grantOnly(speaker)
+	if m.opErr != "" {
+		return
+	}
+	prompt := "the moderator grants you the floor"
+	if sess.Topic != "" {
+		prompt += " — " + sess.Topic
+	}
+	m.requestTurn(bus.Message{Channel: sess.Channel, Author: busHuman, Text: "@" + speaker + " " + prompt})
+}
+
+func selSession(rows []sessionRow, i int) *ideation.Session {
+	if i >= 0 && i < len(rows) {
+		return rows[i].sess
 	}
 	return nil
 }
@@ -542,13 +825,6 @@ func csvList(s string) []string {
 		}
 	}
 	return out
-}
-
-func errString(err error) string {
-	if err == nil {
-		return ""
-	}
-	return err.Error()
 }
 
 func maxInt(a, b int) int {

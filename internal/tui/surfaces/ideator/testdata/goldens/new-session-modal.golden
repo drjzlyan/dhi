@@ -1,21 +1,22 @@
 ▌ SESSIONS          ╭─ › sessions ─────────────────────────────────────────────────────────────────╮
-  ARTIFACTS         │ (none — press n to start one)                                                │
-  PREVIEW           │                                                                              │
-  CHAT              │                                                                              │
+  PARTICIPANTS      │ (none — press n to start one)                                                │
+  CANVAS            │                                                                              │
+  TRANSCRIPT        │                                                                              │
                     │                                                                              │
                     │                                                                              │
                     │                                                                              │
                     │                                                                              │
                     │                                                                              │
                     │                                                                              │
-                               ╭─ › new session ───────────────────────────────────────╮            
-                               │ opens a channel and an artifact folder                │            
-                               │ ▌ name    ▏                                           │            
-                               │   topic                                               │            
-                               │   agents  scout (comma-separated)                     │            
-                               │                                                       │            
-                               │ agents are mentioned by id · tab field · enter create │            
-                               ╰───────────────────────────────────────────────────────╯            
+                                       ╭─ › new session ────────────────────────╮                   
+                                       │ opens a channel and an artifact folder │                   
+                                       │ ▌ name    ▏                            │                   
+                                       │   topic                                │                   
+                                       │   agents  scout (comma-separated)      │                   
+                                       │   mode    < group >                    │                   
+                                       │                                        │                   
+                                       │ tab field · ←/→ mode · enter create    │                   
+                                       ╰────────────────────────────────────────╯                   
                                                                                                     
                     │                                                                              │
                     │                                                                              │
@@ -25,6 +26,5 @@
                     │                                                                              │
                     │                                                                              │
                     │                                                                              │
-                    │                                                                              │
-                    │ n new • enter open • x remove                                                │
+                    │ n new • b breakout • enter open • a/x proposals • x remove                   │
 [ ] sections        ╰──────────────────────────────────────────────────────────────────────────────╯

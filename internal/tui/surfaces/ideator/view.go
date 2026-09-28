@@ -72,19 +72,19 @@ func (m *Model) railView(h int) string {
 	}).View()
 }
 
-// sectionCounts feeds the rail: sessions, artifacts, and the chat
-// agent-message count (F-026 P6 — the reviewer's computed-and-discarded
-// counts pattern ends here too).
+// sectionCounts feeds the rail: sessions, participants, artifacts and
+// the transcript's agent-message count.
 func (m *Model) sectionCounts() [secCount]int {
 	var c [secCount]int
 	if m.store != nil {
-		c[secSessions] = len(m.store.Sessions())
+		c[secSessions] = len(m.store.Sessions()) + len(m.store.PendingProposals())
 		if s, ok := m.openSession(); ok {
-			c[secArtifacts] = len(s.Artifacts)
+			c[secParticipants] = len(s.Agents)
+			c[secCanvas] = len(s.Artifacts)
 			if m.bus != nil {
 				for _, msg := range m.bus.History(s.Channel, 0) {
 					if msg.Author != bus.Human {
-						c[secChat]++
+						c[secTranscript]++
 					}
 				}
 			}
@@ -120,6 +120,8 @@ func (m *Model) statusFlash() string {
 		return theme.ChromeStatus(theme.Current.Danger).Render("✗ " + m.form.err)
 	case m.form.flash != "":
 		return theme.ChromeStatus(theme.Current.Success).Render("✓ " + m.form.flash)
+	case m.opErr != "":
+		return theme.ChromeStatus(theme.Current.Danger).Render("✗ " + m.opErr)
 	}
 	return ""
 }
@@ -128,12 +130,12 @@ func (m *Model) statusFlash() string {
 func (m *Model) sectionHints() []string {
 	switch m.sec {
 	case secSessions:
-		return []string{"n new", "enter open", "x remove"}
-	case secArtifacts:
-		return []string{"enter preview", "s scan", "v reviewed", "a approve", "r reject"}
-	case secPreview:
-		return []string{"j/k scroll", "esc back"}
-	case secChat:
+		return []string{"n new", "b breakout", "enter open", "a/x proposals", "x remove"}
+	case secParticipants:
+		return []string{"f floor", "m moderator", "a invite", "x remove"}
+	case secCanvas:
+		return []string{"j/k select", "J/K scroll", "s scan", "v/a/r review", "e edit"}
+	case secTranscript:
 		return []string{"i compose", "enter send"}
 	}
 	return nil
@@ -141,11 +143,11 @@ func (m *Model) sectionHints() []string {
 
 func (m *Model) activeSectionFor(w, h int) string {
 	switch m.sec {
-	case secArtifacts:
-		return m.artifactsBody(w - 4)
-	case secPreview:
-		return m.previewBody(w-4, maxInt(h-4, 6))
-	case secChat:
+	case secParticipants:
+		return m.participantsBody(w - 4)
+	case secCanvas:
+		return m.canvasBody(w-4, maxInt(h-4, 8))
+	case secTranscript:
 		return m.chatBody(w-4, maxInt(h-4, 6))
 	default:
 		return m.sessionsBody(w - 4)
@@ -172,59 +174,156 @@ func (m *Model) sectionStrip() string {
 
 func (m *Model) activeSection() string {
 	switch m.sec {
-	case secArtifacts:
-		return m.artifactsBody(maxInt(m.width-8, 40))
-	case secPreview:
-		return m.previewBody(maxInt(m.width-8, 40), maxInt(m.height-8, 12))
-	case secChat:
+	case secParticipants:
+		return m.participantsBody(maxInt(m.width-8, 40))
+	case secCanvas:
+		return m.canvasBody(maxInt(m.width-8, 40), maxInt(m.height-8, 8))
+	case secTranscript:
 		return m.chatBody(maxInt(m.width-8, 40), maxInt(m.height-8, 12))
 	default:
 		return m.sessionsBody(maxInt(m.width-8, 40))
 	}
 }
 
-// ---- section bodies ----
+// ---- SESSIONS ----
 
 func (m *Model) sessionsBody(w int) string {
-	rows := m.sessions()
-	c := m.cursors[secSessions]
-	clampCursor(&c, len(rows))
-
-	var out []string
 	if m.store == nil {
-		out = append(out, theme.DangerText().Render("(session store unavailable)"))
-		return strings.Join(out, "\n")
+		return theme.DangerText().Render("(session store unavailable)")
 	}
+	var out []string
 	if warn := m.store.Warnings(); len(warn) > 0 {
 		out = append(out, theme.DangerText().Render(
 			fmt.Sprintf("%d malformed card(s) skipped", len(warn))))
 	}
+	rows := m.sessionRows()
+	c := m.cursors[secSessions]
+	clampCursor(&c, len(rows))
 	if len(rows) == 0 {
 		out = append(out, theme.TextDim().Render("(none — press n to start one)"))
 	}
-	for i, s := range rows {
+	for i, row := range rows {
+		active := i == c
 		style := theme.TextDim()
-		if i == c {
+		if active {
 			style = theme.TabActive()
 		}
-		line := cursorGlyph(i == c) +
-			style.Render(padTo(crop(s.ID, 26), 28)) +
-			theme.Hint().Render(crop(s.Topic+"  ["+itoa(len(s.Agents))+" invited]",
-				maxInt(w-32, 12)))
+		indent := strings.Repeat("  ", row.depth)
+		if row.proposal != nil {
+			p := row.proposal
+			line := indent + cursorGlyph(active) +
+				theme.WarningText().Render("propose ") +
+				style.Render(padTo(crop(p.Name, 24), 26)) +
+				theme.Hint().Render(crop("["+string(p.Mode)+"] by "+p.Caller, maxInt(w-40, 12)))
+			out = append(out, line)
+			if active {
+				out = append(out, indent+"      "+theme.TextDim().Render(
+					"a accept · x decline · does not open until you accept"))
+			}
+			continue
+		}
+		s := row.sess
+		line := indent + cursorGlyph(active) +
+			style.Render(padTo(crop(s.ID, 24), 26)) +
+			modeChip(s) + " " +
+			theme.Hint().Render(crop(s.Topic+"  ["+itoa(len(s.Agents))+"]", maxInt(w-44, 8)))
 		out = append(out, line)
-		if i == c {
+		if active {
 			detail := s.Channel
-			if len(s.Agents) > 0 {
-				detail += " · " + strings.Join(s.Agents, ", ")
+			if s.Moderator != "" {
+				detail += " · moderator " + s.Moderator
 			}
-			if n := len(s.Artifacts); n > 0 {
-				detail += fmt.Sprintf(" · %d artifact(s)", n)
+			if h := s.CurrentSpeaker(); h != "" {
+				detail += " · floor " + h
+			} else {
+				detail += " · floor you"
 			}
-			out = append(out, "      "+theme.TextDim().Render(detail))
+			if n := len(m.store.Breakouts(s.ID)); n > 0 {
+				detail += fmt.Sprintf(" · %d breakout(s)", n)
+			}
+			out = append(out, indent+"      "+theme.TextDim().Render(crop(detail, maxInt(w-8, 12))))
 		}
 	}
 	return strings.Join(out, "\n")
 }
+
+// modeChip renders the session mode as a colored tag.
+func modeChip(s *ideation.Session) string {
+	switch s.Mode {
+	case ideation.ModeOneOnOne:
+		return theme.InfoText().Render("[1:1]")
+	case ideation.ModeBreakout:
+		return theme.AccentText().Render("[breakout]")
+	default:
+		return theme.TextDim().Render("[group]")
+	}
+}
+
+// ---- PARTICIPANTS ----
+
+func (m *Model) participantsBody(w int) string {
+	sess, ok := m.openSession()
+	if !ok {
+		return theme.TextDim().Render("(no session open — pick one under SESSIONS)")
+	}
+	rows := m.participantRows()
+	c := m.cursors[secParticipants]
+	clampCursor(&c, len(rows))
+	holder := sess.CurrentSpeaker()
+	out := []string{theme.TextDim().Render(
+		"moderator: " + moderatorName(sess) + " · floor: " + floorName(holder))}
+	for i, name := range rows {
+		active := i == c
+		style := theme.TextDim()
+		if active {
+			style = theme.TabActive()
+		}
+		marker := "  "
+		switch {
+		case i == 0 && holder == "":
+			marker = theme.SuccessText().Render("● ")
+		case i == 0 && sess.Moderator != "" && holder == sess.Moderator:
+			marker = theme.SuccessText().Render("● ")
+		case i > 0 && name == holder:
+			marker = theme.SuccessText().Render("● ")
+		}
+		role := ""
+		switch {
+		case i == 0 && sess.Moderator == "":
+			role = " (you · moderator)"
+		case i == 0:
+			role = " (moderator)"
+		case name == sess.Moderator:
+			role = " (moderator)"
+		}
+		line := cursorGlyph(active) + marker + style.Render(crop(name, maxInt(w-16, 8))) +
+			theme.Hint().Render(role)
+		if !active {
+			line = "  " + marker + style.Render(crop(name, maxInt(w-16, 8))) + theme.Hint().Render(role)
+		}
+		out = append(out, line)
+	}
+	out = append(out, "")
+	out = append(out, theme.Hint().Render(
+		"f grant the floor · m set moderator · a invite · x remove"))
+	return strings.Join(out, "\n")
+}
+
+func moderatorName(sess ideation.Session) string {
+	if sess.Moderator == "" {
+		return "you"
+	}
+	return sess.Moderator
+}
+
+func floorName(holder string) string {
+	if holder == "" {
+		return "you"
+	}
+	return holder
+}
+
+// ---- CANVAS ----
 
 // sortedArtifacts orders a session's artifacts: draft (newest work)
 // → reviewed → approved → rejected last, path order within a status.
@@ -244,32 +343,34 @@ func sortedArtifacts(arts []ideation.Artifact) []ideation.Artifact {
 	return out
 }
 
-func (m *Model) artifactsBody(w int) string {
-	var out []string
+// canvasBody renders the artifact list and the selected artifact's live
+// preview (markdown/mermaid/raw) inside one pane (F-033 Part B/C).
+func (m *Model) canvasBody(w, h int) string {
 	sess, ok := m.openSession()
 	if !ok {
-		out = append(out, theme.TextDim().Render("(no session open — pick one under SESSIONS)"))
-		return strings.Join(out, "\n")
+		return theme.TextDim().Render("(no session open — pick one under SESSIONS)")
 	}
-	// Active work first (F-026 P6): draft → reviewed → approved,
-	// rejected last; name order inside a status.
+	out := []string{theme.Hint().Render(sess.ID) +
+		theme.TextDim().Render("  canvas · live preview · e edit in editor")}
 	arts := sortedArtifacts(sess.Artifacts)
 	if len(arts) == 0 {
-		out = append(out, theme.TextDim().Render("(none yet — agents write into .dhi/sessions/"+sess.ID+"/)"))
+		out = append(out, theme.TextDim().Render(
+			"(none yet — agents write with artifact_create under .dhi/sessions/"+sess.ID+"/)"))
 		return strings.Join(out, "\n")
 	}
-	c := m.cursors[secArtifacts]
+	c := m.cursors[secCanvas]
 	clampCursor(&c, len(arts))
 	for i, a := range arts {
+		active := i == c
 		style := theme.TextDim()
-		if i == c {
+		if active {
 			style = theme.TabActive()
 		}
-		line := cursorGlyph(i == c) +
+		line := cursorGlyph(active) +
 			style.Render(padTo(crop(a.Path, maxInt(w-24, 10)), maxInt(w-22, 12))) +
 			statusChip(a)
 		out = append(out, line)
-		if i == c && (a.Author != "" || a.Notes != "") {
+		if active && (a.Author != "" || a.Notes != "") {
 			detail := ""
 			if a.Author != "" {
 				detail += "by " + a.Author
@@ -283,6 +384,27 @@ func (m *Model) artifactsBody(w int) string {
 			out = append(out, "      "+theme.TextDim().Render(crop(detail, maxInt(w-8, 12))))
 		}
 	}
+	out = append(out, "")
+	// Live preview of the selected artifact, windowed by the remaining rows.
+	avail := h - len(out)
+	if avail < 3 {
+		avail = 3
+	}
+	rel, _ := m.artifactRelAt(c)
+	e, _ := m.loadPreview(w)
+	total := len(e.lines)
+	top := m.previewTop
+	if top > total {
+		top = 0
+	}
+	for i := top; i < total && len(out) < h; i++ {
+		out = append(out, e.lines[i])
+	}
+	if top+avail < total {
+		out = append(out, theme.Hint().Render(
+			fmt.Sprintf("… %d more (J/K scroll)", total-top-avail)))
+	}
+	_ = rel
 	return strings.Join(out, "\n")
 }
 
@@ -324,18 +446,34 @@ func (m *Model) modalLines() []string {
 			fieldLine(f.fields[0], f.cur == 0),
 			fieldLine(f.fields[1], f.cur == 1),
 			fieldLine(f.fields[2], f.cur == 2),
+			fieldLine(f.fields[3], f.cur == 3),
 			"",
 		}
 		if f.err != "" {
 			lines = append(lines, theme.DangerText().Render(f.err), "")
 		}
 		return append(lines, theme.Hint().Render(
-			"agents are mentioned by id · tab field · enter create"))
+			"tab field · ←/→ mode · enter create"))
+	case fNewBreakout:
+		lines := []string{
+			theme.TextDim().Render("nests under " + f.parent),
+			fieldLine(f.fields[0], f.cur == 0),
+			fieldLine(f.fields[1], f.cur == 1),
+			fieldLine(f.fields[2], f.cur == 2),
+			"",
+		}
+		if f.err != "" {
+			lines = append(lines, theme.DangerText().Render(f.err), "")
+		}
+		return append(lines, theme.Hint().Render("enter open breakout"))
 	case fRemoveConfirm:
 		return confirmLines("remove session "+f.target()+"?",
 			[]string{"the card is deleted. Artifacts under",
-				".dhi/sessions/ stay on disk — nothing",
-				"you ideated is ever garbage-collected."}, f)
+				".dhi/sessions/ stay on disk. A session",
+				"with breakouts refuses until they go."}, f)
+	case fRemoveParticipant:
+		return confirmLines("remove participant "+f.target()+"?",
+			[]string{"they can be invited again at any time."}, f)
 	case fReject:
 		lines := []string{
 			theme.TextDim().Render("routes back to the authoring agent"),
@@ -347,6 +485,16 @@ func (m *Model) modalLines() []string {
 		}
 		return append(lines, theme.Hint().Render(
 			"notes post to the session channel · enter reject"))
+	case fAddParticipant:
+		lines := []string{
+			theme.TextDim().Render("invite agents to this session"),
+			fieldLine(f.fields[0], f.cur == 0),
+			"",
+		}
+		if f.err != "" {
+			lines = append(lines, theme.DangerText().Render(f.err), "")
+		}
+		return append(lines, theme.Hint().Render("comma-separated agent ids · enter invite"))
 	}
 
 	lines := make([]string, 0, len(f.fields)*2+3)
@@ -392,7 +540,7 @@ func hintOrErr(f *formState) string {
 	case f.err != "":
 		return theme.DangerText().Render(f.err)
 	default:
-		return theme.Hint().Render("name · topic · invited agents")
+		return theme.Hint().Render("enter submit · esc cancel")
 	}
 }
 
@@ -400,10 +548,16 @@ func modalTitle(k modalKind) string {
 	switch k {
 	case fNewSession:
 		return "new session"
+	case fNewBreakout:
+		return "new breakout"
 	case fRemoveConfirm:
 		return "remove session"
+	case fRemoveParticipant:
+		return "remove participant"
 	case fReject:
 		return "reject artifact"
+	case fAddParticipant:
+		return "invite participants"
 	}
 	return ""
 }

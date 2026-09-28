@@ -1,8 +1,14 @@
-▌ SESSIONS          ╭─ › sessions ─────────────────────────────────────────────────────────────────╮
-  PARTICIPANTS      │ (none — press n to start one)                                                │
-  CANVAS            │                                                                              │
+  SESSIONS         1╭─ › canvas ───────────────────────────────────────────────────────────────────╮
+  PARTICIPANTS      │ docs  canvas · live preview · e edit in editor                               │
+▌ CANVAS           1│ ▌ plan.md                                           ○ draft                  │
   TRANSCRIPT        │                                                                              │
                     │                                                                              │
+                    │    Ideation plan                                                             │
+                    │                                                                              │
+                    │   ## Goals                                                                   │
+                    │                                                                              │
+                    │   • alternatives                                                             │
+                    │   • review loop                                                              │
                     │                                                                              │
                     │                                                                              │
                     │                                                                              │
@@ -20,11 +26,5 @@
                     │                                                                              │
                     │                                                                              │
                     │                                                                              │
-                    │                                                                              │
-                    │                                                                              │
-                    │                                                                              │
-                    │                                                                              │
-                    │                                                                              │
-                    │                                                                              │
-                    │ n new • b breakout • enter open • a/x proposals • x remove                   │
+                    │ ✓ session docs created  j/k select • J/K scroll • s scan • v/a/r review • e… │
 [ ] sections        ╰──────────────────────────────────────────────────────────────────────────────╯

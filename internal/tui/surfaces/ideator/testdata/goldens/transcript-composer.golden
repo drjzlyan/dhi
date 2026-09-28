@@ -1,7 +1,7 @@
-  SESSIONS         1╭─ › chat ─────────────────────────────────────────────────────────────────────╮
-  ARTIFACTS         │ session chat        i compose · j/k scroll · G latest                        │
-  PREVIEW           │ #ideation-ideas                                                              │
-▌ CHAT              │   (no messages yet — i compose, @mention an invited agent)                   │
+  SESSIONS         1╭─ › transcript ───────────────────────────────────────────────────────────────╮
+  PARTICIPANTS     1│ transcript   mode group · floor you · 0 turn(s)   i compose                  │
+  CANVAS            │ #ideation-ideas                                                              │
+▌ TRANSCRIPT        │   (no messages yet — i compose, @mention an invited agent)                   │
                     │                                                                              │
                     │ > @scout sketch the trade-offs, please▏                                      │
                     │ ⏎ send · @mention triggers agents · esc blur                                 │

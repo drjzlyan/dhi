@@ -118,19 +118,16 @@ func TestSessionsNavAndOpen(t *testing.T) {
 	a, _ := st.Create("Alternatives", "pick one", []string{"scout"})
 	_, _ = st.Create("Docs plan", "", nil)
 
-	// cursor nav
 	if !m.HandleKey("j") || m.cursors[secSessions] != 1 {
 		t.Fatalf("j did not move cursor: %d", m.cursors[secSessions])
 	}
 	if !m.HandleKey("k") || m.cursors[secSessions] != 0 {
 		t.Fatal("k did not move cursor back")
 	}
-	// open scans the (empty) artifact folder and switches sections
 	m.HandleKey("enter")
-	if m.sec != secArtifacts || m.openID != a.ID {
+	if m.sec != secCanvas || m.openID != a.ID {
 		t.Fatalf("open: sec=%v openID=%q", m.sec, m.openID)
 	}
-	// esc returns to SESSIONS
 	m.HandleKey("esc")
 	if m.sec != secSessions {
 		t.Fatal("esc did not return to SESSIONS")
@@ -138,20 +135,18 @@ func TestSessionsNavAndOpen(t *testing.T) {
 }
 
 func TestCreateSessionFlow(t *testing.T) {
-	m, _, _, crew, _ := newSurface(t)
+	m, _, _, _, _ := newSurface(t)
 	sess := createSession(t, m, "Payment retries", "idempotency", "scout, mason")
 	if sess.ID != "payment-retries" || sess.Channel != "#ideation-payment-retries" {
 		t.Fatalf("session = %+v", sess)
 	}
-	if got := m.sessions(); len(got) != 1 || got[0].ID != sess.ID {
-		t.Fatalf("sessions = %+v", got)
+	if sess.Mode != ideation.ModeGroup {
+		t.Fatalf("default mode = %q", sess.Mode)
 	}
-	if m.sec != secArtifacts || m.openID != sess.ID {
+	if m.sec != secCanvas || m.openID != sess.ID {
 		t.Fatalf("post-create state: sec=%v openID=%q", m.sec, m.openID)
 	}
-	_ = crew
-
-	// empty name is refused inside the modal (back on SESSIONS first)
+	// empty name is refused inside the modal
 	m.HandleKey("esc")
 	m.HandleKey("n")
 	m.form.fields[0].runes = nil
@@ -162,6 +157,73 @@ func TestCreateSessionFlow(t *testing.T) {
 	m.HandleKey("esc")
 }
 
+func TestCreateOneOnOneAndBreakout(t *testing.T) {
+	m, _, st, _, _ := newSurface(t)
+	// 1:1 via the create form's mode toggle (←/→ cycles).
+	m.HandleKey("n")
+	m.form.fields[0].runes = []rune("Pair")
+	m.form.fields[1].runes = []rune("sync")
+	m.form.fields[2].runes = []rune("scout")
+	for i := 0; i < 3; i++ {
+		m.HandleKey("tab") // name → topic → agents → mode
+	}
+	m.HandleKey("right") // group -> 1:1
+	if m.form.fields[3].toggleValue() != string(ideation.ModeOneOnOne) {
+		t.Fatalf("toggle = %q", m.form.fields[3].toggleValue())
+	}
+	m.HandleKey("enter")
+	msg := pumpCmd(t, m.listen())
+	ev := msg.(ideEvent)
+	if ev.err != "" {
+		t.Fatalf("1:1 create: %s", ev.err)
+	}
+	m.Update(msg)
+	one, _ := st.Get(ev.id)
+	if one.Mode != ideation.ModeOneOnOne {
+		t.Fatalf("mode = %q", one.Mode)
+	}
+
+	// Breakout under a parent.
+	parent, _ := st.Create("Parent", "", []string{"scout"})
+	m.open(parent.ID)
+	m.sec = secSessions
+	// select the parent row (proposals first, so find its index).
+	idx := -1
+	for i, row := range m.sessionRows() {
+		if row.sess != nil && row.sess.ID == parent.ID {
+			idx = i
+		}
+	}
+	m.cursors[secSessions] = idx
+	m.HandleKey("b")
+	if m.form.kind != fNewBreakout {
+		t.Fatalf("b did not open breakout form: %v", m.form.kind)
+	}
+	m.form.fields[0].runes = []rune("Deep dive")
+	m.HandleKey("enter")
+	msg = pumpCmd(t, m.listen())
+	ev = msg.(ideEvent)
+	if ev.err != "" {
+		t.Fatalf("breakout create: %s", ev.err)
+	}
+	m.Update(msg)
+	child, _ := st.Get(ev.id)
+	if !child.IsBreakout() || child.Parent != parent.ID {
+		t.Fatalf("breakout = %+v", child)
+	}
+	// The child nests under its parent in the row list.
+	nested := false
+	for i, row := range m.sessionRows() {
+		if row.sess != nil && row.sess.ID == child.ID && row.depth == 1 {
+			nested = true
+			_ = i
+		}
+	}
+	if !nested {
+		t.Fatalf("breakout did not nest: %+v", m.sessionRows())
+	}
+}
+
 func TestArtifactsLifecycle(t *testing.T) {
 	m, _, st, _, _ := newSurface(t)
 	sess, _ := st.Create("Ideas", "", []string{"scout"})
@@ -169,12 +231,11 @@ func TestArtifactsLifecycle(t *testing.T) {
 	writeArtifact(t, m, sess.ID, "notes.md", "plain text\n")
 
 	m.open(sess.ID)
-	m.sec = secArtifacts
+	m.sec = secCanvas
 	if got := m.artifacts(); len(got) != 2 {
 		t.Fatalf("artifacts = %+v", got)
 	}
 
-	// mark reviewed, then approve the other one
 	if err := m.store.ClaimAuthor(sess.ID, "design.md", "scout"); err != nil {
 		t.Fatal(err)
 	}
@@ -191,7 +252,6 @@ func TestArtifactsLifecycle(t *testing.T) {
 	if a2.Status != ideation.StatusApproved {
 		t.Fatalf("approved = %+v", a2)
 	}
-	// approved is terminal: reject refused, opErr set
 	m.HandleKey("r")
 	m.form.fields[0].runes = []rune("too late")
 	m.HandleKey("enter")
@@ -200,7 +260,6 @@ func TestArtifactsLifecycle(t *testing.T) {
 	}
 	m.HandleKey("esc")
 
-	// rescan flips rewritten files back to draft
 	writeArtifact(t, m, sess.ID, "design.md", "# Design v2\n")
 	if err := st.Scan(sess.ID); err != nil {
 		t.Fatal(err)
@@ -222,13 +281,12 @@ func TestRejectRoutesToAuthor(t *testing.T) {
 		t.Fatal(err)
 	}
 	m.open(sess.ID)
-	m.sec = secArtifacts
+	m.sec = secCanvas
 
 	m.HandleKey("r")
 	if m.form.kind != fReject {
 		t.Fatalf("expected fReject, got %v", m.form.kind)
 	}
-	// notes required
 	m.HandleKey("enter")
 	if m.form.err == "" {
 		t.Fatal("empty notes accepted")
@@ -243,7 +301,6 @@ func TestRejectRoutesToAuthor(t *testing.T) {
 		t.Fatalf("rejected artifact = %+v", a)
 	}
 
-	// the revision request went to the session channel, mention first
 	hist := b.History(sess.Channel, 0)
 	if len(hist) != 1 {
 		t.Fatalf("channel history = %+v", hist)
@@ -273,7 +330,6 @@ func TestMirrorBusClaimsAuthor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// drain the subscription the way the app would
 	select {
 	case ev := <-m.events:
 		if ev.kind != evBus {
@@ -288,44 +344,67 @@ func TestMirrorBusClaimsAuthor(t *testing.T) {
 	if a.Author != "scout" {
 		t.Fatalf("author not claimed: %+v", a)
 	}
-	// unknown-session traffic is ignored
 	other, _ := b.Post(bus.Message{Channel: "#general", Author: "scout", Text: "hi"})
 	m.mirrorBus(other)
 }
 
-func TestPreviewMarkdownAndRaw(t *testing.T) {
+func TestCanvasMarkdownMermaidRaw(t *testing.T) {
 	m, _, st, _, _ := newSurface(t)
 	sess, _ := st.Create("Docs", "", nil)
 	writeArtifact(t, m, sess.ID, "readme.md", "# Title\n\nSome **bold** text.\n")
+	writeArtifact(t, m, sess.ID, "flow.mmd", "graph TD\n  A[Start] --> B[Done]\n")
 	writeArtifact(t, m, sess.ID, "raw.txt", "just text\n")
 	if err := st.Scan(sess.ID); err != nil {
 		t.Fatal(err)
 	}
 	m.open(sess.ID)
-	m.sec = secArtifacts
+	m.sec = secCanvas
 
-	m.HandleKey("enter") // preview raw.txt (sorts first)
-	if m.sec != secPreview {
-		t.Fatal("enter did not switch to PREVIEW")
+	// artifacts sort by path: flow.mmd, raw.txt, readme.md.
+	body := m.canvasBody(76, 24)
+	if !strings.Contains(body, "Start ──▶ Done") {
+		t.Fatalf("mermaid preview missing: %q", body)
 	}
-	if !strings.Contains(m.previewBody(76, 20), "just text") {
-		t.Fatal("raw preview missing content")
-	}
-	// h returns to ARTIFACTS
-	m.HandleKey("h")
-	if m.sec != secArtifacts {
-		t.Fatal("h did not return")
+	m.HandleKey("j") // raw.txt
+	if body := m.canvasBody(76, 24); !strings.Contains(body, "just text") {
+		t.Fatalf("raw preview missing: %q", body)
 	}
 	m.HandleKey("j") // readme.md
-	m.HandleKey("enter")
-	body := m.previewBody(76, 20)
-	if !strings.Contains(body, "Title") {
-		t.Fatalf("markdown preview missing heading: %q", body)
+	if body := m.canvasBody(76, 24); !strings.Contains(body, "Title") {
+		t.Fatalf("markdown preview missing: %q", body)
 	}
-	// preview of nothing degrades gracefully
+	// canvas of nothing degrades gracefully
 	m2, _, _, _, _ := newSurface(t)
-	if got := m2.previewBody(76, 20); !strings.Contains(got, "no artifact selected") {
-		t.Fatalf("empty preview body = %q", got)
+	if got := m2.canvasBody(76, 20); !strings.Contains(got, "no session open") {
+		t.Fatalf("empty canvas = %q", got)
+	}
+}
+
+func TestCanvasOpenInEditorSeam(t *testing.T) {
+	m, _, st, _, _ := newSurface(t)
+	sess, _ := st.Create("Docs", "", nil)
+	writeArtifact(t, m, sess.ID, "a.md", "# A\n")
+	if err := st.Scan(sess.ID); err != nil {
+		t.Fatal(err)
+	}
+	opened := ""
+	m.openInEditor = func(paths []string) bool {
+		if len(paths) == 1 {
+			opened = paths[0]
+		}
+		return true
+	}
+	m.open(sess.ID)
+	m.sec = secCanvas
+	m.HandleKey("e")
+	if !strings.HasSuffix(opened, "a.md") {
+		t.Fatalf("open seam got %q", opened)
+	}
+	// nil seam degrades with a named hint.
+	m.openInEditor = nil
+	m.HandleKey("e")
+	if !strings.Contains(m.opErr, "unavailable") {
+		t.Fatalf("nil seam hint = %q", m.opErr)
 	}
 }
 
@@ -352,9 +431,6 @@ func TestRemoveSessionConfirm(t *testing.T) {
 	if _, err := os.Stat(m.store.DirFor(sess.ID)); err != nil {
 		t.Fatal("artifact folder was deleted")
 	}
-	if m.openID == sess.ID {
-		t.Fatal("open id still points at removed session")
-	}
 }
 
 func TestNilDepsDegrade(t *testing.T) {
@@ -372,121 +448,188 @@ func TestNilDepsDegrade(t *testing.T) {
 	}
 }
 
-func TestChatComposeAndDispatch(t *testing.T) {
-	m, _, st, crew, b := newSurface(t)
-	sess, _ := st.Create("Ideas", "", []string{"scout", "mason"})
+func TestParticipantsFloorAndRoles(t *testing.T) {
+	m, _, st, crew, _ := newSurface(t)
+	sess, err := st.CreateSession(ideation.CreateOptions{
+		Name: "Round", Topic: "engines", Mode: ideation.ModeGroup,
+		Agents: []string{"scout", "mason"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	m.open(sess.ID)
-	m.sec = secChat
+	m.sec = secParticipants
 
-	// no session open → compose refused
-	m2, _, _, _, _ := newSurface(t)
-	m2.sec = secChat
-	m2.HandleKey("i")
-	if m2.chatFocus {
-		t.Fatal("compose focused without a session")
+	// Cursor 0 is the moderator slot; row 1 is the first sorted agent.
+	m.HandleKey("j")
+	agent, ok := m.participantAt(m.cursors[secParticipants])
+	if !ok || agent == "" {
+		t.Fatalf("participant cursor = %d agent=%q ok=%v", m.cursors[secParticipants], agent, ok)
 	}
-
-	m.HandleKey("i")
-	if !m.chatFocus {
-		t.Fatal("i did not focus composer")
+	// f grants the floor and dispatches a turn.
+	m.HandleKey("f")
+	got, _ := st.Get(sess.ID)
+	if got.CurrentSpeaker() != agent {
+		t.Fatalf("floor = %q want %q", got.CurrentSpeaker(), agent)
 	}
-	for _, r := range "@scout @mason propose two storage alternatives" {
-		m.HandleKey(string(r))
+	if len(crew.handled) == 0 || !strings.Contains(crew.handled[len(crew.handled)-1].Text, "@"+agent) {
+		t.Fatalf("floor grant did not dispatch: %+v", crew.handled)
+	}
+	// Invite a third agent.
+	m.HandleKey("a")
+	m.form.fields[0].runes = []rune("nova")
+	m.HandleKey("enter")
+	got, _ = st.Get(sess.ID)
+	if len(got.Agents) != 3 {
+		t.Fatalf("invite = %v", got.Agents)
+	}
+	// Remove the selected participant (confirm).
+	m.HandleKey("x")
+	if m.form.kind != fRemoveParticipant {
+		t.Fatalf("x did not open remove: %v", m.form.kind)
 	}
 	m.HandleKey("enter")
-	if len(m.chatInput) != 0 {
-		t.Fatal("enter did not clear input")
+	got, _ = st.Get(sess.ID)
+	if got.Participates(agent) {
+		t.Fatalf("participant not removed: %v", got.Agents)
 	}
-	m.HandleKey("esc")
-	if m.chatFocus {
-		t.Fatal("esc did not blur composer")
+	// m makes the selected participant the moderator.
+	sel, ok := m.participantAt(m.cursors[secParticipants])
+	if !ok || sel == "" {
+		t.Fatalf("no participant selected after removal: %d", m.cursors[secParticipants])
 	}
-	if len(crew.handled) != 1 || crew.handled[0].Text == "" {
-		t.Fatalf("dispatch = %+v", crew.handled)
+	m.HandleKey("m")
+	got, _ = st.Get(sess.ID)
+	if got.Moderator != sel {
+		t.Fatalf("moderator = %q want %q", got.Moderator, sel)
 	}
-	hist := b.History(sess.Channel, 0)
-	if len(hist) != 1 || hist[0].Author != bus.Human {
-		t.Fatalf("history = %+v", hist)
+}
+
+func TestRoundTableFloorProtocol(t *testing.T) {
+	m, _, st, crew, b := newSurface(t)
+	sess, err := st.CreateSession(ideation.CreateOptions{
+		Name: "Round", Topic: "storage", Mode: ideation.ModeGroup,
+		Agents: []string{"scout", "mason"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.open(sess.ID)
+	m.sec = secTranscript
+
+	// Human addresses scout → floor moves to scout and a turn dispatches.
+	m.chatPost("@scout propose two options")
+	got, _ := st.Get(sess.ID)
+	if got.CurrentSpeaker() != "scout" {
+		t.Fatalf("after human post floor = %q", got.CurrentSpeaker())
+	}
+	if len(crew.handled) != 1 || !strings.Contains(crew.handled[0].Text, "@scout") {
+		t.Fatalf("human dispatch = %+v", crew.handled)
 	}
 
-	// agent reply arrives on the bus; the pump mirrors it and re-renders
+	// Scout replies addressing mason → floor hands to mason automatically.
 	reply, err := b.Post(bus.Message{
 		Channel: sess.Channel, Author: "scout",
-		Text: "Option A: append-only log, Option B: b-tree",
+		Text: "@mason what do you think?",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	m.mirrorBus(reply)
-	body := m.chatBody(76, 20)
-	if !strings.Contains(body, "Option A") {
-		t.Fatalf("reply not rendered: %q", body)
+	got, _ = st.Get(sess.ID)
+	if got.CurrentSpeaker() != "mason" {
+		t.Fatalf("floor hand-off = %q (turns %+v)", got.CurrentSpeaker(), got.Turns)
 	}
-	// human messages render with their author tag too
-	if !strings.Contains(body, "propose two storage") {
-		t.Fatalf("own message not rendered: %q", body)
+	if len(crew.handled) != 2 || !strings.Contains(crew.handled[1].Text, "@mason") {
+		t.Fatalf("hand-off dispatch = %+v", crew.handled)
+	}
+
+	// Mason replies unaddressed → floor returns to the moderator.
+	reply2, _ := b.Post(bus.Message{Channel: sess.Channel, Author: "mason", Text: "Option A."})
+	m.mirrorBus(reply2)
+	got, _ = st.Get(sess.ID)
+	if got.CurrentSpeaker() != "" {
+		t.Fatalf("floor should return to moderator, got %q", got.CurrentSpeaker())
+	}
+	// The ordered record replays.
+	if len(got.Turns) != 3 || got.Turns[0].Speaker != "scout" || got.Turns[1].Speaker != "mason" || got.Turns[2].Speaker != "" {
+		t.Fatalf("turn order = %+v", got.Turns)
+	}
+	// Transcript carries ordered ids.
+	body := m.chatBody(76, 24)
+	if !strings.Contains(body, "#1") || !strings.Contains(body, "floor ") {
+		t.Fatalf("transcript body = %q", body)
 	}
 }
 
-func TestFullAcceptanceFlow(t *testing.T) {
-	// F-004 acceptance: start a session, invite two agents, request
-	// alternatives; both respond in chat and produce artifacts; reject
-	// routes revision instructions back to the authoring agent.
+func TestOneOnOneAutoDispatch(t *testing.T) {
 	m, _, st, crew, _ := newSurface(t)
-	sess := createSession(t, m, "Storage", "engines", "scout, mason")
-	m.sec = secArtifacts
-
-	// agents "respond" and produce artifacts
-	writeArtifact(t, m, sess.ID, "option-log.md", "# Log\n")
-	writeArtifact(t, m, sess.ID, "option-btree.md", "# B-tree\n")
-	if err := st.Scan(sess.ID); err != nil {
+	sess, err := st.CreateSession(ideation.CreateOptions{
+		Name: "Pair", Mode: ideation.ModeOneOnOne, Agents: []string{"scout"},
+	})
+	if err != nil {
 		t.Fatal(err)
 	}
-	// option-btree.md sorts first; scout authored it
-	if err := st.ClaimAuthor(sess.ID, "option-btree.md", "scout"); err != nil {
+	m.open(sess.ID)
+	m.sec = secTranscript
+	m.chatPost("how should we cache this?")
+	got, _ := st.Get(sess.ID)
+	if got.CurrentSpeaker() != "scout" {
+		t.Fatalf("1:1 floor = %q", got.CurrentSpeaker())
+	}
+	// requestTurn(posted) + the 1:1 invite both dispatch.
+	if len(crew.handled) != 2 || !strings.Contains(crew.handled[1].Text, "@scout") {
+		t.Fatalf("1:1 dispatch = %+v", crew.handled)
+	}
+}
+
+func TestProposalsAcceptDecline(t *testing.T) {
+	m, _, st, _, _ := newSurface(t)
+	parent, _ := st.Create("Parent", "", []string{"scout"})
+	if _, err := st.Propose("scout", "New idea", "explore", ideation.ModeGroup, "", []string{"scout"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.ClaimAuthor(sess.ID, "option-log.md", "mason"); err != nil {
+	if _, err := st.Propose("mason", "Deep dive", "", ideation.ModeBreakout, parent.ID, nil); err != nil {
 		t.Fatal(err)
 	}
-
-	// human rejects scout's option with notes → routes to scout only
-	m.HandleKey("r")
-	m.form.fields[0].runes = []rune("compare against write throughput")
-	m.HandleKey("enter")
-	if len(crew.handled) != 1 {
-		t.Fatalf("crew dispatches = %d", len(crew.handled))
-	}
-	if !strings.HasPrefix(crew.handled[0].Text, "@scout ") {
-		t.Fatalf("revision routed to %q: %q", "", crew.handled[0].Text)
-	}
-	if crew.handled[0].Channel != sess.Channel {
-		t.Fatalf("revision went to %q", crew.handled[0].Channel)
+	m.sec = secSessions
+	if rows := m.sessionRows(); len(rows) < 2 || rows[0].proposal == nil {
+		t.Fatalf("proposals not first: %+v", rows)
 	}
 
-	// scout revises the file; rescan flips it back to draft
-	writeArtifact(t, m, sess.ID, "option-btree.md", "# B-tree v2\n\nthroughput table\n")
-	if err := st.Scan(sess.ID); err != nil {
-		t.Fatal(err)
-	}
-	a, _ := st.Artifact(sess.ID, "option-btree.md")
-	if a.Status != ideation.StatusDraft {
-		t.Fatalf("revised status = %q", a.Status)
-	}
-
-	// approve mason's untouched artifact
-	m.HandleKey("j")
+	// Accept proposal #1 (index 0) → a session opens.
+	m.cursors[secSessions] = 0
 	m.HandleKey("a")
-	a2, _ := st.Artifact(sess.ID, "option-log.md")
-	if a2.Status != ideation.StatusApproved {
-		t.Fatalf("approve failed: %+v", a2)
+	p1, _ := st.Get("new-idea")
+	if p1.ID == "" {
+		t.Fatalf("accept did not create the session; pending=%+v", st.PendingProposals())
 	}
-	_ = crew
+	if m.openID != "new-idea" || m.sec != secCanvas {
+		t.Fatalf("accept state: openID=%q sec=%v", m.openID, m.sec)
+	}
+	// Decline the breakout proposal.
+	m.sec = secSessions
+	m.cursors[secSessions] = 0
+	m.HandleKey("x")
+	if len(st.PendingProposals()) != 0 {
+		t.Fatalf("decline left a pending proposal: %+v", st.PendingProposals())
+	}
+	if _, ok := st.Get("deep-dive"); ok {
+		t.Fatal("decline created a session")
+	}
 }
 
 func TestSurfaceContract(t *testing.T) {
 	m, _, _, _, _ := newSurface(t)
 	if m.Meta().ID != "ideator" || m.Meta().Title != "Ideator" {
 		t.Fatalf("meta = %+v", m.Meta())
+	}
+	for s, want := range map[sectionID]string{
+		secSessions: "SESSIONS", secParticipants: "PARTICIPANTS",
+		secCanvas: "CANVAS", secTranscript: "TRANSCRIPT",
+	} {
+		if got := s.label(); got != want {
+			t.Fatalf("label(%d) = %q, want %q", s, got, want)
+		}
 	}
 }

@@ -292,6 +292,12 @@ func runTUI() {
 			Store: sessionStore,
 			Bus:   messageBus,
 			Crew:  agentRT,
+			OpenInEditor: func(paths []string) bool {
+				if appRef == nil {
+					return false
+				}
+				return appRef.OpenInEditor(paths)
+			},
 		}),
 		reviewer.New(version.Version, ws, reviewer.Deps{
 			Service: reviewSvc,

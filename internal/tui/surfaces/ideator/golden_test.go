@@ -3,6 +3,7 @@ package ideator
 import (
 	"testing"
 
+	"github.com/drjzlyan/dhi/internal/ideation"
 	"github.com/drjzlyan/dhi/internal/testutil/golden"
 )
 
@@ -26,59 +27,79 @@ func TestGoldenNewSessionModal(t *testing.T) {
 	goldenCompare(t, "new-session-modal", m.View())
 }
 
-func TestGoldenArtifactsList(t *testing.T) {
-	m, _, _, _, _ := newSurface(t)
-	sess := createSession(t, m, "Design Alternatives", "storage engines", "scout, mason")
-	writeArtifact(t, m, sess.ID, "design-sql.md", "# SQL first\n\nBoring but proven.\n")
-	writeArtifact(t, m, sess.ID, "design-log.md", "# Log-structured\n\nAppend-only.\n")
-	if err := m.store.Scan(sess.ID); err != nil {
+func TestGoldenSessionsProposal(t *testing.T) {
+	m, _, st, _, _ := newSurface(t)
+	if _, err := st.Create("Payment retries", "idempotency strategy", []string{"scout", "mason"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := m.store.ClaimAuthor(sess.ID, "design-sql.md", "scout"); err != nil {
+	if _, err := st.Propose("mason", "Deep dive", "narrow the retry policy", ideation.ModeBreakout, "payment-retries", nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := m.store.ClaimAuthor(sess.ID, "design-log.md", "mason"); err != nil {
+	goldenCompare(t, "sessions-proposal", m.View())
+}
+
+func TestGoldenParticipants(t *testing.T) {
+	m, _, st, _, _ := newSurface(t)
+	sess, err := st.CreateSession(ideation.CreateOptions{
+		Name: "Round table", Topic: "storage engines", Mode: ideation.ModeGroup,
+		Moderator: "scout", Agents: []string{"scout", "mason"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.GrantFloor(sess.ID, "mason"); err != nil {
 		t.Fatal(err)
 	}
 	m.open(sess.ID)
-	m.sec = secArtifacts
-	goldenCompare(t, "artifacts-list", m.View())
+	m.sec = secParticipants
+	goldenCompare(t, "participants", m.View())
 }
 
-func TestGoldenPreviewMarkdown(t *testing.T) {
-	m, _, _, _, _ := newSurface(t)
+func TestGoldenCanvasMarkdown(t *testing.T) {
+	m, _, st, _, _ := newSurface(t)
 	sess := createSession(t, m, "Docs", "", "")
 	writeArtifact(t, m, sess.ID, "plan.md", "# Ideation plan\n\n## Goals\n\n- alternatives\n- review loop\n")
-	if err := m.store.Scan(sess.ID); err != nil {
+	if err := st.Scan(sess.ID); err != nil {
 		t.Fatal(err)
 	}
 	m.open(sess.ID)
-	m.sec = secArtifacts
-	m.HandleKey("enter")
-	goldenCompare(t, "preview-markdown", m.View())
+	m.sec = secCanvas
+	goldenCompare(t, "canvas-markdown", m.View())
 }
 
-func TestGoldenChatComposer(t *testing.T) {
+func TestGoldenCanvasMermaid(t *testing.T) {
+	m, _, st, _, _ := newSurface(t)
+	sess := createSession(t, m, "Flows", "", "")
+	writeArtifact(t, m, sess.ID, "flow.mmd", "graph TD\n  A[Idea] --> B{Review}\n  B -->|yes| C[Done]\n  B -->|no| A\n")
+	if err := st.Scan(sess.ID); err != nil {
+		t.Fatal(err)
+	}
+	m.open(sess.ID)
+	m.sec = secCanvas
+	goldenCompare(t, "canvas-mermaid", m.View())
+}
+
+func TestGoldenTranscriptComposer(t *testing.T) {
 	m, _, _, _, _ := newSurface(t)
 	sess := createSession(t, m, "Ideas", "pick a storage engine", "scout")
 	m.open(sess.ID)
-	m.sec = secChat
+	m.sec = secTranscript
 	m.HandleKey("i")
 	for _, r := range "@scout sketch the trade-offs, please" {
 		m.HandleKey(string(r))
 	}
-	goldenCompare(t, "chat-composer", m.View())
+	goldenCompare(t, "transcript-composer", m.View())
 }
 
 func TestGoldenRejectModal(t *testing.T) {
-	m, _, _, _, _ := newSurface(t)
+	m, _, st, _, _ := newSurface(t)
 	sess := createSession(t, m, "Ideas", "", "")
 	writeArtifact(t, m, sess.ID, "design.md", "# v1\n")
-	if err := m.store.Scan(sess.ID); err != nil {
+	if err := st.Scan(sess.ID); err != nil {
 		t.Fatal(err)
 	}
 	m.open(sess.ID)
-	m.sec = secArtifacts
+	m.sec = secCanvas
 	m.HandleKey("r")
 	goldenCompare(t, "reject-modal", m.View())
 }

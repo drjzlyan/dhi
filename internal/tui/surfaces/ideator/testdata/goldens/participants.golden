@@ -1,7 +1,9 @@
-  SESSIONS         1╭─ › artifacts ────────────────────────────────────────────────────────────────╮
-▌ ARTIFACTS        2│ ▌ design-log.md                                     ○ draft                  │
-  PREVIEW           │       by mason                                                               │
-  CHAT              │   design-sql.md                                     ○ draft                  │
+  SESSIONS         1╭─ › participants ─────────────────────────────────────────────────────────────╮
+▌ PARTICIPANTS     2│ moderator: scout · floor: mason                                              │
+  CANVAS            │ ▌   scout (moderator)                                                        │
+  TRANSCRIPT        │   ● mason                                                                    │
+                    │                                                                              │
+                    │ f grant the floor · m set moderator · a invite · x remove                    │
                     │                                                                              │
                     │                                                                              │
                     │                                                                              │
@@ -24,7 +26,5 @@
                     │                                                                              │
                     │                                                                              │
                     │                                                                              │
-                    │                                                                              │
-                    │                                                                              │
-                    │ ✓ session design-alternatives created  enter preview • s scan • v reviewed … │
+                    │ f floor • m moderator • a invite • x remove                                  │
 [ ] sections        ╰──────────────────────────────────────────────────────────────────────────────╯

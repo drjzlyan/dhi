@@ -1,7 +1,7 @@
-▌ SESSIONS          ╭─ › sessions ─────────────────────────────────────────────────────────────────╮
-  PARTICIPANTS      │ (none — press n to start one)                                                │
-  CANVAS            │                                                                              │
-  TRANSCRIPT        │                                                                              │
+▌ SESSIONS         2╭─ › sessions ─────────────────────────────────────────────────────────────────╮
+  PARTICIPANTS      │ ▌ propose Deep dive                 [breakout] by mason                      │
+  CANVAS            │       a accept · x decline · does not open until you accept                  │
+  TRANSCRIPT        │   payment-retries           [group] idempotency strategy  [2]                │
                     │                                                                              │
                     │                                                                              │
                     │                                                                              │

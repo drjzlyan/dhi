@@ -22,7 +22,7 @@ var artifactRefRe = regexp.MustCompile(`\.dhi/sessions/[a-z0-9][a-z0-9._-]*/[A-Z
 // request still lands in the channel so nothing is lost.
 func (m *Model) dispatchRevision(rel, notes string) {
 	sess, ok := m.openSession()
-	if !ok || m.bus == nil {
+	if !ok || m.bus == nil || m.store == nil {
 		return
 	}
 	vp := ideation.VPathFor(sess, rel)
@@ -53,7 +53,8 @@ func (m *Model) requestTurn(msg bus.Message) {
 
 // mirrorBus folds inbound session-channel traffic into the store: agent
 // messages that reference artifact paths claim authorship of matching
-// unclaimed artifacts, so rejection routing knows who to ask.
+// unclaimed artifacts (so rejection routing knows who to ask), and the
+// floor protocol advances the discussion (F-033 Part A).
 func (m *Model) mirrorBus(msg bus.Message) {
 	if m.bus == nil || m.store == nil || msg.Author == busHuman || strings.TrimSpace(msg.Text) == "" {
 		return
@@ -73,4 +74,34 @@ func (m *Model) mirrorBus(msg bus.Message) {
 			}
 		}
 	}
+	m.advanceFloor(msg)
+}
+
+// advanceFloor hands the floor to the next participant an agent addressed
+// (or back to the moderator when nobody was addressed). Automatic
+// hand-offs are bounded by roundTableMaxTurns so two agents addressing
+// each other cannot loop forever.
+func (m *Model) advanceFloor(msg bus.Message) {
+	sess, ok := m.openSession()
+	if !ok || m.store == nil || m.crew == nil {
+		return
+	}
+	if len(sess.Turns) >= roundTableMaxTurns {
+		m.opErr = "round-table limit reached — grant the floor to continue"
+		return
+	}
+	next := ""
+	for _, a := range bus.Mentions(msg.Text) {
+		if a != msg.Author && sess.Participates(a) {
+			next = a
+			break
+		}
+	}
+	if next == "" {
+		if sess.CurrentSpeaker() != "" {
+			m.grantOnly("") // floor returns to the moderator
+		}
+		return
+	}
+	m.giveFloor(next)
 }

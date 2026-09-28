@@ -2,6 +2,8 @@ package ideator
 
 import (
 	"strings"
+
+	"github.com/drjzlyan/dhi/internal/ideation"
 )
 
 // modalKind enumerates overlay states.
@@ -10,8 +12,11 @@ type modalKind uint8
 const (
 	fNone modalKind = iota
 	fNewSession
+	fNewBreakout
 	fRemoveConfirm
 	fReject
+	fAddParticipant
+	fRemoveParticipant
 )
 
 // field is one modal input: free text or a cycling toggle.
@@ -41,7 +46,8 @@ func (f *field) toggleValue() string {
 // formState is the active modal (zero kind = none).
 type formState struct {
 	kind   modalKind
-	orig   string // confirm/reject target
+	orig   string // confirm/reject target (session id, artifact rel, agent id)
+	parent string // breakout parent session id
 	fields []field
 	cur    int
 	busy   bool
@@ -53,6 +59,10 @@ func (fs *formState) target() string { return fs.orig }
 
 func textField(label, value string) field {
 	return field{label: label, runes: []rune(value)}
+}
+
+func toggleField(label string, options []string) field {
+	return field{label: label, toggle: options}
 }
 
 func (m *Model) closeForm() {
@@ -70,7 +80,7 @@ func (m *Model) formKey(key string) bool {
 		return true // swallow while async work runs
 	}
 	switch f.kind {
-	case fRemoveConfirm:
+	case fRemoveConfirm, fRemoveParticipant:
 		switch key {
 		case "enter":
 			m.submitConfirm()
@@ -134,7 +144,21 @@ func (m *Model) submitForm() {
 		if m.store == nil {
 			return
 		}
-		m.createSession(name, topic, agents)
+		mode := ideation.SessionMode(f.fields[3].toggleValue())
+		m.createSession(name, topic, agents, mode, "")
+		return
+	case fNewBreakout:
+		name := strings.TrimSpace(f.fields[0].text())
+		topic := strings.TrimSpace(f.fields[1].text())
+		agents := csvList(f.fields[2].text())
+		if name == "" {
+			f.err = "name required"
+			return
+		}
+		if m.store == nil {
+			return
+		}
+		m.createSession(name, topic, agents, ideation.ModeBreakout, f.parent)
 		return
 	case fReject:
 		notes := strings.TrimSpace(f.fields[0].text())
@@ -149,6 +173,22 @@ func (m *Model) submitForm() {
 		}
 		m.closeFormWithFlash("rejected " + rel)
 		m.dispatchRevision(rel, notes)
+	case fAddParticipant:
+		added := csvList(f.fields[0].text())
+		if len(added) == 0 {
+			f.err = "agent id required"
+			return
+		}
+		sess, ok := m.openSession()
+		if !ok || m.store == nil {
+			return
+		}
+		next := append(append([]string{}, sess.Agents...), added...)
+		if err := m.store.SetAgents(m.openID, next); err != nil {
+			f.err = err.Error()
+			return
+		}
+		m.closeFormWithFlash("invited " + strings.Join(added, ", "))
 	}
 }
 
@@ -163,5 +203,24 @@ func (m *Model) submitConfirm() {
 		} else {
 			m.closeForm()
 		}
+	case fRemoveParticipant:
+		agent := f.orig
+		sess, ok := m.openSession()
+		if !ok || m.store == nil {
+			m.closeForm()
+			return
+		}
+		next := make([]string, 0, len(sess.Agents))
+		for _, a := range sess.Agents {
+			if a != agent {
+				next = append(next, a)
+			}
+		}
+		if err := m.store.SetAgents(m.openID, next); err != nil {
+			m.opErr = err.Error()
+			m.closeForm()
+			return
+		}
+		m.closeFormWithFlash("removed participant " + agent)
 	}
 }
