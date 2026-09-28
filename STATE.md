@@ -1,8 +1,43 @@
 # STATE — current position
 
-Updated: 2026-09-26 (session 28: M17 cross-project work complete —
-multi-changeset commit/push/PR, declared dependency graph, propagation
-proposals; M16 complete; `make verify` green)
+Updated: 2026-09-28 (session 29: M18 ideation round-table & canvas
+complete; `make verify` green — only the known reviewer
+TestCLIRuntimeEndToEnd flake, passes isolated)
+
+### Session 29 (M18 — ideation round-table & canvas, F-033)
+
+- **P0 session model + floor protocol** (`internal/ideation`): schema 2
+  adds `Mode` (1:1|group|breakout), `Moderator`, `Parent`, `Turns`;
+  schema-1 cards load as group (no mod/parent/turns). `CreateSession`/
+  `CreateBreakout`/`SetMode`/`SetModerator`/`GrantFloor`/`ReleaseFloor`/
+  `Breakouts`; `Remove` refuses a parent with breakouts; `Open` warns on
+  a dangling breakout parent. A `proposals.toml` registry (skipped by
+  card scan) records agent proposals: `Propose`/`Proposals`/
+  `PendingProposals`/`Decision` (pending→accepted/declined, no
+  resurrection). 6 new tests.
+- **P1 tools + mermaid**: `session_read`, `artifact_create`,
+  `artifact_edit`, `propose_session` added to `servedSlugs` + manifest
+  `BuiltinTools`; scopes read/write/read; artifact writes are
+  VPath-safe, approval-gated via Write, rescan + author-claim.
+  `preview.IsMermaid`/`RenderMermaid` (deterministic ASCII outline:
+  flowchart edges with node-label resolution + sequence messages),
+  `RenderMermaid` wired into the canvas. Tests in dhitools + preview.
+- **P2 surface**: IDEATOR is now SESSIONS · PARTICIPANTS · CANVAS ·
+  TRANSCRIPT. SESSIONS lists pending proposals (`a` accept / `x`
+  decline — accept opens; nothing opens otherwise) then sessions with
+  mode chips + nested breakouts (`b`); PARTICIPANTS has the moderator
+  slot + floor (`f` grant/dispatch, `m` moderator, `a` invite, `x`
+  remove); CANVAS unifies artifact list + live preview + `e` open-in-
+  editor seam; TRANSCRIPT stamps each message `#id` + floor header.
+  Floor protocol in `agent.go`: human mention grants first participant,
+  an addressed agent hands on, unaddressed returns to the moderator,
+  bounded by `roundTableMaxTurns=24`; 1:1 auto-invites its sole agent.
+  Goldens regenerated (sessions-proposal, participants, canvas-markdown,
+  canvas-mermaid, transcript-composer; obsolete artifacts-list/
+  preview-markdown/chat-composer removed).
+- `cmd/dhi` wires `ideator.Deps.OpenInEditor` → `app.OpenInEditor`.
+- Known flakes unchanged (TestCLIRuntimeEndToEnd in reviewer, and the
+  runtime/clirun ones). Untracked `.dhi/agents/dev/` — do NOT commit.
 
 ### Session 28 (M17 — cross-project work)
 
@@ -394,49 +429,24 @@ catalog).
 
 ## Next up
 
-1. **P3 — MCP-for-all (F-030)**: installs now: claude 2.1.274, codex
-   0.147.0, opencode 1.18.25; cursor/copilot/gemini still absent. Both
-   installed natives expose MCP config — codex via `-c key=value`
-   (config override) and `codex mcp`, opencode via its config file /
-   `OPENCODE_CONFIG` (already in EnvPass) / `opencode mcp add`. Wiring
-   each needs a live-verify run (loopback server + tool call through the
-   seatbelt) before `MCPOK` flips — never fabricate it. Then P3's
-   sandbox network for MCP servers.
-2. **M15 P1 — IDE tool catalog** (F-030), *complete*: filesystem set
-   (`read`/`list`/`glob` read-only + `write`/`patch` approval-gated,
-   VPath-jailed, `dhitools/fs.go`) and read-only git
-   (`git_status`/`git_log`/`git_branch`/`git_diff`, plus mutating
-   `git_commit` authored by the user identity, `dhitools/git.go`) and
-   ideation reads, `run` (fixed safe set), and `ask_human` landed.
-   ADR-0023 (editor/LSP tool seam) implemented for `editor_open`/
-   `editor_reveal`/`editor_apply_edit` (runtime EditorAPI seam →
-   `editorBridge` in cmd/dhi resolves VPaths → `app.EditorRequest` on the
-   UI loop → reply; apply edits the live buffer via textbuf.ReplaceText,
-   else the file). and the LSP verbs (hover/definition/references/rename/code_action;
-   rename applies a WorkspaceEdit; all off-loop/async) — M15 P1 catalog
-   complete. P2 core landed (`internal/agentkit/scopes`, manifest
-   schema 4 `[scopes]`, scope-driven dhitools gate). Team layering landed (org team scopes). Workspace scopes landed (settings `[scopes]`, resolved
-   default→workspace→team→manifest). Doctor `authority` row added. `run` network posture landed (DHI-served denied by default;
-   host CLIs keep network per decision). Grant-memory landed (approvals `a`).
-   Settings scopes editor landed —
-   P2 complete. Next: P3 MCP-for-all (blocked on
-   the user installing cursor/copilot/gemini + live MCP verification).
-   Doctor containment caveat landed.
-   MCP-for-all + sandbox. Decisions:
-   `run` uses a fixed safe set now + per-agent commands at M16;
-   `ask_human` posts to the thread; `git_push` dropped in favor of the
-   M16 PR step.
-2. **M15 P2–P3 — capability scopes, MCP-for-all**:
-   fs/search/git/editor/LSP/run tools; scopes + grant-memory approvals;
-   MCP verified for every shipped adapter; sandbox tightened (network
-   deny-by-default); doctor `agent-tools` with the containment caveat.
-3. **M16–M20** per ROADMAP: workflows → cross-project → ideation
-   round-table → registry/MCP install → depth & cohesion.
-4. **Wave-3 live verify + MCP wiring** fold into M15 (they are no longer
-   a separate deferred track): an adapter without verified MCP wiring is
-   not a selectable engine.
-5. **(Deferred, F-026/F-017/F-027/F-020/M11)** as before — now absorbed
-   into M20 depth or the M19 registry where they overlap.
+1. **M19 — pack registry & MCP install (F-034)** *(next)*: extend pack
+   kinds (agents/roles/skills/standards/workflows/MCP configs, all-
+   before-write, provenance + exact uninstall); signed git index
+   (digest/signature verify, cache, offline browse) + Settings
+   MARKETPLACE browse/install; revive the outbound MCP client under
+   sandbox/scope/keychain/approvals with doctor registry/provenance/
+   posture rows (ADR-0022).
+2. **M15 P3 — MCP-for-all (F-030)**: still blocked on installing
+   cursor/copilot (gemini deprecated → antigravity) + live MCP
+   verification before `MCPOK` flips; then sandbox network for MCP
+   servers.
+3. **M20 — depth & cohesion (F-035)**: board Jira depth, editor↔agent
+   co-editing, Slack depth, live work log.
+4. **M18 follow-on (optional)**: surface pending session proposals as an
+   inbox `ItemKind` (they are visible in the Ideator SESSIONS pane today;
+   an inbox row would need an ideator jump seam).
+5. **(Deferred, F-026/F-017/F-027/F-020/M11)** as before — absorbed into
+   M20 or the M19 registry where they overlap.
 
 ## Session 19 gotchas (M12)
 

@@ -1,6 +1,6 @@
 # F-033: Ideation round-table & canvas
 
-Status: planned (M18) · Companion to: ADR-0019 (DHI owns the loop),
+Status: done (M18) · Companion to: ADR-0019 (DHI owns the loop),
 F-004 (ideator), F-027 (roles/skills). Product rule: ideation is a
 session you are *in*, not a transcript you read afterwards.
 
@@ -41,14 +41,23 @@ that the user and agents edit live.
 
 ## Acceptance criteria
 
-- [ ] A group session with a moderator runs a multi-agent exchange where
+- [x] A group session with a moderator runs a multi-agent exchange where
       agents address each other; the transcript is ordered and replays.
-- [ ] Agents can create/edit a mermaid artifact; preview renders it live;
-      status resets to draft on content change.
-- [ ] An agent cannot open a session or breakout — only propose one.
-- [ ] A 1:1 mode and a group mode both work; a breakout nests under its
-      parent.
-- [ ] `make verify` green per phase.
+      (Floor protocol: the human's mention grants the first participant
+      the floor; an agent that addresses another hands it on; the floor
+      returns to the moderator when nobody is addressed. Turn order is
+      recorded on the session card and rendered in the transcript.)
+- [x] Agents can create/edit a mermaid artifact; preview renders it live;
+      status resets to draft on content change. (`artifact_create`/
+      `artifact_edit` tools; `preview.RenderMermaid` ASCII outline;
+      content-hash `Scan` resets status.)
+- [x] An agent cannot open a session or breakout — only propose one.
+      (`propose_session` records a pending `ideation.Proposal`; only the
+      human's accept in SESSIONS opens it.)
+- [x] A 1:1 mode and a group mode both work; a breakout nests under its
+      parent. (Schema 2 modes; breakouts refuse removal of a parent until
+      they are gone.)
+- [x] `make verify` green per phase.
 
 ## Deferred
 

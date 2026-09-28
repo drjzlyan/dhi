@@ -816,15 +816,37 @@ proposal.
 
 ## M18 — Ideation round-table & canvas (F-033)
 
-Status: planned. Moderator + turn grants; 1:1/group/breakout; markdown +
-mermaid artifacts edited live; agents may propose (not open) sessions.
+Status: complete (2026-09-28). Moderator + turn grants; 1:1/group/breakout;
+markdown + mermaid artifacts edited live; agents may propose (not open)
+sessions.
 
-- [ ] Session model (moderator, participants, mode, parent) + floor
+- [x] Session model (moderator, participants, mode, parent) + floor
       protocol (ordered, replayable); agents address each other
-- [ ] Canvas: mermaid/markdown artifacts writable via tools, live
+      — `internal/ideation` schema 2 (schema 1 loads as group, no
+      moderator/parent/turns): `Session.Mode/Moderator/Parent/Turns`,
+      `CreateSession`/`CreateBreakout`/`SetMode`/`SetModerator`/
+      `GrantFloor`/`ReleaseFloor`/`Breakouts`; breakouts refuse an
+      orphaned parent removal; proposals registry
+      (`Propose`/`PendingProposals`/`Decision`) so an agent may only
+      propose; the surface's floor protocol hand-offs are bounded by
+      `roundTableMaxTurns`
+- [x] Canvas: mermaid/markdown artifacts writable via tools, live
       preview, content-hash status reset
-- [ ] IDEATOR surface: SESSIONS · PARTICIPANTS · CANVAS · TRANSCRIPT,
+      — `artifact_create`/`artifact_edit` (Write scope, approval-gated,
+      VPath-safe, author-claiming) + `session_read` + `propose_session`
+      as served tools (`servedSlugs`, manifest `BuiltinTools`, scopes);
+      `preview.IsMermaid`/`RenderMermaid` deterministic ASCII outline;
+      CANVAS renders the selected artifact live (markdown/mermaid/raw)
+      keyed on content hash; `e` opens the artifact through the editor
+      seam (ADR-0023 precedent)
+- [x] IDEATOR surface: SESSIONS · PARTICIPANTS · CANVAS · TRANSCRIPT,
       floor indicator, nested breakouts; `propose session` request
+      — four panes; SESSIONS lists pending proposals (a accept / x
+      decline) then sessions with mode chips and nested breakouts (`b`);
+      PARTICIPANTS shows the moderator + floor (`f` grant, `m` set
+      moderator, `a` invite, `x` remove); TRANSCRIPT stamps each message
+      with its bus id and shows the floor/turn count; rail badges count
+      proposals
 
 ## M19 — Pack registry & MCP install (F-034)
 
