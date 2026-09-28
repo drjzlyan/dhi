@@ -850,17 +850,38 @@ sessions.
 
 ## M19 — Pack registry & MCP install (F-034)
 
-Status: planned. ADR-0022. Packs ship agents/roles/skills/standards/
-workflows/MCP configs; signed git registry; external MCP under
+Status: complete (2026-09-28). ADR-0022. Packs ship agents/roles/skills/
+standards/workflows/MCP configs; signed git registry; external MCP under
 sandbox/scope/keychain/approvals.
 
-- [ ] Pack kinds extended, all-before-write, provenance + exact
-      uninstall; `internal/agentkit/library` reads pack entries
-- [ ] Signed git index: digest/signature verify, cache, offline browse;
+- [x] Pack kinds extended, all-before-write, provenance + exact
+      uninstall
+      — pack schema 2 adds roles/skills/standards/mcp_servers; every kind
+      validates before the first write, conflicts refuse by name,
+      provenance records all kinds, uninstall removes exactly those
+      (standards = workspace-layer lines added by the pack, removed by
+      value); `internal/agentkit/mcpserver` is the `.dhi/mcp/<slug>.toml`
+      card store (stdio/http, env NAMES only, declared origins)
+- [x] Signed git index: digest/signature verify, cache, offline browse;
       Settings MARKETPLACE browse/search/install
-- [ ] Outbound MCP client revived + policy-gated: per-agent allowlist,
+      — `internal/agentkit/registry`: a curated `index.toml` pinning a
+      SHA-256 content digest per pack, fetched through the hermetic git
+      path and cached under `.dhi/registry` (offline browse); install
+      recomputes the canonical digest (path+content, `.git` ignored) and
+      refuses by name on mismatch; Settings MARKETPLACE browses/searches/
+      inspects/installs; doctor `registry` + `packs/provenance` rows.
+      Signature verification deferred (digest pinning ships)
+- [x] Outbound MCP client revived + policy-gated: per-agent allowlist,
       sandbox, declared origins, keychain creds, approval-gated calls;
       doctor registry/provenance/posture rows
+      — `internal/agentkit/mcpbridge`: dials installed servers for one
+      turn; a tool is exposed only when the manifest allowlists
+      `mcp__<server>__<tool>`; stdio children spawn through the OS
+      sandbox (network only when origins are declared); credentials
+      resolve by name from env/keychain (never `.dhi/`); every call
+      crosses the network scope (deny-by-default) and the approvals
+      queue; composed into the per-turn loopback served set; doctor
+      `mcp/servers` row
 
 ## M20 — Depth & cohesion (F-035)
 

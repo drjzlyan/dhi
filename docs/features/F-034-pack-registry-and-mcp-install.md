@@ -1,9 +1,32 @@
 # F-034: Pack registry & MCP install
 
-Status: planned (M19) · Companion to: ADR-0022 (third-party content
+Status: done (M19) · Companion to: ADR-0022 (third-party content
 trust), ADR-0019 (DHI owns the loop), F-018/F-019 (agents, packs).
 Product rule: installing expertise is one visible, reversible, offline-
 capable act inside the IDE.
+
+## Delivery notes (M19)
+
+- Pack schema 2 ships `roles`, `skills`, `standards`, `workflows` and
+  `mcp_servers`; every kind validates before the first write, conflicts
+  refuse by name, provenance records all kinds, and uninstall removes
+  exactly what it wrote (standards are workspace-layer lines the pack
+  added, removed by value on uninstall).
+- `internal/agentkit/mcpserver` is the `.dhi/mcp/<slug>.toml` card store
+  (stdio/http, declared env NAMES only, declared origins).
+- `internal/agentkit/registry` is the signed index: `index.toml` pins a
+  SHA-256 content digest per pack; refresh clones through the hermetic
+  git path and caches under `.dhi/registry` (offline browse); install
+  recomputes the canonical digest and refuses by name on mismatch.
+  Digest pinning is the trust anchor; cryptographic signature
+  verification is the recorded follow-on.
+- Settings MARKETPLACE browses/searches/inspects/installs; `doctor`
+  reports `registry`, `packs/provenance` and `mcp/servers` posture.
+- `internal/agentkit/mcpbridge` serves installed servers to an agent
+  under the trust model (per-agent allowlist, sandboxed stdio spawn,
+  declared-origin network, keychain/env credentials by name, network
+  scope + approvals on every call), composed into the per-turn loopback
+  served tool set.
 
 ## Summary
 
@@ -42,17 +65,19 @@ model.
 
 ## Acceptance criteria
 
-- [ ] A pack installs roles, skills, standards, workflows, and an MCP
+- [x] A pack installs roles, skills, standards, workflows, and an MCP
       config with one provenance record; uninstall removes exactly those.
-- [ ] A registry entry whose digest fails verification refuses by name
+- [x] A registry entry whose digest fails verification refuses by name
       and installs nothing.
-- [ ] An agent with the MCP server in scope can call it under the
+- [x] An agent with the MCP server in scope can call it under the
       sandbox; an agent without it is refused; credentials never touch
-      `.dhi/`.
-- [ ] Browsing works offline from cache.
-- [ ] `make verify` green per phase.
+      `.dhi/` (cards store env NAMES only).
+- [x] Browsing works offline from cache.
+- [x] `make verify` green per phase.
 
 ## Deferred
 
 - Executable skill scripts (same trust machinery as MCP).
 - Multiple/community registries and dependency resolution.
+- Cryptographic signature verification of the index (digest pinning is
+  the shipped trust anchor).

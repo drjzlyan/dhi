@@ -1,8 +1,37 @@
 # STATE — current position
 
-Updated: 2026-09-28 (session 29: M18 ideation round-table & canvas
-complete; `make verify` green — only the known reviewer
-TestCLIRuntimeEndToEnd flake, passes isolated)
+Updated: 2026-09-28 (session 30: M19 pack registry & MCP install
+complete — P0/P1/P2 committed; `make verify` green)
+
+### Session 30 (M19 — pack registry & MCP install, F-034)
+
+- **P0 extended pack kinds**: pack schema 2 adds `roles`, `skills`,
+  `standards`, `mcp_servers` (plus agents/workflows). All-before-write
+  validation; conflicts refuse by name; provenance records every kind;
+  uninstall removes exactly what it wrote. New `internal/agentkit/
+  mcpserver` (`.dhi/mcp/<slug>.toml`, stdio/http, declared env NAMES
+  only, declared origins) joins the reserved `.dhi` tree. Roles/skills
+  validate via new `library.ParseRole/ParseSkill` + `WriteRole/
+  WriteSkill`; standards fragments merge into the workspace layer by
+  value. Settings PACKS shows per-kind counts.
+- **P1 signed registry**: `internal/agentkit/registry` — index.toml pins
+  a SHA-256 content digest per pack; `Refresh` clones via hermetic git &
+  caches `.dhi/registry`; `Install` recomputes the canonical digest
+  (path+content, `.git` ignored) and refuses by name on mismatch;
+  `pack.InstallDir` installs a pre-resolved verified dir. Settings
+  MARKETPLACE section (r refresh / f search / enter digest-verified
+  install / v inspect); doctor `registry`, `packs/provenance`,
+  `mcp/servers` rows.
+- **P2 MCP under trust**: `internal/agentkit/mcpbridge` dials installed
+  servers for a turn; per-agent allowlist via `mcp__<server>__<tool>`;
+  stdio spawns through the OS sandbox (network only when origins are
+  declared); credentials resolve by name from env / macOS keychain
+  (never `.dhi/`); every call crosses network scope (deny-by-default)
+  and approvals. `scopes.ToolScope` maps `mcp__*` → Network.
+  `serveTools` composes DHI + bridge via a prefix-routing
+  `compositeHandler`; `runtime.Config.MCPServers` wired from cmd/dhi.
+- Known sabotages/flakes unchanged. Untracked `.dhi/agents/dev/` — do
+  NOT commit.
 
 ### Session 29 (M18 — ideation round-table & canvas, F-033)
 
@@ -429,24 +458,21 @@ catalog).
 
 ## Next up
 
-1. **M19 — pack registry & MCP install (F-034)** *(next)*: extend pack
-   kinds (agents/roles/skills/standards/workflows/MCP configs, all-
-   before-write, provenance + exact uninstall); signed git index
-   (digest/signature verify, cache, offline browse) + Settings
-   MARKETPLACE browse/install; revive the outbound MCP client under
-   sandbox/scope/keychain/approvals with doctor registry/provenance/
-   posture rows (ADR-0022).
+1. **M20 — depth & cohesion (F-035)** *(next)*: board Jira depth
+   (labels/priority/epic/due/filters/bulk/swimlanes); editor↔agent
+   co-editing (edit tools + active-editing indicator); Slack depth
+   (search/reactions/edits/pins/actions); live work log streaming a
+   running task into its thread (replay stays the durable record).
 2. **M15 P3 — MCP-for-all (F-030)**: still blocked on installing
    cursor/copilot (gemini deprecated → antigravity) + live MCP
    verification before `MCPOK` flips; then sandbox network for MCP
    servers.
-3. **M20 — depth & cohesion (F-035)**: board Jira depth, editor↔agent
-   co-editing, Slack depth, live work log.
-4. **M18 follow-on (optional)**: surface pending session proposals as an
-   inbox `ItemKind` (they are visible in the Ideator SESSIONS pane today;
-   an inbox row would need an ideator jump seam).
+3. **M19 follow-ons (optional)**: index signature verification;
+   pack-sourced badges in the LIBRARY listing; executable skill scripts.
+4. **M18 follow-on (optional)**: pending session proposals as an inbox
+   `ItemKind` (visible in the Ideator SESSIONS pane today).
 5. **(Deferred, F-026/F-017/F-027/F-020/M11)** as before — absorbed into
-   M20 or the M19 registry where they overlap.
+   M20 depth or the M19 registry where they overlap.
 
 ## Session 19 gotchas (M12)
 
