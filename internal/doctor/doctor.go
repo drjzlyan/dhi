@@ -77,6 +77,7 @@ func Run(toolRoot, wsRoot string) Report {
 	r.Checks = append(r.Checks, Authority(wsRoot)...)
 	r.Checks = append(r.Checks, Standards(wsRoot)...)
 	r.Checks = append(r.Checks, Workflows(wsRoot)...)
+	r.Checks = append(r.Checks, Dependencies(wsRoot)...)
 	r.Checks = append(r.Checks, Runtimes()...)
 	r.Checks = append(r.Checks, Tasks(wsRoot)...)
 	r.Checks = append(r.Checks, RunStore(wsRoot)...)
@@ -911,4 +912,31 @@ func Workflows(wsRoot string) []Check {
 	}
 	return []Check{{Name: "workflows", Status: OK,
 		Detail: fmt.Sprintf("%d workflow(s) available: %s", len(avail), strings.Join(avail, ", "))}}
+}
+
+// Dependencies reports the declared cross-project graph (F-032): a
+// dangling endpoint warns by name; no edges is healthy.
+func Dependencies(wsRoot string) []Check {
+	if wsRoot == "" {
+		return nil
+	}
+	ws, err := workspace.Load(wsRoot)
+	if err != nil {
+		return nil // workspace/config already reports the broken config
+	}
+	deps := ws.Dependencies()
+	if len(deps) == 0 {
+		return []Check{{Name: "dependencies", Status: OK, Detail: "no declared cross-project edges"}}
+	}
+	if dang := ws.DanglingDependencies(); len(dang) > 0 {
+		parts := make([]string, 0, len(dang))
+		for _, d := range dang {
+			parts = append(parts, d.From+"→"+d.To+" ("+d.Kind+")")
+		}
+		return []Check{{Name: "dependencies", Status: Warn,
+			Detail: fmt.Sprintf("%d dangling edge(s): %s (member not registered)",
+				len(dang), strings.Join(parts, ", "))}}
+	}
+	return []Check{{Name: "dependencies", Status: OK,
+		Detail: fmt.Sprintf("%d declared edge(s)", len(deps))}}
 }

@@ -231,3 +231,84 @@ func TestVPathReservedDhiValidation(t *testing.T) {
 		t.Fatalf("VPathFor(.dhi root) = %+v, %v", root, err)
 	}
 }
+
+func depsDoc(t *testing.T, root, deps string) {
+	t.Helper()
+	os.MkdirAll(filepath.Join(root, "api"), 0o755)
+	os.MkdirAll(filepath.Join(root, "web"), 0o755)
+	os.MkdirAll(filepath.Join(root, DHIDir), 0o755)
+	doc := "schema = 1\n\n[members.api]\npath = \"api\"\n\n[members.web]\npath = \"web\"\n\n" + deps
+	if err := os.WriteFile(filepath.Join(root, ConfigFile), []byte(doc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDependenciesParseAndQuery(t *testing.T) {
+	root := t.TempDir()
+	depsDoc(t, root, "[[dependency]]\nfrom = \"web\"\nto = \"api\"\nkind = \"api\"\n")
+	ws, err := Load(root)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got := ws.Dependencies(); len(got) != 1 || got[0].From != "web" || got[0].Kind != "api" {
+		t.Fatalf("deps = %+v", got)
+	}
+	if len(ws.DanglingDependencies()) != 0 {
+		t.Fatal("no dangling expected")
+	}
+	if d := ws.DependentsOf("web"); len(d) != 1 || d[0].To != "api" {
+		t.Fatalf("dependents = %+v", d)
+	}
+}
+
+func TestDanglingDependencyReported(t *testing.T) {
+	root := t.TempDir()
+	depsDoc(t, root, "[[dependency]]\nfrom = \"web\"\nto = \"ghost\"\nkind = \"build\"\n")
+	ws, err := Load(root)
+	if err != nil {
+		t.Fatalf("Load (dangling must not refuse): %v", err)
+	}
+	d := ws.DanglingDependencies()
+	if len(d) != 1 || d[0].To != "ghost" {
+		t.Fatalf("dangling = %+v", d)
+	}
+}
+
+func TestDependencyStrictDecode(t *testing.T) {
+	for _, tc := range []struct{ name, dep string }{
+		{"bad kind", "[[dependency]]\nfrom=\"web\"\nto=\"api\"\nkind=\"magic\"\n"},
+		{"self edge", "[[dependency]]\nfrom=\"api\"\nto=\"api\"\nkind=\"api\"\n"},
+		{"missing to", "[[dependency]]\nfrom=\"api\"\nkind=\"api\"\n"},
+		{"duplicate", "[[dependency]]\nfrom=\"web\"\nto=\"api\"\nkind=\"api\"\n[[dependency]]\nfrom=\"web\"\nto=\"api\"\nkind=\"api\"\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			depsDoc(t, root, tc.dep)
+			if _, err := Load(root); err == nil {
+				t.Fatalf("expected refusal")
+			}
+		})
+	}
+}
+
+func TestSetDependenciesPersistsAndPreservesMembers(t *testing.T) {
+	root := t.TempDir()
+	depsDoc(t, root, "")
+	ws, err := Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ws.SetDependencies([]Dependency{{From: "web", To: "api", Kind: "module"}}); err != nil {
+		t.Fatalf("SetDependencies: %v", err)
+	}
+	back, err := Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(back.Members()) != 2 || len(back.Dependencies()) != 1 {
+		t.Fatalf("reload: members=%d deps=%d", len(back.Members()), len(back.Dependencies()))
+	}
+	if err := ws.SetDependencies([]Dependency{{From: "web", To: "api", Kind: "nope"}}); err == nil {
+		t.Fatal("bad kind must refuse")
+	}
+}

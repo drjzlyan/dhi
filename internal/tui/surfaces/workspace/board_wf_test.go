@@ -4,7 +4,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/drjzlyan/dhi/internal/ansi"
 	"github.com/drjzlyan/dhi/internal/tasks"
+	"github.com/drjzlyan/dhi/internal/workspace"
 )
 
 func TestBoardWorkflowLine(t *testing.T) {
@@ -23,5 +25,24 @@ func TestBoardWorkflowLine(t *testing.T) {
 	}
 	if line, _ := boardWorkflowLine(tasks.Task{Workflow: "ghost"}, root); !strings.Contains(line, "missing") {
 		t.Fatalf("missing line = %q", line)
+	}
+}
+
+func TestReposBodyRendersDependencies(t *testing.T) {
+	m, ws := newSurface(t)
+	if err := ws.SetDependencies([]workspace.Dependency{{From: "beta", To: "alpha", Kind: "api"}}); err != nil {
+		t.Fatal(err)
+	}
+	body := ansi.Strip(m.reposBody(80))
+	if !strings.Contains(body, "dependencies") || !strings.Contains(body, "→ alpha (api)") {
+		t.Fatalf("dependency view missing the edge:\n%s", body)
+	}
+	// Dangling edge flagged by name.
+	if err := ws.SetDependencies([]workspace.Dependency{{From: "beta", To: "ghost", Kind: "build"}}); err != nil {
+		t.Fatal(err)
+	}
+	body = ansi.Strip(m.reposBody(80))
+	if !strings.Contains(body, "member missing") {
+		t.Fatalf("dangling edge not flagged:\n%s", body)
 	}
 }

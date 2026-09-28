@@ -54,7 +54,8 @@ type Workspace struct {
 	Root string
 
 	mu      sync.RWMutex
-	members []Member // sorted by name; guarded by mu
+	members []Member     // sorted by name; guarded by mu
+	deps    []Dependency // sorted declared edges; guarded by mu
 
 	subs   map[int]chan Change
 	subSeq int
@@ -62,8 +63,39 @@ type Workspace struct {
 
 // config is the on-disk TOML shape of .dhi/workspace.toml.
 type config struct {
-	Schema  int               `toml:"schema"`
-	Members map[string]member `toml:"members"`
+	Schema       int               `toml:"schema"`
+	Members      map[string]member `toml:"members"`
+	Dependencies []dependency      `toml:"dependency"`
+}
+
+type dependency struct {
+	From string `toml:"from"`
+	To   string `toml:"to"`
+	Kind string `toml:"kind"`
+}
+
+// Dependency is one declared cross-project edge (F-032/ADR-0021):
+// changing From may affect To. Kind classifies the coupling.
+type Dependency struct {
+	From string
+	To   string
+	Kind string
+}
+
+// Dependency kinds.
+const (
+	DepModule = "module"
+	DepAPI    = "api"
+	DepBuild  = "build"
+)
+
+// validDepKind reports whether kind is a known dependency coupling.
+func validDepKind(kind string) bool {
+	switch kind {
+	case DepModule, DepAPI, DepBuild:
+		return true
+	}
+	return false
 }
 
 type member struct {
@@ -171,7 +203,120 @@ func Load(root string) (*Workspace, error) {
 	if len(ws.members) == 0 {
 		return nil, fmt.Errorf("workspace: no members configured")
 	}
+	// Declared dependencies (F-032): strict on shape and kind; a dangling
+	// member is accepted here and surfaced as a doctor warning, so the
+	// graph stays visible while a member is being added.
+	deps, err := parseDeps(cfg.Dependencies)
+	if err != nil {
+		return nil, err
+	}
+	ws.deps = deps
 	return ws, nil
+}
+
+// parseDeps validates declared dependency edges (no self-edges, known
+// kind, no duplicates) and returns them sorted.
+func parseDeps(raw []dependency) ([]Dependency, error) {
+	out := make([]Dependency, 0, len(raw))
+	seen := map[string]bool{}
+	for i, d := range raw {
+		from := strings.TrimSpace(d.From)
+		to := strings.TrimSpace(d.To)
+		kind := strings.TrimSpace(d.Kind)
+		if from == "" || to == "" {
+			return nil, fmt.Errorf("workspace: dependency[%d] needs from and to", i)
+		}
+		if from == to {
+			return nil, fmt.Errorf("workspace: dependency[%d] %s→%s is a self-edge", i, from, to)
+		}
+		if !validDepKind(kind) {
+			return nil, fmt.Errorf("workspace: dependency[%d] %s→%s kind %q must be module|api|build", i, from, to, kind)
+		}
+		key := from + "\x00" + to + "\x00" + kind
+		if seen[key] {
+			return nil, fmt.Errorf("workspace: duplicate dependency %s→%s (%s)", from, to, kind)
+		}
+		seen[key] = true
+		out = append(out, Dependency{From: from, To: to, Kind: kind})
+	}
+	sortDeps(out)
+	return out, nil
+}
+
+func sortDeps(d []Dependency) {
+	sort.Slice(d, func(i, j int) bool {
+		if d[i].From != d[j].From {
+			return d[i].From < d[j].From
+		}
+		if d[i].To != d[j].To {
+			return d[i].To < d[j].To
+		}
+		return d[i].Kind < d[j].Kind
+	})
+}
+
+// Dependencies returns a snapshot of the declared cross-project edges.
+func (w *Workspace) Dependencies() []Dependency {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	out := make([]Dependency, len(w.deps))
+	copy(out, w.deps)
+	return out
+}
+
+// DanglingDependencies returns declared edges whose endpoints are not
+// registered members (F-032 doctor warning; never silent).
+func (w *Workspace) DanglingDependencies() []Dependency {
+	w.mu.RLock()
+	names := map[string]bool{}
+	for _, m := range w.members {
+		names[m.Name] = true
+	}
+	var out []Dependency
+	for _, d := range w.deps {
+		if !names[d.From] || !names[d.To] {
+			out = append(out, d)
+		}
+	}
+	w.mu.RUnlock()
+	return out
+}
+
+// DependentsOf returns the members a change to member `from` may affect
+// through declared edges (F-032 propagation input).
+func (w *Workspace) DependentsOf(from string) []Dependency {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	var out []Dependency
+	for _, d := range w.deps {
+		if d.From == from {
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
+// SetDependencies validates and persists the declared edges, preserving
+// the member roster.
+func (w *Workspace) SetDependencies(deps []Dependency) error {
+	raw := make([]dependency, 0, len(deps))
+	for _, d := range deps {
+		raw = append(raw, dependency{From: d.From, To: d.To, Kind: d.Kind})
+	}
+	parsed, err := parseDeps(raw)
+	if err != nil {
+		return err
+	}
+	w.mu.Lock()
+	w.deps = parsed
+	members := make([]Member, len(w.members))
+	copy(members, w.members)
+	w.mu.Unlock()
+	if err := saveConfig(w.Root, members, parsed); err != nil {
+		return err
+	}
+	w.notify(Change{Kind: DepsChanged})
+	return nil
 }
 
 // Members returns a snapshot of the roster sorted by name.
@@ -217,13 +362,34 @@ func (w *Workspace) Save() error {
 	w.mu.RLock()
 	snap := make([]Member, len(w.members))
 	copy(snap, w.members)
+	deps := make([]Dependency, len(w.deps))
+	copy(deps, w.deps)
 	w.mu.RUnlock()
-	return saveMembers(w.Root, snap)
+	return saveConfig(w.Root, snap, deps)
 }
 
-// saveMembers serializes the given roster atomically (temp file in the
-// target directory, then rename).
+// saveMembers serializes the given roster atomically, preserving the
+// declared dependencies.
 func saveMembers(root string, members []Member) error {
+	deps, _ := loadDeps(root)
+	return saveConfig(root, members, deps)
+}
+
+func loadDeps(root string) ([]Dependency, error) {
+	data, err := os.ReadFile(filepath.Join(root, ConfigFile))
+	if err != nil {
+		return nil, err
+	}
+	var cfg config
+	if err := toml.Unmarshal(data, &cfg); err != nil {
+		return nil, err
+	}
+	return parseDeps(cfg.Dependencies)
+}
+
+// saveConfig serializes the roster + declared edges atomically (temp
+// file in the target directory, then rename).
+func saveConfig(root string, members []Member, deps []Dependency) error {
 	cfg := config{Schema: SchemaVersion, Members: map[string]member{}}
 	for _, m := range members {
 		p := m.Path
@@ -231,6 +397,9 @@ func saveMembers(root string, members []Member) error {
 			p = rel
 		}
 		cfg.Members[m.Name] = member{Path: p}
+	}
+	for _, d := range deps {
+		cfg.Dependencies = append(cfg.Dependencies, dependency{From: d.From, To: d.To, Kind: d.Kind})
 	}
 
 	cfgPath := filepath.Join(root, ConfigFile)
@@ -396,9 +565,10 @@ type ChangeKind string
 
 // Change kinds.
 const (
-	Added   ChangeKind = "added"
-	Removed ChangeKind = "removed"
-	Renamed ChangeKind = "renamed"
+	Added       ChangeKind = "added"
+	Removed     ChangeKind = "removed"
+	Renamed     ChangeKind = "renamed"
+	DepsChanged ChangeKind = "deps"
 )
 
 // Change announces one committed roster mutation.

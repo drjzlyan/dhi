@@ -620,7 +620,37 @@ func (m *Model) reposBody(w int) string {
 			mark+style.Render(padTo(mem.Name, reposNameCol))+
 				theme.Hint().Render(kit.ClipEllipsis(shorten(mem.Path, pathBudget), pathBudget))))
 	}
+	rows = append(rows, m.dependencyLines(w, inset)...)
 	return strings.Join(rows, "\n")
+}
+
+// dependencyLines renders the declared cross-project graph (F-032): each
+// edge as "from → to (kind)", with a dangling endpoint flagged by name.
+// No edges = one line saying so (the view is never invisible).
+func (m *Model) dependencyLines(w int, inset lipgloss.Style) []string {
+	deps := m.ws.Dependencies()
+	lines := []string{"", inset.Render(theme.TextDim().Render(padTo("dependencies", reposNameCol)))}
+	if len(deps) == 0 {
+		return append(lines, inset.Render(theme.Hint().Render(
+			"none declared — add [[dependency]] in .dhi/workspace.toml")))
+	}
+	dangling := map[string]bool{}
+	for _, d := range m.ws.DanglingDependencies() {
+		dangling[d.From+"→"+d.To] = true
+	}
+	for _, d := range deps {
+		edge := d.From + " → " + d.To + " (" + d.Kind + ")"
+		if dangling[d.From+"→"+d.To] {
+			edge += " — member missing"
+			lines = append(lines, inset.Render(theme.DangerText().Render(
+				padTo("  "+d.From, reposNameCol)+kit.ClipEllipsis(edge, maxInt(w-reposNameCol-4, 12)))))
+			continue
+		}
+		lines = append(lines, inset.Render(
+			theme.Hint().Render(padTo("  "+d.From, reposNameCol))+
+				theme.TextDim().Render(kit.ClipEllipsis("→ "+d.To+" ("+d.Kind+")", maxInt(w-reposNameCol-4, 12)))))
+	}
+	return lines
 }
 
 // ---- modals ----

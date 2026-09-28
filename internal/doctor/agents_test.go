@@ -175,3 +175,19 @@ func TestWorkflowsDoctor(t *testing.T) {
 		t.Fatalf("malformed workflow row = %+v", c)
 	}
 }
+
+func TestDependenciesDoctor(t *testing.T) {
+	root := wsFixture(t)
+	if c, ok := statusOf(Dependencies(root), "dependencies"); !ok || c.Status != OK {
+		t.Fatalf("default dependencies row = %+v", c)
+	}
+	// Declare an edge to a member that does not exist → Warn by name.
+	doc := "schema = 1\n\n[members.api]\npath = \"api\"\n\n[[dependency]]\nfrom = \"api\"\nto = \"ghost\"\nkind = \"api\"\n"
+	if err := os.WriteFile(filepath.Join(root, workspace.ConfigFile), []byte(doc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c, ok := statusOf(Dependencies(root), "dependencies")
+	if !ok || c.Status != Warn || !strings.Contains(c.Detail, "ghost") {
+		t.Fatalf("dangling row = %+v", c)
+	}
+}
