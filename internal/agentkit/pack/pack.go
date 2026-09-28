@@ -218,7 +218,13 @@ func (in *Installer) Install(ctx context.Context, source string) (*Result, error
 	if tmpClone != "" {
 		defer func() { _ = os.RemoveAll(tmpClone) }()
 	}
+	return in.InstallDir(dir, source)
+}
 
+// InstallDir installs an already-resolved pack directory (a caller may
+// have cloned + digest-verified it, e.g. the signed registry, F-034).
+// source is recorded in provenance for uninstall/audit.
+func (in *Installer) InstallDir(dir, source string) (*Result, error) {
 	spec, err := ReadSpec(dir)
 	if err != nil {
 		return nil, err

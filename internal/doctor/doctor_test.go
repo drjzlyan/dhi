@@ -422,3 +422,70 @@ func TestSandboxCheck(t *testing.T) {
 		t.Error("sandbox/adapter missing from Run report")
 	}
 }
+
+func TestMarketplacePacksMCPChecks(t *testing.T) {
+	root := setupWorkspaceRoot(t, true)
+
+	// Fresh: registry is Warn (not configured), packs/mcp silent.
+	c, ok := statusOf(Marketplace(root), "registry")
+	if !ok || c.Status != Warn {
+		t.Fatalf("fresh registry = %+v ok=%v", c, ok)
+	}
+	if checks := Packs(root); len(checks) != 0 {
+		t.Fatalf("fresh packs = %+v", checks)
+	}
+	if checks := MCPServers(root); len(checks) != 0 {
+		t.Fatalf("fresh mcp = %+v", checks)
+	}
+
+	// A cached index reports OK with the source.
+	if err := os.MkdirAll(filepath.Join(root, ".dhi", "registry"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	index := "schema = 1\n[[pack]]\nname = \"ux\"\nsource = \"x\"\nsha256 = \"" + strings.Repeat("a", 64) + "\"\n"
+	if err := os.WriteFile(filepath.Join(root, ".dhi", "registry", "index.toml"), []byte(index), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(root, ".dhi", "registry", "source"), []byte("https://example.com/reg\n"), 0o644)
+	c, _ = statusOf(Marketplace(root), "registry")
+	if c.Status != OK || !strings.Contains(c.Detail, "1 pack(s)") || !strings.Contains(c.Detail, "example.com") {
+		t.Fatalf("cached registry = %+v", c)
+	}
+	// Malformed cache FAILs.
+	os.WriteFile(filepath.Join(root, ".dhi", "registry", "index.toml"), []byte("schema = 9\n"), 0o644)
+	c, _ = statusOf(Marketplace(root), "registry")
+	if c.Status != Fail {
+		t.Fatalf("malformed registry = %+v", c)
+	}
+
+	// Valid provenance OK, malformed FAIL.
+	prov := "{\"schema\":1,\"packs\":{\"ux\":{\"source\":\"x\",\"installed_at\":\"2026-01-01T00:00:00Z\",\"agents\":[\"scout\"]}}}"
+	if err := os.WriteFile(filepath.Join(root, ".dhi", "marketplace.json"), []byte(prov), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c, ok = statusOf(Packs(root), "packs/provenance")
+	if !ok || c.Status != OK || !strings.Contains(c.Detail, "ux") {
+		t.Fatalf("packs = %+v ok=%v", c, ok)
+	}
+	os.WriteFile(filepath.Join(root, ".dhi", "marketplace.json"), []byte("{not json"), 0o644)
+	c, _ = statusOf(Packs(root), "packs/provenance")
+	if c.Status != Fail {
+		t.Fatalf("malformed provenance = %+v", c)
+	}
+
+	// Valid MCP card OK, malformed FAIL.
+	if err := os.MkdirAll(filepath.Join(root, ".dhi", "mcp"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	card := "schema = 1\nname = \"FS\"\ntransport = \"stdio\"\ncommand = \"npx\"\norigins = [\"api.example.com\"]\n"
+	os.WriteFile(filepath.Join(root, ".dhi", "mcp", "fs.toml"), []byte(card), 0o644)
+	c, _ = statusOf(MCPServers(root), "mcp/servers")
+	if c.Status != OK || !strings.Contains(c.Detail, "api.example.com") {
+		t.Fatalf("mcp = %+v", c)
+	}
+	os.WriteFile(filepath.Join(root, ".dhi", "mcp", "broken.toml"), []byte("schema = 1\n"), 0o644)
+	c, _ = statusOf(MCPServers(root), "mcp/servers")
+	if c.Status != Fail {
+		t.Fatalf("malformed mcp = %+v", c)
+	}
+}

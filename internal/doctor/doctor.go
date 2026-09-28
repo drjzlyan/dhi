@@ -27,7 +27,10 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/clirun"
 	"github.com/drjzlyan/dhi/internal/agentkit/dhitools"
 	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
+	"github.com/drjzlyan/dhi/internal/agentkit/mcpserver"
 	"github.com/drjzlyan/dhi/internal/agentkit/org"
+	"github.com/drjzlyan/dhi/internal/agentkit/pack"
+	"github.com/drjzlyan/dhi/internal/agentkit/registry"
 	"github.com/drjzlyan/dhi/internal/agentkit/scopes"
 	"github.com/drjzlyan/dhi/internal/gitcore"
 	"github.com/drjzlyan/dhi/internal/settings"
@@ -84,6 +87,9 @@ func Run(toolRoot, wsRoot string) Report {
 	r.Checks = append(r.Checks, Autopilots(wsRoot)...)
 	r.Checks = append(r.Checks, UnreadStore(wsRoot)...)
 	r.Checks = append(r.Checks, Sessions(wsRoot)...)
+	r.Checks = append(r.Checks, Marketplace(wsRoot)...)
+	r.Checks = append(r.Checks, Packs(wsRoot)...)
+	r.Checks = append(r.Checks, MCPServers(wsRoot)...)
 	r.Checks = append(r.Checks, GH(toolRoot)...)
 	r.Checks = append(r.Checks, Sandbox(sandboxMode(wsRoot))...)
 	r.Healthy = true
@@ -702,6 +708,91 @@ func Sessions(wsRoot string) []Check {
 			Detail: detail + "; " + strings.Join(warnings, "; ")}}
 	}
 	return []Check{{Name: "sessions/store", Status: OK, Detail: detail}}
+}
+
+// Marketplace probes the cached signed pack index (F-034 part B). No
+// cache is a healthy "not configured" Warn (browsing needs a source);
+// a malformed cache is a Fail.
+func Marketplace(wsRoot string) []Check {
+	if wsRoot == "" {
+		return nil
+	}
+	ws, err := workspace.Load(wsRoot)
+	if err != nil {
+		return nil
+	}
+	reg := registry.New(ws)
+	entries, berr := reg.Browse()
+	if berr != nil {
+		if strings.Contains(berr.Error(), "no cached index") {
+			return []Check{{Name: "registry", Status: Warn,
+				Detail: "no cached index — set a source in Settings → MARKETPLACE (r)"}}
+		}
+		return []Check{{Name: "registry", Status: Fail, Detail: berr.Error()}}
+	}
+	detail := fmt.Sprintf("%d pack(s)", len(entries))
+	if src, ok := reg.Source(); ok {
+		detail += " · " + src
+	}
+	if at, ok := reg.FetchedAt(); ok {
+		detail += " · fetched " + at.UTC().Format("2006-01-02")
+	}
+	return []Check{{Name: "registry", Status: OK, Detail: detail}}
+}
+
+// Packs probes .dhi/marketplace.json provenance (F-034 part A). A
+// malformed file FAILs; otherwise the installed packs are named.
+func Packs(wsRoot string) []Check {
+	if wsRoot == "" {
+		return nil
+	}
+	ws, err := workspace.Load(wsRoot)
+	if err != nil {
+		return nil
+	}
+	recs, rerr := (&pack.Installer{WS: ws}).Records()
+	if rerr != nil {
+		return []Check{{Name: "packs/provenance", Status: Fail, Detail: rerr.Error()}}
+	}
+	if len(recs) == 0 {
+		return nil // no packs is healthy
+	}
+	names := make([]string, 0, len(recs))
+	for name := range recs {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return []Check{{Name: "packs/provenance", Status: OK,
+		Detail: fmt.Sprintf("%d pack(s): %s", len(names), strings.Join(names, ", "))}}
+}
+
+// MCPServers probes .dhi/mcp/ (F-034 part C): malformed cards FAIL by
+// name; installed servers are listed with their transport and declared
+// origins (posture is auditable, never assumed).
+func MCPServers(wsRoot string) []Check {
+	if wsRoot == "" {
+		return nil
+	}
+	st := mcpserver.Open(wsRoot)
+	if w := st.Warnings(); len(w) > 0 {
+		return []Check{{Name: "mcp/servers", Status: Fail,
+			Detail: fmt.Sprintf("%d malformed card(s): %s", len(w), strings.Join(w, "; "))}}
+	}
+	servers := st.Servers()
+	if len(servers) == 0 {
+		return nil
+	}
+	var parts []string
+	for _, s := range servers {
+		posture := string(s.Transport)
+		if len(s.Origins) > 0 {
+			posture += " → " + strings.Join(s.Origins, ",")
+		} else {
+			posture += " (no network)"
+		}
+		parts = append(parts, s.Slug+" ["+posture+"]")
+	}
+	return []Check{{Name: "mcp/servers", Status: OK, Detail: strings.Join(parts, "; ")}}
 }
 
 // Autopilots probes .dhi/autopilots/ (F-015): malformed cards FAIL

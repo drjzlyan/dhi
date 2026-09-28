@@ -20,6 +20,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
 	"github.com/drjzlyan/dhi/internal/agentkit/org"
 	"github.com/drjzlyan/dhi/internal/agentkit/pack"
+	"github.com/drjzlyan/dhi/internal/agentkit/registry"
 	"github.com/drjzlyan/dhi/internal/autopilot"
 	"github.com/drjzlyan/dhi/internal/gitcore"
 	"github.com/drjzlyan/dhi/internal/settings"
@@ -45,6 +46,10 @@ type Model struct {
 	stdCur   int // STANDARDS rows
 	wfCur    int // WORKFLOWS rows
 	autoCur  int // AUTOPILOTS rows
+	mktCur   int // MARKETPLACE rows
+	mktQuery string
+	mktEdit  bool // search input focused
+	mktBusy  bool
 
 	detected map[string]string // runtime name → version ("" = not installed)
 	lib      *library.Store    // lazy snapshot of the behaviour library
@@ -81,6 +86,7 @@ const (
 	secStandards
 	secWorkflows
 	secAutopilots
+	secMarketplace
 	secCount
 )
 
@@ -102,6 +108,8 @@ func (s sectionID) label() string {
 		return "WORKFLOWS"
 	case secAutopilots:
 		return "AUTOPILOTS"
+	case secMarketplace:
+		return "MARKETPLACE"
 	default:
 		return "CONFIG"
 	}
@@ -137,6 +145,9 @@ type Deps struct {
 	Bus        *bus.Bus
 	Runtime    TurnHandler
 	Tasks      *tasks.Store
+	// Registry is the cached signed pack index (F-034 part B). Nil
+	// degrades the MARKETPLACE section to a named unavailable row.
+	Registry *registry.Registry
 }
 
 // New wires the surface to a loaded config, its persistence target,
@@ -177,10 +188,11 @@ func (m *Model) listen() tea.Cmd {
 func (m *Model) Update(msg tea.Msg) tea.Cmd {
 	if ev, ok := msg.(settingsEvent); ok {
 		m.form.busy = false
+		m.mktBusy = false
 		if m.form.kind == formSource {
 			m.form.open = false
 		}
-		if m.dlg != nil && m.dkind == dlgPackInstall {
+		if m.dlg != nil && (m.dkind == dlgPackInstall || m.dkind == dlgRegistrySource) {
 			m.closeDialog()
 		}
 		if ev.err != "" {
@@ -233,6 +245,8 @@ func (m *Model) HandleKey(key string) bool {
 		return m.workflowsKey(key)
 	case secAutopilots:
 		return m.autopilotsKey(key)
+	case secMarketplace:
+		return m.marketplaceKey(key)
 	default:
 		return m.configKey(key)
 	}
@@ -935,6 +949,8 @@ func (m *Model) sectionPane(w, h int) string {
 		content = m.workflowsView()
 	case m.sec == secAutopilots:
 		content = m.autopilotsView()
+	case m.sec == secMarketplace:
+		content = m.marketplaceView(w)
 	default:
 		content = m.configView()
 	}
@@ -980,6 +996,8 @@ func (m *Model) sectionHints() []string {
 		sec = []string{"n new", "d default", "v preview"}
 	case secAutopilots:
 		sec = []string{"n new", "e arm/pause", "r run now", "x remove"}
+	case secMarketplace:
+		sec = []string{"r refresh", "/ search", "enter install", "v inspect"}
 	}
 	return append(sec, global...)
 }

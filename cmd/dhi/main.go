@@ -27,6 +27,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
 	"github.com/drjzlyan/dhi/internal/agentkit/memory"
 	agentkitOrg "github.com/drjzlyan/dhi/internal/agentkit/org"
+	"github.com/drjzlyan/dhi/internal/agentkit/registry"
 	agentkitRuntime "github.com/drjzlyan/dhi/internal/agentkit/runtime"
 	"github.com/drjzlyan/dhi/internal/agentkit/scopes"
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
@@ -245,6 +246,7 @@ func runTUI() {
 				Bus:        messageBus,
 				Runtime:    agentRT,
 				Tasks:      taskStore,
+				Registry:   registry.New(ws),
 			}
 		}
 	}
