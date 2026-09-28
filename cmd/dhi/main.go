@@ -25,6 +25,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/knowledge"
 	"github.com/drjzlyan/dhi/internal/agentkit/library"
 	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
+	"github.com/drjzlyan/dhi/internal/agentkit/mcpserver"
 	"github.com/drjzlyan/dhi/internal/agentkit/memory"
 	agentkitOrg "github.com/drjzlyan/dhi/internal/agentkit/org"
 	"github.com/drjzlyan/dhi/internal/agentkit/registry"
@@ -170,6 +171,7 @@ func runTUI() {
 	var reviewSvc *review.Service
 	var sessionStore *ideation.Store
 	var unreadStore *unread.Store
+	var mcpStore *mcpserver.Store
 	if ws != nil {
 		messageBus = openBus(ws)
 		if ts, err := tasks.Open(ws); err == nil {
@@ -178,6 +180,7 @@ func runTUI() {
 			wireTaskSeam(ws, ts)
 		}
 		reviewSvc = openReviewService(ws)
+		mcpStore = mcpserver.Open(ws.Root)
 		if ss, err := ideation.Open(ws); err == nil {
 			sessionStore = ss
 		} else {
@@ -197,7 +200,7 @@ func runTUI() {
 		// under .dhi/agents/. Guards carry the audited OS-sandbox
 		// adapter (nil here is impossible: the audit blocked first).
 		if messageBus != nil {
-			agentRT = newAgentRuntime(ws, messageBus, decision.Sandbox, termEnv, cfg.Engine, gitRunner, identityFn, sessionStore, runRunner, editorBridge, wsScopes, taskStore, reviewSvc, rgSearcher)
+			agentRT = newAgentRuntime(ws, messageBus, decision.Sandbox, termEnv, cfg.Engine, gitRunner, identityFn, sessionStore, runRunner, editorBridge, wsScopes, taskStore, reviewSvc, rgSearcher, mcpStore)
 			if agentRT != nil {
 				edOpts = append(edOpts, editor.WithChat(agentRT))
 			}
@@ -613,7 +616,7 @@ func (r execRunner) Run(ctx context.Context, dir string, argv []string, allowNet
 	return out, err
 }
 
-func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cliEnv []string, defaultEngine string, gitRunner *gitcore.Runner, identityFn gitcore.IdentityFunc, sessionStore *ideation.Store, runRunner dhitools.CommandRunner, editor dhitools.EditorAPI, workspaceScopes scopes.Set, taskStore *tasks.Store, reviewSvc *review.Service, kbSearcher search.Searcher) *agentkitRuntime.Runtime {
+func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cliEnv []string, defaultEngine string, gitRunner *gitcore.Runner, identityFn gitcore.IdentityFunc, sessionStore *ideation.Store, runRunner dhitools.CommandRunner, editor dhitools.EditorAPI, workspaceScopes scopes.Set, taskStore *tasks.Store, reviewSvc *review.Service, kbSearcher search.Searcher, mcpStore *mcpserver.Store) *agentkitRuntime.Runtime {
 	roster, err := manifest.LoadDir(filepath.Join(ws.Root, workspace.DirAgents))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "dhi: agent roster:", err)
@@ -664,6 +667,7 @@ func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cl
 		Git:             gitRunner,
 		Identity:        identityFn,
 		Sessions:        sessionStore,
+		MCPServers:      mcpStore,
 		Run:             runRunner,
 		Editor:          editor,
 		WorkspaceScopes: workspaceScopes,

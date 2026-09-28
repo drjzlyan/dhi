@@ -36,6 +36,10 @@ func TestToolScope(t *testing.T) {
 	if got := ToolScope("unknown_tool"); got != Admin {
 		t.Errorf("unknown tool scope = %q, want admin (deny-by-default)", got)
 	}
+	// Bridged third-party MCP tools are network by default (deny).
+	if got := ToolScope("mcp__fs__read"); got != Network {
+		t.Errorf("mcp tool scope = %q, want network", got)
+	}
 }
 
 func TestResolveLayers(t *testing.T) {

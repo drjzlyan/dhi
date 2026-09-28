@@ -7,7 +7,10 @@
 // outside the declared surface.
 package scopes
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // Scope is one capability class.
 type Scope string
@@ -95,11 +98,17 @@ func Resolve(layers ...Set) Set {
 	return out
 }
 
-// ToolScope maps a served tool slug to its scope. Unknown tools map to
-// admin (deny-by-default) so a new tool is never implicitly allowed.
+// ToolScope maps a served tool slug to its scope. A bridged third-party
+// MCP tool (mcp__<server>__<tool>) maps to network — reaching an external
+// server is deny-by-default and must be granted (ADR-0022). Any other
+// unknown tool maps to admin (deny-by-default) so a new tool is never
+// implicitly allowed.
 func ToolScope(tool string) Scope {
 	if sc, ok := toolScopes[tool]; ok {
 		return sc
+	}
+	if strings.HasPrefix(tool, "mcp__") {
+		return Network
 	}
 	return Admin
 }

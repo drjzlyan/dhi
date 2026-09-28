@@ -15,6 +15,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/agentkit/clirun"
 	"github.com/drjzlyan/dhi/internal/agentkit/dhitools"
+	"github.com/drjzlyan/dhi/internal/agentkit/mcpbridge"
 	"github.com/drjzlyan/dhi/internal/agentkit/standards"
 	"github.com/drjzlyan/dhi/internal/agentkit/toolbridge"
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
@@ -271,44 +272,77 @@ func (r *Runtime) serveTools(e *entry, trigger bus.Message) *serveSession {
 	if r.cfg.WS == nil || e.cli == nil || !e.cli.MCPWired() {
 		return nil
 	}
-	any := false
+	wantDHI, wantBridge := false, false
 	for _, t := range e.m.Tools {
 		if dhitools.Serves(t) {
-			any = true
-			break
+			wantDHI = true
+		}
+		if strings.HasPrefix(t, mcpbridge.ToolPrefix) {
+			wantBridge = true
 		}
 	}
-	if !any {
+	if !wantDHI && !wantBridge {
 		return nil
 	}
-	gate, onRun := r.workflowEnforcer(e.m, trigger)
-	handler := dhitools.Deps{
-		Agent:     e.m,
-		Tasks:     r.cfg.Tasks,
-		KB:        r.cfg.Knowledge,
-		Memory:    r.cfg.Memory,
-		Bus:       r.cfg.Bus,
-		WS:        r.cfg.WS,
-		Search:    r.cfg.Search,
-		Approvals: r.cfg.Approvals,
-		Git:       r.cfg.Git,
-		Identity:  r.cfg.Identity,
-		Sessions:  r.cfg.Sessions,
-		Editor:    r.cfg.Editor,
-		Scopes:    r.agentScopes(e.m),
-		Gate:      gate,
-		OnRun:     onRun,
-		Channel:   trigger.Channel,
-		Thread:    trigger.Thread,
-		Workdir:   r.cliWorkdir(trigger),
-	}.Handler()
-	if len(handler.Tools()) == 0 {
+	var handler mcp.Handler
+	if wantDHI {
+		gate, onRun := r.workflowEnforcer(e.m, trigger)
+		handler = dhitools.Deps{
+			Agent:     e.m,
+			Tasks:     r.cfg.Tasks,
+			KB:        r.cfg.Knowledge,
+			Memory:    r.cfg.Memory,
+			Bus:       r.cfg.Bus,
+			WS:        r.cfg.WS,
+			Search:    r.cfg.Search,
+			Approvals: r.cfg.Approvals,
+			Git:       r.cfg.Git,
+			Identity:  r.cfg.Identity,
+			Sessions:  r.cfg.Sessions,
+			Editor:    r.cfg.Editor,
+			Scopes:    r.agentScopes(e.m),
+			Gate:      gate,
+			OnRun:     onRun,
+			Channel:   trigger.Channel,
+			Thread:    trigger.Thread,
+			Workdir:   r.cliWorkdir(trigger),
+		}.Handler()
+	}
+	// Third-party MCP servers (F-034 part C): dialed under the sandbox,
+	// allowlist-gated, network deny-by-default.
+	var bridge *mcpbridge.Bridge
+	if wantBridge && r.cfg.MCPServers != nil {
+		dialCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		bridge = mcpbridge.New(dialCtx, mcpbridge.Deps{
+			Servers:   r.cfg.MCPServers,
+			Agent:     e.m,
+			Sandbox:   r.cfg.Sandbox,
+			Approvals: r.cfg.Approvals,
+			Scopes:    r.agentScopes(e.m),
+		})
+		cancel()
+		if len(bridge.Tools()) > 0 {
+			if handler == nil {
+				handler = bridge
+			} else {
+				handler = compositeHandler{dhi: handler, bridge: bridge}
+			}
+		}
+	}
+	closeBridge := func() {
+		if bridge != nil {
+			bridge.Close()
+		}
+	}
+	if handler == nil || len(handler.Tools()) == 0 {
+		closeBridge()
 		return nil
 	}
 	endpoint, stop, err := mcp.ServeLoopback(handler)
 	if err != nil {
 		// Named degrade, never silent: the turn proceeds on the
 		// dhi-action fallback and the thread sees why (F-011).
+		closeBridge()
 		_, _ = r.cfg.Bus.Post(bus.Message{
 			Channel: trigger.Channel, Thread: trigger.Thread,
 			Author: e.m.ID,
@@ -316,7 +350,11 @@ func (r *Runtime) serveTools(e *entry, trigger bus.Message) *serveSession {
 		})
 		return nil
 	}
-	sess := &serveSession{endpoint: endpoint, stop: stop}
+	stopAll := func() {
+		closeBridge()
+		stop()
+	}
+	sess := &serveSession{endpoint: endpoint, stop: stopAll}
 	// Project-file adapters (cursor) need the config inside the worktree
 	// at a fixed relative path; write it there and git-exclude it so the
 	// agent's own commits never pick it up.
@@ -330,12 +368,12 @@ func (r *Runtime) serveTools(e *entry, trigger bus.Message) *serveSession {
 				sess.stop = func() {
 					_ = os.Remove(path)
 					unexclude()
-					stop()
+					stopAll()
 				}
 				return sess
 			}
 		}
-		stop()
+		stopAll()
 		_, _ = r.cfg.Bus.Post(bus.Message{
 			Channel: trigger.Channel, Thread: trigger.Thread,
 			Author: e.m.ID,
@@ -348,7 +386,7 @@ func (r *Runtime) serveTools(e *entry, trigger bus.Message) *serveSession {
 	if e.cli.MCPConfigFile != nil {
 		tmp, err := os.CreateTemp("", "dhi-mcp-*.json")
 		if err != nil {
-			stop()
+			stopAll()
 			_, _ = r.cfg.Bus.Post(bus.Message{
 				Channel: trigger.Channel, Thread: trigger.Thread,
 				Author: e.m.ID,
@@ -359,7 +397,7 @@ func (r *Runtime) serveTools(e *entry, trigger bus.Message) *serveSession {
 		if _, err := tmp.WriteString(e.cli.MCPConfigFile(endpoint)); err != nil {
 			_ = tmp.Close()
 			_ = os.Remove(tmp.Name())
-			stop()
+			stopAll()
 			return nil
 		}
 		_ = tmp.Close()
@@ -367,10 +405,42 @@ func (r *Runtime) serveTools(e *entry, trigger bus.Message) *serveSession {
 		sess.configPath = path
 		sess.stop = func() {
 			_ = os.Remove(path)
-			stop()
+			stopAll()
 		}
 	}
 	return sess
+}
+
+// compositeHandler merges DHI's own tools with the bridged third-party
+// MCP servers: listing both, routing by the mcp__ prefix.
+type compositeHandler struct {
+	dhi    mcp.Handler
+	bridge mcp.Handler
+}
+
+func (c compositeHandler) ProtocolVersion() string { return mcp.ProtocolVersion }
+
+func (c compositeHandler) ServerInfo() (string, string) { return "dhi", "1" }
+
+func (c compositeHandler) Tools() []mcp.ToolInfo {
+	var out []mcp.ToolInfo
+	if c.dhi != nil {
+		out = append(out, c.dhi.Tools()...)
+	}
+	if c.bridge != nil {
+		out = append(out, c.bridge.Tools()...)
+	}
+	return out
+}
+
+func (c compositeHandler) CallTool(ctx context.Context, name string, args json.RawMessage) (string, bool, error) {
+	if strings.HasPrefix(name, mcpbridge.ToolPrefix) && c.bridge != nil {
+		return c.bridge.CallTool(ctx, name, args)
+	}
+	if c.dhi != nil {
+		return c.dhi.CallTool(ctx, name, args)
+	}
+	return "unknown tool " + name, true, nil
 }
 
 // cliPrompt flattens the trigger + recent history into a headless CLI

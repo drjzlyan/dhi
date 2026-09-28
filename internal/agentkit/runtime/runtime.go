@@ -20,6 +20,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/knowledge"
 	"github.com/drjzlyan/dhi/internal/agentkit/library"
 	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
+	"github.com/drjzlyan/dhi/internal/agentkit/mcpserver"
 	"github.com/drjzlyan/dhi/internal/agentkit/memory"
 	"github.com/drjzlyan/dhi/internal/agentkit/org"
 	"github.com/drjzlyan/dhi/internal/agentkit/scopes"
@@ -93,6 +94,11 @@ type Config struct {
 	Identity gitcore.IdentityFunc
 	// Sessions backs the ideation read tools (M15 P1); nil omits them.
 	Sessions *ideation.Store
+	// MCPServers are the installed third-party MCP server cards (F-034
+	// part C); nil omits bridged tools. Reachable only when the agent's
+	// allowlist names an mcp__<server>__<tool> and its network scope
+	// permits the call.
+	MCPServers *mcpserver.Store
 	// Run executes the `run` tool's allowlisted commands (M15 P1); nil
 	// makes the tool refuse by name.
 	Run dhitools.CommandRunner
