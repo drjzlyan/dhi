@@ -803,14 +803,15 @@ tests-pass-before-PR) and an exception-approval review gate.
 
 ## M17 — Cross-project work & dependency graph (F-032)
 
-Status: planned. ADR-0021. Honor all task changesets; declared
-`[[dependency]]` edges; propagation as an accept/decline proposal.
+Status: complete (2026-09-26). ADR-0021. All task changesets honored;
+declared `[[dependency]]` edges; propagation as an accept/decline
+proposal.
 
-- [ ] Multi-changeset tasks: worktree per member, commit/push/PR across
+- [x] Multi-changeset tasks: worktree per member, commit/push/PR across
       all, per-member failure named
-- [ ] `workspace.toml` `[[dependency]] from/to/kind` + workspace
+- [x] `workspace.toml` `[[dependency]] from/to/kind` + workspace
       dependency view
-- [ ] Propagation proposals (accept/decline) on a declared edge; no
+- [x] Propagation proposals (accept/decline) on a declared edge; no
       auto-create; doctor dangling-member warning
 
 ## M18 — Ideation round-table & canvas (F-033)

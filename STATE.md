@@ -1,9 +1,30 @@
 # STATE — current position
 
-Updated: 2026-09-26 (session 27: M16 feature workflows P0–P2 landed —
-store/builtin/layering + hard-block gates at the commit/PR seams +
-doctor row; M15 complete with MCP serving for five adapters;
-`make verify` green)
+Updated: 2026-09-26 (session 28: M17 cross-project work complete —
+multi-changeset commit/push/PR, declared dependency graph, propagation
+proposals; M16 complete; `make verify` green)
+
+### Session 28 (M17 — cross-project work)
+
+- **P0 multi-changeset** (`tasks.Commit`/`PushBranch`, `toolbridge`
+  prOpen): every changeset committed/pushed/PR'd on its own branch; a
+  per-member failure is named and the others still proceed (no silent
+  skip, no rollback).
+- **P1 declared dependencies**: `workspace.toml [[dependency]]
+  from/to/kind` (kind module|api|build) strict-decoded (bad kind,
+  self-edge, missing endpoint, duplicate refuse); `Workspace.
+  Dependencies/DanglingDependencies/DependentsOf/SetDependencies`;
+  doctor `dependencies` row (dangling member WARN by name); the REPOS
+  section renders the graph (`from → to (kind)`, missing member
+  flagged). `saveConfig` preserves edges across roster edits.
+- **P2 propagation proposals**: attaching a changeset seeds pending
+  `tasks.Propagation` from `ws.DependentsOf`; inbox gains a
+  `Dependency` kind; `a` accepts (creates `<origin>`-derived
+  `dep-…` task in the target member and links it), `x` declines
+  (creates nothing); re-seeding never resurrects a decided proposal.
+- Known flakes unchanged (TestCLIRuntimeEndToEnd,
+  TestMemoryAndKBReachTheSystemBlock, clirun TestDetect). Untracked
+  `.dhi/agents/dev/` — do NOT commit.
 
 ## Where we are
 

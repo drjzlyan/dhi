@@ -38,13 +38,24 @@ visible proposal when A changes.
 
 ## Acceptance criteria
 
-- [ ] A task with two member changesets commits and pushes both, each on
-      its own branch; a failure in one is named.
-- [ ] Declared edges parse strictly; a dangling member warns by name.
-- [ ] Changing A with an A→B edge raises a proposal; declining creates
-      nothing; accepting creates a linked B task.
-- [ ] The dependency view renders declared edges.
-- [ ] `make verify` green per phase.
+- [x] A task with two member changesets commits and pushes both, each on
+      its own branch; a failure in one is named. (P0: `tasks.Commit`/
+      `PushBranch` and `toolbridge.prOpen` iterate every changeset,
+      collecting named per-member failures while the others proceed.)
+- [x] Declared edges parse strictly; a dangling member warns by name.
+      (P1: `workspace.toml [[dependency]]` strict-decoded — bad kind,
+      self-edge, missing endpoint, duplicate all refuse; doctor
+      `dependencies` row WARNs on a dangling member.)
+- [x] Changing A with an A→B edge raises a proposal; declining creates
+      nothing; accepting creates a linked B task. (P2: attaching a
+      changeset seeds pending proposals from `ws.DependentsOf`; the
+      inbox surfaces them; `a` accepts — creating `dep-<task>-<member>`
+      and linking it — `x` declines. Re-seeding never resurrects a
+      decided proposal.)
+- [x] The dependency view renders declared edges. (P1: the REPOS
+      section lists `from → to (kind)` edges and flags a missing
+      member.)
+- [x] `make verify` green per phase.
 
 ## Deferred
 
