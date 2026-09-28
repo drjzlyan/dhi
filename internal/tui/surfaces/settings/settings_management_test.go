@@ -143,7 +143,7 @@ func TestPacksInstallUninstallRoundTrip(t *testing.T) {
 	m.sec = secPacks
 
 	src := writeImportFixture(t, map[string]string{
-		"pack.toml":  "schema = 1\nname = \"ux\"\nagents = [\"scout.toml\"]\n",
+		"pack.toml":  "schema = 2\nname = \"ux\"\nagents = [\"scout.toml\"]\n",
 		"scout.toml": importScoutDoc,
 	})
 	feed(m, "i")
@@ -163,7 +163,7 @@ func TestPacksInstallUninstallRoundTrip(t *testing.T) {
 		t.Fatalf("flash = %q", m.flash)
 	}
 	recs := m.packRows()
-	if len(recs) != 1 || recs[0].name != "ux" || recs[0].agents != 1 {
+	if len(recs) != 1 || recs[0].name != "ux" || recs[0].counts != "1 agent" {
 		t.Fatalf("provenance rows = %+v", recs)
 	}
 	roster, _ := org.LoadRoster(ws)

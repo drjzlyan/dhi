@@ -12,6 +12,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 
 	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
+	"github.com/drjzlyan/dhi/internal/agentkit/standards"
 	"github.com/drjzlyan/dhi/internal/workspace"
 )
 
@@ -39,7 +40,7 @@ func fixturePack(t *testing.T, name string) string {
 	}
 	os.WriteFile(filepath.Join(agents, "alice.toml"), []byte(aliceDoc), 0o644)
 	os.WriteFile(filepath.Join(agents, "bob.toml"), []byte(bobDoc), 0o644)
-	spec := "schema = 1\nname = \"" + name + "\"\nversion = \"0.1.0\"\n" +
+	spec := "schema = 2\nname = \"" + name + "\"\nversion = \"0.1.0\"\n" +
 		"description = \"test crew\"\nagents = [\"agents/bob.toml\", \"agents/alice.toml\"]\n"
 	os.WriteFile(filepath.Join(root, "pack.toml"), []byte(spec), 0o644)
 	return root
@@ -161,7 +162,7 @@ func TestUninstallRemovesExactlyRecordedAgents(t *testing.T) {
 func TestSpecValidation(t *testing.T) {
 	root := t.TempDir()
 	os.WriteFile(filepath.Join(root, "pack.toml"),
-		[]byte("schema = 1\nname = \"x\"\nagents = [\"a.toml\"]\nfuture_key = true\n"), 0o644)
+		[]byte("schema = 2\nname = \"x\"\nagents = [\"a.toml\"]\nfuture_key = true\n"), 0o644)
 	if _, err := ReadSpec(root); err == nil || !strings.Contains(err.Error(), "unknown key") {
 		t.Errorf("unknown key accepted: %v", err)
 	}
@@ -190,7 +191,7 @@ func TestInstallFromGitLocalPath(t *testing.T) {
 	os.MkdirAll(agents, 0o755)
 	os.WriteFile(filepath.Join(agents, "alice.toml"), []byte(aliceDoc), 0o644)
 	os.WriteFile(filepath.Join(repoDir, "pack.toml"),
-		[]byte("schema = 1\nname = \"fromgit\"\nversion = \"1.0\"\nagents = [\"agents/alice.toml\"]\n"), 0o644)
+		[]byte("schema = 2\nname = \"fromgit\"\nversion = \"1.0\"\nagents = [\"agents/alice.toml\"]\n"), 0o644)
 
 	r, err := git.PlainInit(repoDir, false)
 	if err != nil {
@@ -240,7 +241,7 @@ func TestInstallShipsWorkflows(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(wf, "ci.toml"), []byte(ciWorkflowDoc), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	spec := "schema = 1\nname = \"flowpack\"\nversion = \"0.1.0\"\nagents = [\"agents/alice.toml\"]\nworkflows = [\"workflows/ci.toml\"]\n"
+	spec := "schema = 2\nname = \"flowpack\"\nversion = \"0.1.0\"\nagents = [\"agents/alice.toml\"]\nworkflows = [\"workflows/ci.toml\"]\n"
 	if err := os.WriteFile(filepath.Join(root, "pack.toml"), []byte(spec), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -272,7 +273,7 @@ func TestInstallRefusesMalformedWorkflow(t *testing.T) {
 	wf := filepath.Join(root, "workflows")
 	os.MkdirAll(wf, 0o755)
 	os.WriteFile(filepath.Join(wf, "ci.toml"), []byte("schema = 99\n"), 0o644)
-	spec := "schema = 1\nname = \"badflow\"\nagents = [\"agents/alice.toml\"]\nworkflows = [\"workflows/ci.toml\"]\n"
+	spec := "schema = 2\nname = \"badflow\"\nagents = [\"agents/alice.toml\"]\nworkflows = [\"workflows/ci.toml\"]\n"
 	os.WriteFile(filepath.Join(root, "pack.toml"), []byte(spec), 0o644)
 	in := &Installer{WS: ws}
 	if _, err := in.Install(context.Background(), root); err == nil || !strings.Contains(err.Error(), "ci") {
@@ -292,10 +293,150 @@ func TestPackWorkflowConflictRefuses(t *testing.T) {
 	wf := filepath.Join(root, "workflows")
 	os.MkdirAll(wf, 0o755)
 	os.WriteFile(filepath.Join(wf, "ci.toml"), []byte(ciWorkflowDoc), 0o644)
-	spec := "schema = 1\nname = \"flowpack\"\nagents = [\"agents/alice.toml\"]\nworkflows = [\"workflows/ci.toml\"]\n"
+	spec := "schema = 2\nname = \"flowpack\"\nagents = [\"agents/alice.toml\"]\nworkflows = [\"workflows/ci.toml\"]\n"
 	os.WriteFile(filepath.Join(root, "pack.toml"), []byte(spec), 0o644)
 	in := &Installer{WS: ws}
 	if _, err := in.Install(context.Background(), root); err == nil || !strings.Contains(err.Error(), "another source") {
 		t.Fatalf("conflict must refuse: %v", err)
+	}
+}
+
+func TestInstallShipsEveryKind(t *testing.T) {
+	ws := setupWS(t)
+	root := t.TempDir()
+
+	write := func(rel, body string) {
+		t.Helper()
+		p := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("agents/alice.toml", aliceDoc)
+	write("roles/scribe.toml", "schema = 1\ndescription = \"writes docs\"\ntools = [\"read\"]\npolicy_preset = \"read-only\"\n")
+	write("skills/docs.md", "---\nname: Docs\ndescription: write docs\n---\n\nKeep docs short.\n")
+	write("standards/rules.toml", "rules = [\"Ship tests with the change\", \"No force-push\"]\n")
+	write("mcp/fs.toml", "schema = 1\nname = \"Filesystem\"\ntransport = \"stdio\"\ncommand = \"npx\"\nargs = [\"-y\", \"server-fs\"]\norigins = [\"api.example.com\"]\nenv = [\"FS_TOKEN\"]\n")
+	write("pack.toml", `schema = 2
+name = "everykind"
+version = "1.0.0"
+agents = ["agents/alice.toml"]
+roles = ["roles/scribe.toml"]
+skills = ["skills/docs.md"]
+standards = ["standards/rules.toml"]
+mcp_servers = ["mcp/fs.toml"]
+`)
+
+	in := &Installer{WS: ws}
+	res, err := in.Install(context.Background(), root)
+	if err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	if len(res.Roles) != 1 || res.Roles[0] != "scribe" ||
+		len(res.Skills) != 1 || res.Skills[0] != "docs" ||
+		len(res.MCPServers) != 1 || res.MCPServers[0] != "fs" ||
+		len(res.Standards) != 2 {
+		t.Fatalf("result kinds = %+v", res)
+	}
+	for _, p := range []string{
+		filepath.Join(ws.Root, workspace.DirRoles, "scribe.toml"),
+		filepath.Join(ws.Root, workspace.DirSkills, "docs.md"),
+		filepath.Join(ws.Root, workspace.DirMCP, "fs.toml"),
+	} {
+		if _, err := os.Stat(p); err != nil {
+			t.Fatalf("missing installed file %s: %v", p, err)
+		}
+	}
+	// One provenance record carries every kind.
+	rec, err := in.Records()
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := rec["everykind"]
+	if len(r.Agents) != 1 || len(r.Roles) != 1 || len(r.Skills) != 1 || len(r.MCPServers) != 1 || len(r.Standards) != 2 {
+		t.Fatalf("provenance = %+v", r)
+	}
+	// Standards landed as workspace rules.
+	snap, err := standards.Inspect(ws.Root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(snap.Workspace, "|")
+	if !strings.Contains(joined, "Ship tests with the change") || !strings.Contains(joined, "No force-push") {
+		t.Fatalf("standards workspace = %v", snap.Workspace)
+	}
+
+	// Uninstall removes exactly those, and nothing else.
+	if err := standards.Save(ws.Root, append(snap.Workspace, "User rule"), nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := in.Uninstall("everykind"); err != nil {
+		t.Fatalf("Uninstall: %v", err)
+	}
+	for _, p := range []string{
+		filepath.Join(ws.Root, workspace.DirRoles, "scribe.toml"),
+		filepath.Join(ws.Root, workspace.DirSkills, "docs.md"),
+		filepath.Join(ws.Root, workspace.DirMCP, "fs.toml"),
+	} {
+		if _, err := os.Stat(p); !os.IsNotExist(err) {
+			t.Fatalf("uninstall left %s", p)
+		}
+	}
+	snap, _ = standards.Inspect(ws.Root)
+	joined = strings.Join(snap.Workspace, "|")
+	if strings.Contains(joined, "Ship tests") || !strings.Contains(joined, "User rule") {
+		t.Fatalf("standards after uninstall = %v", snap.Workspace)
+	}
+}
+
+func TestPackConflictAcrossNewKinds(t *testing.T) {
+	ws := setupWS(t)
+	// A hand-authored role occupies the slug.
+	if err := os.MkdirAll(filepath.Join(ws.Root, workspace.DirRoles), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(ws.Root, workspace.DirRoles, "scribe.toml"), []byte("x"), 0o644)
+
+	root := t.TempDir()
+	os.MkdirAll(filepath.Join(root, "roles"), 0o755)
+	os.WriteFile(filepath.Join(root, "roles", "scribe.toml"),
+		[]byte("schema = 1\ndescription = \"d\"\n"), 0o644)
+	os.WriteFile(filepath.Join(root, "pack.toml"),
+		[]byte("schema = 2\nname = \"clash\"\nroles = [\"roles/scribe.toml\"]\n"), 0o644)
+
+	in := &Installer{WS: ws}
+	_, err := in.Install(context.Background(), root)
+	if err == nil || !strings.Contains(err.Error(), "role scribe") {
+		t.Fatalf("conflict = %v", err)
+	}
+	if names, _ := in.Installed(); len(names) != 0 {
+		t.Fatalf("conflict installed something: %v", names)
+	}
+}
+
+func TestPackRefusesMalformedMCPAndRole(t *testing.T) {
+	ws := setupWS(t)
+	build := func(body string) string {
+		root := t.TempDir()
+		os.WriteFile(filepath.Join(root, "bad.toml"), []byte(body), 0o644)
+		return root
+	}
+	in := &Installer{WS: ws}
+	// MCP card with a value where a name belongs.
+	mcpRoot := build("schema = 1\nname = \"FS\"\ntransport = \"stdio\"\ncommand = \"npx\"\nenv = [\"sk-12345\"]\n")
+	os.WriteFile(filepath.Join(mcpRoot, "pack.toml"),
+		[]byte("schema = 2\nname = \"badmcp\"\nmcp_servers = [\"bad.toml\"]\n"), 0o644)
+	if _, err := in.Install(context.Background(), mcpRoot); err == nil {
+		t.Fatal("malformed mcp env accepted")
+	}
+	// Role missing a description.
+	roleRoot := build("schema = 1\n")
+	os.WriteFile(filepath.Join(roleRoot, "pack.toml"),
+		[]byte("schema = 2\nname = \"badrole\"\nroles = [\"bad.toml\"]\n"), 0o644)
+	if _, err := in.Install(context.Background(), roleRoot); err == nil {
+		t.Fatal("malformed role accepted")
 	}
 }

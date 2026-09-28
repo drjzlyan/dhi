@@ -131,7 +131,7 @@ func TestImportRefusesWholeBatchOnBadManifest(t *testing.T) {
 func TestImportPrefersPackWhenPresent(t *testing.T) {
 	m, ws, _, reloads := agentSurface(t)
 	dir := writeImportFixture(t, map[string]string{
-		"pack.toml":  "schema = 1\nname = \"crew\"\nversion = \"1.0.0\"\nagents = [\"scout.toml\"]\n",
+		"pack.toml":  "schema = 2\nname = \"crew\"\nversion = \"1.0.0\"\nagents = [\"scout.toml\"]\n",
 		"scout.toml": importScoutDoc,
 		"muse.toml":  importMuseDoc, // ignored: the pack owns the flow
 	})

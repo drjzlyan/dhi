@@ -184,6 +184,26 @@ func parseSkill(slug string, data []byte) (*Skill, error) {
 	return &Skill{Slug: slug, Name: name, Description: desc, Body: body}, nil
 }
 
+// ParseRole validates one role card's bytes without writing it (packs
+// pre-validate every card before the first file lands, ADR-0022).
+func ParseRole(slug string, data []byte) (*Role, error) { return parseRole(slug, data) }
+
+// ParseSkill validates one skill doc's bytes without writing it.
+func ParseSkill(slug string, data []byte) (*Skill, error) { return parseSkill(slug, data) }
+
+// WriteRole is the package-level writer (the Store method needs no
+// state); packs call it after ParseRole.
+func WriteRole(ws *workspace.Workspace, r *Role) error {
+	var s Store
+	return s.WriteRole(ws, r)
+}
+
+// WriteSkill is the package-level writer for skill docs.
+func WriteSkill(ws *workspace.Workspace, k *Skill) error {
+	var s Store
+	return s.WriteSkill(ws, k)
+}
+
 // Store is the merged library: embedded builtins shadowed by local
 // cards. Open never fails — malformed local cards become warnings so
 // the doctor names them and everything else keeps working.

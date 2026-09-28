@@ -15,7 +15,7 @@ import (
 type packRow struct {
 	name    string
 	version string
-	agents  int
+	counts  string
 	source  string
 }
 
@@ -31,7 +31,7 @@ func (m *Model) packRows() []packRow {
 	rows := make([]packRow, 0, len(recs))
 	for name, r := range recs {
 		rows = append(rows, packRow{
-			name: name, version: r.Version, agents: len(r.Agents), source: r.Source,
+			name: name, version: r.Version, counts: recSummary(r), source: r.Source,
 		})
 	}
 	// sorted by name for stable rendering
@@ -41,6 +41,31 @@ func (m *Model) packRows() []packRow {
 		}
 	}
 	return rows
+}
+
+// recSummary renders a pack's provenance as "1 agent · 2 roles · …".
+func recSummary(r pack.PackRec) string {
+	var parts []string
+	add := func(n int, singular, plural string) {
+		if n == 0 {
+			return
+		}
+		if n == 1 {
+			parts = append(parts, "1 "+singular)
+		} else {
+			parts = append(parts, itoa(n)+" "+plural)
+		}
+	}
+	add(len(r.Agents), "agent", "agents")
+	add(len(r.Roles), "role", "roles")
+	add(len(r.Skills), "skill", "skills")
+	add(len(r.Workflows), "workflow", "workflows")
+	add(len(r.Standards), "rule", "rules")
+	add(len(r.MCPServers), "mcp", "mcps")
+	if len(parts) == 0 {
+		return "-"
+	}
+	return strings.Join(parts, " · ")
 }
 
 func (m *Model) packsKey(key string) bool {
@@ -71,7 +96,7 @@ func (m *Model) packsKey(key string) bool {
 		}
 		m.openConfirmDialog("uninstall pack",
 			"uninstall pack "+rows[m.packCur].name+" ("+
-				itoa(rows[m.packCur].agents)+" agents)?",
+				rows[m.packCur].counts+")?",
 			rows[m.packCur].name, dlgPackUninstall)
 		return true
 	}
@@ -102,7 +127,7 @@ func (m *Model) submitPackInstall() {
 		if err != nil {
 			ev.err = err.Error()
 		} else {
-			ev.msg = "installed pack " + res.Pack + " (" + itoa(len(res.Agents)) + " agents)"
+			ev.msg = "installed pack " + res.Pack + " (" + resultSummary(res) + ")"
 		}
 		select {
 		case m.events <- ev:
@@ -125,7 +150,7 @@ func (m *Model) packsView() []string {
 	for i, r := range rows {
 		line := padTo(r.name, 16) +
 			theme.Hint().Render(padTo(orDash(r.version), 10)) +
-			theme.TextDim().Render(padTo(itoa(r.agents)+" agents", 12)) +
+			theme.TextDim().Render(padTo(r.counts, 26)) +
 			theme.TextMuted().Render(r.source)
 		if i == m.packCur {
 			out = append(out, theme.GlyphCursor+" "+theme.TabActive().Render(line))
@@ -134,4 +159,11 @@ func (m *Model) packsView() []string {
 		}
 	}
 	return out
+}
+
+// resultSummary renders an install outcome's kinds.
+func resultSummary(res *pack.Result) string {
+	r := pack.PackRec{Agents: res.Agents, Workflows: res.Workflows, Roles: res.Roles,
+		Skills: res.Skills, Standards: res.Standards, MCPServers: res.MCPServers}
+	return recSummary(r)
 }
