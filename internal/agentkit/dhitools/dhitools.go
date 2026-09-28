@@ -99,7 +99,8 @@ type tool struct {
 var servedSlugs = []string{
 	"read", "write", "patch", "list", "glob",
 	"git_status", "git_log", "git_branch", "git_diff", "git_commit",
-	"ideation_list", "ideation_read",
+	"ideation_list", "ideation_read", "session_read",
+	"artifact_create", "artifact_edit", "propose_session",
 	"run", "ask_human",
 	"editor_open", "editor_reveal", "editor_apply_edit",
 	"lsp_hover", "lsp_definition", "lsp_references", "lsp_rename", "lsp_code_action",
