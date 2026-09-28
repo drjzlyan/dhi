@@ -299,3 +299,209 @@ func TestScanOnUnknownSession(t *testing.T) {
 		t.Error("scan of unknown session succeeded")
 	}
 }
+
+func TestRoundTableModesRoundTrip(t *testing.T) {
+	s, _ := newStore(t)
+	one, err := s.CreateSession(CreateOptions{Name: "Pair", Topic: "sync", Mode: ModeOneOnOne, Agents: []string{"scout"}})
+	if err != nil {
+		t.Fatalf("1:1 create: %v", err)
+	}
+	if one.Mode != ModeOneOnOne || one.IsBreakout() {
+		t.Fatalf("1:1 = %+v", one)
+	}
+	// A 1:1 session needs exactly one participant.
+	if _, err := s.CreateSession(CreateOptions{Name: "Pair2", Mode: ModeOneOnOne, Agents: []string{"a", "b"}}); err == nil {
+		t.Error("1:1 with two participants accepted")
+	}
+	// Round-trip through disk preserves mode.
+	s2, _ := Open(s.ws)
+	got, _ := s2.Get(one.ID)
+	if got.Mode != ModeOneOnOne {
+		t.Fatalf("mode round-trip = %q", got.Mode)
+	}
+
+	// A group with an agent moderator.
+	grp, err := s.CreateSession(CreateOptions{
+		Name: "Round table", Mode: ModeGroup, Moderator: "scout", Agents: []string{"scout", "mason"},
+	})
+	if err != nil {
+		t.Fatalf("group create: %v", err)
+	}
+	if grp.Moderator != "scout" {
+		t.Fatalf("moderator = %q", grp.Moderator)
+	}
+	// Moderator must be a participant.
+	if _, err := s.CreateSession(CreateOptions{Name: "BadMod", Mode: ModeGroup, Moderator: "ghost", Agents: []string{"scout"}}); err == nil {
+		t.Error("non-participant moderator accepted")
+	}
+}
+
+func TestBreakoutNestsAndParentMustExist(t *testing.T) {
+	s, _ := newStore(t)
+	parent, _ := s.Create("Parent", "", []string{"scout", "mason"})
+	if _, err := s.CreateBreakout("ghost", "Child", "", nil); err == nil {
+		t.Fatal("breakout under unknown parent accepted")
+	}
+	child, err := s.CreateBreakout(parent.ID, "Child", "dig in", nil)
+	if err != nil {
+		t.Fatalf("breakout: %v", err)
+	}
+	if !child.IsBreakout() || child.Parent != parent.ID {
+		t.Fatalf("breakout = %+v", child)
+	}
+	// Participants inherit from the parent when none are given.
+	if len(child.Agents) != 2 {
+		t.Fatalf("inherited participants = %v", child.Agents)
+	}
+	kids := s.Breakouts(parent.ID)
+	if len(kids) != 1 || kids[0].ID != child.ID {
+		t.Fatalf("breakouts = %+v", kids)
+	}
+	// Removing a parent with breakouts refuses by name.
+	if err := s.Remove(parent.ID); err == nil {
+		t.Fatal("removed a parent with breakouts")
+	}
+	if err := s.Remove(child.ID); err != nil {
+		t.Fatalf("remove child: %v", err)
+	}
+	if err := s.Remove(parent.ID); err != nil {
+		t.Fatalf("remove parent after child: %v", err)
+	}
+}
+
+func TestSchemaOneLoadsAsGroup(t *testing.T) {
+	_, ws := newStore(t)
+	body := "schema = 1\nname = \"Legacy\"\ntopic = \"old\"\nchannel = \"#ideation-legacy\"\nagents = [\"scout\"]\n"
+	if err := os.WriteFile(filepath.Join(ws.Root, Dir, "legacy.toml"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s2, err := Open(ws)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	got, ok := s2.Get("legacy")
+	if !ok {
+		t.Fatalf("legacy card not loaded; warnings=%v", s2.Warnings())
+	}
+	if got.Mode != ModeGroup || got.Moderator != "" || got.Parent != "" || len(got.Turns) != 0 {
+		t.Fatalf("legacy derivation = %+v", got)
+	}
+}
+
+func TestFloorProtocol(t *testing.T) {
+	s, _ := newStore(t)
+	sess, _ := s.Create("Round", "", []string{"scout", "mason"})
+	if got := sess.CurrentSpeaker(); got != "" {
+		t.Fatalf("initial holder = %q", got)
+	}
+	if err := s.GrantFloor(sess.ID, "ghost"); err == nil {
+		t.Error("grant to non-participant accepted")
+	}
+	if err := s.GrantFloor(sess.ID, "scout"); err != nil {
+		t.Fatalf("grant scout: %v", err)
+	}
+	if err := s.GrantFloor(sess.ID, "scout"); err == nil {
+		t.Error("double grant to the same speaker accepted")
+	}
+	if err := s.GrantFloor(sess.ID, "mason"); err != nil {
+		t.Fatalf("grant mason: %v", err)
+	}
+	got, _ := s.Get(sess.ID)
+	if got.CurrentSpeaker() != "mason" || len(got.Turns) != 2 {
+		t.Fatalf("floor = %+v", got.Turns)
+	}
+	// Release returns the floor to the moderator; releasing again refuses.
+	if err := s.ReleaseFloor(sess.ID); err != nil {
+		t.Fatalf("release: %v", err)
+	}
+	got, _ = s.Get(sess.ID)
+	if got.CurrentSpeaker() != "" || len(got.Turns) != 3 {
+		t.Fatalf("after release = %+v", got.Turns)
+	}
+	if err := s.ReleaseFloor(sess.ID); err == nil {
+		t.Error("release with moderator holding accepted")
+	}
+	// The ordered record replays through disk.
+	s2, _ := Open(s.ws)
+	turns, ok := s2.Turns(sess.ID)
+	if !ok || len(turns) != 3 || turns[0].Speaker != "scout" || turns[1].Speaker != "mason" || turns[2].Speaker != "" {
+		t.Fatalf("replayed turns = %+v", turns)
+	}
+}
+
+func TestProposals(t *testing.T) {
+	s, _ := newStore(t)
+	parent, _ := s.Create("Parent", "", []string{"scout"})
+
+	// A plain group proposal and a breakout proposal.
+	if _, err := s.Propose("scout", "New idea", "explore", ModeGroup, "", []string{"scout", "mason"}); err != nil {
+		t.Fatalf("propose group: %v", err)
+	}
+	p2, err := s.Propose("mason", "Deep dive", "narrow", ModeBreakout, parent.ID, nil)
+	if err != nil {
+		t.Fatalf("propose breakout: %v", err)
+	}
+	if _, err := s.Propose("scout", "Bad", "", ModeBreakout, "ghost", nil); err == nil {
+		t.Error("breakout proposal under unknown parent accepted")
+	}
+	if _, err := s.Propose("", "No caller", "", ModeGroup, "", nil); err == nil {
+		t.Error("proposal without caller accepted")
+	}
+
+	if got := s.PendingProposals(); len(got) != 2 {
+		t.Fatalf("pending = %+v", got)
+	}
+
+	// Decline creates nothing; the row stays decided.
+	if err := s.Decision(1, ProposalDeclined, ""); err != nil {
+		t.Fatalf("decline: %v", err)
+	}
+	if err := s.Decision(1, ProposalAccepted, "x"); err == nil {
+		t.Error("re-decided a declined proposal")
+	}
+
+	// Accept records the created slug.
+	if err := s.Decision(p2.ID, ProposalAccepted, "deep-dive"); err != nil {
+		t.Fatalf("accept: %v", err)
+	}
+	got := s.PendingProposals()
+	if len(got) != 0 {
+		t.Fatalf("pending after decisions = %+v", got)
+	}
+	// Round-trip through disk.
+	s2, _ := Open(s.ws)
+	all := s2.Proposals()
+	if len(all) != 2 || all[0].Decision != ProposalDeclined || all[1].Decision != ProposalAccepted || all[1].CreatedSlug != "deep-dive" {
+		t.Fatalf("proposal round-trip = %+v", all)
+	}
+	// Unknown id.
+	if err := s.Decision(99, ProposalAccepted, ""); err == nil {
+		t.Error("decided unknown proposal")
+	}
+}
+
+func TestModeratorClearedWhenParticipantLeaves(t *testing.T) {
+	s, _ := newStore(t)
+	sess, err := s.CreateSession(CreateOptions{
+		Name: "Round", Mode: ModeGroup, Moderator: "scout",
+		Agents: []string{"scout", "mason"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Removing the moderator leaves a loadable card (moderator cleared).
+	if err := s.SetAgents(sess.ID, []string{"mason"}); err != nil {
+		t.Fatalf("SetAgents: %v", err)
+	}
+	got, _ := s.Get(sess.ID)
+	if got.Moderator != "" {
+		t.Fatalf("moderator not cleared: %q", got.Moderator)
+	}
+	s2, err := Open(s.ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(s2.Warnings()) != 0 {
+		t.Fatalf("card became malformed: %v", s2.Warnings())
+	}
+}
