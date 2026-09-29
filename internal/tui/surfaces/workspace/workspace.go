@@ -18,6 +18,7 @@ import (
 	"charm.land/bubbletea/v2"
 
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
+	"github.com/drjzlyan/dhi/internal/agentkit/channelmeta"
 	"github.com/drjzlyan/dhi/internal/agentkit/org"
 	profiface "github.com/drjzlyan/dhi/internal/agentkit/profile"
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
@@ -105,6 +106,7 @@ type Model struct {
 	approvals    *tools.Approvals          // pending-approval queue (F-016 source)
 	unreadStore  *unread.Store             // read-mark store (F-017); nil = no bus
 	unreadErr    string                    // store unavailable: named, never silent
+	chatMetaErr  string                    // reactions/edits/pins store unavailable
 	unreadCounts map[string]int            // per-frame rail counts (syncUnread)
 	openChat     func() bool               // focus editor chat approvals (F-016 jump)
 	openReview   func(id string) bool      // reviewer select (F-016 jump)
@@ -200,6 +202,11 @@ func New(version string, ws *workspace.Workspace, d Deps) *Model {
 		if d.Bus != nil {
 			m.pane = newChatPane(d.Bus, d.Runtime, m.org)
 			m.pane.profile = m.agentProfileLines
+			if cm, err := channelmeta.Open(ws.Root); err != nil {
+				m.chatMetaErr = err.Error()
+			} else {
+				m.pane.meta = cm
+			}
 			m.wireUnreadSeams()
 			switch {
 			case d.Unread != nil:

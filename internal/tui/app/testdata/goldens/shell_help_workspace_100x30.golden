@@ -1,8 +1,6 @@
  ◆ DHI  1 Workspace › 2 Editor › 3 Settings                                                         
                                                                                                     
                                                                                                     
-                                                                                                    
-                                                                                                    
                             ╔══════════════════════════════════════════╗                            
                             ║                                          ║                            
                             ║  DHI — global keys                       ║                            
@@ -20,10 +18,12 @@
                             ║    n                 new                 ║                            
                             ║    s/S               status              ║                            
                             ║    m                 move                ║                            
-                            ║    o                 thread              ║                            
+                            ║    /                 filter              ║                            
+                            ║    L/P/E/D           meta                ║                            
+                            ║    space             mark                ║                            
+                            ║    M                 bulk                ║                            
                             ║                                          ║                            
                             ╚══════════════════════════════════════════╝                            
-                                                                                                    
                                                                                                     
                                                                                                     
                                                                                                     

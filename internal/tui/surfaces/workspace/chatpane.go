@@ -3,9 +3,11 @@ package workspace
 import (
 	"context"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
+	"github.com/drjzlyan/dhi/internal/agentkit/channelmeta"
 	"github.com/drjzlyan/dhi/internal/agentkit/org"
 	"github.com/drjzlyan/dhi/internal/ansi"
 	"github.com/drjzlyan/dhi/internal/tui/kit"
@@ -63,7 +65,18 @@ type chatPane struct {
 	railCur   int    // rail highlight (wide layout)
 	profileID string // agent profile pane ("" = closed)
 	lastWidth int    // updated per render; keys are width-aware
+
+	// F-035 Slack depth: reactions/edits/pins over the immutable bus.
+	meta      *channelmeta.Store
+	searching bool
+	search    string
+	reactPick bool
+	editID    int64 // message being edited (0 = compose new)
 }
+
+// reactionTokens is the fixed, width-safe reaction set (no emoji-width
+// surprises in a terminal).
+var reactionTokens = []string{"+1", "ok", "?", "!"}
 
 func newChatPane(b *bus.Bus, rt turnHandler, o *org.Org) *chatPane {
 	return &chatPane{
@@ -135,10 +148,12 @@ func (p *chatPane) hints() []string {
 	}
 	// tab is width-gated (the rail is a column only on wide floors) —
 	// never advertise an inert key (F-026 P3).
+	base := []string{"i compose", "j/k select", "t thread", "v profile",
+		"/ search", "+ react", "e edit", "p pin", ",/. channel"}
 	if p.lastWidth >= slackCtxMin {
-		return []string{"i compose", "j/k select", "t thread", "v profile", "tab rail", ",/. channel"}
+		return append([]string{"tab rail"}, base...)
 	}
-	return []string{"i compose", "j/k select", "t thread", "v profile", ",/. channel"}
+	return base
 }
 
 func (p *chatPane) switchChannel(dir int) {
@@ -280,6 +295,42 @@ func (p *chatPane) handleKey(key string) bool {
 	if p.bus == nil {
 		return false
 	}
+	if p.searching {
+		switch key {
+		case "esc":
+			p.searching = false
+			p.search = ""
+		case "enter":
+			p.searching = false
+		case "backspace":
+			if len(p.search) > 0 {
+				p.search = p.search[:len(p.search)-1]
+			}
+		default:
+			if r := []rune(key); len(r) == 1 && r[0] >= 32 {
+				p.search += key
+			}
+		}
+		p.cursor = 0
+		return true
+	}
+	if p.reactPick {
+		if key == "esc" {
+			p.reactPick = false
+			return true
+		}
+		if n, err := strconv.Atoi(key); err == nil && n >= 1 && n <= len(reactionTokens) {
+			history := p.navMsgs(p.lastWidth >= slackCtxMin)
+			if p.cursor < len(history) && p.meta != nil {
+				if err := p.meta.ToggleReaction(p.channelName(), history[p.cursor].ID, reactionTokens[n-1]); err != nil {
+					p.flash = err.Error()
+				}
+			}
+			p.reactPick = false
+			return true
+		}
+		return true
+	}
 	if p.focus {
 		return p.composerKey(key)
 	}
@@ -370,6 +421,45 @@ func (p *chatPane) handleKey(key string) bool {
 			}
 		}
 		return false
+	case "/":
+		p.searching = true
+		return true
+	case "+":
+		if p.meta == nil {
+			p.flash = "channel metadata unavailable"
+			return true
+		}
+		if p.cursor < len(history) {
+			p.reactPick = true
+		}
+		return true
+	case "p":
+		if p.meta == nil {
+			p.flash = "channel metadata unavailable"
+			return true
+		}
+		if p.cursor < len(history) {
+			if err := p.meta.TogglePin(p.channelName(), history[p.cursor].ID); err != nil {
+				p.flash = err.Error()
+			}
+		}
+		return true
+	case "e":
+		if p.meta == nil {
+			p.flash = "channel metadata unavailable"
+			return true
+		}
+		if p.cursor < len(history) {
+			m := history[p.cursor]
+			if m.Author == bus.Human {
+				p.editID = m.ID
+				p.input = []rune(p.displayText(m))
+				p.focus = true
+			} else {
+				p.flash = "only your own messages can be edited"
+			}
+		}
+		return true
 	case "i", "enter":
 		p.focus = true
 		return true
@@ -389,9 +479,24 @@ func (p *chatPane) composerKey(key string) bool {
 	switch key {
 	case "esc":
 		p.focus = false
+		if p.editID != 0 {
+			p.editID = 0
+			p.input = nil
+		}
 		return true
 	case "enter":
 		text := strings.TrimSpace(string(p.input))
+		if p.editID != 0 {
+			if text != "" && p.meta != nil {
+				if err := p.meta.Edit(p.channelName(), p.editID, text); err != nil {
+					p.flash = err.Error()
+				}
+			}
+			p.editID = 0
+			p.input = nil
+			p.focus = false
+			return true
+		}
 		if text != "" {
 			p.post(text)
 			p.input = nil
@@ -449,7 +554,7 @@ func (p *chatPane) visibleHistory() []bus.Message {
 		return nil
 	}
 	if p.threadID == 0 {
-		return p.bus.History(p.channelName(), 0)
+		return p.filterSearch(p.bus.History(p.channelName(), 0))
 	}
 	var out []bus.Message
 	for _, m := range p.bus.History(p.channelName(), 0) {
@@ -458,7 +563,35 @@ func (p *chatPane) visibleHistory() []bus.Message {
 			break
 		}
 	}
-	return append(out, p.bus.History(p.channelName(), p.threadID)...)
+	out = append(out, p.bus.History(p.channelName(), p.threadID)...)
+	return p.filterSearch(out)
+}
+
+// filterSearch narrows history to messages matching the search text
+// (case-insensitive over author + display text).
+func (p *chatPane) filterSearch(msgs []bus.Message) []bus.Message {
+	q := strings.ToLower(strings.TrimSpace(p.search))
+	if q == "" {
+		return msgs
+	}
+	out := make([]bus.Message, 0, len(msgs))
+	for _, m := range msgs {
+		if strings.Contains(strings.ToLower(m.Author+" "+p.displayText(m)), q) {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// displayText applies a human edit over the immutable bus text.
+func (p *chatPane) displayText(m bus.Message) string {
+	if p.meta == nil {
+		return m.Text
+	}
+	if t, ok := p.meta.EditedText(m.Channel, m.ID); ok {
+		return t
+	}
+	return m.Text
 }
 
 // navMsgs is the list the message cursor moves through: on wide screens
@@ -466,7 +599,7 @@ func (p *chatPane) visibleHistory() []bus.Message {
 // replies render beside it; narrow screens drill inline.
 func (p *chatPane) navMsgs(wide bool) []bus.Message {
 	if wide && p.threadID != 0 {
-		return p.bus.History(p.channelName(), 0)
+		return p.filterSearch(p.bus.History(p.channelName(), 0))
 	}
 	return p.visibleHistory()
 }
@@ -531,6 +664,18 @@ func (p *chatPane) renderNarrow(width, height int) []string {
 		wrap = 20
 	}
 
+	if bar := p.searchBar(); bar != "" {
+		lines = append(lines, bar)
+		body--
+	}
+	if bar := p.reactBar(); bar != "" {
+		lines = append(lines, bar)
+		body--
+	}
+	if body < 3 {
+		body = 3
+	}
+
 	lines = append(lines, p.transcriptRender(history, wrap, body)...)
 
 	lines = append(lines, "")
@@ -548,11 +693,31 @@ func (p *chatPane) transcriptLines(width, height int, wide bool) []string {
 	if p.threadID != 0 {
 		header += theme.Hint().Render("  · thread #" + itoa(int(p.threadID)))
 	}
+	if n := p.pinnedCount(); n > 0 {
+		header += theme.TextDim().Render("  · " + itoa(n) + " pinned")
+	}
 	lines = append(lines, theme.Brand().Render(header))
-	lines = append(lines, p.transcriptRender(history, width, height-3)...)
+	extra := 0
+	if bar := p.searchBar(); bar != "" {
+		lines = append(lines, bar)
+		extra++
+	}
+	if bar := p.reactBar(); bar != "" {
+		lines = append(lines, bar)
+		extra++
+	}
+	lines = append(lines, p.transcriptRender(history, width, height-3-extra)...)
 	lines = append(lines, "")
 	lines = append(lines, p.composerRow())
 	return lines
+}
+
+// pinnedCount is the number of pinned messages in the active channel.
+func (p *chatPane) pinnedCount() int {
+	if p.meta == nil {
+		return 0
+	}
+	return len(p.meta.Pinned(p.channelName()))
 }
 
 // composerRow is always rendered (F-026 P3): focused it owns the caret;
@@ -583,7 +748,7 @@ func (p *chatPane) transcriptRender(history []bus.Message, width, body int) []st
 	for _, msg := range history {
 		row := kit.TrnRow{
 			Author: msg.Author,
-			Text:   msg.Text,
+			Text:   p.rowText(msg),
 			Thread: msg.Thread != 0,
 			At:     msg.At,
 			Kind:   kit.TrnAgent,
@@ -594,6 +759,50 @@ func (p *chatPane) transcriptRender(history []bus.Message, width, body int) []st
 		tr.Rows = append(tr.Rows, row)
 	}
 	return tr.View()
+}
+
+// rowText appends the F-035 markers: an edit note, reaction chips and a
+// pin marker, over the immutable bus text.
+func (p *chatPane) rowText(msg bus.Message) string {
+	text := p.displayText(msg)
+	if p.meta == nil {
+		return text
+	}
+	if _, edited := p.meta.EditedText(msg.Channel, msg.ID); edited {
+		text += theme.TextDim().Render(" (edited)")
+	}
+	if rx := p.meta.Reactions(msg.Channel, msg.ID); len(rx) > 0 {
+		text += " " + theme.Hint().Render("["+strings.Join(rx, " ")+"]")
+	}
+	if p.meta.IsPinned(msg.Channel, msg.ID) {
+		text = theme.WarningText().Render("pin ") + text
+	}
+	return text
+}
+
+// searchBar renders the active search/filter state ("" when idle).
+func (p *chatPane) searchBar() string {
+	if p.searching {
+		return theme.TabActive().Render("/ "+p.search) + "▏" +
+			theme.Hint().Render("  enter keep · esc clear")
+	}
+	if p.search != "" {
+		return theme.Hint().Render("search \""+p.search+"\"") +
+			theme.TextDim().Render("  (/ to change · esc clears)")
+	}
+	return ""
+}
+
+// reactBar renders the reaction picker ("" when idle).
+func (p *chatPane) reactBar() string {
+	if !p.reactPick {
+		return ""
+	}
+	var parts []string
+	for i, tok := range reactionTokens {
+		parts = append(parts, theme.Keycap().Render(itoa(i+1)+" "+tok))
+	}
+	return theme.Hint().Render("react: ") + strings.Join(parts, " ")
 }
 
 // railLines renders the vertical channel sidebar: groups, unread

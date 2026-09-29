@@ -896,7 +896,12 @@ live work log in the task thread.
       `space` mark + `M` bulk move + `C` clear, priority glyphs and a
       per-kind metadata line in the card detail
 - [ ] Editor co-editing via F-030 tools + active-editing indicator
-- [ ] Channel search/reactions/edits/per-message actions
+- [x] Channel search/reactions/edits/per-message actions
+      — `internal/agentkit/channelmeta` (`.dhi/channels/meta.json`)
+      stores reactions/edits/pins without touching the append-only bus;
+      the chat pane gains `/` search, `+` reaction picker, `e` edit of
+      own messages, `p` pin (per-message actions), rendered inline with
+      `(edited)`/`[+1]`/`pin` markers
 - [ ] Live work log: a running task streams progress into its thread;
       replay remains the durable record
 

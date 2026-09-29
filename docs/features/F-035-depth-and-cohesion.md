@@ -46,7 +46,9 @@ rather than a post-hoc replay.
       title/slug/labels/epic/assignee, `space` mark + `M` bulk move.)
 - [ ] An agent applies an editor edit the human sees applied, with an
       active-editing indicator.
-- [ ] Channels support search, reactions, and edits.
+- [x] Channels support search, reactions, and edits. (Chat pane `/`
+      search, `+` reaction picker, `e` edit own messages, `p` pin, over a
+      `channelmeta` store that leaves the bus JSONL immutable.)
 - [ ] A running task shows its agent's progress live in the thread.
 - [x] `make verify` green per phase; goldens regenerated deliberately.
 
