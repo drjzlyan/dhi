@@ -1,7 +1,38 @@
 # STATE — current position
 
-Updated: 2026-09-28 (session 30: M19 pack registry & MCP install
-complete — P0/P1/P2 committed; `make verify` green)
+Updated: 2026-09-29 (session 31: M20 depth & cohesion complete —
+P0/P1/P2/P3 committed; `make verify` green. The planned roadmap
+M15–M20 is now fully landed; only optional follow-ons remain.)
+
+### Session 31 (M20 — depth & cohesion, F-035)
+
+- **P0 board Jira depth** (`d9aa3f2`): task schema 2 adds
+  `Labels/Priority/Epic/Due` (schema-1 cards load unchanged) with
+  `SetLabels/SetPriority/SetEpic/SetDue/NormalizeLabels/PriorityRank/
+  ValidPriority`; board keys `L`/`P`/`E`/`D`, `/` filter over
+  title/slug/labels/epic/assignee, `space` mark + `M` bulk move + `C`
+  clear; priority glyphs + metadata line in the card detail.
+- **P1 channel depth** (`depth P1`): new `internal/agentkit/channelmeta`
+  stores reactions/edits/pins over `.dhi/channels/meta.json` (atomic;
+  malformed refuses by name) — the bus JSONL stays append-only. Chat
+  pane gains `/` search, `+` reaction picker (tokens +1/ok/?/!),
+  `e` edit of the human's own messages, `p` pin; rows render
+  `(edited)`/`[+1]`/`pin` markers and the header shows the pinned count.
+  Goldens regenerated (channel hints; board help).
+- **P2 live work log** (`depth P2`): `Runtime.Working` tracks in-flight
+  turns per thread (key `channel#root`, set in `Turn` around `cliTurn`
+  AFTER the strict refusals). New workspace `Deps.Working` seam; the
+  board shows a `●` working glyph on the bound card and a live
+  "agent working — live in the thread" detail line. Progress/command/
+  error events already streamed into the thread; replay stays durable.
+- **P3 editor co-editing** (`depth P3`): agent `editor_apply_edit`
+  reaches `editor.Model.ApplyReplace` (live buffer, one undo step);
+  that path stamps the edit and the buffer title shows
+  `● agent editing` for a 6s window (`agentEditWindow`), path-scoped —
+  truthful, no fake state.
+- Known flakes (pass isolated): `TestCLIRuntimeEndToEnd` (reviewer),
+  `TestChatGrantAlways` (editor), `TestMemoryAndKBReachTheSystemBlock`,
+  clirun `TestDetect`. Untracked `.dhi/agents/dev/` — do NOT commit.
 
 ### Session 30 (M19 — pack registry & MCP install, F-034)
 
@@ -91,6 +122,12 @@ complete — P0/P1/P2 committed; `make verify` green)
   `.dhi/agents/dev/` — do NOT commit.
 
 ## Where we are
+
+**The planned roadmap M15–M20 is fully landed (M20 complete 2026-09-29);
+`make verify` green.** M18 ideation round-table, M19 pack registry +
+MCP install, and M20 depth & cohesion (board depth, channel depth,
+live work log, editor co-editing) all shipped. Beyond M20 only the
+optional follow-ons and the deferred backlog remain (below).
 
 **M14 is complete (P0–P4); `make verify` green.** P4 shipped F-029:
 `gitcore.ResolveIdentity` (one resolver, reads the user's git config
@@ -458,21 +495,15 @@ catalog).
 
 ## Next up
 
-1. **M20 — depth & cohesion (F-035)** *(next)*: board Jira depth
-   (labels/priority/epic/due/filters/bulk/swimlanes); editor↔agent
-   co-editing (edit tools + active-editing indicator); Slack depth
-   (search/reactions/edits/pins/actions); live work log streaming a
-   running task into its thread (replay stays the durable record).
+1. **Optional follow-ons** (no milestone blocking): M19 index signature
+   verification, pack-sourced LIBRARY badges, executable skill scripts;
+   M18 pending session proposals as an inbox `ItemKind`.
 2. **M15 P3 — MCP-for-all (F-030)**: still blocked on installing
    cursor/copilot (gemini deprecated → antigravity) + live MCP
    verification before `MCPOK` flips; then sandbox network for MCP
    servers.
-3. **M19 follow-ons (optional)**: index signature verification;
-   pack-sourced badges in the LIBRARY listing; executable skill scripts.
-4. **M18 follow-on (optional)**: pending session proposals as an inbox
-   `ItemKind` (visible in the Ideator SESSIONS pane today).
-5. **(Deferred, F-026/F-017/F-027/F-020/M11)** as before — absorbed into
-   M20 depth or the M19 registry where they overlap.
+3. **(Deferred, F-026/F-017/F-027/F-020/M11)** as before — now largely
+   absorbed into M20 depth or the M19 registry.
 
 ## Session 19 gotchas (M12)
 
