@@ -136,7 +136,7 @@ func TestBoardCardWidthProportional(t *testing.T) {
 	theme.SwapForTest(t, theme.Dark())
 	tk := tasks.Task{Slug: "x", Title: "a fairly long card title", Assignee: "scout"}
 	for _, laneW := range []int{8, 20, 40} {
-		row := ansi.Strip(boardCard(tk, laneW))
+		row := ansi.Strip(boardCard(tk, laneW, false))
 		if ansi.Width(row) != laneW {
 			t.Fatalf("card row width = %d, want %d: %q", ansi.Width(row), laneW, row)
 		}

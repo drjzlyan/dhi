@@ -885,12 +885,16 @@ sandbox/scope/keychain/approvals.
 
 ## M20 — Depth & cohesion (F-035)
 
-Status: planned. Board Jira depth (labels/priority/epic/due/filters/
-bulk/swimlanes); editor↔agent co-editing (edit tools + indicator);
-Slack depth (search/reactions/edits/pins/actions); live work log in the
-task thread.
+Status: in progress (Part A landed 2026-09-28). Board Jira depth (labels/
+priority/epic/due/filters/bulk); editor↔agent co-editing; Slack depth;
+live work log in the task thread.
 
-- [ ] Board depth + filters/bulk
+- [x] Board depth + filters/bulk
+      — task schema 2 adds labels/priority/epic/due (schema-1 cards load
+      unchanged); board keys `L` labels, `P` priority, `E` epic, `D` due,
+      `/` free-text filter across title/slug/labels/epic/assignee,
+      `space` mark + `M` bulk move + `C` clear, priority glyphs and a
+      per-kind metadata line in the card detail
 - [ ] Editor co-editing via F-030 tools + active-editing indicator
 - [ ] Channel search/reactions/edits/per-message actions
 - [ ] Live work log: a running task streams progress into its thread;

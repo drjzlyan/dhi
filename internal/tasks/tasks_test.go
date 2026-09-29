@@ -364,3 +364,91 @@ func TestPropagationSeedDecide(t *testing.T) {
 		t.Fatal("no pending proposal → must refuse")
 	}
 }
+
+func TestBoardMetadataRoundTrip(t *testing.T) {
+	s, ws := setupStore(t)
+	if err := s.Create("card", "Card", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetLabels("card", []string{" Frontend ", "BUG", "bug"}); err != nil {
+		t.Fatalf("SetLabels: %v", err)
+	}
+	if err := s.SetPriority("card", PriorityHigh); err != nil {
+		t.Fatalf("SetPriority: %v", err)
+	}
+	if err := s.SetEpic("card", "checkout"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetDue("card", "2026-10-01"); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := s.Get("card")
+	if strings.Join(got.Labels, ",") != "bug,frontend" {
+		t.Fatalf("labels = %v", got.Labels)
+	}
+	if got.Priority != PriorityHigh || got.Epic != "checkout" || got.Due != "2026-10-01" {
+		t.Fatalf("metadata = %+v", got)
+	}
+	// Round-trip through disk.
+	s2, _ := Open(ws)
+	got2, _ := s2.Get("card")
+	if got2.Priority != PriorityHigh || got2.Epic != "checkout" || got2.Due != "2026-10-01" ||
+		strings.Join(got2.Labels, ",") != "bug,frontend" {
+		t.Fatalf("reload = %+v", got2)
+	}
+	// Clearers.
+	if err := s.SetPriority("card", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetDue("card", ""); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = s.Get("card")
+	if got.Priority != "" || got.Due != "" {
+		t.Fatalf("clear = %+v", got)
+	}
+	// Refusals.
+	if err := s.SetPriority("card", "blocker"); err == nil {
+		t.Error("bad priority accepted")
+	}
+	if err := s.SetDue("card", "next week"); err == nil {
+		t.Error("bad due accepted")
+	}
+	if PriorityRank(PriorityUrgent) <= PriorityRank(PriorityLow) || PriorityRank("") != PriorityRank(PriorityNormal) {
+		t.Error("priority rank ordering wrong")
+	}
+}
+
+func TestSchemaOneLoadsWithoutMetadata(t *testing.T) {
+	s, ws := setupStore(t)
+	_ = s
+	body := "schema = 1\ntitle = \"Legacy\"\nstatus = \"backlog\"\n"
+	if err := os.WriteFile(filepath.Join(ws.Root, Dir, "legacy.toml"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s2, err := Open(ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok := s2.Get("legacy")
+	if !ok || got.Priority != "" || got.Due != "" || len(got.Labels) != 0 {
+		t.Fatalf("legacy = %+v ok=%v warnings=%v", got, ok, s2.Warnings())
+	}
+}
+
+func TestMalformedBoardMetadataWarns(t *testing.T) {
+	s, ws := setupStore(t)
+	_ = s
+	for name, body := range map[string]string{
+		"badpri.toml": "schema = 2\ntitle = \"X\"\nstatus = \"backlog\"\npriority = \"blocker\"\n",
+		"baddue.toml": "schema = 2\ntitle = \"X\"\nstatus = \"backlog\"\ndue = \"2026/10/01\"\n",
+	} {
+		if err := os.WriteFile(filepath.Join(ws.Root, Dir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s2, _ := Open(ws)
+	if len(s2.Warnings()) != 2 {
+		t.Fatalf("warnings = %v", s2.Warnings())
+	}
+}

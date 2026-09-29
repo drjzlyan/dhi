@@ -179,7 +179,8 @@ func (m *Model) sectionHints() []string {
 		if m.replay != nil {
 			return []string{"esc close", "j/k scroll", "g/G top/bottom"}
 		}
-		return []string{"h/l lane", "n new", "s/S status", "m move", "o thread"}
+		return []string{"h/l lane", "n new", "s/S status", "m move",
+			"/ filter", "L/P/E/D meta", "space mark", "M bulk"}
 	case secChannels:
 		return m.pane.hints()
 	case secRepos:
@@ -275,6 +276,9 @@ func (m *Model) boardBody(w, h int) string {
 		out = append(out, theme.DangerText().Render(
 			fmt.Sprintf("%d malformed card(s) skipped", len(warn))))
 	}
+	if line := m.boardFilterLine(); line != "" {
+		out = append(out, line)
+	}
 
 	detailW := 0
 	if w >= kit.WWide {
@@ -307,7 +311,7 @@ func (m *Model) boardBody(w, h int) string {
 		laneW := board.LaneWidth(i)
 		rows := make([]string, 0, len(g[i]))
 		for _, tk := range g[i] {
-			rows = append(rows, boardCard(tk, laneW))
+			rows = append(rows, boardCard(tk, laneW, m.boardMarks[tk.Slug]))
 		}
 		cols[i] = kit.Column{
 			Title: string(st), Cursor: m.boardCur[i], Rows: rows,
@@ -341,10 +345,27 @@ func (m *Model) boardBody(w, h int) string {
 	return strings.Join(out, "\n")
 }
 
+// boardFilterLine renders the active filter / bulk-selection state
+// (F-035); empty when neither is active.
+func (m *Model) boardFilterLine() string {
+	switch {
+	case m.boardFilterEdit:
+		return theme.TabActive().Render("/ "+m.boardFilter) + "▏" +
+			theme.Hint().Render("  type to filter · enter keep · esc clear")
+	case m.boardFilter != "":
+		return theme.Hint().Render("filter \""+m.boardFilter+"\"") +
+			theme.TextDim().Render("  (esc in edit, or / to change)")
+	case len(m.boardMarks) > 0:
+		return theme.WarningText().Render(itoa(len(m.boardMarks))+" marked") +
+			theme.Hint().Render("  · M move · C clear")
+	}
+	return ""
+}
+
 // boardCard renders one lane row proportional to the lane budget
-// (F-026 P3): slug, ellipsized title, assignee chip — no fixed pads;
-// the assignee drops first when the lane is too narrow for it.
-func boardCard(tk tasks.Task, laneW int) string {
+// (F-026 P3): a mark/priority prefix, slug, ellipsized title, assignee
+// chip — no fixed pads.
+func boardCard(tk tasks.Task, laneW int, marked bool) string {
 	title := tk.Title
 	if title == "" {
 		title = "-"
@@ -358,18 +379,45 @@ func boardCard(tk tasks.Task, laneW int) string {
 	if laneW >= 16 {
 		whoW = minInt(minInt(ansi.Width(who), 12), laneW/3)
 	}
-	slugW := clampInt(laneW-whoW-6, 4, 14)
-	titleW := clampInt(laneW-slugW-whoW-1, 4, 40)
+	prefix := ""
+	prefixW := 0
+	if laneW >= 14 {
+		prefix = boardMarkPrefix(tk.Priority, marked)
+		prefixW = 3
+	}
+	slugW := clampInt(laneW-whoW-prefixW-6, 4, 14)
+	titleW := clampInt(laneW-slugW-whoW-prefixW-1, 4, 40)
 	if whoW > 0 {
-		gap := maxInt(laneW-slugW-titleW-whoW, 0)
+		gap := maxInt(laneW-slugW-titleW-whoW-prefixW, 0)
 		whoPart = padTo(theme.Hint().Render(kit.ClipEllipsis(who, whoW)), whoW+gap)
 	}
-	row := padTo(kit.ClipEllipsis(tk.Slug, slugW-1), slugW) +
+	row := prefix +
+		padTo(kit.ClipEllipsis(tk.Slug, slugW-1), slugW) +
 		padTo(kit.ClipEllipsis(title, titleW-1), titleW)
 	if whoW == 0 {
 		row = padTo(row, laneW)
 	}
 	return row + whoPart
+}
+
+// boardMarkPrefix is the 3-cell mark+priority indicator.
+func boardMarkPrefix(p tasks.Priority, marked bool) string {
+	mark := " "
+	if marked {
+		mark = theme.SuccessText().Render("◆")
+	}
+	glyph := " "
+	switch p {
+	case tasks.PriorityUrgent:
+		glyph = theme.DangerText().Render("▲")
+	case tasks.PriorityHigh:
+		glyph = theme.WarningText().Render("△")
+	case tasks.PriorityLow:
+		glyph = theme.TextDim().Render("▽")
+	case tasks.PriorityNormal:
+		glyph = theme.TextDim().Render("·")
+	}
+	return mark + glyph + " "
 }
 
 func clampInt(v, lo, hi int) int {
@@ -401,6 +449,9 @@ func boardDetailLines(tk tasks.Task, wrapW int, wsRoot string) []string {
 	}
 	lines = append(lines,
 		theme.TextDim().Render("assignee "+who+" · team "+orDash(tk.Team)))
+	if meta := boardMetaLine(tk); meta != "" {
+		lines = append(lines, theme.TextDim().Render(meta))
+	}
 	if tk.ThreadChannel != "" {
 		lines = append(lines, theme.Hint().Render("thread "+threadRef(tk.ThreadChannel, tk.ThreadID)))
 	}
@@ -448,6 +499,25 @@ func boardWorkflowLine(tk tasks.Task, wsRoot string) (string, bool) {
 		return theme.Hint().Render(fmt.Sprintf("workflow %s · next: %s (%s)", tk.Workflow, s.ID, s.Gate)), true
 	}
 	return theme.SuccessText().Render("workflow " + tk.Workflow + " · complete"), true
+}
+
+// boardMetaLine renders a card's F-035 metadata (labels, priority, epic,
+// due); empty when the card carries none.
+func boardMetaLine(tk tasks.Task) string {
+	var parts []string
+	if len(tk.Labels) > 0 {
+		parts = append(parts, "labels "+strings.Join(tk.Labels, ","))
+	}
+	if tk.Priority != "" {
+		parts = append(parts, "priority "+string(tk.Priority))
+	}
+	if tk.Epic != "" {
+		parts = append(parts, "epic "+tk.Epic)
+	}
+	if tk.Due != "" {
+		parts = append(parts, "due "+tk.Due)
+	}
+	return strings.Join(parts, " · ")
 }
 
 func orDash(s string) string {

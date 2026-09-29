@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -77,6 +78,11 @@ type Model struct {
 	// follow tasks.Statuses order (backlog, active, in-review, done).
 	boardActive int
 	boardCur    [4]int
+	// Board depth (F-035): a free-text filter over title/labels/epic/
+	// assignee, and a bulk selection set toggled with space.
+	boardFilter     string
+	boardFilterEdit bool
+	boardMarks      map[string]bool
 
 	org    *org.Org
 	orgErr string
@@ -439,6 +445,11 @@ const (
 	fTaskCommit
 	fTaskPush
 	fTaskMove
+	fTaskLabels
+	fTaskPriority
+	fTaskEpic
+	fTaskDue
+	fTaskBulkMove
 	fSnooze
 )
 
@@ -704,6 +715,24 @@ func (m *Model) boardSelected(g [4][]tasks.Task) (tasks.Task, bool) {
 }
 
 func (m *Model) boardKey(key string) bool {
+	if m.boardFilterEdit {
+		switch key {
+		case "esc":
+			m.boardFilterEdit = false
+			m.boardFilter = ""
+		case "enter":
+			m.boardFilterEdit = false
+		case "backspace":
+			if len(m.boardFilter) > 0 {
+				m.boardFilter = m.boardFilter[:len(m.boardFilter)-1]
+			}
+		default:
+			if r := []rune(key); len(r) == 1 && r[0] >= 32 {
+				m.boardFilter += key
+			}
+		}
+		return true
+	}
 	g := m.boardGroups()
 	switch key {
 	case "h", "left":
@@ -734,6 +763,12 @@ func (m *Model) boardKey(key string) bool {
 		if n := len(g[m.boardActive]); n > 0 {
 			m.boardCur[m.boardActive] = n - 1
 		}
+		return true
+	case "/", "f":
+		m.boardFilterEdit = true
+		return true
+	case "C":
+		m.clearBoardMarks()
 		return true
 	}
 
@@ -825,10 +860,75 @@ func (m *Model) boardKey(key string) bool {
 		m.flashErr("card has no recorded runs")
 	case "o":
 		return m.boardOpenOnFloor(tk)
+	case "L":
+		m.form = openForm(fTaskLabels, tk.Slug, textField("labels ", strings.Join(tk.Labels, ",")))
+	case "P":
+		m.form = openForm(fTaskPriority, tk.Slug,
+			toggleFieldAt("priority ", priorityLabels(), priorityIndex(tk.Priority)))
+	case "E":
+		m.form = openForm(fTaskEpic, tk.Slug, textField("epic   ", tk.Epic))
+	case "D":
+		m.form = openForm(fTaskDue, tk.Slug, textField("due    ", tk.Due))
+	case " ":
+		m.toggleBoardMark(tk.Slug)
+	case "M":
+		if len(m.boardMarks) == 0 {
+			m.flashErr("no cards marked — space marks a card")
+			return true
+		}
+		m.form = openForm(fTaskBulkMove, "",
+			toggleFieldAt("lane ", statusLabels(), statusIndex(tk.Status)))
 	default:
 		return false
 	}
 	return true
+}
+
+// toggleBoardMark adds/removes a card from the bulk selection.
+func (m *Model) toggleBoardMark(slug string) {
+	if m.boardMarks == nil {
+		m.boardMarks = map[string]bool{}
+	}
+	if m.boardMarks[slug] {
+		delete(m.boardMarks, slug)
+	} else {
+		m.boardMarks[slug] = true
+	}
+}
+
+func (m *Model) clearBoardMarks() {
+	m.boardMarks = map[string]bool{}
+}
+
+// priorityLabels is the priority picker's option order.
+func priorityLabels() []string {
+	out := make([]string, 0, len(tasks.Priorities)+1)
+	out = append(out, "(unset)")
+	for _, p := range tasks.Priorities {
+		out = append(out, string(p))
+	}
+	return out
+}
+
+// priorityIndex maps a priority to its picker index (0 = unset).
+func priorityIndex(p tasks.Priority) int {
+	if p == "" {
+		return 0
+	}
+	for i, v := range tasks.Priorities {
+		if v == p {
+			return i + 1
+		}
+	}
+	return 0
+}
+
+// priorityWord returns the picker value at an index.
+func priorityWord(i int) tasks.Priority {
+	if i <= 0 || i > len(tasks.Priorities) {
+		return ""
+	}
+	return tasks.Priorities[i-1]
 }
 
 // boardOpenOnFloor is the board→floor jump (F-021): the bound thread,
@@ -870,6 +970,27 @@ func prevStatus(st tasks.Status) tasks.Status {
 }
 
 // statusLabels is the lane-picker field order (tasks.Statuses).
+// splitCSV splits a comma-separated form value into trimmed entries.
+func splitCSV(s string) []string {
+	var out []string
+	for _, part := range strings.Split(s, ",") {
+		if p := strings.TrimSpace(part); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// indexOfValue returns the position of v in opts (-1 when absent).
+func indexOfValue(opts []string, v string) int {
+	for i, o := range opts {
+		if o == v {
+			return i
+		}
+	}
+	return -1
+}
+
 func statusLabels() []string {
 	out := make([]string, 0, len(tasks.Statuses))
 	for _, s := range tasks.Statuses {
@@ -905,7 +1026,31 @@ func (m *Model) taskRows() []tasks.Task {
 	if m.taskStore == nil {
 		return nil
 	}
-	return m.taskStore.List()
+	all := m.taskStore.List()
+	if strings.TrimSpace(m.boardFilter) == "" {
+		return all
+	}
+	out := make([]tasks.Task, 0, len(all))
+	for _, tk := range all {
+		if boardMatches(tk, m.boardFilter) {
+			out = append(out, tk)
+		}
+	}
+	return out
+}
+
+// boardMatches reports whether a card matches the free-text board filter
+// (F-035): a case-insensitive substring over title, slug, assignee, epic
+// and labels.
+func boardMatches(tk tasks.Task, query string) bool {
+	q := strings.ToLower(strings.TrimSpace(query))
+	if q == "" {
+		return true
+	}
+	hay := strings.ToLower(strings.Join(append([]string{
+		tk.Title, tk.Slug, tk.Assignee, tk.Epic,
+	}, tk.Labels...), " "))
+	return strings.Contains(hay, q)
 }
 
 // ---- autopilot execution (ADR-0014 §5) ----
@@ -1137,6 +1282,66 @@ func (m *Model) submitForm() {
 		}
 		m.followCardIntoLane(f.orig)
 		m.closeForm()
+	case fTaskLabels:
+		if m.taskStore == nil {
+			f.err = "task store unavailable"
+			return
+		}
+		if err := m.taskStore.SetLabels(f.orig, splitCSV(f.values()[0])); err != nil {
+			f.err = err.Error()
+			return
+		}
+		m.closeForm()
+	case fTaskPriority:
+		if m.taskStore == nil {
+			f.err = "task store unavailable"
+			return
+		}
+		if err := m.taskStore.SetPriority(f.orig, priorityWord(indexOfValue(priorityLabels(), f.values()[0]))); err != nil {
+			f.err = err.Error()
+			return
+		}
+		m.closeForm()
+	case fTaskEpic:
+		if m.taskStore == nil {
+			f.err = "task store unavailable"
+			return
+		}
+		if err := m.taskStore.SetEpic(f.orig, f.values()[0]); err != nil {
+			f.err = err.Error()
+			return
+		}
+		m.closeForm()
+	case fTaskDue:
+		if m.taskStore == nil {
+			f.err = "task store unavailable"
+			return
+		}
+		if err := m.taskStore.SetDue(f.orig, f.values()[0]); err != nil {
+			f.err = err.Error()
+			return
+		}
+		m.closeForm()
+	case fTaskBulkMove:
+		if m.taskStore == nil {
+			f.err = "task store unavailable"
+			return
+		}
+		next := tasks.Status(f.values()[0])
+		slugs := make([]string, 0, len(m.boardMarks))
+		for slug := range m.boardMarks {
+			slugs = append(slugs, slug)
+		}
+		sort.Strings(slugs)
+		m.closeForm()
+		for _, slug := range slugs {
+			if err := m.taskStore.SetStatus(slug, next); err != nil {
+				m.flashErr(err.Error())
+				return
+			}
+		}
+		m.clearBoardMarks()
+		m.form = formState{kind: fNone, flash: "moved " + itoa(len(slugs)) + " card(s) to " + string(next)}
 	case fSnooze:
 		if m.snoozeTarget.Kind != inbox.AgentMessage {
 			f.err = "snooze target lost — reopen with z"

@@ -41,13 +41,14 @@ rather than a post-hoc replay.
 
 ## Acceptance criteria
 
-- [ ] A card carries labels/priority/epic/due and can be filtered and
-      bulk-moved.
+- [x] A card carries labels/priority/epic/due and can be filtered and
+      bulk-moved. (Task schema 2; board `L`/`P`/`E`/`D`, `/` filter over
+      title/slug/labels/epic/assignee, `space` mark + `M` bulk move.)
 - [ ] An agent applies an editor edit the human sees applied, with an
       active-editing indicator.
 - [ ] Channels support search, reactions, and edits.
 - [ ] A running task shows its agent's progress live in the thread.
-- [ ] `make verify` green per phase; goldens regenerated deliberately.
+- [x] `make verify` green per phase; goldens regenerated deliberately.
 
 ## Deferred
 

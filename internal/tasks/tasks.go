@@ -24,8 +24,10 @@ import (
 	"github.com/drjzlyan/dhi/internal/workspace"
 )
 
-// SchemaVersion is the task-card schema this build understands.
-const SchemaVersion = 1
+// SchemaVersion is the task-card schema this build understands. Schema 2
+// adds labels/priority/epic/due (F-035 board depth); schema-1 cards load
+// unchanged with those fields unset.
+const SchemaVersion = 2
 
 // Dir is the reserved tasks tree under the workspace root.
 const Dir = ".dhi/tasks"
@@ -43,6 +45,50 @@ const (
 
 // Statuses is the canonical column order for UIs.
 var Statuses = []Status{Backlog, Active, InReview, Done}
+
+// Priority is a card's urgency (F-035). "" means unset (rendered as
+// normal); the ordering is low → urgent.
+type Priority string
+
+// Priorities.
+const (
+	PriorityLow    Priority = "low"
+	PriorityNormal Priority = "normal"
+	PriorityHigh   Priority = "high"
+	PriorityUrgent Priority = "urgent"
+)
+
+// Priorities is the canonical order for pickers.
+var Priorities = []Priority{PriorityLow, PriorityNormal, PriorityHigh, PriorityUrgent}
+
+// ValidPriority reports whether p is a defined priority ("" allowed).
+func ValidPriority(p Priority) bool {
+	if p == "" {
+		return true
+	}
+	for _, v := range Priorities {
+		if v == p {
+			return true
+		}
+	}
+	return false
+}
+
+// PriorityRank orders priorities for sorting (unset sorts as normal).
+func PriorityRank(p Priority) int {
+	switch p {
+	case PriorityLow:
+		return 0
+	case PriorityUrgent:
+		return 3
+	case PriorityHigh:
+		return 2
+	case PriorityNormal:
+		return 1
+	default:
+		return 1 // unset = normal
+	}
+}
 
 var slugRe = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]*$`)
 
@@ -99,6 +145,13 @@ type Task struct {
 	Status   Status
 	Assignee string // agent id or "you"; "" = unassigned
 	Team     string // optional org team slug
+
+	// Board metadata (F-035): labels, priority, an epic/grouping name,
+	// and a due date (YYYY-MM-DD; "" = none).
+	Labels   []string
+	Priority Priority
+	Epic     string
+	Due      string
 
 	ThreadChannel string
 	ThreadID      int64
@@ -187,6 +240,10 @@ type file struct {
 	Status        Status        `toml:"status"`
 	Assignee      string        `toml:"assignee"`
 	Team          string        `toml:"team"`
+	Labels        []string      `toml:"labels,omitempty"`
+	Priority      Priority      `toml:"priority,omitempty"`
+	Epic          string        `toml:"epic,omitempty"`
+	Due           string        `toml:"due,omitempty"`
 	ThreadChannel string        `toml:"thread_channel"`
 	ThreadID      int64         `toml:"thread_id"`
 	ChangeSets    []ChangeSet   `toml:"changeset"`
@@ -293,7 +350,7 @@ func parseCard(path, slug string) (Task, error) {
 		}
 		return Task{}, fmt.Errorf("tasks: %s: unknown key(s): %s", slug, strings.Join(keys, ", "))
 	}
-	if f.Schema != SchemaVersion {
+	if f.Schema != SchemaVersion && f.Schema != 1 {
 		return Task{}, fmt.Errorf("tasks: %s: schema %d, want %d", slug, f.Schema, SchemaVersion)
 	}
 	if !slugRe.MatchString(slug) {
@@ -305,6 +362,16 @@ func parseCard(path, slug string) (Task, error) {
 	st := Status(strings.TrimSpace(string(f.Status)))
 	if !ValidStatus(st) {
 		return Task{}, fmt.Errorf("tasks: %s: bad status %q", slug, f.Status)
+	}
+	priority := Priority(strings.TrimSpace(string(f.Priority)))
+	if !ValidPriority(priority) {
+		return Task{}, fmt.Errorf("tasks: %s: bad priority %q", slug, f.Priority)
+	}
+	due := strings.TrimSpace(f.Due)
+	if due != "" {
+		if _, derr := time.Parse("2006-01-02", due); derr != nil {
+			return Task{}, fmt.Errorf("tasks: %s: due %q must be YYYY-MM-DD", slug, due)
+		}
 	}
 	for i, r := range f.Runs {
 		if perr := validateRun(r); perr != nil {
@@ -327,6 +394,10 @@ func parseCard(path, slug string) (Task, error) {
 		Status:        st,
 		Assignee:      strings.TrimSpace(f.Assignee),
 		Team:          strings.TrimSpace(f.Team),
+		Labels:        NormalizeLabels(f.Labels),
+		Priority:      priority,
+		Epic:          strings.TrimSpace(f.Epic),
+		Due:           due,
 		ThreadChannel: f.ThreadChannel,
 		ThreadID:      f.ThreadID,
 		ChangeSets:    f.ChangeSets,
@@ -450,6 +521,54 @@ func (s *Store) SetWorkflow(slug, wf string) error {
 // (F-031 tests-before-PR gate).
 func (s *Store) SetTestsPass(slug string, ok bool) error {
 	return s.mutate(slug, func(t *Task) { t.TestsPass = ok })
+}
+
+// SetLabels replaces a card's labels (F-035).
+func (s *Store) SetLabels(slug string, labels []string) error {
+	clean := NormalizeLabels(labels)
+	return s.mutate(slug, func(t *Task) { t.Labels = clean })
+}
+
+// SetPriority sets a card's priority ("" clears it).
+func (s *Store) SetPriority(slug string, p Priority) error {
+	p = Priority(strings.TrimSpace(string(p)))
+	if !ValidPriority(p) {
+		return fmt.Errorf("tasks: bad priority %q", p)
+	}
+	return s.mutate(slug, func(t *Task) { t.Priority = p })
+}
+
+// SetEpic sets a card's epic/grouping name ("" clears it).
+func (s *Store) SetEpic(slug, epic string) error {
+	return s.mutate(slug, func(t *Task) { t.Epic = strings.TrimSpace(epic) })
+}
+
+// SetDue sets a card's due date (YYYY-MM-DD; "" clears it).
+func (s *Store) SetDue(slug, due string) error {
+	due = strings.TrimSpace(due)
+	if due != "" {
+		if _, err := time.Parse("2006-01-02", due); err != nil {
+			return fmt.Errorf("tasks: due %q must be YYYY-MM-DD", due)
+		}
+	}
+	return s.mutate(slug, func(t *Task) { t.Due = due })
+}
+
+// NormalizeLabels trims, lowercases, dedupes and sorts labels so the
+// filter and rendering are deterministic.
+func NormalizeLabels(in []string) []string {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(in))
+	for _, l := range in {
+		l = strings.ToLower(strings.TrimSpace(l))
+		if l == "" || seen[l] {
+			continue
+		}
+		seen[l] = true
+		out = append(out, l)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // RecordBypass appends an approved workflow exception (F-031). A step
@@ -745,6 +864,7 @@ func writeCard(path string, t Task) error {
 	f := file{
 		Schema: SchemaVersion, Title: t.Title, Status: t.Status,
 		Assignee: t.Assignee, Team: t.Team,
+		Labels: t.Labels, Priority: t.Priority, Epic: t.Epic, Due: t.Due,
 		ThreadChannel: t.ThreadChannel, ThreadID: t.ThreadID,
 		PRNumber: t.PRNumber, PRURL: t.PRURL,
 		ChangeSets: t.ChangeSets,
