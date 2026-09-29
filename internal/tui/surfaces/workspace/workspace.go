@@ -103,17 +103,18 @@ type Model struct {
 	armSeq     uint64 // autopilot tick-chain guard: exactly one in flight
 	cancelAuto func()
 
-	approvals    *tools.Approvals          // pending-approval queue (F-016 source)
-	unreadStore  *unread.Store             // read-mark store (F-017); nil = no bus
-	unreadErr    string                    // store unavailable: named, never silent
-	chatMetaErr  string                    // reactions/edits/pins store unavailable
-	unreadCounts map[string]int            // per-frame rail counts (syncUnread)
-	openChat     func() bool               // focus editor chat approvals (F-016 jump)
-	openReview   func(id string) bool      // reviewer select (F-016 jump)
-	openEditor   func(paths []string) bool // editor open-in-editor (repos `e`, F-026 P3)
-	inboxHint    string                    // last jump degrade hint (visible, never silent)
-	snoozeTarget inbox.Item                // item parked by the fSnooze form
-	snoozeChain  bool                      // expiry tick chain in flight (F-017)
+	approvals    *tools.Approvals                        // pending-approval queue (F-016 source)
+	unreadStore  *unread.Store                           // read-mark store (F-017); nil = no bus
+	unreadErr    string                                  // store unavailable: named, never silent
+	chatMetaErr  string                                  // reactions/edits/pins store unavailable
+	unreadCounts map[string]int                          // per-frame rail counts (syncUnread)
+	openChat     func() bool                             // focus editor chat approvals (F-016 jump)
+	openReview   func(id string) bool                    // reviewer select (F-016 jump)
+	openEditor   func(paths []string) bool               // editor open-in-editor (repos `e`, F-026 P3)
+	working      func(channel string, thread int64) bool // live turn indicator (F-035 Part D)
+	inboxHint    string                                  // last jump degrade hint (visible, never silent)
+	snoozeTarget inbox.Item                              // item parked by the fSnooze form
+	snoozeChain  bool                                    // expiry tick chain in flight (F-017)
 
 	chromeSeen string    // last chrome flash content (toast dedupe, F-026 P7)
 	chromeAt   time.Time // when that content first appeared
@@ -164,6 +165,9 @@ type Deps struct {
 	OpenChat   func() bool               // focus editor chat (approval jump)
 	OpenReview func(id string) bool      // reviewer select (in_review jump)
 	OpenEditor func(paths []string) bool // editor open-in-editor (repos `e`)
+	// Working reports an in-flight agent turn for a thread (F-035
+	// Part D); nil renders no live indicator.
+	Working func(channel string, thread int64) bool
 }
 
 // New returns the workspace model. A nil ws renders the not-a-workspace
@@ -191,6 +195,7 @@ func New(version string, ws *workspace.Workspace, d Deps) *Model {
 		m.openChat = d.OpenChat
 		m.openReview = d.OpenReview
 		m.openEditor = d.OpenEditor
+		m.working = d.Working
 		switch {
 		case d.Autopilots != nil:
 			m.autopilots = d.Autopilots // shared with Settings (F-023)

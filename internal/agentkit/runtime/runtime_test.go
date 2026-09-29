@@ -931,3 +931,31 @@ func TestAllowedActionsFollowAllowlist(t *testing.T) {
 		t.Fatalf("allowed actions = %v", got)
 	}
 }
+
+func TestWorkingTracksInflightTurns(t *testing.T) {
+	rt := &Runtime{}
+	if rt.Working("#general", 0) {
+		t.Fatal("fresh runtime reports working")
+	}
+	key := workKey("#general", bus.ThreadOf(bus.Message{Channel: "#general", ID: 42}))
+	rt.workStart(key)
+	if !rt.Working("#general", 42) {
+		t.Fatal("started turn not reported working")
+	}
+	if rt.Working("#general", 43) || rt.Working("#other", 42) {
+		t.Fatal("working leaked to another thread")
+	}
+	// A top-level trigger is its own root.
+	rt.workStart(workKey("#general", 0))
+	if !rt.Working("#general", 0) {
+		t.Fatal("top-level turn not reported working")
+	}
+	rt.workDone(key)
+	if rt.Working("#general", 42) {
+		t.Fatal("finished turn still reported working")
+	}
+	rt.workDone(workKey("#general", 0))
+	if rt.Working("#general", 0) {
+		t.Fatal("top-level turn still reported working")
+	}
+}

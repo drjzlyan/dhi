@@ -902,6 +902,9 @@ live work log in the task thread.
       the chat pane gains `/` search, `+` reaction picker, `e` edit of
       own messages, `p` pin (per-message actions), rendered inline with
       `(edited)`/`[+1]`/`pin` markers
-- [ ] Live work log: a running task streams progress into its thread;
+- [x] Live work log: a running task streams progress into its thread;
       replay remains the durable record
+      (`Runtime.Working` tracks in-flight turns per thread; the board
+      shows a `●` working glyph on the bound card and a live detail line,
+      alongside the already-streamed progress/command/error events)
 

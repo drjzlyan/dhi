@@ -49,7 +49,11 @@ rather than a post-hoc replay.
 - [x] Channels support search, reactions, and edits. (Chat pane `/`
       search, `+` reaction picker, `e` edit own messages, `p` pin, over a
       `channelmeta` store that leaves the bus JSONL immutable.)
-- [ ] A running task shows its agent's progress live in the thread.
+- [x] A running task shows its agent's progress live in the thread.
+      (`Runtime` tracks in-flight turns per thread — `Working` — and the
+      board marks the bound card with a working glyph and the detail pane
+      with a live line; the runtime already streamed progress/command/error
+      events into the thread, replay remains the durable record.)
 - [x] `make verify` green per phase; goldens regenerated deliberately.
 
 ## Deferred

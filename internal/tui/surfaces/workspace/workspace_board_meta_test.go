@@ -157,11 +157,11 @@ func TestBoardBulkMove(t *testing.T) {
 }
 
 func TestBoardCardPriorityPrefix(t *testing.T) {
-	out := ansi.Strip(boardCard(tasks.Task{Slug: "x", Title: "X", Priority: tasks.PriorityUrgent}, 40, true))
+	out := ansi.Strip(boardCard(tasks.Task{Slug: "x", Title: "X", Priority: tasks.PriorityUrgent}, 40, true, false))
 	if !strings.Contains(out, "◆") || !strings.Contains(out, "▲") {
 		t.Fatalf("card prefix = %q", out)
 	}
-	if !strings.Contains(ansi.Strip(boardCard(tasks.Task{Slug: "x", Title: "X"}, 40, false)), "x") {
+	if !strings.Contains(ansi.Strip(boardCard(tasks.Task{Slug: "x", Title: "X"}, 40, false, false)), "x") {
 		t.Fatal("plain card missing slug")
 	}
 }

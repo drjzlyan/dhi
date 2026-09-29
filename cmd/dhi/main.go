@@ -291,6 +291,7 @@ func runTUI() {
 				}
 				return appRef.OpenInEditor(paths)
 			},
+			Working: agentRT.Working,
 		}),
 		editor.New(version.Version, ws, edOpts...),
 		ideator.New(version.Version, ws, ideator.Deps{

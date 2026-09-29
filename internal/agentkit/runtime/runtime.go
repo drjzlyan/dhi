@@ -11,6 +11,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -119,6 +120,47 @@ type Runtime struct {
 
 	libOnce sync.Once
 	libRef  *library.Store
+
+	// work tracks in-flight turns per thread so the board can show a
+	// live "working" indicator (F-035 Part D). Key: channel + "#" + root.
+	workMu sync.Mutex
+	work   map[string]int
+}
+
+// workKey identifies the thread a turn belongs to (a top-level trigger
+// is its own thread root).
+func workKey(channel string, thread int64) string {
+	if thread == 0 {
+		return channel + "#0"
+	}
+	return channel + "#" + strconv.FormatInt(thread, 10)
+}
+
+// Working reports whether an agent turn is in flight for the thread.
+func (r *Runtime) Working(channel string, thread int64) bool {
+	r.workMu.Lock()
+	defer r.workMu.Unlock()
+	return r.work[workKey(channel, thread)] > 0
+}
+
+func (r *Runtime) workStart(key string) {
+	r.workMu.Lock()
+	if r.work == nil {
+		r.work = map[string]int{}
+	}
+	r.work[key]++
+	r.workMu.Unlock()
+}
+
+func (r *Runtime) workDone(key string) {
+	r.workMu.Lock()
+	if r.work[key] > 0 {
+		r.work[key]--
+		if r.work[key] == 0 {
+			delete(r.work, key)
+		}
+	}
+	r.workMu.Unlock()
 }
 
 // lib lazily opens the behaviour library (nil-safe; a nil workspace
@@ -449,6 +491,12 @@ func (r *Runtime) Turn(ctx context.Context, agentID string, trigger bus.Message)
 			return fmt.Errorf("runtime: %s: %w", agentID, err)
 		}
 	}
+
+	// Strict (F-011) and ADR-0020 refusals happen before the run is
+	// in flight, so a refused turn never lights the board indicator.
+	key := workKey(trigger.Channel, bus.ThreadOf(trigger))
+	r.workStart(key)
+	defer r.workDone(key)
 
 	return r.cliTurn(ctx, e, trigger)
 }

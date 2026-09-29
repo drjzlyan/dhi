@@ -296,6 +296,9 @@ func (m *Model) boardBody(w, h int) string {
 			root = m.ws.Root
 		}
 		detailLines = boardDetailLines(tk, wrapW, root)
+		if m.working != nil && tk.ThreadChannel != "" && m.working(tk.ThreadChannel, tk.ThreadID) {
+			detailLines = append(detailLines, theme.SuccessText().Render("● agent working — live in the thread"))
+		}
 	}
 	if detailW == 0 && len(detailLines) > 0 {
 		// -1: the lane header row above the Height body rows.
@@ -311,7 +314,8 @@ func (m *Model) boardBody(w, h int) string {
 		laneW := board.LaneWidth(i)
 		rows := make([]string, 0, len(g[i]))
 		for _, tk := range g[i] {
-			rows = append(rows, boardCard(tk, laneW, m.boardMarks[tk.Slug]))
+			working := m.working != nil && tk.ThreadChannel != "" && m.working(tk.ThreadChannel, tk.ThreadID)
+			rows = append(rows, boardCard(tk, laneW, m.boardMarks[tk.Slug], working))
 		}
 		cols[i] = kit.Column{
 			Title: string(st), Cursor: m.boardCur[i], Rows: rows,
@@ -365,7 +369,7 @@ func (m *Model) boardFilterLine() string {
 // boardCard renders one lane row proportional to the lane budget
 // (F-026 P3): a mark/priority prefix, slug, ellipsized title, assignee
 // chip — no fixed pads.
-func boardCard(tk tasks.Task, laneW int, marked bool) string {
+func boardCard(tk tasks.Task, laneW int, marked, working bool) string {
 	title := tk.Title
 	if title == "" {
 		title = "-"
@@ -382,7 +386,7 @@ func boardCard(tk tasks.Task, laneW int, marked bool) string {
 	prefix := ""
 	prefixW := 0
 	if laneW >= 14 {
-		prefix = boardMarkPrefix(tk.Priority, marked)
+		prefix = boardMarkPrefix(tk.Priority, marked, working)
 		prefixW = 3
 	}
 	slugW := clampInt(laneW-whoW-prefixW-6, 4, 14)
@@ -401,7 +405,7 @@ func boardCard(tk tasks.Task, laneW int, marked bool) string {
 }
 
 // boardMarkPrefix is the 3-cell mark+priority indicator.
-func boardMarkPrefix(p tasks.Priority, marked bool) string {
+func boardMarkPrefix(p tasks.Priority, marked, working bool) string {
 	mark := " "
 	if marked {
 		mark = theme.SuccessText().Render("◆")
@@ -417,7 +421,11 @@ func boardMarkPrefix(p tasks.Priority, marked bool) string {
 	case tasks.PriorityNormal:
 		glyph = theme.TextDim().Render("·")
 	}
-	return mark + glyph + " "
+	tail := " "
+	if working {
+		tail = theme.SuccessText().Render("●")
+	}
+	return mark + glyph + tail
 }
 
 func clampInt(v, lo, hi int) int {
