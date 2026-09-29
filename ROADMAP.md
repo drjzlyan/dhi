@@ -885,8 +885,9 @@ sandbox/scope/keychain/approvals.
 
 ## M20 — Depth & cohesion (F-035)
 
-Status: in progress (Part A landed 2026-09-28). Board Jira depth (labels/
-priority/epic/due/filters/bulk); editor↔agent co-editing; Slack depth;
+Status: complete (2026-09-29). Board Jira depth (labels/
+priority/epic/due/filters/bulk); editor↔agent co-editing with an
+active-editing indicator; Slack depth (search/reactions/edits/pins);
 live work log in the task thread.
 
 - [x] Board depth + filters/bulk
@@ -895,7 +896,11 @@ live work log in the task thread.
       `/` free-text filter across title/slug/labels/epic/assignee,
       `space` mark + `M` bulk move + `C` clear, priority glyphs and a
       per-kind metadata line in the card detail
-- [ ] Editor co-editing via F-030 tools + active-editing indicator
+- [x] Editor co-editing via F-030 tools + active-editing indicator
+      — agent `editor_apply_edit` lands on the live buffer through
+      `Model.ApplyReplace` (one undo step) and stamps the edit; the
+      buffer title shows `● agent editing` for a short window, so the
+      human sees the applied change and who made it
 - [x] Channel search/reactions/edits/per-message actions
       — `internal/agentkit/channelmeta` (`.dhi/channels/meta.json`)
       stores reactions/edits/pins without touching the append-only bus;

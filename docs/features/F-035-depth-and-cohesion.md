@@ -1,6 +1,6 @@
 # F-035: Depth & cohesion — dashboard, co-editing, Slack, live work log
 
-Status: planned (M20) · Companion to: ADR-0019 (DHI owns the loop),
+Status: complete (M20) · Companion to: ADR-0019 (DHI owns the loop),
 F-021 (board), F-022 (slack floor), F-026 (UI beauty). Product rule: the
 surface is the product; both the human and the crew should feel the IDE
 respond.
@@ -44,8 +44,10 @@ rather than a post-hoc replay.
 - [x] A card carries labels/priority/epic/due and can be filtered and
       bulk-moved. (Task schema 2; board `L`/`P`/`E`/`D`, `/` filter over
       title/slug/labels/epic/assignee, `space` mark + `M` bulk move.)
-- [ ] An agent applies an editor edit the human sees applied, with an
-      active-editing indicator.
+- [x] An agent applies an editor edit the human sees applied, with an
+      active-editing indicator. (Agent `editor_apply_edit` reaches
+      `Model.ApplyReplace` — the live buffer when open, one undo step —
+      and the buffer title shows `● agent editing` for a short window.)
 - [x] Channels support search, reactions, and edits. (Chat pane `/`
       search, `+` reaction picker, `e` edit own messages, `p` pin, over a
       `channelmeta` store that leaves the bus JSONL immutable.)

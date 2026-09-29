@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"charm.land/bubbletea/v2"
 
@@ -33,6 +34,9 @@ const (
 	railWidth   = 34
 	findCapRows = 200 // finder result rows rendered
 	indexCap    = 20000
+	// agentEditWindow is how long an agent-applied edit keeps its
+	// active-editing indicator visible (F-035 Part B).
+	agentEditWindow = 6 * time.Second
 )
 
 type mode uint8
@@ -108,6 +112,11 @@ type Model struct {
 	bufs      []*bufTab
 	activeTab int
 	bufFocus  bool
+
+	// agentEditPath/agentEditAt mark the last agent-applied edit so the
+	// buffer title can show an active-editing indicator (F-035 Part B).
+	agentEditPath string
+	agentEditAt   time.Time
 
 	drawerOpen  bool
 	termFocus   bool
@@ -930,7 +939,7 @@ func (m *Model) navView() string {
 		title = "preview — " + title
 	case m.active() != nil:
 		e := m.active()
-		title = bufferTitle(e) + m.diagChip(e)
+		title = bufferTitle(e) + m.diagChip(e) + m.agentChip(e)
 		main = m.bufferView()
 	case m.mode == modeResults:
 		main = m.resultsBlock()
@@ -1291,7 +1300,11 @@ func (m *Model) ApplyReplace(abs, old, new string, all bool) error {
 	for _, t := range m.bufs {
 		if t.path == abs {
 			_, err := t.ed.Buffer().ReplaceText(old, new, all)
-			return err
+			if err != nil {
+				return err
+			}
+			m.markAgentEdit(abs)
+			return nil
 		}
 	}
 	data, err := os.ReadFile(abs)
@@ -1312,7 +1325,33 @@ func (m *Model) ApplyReplace(abs, old, new string, all bool) error {
 	} else {
 		replaced = strings.Replace(content, old, new, 1)
 	}
-	return os.WriteFile(abs, []byte(replaced), 0o644)
+	if err := os.WriteFile(abs, []byte(replaced), 0o644); err != nil {
+		return err
+	}
+	m.markAgentEdit(abs)
+	return nil
+}
+
+// markAgentEdit stamps the last agent-applied edit so the title shows the
+// active-editing indicator (F-035 Part B).
+func (m *Model) markAgentEdit(abs string) {
+	m.agentEditPath = abs
+	m.agentEditAt = time.Now()
+}
+
+// agentChip is the active-editing indicator appended to the buffer title:
+// non-empty only while e is the buffer an agent just edited.
+func (m *Model) agentChip(e *textbuf.Editor) string {
+	if e == nil || m.agentEditPath == "" {
+		return ""
+	}
+	if e.Path() != m.agentEditPath {
+		return ""
+	}
+	if time.Since(m.agentEditAt) > agentEditWindow {
+		return ""
+	}
+	return "  " + theme.SuccessText().Render("● agent editing")
 }
 
 func (m *Model) applySuggestion(text string) {
