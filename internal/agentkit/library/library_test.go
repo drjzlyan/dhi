@@ -175,3 +175,77 @@ func TestParseSkillFrontmatterStrict(t *testing.T) {
 		t.Fatal("bogus frontmatter accepted")
 	}
 }
+
+func TestSkillScriptResolution(t *testing.T) {
+	ws := newWs(t)
+	dir := filepath.Join(ws.Root, workspace.DirSkills)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	doc := "---\nname: Checks\ndescription: run checks\nscript: checks.sh\n---\n\nRun the checks.\n"
+	if err := os.WriteFile(filepath.Join(dir, "checks.md"), []byte(doc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	scriptPath := filepath.Join(dir, "checks.sh")
+	if err := os.WriteFile(scriptPath, []byte("#!/bin/sh\necho ok\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	lib := Open(ws)
+	// Not executable yet → named refusal.
+	if _, err := lib.Script("checks"); err == nil || !strings.Contains(err.Error(), "not executable") {
+		t.Fatalf("non-executable script = %v", err)
+	}
+	if err := os.Chmod(scriptPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	got, err := lib.Script("checks")
+	if err != nil || got != scriptPath {
+		t.Fatalf("Script = %q err=%v", got, err)
+	}
+	// Instruction-only skill refuses.
+	if err := os.WriteFile(filepath.Join(dir, "plain.md"),
+		[]byte("---\nname: Plain\ndescription: none\n---\n\nbody\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	lib = Open(ws)
+	if _, err := lib.Script("plain"); err == nil || !strings.Contains(err.Error(), "declares no script") {
+		t.Fatalf("scriptless skill = %v", err)
+	}
+	// Missing script file refuses.
+	if err := os.Remove(scriptPath); err != nil {
+		t.Fatal(err)
+	}
+	lib = Open(ws)
+	if _, err := lib.Script("checks"); err == nil {
+		t.Fatal("missing script accepted")
+	}
+	// Builtin skills refuse (no script scope).
+	if _, err := lib.Script("code-review"); err == nil || !strings.Contains(err.Error(), "builtin") {
+		t.Fatalf("builtin skill = %v", err)
+	}
+}
+
+func TestSkillScriptFrontmatterValidation(t *testing.T) {
+	good := "---\nname: A\ndescription: b\nscript: sub/run.sh\n---\n\nbody\n"
+	k, err := parseSkill("a", []byte(good))
+	if err != nil || k.Script != "sub/run.sh" {
+		t.Fatalf("valid script = %+v err=%v", k, err)
+	}
+	for _, bad := range []string{
+		"/abs/run.sh", "../escape.sh", "a/../../b.sh", `c:\x.sh`, ".",
+	} {
+		doc := "---\nname: A\ndescription: b\nscript: " + bad + "\n---\n\nbody\n"
+		if _, err := parseSkill("a", []byte(doc)); err == nil {
+			t.Fatalf("script %q accepted", bad)
+		}
+	}
+	// Round-trip through WriteSkill preserves the script.
+	ws := newWs(t)
+	if err := (&Store{}).WriteSkill(ws, &Skill{Slug: "a", Name: "A", Description: "b", Script: "run.sh", Body: "body"}); err != nil {
+		t.Fatal(err)
+	}
+	back, ok := Open(ws).Skill("a")
+	if !ok || back.Script != "run.sh" {
+		t.Fatalf("round-trip script = %+v ok=%v", back, ok)
+	}
+}

@@ -11,6 +11,7 @@ import (
 
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/agentkit/knowledge"
+	"github.com/drjzlyan/dhi/internal/agentkit/library"
 	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
 	"github.com/drjzlyan/dhi/internal/agentkit/memory"
 	"github.com/drjzlyan/dhi/internal/agentkit/scopes"
@@ -305,5 +306,54 @@ func TestPROpenRefusals(t *testing.T) {
 	if out, isErr := call(h3, t, "pr_open", `{"slug":"bare","title":"T"}`); !isErr ||
 		!strings.Contains(out, "no worktree") {
 		t.Fatalf("no changeset = %q isErr=%v", out, isErr)
+	}
+}
+
+func TestSkillRunTool(t *testing.T) {
+	f, m := newFixture(t, "skill_run")
+	ws := f.ws
+	dir := filepath.Join(ws.Root, workspace.DirSkills)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	doc := "---\nname: Checks\ndescription: run checks\nscript: checks.sh\n---\n\nRun.\n"
+	if err := os.WriteFile(filepath.Join(dir, "checks.md"), []byte(doc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	script := filepath.Join(dir, "checks.sh")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\necho ok\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	lib := library.Open(ws)
+	run := &fakeRunner{out: "ran\n"}
+	auto := scopes.Set{scopes.Read: scopes.Auto, scopes.Exec: scopes.Auto}
+	h := Deps{Agent: m, Skills: lib, Run: run, Workdir: ws.Root, Channel: "#general", Scopes: auto}.Handler()
+
+	out, isErr := call(h, t, "skill_run", `{"skill":"checks","args":["--fast"]}`)
+	if isErr || !strings.Contains(out, "ran") {
+		t.Fatalf("skill_run = %q isErr=%v", out, isErr)
+	}
+	if !run.called || len(run.argv) != 2 || run.argv[0] != script || run.argv[1] != "--fast" || run.network {
+		t.Fatalf("argv=%v dir=%q net=%v", run.argv, run.dir, run.network)
+	}
+
+	// Unknown skill refuses.
+	if out, isErr := call(h, t, "skill_run", `{"skill":"nope"}`); !isErr || !strings.Contains(out, "not found") {
+		t.Fatalf("unknown skill = %q isErr=%v", out, isErr)
+	}
+	// Exec denied by scope refuses by name (before the runner).
+	denied := Deps{Agent: m, Skills: lib, Run: run, Workdir: ws.Root, Scopes: scopes.Set{scopes.Exec: scopes.Deny}}.Handler()
+	if out, isErr := call(denied, t, "skill_run", `{"skill":"checks"}`); !isErr || !strings.Contains(out, "denied by capability scope") {
+		t.Fatalf("denied = %q isErr=%v", out, isErr)
+	}
+	// No runner refuses.
+	noRun := Deps{Agent: m, Skills: lib, Workdir: ws.Root, Scopes: auto}.Handler()
+	if out, isErr := call(noRun, t, "skill_run", `{"skill":"checks"}`); !isErr || !strings.Contains(out, "command runner unavailable") {
+		t.Fatalf("no runner = %q isErr=%v", out, isErr)
+	}
+	// No library refuses.
+	noLib := Deps{Agent: m, Run: run, Workdir: ws.Root, Scopes: auto}.Handler()
+	if out, isErr := call(noLib, t, "skill_run", `{"skill":"checks"}`); !isErr || !strings.Contains(out, "skill library unavailable") {
+		t.Fatalf("no library = %q isErr=%v", out, isErr)
 	}
 }

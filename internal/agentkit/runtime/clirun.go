@@ -301,6 +301,7 @@ func (r *Runtime) serveTools(e *entry, trigger bus.Message) *serveSession {
 			Gate:      gate,
 			OnRun:     onRun,
 			PR:        r.cfg.PR,
+			Skills:    r.lib(),
 			Channel:   trigger.Channel,
 			Thread:    trigger.Thread,
 			Workdir:   r.cliWorkdir(trigger),

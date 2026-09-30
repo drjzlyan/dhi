@@ -30,6 +30,7 @@ const (
 	dlgLibNew
 	dlgLibEdit
 	dlgLibDelete
+	dlgLibRunSkill
 	dlgRegistrySource
 	dlgRegistryInstall
 	dlgRegistryTrustKey
@@ -146,6 +147,8 @@ func (m *Model) submitConfirmDialog() {
 		m.flash = "pack " + target + " uninstalled"
 	case dlgLibDelete:
 		m.submitLibraryDelete(target)
+	case dlgLibRunSkill:
+		m.runLibSkill(target)
 	case dlgRegistryInstall:
 		m.submitRegistryInstall(target)
 	case dlgRegistryUntrust:

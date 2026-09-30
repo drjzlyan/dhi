@@ -250,6 +250,7 @@ func runTUI() {
 				Runtime:    agentRT,
 				Tasks:      taskStore,
 				Registry:   registry.New(ws),
+				RunScript:  runRunner,
 			}
 		}
 	}

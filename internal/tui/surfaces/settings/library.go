@@ -1,8 +1,10 @@
 package settings
 
 import (
+	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/drjzlyan/dhi/internal/agentkit/library"
 	"github.com/drjzlyan/dhi/internal/agentkit/pack"
@@ -199,8 +201,74 @@ func (m *Model) libraryKey(key string) bool {
 			m.openDisplayDialog(r.kind+" — "+r.slug, m.libCardLines(r))
 			return true
 		}
+	case "r":
+		if m.libCur < len(rows) {
+			r := rows[m.libCur]
+			if r.kind != "skill" {
+				m.flash = "only skills carry scripts"
+				return true
+			}
+			if m.d.RunScript == nil {
+				m.flash = "failed: script runner unavailable"
+				return true
+			}
+			if lib := m.libStore(); lib != nil {
+				if _, err := lib.Script(r.slug); err != nil {
+					m.flash = "failed: " + err.Error()
+					return true
+				}
+			}
+			m.openConfirmDialog("run skill script",
+				"run "+r.slug+"'s script (sandboxed, network denied)?", r.slug, dlgLibRunSkill)
+			return true
+		}
 	}
 	return false
+}
+
+// runLibSkill executes a local skill's declared script off the UI loop
+// and shows the output in a dialog. The runner is hermetic + sandboxed;
+// network is denied.
+func (m *Model) runLibSkill(slug string) {
+	m.closeDialog()
+	lib := m.libStore()
+	if m.d.RunScript == nil || lib == nil || m.d.WS == nil {
+		m.flash = "failed: script runner unavailable"
+		return
+	}
+	script, err := lib.Script(slug)
+	if err != nil {
+		m.flash = "failed: " + err.Error()
+		return
+	}
+	runner, dir := m.d.RunScript, m.d.WS.Root
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		out, rerr := runner.Run(ctx, dir, []string{script}, false)
+		lines := splitOutput(out)
+		if rerr != nil {
+			lines = append(lines, theme.DangerText().Render("✗ "+rerr.Error()))
+			select {
+			case m.events <- settingsEvent{title: "skill " + slug + " — failed", lines: lines}:
+			default:
+			}
+			return
+		}
+		select {
+		case m.events <- settingsEvent{title: "skill " + slug, lines: lines}:
+		default:
+		}
+	}()
+}
+
+// splitOutput renders a runner's stdout as dialog lines.
+func splitOutput(out string) []string {
+	out = strings.TrimRight(out, "\n")
+	if strings.TrimSpace(out) == "" {
+		return []string{theme.TextDim().Render("(no output)")}
+	}
+	return strings.Split(out, "\n")
 }
 
 // libCardLines renders the full card for the display dialog.

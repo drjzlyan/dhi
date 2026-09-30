@@ -71,8 +71,10 @@ var _ surfaces.Surface = (*Model)(nil)
 
 // settingsEvent carries one async crew/import outcome to the loop.
 type settingsEvent struct {
-	msg string
-	err string
+	msg   string
+	err   string
+	title string   // when lines is set: a display dialog title
+	lines []string // when set: open a display dialog with these lines
 }
 
 type sectionID uint8
@@ -121,6 +123,12 @@ type TurnHandler interface {
 	Handle(ctx context.Context, msg bus.Message)
 }
 
+// runner executes one already-vetted argv under the sandbox
+// (dhitools.CommandRunner). Nil disables the LIBRARY skill-run action.
+type runner interface {
+	Run(ctx context.Context, dir string, argv []string, allowNetwork bool) (string, error)
+}
+
 // Deps wires workspace-scoped services. Zero fields degrade the managed
 // sections to visible "unavailable" rows rather than errors (F-011).
 type Deps struct {
@@ -148,6 +156,9 @@ type Deps struct {
 	// Registry is the cached signed pack index (F-034 part B). Nil
 	// degrades the MARKETPLACE section to a named unavailable row.
 	Registry *registry.Registry
+	// RunScript executes a local skill's declared script (sandboxed,
+	// network denied). Nil disables the LIBRARY run action.
+	RunScript runner
 }
 
 // New wires the surface to a loaded config, its persistence target,
@@ -199,6 +210,9 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 			m.flash = "failed: " + ev.err
 		} else {
 			m.flash = ev.msg
+		}
+		if len(ev.lines) > 0 {
+			m.openDisplayDialog(ev.title, ev.lines)
 		}
 		rows, _ := m.agentRows()
 		clampAgentCursor(&m.agentCur, len(rows))
@@ -994,10 +1008,12 @@ func (m *Model) sectionHints() []string {
 		sec = []string{"w workspace", "t team", "g agent", "v preview"}
 	case secWorkflows:
 		sec = []string{"n new", "d default", "v preview"}
+	case secLibrary:
+		sec = []string{"n new", "e edit", "x delete", "r run script", "v card"}
 	case secAutopilots:
 		sec = []string{"n new", "e arm/pause", "r run now", "x remove"}
 	case secMarketplace:
-		sec = []string{"r refresh", "/ search", "enter install", "v inspect"}
+		sec = []string{"r refresh", "/ search", "enter install", "t pin key", "T clear", "v inspect"}
 	}
 	return append(sec, global...)
 }

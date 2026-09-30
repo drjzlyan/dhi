@@ -137,5 +137,5 @@ var toolScopes = map[string]Scope{
 	// approval (the human decision is the proposal's resolution).
 	"propose_session": Read,
 
-	"git_commit": Git, "git_push": Push, "pr_open": Push, "run": Exec,
+	"git_commit": Git, "git_push": Push, "pr_open": Push, "run": Exec, "skill_run": Exec,
 }

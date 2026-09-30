@@ -127,6 +127,60 @@ func (d Deps) miscTools() []tool {
 				return "asked the human in " + d.Channel, nil
 			},
 		},
+		{
+			info: mcp.ToolInfo{
+				Name:        "skill_run",
+				Description: "Run a local skill's declared script (shebang, no shell) under the sandbox. Args: {\"skill\": \"<slug>\", \"args\": [\"...\"]}. Mutating: crosses approvals.",
+				InputSchema: json.RawMessage(`{"type":"object","required":["skill"],"properties":{"skill":{"type":"string"},"args":{"type":"array","items":{"type":"string"}}},"additionalProperties":false}`),
+			},
+			parse: func(raw json.RawMessage) (any, error) {
+				var a struct {
+					Skill string   `json:"skill"`
+					Args  []string `json:"args"`
+				}
+				if err := args(raw, &a); err != nil {
+					return nil, err
+				}
+				s := strings.TrimSpace(a.Skill)
+				if s == "" {
+					return nil, fmt.Errorf("skill is required")
+				}
+				return runPlan{argv: append([]string{s}, a.Args...)}, nil
+			},
+			exec: func(ctx context.Context, dec any) (string, error) {
+				plan := dec.(runPlan)
+				if d.Skills == nil {
+					return "", fmt.Errorf("skill library unavailable")
+				}
+				if d.Run == nil {
+					return "", fmt.Errorf("command runner unavailable (run bootstrap)")
+				}
+				if strings.TrimSpace(d.Workdir) == "" {
+					return "", fmt.Errorf("no working directory for this turn")
+				}
+				script, err := d.Skills.Script(plan.argv[0])
+				if err != nil {
+					return "", err
+				}
+				set := d.Scopes
+				if set == nil {
+					set = scopes.Default()
+				}
+				allowNet := set.EffectFor(scopes.Network) == scopes.Auto
+				argv := append([]string{script}, plan.argv[1:]...)
+				out, err := d.Run.Run(ctx, d.Workdir, argv, allowNet)
+				if err != nil {
+					if strings.TrimSpace(out) != "" {
+						return "", fmt.Errorf("%v\n%s", err, out)
+					}
+					return "", err
+				}
+				if strings.TrimSpace(out) == "" {
+					return "(no output)\n", nil
+				}
+				return out, nil
+			},
+		},
 	}
 }
 

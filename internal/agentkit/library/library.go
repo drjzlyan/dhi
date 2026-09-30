@@ -11,6 +11,7 @@ import (
 	"embed"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -32,11 +33,17 @@ type Role struct {
 	System      string   // system template ({{agent}}, {{workspace}})
 }
 
-// Skill is one teachable instruction document.
+// Skill is one teachable instruction document. An optional Script names
+// an executable file (relative to .dhi/skills, no `..`) the skill can
+// run — the human runs it from LIBRARY; agents request it via the served
+// `skill_run` tool. Scripts execute directly (shebang, no shell) under
+// the OS sandbox with network denied unless the exec/network scope says
+// otherwise.
 type Skill struct {
 	Slug        string
 	Name        string
 	Description string
+	Script      string // relative to .dhi/skills; "" = instruction-only
 	Body        string // markdown instruction body
 }
 
@@ -146,15 +153,15 @@ func parseRole(slug string, data []byte) (*Role, error) {
 }
 
 // parseSkill splits one skill markdown doc into frontmatter + body.
-// Frontmatter is two `key: value` lines (name, description) inside a
-// --- fence; the body is the rest.
+// Frontmatter is `key: value` lines (name, description, optional
+// script) inside a --- fence; the body is the rest.
 func parseSkill(slug string, data []byte) (*Skill, error) {
 	text := strings.ReplaceAll(string(data), "\r\n", "\n")
 	lines := strings.Split(text, "\n")
 	if len(lines) == 0 || strings.TrimSpace(lines[0]) != "---" {
 		return nil, fmt.Errorf("frontmatter fence missing (start the file with ---)")
 	}
-	name, desc := "", ""
+	name, desc, script := "", "", ""
 	i := 1
 	for ; i < len(lines); i++ {
 		l := strings.TrimSpace(lines[i])
@@ -167,8 +174,10 @@ func parseSkill(slug string, data []byte) (*Skill, error) {
 			name = strings.TrimSpace(strings.TrimPrefix(l, "name:"))
 		case strings.HasPrefix(l, "description:"):
 			desc = strings.TrimSpace(strings.TrimPrefix(l, "description:"))
+		case strings.HasPrefix(l, "script:"):
+			script = strings.TrimSpace(strings.TrimPrefix(l, "script:"))
 		default:
-			return nil, fmt.Errorf("frontmatter line %d: %q (want name: or description:)", i+1, l)
+			return nil, fmt.Errorf("frontmatter line %d: %q (want name:, description:, or script:)", i+1, l)
 		}
 	}
 	if name == "" {
@@ -177,11 +186,29 @@ func parseSkill(slug string, data []byte) (*Skill, error) {
 	if desc == "" {
 		return nil, fmt.Errorf("frontmatter description is required")
 	}
+	if script != "" {
+		if err := validScriptRel(script); err != nil {
+			return nil, err
+		}
+	}
 	body := strings.TrimSpace(strings.Join(lines[i:], "\n"))
 	if body == "" {
 		return nil, fmt.Errorf("skill body is empty")
 	}
-	return &Skill{Slug: slug, Name: name, Description: desc, Body: body}, nil
+	return &Skill{Slug: slug, Name: name, Description: desc, Script: script, Body: body}, nil
+}
+
+// validScriptRel enforces that a skill's script path is relative and
+// stays inside the skills dir (no absolute paths, no `..`).
+func validScriptRel(s string) error {
+	if filepath.IsAbs(s) || strings.ContainsAny(s, "\\:") {
+		return fmt.Errorf("script %q must be a relative path", s)
+	}
+	c := path.Clean(s)
+	if c == "." || c == ".." || strings.HasPrefix(c, "../") {
+		return fmt.Errorf("script %q escapes the skills directory", s)
+	}
+	return nil
 }
 
 // ParseRole validates one role card's bytes without writing it (packs
@@ -212,12 +239,16 @@ type Store struct {
 	skills   map[string]*Skill
 	sources  map[string]string // slug+kind → source
 	warnings []string
+	root     string // workspace root ("" for a builtins-only store)
 }
 
 // Open loads the merged library for ws (builtins + .dhi/roles +
 // .dhi/skills). ws may be nil for a builtins-only store (tests).
 func Open(ws *workspace.Workspace) *Store {
 	s := &Store{roles: map[string]*Role{}, skills: map[string]*Skill{}, sources: map[string]string{}}
+	if ws != nil {
+		s.root = ws.Root
+	}
 	s.loadBuiltinDir("builtin/roles", ".toml", func(slug string, data []byte) error {
 		r, err := parseRole(slug, data)
 		if err != nil {
@@ -391,6 +422,44 @@ func (s *Store) WriteRole(ws *workspace.Workspace, r *Role) error {
 	return atomicWrite(filepath.Join(dir, r.Slug+".toml"), buf.String())
 }
 
+// Script resolves a local skill's declared script to an absolute path,
+// refusing builtin/absent scripts, non-executable files, and any path
+// that escapes .dhi/skills. The caller runs it directly (no shell).
+func (s *Store) Script(slug string) (string, error) {
+	k, ok := s.skills[slug]
+	if !ok {
+		return "", fmt.Errorf("library: skill %q not found", slug)
+	}
+	if s.sources["skill/"+slug] != "local" {
+		return "", fmt.Errorf("library: skill %q is %s — scripts run only from local cards", slug, orBuiltin(s.sources["skill/"+slug]))
+	}
+	if s.root == "" {
+		return "", fmt.Errorf("library: no workspace root — scripts unavailable")
+	}
+	if strings.TrimSpace(k.Script) == "" {
+		return "", fmt.Errorf("library: skill %q declares no script", slug)
+	}
+	if err := validScriptRel(k.Script); err != nil {
+		return "", err
+	}
+	dir := filepath.Join(s.root, workspace.DirSkills)
+	abs := filepath.Join(dir, filepath.FromSlash(path.Clean(k.Script)))
+	if rel, err := filepath.Rel(dir, abs); err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("library: skill %q script escapes the skills directory", slug)
+	}
+	fi, err := os.Stat(abs)
+	if err != nil {
+		return "", fmt.Errorf("library: skill %q script %s: %w", slug, k.Script, err)
+	}
+	if fi.IsDir() {
+		return "", fmt.Errorf("library: skill %q script %s is a directory", slug, k.Script)
+	}
+	if fi.Mode()&0o111 == 0 {
+		return "", fmt.Errorf("library: skill %q script %s is not executable (chmod +x)", slug, k.Script)
+	}
+	return abs, nil
+}
+
 // WriteSkill validates-then-writes a local skill doc atomically.
 func (s *Store) WriteSkill(ws *workspace.Workspace, k *Skill) error {
 	if !validSlug(k.Slug) {
@@ -405,17 +474,25 @@ func (s *Store) WriteSkill(ws *workspace.Workspace, k *Skill) error {
 	if strings.TrimSpace(k.Body) == "" {
 		return fmt.Errorf("library: skill body is empty")
 	}
+	if strings.TrimSpace(k.Script) != "" {
+		if err := validScriptRel(k.Script); err != nil {
+			return err
+		}
+	}
 	var b strings.Builder
 	b.WriteString("---\n")
 	b.WriteString("name: " + k.Name + "\n")
 	b.WriteString("description: " + k.Description + "\n")
+	if strings.TrimSpace(k.Script) != "" {
+		b.WriteString("script: " + strings.TrimSpace(k.Script) + "\n")
+	}
 	b.WriteString("---\n\n")
 	b.WriteString(k.Body + "\n")
 	back, err := parseSkill(k.Slug, []byte(b.String()))
 	if err != nil {
 		return fmt.Errorf("library: skill self-check: %w", err)
 	}
-	if back.Name != k.Name || back.Description != k.Description || back.Body != k.Body {
+	if back.Name != k.Name || back.Description != k.Description || back.Body != k.Body || back.Script != strings.TrimSpace(k.Script) {
 		return fmt.Errorf("library: skill round-trip mismatch")
 	}
 	dir := filepath.Join(ws.Root, workspace.DirSkills)

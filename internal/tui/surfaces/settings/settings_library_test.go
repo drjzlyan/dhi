@@ -276,3 +276,64 @@ func TestLibraryPackBadges(t *testing.T) {
 		t.Fatalf("expected both role and skill badged:\n%s", out)
 	}
 }
+
+type fakeScriptRunner struct {
+	argv []string
+	net  bool
+	out  string
+	err  error
+}
+
+func (f *fakeScriptRunner) Run(_ context.Context, _ string, argv []string, allowNet bool) (string, error) {
+	f.argv, f.net = argv, allowNet
+	return f.out, f.err
+}
+
+func TestLibraryRunSkillScript(t *testing.T) {
+	m, ws := libSurface(t)
+	dir := filepath.Join(ws.Root, workspace.DirSkills)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	doc := "---\nname: Checks\ndescription: run checks\nscript: checks.sh\n---\n\nRun.\n"
+	if err := os.WriteFile(filepath.Join(dir, "checks.md"), []byte(doc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	script := filepath.Join(dir, "checks.sh")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\necho ok\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	run := &fakeScriptRunner{out: "hello from script\n"}
+	m.d.RunScript = run
+	m.d.Library, m.lib = nil, nil // reopen to pick up the new skill
+
+	// Focus the "checks" skill row.
+	idx := -1
+	for i, r := range m.libRows() {
+		if r.slug == "checks" {
+			idx = i
+		}
+	}
+	if idx < 0 {
+		t.Fatalf("checks row missing: %+v", m.libRows())
+	}
+	m.libCur = idx
+
+	// r opens a confirm, enter runs async, the output lands in a dialog.
+	feed(m, "r")
+	if m.dlg == nil || m.dkind != dlgLibRunSkill {
+		t.Fatalf("r did not open the run confirm: %+v", m.dlg)
+	}
+	feed(m, "enter")
+	drainDialogEvent(t, m)
+	if m.dlg == nil || m.dkind != dlgDisplay {
+		t.Fatalf("output dialog missing: %+v", m.dlg)
+	}
+	out := ansi.Strip(strings.Join(m.dlg.Lines, "\n"))
+	if !strings.Contains(out, "hello from script") {
+		t.Fatalf("output dialog = %q", out)
+	}
+	if len(run.argv) != 1 || run.argv[0] != script || run.net {
+		t.Fatalf("runner argv=%v net=%v", run.argv, run.net)
+	}
+}

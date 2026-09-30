@@ -1,9 +1,28 @@
 # STATE — current position
 
-Updated: 2026-09-30 (session 32: M15 complete — antigravity MCP wired
-and live-verified, all six adapters serve DHI tools over the loopback
-endpoint, and the `dhi-action` fallback is removed at parity. Only the
-deferred `api:<provider>` engine kind remains.)
+Updated: 2026-09-30 (session 36: optional M18/M19 follow-ons landed —
+inbox ideation proposals, index signature verification, pack-sourced
+LIBRARY badges, executable skill scripts. The planned roadmap M15–M20 is
+complete; only the deferred `api:<provider>` engine and the older
+backlog remain.)
+
+### Session 36 (M19 follow-on — executable skill scripts)
+
+- Skills gained an optional `script: <rel-path>` frontmatter key
+  (relative to `.dhi/skills`, no `..`/absolute; `validScriptRel`).
+  `library.Store.Script(slug)` resolves it, refusing builtin/absent/
+  non-executable/escaping paths by name. Scripts run directly (shebang,
+  no shell) under the sandbox.
+- Human path: LIBRARY `r` on a skill runs its script (confirm → async
+  through the injected runner, network denied) and shows stdout/err in a
+  dialog. New Settings `Deps.RunScript` seam (wired from `runRunner`).
+- Agent path: served `skill_run` tool (dhitools `Deps.Skills *library.Store`
+  wired from `runtime.lib()`, scope `Exec`, approval-gated, network per
+  the network scope). `runPlan` carries skill+args; argv = [script, ...].
+- Tests: library resolution/frontmatter, dhitools skill_run
+  (happy/denied/no-runner/no-library/unknown), settings run flow.
+  Goldens regenerated (LIBRARY hint bar). `make verify` green.
+- Docs: F-027 deferred item struck; LIBRARY hints add `r run script`.
 
 ### Session 35 (M19 follow-on — pack-sourced LIBRARY badges)
 
@@ -589,8 +608,9 @@ catalog).
 
 ## Next up
 
-1. **Optional follow-ons** (no milestone blocking): executable skill
-   scripts.
+1. **Optional follow-ons**: none remaining — the recorded M19/M18
+   follow-ons are all landed (index signatures, LIBRARY badges, skill
+   scripts, inbox proposals).
 2. **Deferred engine kind**: `api:<provider>` (hard tool guarantee /
    offline inference) — designed-not-built; the only open M15 item.
 3. **(Deferred, F-026/F-017/F-027/F-020/M11)** as before — now largely

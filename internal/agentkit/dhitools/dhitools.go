@@ -21,6 +21,7 @@ import (
 
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/agentkit/knowledge"
+	"github.com/drjzlyan/dhi/internal/agentkit/library"
 	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
 	"github.com/drjzlyan/dhi/internal/agentkit/memory"
 	"github.com/drjzlyan/dhi/internal/agentkit/scopes"
@@ -53,6 +54,7 @@ type Deps struct {
 	Editor    EditorAPI            // app-owned editor seam (ADR-0023); nil refuses editor tools
 	Scopes    scopes.Set           // capability effects; nil = scopes.Default()
 	PR        PRSeam               // opens task PRs (F-020/F-032); nil refuses pr_open
+	Skills    *library.Store       // behaviour library; nil refuses skill_run
 
 	// Gate enforces the active feature workflow (F-031) at a seam: it
 	// returns the refusal reasons for acting on seam ("git:commit",
@@ -107,7 +109,7 @@ var servedSlugs = []string{
 	"git_status", "git_log", "git_branch", "git_diff", "git_commit",
 	"ideation_list", "ideation_read", "session_read",
 	"artifact_create", "artifact_edit", "propose_session",
-	"run", "ask_human",
+	"run", "ask_human", "skill_run",
 	"editor_open", "editor_reveal", "editor_apply_edit",
 	"lsp_hover", "lsp_definition", "lsp_references", "lsp_rename", "lsp_code_action",
 	"task_list", "task_create", "task_status", "task_assign", "pr_open",

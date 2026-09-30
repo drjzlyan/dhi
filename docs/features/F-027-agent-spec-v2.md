@@ -81,7 +81,13 @@ user can preview exactly as the agent will receive it.
 
 ## Deferred
 
-- Skill scripts/tools (a skill that carries executable steps) — skills
-  are instruction docs this milestone.
+- ~~Skill scripts/tools (a skill that carries executable steps)~~ —
+  **landed:** a local skill may declare `script: <rel-path>` in its
+  frontmatter (relative to `.dhi/skills`, no `..`); the file must be
+  executable and is run directly (shebang, no shell) under the OS
+  sandbox with network denied. The human runs it from LIBRARY (`r`);
+  agents request it via the served `skill_run` tool (exec scope +
+  approvals). `library.Store.Script` refuses builtin/absent/
+  non-executable/escaping paths by name.
 - Remote-only library browsing — the library is embedded + local +
   packs (F-019 flow), not a marketplace.
