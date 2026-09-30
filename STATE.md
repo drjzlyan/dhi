@@ -1,8 +1,45 @@
 # STATE — current position
 
-Updated: 2026-09-29 (session 31: M20 depth & cohesion complete —
-P0/P1/P2/P3 committed; `make verify` green. The planned roadmap
-M15–M20 is now fully landed; only optional follow-ons remain.)
+Updated: 2026-09-30 (session 32: M15 P3a — antigravity MCP wired and
+live-verified; all six adapters now serve DHI tools over the loopback
+endpoint. Remaining P3 step: remove `dhi-action` at parity.)
+
+### Session 32 (M15 P3a — antigravity MCP via --gemini_dir mirror)
+
+- `agy` reads MCP servers only from `<gemini_dir>/config/mcp_config.json`
+  and takes the dir via the undocumented-but-working `--gemini_dir`
+  flag (`agy --gemini_dir=<dir> mcp list` honours it; the flag parses
+  before the subcommand, not after). It does NOT honour a plain HOME
+  swap for auth: a mirror-HOME boots to "Authentication required" even
+  with `~/.gemini/oauth_creds.json` symlinked, so HOME must stay real.
+- New clirun seam `MCPGeminiDir func(baseDir, configBody) (dir, cleanup,
+  err)` + `MCPGeminiDirFlag`; `RunInput.MCPGeminiDir`. Antigravity's
+  helper `antigravityMCPGeminiDir` builds a per-turn mirror of the real
+  `~/.gemini` (symlinks every entry except `config/mcp_config.json`,
+  which carries DHI's loopback endpoint). The runtime writes the mirror
+  under `<ws.Root>/.dhi/mcp/gemini-*` (admitted + gitignored) and passes
+  `--gemini_dir=<mirror>`; cleanup removes it after the turn.
+- `MCPOK` flipped for antigravity; `MCPWired` now accepts the dir path.
+  All six adapters (claude/codex/opencode/cursor/copilot/antigravity)
+  are MCP-wired. Live-verified: `DHI_LIVE_MCP=1 go test
+  ./internal/agentkit/clirun/ -run TestLiveAntigravityMCP` — agy called
+  DHI's served `echo_probe` (2026-09-30, agy 1.2.11).
+- Tests: `TestAntigravityGeminiDirMirror` (symlink/mcp-file layout +
+  cleanup), `TestAntigravityMCPArgs`, updated `TestMCPConfigWiring`
+  (dir-delivery branch), `TestMCPCapabilityDeclared` (+antigravity),
+  runtime `TestServeToolsGeminiDirForAntigravity` (replaces the obsolete
+  non-MCP-fallback test — no adapter is non-MCP now), doctor
+  `TestAgentToolsNoEngineWarns` (replaces the fallback-warns test).
+- Gotcha: with every adapter MCP-capable, the "no verified MCP wiring"
+  doctor/fallback test cases are unreachable via real adapters; the only
+  remaining warn is "no engine and no workspace default".
+- Known flakes unchanged. Untracked `.dhi/agents/dev/` — do NOT commit.
+- **Next (P3b):** remove the `dhi-action` fallback at parity — add a
+  served `pr_open` tool (the only toolbridge action with no MCP
+  equivalent; task_create/status/assign are already served), then drop
+  `toolbridge.ParseActions`/`Bridge`/`dispatchActions`, the
+  `cliPrompt` advertising block + `mcp` param, and `Config.PR` (or move
+  the PR seam into dhitools.Deps). Update runtime/doctor/m14 tests.
 
 ### Session 31 (M20 — depth & cohesion, F-035)
 
