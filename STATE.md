@@ -5,6 +5,24 @@ and live-verified, all six adapters serve DHI tools over the loopback
 endpoint, and the `dhi-action` fallback is removed at parity. Only the
 deferred `api:<provider>` engine kind remains.)
 
+### Session 34 (M19 follow-on — index signature verification)
+
+- `internal/agentkit/registry/sign.go`: Ed25519 publisher signatures. A
+  detached `index.toml.sig` (lowercase hex) covers the raw `index.toml`
+  bytes; `ParsePublicKey`/`PublicKeyHex`/`VerifyIndex`/`SignIndex`.
+  Pinned keys live in `.dhi/registry/trusted_keys`
+  (`TrustedKeys`/`TrustKey`/`UntrustKey`; malformed pins refuse by name).
+- Policy: with a key pinned, `Refresh` REQUIRES a verifying signature
+  (unsigned source refuses by name) and the cached sig is re-verified on
+  every `index()` read (tamper/legacy-unsigned cache refuses); with no
+  key, digest-only mode (documented). Invalid signer/untrusted key
+  refuses and caches nothing.
+- Settings MARKETPLACE: `t` pins a publisher key (form), `T` clears
+  (confirm); the section shows the trust mode.
+- Tests: sign round-trip/refusals, trust idempotency, refresh policy,
+  tampered/unsigned cache, marketplace pin/clear. `make verify` green.
+- Docs: F-034 registry bullet updated.
+
 ### Session 33 (M18 follow-on — pending proposals in the inbox)
 
 - `inbox.Build` gained a 4th source `props []ideation.Proposal`; new
@@ -556,8 +574,8 @@ catalog).
 
 ## Next up
 
-1. **Optional follow-ons** (no milestone blocking): M19 index signature
-   verification, pack-sourced LIBRARY badges, executable skill scripts.
+1. **Optional follow-ons** (no milestone blocking): pack-sourced LIBRARY
+   badges, executable skill scripts.
 2. **Deferred engine kind**: `api:<provider>` (hard tool guarantee /
    offline inference) — designed-not-built; the only open M15 item.
 3. **(Deferred, F-026/F-017/F-027/F-020/M11)** as before — now largely

@@ -71,10 +71,46 @@ func (m *Model) marketplaceKey(key string) bool {
 		if m.mktCur < len(entries) {
 			m.showMarketplaceEntry(entries[m.mktCur])
 		}
+	case "t":
+		if m.d.Registry == nil {
+			m.flash = "failed: registry unavailable"
+			return true
+		}
+		m.openFormDialog("publisher key", dlgRegistryTrustKey, "",
+			kit.NewTextField("ed25519 public key (hex)", ""))
+	case "T":
+		if m.d.Registry == nil {
+			m.flash = "failed: registry unavailable"
+			return true
+		}
+		if keys, _ := m.d.Registry.TrustedKeys(); len(keys) > 0 {
+			m.openConfirmDialog("clear trusted keys",
+				"unpin all "+itoa(len(keys))+" publisher key(s)? future refreshes accept unsigned indexes",
+				"", dlgRegistryUntrust)
+		} else {
+			m.flash = "no publisher keys pinned"
+		}
 	default:
 		return false
 	}
 	return true
+}
+
+// submitRegistryTrustKey pins a publisher public key so refreshes require
+// a verifying index signature.
+func (m *Model) submitRegistryTrustKey() {
+	f := m.dform
+	if m.d.Registry == nil {
+		f.SetError("registry unavailable")
+		return
+	}
+	key := strings.TrimSpace(f.Values()[0])
+	if err := m.d.Registry.TrustKey(key); err != nil {
+		f.SetError(err.Error())
+		return
+	}
+	m.closeDialog()
+	m.flash = "publisher key pinned — refreshes now require a valid index signature"
 }
 
 // submitRegistrySource kicks an async refresh; the cache lands before the
@@ -166,6 +202,13 @@ func (m *Model) marketplaceView(w int) []string {
 		head = theme.TextDim().Render("(no registry — \"r\" to set a git URL or path)")
 	}
 	out := []string{head}
+	if keys, _ := m.d.Registry.TrustedKeys(); len(keys) > 0 {
+		out = append(out, theme.TextDim().Render(
+			"trust: "+itoa(len(keys))+" publisher key(s) pinned — signed index required (t pin · T clear)"))
+	} else {
+		out = append(out, theme.TextDim().Render(
+			"trust: digest-only — t to pin a publisher key"))
+	}
 	if m.mktEdit {
 		out = append(out, theme.TabActive().Render("/ "+m.mktQuery)+"▏")
 	} else if m.mktQuery != "" {

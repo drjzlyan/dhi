@@ -32,6 +32,8 @@ const (
 	dlgLibDelete
 	dlgRegistrySource
 	dlgRegistryInstall
+	dlgRegistryTrustKey
+	dlgRegistryUntrust
 	dlgDisplay // read-only: profile, standards preview, last-run info
 )
 
@@ -115,6 +117,8 @@ func (m *Model) submitDialog() {
 		m.submitLibrary()
 	case dlgRegistrySource:
 		m.submitRegistrySource()
+	case dlgRegistryTrustKey:
+		m.submitRegistryTrustKey()
 	}
 }
 
@@ -144,6 +148,21 @@ func (m *Model) submitConfirmDialog() {
 		m.submitLibraryDelete(target)
 	case dlgRegistryInstall:
 		m.submitRegistryInstall(target)
+	case dlgRegistryUntrust:
+		if m.d.Registry == nil {
+			m.closeDialog()
+			m.flash = "failed: registry unavailable"
+			return
+		}
+		keys, _ := m.d.Registry.TrustedKeys()
+		for _, k := range keys {
+			if err := m.d.Registry.UntrustKey(k); err != nil {
+				m.dlg.Lines = append(m.dlg.Lines[:2], theme.DangerText().Render(err.Error()))
+				return
+			}
+		}
+		m.closeDialog()
+		m.flash = "cleared trusted publisher keys"
 	case dlgAutoDelete:
 		if m.d.Autopilots == nil {
 			m.closeDialog()

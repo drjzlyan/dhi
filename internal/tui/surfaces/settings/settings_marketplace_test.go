@@ -2,6 +2,8 @@ package settings
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
 	"os"
 	"path/filepath"
 	"strings"
@@ -123,4 +125,55 @@ func TestMarketplaceUnavailable(t *testing.T) {
 	feed(m, "j")
 	feed(m, "enter")
 	feed(m, "r")
+}
+
+func TestMarketplaceTrustKey(t *testing.T) {
+	m, ws, _, _ := agentSurface(t)
+	m.d.Registry = registry.New(ws)
+	gotoMarketplace(m)
+
+	// Digest-only by default.
+	if view := strings.Join(m.marketplaceView(80), "\n"); !strings.Contains(view, "digest-only") {
+		t.Fatalf("default trust line = %q", view)
+	}
+
+	// t opens the pin dialog; a malformed key keeps it open with an error.
+	feed(m, "t")
+	if m.dlg == nil || m.dkind != dlgRegistryTrustKey {
+		t.Fatal("t did not open the publisher-key dialog")
+	}
+	typeDialog(m, "not-a-key")
+	feed(m, "enter")
+	if m.dlg == nil || m.dform.Err == "" {
+		t.Fatalf("malformed key accepted: dlg=%v err=%q", m.dlg, m.dform.Err)
+	}
+
+	// A valid key pins and flips the trust line (reopen for a clean field).
+	pub, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	feed(m, "esc")
+	feed(m, "t")
+	typeDialog(m, registry.PublicKeyHex(pub))
+	feed(m, "enter")
+	if m.dlg != nil {
+		t.Fatal("valid key did not close the dialog")
+	}
+	if keys, _ := m.d.Registry.TrustedKeys(); len(keys) != 1 {
+		t.Fatalf("pinned keys = %v", keys)
+	}
+	if view := strings.Join(m.marketplaceView(80), "\n"); !strings.Contains(view, "signed index required") {
+		t.Fatalf("trust line after pin = %q", view)
+	}
+
+	// T confirms the clear.
+	feed(m, "T")
+	if m.dlg == nil || m.dkind != dlgRegistryUntrust {
+		t.Fatal("T did not open the clear dialog")
+	}
+	feed(m, "enter")
+	if keys, _ := m.d.Registry.TrustedKeys(); len(keys) != 0 {
+		t.Fatalf("keys after clear = %v", keys)
+	}
 }

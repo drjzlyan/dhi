@@ -18,8 +18,13 @@ capable act inside the IDE.
   SHA-256 content digest per pack; refresh clones through the hermetic
   git path and caches under `.dhi/registry` (offline browse); install
   recomputes the canonical digest and refuses by name on mismatch.
-  Digest pinning is the trust anchor; cryptographic signature
-  verification is the recorded follow-on.
+  Digest pinning is the baseline trust anchor; **Ed25519 index
+  signatures** are now enforced: a publisher ships a detached
+  `index.toml.sig`, the user pins the publisher key in
+  `.dhi/registry/trusted_keys` (MARKETPLACE `t` pin / `T` clear), and
+  every refresh + cached read verifies the signature. With a key pinned
+  an unsigned/tampered index refuses by name; with no key the registry
+  stays in its documented digest-only mode (`sign.go`).
 - Settings MARKETPLACE browses/searches/inspects/installs; `doctor`
   reports `registry`, `packs/provenance` and `mcp/servers` posture.
 - `internal/agentkit/mcpbridge` serves installed servers to an agent
@@ -49,8 +54,7 @@ model.
 - A curated index (a git repo of pack manifests + digests) is fetched
   through the hermetic git path, digested/signature-checked, and cached.
   Browsing/search works offline from cache; install upgrades only when
-  the index entry verifies.
-- Settings MARKETPLACE: browse, search, inspect contents, install, and
+  the index entry verifies.- Settings MARKETPLACE: browse, search, inspect contents, install, and
   see provenance.
 
 ## Part C — MCP servers under trust

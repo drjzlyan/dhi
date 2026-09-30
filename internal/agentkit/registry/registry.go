@@ -9,6 +9,11 @@
 // Only SHA-256 digests exist today; cryptographic signature verification
 // is a deliberate follow-on (the index is reviewable, and installs are
 // digest-pinned against it).
+//
+// Follow-on landed: a publisher may sign index.toml with an Ed25519 key
+// (detached index.toml.sig). Pin the publisher key in
+// .dhi/registry/trusted_keys and every refresh+cached read verifies it;
+// see sign.go.
 package registry
 
 import (
@@ -125,6 +130,7 @@ func New(ws *workspace.Workspace) *Registry { return &Registry{ws: ws} }
 
 func (r *Registry) dir() string       { return filepath.Join(r.ws.Root, workspace.DirRegistry) }
 func (r *Registry) cachePath() string { return filepath.Join(r.dir(), "index.toml") }
+func (r *Registry) sigPath() string   { return filepath.Join(r.dir(), "index.toml.sig") }
 func (r *Registry) srcPath() string   { return filepath.Join(r.dir(), "source") }
 func (r *Registry) stampPath() string { return filepath.Join(r.dir(), "fetched_at") }
 
@@ -152,7 +158,9 @@ func (r *Registry) FetchedAt() (time.Time, bool) {
 }
 
 // index reads the cached index. A missing cache is a named error (run a
-// refresh first) — browsing never silently pretends to be empty.
+// refresh first) — browsing never silently pretends to be empty. When a
+// publisher key is pinned, the cached index must carry a signature that
+// verifies against it (a tampered or unsigned cache refuses by name).
 func (r *Registry) index() (*Index, error) {
 	data, err := os.ReadFile(r.cachePath())
 	if os.IsNotExist(err) {
@@ -160,6 +168,19 @@ func (r *Registry) index() (*Index, error) {
 	}
 	if err != nil {
 		return nil, fmt.Errorf("registry: read cache: %w", err)
+	}
+	keys, err := r.decodedKeys()
+	if err != nil {
+		return nil, err
+	}
+	if len(keys) > 0 {
+		sig, serr := os.ReadFile(r.sigPath())
+		if serr != nil {
+			return nil, fmt.Errorf("registry: trusted key pinned but cached index is unsigned — refresh from a signed source")
+		}
+		if verr := VerifyIndex(data, string(sig), keys); verr != nil {
+			return nil, verr
+		}
 	}
 	return Parse(data)
 }
@@ -203,11 +224,37 @@ func (r *Registry) Refresh(ctx context.Context, source string) error {
 	if _, err := Parse(data); err != nil {
 		return err
 	}
+	// Signature policy (F-034 follow-on): with a pinned publisher key the
+	// source MUST ship a verifying index.toml.sig; without one the
+	// registry stays in digest-only mode.
+	keys, err := r.decodedKeys()
+	if err != nil {
+		return err
+	}
+	var sig []byte
+	if raw, serr := os.ReadFile(filepath.Join(dir, sigFile)); serr == nil {
+		sig = raw
+	}
+	if len(keys) > 0 {
+		if sig == nil {
+			return fmt.Errorf("registry: a publisher key is pinned but the source index is unsigned — sign it or untrust the key")
+		}
+		if verr := VerifyIndex(data, string(sig), keys); verr != nil {
+			return verr
+		}
+	}
 	if err := os.MkdirAll(r.dir(), 0o755); err != nil {
 		return fmt.Errorf("registry: mkdir: %w", err)
 	}
 	if err := writeAtomic(r.cachePath(), data); err != nil {
 		return err
+	}
+	if sig != nil {
+		if err := writeAtomic(r.sigPath(), sig); err != nil {
+			return err
+		}
+	} else {
+		_ = os.Remove(r.sigPath())
 	}
 	if err := writeAtomic(r.srcPath(), []byte(source+"\n")); err != nil {
 		return err
