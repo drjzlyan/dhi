@@ -1,10 +1,11 @@
 # STATE — current position
 
-Updated: 2026-09-30 (session 32: M15 P3a — antigravity MCP wired and
-live-verified; all six adapters now serve DHI tools over the loopback
-endpoint. Remaining P3 step: remove `dhi-action` at parity.)
+Updated: 2026-09-30 (session 32: M15 complete — antigravity MCP wired
+and live-verified, all six adapters serve DHI tools over the loopback
+endpoint, and the `dhi-action` fallback is removed at parity. Only the
+deferred `api:<provider>` engine kind remains.)
 
-### Session 32 (M15 P3a — antigravity MCP via --gemini_dir mirror)
+### Session 32 (M15 P3a + P3b — antigravity MCP; dhi-action removed)
 
 - `agy` reads MCP servers only from `<gemini_dir>/config/mcp_config.json`
   and takes the dir via the undocumented-but-working `--gemini_dir`
@@ -34,12 +35,16 @@ endpoint. Remaining P3 step: remove `dhi-action` at parity.)
   doctor/fallback test cases are unreachable via real adapters; the only
   remaining warn is "no engine and no workspace default".
 - Known flakes unchanged. Untracked `.dhi/agents/dev/` — do NOT commit.
-- **Next (P3b):** remove the `dhi-action` fallback at parity — add a
-  served `pr_open` tool (the only toolbridge action with no MCP
-  equivalent; task_create/status/assign are already served), then drop
-  `toolbridge.ParseActions`/`Bridge`/`dispatchActions`, the
-  `cliPrompt` advertising block + `mcp` param, and `Config.PR` (or move
-  the PR seam into dhitools.Deps). Update runtime/doctor/m14 tests.
+- **P3b done in the same session — `dhi-action` removed at parity:**
+  `pr_open` is now a served dhitools tool (new `dhitools.PRSeam` in
+  `Deps.PR`, scope `Push`, workflow `pr` gate + approval + per-changeset
+  fan-out; task_create/status/assign were already served). Deleted the
+  `internal/agentkit/toolbridge` package and the runtime's
+  `dispatchActions`/`bridge`/`allowedActions`/`cliPrompt` advertising
+  path (and the `mcp` param); `Config.PR` is now `dhitools.PRSeam`
+  wired into `serveTools`. Updated doctor `agent-tools` wording and
+  many "fallback" comments; removed the obsolete runtime action tests;
+  added `TestPROpenTool`/`TestPROpenRefusals`. `make verify` green.
 
 ### Session 31 (M20 — depth & cohesion, F-035)
 

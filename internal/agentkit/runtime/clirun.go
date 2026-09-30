@@ -17,11 +17,8 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/dhitools"
 	"github.com/drjzlyan/dhi/internal/agentkit/mcpbridge"
 	"github.com/drjzlyan/dhi/internal/agentkit/standards"
-	"github.com/drjzlyan/dhi/internal/agentkit/toolbridge"
-	"github.com/drjzlyan/dhi/internal/agentkit/tools"
 	"github.com/drjzlyan/dhi/internal/agentkit/workflow"
 	"github.com/drjzlyan/dhi/internal/mcp"
-	"github.com/drjzlyan/dhi/internal/sandbox"
 	"github.com/drjzlyan/dhi/internal/tasks"
 )
 
@@ -54,7 +51,7 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message) er
 			}
 		}
 	}
-	prompt, system := r.cliPrompt(ctx, e, trigger, serve != nil, wfText)
+	prompt, system := r.cliPrompt(ctx, e, trigger, wfText)
 	workdir := r.cliWorkdir(trigger)
 	mcpConfig, mcpEndpoint, mcpGeminiDir := "", "", ""
 	if serve != nil {
@@ -80,7 +77,6 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message) er
 					Author: e.m.ID, Text: run.Summary,
 				})
 			}
-			r.dispatchActions(ctx, e, trigger, run.Summary)
 			return nil
 		}
 		lastErr = fmt.Errorf("runtime: %s: run %s: %s", e.m.ID, run.ID, run.Error)
@@ -257,7 +253,7 @@ func (r *Runtime) saveTranscript(events []clirun.StreamEvent, run tasks.Run) str
 
 // serveSession is one per-turn IDE-tools server (nil when the agent
 // allowlist carries no served tools, or the adapter has no verified
-// MCP wiring — the dhi-action fallback stays for those).
+// MCP wiring).
 type serveSession struct {
 	configPath string // temp MCP config file ("" for inline adapters)
 	endpoint   string // the loopback URL the adapter must reach
@@ -304,6 +300,7 @@ func (r *Runtime) serveTools(e *entry, trigger bus.Message) *serveSession {
 			Scopes:    r.agentScopes(e.m),
 			Gate:      gate,
 			OnRun:     onRun,
+			PR:        r.cfg.PR,
 			Channel:   trigger.Channel,
 			Thread:    trigger.Thread,
 			Workdir:   r.cliWorkdir(trigger),
@@ -341,8 +338,8 @@ func (r *Runtime) serveTools(e *entry, trigger bus.Message) *serveSession {
 	}
 	endpoint, stop, err := mcp.ServeLoopback(handler)
 	if err != nil {
-		// Named degrade, never silent: the turn proceeds on the
-		// dhi-action fallback and the thread sees why (F-011).
+		// Named degrade, never silent: the turn proceeds without served
+		// tools and the thread sees why (F-011).
 		closeBridge()
 		_, _ = r.cfg.Bus.Post(bus.Message{
 			Channel: trigger.Channel, Thread: trigger.Thread,
@@ -471,9 +468,8 @@ func (c compositeHandler) CallTool(ctx context.Context, name string, args json.R
 // prompt and assembles the system block (grounding + memory + KB hits +
 // standards), mirroring the in-house prompt() but as text a CLI accepts.
 // ctx drives the KB search (bounded retrieval, not part of the turn
-// timeout). mcp=true suppresses the dhi-action advertising — the MCP
-// tools/list carries the contract for those adapters (F-028).
-func (r *Runtime) cliPrompt(ctx context.Context, e *entry, trigger bus.Message, mcp bool, wfText string) (prompt, system string) {
+// timeout).
+func (r *Runtime) cliPrompt(ctx context.Context, e *entry, trigger bus.Message, wfText string) (prompt, system string) {
 	// F-027: the effective persona comes from the behaviour composer —
 	// manifest system + role template + attached skills — with the
 	// runtime-owned layers (grounding, actions, memory, KB, standards)
@@ -494,14 +490,6 @@ func (r *Runtime) cliPrompt(ctx context.Context, e *entry, trigger bus.Message, 
 	grounding := "\n\nFiles are addressed as <member>/<rel-path>. Members: " + strings.Join(members, ", ")
 	grounding += "\nThe reserved workspace dotdir is addressed as .dhi/<rel-path>; ideation artifacts belong under .dhi/sessions/<session>/<file>."
 	system += grounding
-	if !mcp {
-		if actions := r.allowedActions(e); len(actions) > 0 {
-			system += "\n\nDHI actions: end your reply with a fenced ```dhi-action block to request one. " +
-				"Shape: {\"action\": \"<name>\", \"args\": {...}}. Valid names: " +
-				strings.Join(actions, ", ") + ". Each runs after the human approves it; " +
-				"the result arrives as a reply in this thread."
-		}
-	}
 	system += r.memoryBlock(e.m.ID)
 	system += r.knowledgeBlock(ctx, trigger.Text)
 	if r.cfg.Standards {
@@ -678,90 +666,6 @@ func truncateRunes(s string, n int) string {
 		return s
 	}
 	return string(r[:n-1]) + "…"
-}
-
-// dispatchActions runs the F-020 toolbridge: dhi-action blocks in the
-// agent's final message execute against the real stores (allowlist +
-// approvals gated), and every outcome — result or named refusal — is
-// posted to the trigger thread so the agent sees it on its next turn.
-func (r *Runtime) dispatchActions(ctx context.Context, e *entry, trigger bus.Message, summary string) {
-	reqs, parseErrs := toolbridge.ParseActions(summary)
-	if len(reqs) == 0 && len(parseErrs) == 0 {
-		return
-	}
-	b := r.bridge(e)
-	post := func(text string) {
-		_, _ = r.cfg.Bus.Post(bus.Message{
-			Channel: trigger.Channel, Thread: trigger.Thread,
-			Author: e.m.ID, Text: text,
-		})
-	}
-	for _, perr := range parseErrs {
-		post("dhi-action refused: " + perr.Error())
-	}
-	for _, req := range reqs {
-		res, err := b.Dispatch(ctx, e.m.ID, req)
-		if err != nil {
-			post("dhi-action refused: " + err.Error())
-			continue
-		}
-		post(res)
-	}
-}
-
-// bridge wires the toolbridge seams from the runtime config: the
-// manifest allowlist gates every action, approvals park mutating ops
-// on the human's y/n seam, and the PR seam (when wired) opens PRs.
-func (r *Runtime) bridge(e *entry) *toolbridge.Bridge {
-	allow := map[string]bool{}
-	for _, t := range e.m.Tools {
-		allow[t] = true
-	}
-	var approvals *tools.Approvals
-	if r.cfg.Approvals != nil {
-		approvals = r.cfg.Approvals
-	}
-	b := &toolbridge.Bridge{
-		Tasks:  r.cfg.Tasks,
-		OpenPR: r.cfg.PR,
-		Allow:  func(agentID, action string) bool { return allow[action] },
-	}
-	if r.cfg.Workflows && r.cfg.Tasks != nil {
-		b.Gate = func(slug, seam string) []string {
-			t, ok := r.cfg.Tasks.Get(slug)
-			if !ok {
-				return nil
-			}
-			if g := r.taskWorkflowGate(e.m, t); g != nil {
-				return g(seam)
-			}
-			return nil
-		}
-	}
-	if approvals != nil {
-		b.Approve = func(ctx context.Context, agentID, detail string) error {
-			return approvals.Ask(ctx, agentID, sandbox.OpExec, detail,
-				"agent-requested DHI action")
-		}
-	}
-	return b
-}
-
-// allowedActions lists the bridge actions the manifest allows, in
-// documentation order — the prompt-side contract (agents can only
-// request what their tools allowlist).
-func (r *Runtime) allowedActions(e *entry) []string {
-	allow := map[string]bool{}
-	for _, t := range e.m.Tools {
-		allow[t] = true
-	}
-	var out []string
-	for _, a := range toolbridge.All() {
-		if allow[a] {
-			out = append(out, a)
-		}
-	}
-	return out
 }
 
 // excludeFromGit appends a worktree-relative path to the repo's

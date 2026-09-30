@@ -13,6 +13,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/knowledge"
 	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
 	"github.com/drjzlyan/dhi/internal/agentkit/memory"
+	"github.com/drjzlyan/dhi/internal/agentkit/scopes"
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
 	"github.com/drjzlyan/dhi/internal/mcp"
 	"github.com/drjzlyan/dhi/internal/sandbox"
@@ -247,3 +248,62 @@ var _ = sandbox.OpExec
 
 // sleepTick yields briefly while waiting for an approval to park.
 func sleepTick() { time.Sleep(2 * time.Millisecond) }
+
+// TestPROpenTool covers the served pr_open tool: the approval-gated
+// fan-out opens one PR per changeset through the review seam, and the
+// workflow `pr` gate hard-blocks before any approval.
+func TestPROpenTool(t *testing.T) {
+	f, m := newFixture(t, "pr_open")
+	type prCall struct{ member, branch, title, base string }
+	var calls []prCall
+	h := Deps{Agent: m, Tasks: f.tasks, Approvals: f.approvals, Channel: "#general",
+		PR: func(_ context.Context, member, branch, title, base string) (string, error) {
+			calls = append(calls, prCall{member, branch, title, base})
+			return "PR #7 " + member, nil
+		}}.Handler()
+
+	f.tasks.Create("feat", "Feature", "", "")
+	if err := f.tasks.RecordChangeSet("feat", tasks.ChangeSet{Member: "api", Branch: "task/feat", Path: "wt"}); err != nil {
+		t.Fatal(err)
+	}
+	out, isErr := callAsync(h, "pr_open", `{"slug":"feat","title":"Feature","base":"main"}`, f)(t)
+	if isErr || !strings.Contains(out, "api") {
+		t.Fatalf("pr_open = %q isErr=%v", out, isErr)
+	}
+	if len(calls) != 1 || calls[0].member != "api" || calls[0].branch != "task/feat" ||
+		calls[0].title != "Feature" || calls[0].base != "main" {
+		t.Fatalf("seam calls = %+v", calls)
+	}
+}
+
+func TestPROpenRefusals(t *testing.T) {
+	f, m := newFixture(t, "pr_open")
+	f.tasks.Create("feat", "Feature", "", "")
+	_ = f.tasks.RecordChangeSet("feat", tasks.ChangeSet{Member: "api", Branch: "b", Path: "wt"})
+	auto := scopes.Set{scopes.Read: scopes.Auto, scopes.Push: scopes.Auto}
+
+	// No review seam → named refusal.
+	h := Deps{Agent: m, Tasks: f.tasks, Channel: "#general", Scopes: auto}.Handler()
+	if out, isErr := call(h, t, "pr_open", `{"slug":"feat","title":"T"}`); !isErr ||
+		!strings.Contains(out, "no review seam") {
+		t.Fatalf("nil seam = %q isErr=%v", out, isErr)
+	}
+
+	// Workflow `pr` gate blocks before the seam is reached.
+	h2 := Deps{Agent: m, Tasks: f.tasks, Channel: "#general", Scopes: auto,
+		PR:   func(context.Context, string, string, string, string) (string, error) { return "x", nil },
+		Gate: func(seam string) []string { return []string{"tests not passing"} }}.Handler()
+	if out, isErr := call(h2, t, "pr_open", `{"slug":"feat","title":"T"}`); !isErr ||
+		!strings.Contains(out, "workflow blocks PR") {
+		t.Fatalf("gate = %q isErr=%v", out, isErr)
+	}
+
+	// No changeset → named refusal.
+	f.tasks.Create("bare", "Bare", "", "")
+	h3 := Deps{Agent: m, Tasks: f.tasks, Channel: "#general", Scopes: auto,
+		PR: func(context.Context, string, string, string, string) (string, error) { return "x", nil }}.Handler()
+	if out, isErr := call(h3, t, "pr_open", `{"slug":"bare","title":"T"}`); !isErr ||
+		!strings.Contains(out, "no worktree") {
+		t.Fatalf("no changeset = %q isErr=%v", out, isErr)
+	}
+}

@@ -86,7 +86,7 @@ func TestWorkflowGuidanceReachesSystem(t *testing.T) {
 	}
 	wfText := workflow.Render(def)
 	_, system := h.rt.cliPrompt(t.Context(), h.rt.agents["scout"],
-		bus.Message{Channel: "#general", Author: bus.Human, Text: "hello"}, false, wfText)
+		bus.Message{Channel: "#general", Author: bus.Human, Text: "hello"}, wfText)
 	if !strings.Contains(system, "Feature workflow (feature)") {
 		t.Fatalf("workflow guidance missing from system block:\n%s", system)
 	}

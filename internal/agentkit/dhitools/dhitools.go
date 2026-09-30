@@ -3,7 +3,7 @@
 // gated by the agent manifest's `tools` allowlist (a tool absent from
 // the list is absent from tools/list — the agent sees what it owns),
 // and mutating tools cross tools.Approvals.Ask so the human's y/n
-// gates every effect, exactly as the dhi-action bridge did.
+// gates every effect.
 //
 // The handlers run IN the DHI process: the runtime serves them over a
 // per-turn loopback endpoint, so approvals and stores are the same
@@ -52,6 +52,7 @@ type Deps struct {
 	Run       CommandRunner        // allowlisted command runner; nil refuses `run`
 	Editor    EditorAPI            // app-owned editor seam (ADR-0023); nil refuses editor tools
 	Scopes    scopes.Set           // capability effects; nil = scopes.Default()
+	PR        PRSeam               // opens task PRs (F-020/F-032); nil refuses pr_open
 
 	// Gate enforces the active feature workflow (F-031) at a seam: it
 	// returns the refusal reasons for acting on seam ("git:commit",
@@ -83,6 +84,11 @@ func (d Deps) checkGate(seam string) []string {
 	return d.Gate(seam)
 }
 
+// PRSeam opens a PR for one member's branch and returns the
+// human-readable result (the review service in main). nil refuses
+// pr_open by name.
+type PRSeam func(ctx context.Context, member, branch, title, base string) (string, error)
+
 // tool is one served tool's declaration + handler. Args parse in two
 // phases: parse runs BEFORE the approval gate so a malformed call is
 // refused without parking a pointless human prompt (F-028: the y/n is
@@ -104,7 +110,7 @@ var servedSlugs = []string{
 	"run", "ask_human",
 	"editor_open", "editor_reveal", "editor_apply_edit",
 	"lsp_hover", "lsp_definition", "lsp_references", "lsp_rename", "lsp_code_action",
-	"task_list", "task_create", "task_status", "task_assign",
+	"task_list", "task_create", "task_status", "task_assign", "pr_open",
 	"kb_search", "kb_contribute",
 	"memory_append", "memory_read_notes", "memory_write_notes",
 	"channel_read", "channel_post",
@@ -339,6 +345,59 @@ func (d Deps) taskTools() []tool {
 				return "", err
 			}
 			return "task " + a.Slug + " assigned to " + orNone(a.Assignee), nil
+		},
+	})
+	out = append(out, tool{
+		info: mcp.ToolInfo{
+			Name:        "pr_open",
+			Description: "Open a pull request for a task's changesets (one PR per member branch). Args: {\"slug\": \"...\", \"title\": \"...\", \"base\": \"main\"}. Mutating: crosses approvals.",
+			InputSchema: json.RawMessage(`{"type":"object","required":["slug","title"],"properties":{"slug":{"type":"string"},"title":{"type":"string"},"base":{"type":"string"}},"additionalProperties":false}`),
+		},
+		parse: func(raw json.RawMessage) (any, error) {
+			var a struct {
+				Slug  string `json:"slug"`
+				Title string `json:"title"`
+				Base  string `json:"base"`
+			}
+			if err := args(raw, &a); err != nil {
+				return nil, err
+			}
+			return a, nil
+		},
+		exec: func(ctx context.Context, dec any) (string, error) {
+			a := dec.(struct {
+				Slug  string `json:"slug"`
+				Title string `json:"title"`
+				Base  string `json:"base"`
+			})
+			slug := strings.TrimSpace(a.Slug)
+			if d.PR == nil {
+				return "", fmt.Errorf("pr_open unavailable: no review seam wired")
+			}
+			// Workflow gate (F-031): tests-before-PR is a hard block.
+			if reasons := d.checkGate("pr"); len(reasons) > 0 {
+				return "", fmt.Errorf("workflow blocks PR: %s", strings.Join(reasons, "; "))
+			}
+			t, ok := d.Tasks.Get(slug)
+			if !ok {
+				return "", fmt.Errorf("unknown task %q", slug)
+			}
+			if len(t.ChangeSets) == 0 {
+				return "", fmt.Errorf("task %s has no worktree — attach one first", slug)
+			}
+			var opened, failures []string
+			for _, cs := range t.ChangeSets {
+				res, err := d.PR(ctx, cs.Member, cs.Branch, a.Title, a.Base)
+				if err != nil {
+					failures = append(failures, cs.Member+": "+err.Error())
+					continue
+				}
+				opened = append(opened, cs.Member+": "+res)
+			}
+			if len(failures) > 0 {
+				return strings.Join(opened, "; "), fmt.Errorf("pr_open failed for %s", strings.Join(failures, "; "))
+			}
+			return strings.Join(opened, "; "), nil
 		},
 	})
 	return out

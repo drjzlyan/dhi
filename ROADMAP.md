@@ -734,7 +734,8 @@ log. See [product.md](docs/product.md) for the vision.
 
 ## M15 — Engine inversion & IDE tool surface (F-030) *(next)*
 
-Status: in progress (P0 + P1 mostly landed 2026-09-26). ADR-0019
+Status: complete (2026-09-30; only the deferred `api:` engine kind
+remains). ADR-0019
 (supersedes ADR-0012/0013) + ADR-0023 (editor/LSP tool seam). The host
 CLI becomes the engine; DHI owns the loop, the tools, and the authority.
 Adapter selectability follows detection: only CLIs installed on the
@@ -771,13 +772,15 @@ verified 2026-09-26 on 1.2.11 (replaces the gemini adapter).
       doctor `authority` row + grant-memory (`a` allow-always per
       agent+scope); Settings scopes editor landed — P2 complete; `run` network posture landed
       (denied by default, host CLIs keep network)
-- [ ] P3 — MCP tool serving verified for **all six** adapters; sandbox
+- [x] P3 — MCP tool serving verified for **all six** adapters; sandbox
       tightened (network deny-by-default, declared origins, exec
       sandboxed); doctor `agent-tools` row with the containment caveat
       — all six wired + live-verified (claude/opencode/codex/cursor/
       copilot 2026-09-26; antigravity `--gemini_dir` mirror 2026-09-30),
-      sandbox + doctor row landed (M15 P2/M19 P2); **remaining:**
-      remove the `dhi-action` fallback at parity
+      sandbox + doctor row landed (M15 P2/M19 P2); `dhi-action` removed
+      at parity — the `pr_open` action is now a served tool (task
+      create/status/assign were already served), and the final-message
+      parsing path (`toolbridge`) is gone
 - [ ] Deferred: `api:<provider>` engine kind (hard guarantee / offline)
 
 ## M16 — Feature workflows (F-031)

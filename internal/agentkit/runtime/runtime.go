@@ -26,7 +26,6 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/org"
 	"github.com/drjzlyan/dhi/internal/agentkit/scopes"
 	"github.com/drjzlyan/dhi/internal/agentkit/standards"
-	"github.com/drjzlyan/dhi/internal/agentkit/toolbridge"
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
 	"github.com/drjzlyan/dhi/internal/agentkit/workflow"
 	"github.com/drjzlyan/dhi/internal/gitcore"
@@ -74,9 +73,9 @@ type Config struct {
 	// (F-031) and enforces its gates at DHI's seams. A malformed
 	// workflow definition refuses the turn by name (ADR-0011).
 	Workflows bool
-	// PR opens a PR for a task's branch (F-020 pr_open; the review
-	// service in main). nil = pr_open refuses by name.
-	PR toolbridge.PRSeam
+	// PR opens a PR for a task's branch (the served `pr_open` tool; the
+	// review service in main). nil = pr_open refuses by name.
+	PR dhitools.PRSeam
 	// Memory gives agents persistent context across turns (M14 P1):
 	// the journal tail and notes ride the system block. Nil = no
 	// memory injection (the block names it, never silent).

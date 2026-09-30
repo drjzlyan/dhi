@@ -446,9 +446,9 @@ func Runtimes() []Check {
 // AgentTools reports the IDE-tools capability (F-028/ADR-0017): the
 // runtime serves DHI's own tools (tasks/KB/memory/channels/search) to
 // agents over a per-turn loopback MCP endpoint. Exactly one row: ok
-// when idle or when every agent that allowlists a served tool is on an
-// adapter with verified MCP wiring; warn naming each agent whose
-// runtime lacks it (its dhi-action fallback stays).
+// when idle or when every agent that allowlists a served tool can be
+// served (an engine that resolves to a wired adapter); warn naming each
+// agent that declares no engine and no workspace default.
 func AgentTools(wsRoot string) []Check {
 	if wsRoot == "" {
 		return nil
@@ -510,7 +510,7 @@ func AgentTools(wsRoot string) []Check {
 			parts = append([]string{"serving to " + strings.Join(ready, ", ")}, fallback...)
 		}
 		return []Check{{Name: "agent-tools", Status: Warn,
-			Detail: strings.Join(parts, "; ") + " (dhi-action fallback retained)"}}
+			Detail: strings.Join(parts, "; ")}}
 	}
 }
 

@@ -73,7 +73,7 @@ func TestMaxPromptArgBudget(t *testing.T) {
 // TestMCPConfigWiring pins the F-028 adapter contract: every MCPOK
 // adapter declares a complete injection (a config-file renderer plus
 // either argv or env); argv takers emit the flags; env takers never
-// leak the path into argv (their dhi-action fallback stays otherwise).
+// never leak the path into argv.
 func TestMCPConfigWiring(t *testing.T) {
 	const path = "/tmp/dhi-mcp.json"
 	const url = "http://127.0.0.1:1/mcp"

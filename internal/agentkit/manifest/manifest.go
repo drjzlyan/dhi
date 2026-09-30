@@ -72,7 +72,7 @@ var (
 
 // BuiltinTools are the native tool names a manifest may allowlist.
 // Any other entry must be an mcp__<server>__<tool> reference resolved
-// against connected MCP servers at runtime. The F-020 toolbridge
+// against connected MCP servers at runtime.
 // actions (task cards + PRs) are builtins too — the work-facing moves
 // a human makes by hand. The F-028 served tools (tasks/KB/memory/
 // channels/workspace search) are builtins as well: a manifest may

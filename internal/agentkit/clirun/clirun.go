@@ -54,7 +54,7 @@ type RunInput struct {
 	Workdir string // run cwd (the task worktree); "" = inherit
 	// MCPConfig names a temp config file registering DHI's IDE-tools
 	// server (F-028/ADR-0017). Adapters with a verified MCP flag wire
-	// it; others ignore it (their dhi-action fallback stays).
+	// it; every shipped adapter is MCP-wired today.
 	MCPConfig string
 	// MCPURL is the loopback endpoint the per-turn config file carries;
 	// argv-delivered adapters (codex) reference it directly.
@@ -120,7 +120,7 @@ type CLI struct {
 	// MCPOK reports whether the adapter has a verified MCP-server
 	// wiring (F-028): the runtime serves DHI's IDE tools to these
 	// adapters over a per-turn loopback endpoint. Adapters without it
-	// keep the dhi-action fallback contract.
+	// serve DHI's tools over the per-turn loopback endpoint.
 	MCPOK bool
 	// MCPConfigFile renders the temp config file body that registers
 	// DHI's loopback endpoint in the adapter's own format. Optional:

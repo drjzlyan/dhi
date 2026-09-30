@@ -244,7 +244,7 @@ func TestServeToolsConfigForMCPAdapter(t *testing.T) {
 }
 
 // TestNoServedToolsNoSession pins the negative: an allowlist with no
-// served slug never starts the endpoint (the dhi-action fallback stays).
+// served slug never starts the endpoint.
 func TestNoServedToolsNoSession(t *testing.T) {
 	h := newHarness(t, baseDoc())
 	// Narrow the allowlist to a non-served builtin (the fs + git
@@ -283,7 +283,7 @@ func TestServeToolsGeminiDirForAntigravity(t *testing.T) {
 
 // TestTurnWiresMCPConfigToClaude pins the spawn wiring end-to-end:
 // claude gets --mcp-config <temp> --strict-mcp-config, and the
-// dhi-action contract is suppressed in the system block (MCP carries it).
+// system block advertises no dhi-action block (MCP carries the tools).
 func TestTurnWiresMCPConfigToClaude(t *testing.T) {
 	h := newHarness(t, docTools("claude", `"memory_append"`))
 	h.rt.cfg.Memory = memory.Open(h.ws)
@@ -323,7 +323,7 @@ func TestCliPromptMemoryDegradeNamesIt(t *testing.T) {
 	h := newHarness(t, baseDoc())
 	h.rt.cfg.Knowledge = failingKB{}
 	prompt, system := h.rt.cliPrompt(context.Background(), h.rt.agents["scout"],
-		bus.Message{Channel: "#general", Author: bus.Human, Text: "hello"}, false, "")
+		bus.Message{Channel: "#general", Author: bus.Human, Text: "hello"}, "")
 	if !strings.Contains(system, "Knowledge base unavailable") {
 		t.Fatalf("named KB degrade missing:\n%s", system)
 	}

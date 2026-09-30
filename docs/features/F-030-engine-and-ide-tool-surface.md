@@ -28,7 +28,9 @@ sandbox (network deny-by-default, no free-form shell).
   still gates doctor. Model selection is per-agent (`model` key).
 - `dhi-action` final-message parsing is removed once every shipped
   adapter has verified MCP wiring (the `MCPOK=false` shipping state
-  ends).
+  ends). **Landed (2026-09-30):** all six adapters wired; the
+  `toolbridge` parser and dispatch path are deleted, and `pr_open`
+  became a served tool.
 
 ## Part B — the IDE tool catalog
 
@@ -111,7 +113,7 @@ sandbox (network deny-by-default, no free-form shell).
       copilot become selectable once installed and MCP-verified. The
       deprecated Gemini CLI was replaced by Antigravity (`agy`, live-
       verified 2026-09-26 on 1.2.11).
-- [~] Every shipped adapter serves DHI tools over the loopback endpoint
+- [x] Every shipped adapter serves DHI tools over the loopback endpoint
       (MCP wiring verified); `dhi-action` is gone. Landed: claude
       (--mcp-config, file+argv), opencode (OPENCODE_CONFIG, env file),
       codex (`-c mcp_servers.dhi.url=`, inline argv), cursor-agent
@@ -122,8 +124,9 @@ sandbox (network deny-by-default, no free-form shell).
       and antigravity (`agy`, live-verified 2026-09-30 on 1.2.11): a
       per-turn `--gemini_dir` mirror of `~/.gemini` (symlinked except
       `config/mcp_config.json`) injects the loopback endpoint without
-      mutating the user's global config. All six wired; removing
-      `dhi-action` at parity is the remaining step.
+      mutating the user's global config. `dhi-action` is removed at
+      parity: `pr_open` is now a served tool (task_create/status/assign
+      already were) and the `toolbridge` final-message parser is gone.
       The streamable-HTTP server was fixed in the same pass (GET SSE
       stream + SSE-framed POST replies + `2025-11-25` protocol +
       lowercase tool keys) — the legacy handler made opencode drop
