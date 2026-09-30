@@ -12,6 +12,7 @@ import (
 	"charm.land/bubbletea/v2"
 
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
+	"github.com/drjzlyan/dhi/internal/ideation"
 	"github.com/drjzlyan/dhi/internal/inbox"
 	"github.com/drjzlyan/dhi/internal/tasks"
 	"github.com/drjzlyan/dhi/internal/unread"
@@ -34,7 +35,11 @@ func (m *Model) inboxItems() []inbox.Item {
 	if m.taskStore != nil {
 		ts = m.taskStore.List()
 	}
-	items := inbox.Build(apprs, msgs, ts)
+	var props []ideation.Proposal
+	if m.sessions != nil {
+		props = m.sessions.PendingProposals()
+	}
+	items := inbox.Build(apprs, msgs, ts, props)
 	for i := range items {
 		if items[i].Kind == inbox.InReview {
 			if id := m.reviewIDFor(items[i].TaskSlug); id != "" {
@@ -193,6 +198,11 @@ func (m *Model) inboxJump(it inbox.Item) {
 		} else {
 			m.inboxHint = "in review  " + it.TaskSlug + " — attach a review first (w)"
 		}
+	case inbox.Proposal:
+		if m.openIdeator != nil && m.openIdeator(it.ProposalID) {
+			return
+		}
+		m.inboxHint = "proposal jump: Ideator unavailable or proposal decided"
 	}
 }
 

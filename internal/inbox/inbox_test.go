@@ -7,6 +7,7 @@ import (
 
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
+	"github.com/drjzlyan/dhi/internal/ideation"
 	"github.com/drjzlyan/dhi/internal/sandbox"
 	"github.com/drjzlyan/dhi/internal/tasks"
 	"github.com/drjzlyan/dhi/internal/unread"
@@ -28,7 +29,7 @@ func msg(id int64, channel, author, text string, at time.Time) unread.Item {
 
 func TestBuildApprovalRow(t *testing.T) {
 	ap := &tools.Approval{ID: 7, Agent: "scout", Op: sandbox.OpWrite, Target: ".dhi/tasks/a/b.md"}
-	items := Build([]*tools.Approval{ap}, nil, nil)
+	items := Build([]*tools.Approval{ap}, nil, nil, nil)
 	if len(items) != 1 {
 		t.Fatalf("got %d items", len(items))
 	}
@@ -46,7 +47,7 @@ func TestBuildAgentMessageRow(t *testing.T) {
 		msg(3, "dm:scout", "scout", "heads-up, contract renewal", clock(2026, 9, 2, 8, 0)),
 		msg(5, "#general", "scout", "@you needs a decision on the plan", clock(2026, 9, 2, 8, 5)),
 	}
-	items := Build(nil, msgs, nil)
+	items := Build(nil, msgs, nil, nil)
 	if len(items) != 2 {
 		t.Fatalf("got %d items: %+v", len(items), items)
 	}
@@ -75,7 +76,7 @@ func TestBuildRunFailedAndInReviewRows(t *testing.T) {
 			Runs: []tasks.Run{run("r2", tasks.RunOK,
 				clock(2026, 9, 2, 7, 0), clock(2026, 9, 2, 7, 30))}},
 	}
-	items := Build(nil, nil, ts)
+	items := Build(nil, nil, ts, nil)
 	if len(items) != 2 {
 		t.Fatalf("got %d items: %+v", len(items), items)
 	}
@@ -99,7 +100,7 @@ func TestBuildSkipsDoneTasksAndOkRuns(t *testing.T) {
 			Runs: []tasks.Run{run("r2", tasks.RunOK,
 				clock(2026, 9, 2, 8, 0), clock(2026, 9, 2, 8, 10))}},
 	}
-	if items := Build(nil, nil, ts); len(items) != 0 {
+	if items := Build(nil, nil, ts, nil); len(items) != 0 {
 		t.Fatalf("expected no items, got %+v", items)
 	}
 }
@@ -108,7 +109,7 @@ func TestSnoozedCarriedThrough(t *testing.T) {
 	until := clock(2026, 9, 3, 9, 0)
 	um := msg(4, "dm:muse", "muse", "later", clock(2026, 9, 2, 9, 0))
 	um.Snoozed = until
-	items := Build(nil, []unread.Item{um}, nil)
+	items := Build(nil, []unread.Item{um}, nil, nil)
 	if len(items) != 1 {
 		t.Fatalf("got %d", len(items))
 	}
@@ -133,7 +134,7 @@ func TestOrderBySeverityThenAge(t *testing.T) {
 			Runs: []tasks.Run{run("r1", tasks.RunTimeout,
 				clock(2026, 9, 2, 4, 0), clock(2026, 9, 2, 4, 10))}},
 	}
-	items := Build(appr, msgs, ts)
+	items := Build(appr, msgs, ts, nil)
 	got := []ItemKind{items[0].Kind, items[1].Kind, items[2].Kind, items[3].Kind, items[4].Kind}
 	want := []ItemKind{Approval, Approval, RunFailed, InReview, AgentMessage}
 	for i := range want {
@@ -148,10 +149,10 @@ func TestOrderBySeverityThenAge(t *testing.T) {
 
 func TestResolveRemovesRow(t *testing.T) {
 	appr := []*tools.Approval{{ID: 5, Agent: "scout", Op: sandbox.OpRead, Target: "README.md"}}
-	if items := Build(appr, nil, nil); len(items) != 1 {
+	if items := Build(appr, nil, nil, nil); len(items) != 1 {
 		t.Fatalf("before resolve: %d", len(items))
 	}
-	if items := Build(nil, nil, nil); len(items) != 0 {
+	if items := Build(nil, nil, nil, nil); len(items) != 0 {
 		t.Fatalf("resolved approval still listed: %+v", items)
 	}
 }
@@ -159,7 +160,7 @@ func TestResolveRemovesRow(t *testing.T) {
 func TestMessageQuoteTruncated(t *testing.T) {
 	long := strings.Repeat("decide ", 40) // > 96 runes
 	msgs := []unread.Item{msg(1, "dm:muse", "muse", long, clock(2026, 9, 2, 9, 0))}
-	items := Build(nil, msgs, nil)
+	items := Build(nil, msgs, nil, nil)
 	if len(items) != 1 {
 		t.Fatalf("got %d", len(items))
 	}
@@ -174,7 +175,7 @@ func TestDependencyProposalItem(t *testing.T) {
 			{FromMember: "api", ToMember: "web", Kind: "api", Decision: tasks.PropPending},
 			{FromMember: "api", ToMember: "cli", Kind: "build", Decision: tasks.PropDeclined},
 		}}
-	items := Build(nil, nil, []tasks.Task{tk})
+	items := Build(nil, nil, []tasks.Task{tk}, nil)
 	var deps []Item
 	for _, it := range items {
 		if it.Kind == Dependency {
@@ -186,5 +187,30 @@ func TestDependencyProposalItem(t *testing.T) {
 	}
 	if !strings.Contains(deps[0].Row, "api → web") {
 		t.Fatalf("row = %q", deps[0].Row)
+	}
+}
+
+func TestIdeationProposalItem(t *testing.T) {
+	props := []ideation.Proposal{
+		{ID: 3, Caller: "scout", Name: "Auth review", Mode: ideation.ModeGroup,
+			Decision: ideation.ProposalPending, At: time.Unix(100, 0)},
+	}
+	items := Build(nil, nil, nil, props)
+	if len(items) != 1 || items[0].Kind != Proposal {
+		t.Fatalf("items = %+v", items)
+	}
+	it := items[0]
+	if it.ProposalID != 3 || it.ProposalName != "Auth review" || it.ProposalCaller != "scout" {
+		t.Fatalf("proposal item = %+v", it)
+	}
+	if !strings.Contains(it.Row, "scout") || !strings.Contains(it.Row, "Auth review") ||
+		!strings.Contains(it.Row, "a session") {
+		t.Fatalf("row = %q", it.Row)
+	}
+	// Proposals rank below approvals but above failed runs.
+	ap := &tools.Approval{ID: 1, Agent: "a", Op: sandbox.OpWrite, Target: "x"}
+	both := Build([]*tools.Approval{ap}, nil, nil, props)
+	if len(both) != 2 || both[0].Kind != Approval || both[1].Kind != Proposal {
+		t.Fatalf("rank order = %+v", both)
 	}
 }

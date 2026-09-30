@@ -395,6 +395,27 @@ func (a *App) SelectReviewer(id string) bool {
 	return false
 }
 
+// SelectProposal jumps the ideator surface to one pending proposal (the
+// F-033 inbox jump). Returns false when unknown or unavailable.
+func (a *App) SelectProposal(id int) bool {
+	for i, s := range a.surfaces {
+		if s.Meta().ID != "ideator" {
+			continue
+		}
+		sel, ok := s.(interface {
+			SelectProposal(int) bool
+		})
+		if !ok {
+			return false
+		}
+		if sel.SelectProposal(id) {
+			a.selectSurface(i)
+			return true
+		}
+	}
+	return false
+}
+
 // attentionCount sums the open attention items across surfaces (F-016
 // statusline !N segment; recomputed on demand — items resolve out of the
 // count the frame their home surface flips them).

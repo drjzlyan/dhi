@@ -5,6 +5,22 @@ and live-verified, all six adapters serve DHI tools over the loopback
 endpoint, and the `dhi-action` fallback is removed at parity. Only the
 deferred `api:<provider>` engine kind remains.)
 
+### Session 33 (M18 follow-on — pending proposals in the inbox)
+
+- `inbox.Build` gained a 4th source `props []ideation.Proposal`; new
+  `Proposal` ItemKind (severity just below `approval`) with
+  `ProposalID/Name/Caller`; row names the caller, name and mode, jump
+  targets the Ideator.
+- `ideator.Model.SelectProposal(id)` focuses SESSIONS on the pending
+  proposal (false when decided/gone). `App.SelectProposal` routes it
+  (mirrors `SelectReviewer`); workspace `Deps.Sessions` +
+  `Deps.OpenIdeator` aggregate + jump (nil seam degrades with a named
+  hint). `cmd/dhi` wires `sessionStore` + `appRef.SelectProposal`.
+- Tests: inbox proposal item + rank, ideator `SelectProposal`,
+  workspace proposal row + jump/degrade. `make verify` green.
+- Docs: F-016 sources table gains `proposal` (+ the previously-undocu-
+  mented `dependency` row) and the severity order.
+
 ### Session 32 (M15 P3a + P3b — antigravity MCP; dhi-action removed)
 
 - `agy` reads MCP servers only from `<gemini_dir>/config/mcp_config.json`
@@ -541,8 +557,7 @@ catalog).
 ## Next up
 
 1. **Optional follow-ons** (no milestone blocking): M19 index signature
-   verification, pack-sourced LIBRARY badges, executable skill scripts;
-   M18 pending session proposals as an inbox `ItemKind`.
+   verification, pack-sourced LIBRARY badges, executable skill scripts.
 2. **Deferred engine kind**: `api:<provider>` (hard tool guarantee /
    offline inference) — designed-not-built; the only open M15 item.
 3. **(Deferred, F-026/F-017/F-027/F-020/M11)** as before — now largely

@@ -291,7 +291,14 @@ func runTUI() {
 				}
 				return appRef.OpenInEditor(paths)
 			},
-			Working: agentRT.Working,
+			Working:  agentRT.Working,
+			Sessions: sessionStore,
+			OpenIdeator: func(id int) bool {
+				if appRef == nil {
+					return false
+				}
+				return appRef.SelectProposal(id)
+			},
 		}),
 		editor.New(version.Version, ws, edOpts...),
 		ideator.New(version.Version, ws, ideator.Deps{

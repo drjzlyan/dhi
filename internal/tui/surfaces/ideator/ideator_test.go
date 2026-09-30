@@ -633,3 +633,42 @@ func TestSurfaceContract(t *testing.T) {
 		}
 	}
 }
+
+func TestSelectProposalFocusesSessionsPane(t *testing.T) {
+	m, _, st, _, _ := newSurface(t)
+	// Propose needs an existing parent for a breakout; use a group.
+	p1, err := st.Propose("scout", "Auth review", "review the auth flow", ideation.ModeGroup, "", []string{"scout", "mason"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p2, err := st.Propose("mason", "Perf tune", "tune the hot path", ideation.ModeGroup, "", []string{"mason"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.sec = secCanvas
+	if !m.SelectProposal(p2.ID) {
+		t.Fatal("SelectProposal(p2) returned false")
+	}
+	if m.sec != secSessions {
+		t.Fatalf("section = %v, want SESSIONS", m.sec)
+	}
+	rows := m.sessionRows()
+	if m.cursors[secSessions] >= len(rows) || rows[m.cursors[secSessions]].proposal == nil ||
+		rows[m.cursors[secSessions]].proposal.ID != p2.ID {
+		t.Fatalf("cursor %d not on p2 in %+v", m.cursors[secSessions], rows)
+	}
+	// First pending proposal is p1; the cursor must reach it too.
+	if !m.SelectProposal(p1.ID) || rows[m.cursors[secSessions]].proposal.ID != p1.ID {
+		t.Fatal("SelectProposal(p1) did not focus p1")
+	}
+	// A decided/gone proposal refuses.
+	if m.SelectProposal(9999) {
+		t.Fatal("SelectProposal accepted an unknown id")
+	}
+	// A nil store degrades.
+	none := New("0.1.0", m.ws, Deps{})
+	none.Resize(80, 24)
+	if none.SelectProposal(p1.ID) {
+		t.Fatal("SelectProposal succeeded without a store")
+	}
+}

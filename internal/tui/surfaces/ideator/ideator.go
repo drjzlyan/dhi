@@ -319,6 +319,23 @@ func (m *Model) sessionRows() []sessionRow {
 
 // ---- key routing ----
 
+// SelectProposal focuses the SESSIONS pane on a pending proposal (the
+// F-016 inbox jump). Returns false when the proposal is gone (already
+// decided) so the caller can degrade with a named hint.
+func (m *Model) SelectProposal(id int) bool {
+	if m.ws == nil || m.store == nil {
+		return false
+	}
+	for i, r := range m.sessionRows() {
+		if r.proposal != nil && r.proposal.ID == id {
+			m.sec = secSessions
+			m.cursors[secSessions] = i
+			return true
+		}
+	}
+	return false
+}
+
 func (m *Model) HandleKey(key string) bool {
 	if m.ws == nil {
 		return false

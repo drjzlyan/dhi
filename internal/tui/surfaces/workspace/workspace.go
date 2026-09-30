@@ -24,6 +24,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
 	"github.com/drjzlyan/dhi/internal/autopilot"
 	"github.com/drjzlyan/dhi/internal/gitcore"
+	"github.com/drjzlyan/dhi/internal/ideation"
 	"github.com/drjzlyan/dhi/internal/inbox"
 	"github.com/drjzlyan/dhi/internal/review"
 	"github.com/drjzlyan/dhi/internal/tasks"
@@ -112,6 +113,8 @@ type Model struct {
 	openReview   func(id string) bool                    // reviewer select (F-016 jump)
 	openEditor   func(paths []string) bool               // editor open-in-editor (repos `e`, F-026 P3)
 	working      func(channel string, thread int64) bool // live turn indicator (F-035 Part D)
+	sessions     *ideation.Store                         // pending proposals → inbox (F-033)
+	openIdeator  func(proposalID int) bool               // ideator jump (F-033 inbox)
 	inboxHint    string                                  // last jump degrade hint (visible, never silent)
 	snoozeTarget inbox.Item                              // item parked by the fSnooze form
 	snoozeChain  bool                                    // expiry tick chain in flight (F-017)
@@ -168,6 +171,12 @@ type Deps struct {
 	// Working reports an in-flight agent turn for a thread (F-035
 	// Part D); nil renders no live indicator.
 	Working func(channel string, thread int64) bool
+	// Sessions is the ideation store: pending agent proposals surface in
+	// the inbox (F-033). nil = no proposal rows.
+	Sessions *ideation.Store
+	// OpenIdeator jumps the Ideator surface to a proposal (F-033 inbox
+	// jump). Returns false when unknown/unavailable.
+	OpenIdeator func(proposalID int) bool
 }
 
 // New returns the workspace model. A nil ws renders the not-a-workspace
@@ -196,6 +205,8 @@ func New(version string, ws *workspace.Workspace, d Deps) *Model {
 		m.openReview = d.OpenReview
 		m.openEditor = d.OpenEditor
 		m.working = d.Working
+		m.sessions = d.Sessions
+		m.openIdeator = d.OpenIdeator
 		switch {
 		case d.Autopilots != nil:
 			m.autopilots = d.Autopilots // shared with Settings (F-023)

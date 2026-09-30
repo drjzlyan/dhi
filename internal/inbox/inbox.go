@@ -13,6 +13,7 @@ import (
 
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
+	"github.com/drjzlyan/dhi/internal/ideation"
 	"github.com/drjzlyan/dhi/internal/sandbox"
 	"github.com/drjzlyan/dhi/internal/tasks"
 	"github.com/drjzlyan/dhi/internal/unread"
@@ -24,13 +25,14 @@ type ItemKind string
 // Kinds, in severity order (approval highest).
 const (
 	Approval     ItemKind = "approval"
+	Proposal     ItemKind = "proposal"
 	RunFailed    ItemKind = "run_failed"
 	Dependency   ItemKind = "dependency"
 	InReview     ItemKind = "in_review"
 	AgentMessage ItemKind = "agent_message"
 )
 
-var rank = map[ItemKind]int{Approval: 0, RunFailed: 1, Dependency: 2, InReview: 3, AgentMessage: 4}
+var rank = map[ItemKind]int{Approval: 0, Proposal: 1, RunFailed: 2, Dependency: 3, InReview: 4, AgentMessage: 5}
 
 // Item is one row of the inbox. Row is the display text (label + payload,
 // no glyph); the rest is jump payload for the owning surfaces.
@@ -58,6 +60,12 @@ type Item struct {
 	Run       tasks.Run // run_failed jump target (zero value when none)
 	ReviewID  string
 
+	// Ideation proposal (F-033): the human accepts/declines in the
+	// Ideator SESSIONS pane; the jump selects the proposal row.
+	ProposalID     int
+	ProposalName   string
+	ProposalCaller string
+
 	// Dependency proposal (F-032): changing FromMember may affect
 	// ToMember through Kind; accepting creates a linked task in ToMember.
 	FromMember string
@@ -70,12 +78,15 @@ type Item struct {
 // the inputs are treated as already-stable snapshots. Agent messages
 // arrive pre-computed by the read-mark store, whose predicate owns the
 // addressed-to-human rule (F-017 §Part B).
-func Build(apprs []*tools.Approval, msgs []unread.Item, ts []tasks.Task) []Item {
+func Build(apprs []*tools.Approval, msgs []unread.Item, ts []tasks.Task, props []ideation.Proposal) []Item {
 	var out []Item
 	for _, ap := range apprs {
 		out = append(out, approvalItem(ap))
 	}
 	out = append(out, messageItems(msgs)...)
+	for _, p := range props {
+		out = append(out, proposalItem(p))
+	}
 	for _, tk := range ts {
 		if r, ok := tk.NewestRun(); ok && !tkDone(tk) && failedRun(r) {
 			out = append(out, failedItem(tk, r))
@@ -127,6 +138,32 @@ func approvalItem(ap *tools.Approval) Item {
 		Target:     ap.Target,
 		At:         time.Unix(0, int64(ap.ID)),
 		Row:        "approve  " + ap.Agent + ": " + opWord(ap.Op) + " " + ap.Target,
+	}
+}
+
+// proposalItem lifts a pending ideation proposal into an inbox row
+// (F-033): only the human can accept it, which is why it is attention
+// rather than a background event.
+func proposalItem(p ideation.Proposal) Item {
+	return Item{
+		Kind:           Proposal,
+		ProposalID:     p.ID,
+		ProposalName:   p.Name,
+		ProposalCaller: p.Caller,
+		At:             p.At,
+		Row: fmt.Sprintf("%s proposes %s \"%s\" (%s) — accept to open",
+			p.Caller, proposalWord(p.Mode), p.Name, p.Mode),
+	}
+}
+
+func proposalWord(mode ideation.SessionMode) string {
+	switch mode {
+	case ideation.ModeOneOnOne:
+		return "a 1:1"
+	case ideation.ModeBreakout:
+		return "a breakout"
+	default:
+		return "a session"
 	}
 }
 

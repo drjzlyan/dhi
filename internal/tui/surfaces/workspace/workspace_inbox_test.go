@@ -9,6 +9,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
 	"github.com/drjzlyan/dhi/internal/ansi"
+	"github.com/drjzlyan/dhi/internal/ideation"
 	"github.com/drjzlyan/dhi/internal/inbox"
 	"github.com/drjzlyan/dhi/internal/sandbox"
 	"github.com/drjzlyan/dhi/internal/tasks"
@@ -435,4 +436,50 @@ func TestInboxSnoozedGolden(t *testing.T) {
 	m.HandleKey("enter")
 	gotoInbox(m)
 	golden.Snapshot(t, "workspace_inbox_snoozed", m.View())
+}
+
+func TestInboxSurfacesPendingProposals(t *testing.T) {
+	m, ws, _ := newSurfaceWithBus(t)
+	st, err := ideation.Open(ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.sessions = st
+	p, err := st.Propose("scout", "Auth review", "review auth", ideation.ModeGroup, "", []string{"scout"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	items := m.inboxItems()
+	var prop *inbox.Item
+	for i := range items {
+		if items[i].Kind == inbox.Proposal {
+			prop = &items[i]
+		}
+	}
+	if prop == nil || prop.ProposalID != p.ID || !strings.Contains(prop.Row, "Auth review") {
+		t.Fatalf("proposal item = %+v (items=%+v)", prop, items)
+	}
+
+	// Jump routes through the injected ideator seam.
+	got := -1
+	m.openIdeator = func(id int) bool { got = id; return true }
+	m.inboxJump(*prop)
+	if got != p.ID {
+		t.Fatalf("openIdeator id = %d, want %d", got, p.ID)
+	}
+
+	// Missing seam degrades with a named hint.
+	m.openIdeator = nil
+	m.inboxJump(*prop)
+	if !strings.Contains(m.inboxHint, "Ideator unavailable") {
+		t.Fatalf("hint = %q", m.inboxHint)
+	}
+	// Nil sessions store contributes no proposal rows.
+	m.sessions = nil
+	for _, it := range m.inboxItems() {
+		if it.Kind == inbox.Proposal {
+			t.Fatalf("proposal row without a sessions store: %+v", it)
+		}
+	}
 }

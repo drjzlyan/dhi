@@ -21,18 +21,21 @@ reviews still decided in Reviewer).
 | kind | source seam | row text | jump |
 |---|---|---|---|
 | `approval` | `tools.Approvals.List()` | `approve  scout: write .dhi/tasks/x/y.md` | Editor chat approvals (opens the sidebar approval) |
+| `proposal` | ideation: pending agent proposals (`Store.PendingProposals()`) | `scout proposes a session "Auth review" (group) — accept to open` | Ideator, that proposal selected (F-033) |
 | `mention` | bus: a message @-ing "you" with no later message from "you" in its thread | `#general  scout: "needs a decision on…"` | CHANNELS, thread opened at the mention |
 | `run_failed` | F-014 run records: status failed/timed_out on a task not done | `run failed  fix-login (codex) — timeout after 10m` | run replay pane (F-014) |
 | `in_review` | tasks: status `in-review` | `in review  fix-login — scout, 2 runs · $0.42` | Reviewer, that review/task |
+| `dependency` | tasks: pending cross-project propagation (F-032) | `cross-project  feat: api → web (api) — accept to open a task in web` | accept (`a`) / decline (`x`) in place |
 
 - **Mention rule detail:** "no later message from you" is computed
   from the bus thread (you are a bus participant, "you" author id);
   a mention replied to is no longer in the inbox. No read-marks are
   invented for M8 — this is the M4-deferred unread marker, scoped to
   exactly the attention cases.
-- Aggregation is a pure function `Inbox(approvals, bus, tasks, runs)
-  []Item` — deterministic ordering: severity (approval > run_failed >
-  in_review > mention), then oldest-first; stable, table-tested.
+- Aggregation is a pure function `Build(approvals, msgs, tasks,
+  proposals) []Item` — deterministic ordering: severity (approval >
+  proposal > run_failed > dependency > in_review > mention), then
+  oldest-first; stable, table-tested.
 - No state writes: the inbox cannot mark-read, resolve, or delete.
   (A dismissed mention would need a read-mark model; that is the
   deferred "true unread" follow-up, not M8.)
