@@ -5,6 +5,21 @@ and live-verified, all six adapters serve DHI tools over the loopback
 endpoint, and the `dhi-action` fallback is removed at parity. Only the
 deferred `api:<provider>` engine kind remains.)
 
+### Session 35 (M19 follow-on — pack-sourced LIBRARY badges)
+
+- Settings LIBRARY now badges pack-installed roles/skills with
+  `pack:<name>` (from `pack.Installer.Records()` provenance), distinct
+  from `builtin` and `local`. `libPackBadges` reads the marketplace
+  records once per render; a malformed provenance simply yields no
+  badge (the listing never fails). Tests cover the badge for a role and
+  a skill from one installed pack.
+- Docs: F-027 LIBRARY source column updated.
+- Observed once under full-suite `-race` load (did not reproduce isolated
+  over 3 runs, nor on the next full run): a `DATA RACE` warning +
+  `TestChatApprovalFlow` timeout in `internal/tui/surfaces/editor`.
+  Treat as an intermittent to watch; the editor package passes `-race`
+  isolated.
+
 ### Session 34 (M19 follow-on — index signature verification)
 
 - `internal/agentkit/registry/sign.go`: Ed25519 publisher signatures. A
@@ -574,8 +589,8 @@ catalog).
 
 ## Next up
 
-1. **Optional follow-ons** (no milestone blocking): pack-sourced LIBRARY
-   badges, executable skill scripts.
+1. **Optional follow-ons** (no milestone blocking): executable skill
+   scripts.
 2. **Deferred engine kind**: `api:<provider>` (hard tool guarantee /
    offline inference) — designed-not-built; the only open M15 item.
 3. **(Deferred, F-026/F-017/F-027/F-020/M11)** as before — now largely

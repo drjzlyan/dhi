@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/drjzlyan/dhi/internal/agentkit/library"
+	"github.com/drjzlyan/dhi/internal/agentkit/pack"
 	"github.com/drjzlyan/dhi/internal/tui/kit"
 	"github.com/drjzlyan/dhi/internal/tui/theme"
 )
@@ -53,6 +54,29 @@ func (m *Model) libRows() []libRow {
 	return rows
 }
 
+// libPackBadges maps "role/slug" and "skill/slug" to the pack that
+// installed the card (marketplace provenance), so the LIBRARY listing
+// can badge pack-sourced entries.
+func (m *Model) libPackBadges() map[string]string {
+	if m.d.WS == nil {
+		return nil
+	}
+	recs, err := (&pack.Installer{WS: m.d.WS}).Records()
+	if err != nil {
+		return nil
+	}
+	out := map[string]string{}
+	for name, rec := range recs {
+		for _, s := range rec.Roles {
+			out["role/"+s] = name
+		}
+		for _, s := range rec.Skills {
+			out["skill/"+s] = name
+		}
+	}
+	return out
+}
+
 // libraryBody renders the grouped listing with source badges.
 func (m *Model) libraryBody(w int) string {
 	if m.d.WS == nil {
@@ -60,6 +84,7 @@ func (m *Model) libraryBody(w int) string {
 	}
 	lib := m.libStore()
 	rows := m.libRows()
+	badges := m.libPackBadges()
 	if len(rows) == 0 {
 		out := theme.TextDim().Render("(empty — press n to author the first card)")
 		for _, warn := range lib.Warnings() {
@@ -84,8 +109,13 @@ func (m *Model) libraryBody(w int) string {
 			style = theme.TabActive()
 		}
 		src := ""
-		if r.source == "builtin" {
+		switch {
+		case r.source == "builtin":
 			src = theme.TextMuted().Render(" builtin")
+		case badges[r.kind+"/"+r.slug] != "":
+			src = theme.TextMuted().Render(" pack:" + kit.ClipEllipsis(badges[r.kind+"/"+r.slug], 16))
+		case r.source == "local":
+			src = theme.TextMuted().Render(" local")
 		}
 		desc := ""
 		if e, ok := m.libEntry(r); ok {

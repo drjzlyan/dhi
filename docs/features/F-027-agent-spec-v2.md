@@ -56,7 +56,9 @@ user can preview exactly as the agent will receive it.
   Built-ins are versioned with the app and render with a builtin
   marker.
 - User-authored entries in `.dhi/` shadow built-ins by slug.
-- Settings LIBRARY section: browse (source column: builtin/local),
+- Settings LIBRARY section: browse (source column: builtin/local, plus
+  `pack:<name>` when a card came from an installed marketplace pack —
+  read from `pack.Installer.Records()` provenance),
   create/edit via strict forms, attach/detach on agents.
 - Packs may ship roles/skills: `pack.toml` gains `roles`/`skills`
   lists; install validates all-before-write; provenance records them.

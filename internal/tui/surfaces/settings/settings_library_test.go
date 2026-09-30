@@ -1,12 +1,16 @@
 package settings
 
 import (
+	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/drjzlyan/dhi/internal/agentkit/library"
 	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
 	"github.com/drjzlyan/dhi/internal/agentkit/org"
+	"github.com/drjzlyan/dhi/internal/agentkit/pack"
 	"github.com/drjzlyan/dhi/internal/ansi"
 	"github.com/drjzlyan/dhi/internal/testutil/golden"
 	"github.com/drjzlyan/dhi/internal/workspace"
@@ -237,4 +241,38 @@ func TestAgentSubmitCarriesRoleSkills(t *testing.T) {
 		return
 	}
 	t.Fatal("spec agent missing from roster")
+}
+
+func TestLibraryPackBadges(t *testing.T) {
+	m, ws := libSurface(t)
+
+	// Install a pack that ships one role + one skill.
+	root := t.TempDir()
+	write := func(rel, body string) {
+		t.Helper()
+		p := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("roles/scribe.toml", "schema = 1\ndescription = \"writes docs\"\ntools = [\"read\"]\npolicy_preset = \"read-only\"\n")
+	write("skills/docs.md", "---\nname: Docs\ndescription: write docs\n---\n\nKeep docs short.\n")
+	write("pack.toml", "schema = 2\nname = \"everykind\"\nversion = \"1.0.0\"\nroles = [\"roles/scribe.toml\"]\nskills = [\"skills/docs.md\"]\n")
+	if _, err := (&pack.Installer{WS: ws}).Install(context.Background(), root); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+
+	// The listing (fresh store) badges both cards with the pack name.
+	m.lib = nil
+	m.d.Library = nil
+	out := ansi.Strip(m.libraryBody(100))
+	if !strings.Contains(out, "scribe") || !strings.Contains(out, "pack:everykind") {
+		t.Fatalf("role pack badge missing:\n%s", out)
+	}
+	if strings.Count(out, "pack:everykind") != 2 {
+		t.Fatalf("expected both role and skill badged:\n%s", out)
+	}
 }
