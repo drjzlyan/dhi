@@ -77,13 +77,15 @@ func TestMaxPromptArgBudget(t *testing.T) {
 func TestMCPConfigWiring(t *testing.T) {
 	const path = "/tmp/dhi-mcp.json"
 	const url = "http://127.0.0.1:1/mcp"
+	const geminiDir = "/tmp/dhi-gemini"
 	for _, c := range allAdapters() {
-		argv := strings.Join(c.BuildArgs(RunInput{Prompt: "p", MCPConfig: path, MCPURL: url}), "\x00")
+		in := RunInput{Prompt: "p", MCPConfig: path, MCPURL: url, MCPGeminiDir: geminiDir}
+		argv := strings.Join(c.BuildArgs(in), "\x00")
 		if !c.MCPOK {
-			if c.MCPConfigFile != nil || c.MCPConfigEnv != "" || c.MCPConfigArgs != nil {
+			if c.MCPConfigFile != nil || c.MCPConfigEnv != "" || c.MCPConfigArgs != nil || c.MCPGeminiDir != nil {
 				t.Errorf("%s declares MCP wiring without MCPOK", c.Name)
 			}
-			if strings.Contains(argv, path) || strings.Contains(argv, url) {
+			if strings.Contains(argv, path) || strings.Contains(argv, url) || strings.Contains(argv, geminiDir) {
 				t.Errorf("%s leaked an unverified MCP wiring into argv: %q", c.Name, argv)
 			}
 			continue
@@ -92,25 +94,32 @@ func TestMCPConfigWiring(t *testing.T) {
 		if !c.MCPWired() {
 			t.Errorf("%s: MCPOK without any wiring", c.Name)
 		}
-		if c.MCPConfigArgs != nil {
+		switch {
+		case c.MCPGeminiDir != nil:
+			if c.MCPGeminiDirFlag == "" || !strings.Contains(argv, geminiDir) {
+				t.Errorf("%s: dir-delivered adapter must emit %s=<dir>: %q", c.Name, c.MCPGeminiDirFlag, argv)
+			}
+		case c.MCPConfigArgs != nil:
 			if !strings.Contains(argv, path) && !strings.Contains(argv, url) {
 				t.Errorf("%s argv missing MCP wiring (path or url): %q", c.Name, argv)
 			}
-		} else if strings.Contains(argv, path) || strings.Contains(argv, url) {
-			t.Errorf("%s is env-delivered but leaked wiring into argv: %q", c.Name, argv)
+		default:
+			if strings.Contains(argv, path) || strings.Contains(argv, url) {
+				t.Errorf("%s is env-delivered but leaked wiring into argv: %q", c.Name, argv)
+			}
 		}
 	}
 }
 
 // TestMCPCapabilityDeclared pins which adapters claim verified MCP
-// wiring: claude (argv) + opencode (env) today; the rest stay fallback
-// until their live-verify checklist is filled (ADR-0011/ADR-0017).
+// wiring: claude (argv) + opencode (env) + codex (argv) + cursor
+// (project file) + copilot (project file) + antigravity (--gemini_dir).
 func TestMCPCapabilityDeclared(t *testing.T) {
 	reg := map[string]bool{}
 	for _, c := range allAdapters() {
 		reg[c.Name] = c.MCPOK
 	}
-	for _, n := range []string{"claude", "opencode", "codex", "cursor-agent", "copilot"} {
+	for _, n := range []string{"claude", "opencode", "codex", "cursor-agent", "copilot", "antigravity"} {
 		if !reg[n] {
 			t.Fatalf("%s must declare MCP wiring: %v", n, reg)
 		}

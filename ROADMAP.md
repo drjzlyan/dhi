@@ -774,6 +774,10 @@ verified 2026-09-26 on 1.2.11 (replaces the gemini adapter).
 - [ ] P3 — MCP tool serving verified for **all six** adapters; sandbox
       tightened (network deny-by-default, declared origins, exec
       sandboxed); doctor `agent-tools` row with the containment caveat
+      — all six wired + live-verified (claude/opencode/codex/cursor/
+      copilot 2026-09-26; antigravity `--gemini_dir` mirror 2026-09-30),
+      sandbox + doctor row landed (M15 P2/M19 P2); **remaining:**
+      remove the `dhi-action` fallback at parity
 - [ ] Deferred: `api:<provider>` engine kind (hard guarantee / offline)
 
 ## M16 — Feature workflows (F-031)

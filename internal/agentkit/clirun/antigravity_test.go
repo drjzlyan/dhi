@@ -2,6 +2,8 @@ package clirun
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -104,5 +106,64 @@ func TestAntigravityVersion(t *testing.T) {
 	}
 	if v != "1.2.11" {
 		t.Fatalf("version = %q", v)
+	}
+}
+
+func TestAntigravityGeminiDirMirror(t *testing.T) {
+	realGemini := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(realGemini, "config"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	must := func(err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	must(os.WriteFile(filepath.Join(realGemini, "oauth_creds.json"), []byte("tok"), 0o600))
+	must(os.WriteFile(filepath.Join(realGemini, "config", "settings.json"), []byte("{}"), 0o644))
+	must(os.WriteFile(filepath.Join(realGemini, "config", "mcp_config.json"), []byte(`{"mcpServers":{"user":{}}}`), 0o644))
+	must(os.MkdirAll(filepath.Join(realGemini, "antigravity-cli"), 0o755))
+
+	base := t.TempDir()
+	dir, cleanup, err := antigravityMCPGeminiDir(realGemini, base, Antigravity.MCPConfigFile("http://127.0.0.1:9/mcp"))
+	if err != nil {
+		t.Fatalf("mirror: %v", err)
+	}
+	defer cleanup()
+
+	// OAuth + state are symlinks back to the real dir (auth survives).
+	if ln, err := os.Readlink(filepath.Join(dir, "oauth_creds.json")); err != nil || ln != filepath.Join(realGemini, "oauth_creds.json") {
+		t.Fatalf("oauth symlink = %q err=%v", ln, err)
+	}
+	if ln, err := os.Readlink(filepath.Join(dir, "antigravity-cli")); err != nil || ln != filepath.Join(realGemini, "antigravity-cli") {
+		t.Fatalf("state symlink = %q err=%v", ln, err)
+	}
+	// Non-mcp config entries are symlinked through.
+	if ln, err := os.Readlink(filepath.Join(dir, "config", "settings.json")); err != nil || ln != filepath.Join(realGemini, "config", "settings.json") {
+		t.Fatalf("settings symlink = %q err=%v", ln, err)
+	}
+	// mcp_config.json is a real file carrying DHI's endpoint, not the user's.
+	if fi, err := os.Lstat(filepath.Join(dir, "config", "mcp_config.json")); err != nil || fi.Mode()&os.ModeSymlink != 0 {
+		t.Fatalf("mcp_config.json must be a real file: %v %v", fi, err)
+	}
+	body, err := os.ReadFile(filepath.Join(dir, "config", "mcp_config.json"))
+	if err != nil || !strings.Contains(string(body), "127.0.0.1:9") {
+		t.Fatalf("mcp body = %q err=%v", body, err)
+	}
+	// cleanup removes the mirror.
+	cleanup()
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Fatalf("mirror survived cleanup: %v", err)
+	}
+}
+
+func TestAntigravityMCPArgs(t *testing.T) {
+	args := strings.Join(Antigravity.BuildArgs(RunInput{Prompt: "p", MCPGeminiDir: "/x/gemini"}), "\x00")
+	if !strings.Contains(args, "--gemini_dir=/x/gemini") {
+		t.Fatalf("antigravity argv missing --gemini_dir: %q", args)
+	}
+	if strings.Contains(strings.Join(Antigravity.BuildArgs(RunInput{Prompt: "p"}), "\x00"), "--gemini_dir") {
+		t.Fatal("antigravity emitted --gemini_dir without a dir")
 	}
 }

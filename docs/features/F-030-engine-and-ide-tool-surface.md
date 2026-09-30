@@ -118,12 +118,12 @@ sandbox (network deny-by-default, no free-form shell).
       (worktree `.cursor/mcp.json` + git-exclude + `--approve-mcps`),
       copilot (worktree `.mcp.json` + git-exclude + `--allow-all-tools`
       `--disable-builtin-mcps`) — all live-verified end-to-end
-      2026-09-26 (a real tool call through DHI's loopback server).
-      antigravity (`agy`) is deliberately left on the dhi-action
-      fallback (decision 2026-09-26, future work): its MCP list lives
-      only in the user-global `~/.gemini/config/mcp_config.json` with no
-      project/env/override path, so wiring it would mean mutating the
-      user's global config every turn.
+      2026-09-26 (a real tool call through DHI's loopback server) —
+      and antigravity (`agy`, live-verified 2026-09-30 on 1.2.11): a
+      per-turn `--gemini_dir` mirror of `~/.gemini` (symlinked except
+      `config/mcp_config.json`) injects the loopback endpoint without
+      mutating the user's global config. All six wired; removing
+      `dhi-action` at parity is the remaining step.
       The streamable-HTTP server was fixed in the same pass (GET SSE
       stream + SSE-framed POST replies + `2025-11-25` protocol +
       lowercase tool keys) — the legacy handler made opencode drop

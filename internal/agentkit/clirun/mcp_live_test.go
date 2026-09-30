@@ -289,3 +289,56 @@ func TestLiveCopilotMCP(t *testing.T) {
 		t.Fatalf("copilot did not call the served tool; output:\n%s", out)
 	}
 }
+
+// TestLiveAntigravityMCP is the live-verify for the antigravity MCP
+// wiring: a per-turn --gemini_dir mirror carrying DHI's loopback
+// endpoint must register the server and the agent must call the served
+// tool.
+//
+//	DHI_LIVE_MCP=1 go test ./internal/agentkit/clirun/ -run TestLiveAntigravityMCP -v
+func TestLiveAntigravityMCP(t *testing.T) {
+	if os.Getenv("DHI_LIVE_MCP") == "" {
+		t.Skip("set DHI_LIVE_MCP=1 to run the real antigravity MCP verification (costs tokens)")
+	}
+	path, err := exec.LookPath("agy")
+	if err != nil {
+		t.Skip("agy not installed")
+	}
+	h := &probeHandler{called: make(chan string, 1)}
+	endpoint, stop, err := mcp.ServeLoopback(h)
+	if err != nil {
+		t.Fatalf("ServeLoopback: %v", err)
+	}
+	defer stop()
+
+	base := t.TempDir()
+	dir, cleanup, err := Antigravity.MCPGeminiDir(base, Antigravity.MCPConfigFile(endpoint))
+	if err != nil {
+		t.Fatalf("gemini_dir mirror: %v", err)
+	}
+	defer cleanup()
+
+	work := t.TempDir()
+	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Second)
+	defer cancel()
+	argv := Antigravity.BuildArgs(RunInput{
+		Prompt:       "Call the MCP tool named echo_probe with text=\"HELLO\" (server dhi), then reply with its output.",
+		Workdir:      work,
+		MCPGeminiDir: dir,
+	})
+	cmd := exec.CommandContext(ctx, path, argv...)
+	cmd.Dir = work
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("agy run: %v\n%s", err, out)
+	}
+	select {
+	case got := <-h.called:
+		t.Logf("LIVE-VERIFIED: antigravity called DHI's served tool with args %s", got)
+		if !strings.Contains(got, "HELLO") {
+			t.Fatalf("tool called with unexpected args: %s", got)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatalf("agy did not call the served tool; output:\n%s", out)
+	}
+}

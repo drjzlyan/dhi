@@ -18,6 +18,13 @@
 // There is no native system-prompt flag, so the system block rides ahead
 // of the prompt in the shared tagged shape. `--print` is a single-turn
 // headless mode; stdin is NDJSON (not a raw prompt), so StdinOK=false.
+//
+// MCP — LIVE-VERIFIED 2026-09-30 on agy 1.2.11: agy reads servers only
+// from <gemini_dir>/config/mcp_config.json and takes the dir via the
+// `--gemini_dir` flag. The runtime builds a per-turn mirror of the
+// user's ~/.gemini (symlinked except config/mcp_config.json) so OAuth +
+// conversation state survive while DHI's loopback endpoint is injected.
+// `agy --gemini_dir=<mirror> -p ... call_mcp_tool` reached DHI's tool.
 package clirun
 
 import (
@@ -61,11 +68,87 @@ var Antigravity = &CLI{
 		if in.Model != "" {
 			args = append(args, "--model", in.Model)
 		}
+		if in.MCPGeminiDir != "" {
+			args = append(args, "--gemini_dir="+in.MCPGeminiDir)
+		}
 		return args
 	},
 	ParseStream: antigravityParseStream,
 	Finalize:    antigravityFinalize,
 	Version:     antigravityVersion,
+	// MCP: agy reads servers only from <gemini_dir>/config/mcp_config.json
+	// and offers no config-path flag — the runtime points --gemini_dir at
+	// a per-turn mirror (MCPGeminiDir) holding this file.
+	MCPOK:            true,
+	MCPConfigFile:    antigravityMCPConfig,
+	MCPGeminiDir:     antigravityMCPGeminiDirForHome,
+	MCPGeminiDirFlag: "--gemini_dir",
+}
+
+// antigravityMCPGeminiDirForHome resolves the user's real ~/.gemini and
+// builds the per-turn mirror from it.
+func antigravityMCPGeminiDirForHome(baseDir, configBody string) (string, func(), error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", nil, err
+	}
+	return antigravityMCPGeminiDir(filepath.Join(home, ".gemini"), baseDir, configBody)
+}
+
+// antigravityMCPConfig renders agy's mcp_config.json for DHI's loopback
+// endpoint (http transport).
+func antigravityMCPConfig(endpoint string) string {
+	return fmt.Sprintf("{\n  \"mcpServers\": {\n    \"dhi\": {\n      \"url\": %q\n    }\n  }\n}\n", endpoint)
+}
+
+// antigravityMCPGeminiDir builds a per-turn --gemini_dir mirror: a
+// directory symlinking every entry of realGeminiDir (so OAuth +
+// conversation state keep working) except config/mcp_config.json,
+// which is replaced with DHI's rendered config. The mirror lives under
+// baseDir (an admitted runtime path); cleanup removes it.
+func antigravityMCPGeminiDir(realGeminiDir, baseDir, configBody string) (string, func(), error) {
+	real := realGeminiDir
+	if err := os.MkdirAll(baseDir, 0o755); err != nil {
+		return "", nil, err
+	}
+	dir, err := os.MkdirTemp(baseDir, "gemini-")
+	if err != nil {
+		return "", nil, err
+	}
+	cleanup := func() { _ = os.RemoveAll(dir) }
+	linkAllExcept := func(src, dst, skip string) error {
+		ents, err := os.ReadDir(src)
+		if err != nil {
+			return err
+		}
+		for _, e := range ents {
+			if e.Name() == skip {
+				continue
+			}
+			if err := os.Symlink(filepath.Join(src, e.Name()), filepath.Join(dst, e.Name())); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if err := linkAllExcept(real, dir, "config"); err != nil {
+		cleanup()
+		return "", nil, err
+	}
+	cfg := filepath.Join(dir, "config")
+	if err := os.MkdirAll(cfg, 0o755); err != nil {
+		cleanup()
+		return "", nil, err
+	}
+	if err := linkAllExcept(filepath.Join(real, "config"), cfg, "mcp_config.json"); err != nil {
+		cleanup()
+		return "", nil, err
+	}
+	if err := os.WriteFile(filepath.Join(cfg, "mcp_config.json"), []byte(configBody), 0o644); err != nil {
+		cleanup()
+		return "", nil, err
+	}
+	return dir, cleanup, nil
 }
 
 // antigravityLine is the union shape of one stream-json line.

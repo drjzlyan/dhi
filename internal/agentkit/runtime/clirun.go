@@ -56,10 +56,10 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message) er
 	}
 	prompt, system := r.cliPrompt(ctx, e, trigger, serve != nil, wfText)
 	workdir := r.cliWorkdir(trigger)
-	mcpConfig, mcpEndpoint := "", ""
+	mcpConfig, mcpEndpoint, mcpGeminiDir := "", "", ""
 	if serve != nil {
 		defer serve.stop()
-		mcpConfig, mcpEndpoint = serve.configPath, serve.endpoint
+		mcpConfig, mcpEndpoint, mcpGeminiDir = serve.configPath, serve.endpoint, serve.geminiDir
 	}
 
 	if e.m.Timeout > 0 {
@@ -70,7 +70,7 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message) er
 
 	var lastErr error
 	for attempt := 0; ; attempt++ {
-		run := r.cliSpawnOnce(ctx, e, trigger, prompt, system, workdir, attempt, mcpConfig, mcpEndpoint)
+		run := r.cliSpawnOnce(ctx, e, trigger, prompt, system, workdir, attempt, mcpConfig, mcpEndpoint, mcpGeminiDir)
 		r.recordRun(trigger, run)
 
 		if run.Status == tasks.RunOK {
@@ -107,7 +107,7 @@ var cliRetryBackoff = 30 * time.Second
 // cliSpawnOnce runs a single attempt: spawn the wrapped CLI, stream the
 // transcript into the trigger thread, persist the event JSONL, finalize,
 // and return the run record.
-func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Message, prompt, system, workdir string, attempt int, mcpConfig, mcpEndpoint string) tasks.Run {
+func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Message, prompt, system, workdir string, attempt int, mcpConfig, mcpEndpoint, mcpGeminiDir string) tasks.Run {
 	started := time.Now().UTC()
 	run := tasks.Run{
 		ID: runID(started), Agent: e.m.ID,
@@ -144,7 +144,7 @@ func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Messag
 	argv := append([]string{e.cliPath}, e.cli.BuildArgs(clirun.RunInput{
 		Prompt: prompt, System: system,
 		Model: e.m.Model, Workdir: workdir, Stdin: stdin,
-		MCPConfig: mcpConfig, MCPURL: mcpEndpoint,
+		MCPConfig: mcpConfig, MCPURL: mcpEndpoint, MCPGeminiDir: mcpGeminiDir,
 	})...)
 	wrapped, err := e.guard.Sandbox.Wrap(argv)
 	if err != nil {
@@ -261,6 +261,7 @@ func (r *Runtime) saveTranscript(events []clirun.StreamEvent, run tasks.Run) str
 type serveSession struct {
 	configPath string // temp MCP config file ("" for inline adapters)
 	endpoint   string // the loopback URL the adapter must reach
+	geminiDir  string // per-turn --gemini_dir mirror ("" for other adapters)
 	stop       func()
 }
 
@@ -355,6 +356,29 @@ func (r *Runtime) serveTools(e *entry, trigger bus.Message) *serveSession {
 		stop()
 	}
 	sess := &serveSession{endpoint: endpoint, stop: stopAll}
+	// Dir-delivered adapters (antigravity) need a per-turn config
+	// directory on argv; the adapter builds a mirror of its real global
+	// dir so OAuth/state survive (ADR-0012 §4 read pass-through).
+	if e.cli.MCPGeminiDir != nil {
+		base := filepath.Join(r.cfg.WS.Root, ".dhi", "mcp")
+		dir, cleanup, derr := e.cli.MCPGeminiDir(base, e.cli.MCPConfigFile(endpoint))
+		if derr != nil {
+			stopAll()
+			_, _ = r.cfg.Bus.Post(bus.Message{
+				Channel: trigger.Channel, Thread: trigger.Thread,
+				Author: e.m.ID,
+				Text:   "IDE tools unavailable this turn: " + derr.Error(),
+			})
+			return nil
+		}
+		sess.configPath = dir
+		sess.geminiDir = dir
+		sess.stop = func() {
+			cleanup()
+			stopAll()
+		}
+		return sess
+	}
 	// Project-file adapters (cursor) need the config inside the worktree
 	// at a fixed relative path; write it there and git-exclude it so the
 	// agent's own commits never pick it up.

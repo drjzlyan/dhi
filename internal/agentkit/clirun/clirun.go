@@ -59,6 +59,9 @@ type RunInput struct {
 	// MCPURL is the loopback endpoint the per-turn config file carries;
 	// argv-delivered adapters (codex) reference it directly.
 	MCPURL string
+	// MCPGeminiDir is the per-turn config directory for adapters that
+	// take it on argv (antigravity: --gemini_dir); "" = none.
+	MCPGeminiDir string
 	// Stdin overrides argv delivery (F-014 M14 P1): when non-empty the
 	// adapter emits a stdin-reading argv and the runner feeds this as
 	// the process stdin. The runner sets it only when the assembled
@@ -136,12 +139,21 @@ type CLI struct {
 	// the temp config path and the raw endpoint: file-based adapters
 	// reference the path, inline adapters reference the URL.
 	MCPConfigArgs func(configPath, endpoint string) []string
+	// MCPGeminiDir, when set, builds a per-turn config *directory* for
+	// adapters that read MCP servers only from a fixed path under a
+	// global dir and accept that dir on argv (antigravity:
+	// --gemini_dir). It receives a writable base dir and the rendered
+	// config body, returning the dir and a cleanup. Optional; when set
+	// it supersedes the temp-file/env delivery.
+	MCPGeminiDir func(baseDir, configBody string) (dir string, cleanup func(), err error)
+	// MCPGeminiDirFlag is the argv flag that takes that directory.
+	MCPGeminiDirFlag string
 }
 
 // MCPWired reports whether the adapter declares a complete per-turn MCP
 // injection (a delivery path exists).
 func (c *CLI) MCPWired() bool {
-	return c.MCPOK && (c.MCPConfigFile != nil || c.MCPConfigEnv != "" || c.MCPConfigArgs != nil)
+	return c.MCPOK && (c.MCPConfigFile != nil || c.MCPConfigEnv != "" || c.MCPConfigArgs != nil || c.MCPGeminiDir != nil)
 }
 
 // MCPEnv returns the env additions that point this CLI at configPath

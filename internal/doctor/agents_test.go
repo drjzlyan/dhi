@@ -107,18 +107,20 @@ func TestAgentToolsServingOnMCPAdapter(t *testing.T) {
 	}
 }
 
-// TestAgentToolsFallbackWarns pins the named warn: a served allowlist on
-// a runtime without verified MCP wiring keeps the dhi-action fallback,
-// and the row says so.
-func TestAgentToolsFallbackWarns(t *testing.T) {
+// TestAgentToolsNoEngineWarns pins the named warn: a served allowlist
+// with no engine and no workspace default cannot be served.
+func TestAgentToolsNoEngineWarns(t *testing.T) {
 	root := wsFixture(t)
-	writeAgent(t, root, "scout", "antigravity", `"memory_append"`)
+	doc := "schema = 3\nname = \"S\"\nmodel = \"m\"\ntools = [\"memory_append\"]\n"
+	if err := os.WriteFile(filepath.Join(root, workspace.DirAgents, "scout.toml"), []byte(doc), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	got := AgentTools(root)
 	if len(got) != 1 || got[0].Name != "agent-tools" {
 		t.Fatalf("checks = %+v, want one agent-tools row", got)
 	}
-	if got[0].Status != Warn || !strings.Contains(got[0].Detail, "antigravity") ||
-		!strings.Contains(got[0].Detail, "fallback") {
+	if got[0].Status != Warn || !strings.Contains(got[0].Detail, "scout") ||
+		!strings.Contains(got[0].Detail, "no engine") {
 		t.Fatalf("warn row = %+v", got[0])
 	}
 }

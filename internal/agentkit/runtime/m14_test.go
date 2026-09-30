@@ -256,15 +256,28 @@ func TestNoServedToolsNoSession(t *testing.T) {
 	}
 }
 
-// TestNonMCPAdapterKeepsFallback pins the adapter gate: a served slug on
-// a runtime without verified MCP wiring serves nothing (fallback).
-func TestNonMCPAdapterKeepsFallback(t *testing.T) {
+// TestServeToolsGeminiDirForAntigravity pins the antigravity delivery:
+// a served allowlist now gets a per-turn session whose --gemini_dir
+// mirror carries DHI's loopback endpoint, and stop() removes it.
+func TestServeToolsGeminiDirForAntigravity(t *testing.T) {
 	h := newHarnessMulti(t, docTools("antigravity", `"memory_append"`),
 		map[string]string{"agy": silentStub})
 	h.rt.cfg.Memory = memory.Open(h.ws)
-	if s := h.rt.serveTools(h.rt.agents["scout"], bus.Message{Channel: "#general"}); s != nil {
-		s.stop()
-		t.Fatal("served MCP tools to an adapter without verified wiring")
+	serve := h.rt.serveTools(h.rt.agents["scout"], bus.Message{Channel: "#general"})
+	if serve == nil {
+		t.Fatal("no serve session for antigravity with verified MCP wiring")
+	}
+	if serve.geminiDir == "" || serve.configPath != serve.geminiDir {
+		t.Fatalf("antigravity session must be dir-delivered: %+v", serve)
+	}
+	body, err := os.ReadFile(filepath.Join(serve.geminiDir, "config", "mcp_config.json"))
+	if err != nil || !strings.Contains(string(body), "127.0.0.1") {
+		t.Fatalf("mirror mcp_config = %q err=%v", body, err)
+	}
+	dir := serve.geminiDir
+	serve.stop()
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Fatalf("gemini_dir mirror survived stop: %v", err)
 	}
 }
 
