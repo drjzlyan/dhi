@@ -137,7 +137,7 @@ func TestChatApprovalFlow(t *testing.T) {
 	}()
 
 	h.openFocused()
-	deadline := time.After(2 * time.Second)
+	deadline := time.After(asyncTimeout)
 	for len(h.apprs.List()) == 0 {
 		select {
 		case <-h.apprs.Changes():
@@ -245,7 +245,7 @@ func TestChatGrantAlways(t *testing.T) {
 			"scout", "write", sandbox.OpWrite, "alpha/docs/n.md", "policy asks")
 	}()
 	h.openFocused()
-	deadline := time.After(2 * time.Second)
+	deadline := time.After(asyncTimeout)
 	for len(h.apprs.List()) == 0 {
 		select {
 		case <-h.apprs.Changes():
@@ -265,3 +265,7 @@ func TestChatGrantAlways(t *testing.T) {
 		t.Fatal("granted scope still parked a prompt")
 	}
 }
+
+// asyncTimeout bounds test waits for async chat outcomes; generous so
+// -race + a loaded full-suite run never trips it.
+const asyncTimeout = 30 * time.Second

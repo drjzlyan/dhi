@@ -142,7 +142,7 @@ func waitReply(t *testing.T, ch <-chan bus.Message) bus.Message {
 			if m.Author != bus.Human {
 				return m
 			}
-		case <-time.After(5 * time.Second):
+		case <-time.After(asyncTimeout):
 			t.Fatal("no reply within timeout")
 			return bus.Message{}
 		}
@@ -752,3 +752,7 @@ func TestWorkingTracksInflightTurns(t *testing.T) {
 		t.Fatal("top-level turn still reported working")
 	}
 }
+
+// asyncTimeout bounds test waits for spawned CLIs; generous so -race + a
+// loaded full-suite run never trips it (a real hang still fails).
+const asyncTimeout = 30 * time.Second

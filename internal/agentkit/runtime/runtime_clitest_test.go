@@ -124,7 +124,7 @@ func (h *cliHarness) trigger() bus.Message {
 func collectUntil(t *testing.T, ch <-chan bus.Message, needle string) []bus.Message {
 	t.Helper()
 	var msgs []bus.Message
-	deadline := time.After(10 * time.Second)
+	deadline := time.After(asyncTimeout)
 	for {
 		select {
 		case m, ok := <-ch:

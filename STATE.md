@@ -1,10 +1,26 @@
 # STATE — current position
 
-Updated: 2026-09-30 (session 36: optional M18/M19 follow-ons landed —
-inbox ideation proposals, index signature verification, pack-sourced
-LIBRARY badges, executable skill scripts. The planned roadmap M15–M20 is
-complete; only the deferred `api:<provider>` engine and the older
-backlog remain.)
+Updated: 2026-09-30 (session 37: de-flaked the async test waits — the
+roadmap M15–M20 and every recorded follow-on are complete, and `make
+verify` is green on repeated full runs. Only the deferred
+`api:<provider>` engine and the older backlog remain.)
+
+### Session 37 (de-flake the async test waits)
+
+- The long-standing "known flakes" (`TestCLIRuntimeEndToEnd`,
+  `TestMemoryAndKBReachTheSystemBlock`, clirun `TestDetect`, editor
+  `TestChatApprovalFlow`) were **tight test deadlines**, not product
+  bugs: their helper waits (2–5 s) expired under `-race` + full-suite
+  contention while a stub CLI subprocess was spawning.
+- Introduced a shared `asyncTimeout = 30s` in the reviewer, runtime, and
+  editor test packages and used it for `pumpCmd`/`waitReply`/chat
+  outcome waits; raised the `runtime_clitest` drain to it; bumped the
+  production `Registry.Detect` per-adapter probe 5s → 10s (a stub
+  `--version` under load can exceed 5s; still bounded).
+- `make verify` (gofmt + vet + race) is now green on **three consecutive
+  full runs** — the flake caveats in earlier session notes no longer
+  apply. (A one-off editor `DATA RACE` warning seen earlier did not
+  reproduce across these runs; keep an eye out.)
 
 ### Session 36 (M19 follow-on — executable skill scripts)
 

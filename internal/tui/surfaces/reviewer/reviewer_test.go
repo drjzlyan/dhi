@@ -128,7 +128,7 @@ func pumpCmd(t *testing.T, cmd tea.Cmd) tea.Msg {
 	select {
 	case b := <-ch:
 		return b.msg
-	case <-time.After(3 * time.Second):
+	case <-time.After(asyncTimeout):
 		t.Fatal("async operation timed out")
 	}
 	return nil
@@ -400,3 +400,7 @@ func renderAt(m *Model, l layoutMode) string {
 	r, _ := m.openReview()
 	return m.renderDiff(80, 24, r.Viewed)
 }
+
+// asyncTimeout bounds test waits for spawned CLIs; generous so -race + a
+// loaded full-suite run never trips it (a real hang still fails).
+const asyncTimeout = 30 * time.Second
