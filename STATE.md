@@ -165,11 +165,14 @@ deferred `api:<provider>` engine kind remains.)
 
 ## Where we are
 
-**The planned roadmap M15–M20 is fully landed (M20 complete 2026-09-29);
-`make verify` green.** M18 ideation round-table, M19 pack registry +
-MCP install, and M20 depth & cohesion (board depth, channel depth,
-live work log, editor co-editing) all shipped. Beyond M20 only the
-optional follow-ons and the deferred backlog remain (below).
+**The planned roadmap M15–M20 is fully landed (M20 complete 2026-09-29,
+M15 complete 2026-09-30); `make verify` green.** M15 engine inversion
+(the host CLI is the engine; all six adapters serve DHI tools over the
+loopback MCP endpoint; `dhi-action` removed), M18 ideation round-table,
+M19 pack registry + MCP install, and M20 depth & cohesion (board depth,
+channel depth, live work log, editor co-editing) all shipped. Beyond
+M20 only the optional follow-ons and the deferred backlog remain
+(below).
 
 **M14 is complete (P0–P4); `make verify` green.** P4 shipped F-029:
 `gitcore.ResolveIdentity` (one resolver, reads the user's git config
@@ -540,10 +543,8 @@ catalog).
 1. **Optional follow-ons** (no milestone blocking): M19 index signature
    verification, pack-sourced LIBRARY badges, executable skill scripts;
    M18 pending session proposals as an inbox `ItemKind`.
-2. **M15 P3 — MCP-for-all (F-030)**: still blocked on installing
-   cursor/copilot (gemini deprecated → antigravity) + live MCP
-   verification before `MCPOK` flips; then sandbox network for MCP
-   servers.
+2. **Deferred engine kind**: `api:<provider>` (hard tool guarantee /
+   offline inference) — designed-not-built; the only open M15 item.
 3. **(Deferred, F-026/F-017/F-027/F-020/M11)** as before — now largely
    absorbed into M20 depth or the M19 registry.
 
