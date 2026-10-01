@@ -41,21 +41,21 @@ type Approvals struct {
 	grants    map[string]bool // agent|scope → always-allow (F-030 P2)
 }
 
-// NewApprovals returns an empty queue.
-func NewApprovals() *Approvals { return &Approvals{} }
+// NewApprovals returns an empty queue. The change-signal channel is
+// created here and never reassigned, so Changes/signal may read it
+// without a lock (an Approvals must come from this constructor).
+func NewApprovals() *Approvals {
+	return &Approvals{changes: make(chan struct{}, 1)}
+}
 
 // Changes returns a channel receiving a token whenever the pending set
 // changes (push, resolve, cancel). The token carries no payload; callers
 // re-read List(). The channel is created once and shared by all callers.
-func (a *Approvals) Changes() <-chan struct{} {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if a.changes == nil {
-		a.changes = make(chan struct{}, 1)
-	}
-	return a.changes
-}
+func (a *Approvals) Changes() <-chan struct{} { return a.changes }
 
+// signal wakes Changes() listeners. a.changes is immutable after
+// NewApprovals, so the field read is lock-free; the send is
+// non-blocking. It must NOT take a.mu — Resolve already holds it.
 func (a *Approvals) signal() {
 	if a.changes == nil {
 		return

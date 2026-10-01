@@ -1,9 +1,24 @@
 # STATE — current position
 
-Updated: 2026-09-30 (session 38: dropped the deferred `api:<provider>`
-engine kind (ADR-0024) and cleaned every artifact. The roadmap M15–M20
-and all follow-ons are complete; `make verify` is green. No open
-milestones remain — only the older, unspecified deferred backlog.)
+Updated: 2026-09-30 (session 39: fixed a real `tools.Approvals` data
+race behind the intermittent editor `DATA RACE`. Roadmap M15–M20 and all
+follow-ons are complete; `make verify` is green. No open milestones —
+only the older, unspecified deferred backlog remains.)
+
+### Session 39 (fix a real Approvals data race)
+
+- The intermittent editor `DATA RACE` was **production**, not test-only:
+  `tools.Approvals.signal()` read the `changes` channel field while
+  `Changes()` lazily created it, unsynchronised — a concurrent
+  `AskScope` + `Changes()` mutated/read the same pointer. (It also made
+  `TestChatApprovalFlow` hang past its deadline.)
+- Fix: the channel is created once in `NewApprovals` and never
+  reassigned, so `Changes()` returns it and `signal()` reads it
+  lock-free (no `a.mu` — `Resolve` already holds it, so a locking
+  `signal` would self-deadlock). Documented the constructor requirement.
+- Reproduced with `editor -race -count=20`; after the fix 20 iterations
+  are clean. Added `TestApprovalsConcurrentChangesAndAsk` (bounded
+  concurrency under `-race`). `make verify` green.
 
 ### Session 38 (drop the deferred api engine kind — cleanup)
 

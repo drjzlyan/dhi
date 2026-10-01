@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -144,4 +145,50 @@ func TestGrantAlwaysSkipsNextAsk(t *testing.T) {
 	if err := a.AskScope(ctx, "scout", "push", sandbox.OpWrite, "t", "r"); err == nil {
 		t.Fatal("cancelled ask should return the ctx error")
 	}
+}
+
+// TestApprovalsConcurrentChangesAndAsk exercises the change-signal path
+// under concurrency: Changes() must be lock-free-safe against signal()
+// fired by concurrent Ask/Resolve (a former lazy-init race). -race is
+// the assertion. Bounded by ctx so it always terminates.
+func TestApprovalsConcurrentChangesAndAsk(t *testing.T) {
+	a := NewApprovals()
+	ch := a.Changes()
+	if ch == nil {
+		t.Fatal("Changes() returned nil")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Listener: drains tokens until ctx is done (not part of the WaitGroup).
+	go func() {
+		for {
+			select {
+			case <-ch:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
+	var wg sync.WaitGroup
+	for i := 0; i < 4; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			done := make(chan struct{})
+			go func() { defer close(done); _ = a.AskScope(ctx, "scout", "write", sandbox.OpWrite, "t", "r") }()
+			for {
+				select {
+				case <-done:
+					return
+				case <-time.After(2 * time.Millisecond):
+					for _, ap := range a.List() {
+						a.Resolve(ap.ID, true)
+					}
+				}
+			}
+		}()
+	}
+	wg.Wait()
 }
