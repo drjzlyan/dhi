@@ -1,9 +1,24 @@
 # STATE — current position
 
-Updated: 2026-09-30 (session 37: de-flaked the async test waits — the
-roadmap M15–M20 and every recorded follow-on are complete, and `make
-verify` is green on repeated full runs. Only the deferred
-`api:<provider>` engine and the older backlog remain.)
+Updated: 2026-09-30 (session 38: dropped the deferred `api:<provider>`
+engine kind (ADR-0024) and cleaned every artifact. The roadmap M15–M20
+and all follow-ons are complete; `make verify` is green. No open
+milestones remain — only the older, unspecified deferred backlog.)
+
+### Session 38 (drop the deferred api engine kind — cleanup)
+
+- Per decision, removed the never-built `engine = "api:<provider>"`
+  path rather than leaving it deferred. Code: `manifest.ParseEngine` no
+  longer special-cases `api:` (it is now a plain unknown-kind refusal);
+  the `case "api"` branch + "not built yet" message are gone and the
+  test asserts the unknown-kind refusal.
+- Docs: new **ADR-0024** supersedes ADR-0019 §5's forwarding clause
+  (ADR-0019 is otherwise untouched — append-only); ROADMAP drops the
+  `api:<provider>` deferred bullet and the "only deferred item" status
+  note; F-030 drops the Part D/acceptance/Deferred `api:` mentions;
+  product.md states best-effort containment plainly with no future path.
+- No remaining `api:` engine artifact in code or docs (ADR-0019/0024
+  history excepted). `make verify` green.
 
 ### Session 37 (de-flake the async test waits)
 
@@ -279,8 +294,8 @@ engine) and feature specs **F-030–F-035**.
 **M15 P0 landed (engine inversion).** Manifest schema 3 adds
 `engine = "cli:<name>"` (optional; empty = inherit the workspace
 default) via `manifest.ParseEngine`/`EngineString`; `runtime` stays as
-a synonym for schema 1/2 and refuses alongside `engine`; the `api:`
-kind refuses as not-built. Settings gained a strict `engine` default;
+a synonym for schema 1/2 and refuses alongside `engine`; unknown engine
+kinds refuse by name (ADR-0024 drops the `api:` path). Settings gained a strict `engine` default;
 `runtime.Config.DefaultEngine` + `runtime.engineName` resolve the
 effective engine, refusing by name when neither is set; doctor
 `agent-tools` resolves the inherited engine. Adapter selectability
@@ -624,13 +639,11 @@ catalog).
 
 ## Next up
 
-1. **Optional follow-ons**: none remaining — the recorded M19/M18
-   follow-ons are all landed (index signatures, LIBRARY badges, skill
-   scripts, inbox proposals).
-2. **Deferred engine kind**: `api:<provider>` (hard tool guarantee /
-   offline inference) — designed-not-built; the only open M15 item.
-3. **(Deferred, F-026/F-017/F-027/F-020/M11)** as before — now largely
-   absorbed into M20 depth or the M19 registry.
+1. **Optional follow-ons**: none — all landed.
+2. **Engine kinds**: `cli:<name>` only (ADR-0024 dropped the `api:`
+   path). Reinstating a direct-API engine would be a fresh ADR + spec.
+3. **(Deferred, F-026/F-017/F-027/F-020/M11)** — the older, unspecified
+   backlog; pick and spec one when wanted.
 
 ## Session 19 gotchas (M12)
 

@@ -40,8 +40,8 @@ func EngineString(cliName string) string { return EngineCLIPrefix + cliName }
 
 // ParseEngine validates an engine declaration ("cli:<name>") and returns
 // the CLI name. The empty string is a valid engine meaning "inherit the
-// workspace default". An unknown CLI, an unknown kind, or the not-built
-// `api:` kind refuses by name (ADR-0011).
+// workspace default". An unknown CLI or an unknown kind refuses by name
+// (ADR-0011).
 func ParseEngine(engine string) (string, error) {
 	e := strings.TrimSpace(strings.ToLower(engine))
 	if e == "" {
@@ -58,8 +58,6 @@ func ParseEngine(engine string) (string, error) {
 				engine, strings.Join(clirun.CLINames(), ", "))
 		}
 		return name, nil
-	case "api":
-		return "", fmt.Errorf("engine %q: the api engine kind is not built yet (use cli:<name>)", engine)
 	default:
 		return "", fmt.Errorf("engine %q: unknown kind %q (want cli)", engine, kind)
 	}

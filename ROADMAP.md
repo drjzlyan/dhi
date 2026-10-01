@@ -724,19 +724,19 @@ that declares every tool, authority, workflow, and record. Agents work
 only through DHI's IDE tool surface — no free-form shell, network
 deny-by-default — so "the crew works inside the IDE" is auditable.
 **Containment is best-effort while a CLI is the engine** (a CLI keeps
-its native tools); the `api:` engine kind is the recorded path to a hard
-guarantee.
+its native tools); this is stated as such, and there is no second
+engine kind (ADR-0024).
 
 Pillars: engine inversion + IDE tool surface · feature workflows ·
 cross-project work + dependency graph · ideation round-table + canvas ·
 pack registry + MCP install · dashboard/editor/Slack depth + live work
 log. See [product.md](docs/product.md) for the vision.
 
-## M15 — Engine inversion & IDE tool surface (F-030) *(next)*
+## M15 — Engine inversion & IDE tool surface (F-030)
 
-Status: complete (2026-09-30; only the deferred `api:` engine kind
-remains). ADR-0019
-(supersedes ADR-0012/0013) + ADR-0023 (editor/LSP tool seam). The host
+Status: complete (2026-09-30). ADR-0019 (supersedes ADR-0012/0013) +
+ADR-0023 (editor/LSP tool seam) + ADR-0024 (no direct-API engine kind).
+The host
 CLI becomes the engine; DHI owns the loop, the tools, and the authority.
 Adapter selectability follows detection: only CLIs installed on the
 machine are selectable; cursor/copilot join once installed +
@@ -781,7 +781,6 @@ verified 2026-09-26 on 1.2.11 (replaces the gemini adapter).
       at parity — the `pr_open` action is now a served tool (task
       create/status/assign were already served), and the final-message
       parsing path (`toolbridge`) is gone
-- [ ] Deferred: `api:<provider>` engine kind (hard guarantee / offline)
 
 ## M16 — Feature workflows (F-031)
 

@@ -198,10 +198,10 @@ func TestEngineSchema3(t *testing.T) {
 		}
 	})
 
-	t.Run("api engine kind refuses as not built", func(t *testing.T) {
+	t.Run("unknown engine kind refuses", func(t *testing.T) {
 		doc := "schema = 3\nname = \"E\"\nmodel = \"m\"\nengine = \"api:anthropic\"\n"
-		if _, err := Parse("e", []byte(doc)); err == nil || !strings.Contains(err.Error(), "not built") {
-			t.Fatalf("err = %v, want api-not-built refusal", err)
+		if _, err := Parse("e", []byte(doc)); err == nil || !strings.Contains(err.Error(), "unknown kind") {
+			t.Fatalf("err = %v, want unknown-kind refusal", err)
 		}
 	})
 

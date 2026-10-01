@@ -96,13 +96,13 @@ sandbox (network deny-by-default, no free-form shell).
   (they must reach their vendors). A Noop sandbox cannot deny, so `run`
   refuses rather than leak. Seatbelt/bwrap
   profiles gain declared-network roots.
-- Containment is documented as best-effort; the `api:` engine kind
-  remains designed-not-built.
+- Containment is documented as best-effort; there is no second engine
+  kind (ADR-0024).
 
 ## Acceptance criteria
 
 - [x] A schema-3 manifest selects an engine (workspace default +
-      per-agent override); an unknown engine or `api:` kind refuses by
+      per-agent override); an unknown engine or kind refuses by
       name; schema-1/2 load with their engine derived from `runtime`
       (capability scopes land in P2).
       — landed: manifest schema 3 + `ParseEngine`/`EngineString`,
@@ -143,6 +143,4 @@ sandbox (network deny-by-default, no free-form shell).
 
 ## Deferred
 
-- The direct-API engine kind (`api:<provider>`) — the recorded path to a
-  hard tool guarantee and offline inference.
 - Multi-workspace (more than one workspace open per process).

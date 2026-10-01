@@ -18,8 +18,8 @@ editor, git, board, channels, and ideation the human uses — under declared
 capability scopes, feature workflows, and approvals. There is no free-form
 shell and no unapproved mutation: the crew works *inside* the IDE, and every
 step is visible and reversible. Because a host CLI keeps its own native tools,
-this containment is best-effort; an in-house API engine is the recorded path to
-a hard guarantee.
+this containment is best-effort — and that is stated plainly rather than
+claimed as a guarantee (there is no second engine kind; see ADR-0024).
 
 ## Personas
 
