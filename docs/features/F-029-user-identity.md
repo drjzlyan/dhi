@@ -67,5 +67,5 @@ work the user's (ADR-0021-era product rule).
 
 ## Deferred
 
-- Per-agent git identities or commit trailers (Co-Authored-By) — the
-  product rule is the opposite: one outward identity.
+- ~~Per-agent git identities / commit trailers~~ — **closed (not
+  planned)**: one outward identity by design.

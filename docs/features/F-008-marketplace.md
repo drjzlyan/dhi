@@ -1,6 +1,6 @@
 # F-008: Marketplace packs
 
-Status: in progress · Milestone: M4 (P2) · Parent: [F-003](F-003-workspace.md)
+Status: implemented (M4 P2, 2026-08-25) · Parent: [F-003](F-003-workspace.md)
 
 ## Summary
 

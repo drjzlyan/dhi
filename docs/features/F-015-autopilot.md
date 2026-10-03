@@ -97,8 +97,8 @@ review gate.
 
 ## Deferred
 
-- Cron expressions (the three schedule shapes cover the documented
-  Multica use cases — standups, audits, reports — without a parser).
+- ~~Cron expressions~~ — **closed (not planned)**: the three schedule
+  shapes cover the documented use cases.
 - Resident mode (`dhi --serve`) so schedules fire while the TUI is
   closed: a product decision with packaging implications, not an
   implementation gap.

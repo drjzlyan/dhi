@@ -86,6 +86,8 @@ when you need them, never the focus.
 
 ## Deferred
 
-- Tab-bar badges (attention dots per surface) — statusline carries it.
+- ~~Tab-bar badges~~ — **closed (not planned)**: the statusline `!N`
+  carries it.
 - Mouse support; per-pane scrollbars.
-- Reworking the editor's centered empty-state (intentional hero).
+- ~~Reworking the editor's centered empty-state~~ — **closed (not
+  planned)**: intentional hero.

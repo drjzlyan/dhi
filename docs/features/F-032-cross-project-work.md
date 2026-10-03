@@ -1,6 +1,6 @@
 # F-032: Cross-project work & dependency graph
 
-Status: planned (M17) · Companion to: ADR-0021 (cross-project
+Status: implemented (M17) · Companion to: ADR-0021 (cross-project
 dependencies), ADR-0009 (worktrees), F-021 (board). Product rule: a
 change that crosses projects is one piece of work, not N disconnected
 ones.

@@ -201,7 +201,8 @@ CHANNELS-rail count too — one read state, two views of it.
 - Autopilot completions / doctor regressions as inbox items — the
   F-016 surface is ready for local triggers; this spec keeps the
   agent-message model as the only new source.
-- Multi-human read states (DHI is single-human: `bus.Human`).
+- ~~Multi-human read states~~ — **closed (not planned)**: DHI is
+  single-human (`bus.Human`).
 - "Mark everything in this channel read" as an explicit command
   (opening already does; a bulk all-channels reset is a candidate for
   settings).

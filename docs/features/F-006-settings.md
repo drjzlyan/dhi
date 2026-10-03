@@ -1,6 +1,6 @@
 # F-006: Settings surface — everything configurable
 
-Status: planned · Skeleton lands M2, full coverage tracks each feature milestone
+Status: implemented (M2 skeleton; full coverage through M11/M18/M19) · extended by later milestones
 
 ## Summary
 

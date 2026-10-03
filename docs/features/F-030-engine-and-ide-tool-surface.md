@@ -1,7 +1,6 @@
 # F-030: Engine inversion & the IDE tool surface
 
-Status: in progress (M15; P0 engine seam + P1 fs/git/ideation/run/
-ask_human landed 2026-09-26; editor/LSP via ADR-0023 next) · Companion
+Status: complete (M15, 2026-09-30) · Companion
 to: ADR-0019 (DHI owns the loop, CLI
 is the engine), ADR-0011 (no silent fallbacks), ADR-0018 (loopback
 serving), F-028 (the first tool surface). Product rule: agents work the

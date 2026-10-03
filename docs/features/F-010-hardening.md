@@ -124,8 +124,8 @@ Two hardening halves ship together:
 
 ## Deferred
 
-- MCP stdio spawn wrapped through the sandbox (needs the first real
-  MCP consumer in cmd/dhi wiring).
+- ~~MCP stdio spawn wrapped through the sandbox~~ — **landed** (M19 P2,
+  `mcpbridge`).
 - Read-only ro-root policy differentiation (roots plumbed, unused).
 - bubblewrap network namespace tightening (`--unshare-net`) once
   policy-driven net allowances can inform the profile.

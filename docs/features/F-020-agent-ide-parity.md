@@ -95,5 +95,5 @@ adapters.
 - Interactive tools that need a human-present UI beyond approvals
   (e.g. agents driving the editor cursor).
 - Cross-workspace agent actions.
-- MCP-style third-party tool registries (DHI's ADR-0005 hermetic rule
-  makes this a deliberate non-goal until a design exists).
+- ~~MCP-style third-party tool registries~~ — **closed (not planned)**:
+  a deliberate non-goal (ADR-0005).

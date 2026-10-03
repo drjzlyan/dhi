@@ -1,6 +1,6 @@
 # F-013: CLI runtimes — roster the agent CLIs you already run
 
-Status: in progress (M8 P1 · wave-3 live-verify pending) · Milestone: M8 · Closes: ADR-0012
+Status: implemented (M8 P1; six adapters live-verified; more runtimes deferred) · Milestone: M8 · Closes: ADR-0012
 Inspired by: Multica's daemon-runtimes model — an agent is a teammate
 who works on a runtime you control; Multica drives 26 host agent CLIs
 and DHI starts with six of the same, through DHI's own task/worktree/

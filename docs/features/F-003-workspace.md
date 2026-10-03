@@ -1,6 +1,6 @@
 # F-003: Workspace surface — company of agents
 
-Status: planned · Milestone: M4 (domain models land M1)
+Status: implemented (M4, 2026-08-25) · Milestone: M4 (domain models landed M1)
 
 ## Summary
 

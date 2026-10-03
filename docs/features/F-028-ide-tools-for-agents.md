@@ -73,7 +73,6 @@ product's CLI surface and help text.
 
 ## Deferred
 
-- File read/write/list as served tools (agents keep the sandboxed CLI
-  tools for the filesystem).
+- ~~File read/write/list as served tools~~ — **landed** (M15 P1).
 - GUI-action tools (opening editors/panes); MCP over HTTP between
   DHI instances.

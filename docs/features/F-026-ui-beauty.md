@@ -129,6 +129,7 @@ primitives, surfaces consume them — no exceptions.
 
 ## Deferred (stays out)
 
-- M7 LSP nav (definition/references); mouse drag; ideator diagram
-  preview; MCP/remote registries; per-surface identity accent ramps
-  (one accent ramp keeps consistency).
+- ~~M7 LSP nav (definition/references)~~ — **landed** (F-009/F-030
+  LSP verbs); ~~ideator diagram preview~~ — **landed** (M18 mermaid).
+  Open: mouse drag; per-surface identity accent ramps (one ramp keeps
+  consistency).

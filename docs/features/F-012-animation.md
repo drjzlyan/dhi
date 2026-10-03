@@ -124,8 +124,9 @@ Design constraints (unchanged):
 
 ## Deferred
 
-- Per-transition custom easings (one fade shape is enough for v1).
-- Terminal-capability detection (truecolor vs dim fallback) — lipgloss
-  already degrades `Faint` gracefully per terminal env.
+- ~~Per-transition custom easings~~ — **closed (not planned)**: one
+  fade shape is enough.
+- ~~Terminal-capability detection~~ — **closed**: lipgloss degrades
+  `Faint` gracefully per terminal env.
 - OS-level reduce-motion import (blocked by ADR-0005 hermeticity;
   revisit only if a seam appears that reads env vars at boot).

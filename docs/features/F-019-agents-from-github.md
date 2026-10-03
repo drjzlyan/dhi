@@ -1,6 +1,6 @@
 # F-019: Add agents from GitHub — one flow, manifest or pack
 
-Status: planned (M10 P2) · Milestone: M10 · Depends on: F-018
+Status: implemented (M10 P2, 2026-09-09) · Milestone: M10 · Depends on: F-018
 (settings agents), F-008 (packs). Inspired by: the user goal — "they
 can add agents from github".
 

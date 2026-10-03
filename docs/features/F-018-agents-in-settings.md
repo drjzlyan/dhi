@@ -1,6 +1,6 @@
 # F-018: Agents in Settings — full CRUD, live roster
 
-Status: planned (M10 P1) · Milestone: M10 · Depends on: F-006 (settings),
+Status: implemented (M10 P1, 2026-09-09) · Milestone: M10 · Depends on: F-006 (settings),
 M2 (org crew ops). Inspired by: the user goal — "a user can create their
 own agents in settings".
 

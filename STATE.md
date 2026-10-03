@@ -1,9 +1,24 @@
 # STATE — current position
 
-Updated: 2026-09-30 (session 39: fixed a real `tools.Approvals` data
-race behind the intermittent editor `DATA RACE`. Roadmap M15–M20 and all
-follow-ons are complete; `make verify` is green. No open milestones —
-only the older, unspecified deferred backlog remains.)
+Updated: 2026-09-30 (session 40: fixed stale feature statuses and closed
+landed/decided deferral notes. Roadmap M15–M20 and all follow-ons are
+complete; `make verify` green. No open milestones.)
+
+### Session 40 (docs: fix stale statuses + close landed deferrals)
+
+- Feature status headers that still read "planned"/"in progress" now
+  reflect reality: F-003, F-006, F-008, F-013, F-018, F-019, F-027,
+  F-030 (in progress → complete), F-031, F-032. No feature file reads
+  planned/in-progress anymore.
+- Deferred sections: struck-through + annotated the items that have
+  since **landed** (F-010 MCP-stdio sandbox; F-016 true-unread &
+  per-item snooze; F-026 LSP nav + ideator preview; F-028 fs tools;
+  F-031/F-034 executable skill scripts; F-034 index signatures) and the
+  items **closed (not planned)** (F-012 easings + terminal detection;
+  F-016 external notifications; F-017 multi-human; F-020 MCP
+  registries; F-025 tab badges + empty-state; F-029 per-agent
+  identity; F-033 voice/video). The remaining deferred entries are the
+  genuinely open/design items.
 
 ### Session 39 (fix a real Approvals data race)
 

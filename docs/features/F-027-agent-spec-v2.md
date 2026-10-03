@@ -1,6 +1,6 @@
 # F-027: Agent spec v2 — roles, skills, behaviour library
 
-Status: planned (M14 P0 accepted 2026-09-19)
+Status: implemented (M14, 2026-09-26)
 Companion to: ADR-0016 (spec v2 + library format), F-018 (agents in
 Settings), F-019 (agents from GitHub), F-023 (settings management).
 Product rule: the IDE is the product — an agent is defined entirely in

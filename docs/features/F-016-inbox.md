@@ -78,11 +78,9 @@ reviews still decided in Reviewer).
 
 ## Deferred
 
-- True unread/read-mark model (the M4-deferred item) — the mention
-  rule is a deliberate subset until that lands.
-- Inbox notifications from chat channels (Slack/Lark/Telegram): the
-  integration DHI has declined to build; the surface is ready for a
-  local trigger (autopilot completions, doctor regressions) first.
-- Per-item snooze ("remind me later") — needs a persisted
-  snooze state, i.e. the inbox stops being pure; revisit with the
-  read-mark model.
+- ~~True unread/read-mark model~~ — **landed** as F-017.
+- ~~Per-item snooze ("remind me later")~~ — **landed** in F-017 (with
+  persisted expiry).
+- ~~Inbox notifications from chat channels (Slack/Lark/Telegram)~~ —
+  **closed (not planned)**: declined integration; local triggers are
+  the supported path.

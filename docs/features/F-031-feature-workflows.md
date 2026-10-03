@@ -1,6 +1,6 @@
 # F-031: Feature workflows
 
-Status: planned (M16) · Companion to: ADR-0020 (feature workflows),
+Status: implemented (M16) · Companion to: ADR-0020 (feature workflows),
 ADR-0019 (DHI owns the loop), F-011 (standards layers), F-021 (board).
 Product rule: how the crew works is configured in the IDE, shared, and
 followed by every agent.
@@ -72,4 +72,4 @@ a suggestion the agent may skip.
 ## Deferred
 
 - Workflow branching (conditional steps) and parallel steps.
-- Executable skill scripts (a skill that carries steps).
+- ~~Executable skill scripts~~ — **landed** (F-027).

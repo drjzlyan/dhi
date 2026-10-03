@@ -62,5 +62,6 @@ that the user and agents edit live.
 ## Deferred
 
 - Structured diagram editor (nodes/edges) beyond mermaid.
-- Voice/video (out of scope for a terminal-native product).
+- ~~Voice/video~~ — **closed (not planned)**: out of scope for a
+  terminal-native product.
 - Non-ideator (repo-mutating) artifacts.

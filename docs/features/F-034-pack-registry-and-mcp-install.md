@@ -81,7 +81,7 @@ model.
 
 ## Deferred
 
-- Executable skill scripts (same trust machinery as MCP).
+- ~~Executable skill scripts~~ — **landed** (F-027).
 - Multiple/community registries and dependency resolution.
-- Cryptographic signature verification of the index (digest pinning is
-  the shipped trust anchor).
+- ~~Cryptographic signature verification of the index~~ — **landed**
+  (Ed25519 index signatures; `t`/`T` in MARKETPLACE).
