@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -153,5 +154,38 @@ func TestRollupRunsExactCostOn0USD(t *testing.T) {
 	rl := RollupRuns(runs)
 	if rl.Costed != 1 || rl.CostPartial || rl.CostText() != "$0" {
 		t.Errorf("CostText = %q Costed=%d partial=%v", rl.CostText(), rl.Costed, rl.CostPartial)
+	}
+}
+
+func TestRollupByModel(t *testing.T) {
+	runs := []Run{
+		{Model: "gpt-5", Status: RunOK, HasCost: true, CostUSD: 0.10},
+		{Model: "gpt-5", Status: RunError, HasCost: true, CostUSD: 0.05, TokensIn: 10, TokensOut: 5},
+		{Model: "sonnet", Status: RunOK, HasCost: false, TokensIn: 20, TokensOut: 8},
+		{Model: "", Status: RunOK, HasCost: true, CostUSD: 0.01},
+	}
+	got := RollupByModel(runs)
+	if len(got) != 3 {
+		t.Fatalf("groups = %+v", got)
+	}
+	// Most-used first: gpt-5 (2 runs).
+	if got[0].Model != "gpt-5" || got[0].Runs != 2 || got[0].Fail != 1 {
+		t.Fatalf("first group = %+v", got[0])
+	}
+	if got[0].CostText() != "$0.15" {
+		t.Fatalf("gpt-5 cost = %q", got[0].CostText())
+	}
+	// Remaining two tie on 1 run → model-name order: "" then "sonnet".
+	if got[1].Model != "" || got[2].Model != "sonnet" {
+		t.Fatalf("tie order = %q, %q", got[1].Model, got[2].Model)
+	}
+	if !strings.Contains(got[1].Line(), "(default model)") {
+		t.Fatalf("default-model label = %q", got[1].Line())
+	}
+	if got[2].CostText() != "cost partial" {
+		t.Fatalf("sonnet cost = %q", got[2].CostText())
+	}
+	if len(RollupByModel(nil)) != 0 {
+		t.Fatal("nil runs produced groups")
 	}
 }

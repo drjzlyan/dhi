@@ -117,6 +117,44 @@ func (s *Store) AgentRuns(id string) []Run {
 	return out
 }
 
+// ModelRollup is one model's folded run set (F-014 §Part A: cost per
+// model). The embedded Rollup carries the counts/sums; Model is the
+// manifest model tag ("" = the engine's default/unknown).
+type ModelRollup struct {
+	Model string
+	Rollup
+}
+
+// RollupByModel folds a run slice per runtime model, most-used first
+// (ties broken by model name for determinism). Pure arithmetic over the
+// records — no persistence.
+func RollupByModel(runs []Run) []ModelRollup {
+	groups := map[string][]Run{}
+	for _, r := range runs {
+		groups[r.Model] = append(groups[r.Model], r)
+	}
+	out := make([]ModelRollup, 0, len(groups))
+	for m, rs := range groups {
+		out = append(out, ModelRollup{Model: m, Rollup: RollupRuns(rs)})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Runs != out[j].Runs {
+			return out[i].Runs > out[j].Runs
+		}
+		return out[i].Model < out[j].Model
+	})
+	return out
+}
+
+// Line renders one model breakdown row (F-014 §Part B).
+func (m ModelRollup) Line() string {
+	name := m.Model
+	if name == "" {
+		name = "(default model)"
+	}
+	return fmt.Sprintf("%s · %d runs · %s · %d fail", name, m.Runs, m.CostText(), m.Fail)
+}
+
 // CostText renders the F-014 cost column: "n/a" when nothing is costed,
 // "cost partial" when any run is cost-less, else the exact dollar sum.
 func (r Rollup) CostText() string {

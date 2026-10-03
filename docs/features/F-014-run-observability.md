@@ -80,7 +80,8 @@ machinery — this is aggregation + rendering over F-013's records.
 - A `cli:<name>` model/cost schema *per CLI* (each adapter's terminal
   usage shape; claude's is parsed today, the rest land with waves 2–3
   of F-013) — its own spec when the conformance fixtures carry it.
-- Cost per *model* breakdown and trend charts (data is already
-  recorded; a rendering question).
+- ~~Cost per *model* breakdown~~ — **landed** (`tasks.RollupByModel`;
+  the INSPECT profile shows per-model runs/cost rows). Trend charts
+  remain open (a rendering question over already-recorded data).
 - Transcripts in the reviewer surface alongside the diff (natural
   M9: run + diff + transcript in one review).

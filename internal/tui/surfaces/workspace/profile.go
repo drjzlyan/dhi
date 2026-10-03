@@ -90,6 +90,12 @@ func compactProfileLines(p *profile.Profile) []string {
 	if runs := profileRuns(p); len(runs) > 0 {
 		rl := tasks.RollupRuns(runs)
 		add(theme.TextDim().Render(rl.Summary()))
+		for i, mr := range tasks.RollupByModel(runs) {
+			if i >= 4 || len(out) >= 30 {
+				break
+			}
+			add(theme.Hint().Render("  " + mr.Line()))
+		}
 	}
 	add("")
 	add(theme.Hint().Render("recent"))
