@@ -450,3 +450,31 @@ func TestReviewerFilesPaneScrollbar(t *testing.T) {
 		t.Fatal("offset did not follow the cursor")
 	}
 }
+
+func TestReviewerReviewsPaneScrollbar(t *testing.T) {
+	m, _, st, _ := newSurface(t)
+	startBranchReview(t, m, st)
+	for i := 0; i < 12; i++ {
+		if err := st.Create(review.Review{
+			ID: fmt.Sprintf("rv%02d", i), Title: "t",
+			Target: review.Target{Kind: "branch", Base: "master", Head: "master", Member: "api"},
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	m.sec = secReviews
+	m.Resize(100, 40)
+	if strings.Contains(m.View(), "█") {
+		t.Fatal("no scrollbar expected when reviews fit")
+	}
+	m.Resize(100, 6) // body budget 3 < reviews
+	if !strings.Contains(m.View(), "█") {
+		t.Fatal("expected a right-edge scrollbar on REVIEWS")
+	}
+	m.cursors[secReviews] = len(m.reviews()) - 1
+	m.offsets[secReviews] = 0
+	m.reviewsBody(80, 3)
+	if m.offsets[secReviews] == 0 {
+		t.Fatal("offset did not follow the cursor")
+	}
+}

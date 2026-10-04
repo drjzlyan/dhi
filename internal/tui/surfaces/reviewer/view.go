@@ -108,6 +108,9 @@ func (m *Model) mainPane(w, h int) string {
 		}
 	} else if m.sec == secFiles && len(m.files) > 0 {
 		p.SetScroll(kit.NewScroller(len(m.files), h-3, m.offsets[secFiles]))
+	} else if m.sec == secReviews {
+		total, off := m.reviewsScroll(inner)
+		p.SetScroll(kit.NewScroller(total, h-3, off))
 	}
 	pane := p.View()
 	if m.composer != nil {
@@ -188,7 +191,7 @@ func (m *Model) activeSectionFor(w, h int) string {
 	case secFiles:
 		return m.filesBody(w-4, h)
 	default:
-		return m.reviewsBody(w - 4)
+		return m.reviewsBody(w-4, h)
 	}
 }
 
@@ -217,13 +220,13 @@ func (m *Model) activeSection() string {
 	case secFiles:
 		return m.filesBody(maxInt(m.width-8, 40), maxInt(m.height-8, 12))
 	default:
-		return m.reviewsBody(maxInt(m.width-8, 40))
+		return m.reviewsBody(maxInt(m.width-8, 40), maxInt(m.height-8, 12))
 	}
 }
 
 // ---- section bodies ----
 
-func (m *Model) reviewsBody(w int) string {
+func (m *Model) reviewsBody(w, h int) string {
 	rows := m.reviews()
 	c := m.cursors[secReviews]
 	clampCursor(&c, len(rows))
@@ -233,21 +236,63 @@ func (m *Model) reviewsBody(w int) string {
 		out = append(out, theme.DangerText().Render("(review service unavailable)"))
 		return strings.Join(out, "\n")
 	}
-	if w := m.svc.Store().Warnings(); len(w) > 0 {
+	if warns := m.svc.Store().Warnings(); len(warns) > 0 {
 		out = append(out, theme.DangerText().Render(
-			fmt.Sprintf("%d malformed card(s) skipped", len(w))))
+			fmt.Sprintf("%d malformed card(s) skipped", len(warns))))
 	}
 	if len(rows) == 0 {
 		out = append(out, theme.TextDim().Render("(none — press n to start one)"))
+		return strings.Join(out, "\n")
 	}
+
+	// Scroll window (F-025): a selected row expands one detail line, so
+	// window by review (groups carry their rows) with cursor-follow.
+	groups := m.reviewsGroups(w)
+	avail := h - len(out)
+	if avail < 1 {
+		avail = 1
+	}
+	start := clampInt(m.offsets[secReviews], 0, len(rows)-1)
+	if c < start {
+		start = c
+	}
+	render := func(from int) (rs []string, last int) {
+		last = from - 1
+		for i := from; i < len(rows); i++ {
+			g := groups[i]
+			if len(rs) > 0 && len(rs)+len(g) > avail {
+				break
+			}
+			rs = append(rs, g...)
+			last = i
+			if len(rs) >= avail {
+				break
+			}
+		}
+		return rs, last
+	}
+	window, last := render(start)
+	if c > last { // cursor below the window: restart at it
+		start = c
+		window, _ = render(start)
+	}
+	m.offsets[secReviews] = start
+	out = append(out, window...)
+	return strings.Join(out, "\n")
+}
+
+// reviewsGroups renders each review card to its rows (the selected one
+// carries its detail line), for the pane scroll window.
+func (m *Model) reviewsGroups(w int) [][]string {
+	rows := m.reviews()
+	c := m.cursors[secReviews]
+	clampCursor(&c, len(rows))
+	groups := make([][]string, len(rows))
 	for i, r := range rows {
 		style := theme.TextDim()
 		if i == c {
 			style = theme.TabActive()
 		}
-		// State chips carry semantic color (F-026 P6): posted success,
-		// discarded muted, pending warning — the state stops being
-		// one flat bracket string.
 		var chips []string
 		switch {
 		case r.Done:
@@ -262,20 +307,38 @@ func (m *Model) reviewsBody(w int) string {
 			chips = append(chips, theme.WarningText().Render(itoa(p)+" pending"))
 		}
 		state := strings.Join(chips, " · ")
-		line := cursorGlyph(i == c) +
+		g := []string{cursorGlyph(i == c) +
 			style.Render(padTo(crop(r.ID, 26), 28)) +
-			theme.Hint().Render(crop(r.Title+"  ["+state+"]", maxInt(w-32, 12)))
-		out = append(out, line)
+			theme.Hint().Render(crop(r.Title+"  ["+state+"]", maxInt(w-32, 12)))}
 		if i == c {
 			detail := fmt.Sprintf("%s %s...%s in member %q",
 				r.Target.Kind, r.Target.Base, shortSHA(r.Target.Head), r.Target.Member)
 			if r.Target.PRNumber > 0 {
 				detail += fmt.Sprintf(" · PR #%d", r.Target.PRNumber)
 			}
-			out = append(out, "      "+theme.TextDim().Render(detail))
+			g = append(g, "      "+theme.TextDim().Render(detail))
 		}
+		groups[i] = g
 	}
-	return strings.Join(out, "\n")
+	return groups
+}
+
+// reviewsScroll reports the visual-row total and the rows before the
+// window's first review, for the pane scrollbar (F-025).
+func (m *Model) reviewsScroll(w int) (total, offset int) {
+	rows := m.reviews()
+	if m.svc == nil || len(rows) == 0 {
+		return 1, 0
+	}
+	groups := m.reviewsGroups(w)
+	start := clampInt(m.offsets[secReviews], 0, len(rows)-1)
+	for i, g := range groups {
+		if i < start {
+			offset += len(g)
+		}
+		total += len(g)
+	}
+	return total, offset
 }
 
 func (m *Model) filesBody(w, h int) string {
@@ -336,20 +399,14 @@ func (m *Model) filesBody(w, h int) string {
 	if avail < 1 {
 		avail = 1
 	}
-	off := m.offsets[secFiles]
-	if off > len(rows)-avail {
-		off = len(rows) - avail
-	}
-	if off < 0 {
-		off = 0
-	}
+	off := clampInt(m.offsets[secFiles], 0, len(rows)-1)
 	if c < off {
 		off = c
 	} else if c >= off+avail {
 		off = c - avail + 1
 	}
-	if off > len(rows)-avail {
-		off = len(rows) - avail
+	if max := len(rows) - avail; off > max {
+		off = max
 	}
 	if off < 0 {
 		off = 0
