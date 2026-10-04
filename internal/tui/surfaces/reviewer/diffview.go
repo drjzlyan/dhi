@@ -116,6 +116,43 @@ const (
 	marginCol = 1 // cursor/margin strip before every row
 )
 
+// diffSeg is one wrapped visual line and the logical row it belongs to.
+type diffSeg struct {
+	row int
+	txt string
+}
+
+// diffSegmentsView wraps the logical diff rows to visual lines for width
+// w; renderDiff and the pane scrollbar both read it, so their geometry
+// cannot drift.
+func (m *Model) diffSegmentsView(w int, viewed map[string]bool) ([]diffSeg, []int) {
+	rows := m.diffRows()
+	bodyW := maxInt(w-marginCol, 10)
+	sideW := (bodyW - 1) / 2
+	heights := make([]int, len(rows))
+	var segs []diffSeg
+	for i, row := range rows {
+		var lines []string
+		switch row.kind {
+		case vrFileHeader:
+			lines = []string{m.fileHeaderText(row.file, viewed)}
+		case vrHunkHeader:
+			lines = []string{m.hunkHeader(row.text, bodyW)}
+		case vrBinary:
+			lines = []string{theme.TextDim().Render(crop(row.text, bodyW))}
+		case vrLineUnified:
+			lines = m.unifiedLine(row.left, bodyW)
+		case vrSideBySide:
+			lines = m.sideBySide(row.left, row.right, sideW)
+		}
+		heights[i] = len(lines)
+		for _, l := range lines {
+			segs = append(segs, diffSeg{i, l})
+		}
+	}
+	return segs, heights
+}
+
 // renderDiff paints the viewport: logical rows wrapped to visual lines,
 // sliced from scroll, cursor highlighted via the margin strip.
 func (m *Model) renderDiff(w, h int, viewed map[string]bool) string {
@@ -136,34 +173,7 @@ func (m *Model) renderDiff(w, h int, viewed map[string]bool) string {
 		}
 	}
 
-	bodyW := maxInt(w-marginCol, 10)
-	sideW := (bodyW - 1) / 2
-
-	type seg struct {
-		row int
-		txt string
-	}
-	var segs []seg
-	heights := make([]int, len(rows))
-	for i, row := range rows {
-		var lines []string
-		switch row.kind {
-		case vrFileHeader:
-			lines = []string{m.fileHeaderText(row.file, viewed)}
-		case vrHunkHeader:
-			lines = []string{m.hunkHeader(row.text, bodyW)}
-		case vrBinary:
-			lines = []string{theme.TextDim().Render(crop(row.text, bodyW))}
-		case vrLineUnified:
-			lines = m.unifiedLine(row.left, bodyW)
-		case vrSideBySide:
-			lines = m.sideBySide(row.left, row.right, sideW)
-		}
-		heights[i] = len(lines)
-		for _, l := range lines {
-			segs = append(segs, seg{i, l})
-		}
-	}
+	segs, heights := m.diffSegmentsView(w, viewed)
 
 	m.clampScrollHeight(heights, h)
 	visible := h

@@ -1,8 +1,25 @@
 # STATE — current position
 
-Updated: 2026-10-04 (session 42: F-009 deferred item — rename
-now validates via `textDocument/prepareRename`. Roadmap M15–M20 and
-all follow-ons complete; `make verify` green.)
+Updated: 2026-10-04 (session 43: F-025 deferred item — per-pane
+scrollbars, right-edge thumb. Roadmap M15–M20 and all follow-ons
+complete; `make verify` green.)
+
+### Session 43 (F-025 follow-on: per-pane scrollbars)
+
+- `kit.Panel.SetScroll(Scroller)` paints a `█` thumb on the pane's right
+  edge (track `│` on the border shade) when the window overflows the
+  body budget; a fitted scroller leaves the plain edge. Shares glyphs
+  with `Scroller.Scrollbar`; `kit.NewScroller(total, height, offset)`
+  builds one from a surface-owned offset (offset is unexported).
+- Reviewer: mainPane now sets the HintBar as a real `SetFooter` row (so
+  the track spans exactly the body), and wires scrollbars for the DIFF
+  viewport (`m.scroll`) and the run-transcript pane (`m.transcriptScroll`);
+  `diffSegmentsView` is the shared wrap geometry for render + bar.
+- Other surfaces (inbox/board/files) clip rather than scroll, so they
+  have no window to paint yet — adoption is follow-on as panes gain
+  offsets.
+- Tests: kit right-edge thumb (present when overflowing, absent when
+  fitted); reviewer DIFF fits→no bar / overflow→bar. `make verify` green.
 
 ### Session 42 (F-009 follow-on: prepareRename validation)
 

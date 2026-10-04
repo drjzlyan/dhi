@@ -18,6 +18,14 @@ type Scroller struct {
 	offset int
 }
 
+// NewScroller builds a scroller for a surface-owned window (surfaces
+// cannot set the unexported offset directly). offset is clamped.
+func NewScroller(total, height, offset int) Scroller {
+	s := Scroller{Total: total, Height: height}
+	s.SetOffset(offset)
+	return s
+}
+
 // Window returns the visible row range: start inclusive, end exclusive.
 func (s *Scroller) Window() (start, end int) {
 	if s.Height <= 0 || s.Height >= s.Total {

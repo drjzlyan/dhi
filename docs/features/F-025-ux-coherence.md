@@ -88,6 +88,12 @@ when you need them, never the focus.
 
 - ~~Tab-bar badges~~ — **closed (not planned)**: the statusline `!N`
   carries it.
-- Mouse support; per-pane scrollbars.
+- ~~Mouse support~~ — **closed (landed)**: F-026 P2 enables mouse
+  (wheel + click, no drag) with nil-safe `Wheel`/`Click` seams.
+- Per-pane scrollbars: `kit.Panel.SetScroll` paints a thumb on the
+  pane's right edge from a `kit.NewScroller(total, height, offset)`
+  when the window overflows. Landed for the reviewer DIFF and its
+  run-transcript pane; remaining surfaces adopt it as they gain real
+  scroll windows (inbox/board/files currently clip, not scroll).
 - ~~Reworking the editor's centered empty-state~~ — **closed (not
   planned)**: intentional hero.

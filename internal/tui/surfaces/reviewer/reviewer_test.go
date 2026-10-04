@@ -404,3 +404,24 @@ func renderAt(m *Model, l layoutMode) string {
 // asyncTimeout bounds test waits for spawned CLIs; generous so -race + a
 // loaded full-suite run never trips it (a real hang still fails).
 const asyncTimeout = 30 * time.Second
+
+func TestReviewerDiffPaneScrollbar(t *testing.T) {
+	m, _, _, _ := newSurface(t)
+	startBranchReview(t, m, m.svc.Store())
+	m.HandleKey("]") // FILES → DIFF
+	if m.sec != secDiff {
+		t.Fatalf("section = %v", m.sec)
+	}
+	segs, _ := m.diffSegmentsView(80, m.viewedSet())
+	if len(segs) < 4 {
+		t.Skipf("diff too small to overflow (segments=%d)", len(segs))
+	}
+	m.Resize(100, 40)
+	if strings.Contains(m.View(), "█") {
+		t.Fatal("no scrollbar expected when the diff fits")
+	}
+	m.Resize(100, 5) // body budget 2 < segments → overflow
+	if !strings.Contains(m.View(), "█") {
+		t.Fatal("expected a right-edge scrollbar when the diff overflows")
+	}
+}

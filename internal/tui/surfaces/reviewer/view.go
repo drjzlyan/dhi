@@ -91,9 +91,22 @@ func (m *Model) mainPane(w, h int) string {
 		content = append(content, "")
 	}
 	content = content[:h-3]
-	content = append(content, kit.HintBar(inner, m.statusFlash(), m.sectionHints()...))
 	p.SetContent(content...)
+	p.SetFooter(kit.HintBar(inner, m.statusFlash(), m.sectionHints()...))
 	p.Width, p.Height = w, h
+	// Per-pane scrollbar: the diff viewport is the one section with a
+	// real scroll window (F-025); the HintBar is a footer row, so the
+	// track spans exactly the diff rows.
+	if m.sec == secDiff && m.transcriptOpen {
+		if n := len(m.transcriptLines); n > 0 {
+			p.SetScroll(kit.NewScroller(n, h-3, m.transcriptScroll))
+		}
+	} else if m.sec == secDiff && !m.threadOpen && len(m.diffRows()) > 0 {
+		segs, _ := m.diffSegmentsView(inner-4, m.viewedSet())
+		if len(segs) > 0 {
+			p.SetScroll(kit.NewScroller(len(segs), h-3, m.scroll))
+		}
+	}
 	pane := p.View()
 	if m.composer != nil {
 		return kit.Overlay(strings.Split(pane, "\n"), composerBox(m.composer).View(), w, h)
@@ -103,6 +116,15 @@ func (m *Model) mainPane(w, h int) string {
 	}
 	box := kit.Modal{Title: modalTitle(m.form.kind), Lines: m.modalLines()}
 	return kit.Overlay(strings.Split(pane, "\n"), box.View(), w, h)
+}
+
+// viewedSet is the open review's viewed-file map, or nil when none is
+// open (diff rendering treats nil as "nothing viewed").
+func (m *Model) viewedSet() map[string]bool {
+	if r, ok := m.openReview(); ok && r.ID != "" {
+		return r.Viewed
+	}
+	return nil
 }
 
 // statusFlash renders the outcome segment on the chrome bar.
@@ -160,12 +182,7 @@ func (m *Model) activeSectionFor(w, h int) string {
 		if m.threadOpen {
 			return m.renderThreads(w-4, maxInt(h-4, 6))
 		}
-		r, _ := m.openReview()
-		viewed := map[string]bool{}
-		if r.ID != "" {
-			viewed = r.Viewed
-		}
-		return m.renderDiff(w-4, maxInt(h-4, 6), viewed)
+		return m.renderDiff(w-4, maxInt(h-4, 6), m.viewedSet())
 	case secFiles:
 		return m.filesBody(w - 4)
 	default:
