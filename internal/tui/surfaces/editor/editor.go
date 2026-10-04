@@ -925,12 +925,14 @@ func (m *Model) navView() string {
 	savedListH := m.list.Height
 	m.list.Height = bodyH - 4 // hint row, spacer, panel padding
 	content := splitLines(m.list.View())
+	sb := m.list.Scroller() // capture with the live window height (F-025)
 	for len(content) < bodyH-4 {
 		content = append(content, "") // push hints to the rail's foot
 	}
 	rail.SetContent(append(content, "", hint)...)
 	rail.Width = railWidth
 	rail.Height = bodyH
+	rail.SetScroll(sb)
 	m.list.Height = savedListH
 
 	var main string

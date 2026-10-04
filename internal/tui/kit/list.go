@@ -222,6 +222,12 @@ func (l *List) Scrollbar(h int) string {
 	return s.Scrollbar(h)
 }
 
+// Scroller exposes the list's scroll window so a surface can paint a
+// pane scrollbar (Panel.SetScroll) without reaching into offset.
+func (l *List) Scroller() Scroller {
+	return Scroller{Total: len(l.Items), Height: l.Height, offset: l.offset}
+}
+
 func (l *List) visibleRows() []Item {
 	items := l.Items
 	if l.Height > 0 && l.Height < len(items) {
