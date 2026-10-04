@@ -75,6 +75,10 @@ type Model struct {
 
 	sec     sectionID
 	cursors [secCount]int
+	// offsets is the first visible rendered row per section for panes
+	// with a real scroll window (F-025 per-pane scrollbars: INBOX,
+	// REPOS). Zero when the section fits.
+	offsets [secCount]int
 
 	// Board state (F-021): active lane + per-lane card cursors. Lanes
 	// follow tasks.Statuses order (backlog, active, in-review, done).

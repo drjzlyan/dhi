@@ -122,9 +122,15 @@ func (m *Model) mainPane(w, h int) string {
 		content = append(content, "")
 	}
 	content = content[:h-3]
-	content = append(content, kit.HintBar(inner, m.statusFlash(), m.sectionHints()...))
 	p.SetContent(content...)
+	p.SetFooter(kit.HintBar(inner, m.statusFlash(), m.sectionHints()...))
 	p.Width, p.Height = w, h
+	// Per-pane scrollbar (F-025): REPOS windows by row (members lead the
+	// dependency lines) and owns offsets[secRepos]; paint the thumb when
+	// it overflows the body budget.
+	if m.sec == secRepos && m.replay == nil {
+		p.SetScroll(kit.NewScroller(m.reposRowCount(inner), h-3, m.offsets[secRepos]))
+	}
 	pane := p.View()
 
 	if m.form.kind == fNone {
@@ -205,7 +211,7 @@ func (m *Model) activeSectionFor(w, h int) string {
 	case secInbox:
 		return m.inboxBody(w)
 	case secRepos:
-		return m.reposBody(w)
+		return m.reposBody(w, maxInt(h, 6))
 	default:
 		return m.activeSection()
 	}
@@ -222,7 +228,7 @@ func (m *Model) activeSection() string {
 	case secInbox:
 		return m.inboxBody(w - 6)
 	case secRepos:
-		return m.reposBody(w - 6)
+		return m.reposBody(w-6, maxInt(m.height-8, 8))
 	default:
 		return m.boardBody(w-6, maxInt(m.height-8, 8))
 	}
@@ -675,7 +681,7 @@ const reposNameCol = 14
 // reposBody renders member rows on the inset shade (the section zone
 // reads like every other shaded block, F-026 P3): cursor, name, and a
 // path clipped into the real pane budget — not a fixed 46 cells.
-func (m *Model) reposBody(w int) string {
+func (m *Model) reposBody(w, h int) string {
 	members := m.ws.Members()
 	c := m.cursors[secRepos]
 	clampCursor(&c, len(members))
@@ -699,7 +705,57 @@ func (m *Model) reposBody(w int) string {
 				theme.Hint().Render(kit.ClipEllipsis(shorten(mem.Path, pathBudget), pathBudget))))
 	}
 	rows = append(rows, m.dependencyLines(w, inset)...)
-	return strings.Join(rows, "\n")
+
+	// Scroll window (F-025): members are one row each and lead the
+	// dependency lines, so the cursor's member index is its row index.
+	off := clampOffset(m.offsets[secRepos], len(rows), h)
+	if len(members) > 0 {
+		if c < off {
+			off = c
+		} else if c >= off+h {
+			off = c - h + 1
+		}
+		off = clampOffset(off, len(rows), h)
+	}
+	m.offsets[secRepos] = off
+	if h <= 0 {
+		return strings.Join(rows, "\n")
+	}
+	end := minInt(off+h, len(rows))
+	if end <= off {
+		return ""
+	}
+	return strings.Join(rows[off:end], "\n")
+}
+
+// reposRowCount is the rendered row total for REPOS (member rows +
+// the dependency block), used to size its scrollbar without a second
+// full render.
+func (m *Model) reposRowCount(w int) int {
+	n := len(m.ws.Members())
+	if n == 0 {
+		n = 1
+	}
+	return n + len(m.dependencyLines(w, theme.InsetBg()))
+}
+
+// clampOffset clamps a scroll offset so a window of h rows stays inside
+// total rows (0 total ⇒ 0).
+func clampOffset(off, total, h int) int {
+	if h <= 0 {
+		return 0
+	}
+	max := total - h
+	if max < 0 {
+		max = 0
+	}
+	if off < 0 {
+		return 0
+	}
+	if off > max {
+		return max
+	}
+	return off
 }
 
 // dependencyLines renders the declared cross-project graph (F-032): each

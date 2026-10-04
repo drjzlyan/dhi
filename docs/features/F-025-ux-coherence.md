@@ -92,8 +92,9 @@ when you need them, never the focus.
   (wheel + click, no drag) with nil-safe `Wheel`/`Click` seams.
 - Per-pane scrollbars: `kit.Panel.SetScroll` paints a thumb on the
   pane's right edge from a `kit.NewScroller(total, height, offset)`
-  when the window overflows. Landed for the reviewer DIFF and its
-  run-transcript pane; remaining surfaces adopt it as they gain real
-  scroll windows (inbox/board/files currently clip, not scroll).
+  when the window overflows. Landed for the reviewer DIFF + run
+  transcript and the workspace REPOS pane (which now has a real scroll
+  window with cursor-follow). INBOX/BOARD/FILES still clip rather than
+  scroll, so they adopt as they gain windows.
 - ~~Reworking the editor's centered empty-state~~ — **closed (not
   planned)**: intentional hero.

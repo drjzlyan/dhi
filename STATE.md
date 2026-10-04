@@ -1,8 +1,24 @@
 # STATE — current position
 
-Updated: 2026-10-04 (session 43: F-025 deferred item — per-pane
-scrollbars, right-edge thumb. Roadmap M15–M20 and all follow-ons
-complete; `make verify` green.)
+Updated: 2026-10-04 (session 44: F-025 per-pane scrollbars — workspace
+REPOS pane gains a scroll window + thumb. Roadmap M15–M20 and all
+follow-ons complete; `make verify` green.)
+
+### Session 44 (F-025: workspace REPOS scroll window + scrollbar)
+
+- Workspace Model gained `offsets [secCount]int` (first visible row per
+  section). REPOS now renders through a real scroll window:
+  `reposBody(w, h)` windows member rows + the dependency block, follows
+  the member cursor (`m.cursors[secRepos]`), and clamps via
+  `clampOffset`. mainPane paints the `Panel.SetScroll` thumb from
+  `reposRowCount(inner)`.
+- Workspace mainPane also moves the HintBar to a real `SetFooter` row
+  (output-identical to the old content-embedded bar) so the track spans
+  exactly the body; goldens unchanged.
+- Tests: REPOS fits→no bar / overflow→bar + offset cursor-follow.
+  `make verify` green.
+- INBOX/BOARD/FILES still clip; they adopt the pattern when they gain
+  scroll windows.
 
 ### Session 43 (F-025 follow-on: per-pane scrollbars)
 
