@@ -144,18 +144,23 @@ type Card struct {
 	Prompt   string
 	Schedule Schedule
 	Enabled  bool
-	LastRun  time.Time // zero = never ran
+	// CreateTask, when set, gives every run its own task card (F-015):
+	// the card is created and bound to the run's DM thread so the run
+	// record lands on it. Off by default (avoids thread noise).
+	CreateTask bool
+	LastRun    time.Time // zero = never ran
 }
 
 // file is the on-disk TOML shape.
 type file struct {
-	Schema   int       `toml:"schema"`
-	Name     string    `toml:"name"`
-	Agent    string    `toml:"agent"`
-	Prompt   string    `toml:"prompt"`
-	Schedule string    `toml:"schedule"`
-	Enabled  bool      `toml:"enabled"`
-	LastRun  time.Time `toml:"last_run"`
+	Schema     int       `toml:"schema"`
+	Name       string    `toml:"name"`
+	Agent      string    `toml:"agent"`
+	Prompt     string    `toml:"prompt"`
+	Schedule   string    `toml:"schedule"`
+	Enabled    bool      `toml:"enabled"`
+	CreateTask bool      `toml:"create_task,omitempty"`
+	LastRun    time.Time `toml:"last_run"`
 }
 
 // Store is the loaded autopilot set; safe for concurrent use.
@@ -247,7 +252,7 @@ func parseCard(path, slug string) (Card, error) {
 	}
 	return Card{
 		Slug: slug, Name: strings.TrimSpace(f.Name), Agent: strings.TrimSpace(f.Agent),
-		Prompt: f.Prompt, Schedule: sch, Enabled: f.Enabled, LastRun: f.LastRun,
+		Prompt: f.Prompt, Schedule: sch, Enabled: f.Enabled, CreateTask: f.CreateTask, LastRun: f.LastRun,
 	}, nil
 }
 
@@ -431,6 +436,11 @@ func (s *Store) SetEnabled(slug string, on bool) error {
 	return s.mutate(slug, func(c *Card) { c.Enabled = on })
 }
 
+// SetCreateTask toggles per-run task-card creation (F-015).
+func (s *Store) SetCreateTask(slug string, on bool) error {
+	return s.mutate(slug, func(c *Card) { c.CreateTask = on })
+}
+
 // Remove deletes a card after its caller confirms.
 func (s *Store) Remove(slug string) error {
 	s.mu.RLock()
@@ -479,13 +489,14 @@ func (s *Store) mutate(slug string, apply func(*Card)) error {
 
 func writeCard(path string, c Card) error {
 	f := file{
-		Schema:   SchemaVersion,
-		Name:     c.Name,
-		Agent:    c.Agent,
-		Prompt:   c.Prompt,
-		Schedule: c.Schedule.String(),
-		Enabled:  c.Enabled,
-		LastRun:  c.LastRun,
+		Schema:     SchemaVersion,
+		Name:       c.Name,
+		Agent:      c.Agent,
+		Prompt:     c.Prompt,
+		Schedule:   c.Schedule.String(),
+		Enabled:    c.Enabled,
+		CreateTask: c.CreateTask,
+		LastRun:    c.LastRun,
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("autopilot: write: %w", err)

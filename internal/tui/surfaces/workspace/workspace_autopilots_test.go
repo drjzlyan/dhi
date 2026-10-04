@@ -2,6 +2,7 @@ package workspace
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -9,6 +10,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
 	"github.com/drjzlyan/dhi/internal/autopilot"
+	"github.com/drjzlyan/dhi/internal/tasks"
 )
 
 func autoClock(y, m, d, hh, mm int) time.Time {
@@ -207,5 +209,54 @@ func TestAutopilotTickChainArmsAndReArms(t *testing.T) {
 	case msg := <-capT.posts:
 		t.Fatalf("paused card ran: %+v", msg)
 	case <-time.After(20 * time.Millisecond):
+	}
+}
+
+func TestAutopilotCreatesBoundTaskCard(t *testing.T) {
+	m, as := autoSurface(t)
+	capT := &capturingTurns{posts: make(chan bus.Message, 4)}
+	m.rt = capT
+	ts, err := tasks.Open(m.ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.taskStore = ts
+	_, _ = as.Create("standup", "Standup", "alice", "summarize", mustKeyboard(t, "daily 09:00"))
+	_ = as.SetCreateTask("standup", true)
+	card, _ := as.Get("standup")
+
+	if err := m.autopilotRun(card); err != nil {
+		t.Fatal(err)
+	}
+	msg := <-capT.posts
+	slug := "auto-standup-" + fmt.Sprintf("%d", msg.ID)
+	got, ok := ts.Get(slug)
+	if !ok {
+		t.Fatalf("no per-run card %q; cards=%v", slug, ts.List())
+	}
+	if got.ThreadChannel != "dm:alice" || got.ThreadID != msg.ID {
+		t.Fatalf("card binding = %s#%d, want dm:alice#%d", got.ThreadChannel, got.ThreadID, msg.ID)
+	}
+}
+
+func TestAutopilotNoCardByDefault(t *testing.T) {
+	m, as := autoSurface(t)
+	capT := &capturingTurns{posts: make(chan bus.Message, 4)}
+	m.rt = capT
+	ts, err := tasks.Open(m.ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.taskStore = ts
+	_, _ = as.Create("standup", "Standup", "alice", "summarize", mustKeyboard(t, "daily 09:00"))
+	card, _ := as.Get("standup")
+	if card.CreateTask {
+		t.Fatal("create_task must default off")
+	}
+	if err := m.autopilotRun(card); err != nil {
+		t.Fatal(err)
+	}
+	if cards := ts.List(); len(cards) != 0 {
+		t.Fatalf("default autopilot created cards: %v", cards)
 	}
 }

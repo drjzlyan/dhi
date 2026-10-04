@@ -27,6 +27,7 @@ review gate.
   prompt = "Summarize yesterday's runs and today's open tasks."
   schedule = "daily 09:00"   # strict: "interval <dur>" | "daily HH:MM" | "weekly <dow> HH:MM"
   enabled = true
+  create_task = false               # opt-in: bind a per-run task card (F-015)
   last_run = 2026-09-08T09:00:00Z   # runtime-maintained
   ```
   Strict decode; unknown keys refuse (ADR-0011); malformed cards are
@@ -102,6 +103,8 @@ review gate.
 - Resident mode (`dhi --serve`) so schedules fire while the TUI is
   closed: a product decision with packaging implications, not an
   implementation gap.
-- Per-autopilot task-card creation (results currently ride the agent
-  channel thread; one `tasks.Add` per run is a two-line follow-up if
-  the thread becomes noisy).
+- ~~Per-autopilot task-card creation~~ — **closed (landed)**: an opt-in
+  `create_task` flag (Settings → AUTOPILOTS, key `c`) gives each run its
+  own task card, created and bound to the run's DM message thread so the
+  run record lands on it (`runtime.recordRun` resolves the trigger via
+  `bus.ThreadOf`). Off by default to avoid thread noise.

@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"encoding/base64"
+	"github.com/drjzlyan/dhi/internal/tasks"
 	"os"
 	"path/filepath"
 	"strings"
@@ -756,3 +757,26 @@ func TestWorkingTracksInflightTurns(t *testing.T) {
 // asyncTimeout bounds test waits for spawned CLIs; generous so -race + a
 // loaded full-suite run never trips it (a real hang still fails).
 const asyncTimeout = 30 * time.Second
+
+func TestRecordRunTopLevelTrigger(t *testing.T) {
+	h := newHarness(t, baseDoc())
+	st, err := tasks.Open(h.ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.rt.cfg.Tasks = st
+	if err := st.Create("auto-a-7", "A run", "alice", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.BindThread("auto-a-7", "dm:alice", 7); err != nil {
+		t.Fatal(err)
+	}
+	trigger := bus.Message{Channel: "dm:alice", ID: 7, Author: bus.Human, Text: "run"}
+	now := time.Now()
+	h.rt.recordRun(trigger, tasks.Run{ID: "r1", Agent: "alice",
+		Status: tasks.RunOK, Started: now, Finished: now})
+	got, ok := st.Get("auto-a-7")
+	if !ok || len(got.Runs) != 1 {
+		t.Fatalf("top-level trigger run not recorded: ok=%v runs=%+v", ok, got.Runs)
+	}
+}

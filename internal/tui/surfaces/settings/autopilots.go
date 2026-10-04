@@ -86,6 +86,21 @@ func (m *Model) autopilotsKey(key string) bool {
 			m.showLastRun(rows[m.autoCur])
 			return true
 		}
+	case "c":
+		if m.d.Autopilots == nil || m.autoCur >= len(rows) {
+			return false
+		}
+		card := rows[m.autoCur]
+		if err := m.d.Autopilots.SetCreateTask(card.Slug, !card.CreateTask); err != nil {
+			m.flash = "failed: " + err.Error()
+			return true
+		}
+		if card.CreateTask {
+			m.flash = card.Slug + " task cards off"
+		} else {
+			m.flash = card.Slug + " task cards on"
+		}
+		return true
 	}
 	return false
 }
@@ -137,12 +152,24 @@ func (m *Model) runAutopilotNow(slug string) error {
 		Text:    "[autopilot " + c.Slug + "] " + c.Prompt,
 		At:      m.now(),
 	}
+	posted := msg
 	if m.d.Bus != nil {
-		if _, err := m.d.Bus.Post(msg); err != nil {
+		p, err := m.d.Bus.Post(msg)
+		if err != nil {
 			return fmt.Errorf("autopilot %q: %w", c.Slug, err)
 		}
+		posted = p
 	}
-	go m.d.Runtime.Handle(context.Background(), msg)
+	if c.CreateTask && m.d.Bus != nil && m.d.Tasks != nil {
+		tslug := "auto-" + c.Slug + "-" + fmt.Sprintf("%d", posted.ID)
+		if len(tslug) > 48 {
+			tslug = tslug[:48]
+		}
+		if err := m.d.Tasks.Create(tslug, c.Name+" run", c.Agent, ""); err == nil {
+			_ = m.d.Tasks.BindThread(tslug, "dm:"+c.Agent, posted.ID)
+		}
+	}
+	go m.d.Runtime.Handle(context.Background(), posted)
 	return m.d.Autopilots.MarkRan(c.Slug, m.now())
 }
 
@@ -229,6 +256,9 @@ func (m *Model) autopilotsView() []string {
 			style.Render(padTo(sched, 28)) +
 			theme.Hint().Render(padTo(m.autoNext(card), 16)) +
 			theme.TextDim().Render(m.autoResult(card))
+		if card.CreateTask {
+			line += theme.WarningText().Render("  task")
+		}
 		out = append(out, line)
 	}
 	return out

@@ -629,12 +629,14 @@ func (r *Runtime) cliEvent(agentID string, trigger bus.Message, ev clirun.Stream
 
 // recordRun persists the run onto the bound task card. Best-effort: the
 // transcript already lives on the bus, so a failure here loses only the
-// card's history column.
+// card's history column. The trigger's own thread root is used so a
+// top-level trigger (e.g. an autopilot DM, bus.ThreadOf = its own id)
+// still matches a card bound to that message.
 func (r *Runtime) recordRun(trigger bus.Message, run tasks.Run) {
 	if r.cfg.Tasks == nil {
 		return
 	}
-	t, ok := r.cfg.Tasks.FindByThread(trigger.Channel, trigger.Thread)
+	t, ok := r.cfg.Tasks.FindByThread(trigger.Channel, bus.ThreadOf(trigger))
 	if !ok {
 		return
 	}

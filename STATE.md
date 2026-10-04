@@ -1,8 +1,24 @@
 # STATE — current position
 
-Updated: 2026-09-30 (session 40: fixed stale feature statuses and closed
-landed/decided deferral notes. Roadmap M15–M20 and all follow-ons are
-complete; `make verify` green. No open milestones.)
+Updated: 2026-10-04 (session 41: F-015 per-run autopilot task
+cards landed. Roadmap M15–M20 and all follow-ons complete; `make
+verify` green.)
+
+### Session 41 (F-015 follow-on: per-autopilot task cards)
+
+- Autopilot cards gained an opt-in `create_task` flag (strict TOML,
+  default false; `SetCreateTask`), toggled in Settings → AUTOPILOTS
+  with key `c` (row shows a `task` marker).
+- When set, each run (workspace scheduled path *and* Settings run-now)
+  creates a task card `auto-<slug>-<msgID>` and `BindThread`s it to the
+  run's DM message, so the run's record lands on the card.
+- `runtime.recordRun` now resolves the card via `bus.ThreadOf(trigger)`
+  instead of `trigger.Thread`, so a **top-level** trigger (autopilot DM,
+  thread 0 ⇒ its own id) matches the bound card. Backward compatible:
+  threaded triggers are unchanged (`ThreadOf` returns `Thread`).
+- Tests: autopilot `SetCreateTask` persistence; workspace create/bind +
+  default-off; runtime `recordRun` top-level matching. Settings golden
+  regenerated (hint line). `make verify` green.
 
 ### Session 40 (docs: fix stale statuses + close landed deferrals)
 

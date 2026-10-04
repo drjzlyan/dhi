@@ -1011,7 +1011,7 @@ func (m *Model) sectionHints() []string {
 	case secLibrary:
 		sec = []string{"n new", "e edit", "x delete", "r run script", "v card"}
 	case secAutopilots:
-		sec = []string{"n new", "e arm/pause", "r run now", "x remove"}
+		sec = []string{"n new", "e arm/pause", "r run now", "c task cards", "o last run", "x remove"}
 	case secMarketplace:
 		sec = []string{"r refresh", "/ search", "enter install", "t pin key", "T clear", "v inspect"}
 	}

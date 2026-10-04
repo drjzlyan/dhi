@@ -339,3 +339,26 @@ func mustSch(t *testing.T, s string) Schedule {
 	}
 	return sch
 }
+
+func TestSetCreateTaskPersists(t *testing.T) {
+	s := withStore(t, nil)
+	if _, err := s.Create("standup", "Standup", "scout", "summarize", mustSch(t, "daily 09:00")); err != nil {
+		t.Fatal(err)
+	}
+	if c, _ := s.Get("standup"); c.CreateTask {
+		t.Fatal("new cards must default create_task off")
+	}
+	if err := s.SetCreateTask("standup", true); err != nil {
+		t.Fatal(err)
+	}
+	re, err := Open(s.ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c, _ := re.Get("standup"); !c.CreateTask {
+		t.Fatal("create_task did not persist")
+	}
+	if err := s.SetCreateTask("missing", true); err == nil {
+		t.Fatal("unknown slug must refuse")
+	}
+}

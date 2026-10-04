@@ -49,12 +49,26 @@ func (m *Model) autopilotRun(c autopilot.Card) error {
 		Text:    "[autopilot " + c.Slug + "] " + c.Prompt,
 		At:      m.now(),
 	}
+	posted := msg
 	if m.bus != nil {
-		if _, err := m.bus.Post(msg); err != nil {
+		p, err := m.bus.Post(msg)
+		if err != nil {
 			return fmt.Errorf("autopilot %q: %w", c.Slug, err)
 		}
+		posted = p
 	}
-	go m.rt.Handle(context.Background(), msg)
+	// Per-run task card (F-015, opt-in): bind a card to this DM message's
+	// own thread so recordRun attaches the run record to it.
+	if c.CreateTask && m.bus != nil && m.taskStore != nil {
+		slug := "auto-" + c.Slug + "-" + fmt.Sprintf("%d", posted.ID)
+		if len(slug) > 48 {
+			slug = slug[:48]
+		}
+		if err := m.taskStore.Create(slug, c.Name+" run", c.Agent, ""); err == nil {
+			_ = m.taskStore.BindThread(slug, "dm:"+c.Agent, posted.ID)
+		}
+	}
+	go m.rt.Handle(context.Background(), posted)
 	return nil
 }
 
