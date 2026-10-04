@@ -411,3 +411,60 @@ func TestThreadScopeReadsTopLevel(t *testing.T) {
 		t.Fatalf("general count = %d, want >= 1", counts["#general"])
 	}
 }
+
+func TestMarkChannelReadBulk(t *testing.T) {
+	ws := testWS(t)
+	if err := os.MkdirAll(filepath.Join(ws.Root, workspace.DHIDir), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	b := testBus(t, ws)
+	s, err := Open(ws, b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seedBus(t, b) // posts after seed → all unread
+	if items := s.Unread(b, time.Now()); len(items) == 0 {
+		t.Fatal("expected unread seed messages")
+	}
+	if err := s.MarkChannelRead("#general", b); err != nil {
+		t.Fatal(err)
+	}
+	// #general (top-level + thread) is read; the DM is untouched.
+	for _, it := range s.Unread(b, time.Now()) {
+		if it.Msg.Channel == "#general" {
+			t.Fatalf("#general still unread: %+v", it)
+		}
+	}
+	if items := s.Unread(b, time.Now()); len(items) == 0 {
+		t.Fatal("DM should remain unread")
+	}
+	// Reload proves it persisted.
+	s2, err := Open(ws, b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, it := range s2.Unread(b, time.Now()) {
+		if it.Msg.Channel == "#general" {
+			t.Fatalf("#general still unread after reload: %+v", it)
+		}
+	}
+}
+
+func TestMarkAllReadBulk(t *testing.T) {
+	ws := testWS(t)
+	if err := os.MkdirAll(filepath.Join(ws.Root, workspace.DHIDir), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	b := testBus(t, ws)
+	s, err := Open(ws, b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seedBus(t, b)
+	if err := s.MarkAllRead(b); err != nil {
+		t.Fatal(err)
+	}
+	if items := s.Unread(b, time.Now()); len(items) != 0 {
+		t.Fatalf("MarkAllRead left %d item(s): %+v", len(items), items)
+	}
+}

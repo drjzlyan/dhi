@@ -314,6 +314,76 @@ func (s *Store) MarkRead(scope string, upToID int64) error {
 	return nil
 }
 
+// MarkChannelRead advances the named channel's top-level watermark and
+// every one of its thread watermarks to the current max IDs, clearing
+// that channel's unread set. Snoozes are untouched (they are parked, not
+// unread). It is the bulk "mark everything in this channel read" action.
+func (s *Store) MarkChannelRead(channel string, b *bus.Bus) error {
+	if b == nil {
+		return nil
+	}
+	adv := channelScopes(channel, b)
+	s.mu.Lock()
+	for scope, max := range adv {
+		if max > s.data.Channels[scope] {
+			s.data.Channels[scope] = max
+		}
+	}
+	err := s.writeLocked()
+	s.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	s.signal()
+	return nil
+}
+
+// MarkAllRead advances every channel and thread watermark to the current
+// max IDs across the bus (the all-channels bulk reset). Snoozes are
+// untouched.
+func (s *Store) MarkAllRead(b *bus.Bus) error {
+	if b == nil {
+		return nil
+	}
+	adv := map[string]int64{}
+	for _, ch := range b.Channels() {
+		for scope, max := range channelScopes(ch, b) {
+			adv[scope] = max
+		}
+	}
+	s.mu.Lock()
+	for scope, max := range adv {
+		if max > s.data.Channels[scope] {
+			s.data.Channels[scope] = max
+		}
+	}
+	err := s.writeLocked()
+	s.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	s.signal()
+	return nil
+}
+
+// channelScopes maps every scope in one channel (the channel itself plus
+// each thread root) to its current max message ID.
+func channelScopes(channel string, b *bus.Bus) map[string]int64 {
+	out := map[string]int64{}
+	top := b.History(channel, 0)
+	if len(top) == 0 {
+		return out
+	}
+	out[channel] = top[len(top)-1].ID
+	for _, m := range top {
+		rep := b.History(channel, m.ID)
+		if len(rep) > 0 {
+			out[ThreadScope(channel, m.ID)] = rep[len(rep)-1].ID
+		}
+	}
+	return out
+}
+
 // Snooze parks (channel, msgID) until until, replacing any existing
 // snooze for the same message.
 func (s *Store) Snooze(channel string, msgID int64, until time.Time) error {

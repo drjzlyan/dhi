@@ -45,6 +45,9 @@ type chatPane struct {
 	// onRead advances a scope's watermark; unreadFor feeds rail markers.
 	onRead    func(scope string, upToID int64)
 	unreadFor func(ch string) int
+	// markAllRead bulk-marks a whole channel (top-level + threads) read
+	// (F-017 bulk action, key R). nil = the action degrades by name.
+	markAllRead func(ch string) error
 
 	// F-022 agent-profile seam: the Model injects a renderer.
 	profile func(id string) []string
@@ -149,7 +152,7 @@ func (p *chatPane) hints() []string {
 	// tab is width-gated (the rail is a column only on wide floors) —
 	// never advertise an inert key (F-026 P3).
 	base := []string{"i compose", "j/k select", "t thread", "v profile",
-		"/ search", "+ react", "e edit", "p pin", ",/. channel"}
+		"/ search", "+ react", "e edit", "p pin", "R all read", ",/. channel"}
 	if p.lastWidth >= slackCtxMin {
 		return append([]string{"tab rail"}, base...)
 	}
@@ -227,6 +230,24 @@ func (p *chatPane) markThreadRead(root int64) {
 		}
 	}
 	p.onRead(unread.ThreadScope(p.channelName(), root), maxID)
+}
+
+// markAllReadNow bulk-marks the active channel (top-level + every thread)
+// fully read via the injected store seam (F-017 bulk action, key R).
+func (p *chatPane) markAllReadNow() {
+	ch := p.channelName()
+	if ch == "" {
+		return
+	}
+	if p.markAllRead == nil {
+		p.flash = "read marks unavailable"
+		return
+	}
+	if err := p.markAllRead(ch); err != nil {
+		p.flash = err.Error()
+		return
+	}
+	p.flash = "marked " + ch + " read"
 }
 
 // openAt jumps the CHANNELS pane to a channel's thread, positioning the
@@ -459,6 +480,9 @@ func (p *chatPane) handleKey(key string) bool {
 				p.flash = "only your own messages can be edited"
 			}
 		}
+		return true
+	case "R":
+		p.markAllReadNow()
 		return true
 	case "i", "enter":
 		p.focus = true

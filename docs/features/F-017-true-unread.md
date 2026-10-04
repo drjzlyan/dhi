@@ -203,6 +203,7 @@ CHANNELS-rail count too — one read state, two views of it.
   agent-message model as the only new source.
 - ~~Multi-human read states~~ — **closed (not planned)**: DHI is
   single-human (`bus.Human`).
-- "Mark everything in this channel read" as an explicit command
-  (opening already does; a bulk all-channels reset is a candidate for
-  settings).
+- ~~"Mark everything in this channel read" as an explicit command~~ —
+  **landed**: CHANNELS `R` bulk-marks the active channel (top-level +
+  every thread) via `unread.Store.MarkChannelRead`; `MarkAllRead` is the
+  all-channels reset (available to Settings).

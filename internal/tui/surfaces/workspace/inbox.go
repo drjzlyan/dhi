@@ -228,6 +228,16 @@ func (m *Model) wireUnreadSeams() {
 	}
 	m.pane.onRead = m.markScopeRead
 	m.pane.unreadFor = m.unreadForChannel
+	m.pane.markAllRead = m.markChannelFullyRead
+}
+
+// markChannelFullyRead bulk-marks one channel (top-level + threads) read
+// (F-017 bulk action). A missing store degrades by name.
+func (m *Model) markChannelFullyRead(channel string) error {
+	if m.unreadStore == nil {
+		return fmt.Errorf("read marks unavailable")
+	}
+	return m.unreadStore.MarkChannelRead(channel, m.bus)
 }
 
 // markScopeRead advances one watermark scope; a failed write is a named
