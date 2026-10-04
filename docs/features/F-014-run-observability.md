@@ -83,5 +83,6 @@ machinery — this is aggregation + rendering over F-013's records.
 - ~~Cost per *model* breakdown~~ — **landed** (`tasks.RollupByModel`;
   the INSPECT profile shows per-model runs/cost rows). Trend charts
   remain open (a rendering question over already-recorded data).
-- Transcripts in the reviewer surface alongside the diff (natural
-  M9: run + diff + transcript in one review).
+- ~~Transcripts in the reviewer surface alongside the diff~~ —
+  **landed**: DIFF `T` swaps the pane for the reviewed task's newest run
+  transcript (same persisted JSONL; a missing file degrades by name).

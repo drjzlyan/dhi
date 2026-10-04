@@ -124,7 +124,7 @@ func (m *Model) sectionHints() []string {
 	case secFiles:
 		return []string{"enter diff", "v viewed", "A agent review"}
 	case secDiff:
-		return []string{"c comment", "t threads", "\\ split", "n/p file"}
+		return []string{"c comment", "t threads", "T transcript", "\\ split", "n/p file"}
 	}
 	return nil
 }
@@ -154,6 +154,9 @@ func composerBox(c *composer) *kit.Modal {
 func (m *Model) activeSectionFor(w, h int) string {
 	switch m.sec {
 	case secDiff:
+		if m.transcriptOpen {
+			return m.renderTranscript(w-4, maxInt(h-4, 6))
+		}
 		if m.threadOpen {
 			return m.renderThreads(w-4, maxInt(h-4, 6))
 		}

@@ -93,7 +93,12 @@ type Model struct {
 	threadOpen bool // DIFF replaced by the thread view
 	threadFile string
 	threadCur  int
-	syncedAt   time.Time // last successful remote-comment import
+
+	transcriptOpen   bool     // DIFF replaced by the run-transcript view
+	transcriptTitle  string   // header of the loaded transcript
+	transcriptLines  []string // rendered transcript lines
+	transcriptScroll int
+	syncedAt         time.Time // last successful remote-comment import
 
 	bus       *bus.Bus
 	crew      crew
@@ -408,6 +413,9 @@ func (m *Model) HandleKey(key string) bool {
 	if m.threadOpen && m.sec == secDiff {
 		return m.threadsKey(key)
 	}
+	if m.transcriptOpen && m.sec == secDiff {
+		return m.transcriptKey(key)
+	}
 	return m.sectionKey(key)
 }
 
@@ -449,6 +457,7 @@ func (m *Model) sectionKey(key string) bool {
 		if m.sec != secReviews {
 			m.sec = secReviews
 			m.threadOpen = false
+			m.transcriptOpen = false
 			return true
 		}
 		return false
@@ -704,6 +713,9 @@ func (m *Model) diffKey(key string) bool {
 			m.threadOpen = true
 			return true
 		}
+	case "T":
+		m.toggleTranscript()
+		return true
 	case "\t", "h":
 		m.sec = secFiles
 		return true
