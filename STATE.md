@@ -1,8 +1,23 @@
 # STATE — current position
 
-Updated: 2026-10-04 (session 41: F-015 per-run autopilot task
-cards landed. Roadmap M15–M20 and all follow-ons complete; `make
-verify` green.)
+Updated: 2026-10-04 (session 42: F-009 deferred item — rename
+now validates via `textDocument/prepareRename`. Roadmap M15–M20 and
+all follow-ons complete; `make verify` green.)
+
+### Session 42 (F-009 follow-on: prepareRename validation)
+
+- `lsp.Client.PrepareRename(path, line, col) (Range, bool, error)`
+  handles all three wire shapes (bare range, `{range,placeholder}`,
+  `{defaultBehavior:true}`) and `null` (declines).
+- Editor rename flow: `dispatchRename` now calls prepareRename in the
+  async goroutine before `textDocument/rename`; a valid range anchors the
+  edit (beats the client word guess), an explicit decline surfaces
+  `lsp: not renameable here` (new `lspMsgNote`) and sends nothing, and
+  an unsupported/erroring server degrades to the client range. The
+  prompt still opens instantly off the client word.
+- Tests: lsp PrepareRename shapes table; editor rename flow now exercises
+  the prepareRename round-trip + a decline test (buffer untouched).
+  `make verify` green.
 
 ### Session 41 (F-015 follow-on: per-autopilot task cards)
 

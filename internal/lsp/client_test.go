@@ -339,3 +339,43 @@ func TestDiagnosticsClearCarriesPath(t *testing.T) {
 }
 
 var _ io.ReadWriteCloser = (net.Conn)(nil)
+
+func TestPrepareRenameShapes(t *testing.T) {
+	cases := []struct {
+		name string
+		raw  any
+		ok   bool
+		line int
+	}{
+		{"range", map[string]any{
+			"start": map[string]any{"line": 1, "character": 2},
+			"end":   map[string]any{"line": 1, "character": 8}}, true, 1},
+		{"range+placeholder", map[string]any{
+			"range": map[string]any{
+				"start": map[string]any{"line": 3, "character": 4},
+				"end":   map[string]any{"line": 3, "character": 9}},
+			"placeholder": "Helper"}, true, 3},
+		{"defaultBehavior", map[string]any{"defaultBehavior": true}, true, 7},
+		{"null-declines", nil, false, 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := startFake(t, func(method string, _ json.RawMessage) (any, bool) {
+				if method != "textDocument/prepareRename" {
+					return nil, false
+				}
+				return tc.raw, true
+			})
+			rng, ok, err := c.PrepareRename("/ws/a.go", 7, 3)
+			if err != nil {
+				t.Fatalf("PrepareRename: %v", err)
+			}
+			if ok != tc.ok {
+				t.Fatalf("ok = %v, want %v", ok, tc.ok)
+			}
+			if ok && rng.Start.Line != tc.line {
+				t.Fatalf("range = %+v, want start line %d", rng, tc.line)
+			}
+		})
+	}
+}

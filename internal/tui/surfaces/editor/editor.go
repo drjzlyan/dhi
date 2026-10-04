@@ -440,6 +440,7 @@ type teaMsg struct {
 	hoverOK   bool
 	edit      *lsp.WorkspaceEdit
 	actions   []lsp.CodeAction
+	note      string
 }
 
 const (
@@ -450,6 +451,7 @@ const (
 	lspMsgHover
 	lspMsgEdit
 	lspMsgAction
+	lspMsgNote
 )
 
 func (m *Model) Resize(w, h int) {
@@ -493,7 +495,7 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 			m.ingestTermChunk(msg.tab, msg.chunk)
 		case termMsgClosed:
 			m.termExited(msg.tab)
-		case lspMsgDiag, lspMsgComp, lspMsgHover, lspMsgEdit, lspMsgAction:
+		case lspMsgDiag, lspMsgComp, lspMsgHover, lspMsgEdit, lspMsgAction, lspMsgNote:
 			m.applyLSPUpdate(msg)
 		}
 		return m.listenTerm()

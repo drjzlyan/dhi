@@ -115,6 +115,10 @@ func (m *Model) applyLSPUpdate(msg teaMsg) {
 		}
 	case lspMsgEdit:
 		m.applyWorkspaceEdit(msg.edit)
+	case lspMsgNote:
+		if e := m.active(); e != nil {
+			e.SetMessage(msg.note)
+		}
 	}
 }
 
@@ -241,9 +245,24 @@ func (m *Model) dispatchRename(newName string) {
 		return
 	}
 	cur := e.Buffer().Cursor()
-	_, start, _ := wordAt(e.Buffer().Line(cur.Line), cur.Col)
+	_, clientStart, _ := wordAt(e.Buffer().Line(cur.Line), cur.Col)
 	path := e.Path()
 	go func() {
+		// Validate and anchor the edit with the server (F-009): a range
+		// from prepareRename beats the client word guess, and an explicit
+		// decline stops the rename instead of silently sending garbage.
+		// An unsupported method (error) degrades to the client range.
+		start := clientStart
+		if rng, ok, err := c.PrepareRename(path, cur.Line, clientStart); err == nil {
+			if !ok {
+				select {
+				case m.termMsgs <- teaMsg{kind: lspMsgNote, note: "lsp: not renameable here"}:
+				default:
+				}
+				return
+			}
+			start = rng.Start.Character
+		}
 		edit, err := c.Rename(path, cur.Line, start, newName)
 		if err != nil || edit == nil {
 			return // silent like completion failures

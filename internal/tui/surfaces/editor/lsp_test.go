@@ -22,6 +22,9 @@ type goplusFake struct {
 
 	mu       sync.Mutex
 	lastOpen string // file URI seen in the last didOpen
+	// declinePrepare makes prepareRename answer null (symbol not
+	// renameable), for the F-009 validation path.
+	declinePrepare bool
 }
 
 func startFakeServer(t *testing.T) (*goplusFake, *lsp.Manager) {
@@ -85,6 +88,19 @@ func (f *goplusFake) serve() {
 			f.reply(*msg.ID, map[string]any{"contents": map[string]any{
 				"kind": "markdown", "value": "```go\nfunc Helper()\n```\nhover doc line2",
 			}})
+
+		case "textDocument/prepareRename":
+			f.mu.Lock()
+			decline := f.declinePrepare
+			f.mu.Unlock()
+			if decline {
+				f.reply(*msg.ID, nil)
+				break
+			}
+			f.reply(*msg.ID, map[string]any{
+				"start": map[string]any{"line": 0, "character": 0},
+				"end":   map[string]any{"line": 0, "character": 7},
+			})
 
 		case "textDocument/rename":
 			var p struct {
@@ -268,6 +284,23 @@ func TestLSPRenameFlow(t *testing.T) {
 	waitFor(t, m, func() bool {
 		return strings.Contains(m.active().Buffer().Text(), "zeta main")
 	}, "rename applied")
+}
+
+func TestLSPRenameDeclined(t *testing.T) {
+	m, srv := openMainGoWithLSP(t)
+	srv.mu.Lock()
+	srv.declinePrepare = true
+	srv.mu.Unlock()
+	before := m.active().Buffer().Text()
+	feed(m, "g", "r")
+	typeKeys(m, "zeta")
+	feed(m, "enter")
+	waitFor(t, m, func() bool {
+		return strings.Contains(plainView(m), "not renameable")
+	}, "declined rename note")
+	if m.active().Buffer().Text() != before {
+		t.Error("declined rename must not modify the buffer")
+	}
 }
 
 func TestLSPCodeActions(t *testing.T) {

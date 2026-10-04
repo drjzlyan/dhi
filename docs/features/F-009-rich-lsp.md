@@ -40,7 +40,11 @@ missing server degrades to today's behavior silently.
   text, truncated to pane width.
 - Rename reuses the git-commit input-line pattern: prompt shows
   `rename: <old> → `; `enter` dispatches `textDocument/rename` and
-  applies the returned WorkspaceEdit; `esc` cancels.
+  applies the returned WorkspaceEdit; `esc` cancels. Before dispatching,
+  `textDocument/prepareRename` validates the position: its range anchors
+  the edit (beating the client word guess) and an explicit decline shows
+  `lsp: not renameable here` instead of sending a bad request. A server
+  that doesn't implement prepareRename degrades to the client range.
 - Code actions render in the completion popup's list machinery
   (`j`/`k` navigate, `enter` applies); an action carrying a
   WorkspaceEdit applies it, one carrying a command runs
@@ -70,6 +74,8 @@ missing server degrades to today's behavior silently.
 
 ## Deferred
 
-- prepareRename range validation (client-side word extraction only),
-  references/definition navigation, auto-open-and-apply for closed
+- ~~prepareRename range validation~~ — **closed (landed)**: rename now
+  asks `textDocument/prepareRename` first (range anchor + decline note;
+  unsupported servers fall back to the client range).
+- references/definition navigation, auto-open-and-apply for closed
   files, hover markdown styling.

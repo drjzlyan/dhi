@@ -193,6 +193,44 @@ func (c *Client) Hover(path string, line, col int) (*Hover, error) {
 	return &Hover{Contents: flattenContents(result.Contents)}, nil
 }
 
+// PrepareRename asks the server whether the symbol at a position can be
+// renamed and, if so, the range it would rewrite. ok is false when the
+// server declines (null result or neither a range nor defaultBehavior).
+// A non-nil error means the request failed or the method is unsupported;
+// callers may fall back to a client-side range in that case.
+func (c *Client) PrepareRename(path string, line, col int) (Range, bool, error) {
+	var raw json.RawMessage
+	params := map[string]any{
+		"textDocument": map[string]any{"uri": pathToURI(path)},
+		"position":     map[string]any{"line": line, "character": col},
+	}
+	if err := c.call("textDocument/prepareRename", params, &raw); err != nil {
+		return Range{}, false, err
+	}
+	if len(raw) == 0 || string(raw) == "null" {
+		return Range{}, false, nil
+	}
+	// Three wire shapes: {start,end} | {range,placeholder} | {defaultBehavior}.
+	var obj struct {
+		Start           *Position `json:"start"`
+		End             *Position `json:"end"`
+		Range           *Range    `json:"range"`
+		DefaultBehavior bool      `json:"defaultBehavior"`
+	}
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		return Range{}, false, fmt.Errorf("lsp: prepareRename result: %w", err)
+	}
+	switch {
+	case obj.Start != nil && obj.End != nil:
+		return Range{Start: *obj.Start, End: *obj.End}, true, nil
+	case obj.Range != nil:
+		return *obj.Range, true, nil
+	case obj.DefaultBehavior:
+		return Range{Start: Position{Line: line, Character: col}, End: Position{Line: line, Character: col}}, true, nil
+	}
+	return Range{}, false, nil
+}
+
 // Rename asks the server for edits renaming the symbol at a position.
 func (c *Client) Rename(path string, line, col int, newName string) (*WorkspaceEdit, error) {
 	var raw json.RawMessage
