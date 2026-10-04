@@ -131,6 +131,10 @@ func (m *Model) mainPane(w, h int) string {
 	if m.sec == secRepos && m.replay == nil {
 		p.SetScroll(kit.NewScroller(m.reposRowCount(inner), h-3, m.offsets[secRepos]))
 	}
+	if m.sec == secInbox && m.replay == nil {
+		total, off := m.inboxScroll(inner)
+		p.SetScroll(kit.NewScroller(total, h-3, off))
+	}
 	pane := p.View()
 
 	if m.form.kind == fNone {
@@ -209,7 +213,7 @@ func (m *Model) activeSectionFor(w, h int) string {
 	case secChannels:
 		return strings.Join(m.pane.render(w, maxInt(h, 12)), "\n")
 	case secInbox:
-		return m.inboxBody(w)
+		return m.inboxBody(w, maxInt(h, 6))
 	case secRepos:
 		return m.reposBody(w, maxInt(h, 6))
 	default:
@@ -226,7 +230,7 @@ func (m *Model) activeSection() string {
 	w := maxInt(m.width, 40)
 	switch m.sec {
 	case secInbox:
-		return m.inboxBody(w - 6)
+		return m.inboxBody(w-6, maxInt(m.height-8, 8))
 	case secRepos:
 		return m.reposBody(w-6, maxInt(m.height-8, 8))
 	default:
@@ -556,7 +560,7 @@ func inboxGlyph(k inbox.ItemKind) string {
 	}
 }
 
-func (m *Model) inboxBody(w int) string {
+func (m *Model) inboxBody(w, h int) string {
 	items := m.inboxItems()
 	c := &m.cursors[secInbox]
 	clampCursor(c, len(items))
@@ -569,15 +573,52 @@ func (m *Model) inboxBody(w int) string {
 		out = append(out, theme.TextDim().Render("(nothing needs attention)"))
 		return strings.Join(out, "\n")
 	}
+
+	groups := m.inboxGroups(w)
+	start := clampInt(m.offsets[secInbox], 0, len(items)-1)
+	if *c < start {
+		start = *c
+	}
+	render := func(from int) (rows []string, last int) {
+		last = from - 1
+		for i := from; i < len(items); i++ {
+			g := groups[i]
+			if h > 0 && len(rows) > 0 && len(rows)+len(g) > h {
+				break
+			}
+			rows = append(rows, g...)
+			last = i
+			if h > 0 && len(rows) >= h {
+				break
+			}
+		}
+		return rows, last
+	}
+	rows, last := render(start)
+	if *c > last { // cursor below the window: restart at the cursor
+		start = *c
+		rows, _ = render(start)
+	}
+	m.offsets[secInbox] = start
+	return strings.Join(append(out, rows...), "\n")
+}
+
+// inboxGroups renders each inbox item to its wrapped visual rows, so the
+// pane can window by item while the scrollbar counts rows (F-025).
+func (m *Model) inboxGroups(w int) [][]string {
+	items := m.inboxItems()
+	c := m.cursors[secInbox]
+	clampCursor(&c, len(items))
 	lines := maxInt(w-4, 30)
 	gl := len([]rune(theme.GlyphCursor))
+	groups := make([][]string, len(items))
 	for i, it := range items {
 		snoozed := !it.Snoozed.IsZero()
 		// Snoozed rows stay visible but dim — even under the cursor —
 		// and carry the parked bullet glyph so the affordance is more
 		// than color (F-017; F-026 P3).
 		style := theme.TextDim()
-		if i == *c && !snoozed {
+		if i == c && !snoozed {
 			style = theme.TabActive()
 		}
 		glyph := inboxGlyph(it.Kind)
@@ -594,21 +635,42 @@ func (m *Model) inboxBody(w int) string {
 		if snoozed {
 			row += "  — snoozed until " + snoozeUntilText(it.Snoozed, m.now())
 		}
+		var g []string
 		first := true
 		for _, ln := range kit.WrapWords(row, lines) {
 			if first {
 				prefix := strings.Repeat(" ", gl)
-				if i == *c {
+				if i == c {
 					prefix = theme.GlyphCursor + " "
 				}
-				out = append(out, prefix+style.Render(glyph+" "+ln))
+				g = append(g, prefix+style.Render(glyph+" "+ln))
 				first = false
 			} else {
-				out = append(out, strings.Repeat(" ", gl+1)+style.Render(ln))
+				g = append(g, strings.Repeat(" ", gl+1)+style.Render(ln))
 			}
 		}
+		groups[i] = g
 	}
-	return strings.Join(out, "\n")
+	return groups
+}
+
+// inboxScroll reports the visual-row total and the rows before the
+// window's first item, for the pane scrollbar (F-025). Falls to (0,0)
+// for the informational single-line states (which never overflow).
+func (m *Model) inboxScroll(w int) (total, offset int) {
+	items := m.inboxItems()
+	if m.unreadErr != "" || len(items) == 0 {
+		return 1, 0
+	}
+	groups := m.inboxGroups(w)
+	start := clampInt(m.offsets[secInbox], 0, len(items)-1)
+	for i, g := range groups {
+		if i < start {
+			offset += len(g)
+		}
+		total += len(g)
+	}
+	return total, offset
 }
 
 // timeAgo is the relative stamp used across rows (deterministic from

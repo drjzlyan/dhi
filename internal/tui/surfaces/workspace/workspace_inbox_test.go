@@ -483,3 +483,31 @@ func TestInboxSurfacesPendingProposals(t *testing.T) {
 		}
 	}
 }
+
+func TestInboxPaneScrollWindow(t *testing.T) {
+	m, _ := newSurface(t)
+	seedInbox(t, m)
+	gotoInbox(m)
+
+	m.cursors[secInbox] = 0
+	m.offsets[secInbox] = 0
+	_ = m.inboxBody(80, 2)
+	if m.offsets[secInbox] != 0 {
+		t.Fatalf("offset = %d, want 0 at top", m.offsets[secInbox])
+	}
+	m.cursors[secInbox] = len(m.inboxItems()) - 1
+	_ = m.inboxBody(80, 2)
+	if m.offsets[secInbox] == 0 {
+		t.Fatal("offset did not follow the cursor down")
+	}
+	total, off := m.inboxScroll(80)
+	if total <= 2 || off <= 0 {
+		t.Fatalf("scroll metrics total=%d off=%d", total, off)
+	}
+
+	m.Resize(100, 6) // body budget 3 < items → overflow
+	gotoInbox(m)
+	if !strings.Contains(m.View(), "█") {
+		t.Fatal("expected a right-edge scrollbar on INBOX")
+	}
+}

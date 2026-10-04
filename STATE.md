@@ -1,8 +1,21 @@
 # STATE — current position
 
-Updated: 2026-10-04 (session 44: F-025 per-pane scrollbars — workspace
-REPOS pane gains a scroll window + thumb. Roadmap M15–M20 and all
-follow-ons complete; `make verify` green.)
+Updated: 2026-10-04 (session 45: F-025 per-pane scrollbars — workspace
+INBOX scroll window + thumb. Roadmap M15–M20 and all follow-ons
+complete; `make verify` green.)
+
+### Session 45 (F-025: workspace INBOX scroll window + scrollbar)
+
+- INBOX now renders through a scroll window: `inboxBody(w, h)` windows
+  by item (via `inboxGroups`) with cursor-follow on `offsets[secInbox]`;
+  `inboxScroll(w)` reports visual-row total/offset for the pane
+  scrollbar. Wrapping is preserved (a group carries its wrapped rows).
+- mainPane paints the thumb for `secInbox` when it overflows. Normal-
+  size goldens unchanged (window only engages past the budget).
+- Tests: INBOX window/cursor-follow/metrics + overflow→bar. `make
+  verify` green.
+- BOARD (lanes) and FILES (reviewer list) still clip; they adopt when
+  they gain windows.
 
 ### Session 44 (F-025: workspace REPOS scroll window + scrollbar)
 
