@@ -14,6 +14,12 @@ import (
 	"github.com/drjzlyan/dhi/internal/tui/theme"
 )
 
+// Scrollbar glyphs shared with Scroller (a track column + a solid thumb).
+const (
+	scrollTrackGlyph = "│"
+	scrollThumbGlyph = "█"
+)
+
 // Panel is a titled, rounded box — the visual unit every surface is built
 // from. Focused panels carry the brand accent edge.
 //
@@ -27,6 +33,7 @@ type Panel struct {
 
 	content []string
 	footer  []string
+	scroll  *Scroller // optional right-edge scrollbar (F-025 per-pane)
 }
 
 // NewPanel returns an empty panel. Chain SetContent to populate.
@@ -41,6 +48,12 @@ func (p *Panel) SetContent(lines ...string) *Panel { p.content = lines; return p
 // cues, position summaries — F-026 P1). The body budget shrinks; at
 // tiny heights the footer yields to content.
 func (p *Panel) SetFooter(lines ...string) *Panel { p.footer = lines; return p }
+
+// SetScroll draws a scrollbar thumb on the panel's right edge for a
+// scroll window whose Total rows overflow the body budget (F-025
+// per-pane scrollbars). A scroller that fits renders no bar (the plain
+// edge stays), so callers can pass one unconditionally.
+func (p *Panel) SetScroll(s Scroller) *Panel { p.scroll = &s; return p }
 
 // View renders the complete panel including edges and title.
 func (p *Panel) View() string {
@@ -75,6 +88,21 @@ func (p *Panel) View() string {
 
 	bg := theme.PanelBg()
 
+	// Right-edge scrollbar: only when content overflows the body budget.
+	// Rebase the scroller onto the actual budget so the thumb aligns
+	// with the rows the panel paints.
+	sbOn := false
+	sbPos, sbTh := 0, 0
+	if p.scroll != nil && budget > 0 {
+		sc := *p.scroll
+		sc.Height = budget
+		sbOn = sc.Total > budget
+		if sbOn {
+			sbTh = sc.thumbLen(budget)
+			sbPos = sc.thumbPos(budget, sbTh)
+		}
+	}
+
 	var out []string
 	out = append(out, topEdge(width, p.Title, edge, titleSt))
 
@@ -87,8 +115,15 @@ func (p *Panel) View() string {
 			row += strings.Repeat(" ", inner-w)
 		}
 		line := strings.Repeat(" ", pad) + bg.Render(row) + strings.Repeat(" ", pad)
-		out = append(out, edge.Render(lipgloss.RoundedBorder().Left)+line+
-			edge.Render(lipgloss.RoundedBorder().Right))
+		right := edge.Render(lipgloss.RoundedBorder().Right)
+		if sbOn {
+			if y >= sbPos && y < sbPos+sbTh {
+				right = theme.AccentDimText().Render(scrollThumbGlyph)
+			} else {
+				right = edge.Render(scrollTrackGlyph)
+			}
+		}
+		out = append(out, edge.Render(lipgloss.RoundedBorder().Left)+line+right)
 	}
 	for y := 0; y < footerRows; y++ {
 		row := clip(p.footer[y], inner)

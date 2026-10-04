@@ -268,3 +268,37 @@ func TestEllipsisClipMarker(t *testing.T) {
 		t.Fatalf("tiny clip = %q", got)
 	}
 }
+
+func TestPanelRightEdgeScrollbar(t *testing.T) {
+	body := make([]string, 20)
+	for i := range body {
+		body[i] = "row"
+	}
+	p := NewPanel("t", true).SetContent(body...)
+	p.Width, p.Height = 20, 7 // body budget = 5
+	p.SetScroll(Scroller{Total: 20, Height: 5, offset: 0})
+	v := ansi.Strip(p.View())
+	lines := strings.Split(v, "\n")
+	// Body rows are lines[1..5]; count thumb cells on the right edge.
+	thumbs, track := 0, 0
+	for _, ln := range lines[1:6] {
+		switch string([]rune(ln)[len([]rune(ln))-1]) {
+		case "█":
+			thumbs++
+		case "│":
+			track++
+		}
+	}
+	if thumbs != 1 {
+		t.Fatalf("thumbs = %d, want 1 (offset 0, exact window)\n%s", thumbs, v)
+	}
+	if track != 4 {
+		t.Fatalf("track = %d, want 4\n%s", track, v)
+	}
+	// A scroller that fits leaves the edge plain (no thumb).
+	fit := NewPanel("t", true).SetContent("a", "b")
+	fit.Width, fit.Height = 12, 6
+	if strings.Contains(ansi.Strip(fit.SetScroll(Scroller{Total: 2, Height: 4}).View()), "█") {
+		t.Fatal("fitted scroller must not paint a thumb")
+	}
+}

@@ -121,12 +121,12 @@ func (s *Scroller) Scrollbar(h int) string {
 	thumb := theme.AccentDimText()
 	rows := make([]string, 0, h)
 	for y := 0; y < h; y++ {
-		rows = append(rows, track.Render("│"))
+		rows = append(rows, track.Render(scrollTrackGlyph))
 	}
 	if th := s.thumbLen(h); th > 0 {
 		pos := s.thumbPos(h, th)
 		for y := pos; y < pos+th; y++ {
-			rows[y] = thumb.Render("█")
+			rows[y] = thumb.Render(scrollThumbGlyph)
 		}
 	}
 	return strings.Join(rows, "\n")
