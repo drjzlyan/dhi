@@ -77,5 +77,6 @@ missing server degrades to today's behavior silently.
 - ~~prepareRename range validation~~ — **closed (landed)**: rename now
   asks `textDocument/prepareRename` first (range anchor + decline note;
   unsupported servers fall back to the client range).
-- references/definition navigation, auto-open-and-apply for closed
-  files, hover markdown styling.
+- ~~references/definition navigation~~ — **closed (landed)**: the editor
+  LSP verbs (`gd`/definition, `references`) ship via F-030.
+- auto-open-and-apply for closed files, hover markdown styling.
