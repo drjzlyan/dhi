@@ -1,8 +1,18 @@
 # STATE — current position
 
-Updated: 2026-10-04 (session 45: F-025 per-pane scrollbars — workspace
-INBOX scroll window + thumb. Roadmap M15–M20 and all follow-ons
+Updated: 2026-10-04 (session 46: F-025 per-pane scrollbars — reviewer
+FILES scroll window + thumb. Roadmap M15–M20 and all follow-ons
 complete; `make verify` green.)
+
+### Session 46 (F-025: reviewer FILES scroll window + scrollbar)
+
+- Reviewer Model gained `offsets [secCount]int`. `filesBody(w, h)` pins
+  the header rows and windows the file rows with cursor-follow;
+  mainPane paints the thumb for `secFiles` when files overflow.
+- Tests: FILES fits→no bar / overflow→bar + offset cursor-follow.
+  `make verify` green.
+- Remaining (clip, not scroll): workspace BOARD lanes; reviewer REVIEWS
+  (cursor detail block). They adopt when they gain windows.
 
 ### Session 45 (F-025: workspace INBOX scroll window + scrollbar)
 

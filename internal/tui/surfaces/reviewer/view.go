@@ -106,6 +106,8 @@ func (m *Model) mainPane(w, h int) string {
 		if len(segs) > 0 {
 			p.SetScroll(kit.NewScroller(len(segs), h-3, m.scroll))
 		}
+	} else if m.sec == secFiles && len(m.files) > 0 {
+		p.SetScroll(kit.NewScroller(len(m.files), h-3, m.offsets[secFiles]))
 	}
 	pane := p.View()
 	if m.composer != nil {
@@ -184,7 +186,7 @@ func (m *Model) activeSectionFor(w, h int) string {
 		}
 		return m.renderDiff(w-4, maxInt(h-4, 6), m.viewedSet())
 	case secFiles:
-		return m.filesBody(w - 4)
+		return m.filesBody(w-4, h)
 	default:
 		return m.reviewsBody(w - 4)
 	}
@@ -213,7 +215,7 @@ func (m *Model) activeSection() string {
 	case secDiff:
 		return m.activeSectionFor(maxInt(m.width-8, 40), maxInt(m.height-8, 12))
 	case secFiles:
-		return m.filesBody(maxInt(m.width-8, 40))
+		return m.filesBody(maxInt(m.width-8, 40), maxInt(m.height-8, 12))
 	default:
 		return m.reviewsBody(maxInt(m.width-8, 40))
 	}
@@ -276,7 +278,7 @@ func (m *Model) reviewsBody(w int) string {
 	return strings.Join(out, "\n")
 }
 
-func (m *Model) filesBody(w int) string {
+func (m *Model) filesBody(w, h int) string {
 	var out []string
 	r, ok := m.openReview()
 	if !ok {
@@ -307,6 +309,8 @@ func (m *Model) filesBody(w int) string {
 	}
 	c := m.cursors[secFiles]
 	clampCursor(&c, len(m.files))
+
+	var rows []string
 	for i := range m.files {
 		f := &m.files[i]
 		adds, dels := f.Stat()
@@ -318,12 +322,42 @@ func (m *Model) filesBody(w int) string {
 		if i == c {
 			style = theme.TabActive()
 		}
-		out = append(out,
+		rows = append(rows,
 			cursorGlyph(i == c)+
 				theme.SuccessText().Render(mark)+
 				style.Render(padTo(crop(f.DisplayPath(), maxInt(w-18, 10)), maxInt(w-16, 12)))+
 				theme.SuccessText().Render(fmt.Sprintf("+%d ", adds))+
 				theme.DangerText().Render(fmt.Sprintf("-%d", dels)))
+	}
+
+	// Scroll window (F-025): header rows stay pinned; the file rows
+	// window with cursor-follow. offsets[secFiles] is a file index.
+	avail := h - len(out)
+	if avail < 1 {
+		avail = 1
+	}
+	off := m.offsets[secFiles]
+	if off > len(rows)-avail {
+		off = len(rows) - avail
+	}
+	if off < 0 {
+		off = 0
+	}
+	if c < off {
+		off = c
+	} else if c >= off+avail {
+		off = c - avail + 1
+	}
+	if off > len(rows)-avail {
+		off = len(rows) - avail
+	}
+	if off < 0 {
+		off = 0
+	}
+	m.offsets[secFiles] = off
+	end := minInt(off+avail, len(rows))
+	if end > off {
+		out = append(out, rows[off:end]...)
 	}
 	return strings.Join(out, "\n")
 }

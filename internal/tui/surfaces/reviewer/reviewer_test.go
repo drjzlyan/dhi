@@ -2,6 +2,8 @@ package reviewer
 
 import (
 	"context"
+	"fmt"
+	"github.com/drjzlyan/dhi/internal/gitdiff"
 	"os"
 	"path/filepath"
 	"strings"
@@ -423,5 +425,28 @@ func TestReviewerDiffPaneScrollbar(t *testing.T) {
 	m.Resize(100, 5) // body budget 2 < segments → overflow
 	if !strings.Contains(m.View(), "█") {
 		t.Fatal("expected a right-edge scrollbar when the diff overflows")
+	}
+}
+
+func TestReviewerFilesPaneScrollbar(t *testing.T) {
+	m, _, _, _ := newSurface(t)
+	startBranchReview(t, m, m.svc.Store())
+	for i := 0; i < 15; i++ {
+		m.files = append(m.files, gitdiff.FileDiff{NewPath: fmt.Sprintf("f%02d.go", i)})
+	}
+	m.sec = secFiles
+	m.Resize(100, 40)
+	if strings.Contains(m.View(), "█") {
+		t.Fatal("no scrollbar expected when files fit")
+	}
+	m.Resize(100, 6) // budget 3, header 1 → 2 rows < 15 files
+	if !strings.Contains(m.View(), "█") {
+		t.Fatal("expected a right-edge scrollbar on FILES")
+	}
+	m.cursors[secFiles] = 14
+	m.offsets[secFiles] = 0
+	m.filesBody(80, 3)
+	if m.offsets[secFiles] == 0 {
+		t.Fatal("offset did not follow the cursor")
 	}
 }

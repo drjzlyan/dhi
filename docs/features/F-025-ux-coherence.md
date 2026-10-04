@@ -93,8 +93,9 @@ when you need them, never the focus.
 - Per-pane scrollbars: `kit.Panel.SetScroll` paints a thumb on the
   pane's right edge from a `kit.NewScroller(total, height, offset)`
   when the window overflows. Landed for the reviewer DIFF + run
-  transcript and the workspace INBOX and REPOS panes (both now have real
-  scroll windows with item/row cursor-follow). BOARD/FILES still clip
-  rather than scroll, so they adopt as they gain windows.
+  transcript + FILES and the workspace INBOX and REPOS panes (each now
+  has a real scroll window with cursor-follow). Workspace BOARD (lanes)
+  and reviewer REVIEWS (cursor detail block) still clip, so they adopt
+  as they gain windows.
 - ~~Reworking the editor's centered empty-state~~ — **closed (not
   planned)**: intentional hero.

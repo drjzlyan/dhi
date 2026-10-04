@@ -73,6 +73,9 @@ type Model struct {
 
 	sec     sectionID
 	cursors [secCount]int
+	// offsets is the first visible rendered row per section for panes
+	// with a real scroll window (F-025: FILES).
+	offsets [secCount]int
 
 	openID  string // review currently loaded ("", none)
 	files   []gitdiff.FileDiff
