@@ -1,8 +1,26 @@
 # STATE — current position
 
-Updated: 2026-10-04 (session 46: F-025 per-pane scrollbars — reviewer
-FILES scroll window + thumb. Roadmap M15–M20 and all follow-ons
-complete; `make verify` green.)
+Updated: 2026-10-04 (session 47: F-025 per-pane scrollbars COMPLETE —
+reviewer REVIEWS + editor files rail added; BOARD documented as
+per-lane Columns. Roadmap M15–M20 and all follow-ons complete;
+`make verify` green.)
+
+### Session 47 (F-025: reviewer REVIEWS + editor rail; F-025 closed)
+
+- Reviewer REVIEWS windows by review (a selected row expands a detail
+  line, so groups carry rows) with cursor-follow; mainPane paints the
+  thumb on overflow. `reviewsScroll` reports metrics.
+- `kit.List.Scroller()` exposes the list window; the editor files rail
+  (a `kit.Panel`) paints the right-edge thumb when files overflow.
+- F-025 per-pane scrollbars is **complete**: reviewer DIFF/transcript/
+  FILES/REVIEWS, workspace INBOX/REPOS, editor files rail. BOARD is the
+  documented exception (multi-lane grid scrolled per lane by
+  `kit.Columns`; no single right-edge thumb); CHANNELS tails without an
+  offset. F-025 doc closed.
+- Tests: reviewer REVIEWS fits/overflow + cursor-follow; editor rail
+  fits/overflow. `make verify` green (one full-suite run showed a
+  pre-existing doctor git-subprocess load flake; rerun + isolated run
+  green).
 
 ### Session 46 (F-025: reviewer FILES scroll window + scrollbar)
 

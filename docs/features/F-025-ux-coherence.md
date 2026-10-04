@@ -90,12 +90,15 @@ when you need them, never the focus.
   carries it.
 - ~~Mouse support~~ — **closed (landed)**: F-026 P2 enables mouse
   (wheel + click, no drag) with nil-safe `Wheel`/`Click` seams.
-- Per-pane scrollbars: `kit.Panel.SetScroll` paints a thumb on the
-  pane's right edge from a `kit.NewScroller(total, height, offset)`
-  when the window overflows. Landed for the reviewer DIFF + run
-  transcript + FILES and the workspace INBOX and REPOS panes (each now
-  has a real scroll window with cursor-follow). Workspace BOARD (lanes)
-  and reviewer REVIEWS (cursor detail block) still clip, so they adopt
-  as they gain windows.
+- ~~Per-pane scrollbars~~ — **closed (landed)**: `kit.Panel.SetScroll`
+  paints a thumb on the pane's right edge from a
+  `kit.NewScroller(total, height, offset)` when the window overflows.
+  Landed for the reviewer DIFF + run transcript + FILES + REVIEWS and
+  the workspace INBOX + REPOS panes, plus the editor files rail
+  (`kit.List.Scroller`). Every one has a real scroll window with
+  cursor-follow. The workspace BOARD is the documented exception: it is
+  a multi-lane grid scrolled per lane by `kit.Columns` (F-026 P3), so a
+  single right-edge thumb does not apply. CHANNELS is a tail-following
+  transcript (no offset).
 - ~~Reworking the editor's centered empty-state~~ — **closed (not
   planned)**: intentional hero.
