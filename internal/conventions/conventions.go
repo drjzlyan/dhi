@@ -40,7 +40,12 @@ type Commit struct {
 	Format        string `toml:"format"`
 	TicketPattern string `toml:"ticket_pattern"`
 	MaxSubject    int    `toml:"max_subject"`
-	CoAuthor      string `toml:"co_author"` // "Name <email>" trailer; empty = none
+	// CoAuthor is the "Name <email>" credited in a Co-Authored-By trailer.
+	// It has no default (DHI drives several CLIs; crediting one by default
+	// would misattribute the others), and is applied only when
+	// CoAuthorEnabled is set.
+	CoAuthor        string `toml:"co_author"`
+	CoAuthorEnabled bool   `toml:"co_author_enabled"`
 }
 
 // Copyright configures the header agents put on new source files.
@@ -148,6 +153,9 @@ func (c Config) Validate() error {
 	if ca := strings.TrimSpace(c.Commit.CoAuthor); ca != "" && !coAuthorRe.MatchString(ca) {
 		return fmt.Errorf("commit.co_author %q must look like \"Name <email>\"", ca)
 	}
+	if c.Commit.CoAuthorEnabled && strings.TrimSpace(c.Commit.CoAuthor) == "" {
+		return fmt.Errorf("commit.co_author is required when commit.co_author_enabled")
+	}
 	if c.Copyright.Enabled && strings.TrimSpace(c.Copyright.Holder) == "" {
 		return fmt.Errorf("copyright.holder is required when copyright.enabled")
 	}
@@ -187,7 +195,7 @@ func (c Commit) CheckCommit(msg string) error {
 // Finalize applies the co-author trailer (once) to a validated message.
 func (c Commit) Finalize(msg string) string {
 	msg = strings.TrimRight(msg, " \n\t")
-	if ca := strings.TrimSpace(c.CoAuthor); ca != "" {
+	if ca := strings.TrimSpace(c.CoAuthor); c.CoAuthorEnabled && ca != "" {
 		trailer := "Co-Authored-By: " + ca
 		if !strings.Contains(msg, trailer) {
 			msg += "\n\n" + trailer
@@ -295,7 +303,7 @@ func (c Config) Guidance() string {
 		b.WriteString("- Commit messages: a short imperative subject, then a body explaining why.\n")
 	}
 	fmt.Fprintf(&b, "- Keep commit subjects within %d characters.\n", c.Commit.MaxSubject)
-	if c.Commit.CoAuthor != "" {
+	if c.Commit.CoAuthorEnabled {
 		b.WriteString("- DHI adds the Co-Authored-By trailer to commits; do not add it yourself.\n")
 	}
 	if c.Copyright.Enabled {

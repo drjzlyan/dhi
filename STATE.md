@@ -15,6 +15,11 @@ real delve v1.27.2 — see F-039; `dlv` provisioning still open.)
   `task/<slug>`/`review/<id>`; `git_commit` validates + appends the
   co-author trailer; `Guidance()` rides the agent system prompt;
   Settings rows. `settings.UnknownKeys` now recurses.
+- Fixup (same session): conventions are a TRACKED team contract in
+  `.dhi/conventions.toml` (layers: defaults < user < user conventions <
+  team conventions < personal config); `Config.Save` never writes them,
+  `settings.SaveConventions` does. Co-author needs an explicit value +
+  `co_author_enabled` (pointer in the layer so a layer can switch it off).
 - Decision: missing agent CLIs get a confirm-gated install (P5); needs a
   new ADR superseding 0012.
 - Gotchas: Go `iota` stops when one const gets an explicit expression

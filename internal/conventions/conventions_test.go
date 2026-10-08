@@ -65,7 +65,7 @@ func TestCheckCommit(t *testing.T) {
 }
 
 func TestFinalizeCoAuthorOnce(t *testing.T) {
-	c := Commit{CoAuthor: "Bot <bot@x.io>"}
+	c := Commit{CoAuthor: "Bot <bot@x.io>", CoAuthorEnabled: true}
 	once := c.Finalize("feat: x")
 	twice := c.Finalize(once)
 	if once != twice || strings.Count(once, "Co-Authored-By") != 1 {
@@ -73,6 +73,10 @@ func TestFinalizeCoAuthorOnce(t *testing.T) {
 	}
 	if got := (Commit{}).Finalize("a"); got != "a\n" {
 		t.Fatalf("no co-author = %q", got)
+	}
+	// A stored value stays inert until enabled.
+	if got := (Commit{CoAuthor: "Bot <bot@x.io>"}).Finalize("a"); got != "a\n" {
+		t.Fatalf("disabled co-author applied: %q", got)
 	}
 }
 
@@ -83,6 +87,7 @@ func TestValidateRejects(t *testing.T) {
 		func(c *Config) { c.Commit.TicketPattern = "(" },
 		func(c *Config) { c.Commit.MaxSubject = 5 },
 		func(c *Config) { c.Commit.CoAuthor = "no-email" },
+		func(c *Config) { c.Commit.CoAuthorEnabled = true },
 		func(c *Config) { c.Copyright.Enabled = true },
 	}
 	for i, mut := range bad {

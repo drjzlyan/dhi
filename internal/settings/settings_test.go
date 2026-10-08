@@ -373,7 +373,7 @@ func TestConventionsDefaultsAndLayering(t *testing.T) {
 	dir := t.TempDir()
 	user := filepath.Join(dir, "user.toml")
 	ws := filepath.Join(dir, "ws.toml")
-	os.WriteFile(user, []byte("[conventions.commit]\nformat = \"conventional\"\nco_author = \"Bot <bot@x.io>\"\n"), 0o644)
+	os.WriteFile(user, []byte("[conventions.commit]\nformat = \"conventional\"\nco_author = \"Bot <bot@x.io>\"\nco_author_enabled = true\n"), 0o644)
 	os.WriteFile(ws, []byte("[conventions.branch]\ntask = \"{user}/{slug}\"\n[conventions.commit]\nformat = \"ticket\"\n"), 0o644)
 
 	def, err := Load("", "")
@@ -385,7 +385,7 @@ func TestConventionsDefaultsAndLayering(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := cfg.Conventions
-	if c.Commit.Format != "ticket" || c.Commit.CoAuthor != "Bot <bot@x.io>" ||
+	if c.Commit.Format != "ticket" || !c.Commit.CoAuthorEnabled ||
 		c.Branch.Task != "{user}/{slug}" || c.Branch.Review != "review/{id}" {
 		t.Fatalf("layering wrong: %+v", c)
 	}
@@ -409,15 +409,55 @@ func TestConventionsRefuseBadValuesAndTypos(t *testing.T) {
 }
 
 func TestConventionsRoundTrip(t *testing.T) {
-	p := filepath.Join(t.TempDir(), "c.toml")
+	dir := t.TempDir()
+	p := filepath.Join(dir, "ws", "config.toml")
 	cfg := Defaults()
 	cfg.Conventions.Commit.Format = "conventional"
 	cfg.Conventions.Copyright = conventions.Copyright{Enabled: true, Holder: "Acme", License: "MIT"}
+	if err := SaveConventions(ConventionsPath(p), cfg.Conventions); err != nil {
+		t.Fatal(err)
+	}
 	if err := cfg.Save(p); err != nil {
 		t.Fatal(err)
 	}
-	back, err := Load(p, "")
+	if data, _ := os.ReadFile(p); strings.Contains(string(data), "conventions") {
+		t.Errorf("personal config must not carry conventions:\n%s", data)
+	}
+	back, err := Load("", p)
 	if err != nil || back.Conventions.Commit.Format != "conventional" || !back.Conventions.Copyright.Enabled {
 		t.Fatalf("round trip = %+v err=%v", back.Conventions, err)
+	}
+}
+
+// The team layer must be able to switch a user-level co-author OFF, and a
+// settings save must not freeze lower layers into the personal file.
+func TestTeamConventionsOverrideUserCoAuthor(t *testing.T) {
+	dir := t.TempDir()
+	user := filepath.Join(dir, "user", "config.toml")
+	ws := filepath.Join(dir, "ws", ".dhi", "config.toml")
+	os.MkdirAll(filepath.Dir(user), 0o755)
+	os.MkdirAll(filepath.Dir(ws), 0o755)
+	os.WriteFile(ConventionsPath(user), []byte(
+		"[conventions.commit]\nco_author = \"Me <me@x.io>\"\nco_author_enabled = true\n"), 0o644)
+	cfg, err := Load(user, ws)
+	if err != nil || !cfg.Conventions.Commit.CoAuthorEnabled {
+		t.Fatalf("user layer = %+v err=%v", cfg.Conventions.Commit, err)
+	}
+	cfg.Conventions.Commit.CoAuthorEnabled = false
+	if err := SaveConventions(ConventionsPath(ws), cfg.Conventions); err != nil {
+		t.Fatal(err)
+	}
+	back, err := Load(user, ws)
+	if err != nil || back.Conventions.Commit.CoAuthorEnabled {
+		t.Fatalf("team layer did not switch co-author off: %+v err=%v", back.Conventions.Commit, err)
+	}
+}
+
+func TestConventionsFileRejectsOtherKeys(t *testing.T) {
+	dir := t.TempDir()
+	ws := filepath.Join(dir, "config.toml")
+	os.WriteFile(ConventionsPath(ws), []byte("theme = \"light\"\n"), 0o644)
+	if _, err := Load("", ws); err == nil || !strings.Contains(err.Error(), "only [conventions.*]") {
+		t.Fatalf("err = %v", err)
 	}
 }

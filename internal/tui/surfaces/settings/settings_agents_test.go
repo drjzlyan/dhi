@@ -225,3 +225,14 @@ func mustAgent(t *testing.T, id, doc string) *manifest.Agent {
 	}
 	return a
 }
+
+// The effective-standards preview must show what the agent prompt carries
+// after the standards: the team conventions (cliPrompt appends both).
+func TestEffectiveBlockIncludesConventions(t *testing.T) {
+	m, _, _, _ := agentSurface(t)
+	m.cfg.Conventions.Commit.Format = "conventional"
+	block := m.effectiveBlock("")
+	if !strings.Contains(block, "Team conventions") || !strings.Contains(block, "Conventional Commits") {
+		t.Fatalf("preview lacks conventions:\n%s", block)
+	}
+}

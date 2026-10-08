@@ -177,7 +177,7 @@ func (m *Model) showStdPreview() {
 		return
 	}
 	id := strings.TrimSpace(f.Values()[0])
-	block := standards.Resolve(m.d.WS.Root, id, m.teamLookup())
+	block := m.effectiveBlock(id)
 	m.openDisplayDialog("effective standards — "+orDash(id),
 		strings.Split(strings.TrimRight(block, "\n"), "\n"))
 }
@@ -189,9 +189,17 @@ func (m *Model) previewStandards(id string) {
 		m.flash = "standards unavailable: not inside a workspace"
 		return
 	}
-	block := standards.Resolve(m.d.WS.Root, id, m.teamLookup())
+	block := m.effectiveBlock(id)
 	m.openDisplayDialog("effective standards — "+orDash(id),
 		strings.Split(strings.TrimRight(block, "\n"), "\n"))
+}
+
+// effectiveBlock is what an agent's prompt carries after its system text:
+// the layered standards, then the team conventions — the same order
+// cliPrompt appends them in.
+func (m *Model) effectiveBlock(id string) string {
+	return standards.Resolve(m.d.WS.Root, id, m.teamLookup()) +
+		"\n\n" + m.cfg.Conventions.Guidance()
 }
 
 func (m *Model) teamLookup() standards.TeamLookup {

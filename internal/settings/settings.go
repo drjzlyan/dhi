@@ -74,8 +74,9 @@ type Config struct {
 	Terminal Terminal          `toml:"terminal"`
 	Security Security          `toml:"security"`
 	// Conventions is the team-style layer (F-042): branch names, commit
-	// format, copyright header, PR text.
-	Conventions conventions.Config `toml:"conventions"`
+	// format, copyright header, PR text. It lives in its own tracked file
+	// (ConventionsPath), so the personal config never serialises it.
+	Conventions conventions.Config `toml:"-"`
 }
 
 // Defaults returns the built-in baseline every layer merges onto.
@@ -100,16 +101,34 @@ func Known() []string {
 		"conventions.branch.task", "conventions.branch.review",
 		"conventions.commit.format", "conventions.commit.ticket_pattern",
 		"conventions.commit.max_subject", "conventions.commit.co_author",
+		"conventions.commit.co_author_enabled",
 		"conventions.copyright.enabled", "conventions.copyright.holder",
 		"conventions.copyright.license", "conventions.copyright.year",
 		"conventions.pr.title", "conventions.pr.body"}
 }
 
-// Load merges defaults ← user ← workspace. Missing files are fine;
-// malformed files surface as errors naming the offending path.
+// ConventionsFile is the name of the conventions layer that sits next to
+// a config file. The workspace copy (.dhi/conventions.toml) is tracked —
+// it is the team's shared contract; the user copy is personal.
+const ConventionsFile = "conventions.toml"
+
+// ConventionsPath returns the conventions file paired with a config path
+// ("" stays "").
+func ConventionsPath(configPath string) string {
+	if configPath == "" {
+		return ""
+	}
+	return filepath.Join(filepath.Dir(configPath), ConventionsFile)
+}
+
+// Load merges defaults ← user ← user conventions ← team conventions
+// (workspace .dhi/conventions.toml, tracked) ← workspace config
+// (.dhi/config.toml, personal). Missing files are fine; malformed files
+// surface as errors naming the offending path.
 func Load(userPath, wsPath string) (Config, error) {
 	cfg := Defaults()
-	for _, path := range []string{userPath, wsPath} {
+	for _, path := range []string{userPath, ConventionsPath(userPath),
+		ConventionsPath(wsPath), wsPath} {
 		if path == "" {
 			continue
 		}
@@ -130,6 +149,11 @@ func Load(userPath, wsPath string) (Config, error) {
 		} else if len(unknown) > 0 {
 			return cfg, fmt.Errorf("settings: unknown keys in %s: %s (fix or remove them)",
 				path, strings.Join(unknown, ", "))
+		}
+		if filepath.Base(path) == ConventionsFile {
+			if err := onlyConventions(data); err != nil {
+				return cfg, fmt.Errorf("settings: %s: %w", path, err)
+			}
 		}
 		layer.mergeInto(&cfg)
 	}
@@ -224,6 +248,8 @@ type fileLayer struct {
 			TicketPattern string `toml:"ticket_pattern"`
 			MaxSubject    int    `toml:"max_subject"`
 			CoAuthor      string `toml:"co_author"`
+			// A pointer, so a layer can switch the trailer off explicitly.
+			CoAuthorEnabled *bool `toml:"co_author_enabled"`
 		} `toml:"commit"`
 		Copyright struct {
 			Enabled *bool  `toml:"enabled"`
@@ -279,6 +305,9 @@ func (f fileLayer) mergeInto(dst *Config) {
 	setStr(&d.Commit.Format, cv.Commit.Format)
 	setStr(&d.Commit.TicketPattern, cv.Commit.TicketPattern)
 	setStr(&d.Commit.CoAuthor, cv.Commit.CoAuthor)
+	if cv.Commit.CoAuthorEnabled != nil {
+		d.Commit.CoAuthorEnabled = *cv.Commit.CoAuthorEnabled
+	}
 	if cv.Commit.MaxSubject != 0 {
 		d.Commit.MaxSubject = cv.Commit.MaxSubject
 	}
@@ -377,4 +406,36 @@ func (c Config) Save(path string) error {
 		return fmt.Errorf("settings: save: %w", err)
 	}
 	return nil
+}
+
+// onlyConventions rejects a conventions file carrying anything but
+// [conventions.*] — it is a shared, tracked contract, not a second config.
+func onlyConventions(data []byte) error {
+	var raw map[string]any
+	if _, err := toml.Decode(string(data), &raw); err != nil {
+		return err
+	}
+	for k := range raw {
+		if k != "conventions" {
+			return fmt.Errorf("only [conventions.*] is allowed here, found %q", k)
+		}
+	}
+	return nil
+}
+
+// SaveConventions writes the conventions table to path in full — the file
+// is an explicit, readable contract, so defaults are written too.
+func SaveConventions(path string, c conventions.Config) error {
+	if err := c.Validate(); err != nil {
+		return fmt.Errorf("settings: conventions: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("settings: save conventions: %w", err)
+	}
+	var sb strings.Builder
+	sb.WriteString("# DHI team conventions (tracked; hand-editable)\n")
+	if err := toml.NewEncoder(&sb).Encode(map[string]any{"conventions": c}); err != nil {
+		return fmt.Errorf("settings: encode conventions: %w", err)
+	}
+	return os.WriteFile(path, []byte(sb.String()), 0o644)
 }

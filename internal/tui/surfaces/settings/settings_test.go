@@ -161,13 +161,21 @@ func TestConventionRowsCycleAndPersist(t *testing.T) {
 	feed(m, "l") // task/{slug} → feature/{slug}
 	m.cursor = rowCommitCoAuthor
 	feed(m, "enter")
+	if m.cfg.Conventions.Commit.CoAuthorEnabled || !strings.Contains(m.flash, "co_author") {
+		t.Fatalf("co-author enabled without a value: flash=%q", m.flash)
+	}
+	m.cfg.Conventions.Commit.CoAuthor = "Bot <bot@x.io>"
+	feed(m, "enter")
 
+	if !strings.Contains(m.flash, "applies on restart") {
+		t.Errorf("flash = %q", m.flash)
+	}
 	back, err := settings.Load(path, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	c := back.Conventions
-	if c.Commit.Format != "conventional" || c.Branch.Task != "feature/{slug}" || c.Commit.CoAuthor != coAuthorTrailer {
+	if c.Commit.Format != "conventional" || c.Branch.Task != "feature/{slug}" || !c.Commit.CoAuthorEnabled {
 		t.Fatalf("persisted conventions = %+v", c)
 	}
 }

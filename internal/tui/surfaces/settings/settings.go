@@ -348,9 +348,6 @@ const (
 // pattern is hand-edited in config.toml and shows as-is.
 var branchPresets = []string{"task/{slug}", "feature/{slug}", "{user}/{slug}", "{user}/{date}-{slug}"}
 
-// coAuthorTrailer is the value the Co-Authored-By row toggles to.
-const coAuthorTrailer = "Claude <noreply@anthropic.com>"
-
 func cycleString(cur string, opts []string, dir int) string {
 	for i, o := range opts {
 		if o == cur {
@@ -400,11 +397,12 @@ func (m *Model) cycle(dir int) {
 		m.cfg.Conventions.Commit.Format = cycleString(m.cfg.Conventions.Commit.Format,
 			[]string{conventions.FormatFree, conventions.FormatConventional, conventions.FormatTicket}, dir)
 	case rowCommitCoAuthor:
-		if m.cfg.Conventions.Commit.CoAuthor == "" {
-			m.cfg.Conventions.Commit.CoAuthor = coAuthorTrailer
-		} else {
-			m.cfg.Conventions.Commit.CoAuthor = ""
+		cm := &m.cfg.Conventions.Commit
+		if !cm.CoAuthorEnabled && strings.TrimSpace(cm.CoAuthor) == "" {
+			m.flash = "set conventions.commit.co_author = \"Name <email>\" in " + settings.ConventionsFile + " first"
+			return
 		}
+		cm.CoAuthorEnabled = !cm.CoAuthorEnabled
 	case rowCopyright:
 		if !m.cfg.Conventions.Copyright.Enabled && strings.TrimSpace(m.cfg.Conventions.Copyright.Holder) == "" {
 			m.flash = "set conventions.copyright.holder in config.toml first"
@@ -439,6 +437,16 @@ func (m *Model) applyAndPersist() {
 	}
 	if err := m.cfg.Save(m.savePath); err != nil {
 		m.flash = "save failed: " + err.Error()
+		return
+	}
+	// Conventions are a separate, tracked file shared with the team and
+	// are read at launch, so say so.
+	if m.cursor >= rowBranchTask {
+		if err := settings.SaveConventions(settings.ConventionsPath(m.savePath), m.cfg.Conventions); err != nil {
+			m.flash = "save failed: " + err.Error()
+			return
+		}
+		m.flash = "saved to " + settings.ConventionsFile + " (applies on restart)"
 		return
 	}
 	m.flash = "saved"
@@ -1122,9 +1130,9 @@ func (m *Model) configView() []string {
 		}
 		rows = append(rows, settingRow(m.cursor == rowScopesBase+i, "scopes."+name, valueText(val)))
 	}
-	co := m.cfg.Conventions.Commit.CoAuthor
-	if co == "" {
-		co = "off"
+	co := "off"
+	if m.cfg.Conventions.Commit.CoAuthorEnabled {
+		co = m.cfg.Conventions.Commit.CoAuthor
 	}
 	return append(rows,
 		settingRow(m.cursor == rowBranchTask, "conventions.branch.task",

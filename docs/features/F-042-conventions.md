@@ -14,10 +14,20 @@ in free text.
 ## Design
 
 `internal/conventions` — pure, stdlib-only — holds the rules and every
-default. `settings.Config.Conventions` embeds it, so the existing
-layering (defaults < user `config.toml` < workspace `.dhi/config.toml`)
-and strict unknown-key refusal (ADR-0011) apply unchanged. `UnknownKeys`
-now recurses, so a typo under `conventions.commit.*` is named.
+default. `settings.Config.Conventions` embeds it. Conventions are a
+**team contract**, so they do not live in the personal, gitignored
+`.dhi/config.toml`. Layers, lowest first:
+
+1. built-in defaults
+2. `~/.config/dhi/config.toml`, then `~/.config/dhi/conventions.toml` (personal)
+3. **`.dhi/conventions.toml` — tracked, shared with the team**
+4. `.dhi/config.toml` (personal override, may also carry `[conventions.*]`)
+
+`conventions.toml` may only contain `[conventions.*]`. `Config.Save` never
+serialises conventions (so saving a theme cannot freeze team values into a
+personal file); `settings.SaveConventions` writes the tracked file in
+full. Strict unknown-key refusal (ADR-0011) applies, and `UnknownKeys`
+now recurses so a typo under `conventions.commit.*` is named.
 
 ```toml
 [conventions.branch]
@@ -28,7 +38,8 @@ review = "review/{id}"
 format         = "free"     # free | conventional | ticket
 ticket_pattern = '[A-Z][A-Z0-9]+-\d+'
 max_subject    = 72
-co_author      = ""         # "Name <email>" → trailer added once
+co_author      = ""         # "Name <email>" — no default: DHI drives several CLIs
+co_author_enabled = false   # trailer added once when true (a layer can switch it off)
 
 [conventions.copyright]
 enabled = false
@@ -47,9 +58,10 @@ body  = "{summary}"
 |---|---|
 | Branch patterns | task attach and review worktree seams in `cmd/dhi/main.go` (`branchVars`); bad pattern is a visible error, never a fallback |
 | Commit format + subject length | `git_commit` validates in `parse` (before an approval is spent) with a message telling the author the fix |
-| Co-author trailer | `git_commit` appends once (idempotent) |
+| Co-author trailer | `git_commit` appends once (idempotent), only when `co_author_enabled`; the value must be set explicitly |
 | Agent awareness | `Config.Guidance()` joins the system prompt (`cliPrompt`) so agents comply before a gate refuses |
-| Settings UI | rows for branch preset, commit format, co-author toggle, copyright toggle (needs `holder`) |
+| Settings UI | rows for branch preset, commit format, co-author toggle (needs a value), copyright toggle (needs `holder`); saved to `conventions.toml`, flash says "applies on restart" |
+| Preview | Settings "effective standards" shows standards + conventions, in the order `cliPrompt` appends them |
 
 ## Acceptance criteria
 
@@ -64,8 +76,9 @@ body  = "{summary}"
 ## Deferred
 
 - Worktree root location (`tasks.Dir` is the store layout; moving it is a migration).
-- Copyright header injection on agent file writes, and `pr.title`/`pr.body`
-  consumption by `pr_open` — the templates parse and validate today,
-  the PR seam still takes the title agents pass. Both need the write/PR
-  tools' seams; tracked for the tools phase.
+- **Copyright header injection on agent file writes** and **`pr.title`/`pr.body`
+  consumption by `pr_open`** — today copyright exists only as prompt
+  text and the PR templates only parse and validate. Scheduled as an
+  explicit line in ROADMAP M25 (P7a).
+- Live reload: edits apply on restart (the wizard relaunches; Settings says so).
 - Free-text editing of patterns inside the TUI (hand-edit `config.toml`).

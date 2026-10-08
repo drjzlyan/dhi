@@ -955,3 +955,4 @@ Seven phases, one commit each; push deferred to the end.
 - [ ] P5 Agent CLI onboarding (confirm-gated install; supersedes ADR-0012)
 - [ ] P6 Integrations catalog (Jira, Confluence, Slack, Teams, …)
 - [ ] P7 Tools (LSP/dlv/formatters) + interactive tutorials
+- [ ] P7a Finish F-042: copyright header injection on agent file writes; `pr.title`/`pr.body` consumed by `pr_open`

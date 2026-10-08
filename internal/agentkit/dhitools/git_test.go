@@ -269,6 +269,7 @@ func TestGitCommitEnforcesConventions(t *testing.T) {
 	conv := conventions.Defaults()
 	conv.Commit.Format = conventions.FormatConventional
 	conv.Commit.CoAuthor = "Bot <bot@example.com>"
+	conv.Commit.CoAuthorEnabled = true
 	h := Deps{Agent: m, WS: f.ws, Workdir: api, Identity: testIdentity(),
 		Approvals: f.approvals, Conventions: &conv}.Handler()
 
