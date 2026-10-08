@@ -70,7 +70,7 @@ func TestNilWorkspaceRendersHeroAndSwallowsKeys(t *testing.T) {
 	m := New("0.1.0", nil, Deps{})
 	m.Resize(100, 30)
 	out := m.View()
-	if !strings.Contains(out, "███████") || !strings.Contains(out, "not inside a DHI workspace") {
+	if !strings.Contains(out, "███████") || !strings.Contains(out, "not a DHI workspace") {
 		t.Fatalf("empty state missing hero/hint:\n%s", out)
 	}
 	for _, k := range []string{"a", "r", "d", "j", "k", "[", "]"} {

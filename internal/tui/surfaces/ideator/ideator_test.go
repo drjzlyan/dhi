@@ -437,7 +437,7 @@ func TestNilDepsDegrade(t *testing.T) {
 	m, ws, _, _, _ := newSurface(t)
 	bare := New("0.1.0", ws, Deps{})
 	bare.Resize(100, 30)
-	if body := bare.sessionsBody(76); !strings.Contains(body, "unavailable") {
+	if body := bare.sessionsBody(76, 20); !strings.Contains(body, "unavailable") {
 		t.Fatalf("nil store body = %q", body)
 	}
 	if bare.HandleKey("n") {

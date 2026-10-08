@@ -37,8 +37,7 @@ func TestEditorRailScrollbar(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := New("test", ws)
-	m.roots[0].toggle() // expand the member so its files become rows
-	m.refreshRows()
+	// A single-member workspace opens expanded: its files are rows.
 
 	m.Resize(100, 60) // window 56 > 31 rows → no bar
 	if strings.Contains(ansi.Strip(m.View()), "█") {

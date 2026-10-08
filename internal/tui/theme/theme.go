@@ -445,5 +445,5 @@ var (
 	GlyphBranch    = "⎇" // git branch marker (F-026 P4 git panel)
 	GlyphGutterBar = "▎" // git gutter: added/modified line (F-040)
 	GlyphGutterDel = "▁" // git gutter: lines deleted below
-	GlyphSpark     = "✦" // agent activity / transcript agent author (F-026 P1e)
+	GlyphSpark     = "◇" // agent activity / transcript agent author (F-026 P1e); Geometric Shapes, not Dingbats, so common terminal fonts have it
 )

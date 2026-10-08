@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"charm.land/bubbletea/v2"
+	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
@@ -814,15 +814,8 @@ func (m *Model) HelpSections() [][2]string {
 		{"j / k", "move the cursor"},
 		{"ctrl+s", "write settings"},
 	}
-	for _, h := range m.sectionHints() {
-		parts := strings.SplitN(h, " ", 2)
-		if len(parts) != 2 {
-			out = append(out, [2]string{h, ""})
-			continue
-		}
-		out = append(out, [2]string{parts[0], parts[1]})
-	}
-	return out
+	out = append(out, kit.HintRows(m.sectionHints()...)...)
+	return kit.DedupeHelpRows(out)
 }
 
 func clampAgentCursor(c *int, n int) {
@@ -1220,8 +1213,12 @@ func (m *Model) formView() []string {
 	return out
 }
 
+// settingNameW fits the longest key ("conventions.copyright.enabled")
+// plus a two-cell gutter, so a value never runs into its name.
+const settingNameW = 31
+
 func settingRow(selected bool, name, value string) string {
-	namePart := padTo(name, 24)
+	namePart := padTo(name, settingNameW)
 	if selected {
 		return theme.GlyphCursor + " " + theme.TabActive().Render(namePart) + value
 	}

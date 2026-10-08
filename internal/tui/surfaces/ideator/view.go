@@ -21,12 +21,7 @@ const railWidth = 20
 // truly tiny ones, brand hero when not inside a workspace (F-025).
 func (m *Model) View() string {
 	if m.ws == nil {
-		lines := strings.Split(branding.HeroBlock(m.version), "\n")
-		lines = append(lines, "", theme.Hint().Render("not inside a DHI workspace"))
-		return kit.Center(strings.Join(lines, "\n"), maxInt(m.width, 40), maxInt(m.height, 10))
-	}
-	if m.width < kit.WCompact {
-		return kit.Center(m.compactBody(), maxInt(m.width, 40), maxInt(m.height, 10))
+		return branding.NoWorkspace(m.width, m.height, m.version)
 	}
 	if m.width < kit.WDock {
 		return m.compactBody()
@@ -35,12 +30,11 @@ func (m *Model) View() string {
 }
 
 func (m *Model) compactBody() string {
-	body := m.sectionStrip() + "\n" + m.activeSection() + "\n" +
-		kit.HintBar(maxInt(m.width, 40), m.statusFlash(), m.sectionHints()...)
-	if m.form.kind != fNone {
-		body = m.modalView(body)
-	}
-	return body
+	// Below the dock width the rail folds into a one-line section strip
+	// and the same panel (body + hint bar) takes the full width (F-054):
+	// narrow terminals get the real UI, never a stripped-down stack.
+	strip := kit.ClipEllipsis(m.sectionStrip(), m.width)
+	return strip + "\n" + m.mainPane(m.width, m.height-1)
 }
 
 func (m *Model) dockedView() string {
@@ -82,7 +76,6 @@ func (m *Model) railView(h int) string {
 		Active: int(m.sec),
 		Width:  railWidth,
 		Height: h,
-		Foot:   "[ ] sections",
 	}).View()
 }
 
@@ -108,6 +101,9 @@ func (m *Model) sectionCounts() [secCount]int {
 }
 
 func (m *Model) mainPane(w, h int) string {
+	// The first frame can arrive before any resize (0x0) and terminals
+	// can be tiny; render a minimal panel and let the shell clip it.
+	w, h = maxInt(w, 12), maxInt(h, 4)
 	p := kit.NewPanel(strings.ToLower(m.sec.label()), true)
 	inner := w - 4
 	body := m.activeSectionFor(inner, h-3)
@@ -158,13 +154,13 @@ func (m *Model) sectionHints() []string {
 func (m *Model) activeSectionFor(w, h int) string {
 	switch m.sec {
 	case secParticipants:
-		return m.participantsBody(w - 4)
+		return m.participantsBody(w)
 	case secCanvas:
-		return m.canvasBody(w-4, maxInt(h-4, 8))
+		return m.canvasBody(w, maxInt(h, 8))
 	case secTranscript:
-		return m.chatBody(w-4, maxInt(h-4, 6))
+		return m.chatBody(w, maxInt(h, 6))
 	default:
-		return m.sessionsBody(w - 4)
+		return m.sessionsBody(w, h)
 	}
 }
 
@@ -186,22 +182,9 @@ func (m *Model) sectionStrip() string {
 	return line + flash
 }
 
-func (m *Model) activeSection() string {
-	switch m.sec {
-	case secParticipants:
-		return m.participantsBody(maxInt(m.width-8, 40))
-	case secCanvas:
-		return m.canvasBody(maxInt(m.width-8, 40), maxInt(m.height-8, 8))
-	case secTranscript:
-		return m.chatBody(maxInt(m.width-8, 40), maxInt(m.height-8, 12))
-	default:
-		return m.sessionsBody(maxInt(m.width-8, 40))
-	}
-}
-
 // ---- SESSIONS ----
 
-func (m *Model) sessionsBody(w int) string {
+func (m *Model) sessionsBody(w, h int) string {
 	if m.store == nil {
 		return theme.DangerText().Render("(session store unavailable)")
 	}
@@ -218,7 +201,7 @@ func (m *Model) sessionsBody(w int) string {
 			Title:  "No sessions yet",
 			Why:    "A session is a round-table: invite agents, pass the floor, and shape ideas on a shared canvas.",
 			Action: "press n to start one",
-		}.Lines(w, 0)...)
+		}.Lines(w, h-len(out))...)
 	}
 	for i, row := range rows {
 		active := i == c
@@ -445,12 +428,6 @@ func cursorGlyph(active bool) string {
 }
 
 // ---- modals ----
-
-func (m *Model) modalView(body string) string {
-	box := kit.Modal{Title: modalTitle(m.form.kind), Lines: m.modalLines()}
-	return kit.Overlay(strings.Split(body, "\n"), box.View(),
-		maxInt(m.width, 40), maxInt(m.height, 10))
-}
 
 func (m *Model) modalLines() []string {
 	f := &m.form

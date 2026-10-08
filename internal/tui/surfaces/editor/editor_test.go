@@ -77,7 +77,7 @@ func TestEmptyStateWithoutWorkspace(t *testing.T) {
 	theme.SwapForTest(t, theme.Dark())
 	m := New("test", nil)
 	m.Resize(80, 24)
-	if !strings.Contains(plainView(m), "no workspace loaded") {
+	if !strings.Contains(plainView(m), "not a DHI workspace") {
 		t.Errorf("empty state missing:\n%s", m.View())
 	}
 }

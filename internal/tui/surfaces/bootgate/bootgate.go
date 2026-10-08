@@ -245,7 +245,7 @@ func (m *Model) View() string {
 }
 
 func (m *Model) buildFailedView() string {
-	w := max(m.width-14, 30)
+	w := m.cardTextWidth()
 	var lines []string
 	push := func(s string) { lines = append(lines, wrapLine(s, w)...) }
 	push(theme.DangerText().Render("some tools could not be built"))
@@ -256,15 +256,11 @@ func (m *Model) buildFailedView() string {
 	lines = append(lines, "")
 	push(theme.TextDim().Render("Language support (gopls) and debugging (dlv) refuse by name until they are built; `dhi doctor` shows which. Re-run the install by deleting the toolchain folder."))
 	lines = append(lines, "", theme.Hint().Render("press enter to continue"))
-	p := kit.NewPanel("dhi "+m.version, false)
-	p.SetContent(lines...)
-	p.Width = max(m.width-6, 40)
-	p.Height = max(m.height-4, 12)
-	return kit.Center(p.View(), p.Width, p.Height)
+	return m.card(lines)
 }
 
 func (m *Model) blockView() string {
-	w := max(m.width-14, 30) // panel padding + centering margins
+	w := m.cardTextWidth()
 	var lines []string
 	push := func(s string) { lines = append(lines, wrapLine(s, w)...) }
 	push(theme.DangerText().Render("boot blocked — no silent fallbacks (ADR-0011)"))
@@ -276,11 +272,23 @@ func (m *Model) blockView() string {
 	}
 	lines = append(lines, "",
 		theme.Hint().Render("ctrl+q quit · dhi doctor diagnoses a blocked boot"))
+	return m.card(lines)
+}
+
+// cardWidth is the boot card's width: a readable column (F-054), never
+// the whole terminal — names and sizes stay close enough to read as rows.
+func (m *Model) cardWidth() int { return min(max(m.width-4, 30), 80) }
+
+// cardTextWidth is the text column inside the card's border and padding.
+func (m *Model) cardTextWidth() int { return m.cardWidth() - 6 }
+
+// card frames lines in a panel sized to its content, centered on screen.
+func (m *Model) card(lines []string) string {
 	p := kit.NewPanel("dhi "+m.version, false)
 	p.SetContent(lines...)
-	p.Width = max(m.width-6, 40)
-	p.Height = max(m.height-4, 12)
-	return kit.Center(p.View(), p.Width, p.Height)
+	p.Width = m.cardWidth()
+	p.Height = min(len(lines)+2, max(m.height, 8))
+	return kit.Center(p.View(), max(m.width, p.Width), max(m.height, p.Height))
 }
 
 // toolBlurb is the one-line "what is this for" shown beside each tool.
@@ -294,7 +302,7 @@ var toolBlurb = map[string]string{
 }
 
 func (m *Model) confirmView() string {
-	w := max(m.width-14, 30)
+	w := m.cardTextWidth()
 	var lines []string
 	push := func(s string) { lines = append(lines, wrapLine(s, w)...) }
 	if m.decision.FirstRun {
@@ -309,7 +317,7 @@ func (m *Model) confirmView() string {
 		lines = append(lines, m.offerLine(o, w))
 	}
 	if t := m.decision.OfferTotal; t > 0 {
-		lines = append(lines, theme.TextDim().Render(strings.Repeat("─", min(w, 44))))
+		lines = append(lines, theme.TextDim().Render("  "+strings.Repeat("─", w-2)))
 		lines = append(lines, offerRow("total download", kit.FormatBytes(t), w))
 	}
 	if m.decision.FirstRun {
@@ -328,11 +336,7 @@ func (m *Model) confirmView() string {
 	for _, l := range wrapLine(hint, w) {
 		lines = append(lines, theme.Hint().Render(l))
 	}
-	p := kit.NewPanel("dhi "+m.version, false)
-	p.SetContent(lines...)
-	p.Width = max(m.width-6, 40)
-	p.Height = max(m.height-4, 12)
-	return kit.Center(p.View(), p.Width, p.Height)
+	return m.card(lines)
 }
 
 // tildePath shows a path under $HOME as ~/…; empty stays a readable default.

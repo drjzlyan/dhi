@@ -1,6 +1,6 @@
   SESSIONS         1╭─ › canvas ───────────────────────────────────────────────────────────────────╮
   PARTICIPANTS      │ flows  canvas · live preview · e edit in editor                              │
-▌ CANVAS           1│ ▌ flow.mmd                                          ○ draft                  │
+▌ CANVAS           1│ ▌ flow.mmd                                              ○ draft              │
   TRANSCRIPT        │                                                                              │
                     │ Idea ──▶ Review                                                              │
                     │ Review ──▶ Done  (yes)                                                       │
@@ -27,4 +27,4 @@
                     │                                                                              │
                     │                                                                              │
                     │ ✓ session flows created  j/k select • J/K scroll • s scan • v/a/r review • … │
-[ ] sections        ╰──────────────────────────────────────────────────────────────────────────────╯
+                    ╰──────────────────────────────────────────────────────────────────────────────╯

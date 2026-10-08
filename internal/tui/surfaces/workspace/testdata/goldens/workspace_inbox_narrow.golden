@@ -1,9 +1,24 @@
 [INBOX] · BOARD · CHANNELS · REPOS
-▌ ◆ approve scout: write .dhi/tasks/x/y.md
- ✗ run failed fix-login (alice) — timeout after       now
-  10.0m
- ✓ in review ship-docs — scout, 1 runs · cost         now
-  partial
- @ #general scout: "@you needs a decision on the      now
-  plan"
-enter/o jump • z snooze • u unsnooze                            
+╭─ › inbox ────────────────────────────────────────────────────╮
+│ ▌ ◆ approve scout: write .dhi/tasks/x/y.md                   │
+│  ✗ run failed fix-login (alice) — timeout after 10.0m   now  │
+│  ✓ in review ship-docs — scout, 1 runs · cost partial   now  │
+│  @ #general scout: "@you needs a decision on the plan"  now  │
+│                                                              │
+│                                                              │
+│                                                              │
+│                                                              │
+│                                                              │
+│                                                              │
+│                                                              │
+│                                                              │
+│                                                              │
+│                                                              │
+│                                                              │
+│                                                              │
+│                                                              │
+│                                                              │
+│                                                              │
+│                                                              │
+│ enter/o jump • z snooze • u unsnooze                         │
+╰──────────────────────────────────────────────────────────────╯

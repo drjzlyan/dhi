@@ -125,7 +125,7 @@ func (m *Model) bufferView() string {
 		// F-026 P4: completions/code-actions/hover float as a bordered
 		// dialog anchored under the cursor cell — not plain rows
 		// appended below the buffer.
-		x := clampIdx(gutW+curCol, maxInt(m.width-railWidth-5, 20)-10)
+		x := clampIdx(gutW+curCol, maxInt(m.width-m.railW()-5, 20)-10)
 		out = m.floatPopup(out, popup, x, curLine, top)
 	}
 
@@ -167,7 +167,7 @@ func (m *Model) floatPopup(base []string, rows []string, x, curLine, top int) []
 	if len(rows) == 0 || len(base) == 0 {
 		return base
 	}
-	avail := maxInt(m.width-railWidth-5, 20)
+	avail := maxInt(m.width-m.railW()-5, 20)
 	w := 0
 	for _, r := range rows {
 		if lw := ansi.Width(ansi.Strip(r)); lw > w {
@@ -233,7 +233,7 @@ func (m *Model) hoverView() []string {
 	rows := make([]string, 0, min(len(m.hoverLines), 6)+1)
 	rows = append(rows, theme.Hint().Render("hover:"))
 	for _, ln := range m.hoverLines[:min(len(m.hoverLines), 6)] {
-		rows = append(rows, "  "+theme.TextDim().Render(truncateRunes(ln, maxInt(m.width-railWidth-6, 20))))
+		rows = append(rows, "  "+theme.TextDim().Render(truncateRunes(ln, maxInt(m.width-m.railW()-6, 20))))
 	}
 	return rows
 }

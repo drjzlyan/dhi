@@ -1,12 +1,12 @@
 ▌ SESSIONS          ╭─ › sessions ─────────────────────────────────────────────────────────────────╮
-  PARTICIPANTS      │                                    ✦                                         │
-  CANVAS            │                             No sessions yet                                  │
+  PARTICIPANTS      │                                                                              │
+  CANVAS            │                                                                              │
   TRANSCRIPT        │                                                                              │
-                    │           A session is a round-table: invite agents, pass the                │
-                    │                floor, and shape ideas on a shared canvas.                    │
                     │                                                                              │
-                    │                           press n to start one                               │
                     │                                                                              │
+                    │                                                                              │
+                    │                                      ◇                                       │
+                    │                               No sessions yet                                │
                     │                                                                              │
                                        ╭─ › new session ────────────────────────╮                   
                                        │ opens a channel and an artifact folder │                   
@@ -27,4 +27,4 @@
                     │                                                                              │
                     │                                                                              │
                     │ n new • b breakout • enter open • a/x proposals • x remove                   │
-[ ] sections        ╰──────────────────────────────────────────────────────────────────────────────╯
+                    ╰──────────────────────────────────────────────────────────────────────────────╯

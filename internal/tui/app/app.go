@@ -69,6 +69,7 @@ type App struct {
 
 	width, height int
 	showHelp      bool
+	help          helpState
 	quitting      bool
 
 	// welcome is the one-time first-run card (F-041); nil once dismissed.
@@ -362,6 +363,15 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if a.palette != nil {
 			return a, a.paletteKey(key)
 		}
+		if a.showHelp {
+			switch key {
+			case "ctrl+c", "ctrl+q":
+				a.quitting = true
+				return a, tea.Quit
+			}
+			a.helpKey(key) // the overlay is modal while open
+			return a, nil
+		}
 		if key == "ctrl+p" {
 			a.openPalette()
 			return a, nil
@@ -470,10 +480,7 @@ func (a *App) handleGlobal(key string, capturing bool) (tea.Cmd, bool) {
 	}
 	switch key {
 	case "?":
-		a.showHelp = !a.showHelp
-		if a.showHelp {
-			a.observe("help")
-		}
+		a.openHelp()
 		return nil, true
 	case "tab":
 		a.selectSurface((a.active + 1) % len(a.surfaces))
@@ -517,10 +524,10 @@ func (a *App) welcomeView() string {
 	lines := []string{theme.Brand().Render("Welcome to DHI"),
 		theme.TextDim().Render("Your virtual office — agents work beside you."), ""}
 	for _, r := range rows {
-		lines = append(lines, "  "+keycap(r[0])+"  "+theme.TextDim().Render(r[1]))
+		lines = append(lines, "  "+keycap(r[0], 8)+"  "+theme.TextDim().Render(r[1]))
 	}
 	lines = append(lines, "", theme.Hint().Render("press enter to begin"))
-	m := kit.Modal{Title: "welcome", Lines: lines, Width: 74}
+	m := kit.Modal{Title: "welcome", Lines: lines, Width: min(74, a.width-2)}
 	return m.View()
 }
 
@@ -567,7 +574,7 @@ func (a *App) openPalette() {
 	if a.setupGate != nil {
 		add("Setup", "Run setup wizard", "", func() tea.Cmd { return a.StartGate(a.setupGate()) })
 	}
-	add("", "Show keyboard help", "?", func() tea.Cmd { a.showHelp = true; a.observe("help"); return nil })
+	add("", "Show keyboard help", "?", func() tea.Cmd { a.openHelp(); return nil })
 	a.coachCommands(add)
 	add("Theme", "Dark", "", func() tea.Cmd { theme.Current = theme.Dark(); return nil })
 	add("Theme", "Light", "", func() tea.Cmd { theme.Current = theme.Light(); return nil })
@@ -779,17 +786,21 @@ func (a *App) compose() string {
 
 	statusLine := a.buildStatus().View()
 
+	// The layout contract (F-054): whatever a surface or gate returns,
+	// the body is fitted to exactly the rows between the tab bar and the
+	// statusline, so the statusline always sits on the last row and no
+	// row overflows the terminal width.
 	if a.gateActive() {
-		return bar + "\n" + a.gate.View() + "\n" + statusLine
+		return bar + "\n" + kit.Fit(a.gate.View(), a.width, a.bodyHeight()) + "\n" + statusLine
 	}
 
-	body := a.Active().View()
+	body := kit.Fit(a.Active().View(), a.width, a.bodyHeight())
 	if a.transLeft > 0 { // fade-in frames (F-012); content unchanged
 		body = theme.Faint(body)
 	}
 	out := bar + "\n" + body + "\n" + statusLine
 	if a.coach != nil {
-		out = bar + "\n" + body + "\n" + a.coachView() + "\n" + statusLine
+		out = bar + "\n" + body + "\n" + kit.Fit(a.coachView(), a.width, coachHeight) + "\n" + statusLine
 	}
 	if a.welcome && !a.gateActive() {
 		out = kit.Overlay(strings.Split(out, "\n"), a.welcomeView(), a.width, a.height)
@@ -852,43 +863,3 @@ func (a *App) buildStatus() *kit.StatusLine {
 	sl.Width = a.width
 	return sl
 }
-
-// helpProvider is the contextual-help seam (F-026 P7): surfaces with
-// it contribute their live key sections (the same wording as their
-// chrome HintBar); surfaces without it get globals only.
-type helpProvider interface {
-	HelpSections() [][2]string // (keys, description) pairs, current context
-}
-
-func (a *App) helpView() string {
-	n := len(a.surfaces)
-	rows := [][2]string{
-		{fmt.Sprintf("1-%d", n), "jump between views"},
-		{"tab / shift+tab", "cycle views"},
-		{"ctrl+p", "command palette (search every action)"},
-		{"?", "toggle this help"},
-		{"ctrl+c", "quit DHI"},
-	}
-	lines := []string{theme.Brand().Render("DHI — global keys"), ""}
-	for _, r := range rows {
-		lines = append(lines, "  "+keycap(r[0])+"  "+theme.TextDim().Render(r[1]))
-	}
-	if hp, ok := a.Active().(helpProvider); ok {
-		secs := hp.HelpSections()
-		if len(secs) > 0 {
-			lines = append(lines, "",
-				theme.TabActive().Render(a.Active().Meta().Title+" — here"), "")
-			for _, r := range secs {
-				lines = append(lines, "  "+keycap(r[0])+"  "+theme.TextDim().Render(r[1]))
-			}
-		}
-	}
-	return theme.HelpOverlay().Render(strings.Join(lines, "\n"))
-}
-
-// keycap renders one key fragment as a raised pill (F-026 P7).
-func keycap(k string) string {
-	return theme.Keycap().Render(padKey(k))
-}
-
-func padKey(k string) string { return fmt.Sprintf("%-16s", k) }

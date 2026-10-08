@@ -261,7 +261,7 @@ func (m *Model) gitPanelView() string {
 	body := m.gitBody(h)
 	panel := kit.NewPanel("git"+gitFocusMark(m.gitFocus)+m.gitRepoLabel(), false)
 	panel.SetContent(body...)
-	panel.Width = maxInt(m.width-railWidth-1, 20)
+	panel.Width = maxInt(m.width-m.railW()-1, 20)
 	panel.Height = h
 	return panel.View()
 }

@@ -9,14 +9,15 @@ package workspace
 import (
 	"context"
 	"fmt"
-	"github.com/drjzlyan/dhi/internal/tutorial"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
-	"charm.land/bubbletea/v2"
+	"github.com/drjzlyan/dhi/internal/tutorial"
+
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/agentkit/channelmeta"
@@ -631,15 +632,8 @@ func (m *Model) HelpSections() [][2]string {
 	out := make([][2]string, 0, len(hints)+2)
 	out = append(out, [2]string{"[ / ]", "switch sections"})
 	out = append(out, [2]string{"j / k", "move the cursor"})
-	for _, h := range hints {
-		parts := strings.SplitN(h, " ", 2)
-		if len(parts) != 2 {
-			out = append(out, [2]string{h, ""})
-			continue
-		}
-		out = append(out, [2]string{parts[0], parts[1]})
-	}
-	return out
+	out = append(out, kit.HintRows(hints...)...)
+	return kit.DedupeHelpRows(out)
 }
 
 func (m *Model) sectionKey(key string) bool {
@@ -678,7 +672,7 @@ func (m *Model) sectionKey(key string) bool {
 	case secBoard:
 		return m.boardKey(key)
 	case secChannels:
-		return m.pane.handleKey(key)
+		return m.pane != nil && m.pane.handleKey(key)
 	case secRepos:
 		return m.reposKey(key)
 	}

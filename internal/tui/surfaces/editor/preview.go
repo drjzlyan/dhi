@@ -27,4 +27,4 @@ func (m *Model) previewView() string {
 	return m.previewDoc
 }
 
-func (m *Model) previewWidth() int { return maxInt(m.width-railWidth-1, 24) }
+func (m *Model) previewWidth() int { return maxInt(m.width-m.railW()-1, 24) }

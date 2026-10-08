@@ -46,6 +46,11 @@ func buildRoots(members []memberRef) []*node {
 			member: m.name,
 		})
 	}
+	// A single-repo workspace opens with its files showing: a lone
+	// collapsed "repo/ ▸" row hides the whole tree behind a keypress.
+	if len(roots) == 1 {
+		roots[0].toggle()
+	}
 	return roots
 }
 

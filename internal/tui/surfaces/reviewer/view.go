@@ -20,12 +20,7 @@ const railWidth = 20
 // a workspace.
 func (m *Model) View() string {
 	if m.ws == nil {
-		lines := strings.Split(branding.HeroBlock(m.version), "\n")
-		lines = append(lines, "", theme.Hint().Render("not inside a DHI workspace"))
-		return kit.Center(strings.Join(lines, "\n"), maxInt(m.width, 40), maxInt(m.height, 10))
-	}
-	if m.width < kit.WCompact {
-		return kit.Center(m.compactBody(), maxInt(m.width, 40), maxInt(m.height, 10))
+		return branding.NoWorkspace(m.width, m.height, m.version)
 	}
 	if m.width < kit.WDock {
 		return m.compactBody()
@@ -34,12 +29,11 @@ func (m *Model) View() string {
 }
 
 func (m *Model) compactBody() string {
-	body := m.sectionStrip() + "\n" + m.activeSection() + "\n" +
-		kit.HintBar(maxInt(m.width, 40), m.statusFlash(), m.sectionHints()...)
-	if m.form.kind != fNone {
-		body = m.modalView(body)
-	}
-	return body
+	// Below the dock width the rail folds into a one-line section strip
+	// and the same panel (body + hint bar) takes the full width (F-054):
+	// narrow terminals get the real UI, never a stripped-down stack.
+	strip := kit.ClipEllipsis(m.sectionStrip(), m.width)
+	return strip + "\n" + m.mainPane(m.width, m.height-1)
 }
 
 func (m *Model) dockedView() string {
@@ -87,7 +81,6 @@ func (m *Model) railView(h int) string {
 		Active: int(m.sec),
 		Width:  railWidth,
 		Height: h,
-		Foot:   "[ ] sections",
 	}).View()
 }
 
@@ -100,6 +93,9 @@ func (m *Model) sectionCounts() [secCount]int {
 }
 
 func (m *Model) mainPane(w, h int) string {
+	// The first frame can arrive before any resize (0x0) and terminals
+	// can be tiny; render a minimal panel and let the shell clip it.
+	w, h = maxInt(w, 12), maxInt(h, 4)
 	p := kit.NewPanel(strings.ToLower(m.sec.label()), true)
 	inner := w - 4
 	body := m.activeSectionFor(inner, h-3)
@@ -206,9 +202,9 @@ func (m *Model) activeSectionFor(w, h int) string {
 		}
 		return m.renderDiff(w-4, maxInt(h-4, 6), m.viewedSet())
 	case secFiles:
-		return m.filesBody(w-4, h)
+		return m.filesBody(w, h)
 	default:
-		return m.reviewsBody(w-4, h)
+		return m.reviewsBody(w, h)
 	}
 }
 
@@ -228,17 +224,6 @@ func (m *Model) sectionStrip() string {
 		flash = "   " + theme.SuccessText().Render(m.form.flash)
 	}
 	return line + flash
-}
-
-func (m *Model) activeSection() string {
-	switch m.sec {
-	case secDiff:
-		return m.activeSectionFor(maxInt(m.width-8, 40), maxInt(m.height-8, 12))
-	case secFiles:
-		return m.filesBody(maxInt(m.width-8, 40), maxInt(m.height-8, 12))
-	default:
-		return m.reviewsBody(maxInt(m.width-8, 40), maxInt(m.height-8, 12))
-	}
 }
 
 // ---- section bodies ----
@@ -468,12 +453,6 @@ func shortSHA(s string) string {
 }
 
 // ---- modals ----
-
-func (m *Model) modalView(body string) string {
-	box := kit.Modal{Title: modalTitle(m.form.kind), Lines: m.modalLines()}
-	return kit.Overlay(strings.Split(body, "\n"), box.View(),
-		maxInt(m.width, 40), maxInt(m.height, 10))
-}
 
 func (m *Model) modalLines() []string {
 	f := &m.form

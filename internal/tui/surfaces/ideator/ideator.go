@@ -14,10 +14,11 @@ import (
 	"strings"
 	"time"
 
-	"charm.land/bubbletea/v2"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/ideation"
+	"github.com/drjzlyan/dhi/internal/tui/kit"
 	"github.com/drjzlyan/dhi/internal/tui/surfaces"
 	"github.com/drjzlyan/dhi/internal/workspace"
 )
@@ -426,15 +427,8 @@ func (m *Model) HelpSections() [][2]string {
 		{"[ / ]", "switch sections"},
 		{"j / k", "move the cursor"},
 	}
-	for _, h := range m.sectionHints() {
-		parts := strings.SplitN(h, " ", 2)
-		if len(parts) != 2 {
-			out = append(out, [2]string{h, ""})
-			continue
-		}
-		out = append(out, [2]string{parts[0], parts[1]})
-	}
-	return out
+	out = append(out, kit.HintRows(m.sectionHints()...)...)
+	return kit.DedupeHelpRows(out)
 }
 
 func clampCursor(c *int, n int) {

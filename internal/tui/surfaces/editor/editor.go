@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"charm.land/bubbletea/v2"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/drjzlyan/dhi/internal/agentkit/runtime"
 	"github.com/drjzlyan/dhi/internal/fuzzy"
@@ -25,6 +25,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/search"
 	"github.com/drjzlyan/dhi/internal/testrun"
 	"github.com/drjzlyan/dhi/internal/textbuf"
+	"github.com/drjzlyan/dhi/internal/tui/branding"
 	"github.com/drjzlyan/dhi/internal/tui/kit"
 	"github.com/drjzlyan/dhi/internal/tui/surfaces"
 	"github.com/drjzlyan/dhi/internal/tui/theme"
@@ -34,7 +35,6 @@ import (
 )
 
 const (
-	railWidth   = 34
 	findCapRows = 200 // finder result rows rendered
 	indexCap    = 20000
 	// agentEditWindow is how long an agent-applied edit keeps its
@@ -547,17 +547,17 @@ const (
 
 func (m *Model) Resize(w, h int) {
 	m.width, m.height = w, h
-	m.list.Width = railWidth - 4
+	m.list.Width = m.railW() - 4
 	m.list.Height = h - 3
 	m.list.Inset = true // shaded sidebar zone (F-025)
 	m.findList.Width = 60 - 4
 	m.findList.Height = min(12, h-6)
-	m.hitList.Width = maxInt(w-railWidth-7, 10)
+	m.hitList.Width = maxInt(w-m.railW()-7, 10)
 	m.hitList.Height = h - 5
 
 	if t := m.activeTermTab(); t != nil && t.sess != nil && !t.exited {
 		rows := min(drawerHeight, maxInt(h/3, 4)) - 2
-		_ = t.sess.Resize(maxInt(w-railWidth-4, 20), rows)
+		_ = t.sess.Resize(maxInt(w-m.railW()-4, 20), rows)
 	}
 }
 
@@ -1014,11 +1014,7 @@ func (m *Model) refreshRows() {
 
 func (m *Model) View() string {
 	if m.ws == nil {
-		return kit.Center(
-			theme.TextDim().Render("no workspace loaded — open DHI inside a directory with .dhi/workspace.toml")+
-				"\n\n"+theme.AccentText().Render("or press ctrl+p → Run setup wizard to create one here"),
-			m.width, m.height,
-		)
+		return branding.NoWorkspace(m.width, m.height, m.version)
 	}
 	if m.reviewOpen && len(m.proposals) > 0 {
 		return m.reviewView()
@@ -1059,6 +1055,7 @@ func (m *Model) navView() string {
 	rail := kit.NewPanel("files", false)
 	hint := theme.Hint().Render("⏎ open · / find · s search")
 	savedListH := m.list.Height
+	m.list.Width = maxInt(m.railW()-4, 8)
 	m.list.Height = bodyH - 4 // hint row, spacer, panel padding
 	content := splitLines(m.list.View())
 	sb := m.list.Scroller() // capture with the live window height (F-025)
@@ -1066,7 +1063,7 @@ func (m *Model) navView() string {
 		content = append(content, "") // push hints to the rail's foot
 	}
 	rail.SetContent(append(content, "", hint)...)
-	rail.Width = railWidth
+	rail.Width = maxInt(m.railW(), 1)
 	rail.Height = bodyH
 	rail.SetScroll(sb)
 	m.list.Height = savedListH
@@ -1098,7 +1095,19 @@ func (m *Model) navView() string {
 		}, "\n")
 	}
 
-	mainW := maxInt(m.width-railWidth-1, 10)
+	railW := m.railW()
+	if railW >= m.width { // narrow, nothing open: the tree is the view
+		return m.withBottomPanels(rail.View())
+	}
+	mainW := m.width - railW - 1
+	if railW == 0 {
+		mainW = m.width
+	}
+	chatOpen := m.chat != nil && m.chat.open
+	if chatOpen {
+		mainW -= chatWidth // the crew panel docks right; the buffer gives way
+	}
+	mainW = maxInt(mainW, 10)
 	centered := kit.Center(main, maxInt(mainW-2, 10), maxInt(bodyH-2, 3))
 	if m.mode == modeResults || m.active() != nil {
 		centered = main // lists and buffers are left-aligned
@@ -1111,8 +1120,11 @@ func (m *Model) navView() string {
 	mainPanel.Width = mainW
 	mainPanel.Height = bodyH
 
-	out := joinH(rail.View(), mainPanel.View())
-	if m.chat != nil && m.chat.open {
+	out := mainPanel.View()
+	if railW > 0 {
+		out = joinH(rail.View(), out)
+	}
+	if chatOpen {
 		chatPanel := kit.NewPanel("crew", true)
 		body := m.chat.view(bodyH)
 		chatPanel.SetContent(splitLines(body)...)
@@ -1120,6 +1132,12 @@ func (m *Model) navView() string {
 		chatPanel.Height = bodyH
 		out = joinH(out, chatPanel.View())
 	}
+	return m.withBottomPanels(out)
+}
+
+// withBottomPanels stacks the git panel and the terminal drawer under
+// the main row when they are open.
+func (m *Model) withBottomPanels(out string) string {
 	if m.gitOpen {
 		out += "\n" + m.gitPanelView()
 	}
@@ -1127,6 +1145,24 @@ func (m *Model) navView() string {
 		out += "\n" + m.drawerView()
 	}
 	return out
+}
+
+// railW is the file tree's width for the current terminal (F-054): it
+// shrinks with the window, and below the compact breakpoint only one
+// pane shows — the open buffer (rail 0) or, with nothing open, the
+// tree at full width.
+func (m *Model) railW() int {
+	switch {
+	case m.width >= kit.WWide:
+		return 34
+	case m.width >= kit.WDock:
+		return 28
+	case m.width >= kit.WCompact:
+		return 24
+	case m.active() != nil:
+		return 0
+	}
+	return m.width
 }
 
 // ExecEx implements textbuf.CommandDelegate: buffer-list ex commands.

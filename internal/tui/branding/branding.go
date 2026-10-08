@@ -40,7 +40,7 @@ func Tagline() string {
 
 // VersionLine returns the styled version chip line.
 func VersionLine(v string) string {
-	return theme.Hint().Render("v" + v + "  " + theme.GlyphBullet + "  foundation")
+	return theme.Hint().Render("v" + v)
 }
 
 // HeroBlock composes logo + tagline + version as raw left-aligned lines so
@@ -57,4 +57,22 @@ func HeroBlock(version string) string {
 // Hero renders the brand hero centered inside width×height cells.
 func Hero(width, height int, version string) string {
 	return kit.Center(HeroBlock(version), width, height)
+}
+
+// NoWorkspace is the landing shown when DHI runs outside a workspace: the
+// hero plus the one action that fixes it (F-054 — never a dead end).
+// Below the logo's width the logo is dropped and the text stays.
+func NoWorkspace(width, height int, version string) string {
+	lines := []string{}
+	if width >= 30 && height >= 14 {
+		lines = append(strings.Split(HeroBlock(version), "\n"), "")
+	}
+	lines = append(lines,
+		theme.TextStyle().Render("This folder is not a DHI workspace yet."),
+		"",
+		theme.Hint().Render("press ")+theme.AccentText().Render("ctrl+p")+
+			theme.Hint().Render(" → ")+theme.AccentText().Render("Run setup wizard"),
+		theme.Hint().Render("to make it one, or start dhi inside a workspace"),
+	)
+	return kit.Center(strings.Join(lines, "\n"), width, height)
 }

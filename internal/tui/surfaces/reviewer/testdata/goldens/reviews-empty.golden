@@ -5,13 +5,13 @@
                     │                                                                              │
                     │                                                                              │
                     │                                                                              │
-                    │                                    ✦                                         │
-                    │                              No reviews yet                                  │
+                    │                                      ◇                                       │
+                    │                                No reviews yet                                │
                     │                                                                              │
-                    │         A review is a diff of a branch, worktree or pull request             │
-                    │         with threaded comments you and your agents can resolve.              │
+                    │           A review is a diff of a branch, worktree or pull request           │
+                    │           with threaded comments you and your agents can resolve.            │
                     │                                                                              │
-                    │                           press n to start one                               │
+                    │                             press n to start one                             │
                     │                                                                              │
                     │                                                                              │
                     │                                                                              │
@@ -27,4 +27,4 @@
                     │                                                                              │
                     │                                                                              │
                     │ n new • enter open • S submit review • F fixer                               │
-[ ] sections        ╰──────────────────────────────────────────────────────────────────────────────╯
+                    ╰──────────────────────────────────────────────────────────────────────────────╯

@@ -977,10 +977,10 @@ GitHub setup, a real release, and every deferral either done or specced.
       spawn wrapping and the `dhi-action` fallback already done. Still open (→ P7): full VT
       emulation, pack signature verification, embedding retrieval, keybinding overrides,
       ideation artifact export, ro-root policy
-- [ ] P1 CI green: 69 lint findings; Linux-only test failures (GNU base64 wrap, antigravity
+- [x] P1 CI green (2026-10-09; branch protection requires the four checks): 69 lint findings; Linux-only test failures (GNU base64 wrap, antigravity
       mirror failed without `~/.gemini` — a real bug, replay golden carried a temp path)
-- [ ] P2 Layout contract: every view fills exactly the terminal at any size; help overlay
-      fits and is searchable; compact tab bar
+- [x] P2 Layout contract (F-054): every view fills exactly the terminal at any size; help overlay
+      fits and is searchable; compact tab bar; crash fixes (first frame, nil bus)
 - [ ] P3 Use of space + empty states: flexible board lanes + wide detail pane, settings
       columns, editor welcome, consistent empty states, Notice/Loading, list/lane clicks
 - [ ] P4 Editor deferrals: regex project replace, split panes

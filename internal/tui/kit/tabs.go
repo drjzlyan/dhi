@@ -54,16 +54,54 @@ func (t *Tabs) ActiveID() string {
 	return ""
 }
 
+// brand is the fixed tab-bar prefix.
+const brand = " ◆ DHI "
+
+// labels returns each tab's text for the bar's width (F-054): full
+// labels when they fit, else the active tab keeps its name and the rest
+// show only their number, else numbers only — the bar shrinks before it
+// ever clips.
+func (t *Tabs) labels() []string {
+	full := make([]string, len(t.Items))
+	activeOnly := make([]string, len(t.Items))
+	numbers := make([]string, len(t.Items))
+	for i, it := range t.Items {
+		n := strconv.Itoa(i + 1)
+		full[i] = n + " " + it.Label
+		numbers[i] = n
+		activeOnly[i] = n
+		if i == t.Active {
+			activeOnly[i] = full[i]
+		}
+	}
+	for _, set := range [][]string{full, activeOnly} {
+		if t.Width <= 0 || barWidth(set) <= t.Width {
+			return set
+		}
+	}
+	return numbers
+}
+
+// barWidth is the visible width of brand + tabs + separators.
+func barWidth(labels []string) int {
+	w := runeWidth(brand)
+	for i, l := range labels {
+		w += runeWidth(" " + l + " ")
+		if i > 0 {
+			w += runeWidth(theme.GlyphChevron)
+		}
+	}
+	return w
+}
+
 // View renders "1 Home  2 Editor …" with the active tab highlighted and the
 // whole bar padded to Width cells.
 func (t *Tabs) View() string {
-	_ = theme.TabBar()
 	active := theme.TabActive()
 	inactive := theme.TabInactive()
 
 	var parts []string
-	for i, it := range t.Items {
-		label := strconv.Itoa(i+1) + " " + it.Label
+	for i, label := range t.labels() {
 		st := inactive
 		if i == t.Active {
 			st = active
@@ -71,7 +109,7 @@ func (t *Tabs) View() string {
 		parts = append(parts, st.Render(" "+label+" "))
 	}
 
-	left := theme.Brand().Render(" ◆ DHI ") + strings.Join(parts, theme.Hint().Render(theme.GlyphChevron))
+	left := theme.Brand().Render(brand) + strings.Join(parts, theme.Hint().Render(theme.GlyphChevron))
 	if t.Right != "" && t.Width > 0 {
 		lw, rw := runeWidth(ansi.Strip(left)), runeWidth(ansi.Strip(t.Right))
 		if lw+2+rw <= t.Width {
@@ -79,8 +117,7 @@ func (t *Tabs) View() string {
 		}
 	}
 	line := padTo(left, t.Width)
-	// Many surfaces or long labels clip with an ellipsis marker instead
-	// of overflowing the terminal width (F-026 P1).
+	// Even numbers-only can exceed a tiny terminal: clip visibly (F-026 P1).
 	return ClipEllipsis(line, t.Width)
 }
 
@@ -91,9 +128,8 @@ func (t *Tabs) Hit(x int) (i int, ok bool) {
 	if x < 0 || len(t.Items) == 0 {
 		return -1, false
 	}
-	start := runeWidth(" ◆ DHI ")
-	for j, it := range t.Items {
-		label := strconv.Itoa(j+1) + " " + it.Label
+	start := runeWidth(brand)
+	for j, label := range t.labels() {
 		end := start + runeWidth(" "+label+" ") + runeWidth(theme.GlyphChevron)
 		if x < end {
 			if x >= start {

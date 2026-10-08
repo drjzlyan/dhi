@@ -94,7 +94,7 @@ func (m *Model) drawerView() string {
 	var body []string
 	if m.activeTerm < len(m.terms) {
 		t := m.terms[m.activeTerm]
-		inner := maxInt(m.width-railWidth-5, 20)
+		inner := maxInt(m.width-m.railW()-5, 20)
 		body = t.screen.Lines(inner, h-2)
 		if !t.exited {
 			// Live-cell prompt marker: fresh rows get their own "_",
@@ -115,7 +115,7 @@ func (m *Model) drawerView() string {
 	}
 	panel := kit.NewPanel("terminal"+focusMark+termStrip(m), false)
 	panel.SetContent(body...)
-	panel.Width = maxInt(m.width-railWidth-1, 20)
+	panel.Width = maxInt(m.width-m.railW()-1, 20)
 	panel.Height = h
 	hint := "ctrl+t blur/close · alt+1..9 switch · alt+n new tab"
 	return panel.View() + "\n" + theme.Hint().Render(hint)

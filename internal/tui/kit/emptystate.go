@@ -50,7 +50,7 @@ func (e EmptyState) Lines(width, height int) []string {
 		}
 	}
 	for _, l := range block {
-		w := len([]rune(ansi.Strip(l)))
+		w := ansi.Width(l)
 		pad := (width - w) / 2
 		if pad < 0 {
 			pad = 0
@@ -59,6 +59,11 @@ func (e EmptyState) Lines(width, height int) []string {
 	}
 	for height > 0 && len(out) < height {
 		out = append(out, "")
+	}
+	// Full-width rows: the host pane's background stays uniform instead
+	// of changing where each line's text ends.
+	for i, l := range out {
+		out[i] = padTo(l, width)
 	}
 	return out
 }

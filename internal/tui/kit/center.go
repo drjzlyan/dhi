@@ -7,13 +7,14 @@ import (
 )
 
 // Center places a rendered block roughly centered inside a width×height
-// cell area. Width math uses visible cells only; blocks wider than width
-// are clipped per line.
+// cell area and fills it: the result is exactly height lines, each at
+// most width visible cells (wider lines are clipped). A zero width or
+// height means "not sized yet" and returns the block unclipped.
 func Center(block string, width, height int) string {
 	lines := strings.Split(block, "\n")
 	maxW := 0
 	for _, l := range lines {
-		if w := len([]rune(ansi.Strip(l))); w > maxW {
+		if w := ansi.Width(l); w > maxW {
 			maxW = w
 		}
 	}
@@ -33,5 +34,9 @@ func Center(block string, width, height int) string {
 		lines[i] = side + l
 	}
 	top := make([]string, padY)
-	return strings.Join(append(top, lines...), "\n")
+	out := strings.Join(append(top, lines...), "\n")
+	if width <= 0 || height <= 0 {
+		return out // unsized (before the first resize): no area to fill
+	}
+	return Fit(out, width, height)
 }

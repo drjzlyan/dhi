@@ -174,7 +174,7 @@ func TestMetaAndNilWorkspace(t *testing.T) {
 	bare := New("0.1.0", nil, Deps{})
 	bare.Resize(90, 24)
 	out := bare.View()
-	if !strings.Contains(out, "not inside a DHI workspace") {
+	if !strings.Contains(out, "not a DHI workspace") {
 		t.Fatalf("hero missing:\n%s", out)
 	}
 	for _, k := range []string{"n", "enter", "x", "d", "j"} {

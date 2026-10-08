@@ -6,16 +6,25 @@
 
 
 
+                          ██████╗ ██╗  ██╗██╗
+                          ██╔══██╗██║  ██║██║
+                          ██║  ██║███████║██║
+                          ██║  ██║██╔══██║██║
+                          ██████╔╝██║  ██║██║
+                          ╚═════╝ ╚═╝  ╚═╝╚═╝
+                          
+                          the agentic workspace IDE
+                          v0.1.0
+                          
+                          This folder is not a DHI workspace yet.
+                          
+                          press ctrl+p → Run setup wizard
+                          to make it one, or start dhi inside a workspace
 
-                                     ██████╗ ██╗  ██╗██╗
-                                     ██╔══██╗██║  ██║██║
-                                     ██║  ██║███████║██║
-                                     ██║  ██║██╔══██║██║
-                                     ██████╔╝██║  ██║██║
-                                     ╚═════╝ ╚═╝  ╚═╝╚═╝
-                                     
-                                     the agentic workspace IDE
-                                     v0.1.0  •  foundation
-                                     
-                                     not inside a DHI workspace
+
+
+
+
+
+
  Workspace › board                        1-3  views • tab  next • ^p  palette • ?  help • ^c  quit 
