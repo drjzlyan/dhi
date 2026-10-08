@@ -43,6 +43,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/doctor"
 	"github.com/drjzlyan/dhi/internal/gitcore"
 	"github.com/drjzlyan/dhi/internal/ideation"
+	"github.com/drjzlyan/dhi/internal/lsp"
 	"github.com/drjzlyan/dhi/internal/review"
 	"github.com/drjzlyan/dhi/internal/sandbox"
 	"github.com/drjzlyan/dhi/internal/search"
@@ -170,6 +171,12 @@ func runTUI() (relaunch bool) {
 		// naming the fix — it never leaks the host PATH (ADR-0011).
 		termEnv = mgr.Env(nil)
 		edOpts = append(edOpts, editor.WithTermEnv(termEnv))
+		// Language servers run from the same hermetic shim dir and env.
+		// Shut down on every return — the relaunch loop re-enters runTUI,
+		// so a leak here would stack one gopls per setup relaunch.
+		lspMgr := lsp.NewManager(mgr.ShimDir(), termEnv)
+		defer lspMgr.ShutdownAll()
+		edOpts = append(edOpts, editor.WithLSP(lspMgr))
 		// F-029: one identity resolver, read from the user's git config
 		// (host path) through the hermetic git binary. It is nil when the
 		// toolchain is absent, which makes every commit path refuse by
