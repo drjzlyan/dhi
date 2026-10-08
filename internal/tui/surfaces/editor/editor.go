@@ -144,6 +144,12 @@ type Model struct {
 	bufs      []*bufTab
 	activeTab int
 	bufFocus  bool
+	// split panes (F-057): the second pane's tab, the pending ctrl+w
+	// prefix, and a render flag that keeps popups on the focused pane.
+	split          bool
+	splitTab       int
+	pendingW       bool
+	renderingSplit bool
 
 	// agentEditPath/agentEditAt mark the last agent-applied edit so the
 	// buffer title can show an active-editing indicator (F-035 Part B).
@@ -195,10 +201,17 @@ type Model struct {
 	hits          []hitRow
 	hitList       kit.List
 	hitsCh        <-chan search.Hit
+	queued        tea.Cmd // drained by the shell after a key (surfaces.CmdSource)
 	searchCancel  context.CancelFunc
 	searching     bool
 	searchErr     string
 	lastQueryText string
+	// F-056: regex search mode (ctrl+r in the query box), the mode the
+	// shown results used, the open replace prompt and its last outcome.
+	searchRegex    bool
+	lastQueryRegex bool
+	replace        *replaceState
+	replaceNote    string
 
 	lspMgr        *lsp.Manager
 	emit          func(event string) // tutorial action events (F-051); nil = not wired
@@ -311,6 +324,8 @@ func (m *Model) CapturesInput() bool {
 		return true
 	case m.mode == modeFind, m.mode == modeSearchQuery, m.mode == modeSymbols:
 		return true
+	case m.mode == modeResults && m.replace != nil:
+		return true
 	}
 	return m.bufFocus && m.active() != nil
 }
@@ -380,9 +395,11 @@ func (m *Model) HelpSections() [][2]string {
 			[2]string{":fmt · :sym", "format · outline / go to symbol (format on save: :set nofmt)"},
 			[2]string{"ctrl+y", "review agent suggestions"},
 			[2]string{"ctrl+g", "markdown preview"},
-			[2]string{":s/old/new/[g]", "replace"})
+			[2]string{":s/old/new/[g]", "replace"},
+			[2]string{"ctrl+w v · ctrl+w w", "split side by side · switch pane (:vs · :only)"})
 	case m.mode == modeResults:
-		out = append(out, [2]string{"enter", "jump to the hit"})
+		out = append(out, [2]string{"enter", "jump to the hit"},
+			[2]string{"r", "replace across every hit (preview, then enter)"})
 	}
 	return out
 }
@@ -635,6 +652,13 @@ func (m *Model) listenHits() tea.Cmd {
 	}
 }
 
+// TakeCmd implements surfaces.CmdSource: work a key started.
+func (m *Model) TakeCmd() tea.Cmd {
+	c := m.queued
+	m.queued = nil
+	return c
+}
+
 // HandleKey implements surface key routing.
 func (m *Model) HandleKey(key string) bool {
 	if m.ws == nil {
@@ -730,6 +754,20 @@ func (m *Model) HandleKey(key string) bool {
 				m.lspSync()
 			}
 			return true
+		}
+
+		// ctrl+w window prefix (F-057), normal mode only: insert-mode
+		// ctrl+w stays the buffer's.
+		if e.Mode() == textbuf.ModeNormal {
+			if m.pendingW {
+				m.pendingW = false
+				m.splitKey(key)
+				return true
+			}
+			if key == "ctrl+w" {
+				m.pendingW = true
+				return true
+			}
 		}
 
 		// `gr`/`ga` sequences and `K` hover (normal mode only; `g` is
@@ -976,12 +1014,23 @@ func (m *Model) closeBuffer() {
 		m.bufFocus = false
 		return
 	}
+	closing := m.activeTab
 	m.bufs = append(m.bufs[:m.activeTab], m.bufs[m.activeTab+1:]...)
 	switch {
 	case len(m.bufs) == 0:
 		m.bufFocus = false
 	case m.activeTab >= len(m.bufs):
 		m.activeTab = len(m.bufs) - 1
+	}
+	if m.split { // closing a pane's buffer ends the split on the other one
+		m.split = false
+		other := m.splitTab
+		if other > closing {
+			other--
+		}
+		if other >= 0 && other < len(m.bufs) && other != closing {
+			m.activeTab = other
+		}
 	}
 }
 
@@ -1098,6 +1147,9 @@ func (m *Model) navView() string {
 	var main string
 	title := mainTitle(m.openVPath)
 	switch {
+	case m.mode == modeResults: // search results win over an open buffer
+		main = m.resultsBlock()
+		title = "results"
 	case m.active() != nil && m.previewOn && preview.IsMarkdown(m.active().Path()):
 		main = m.previewView()
 		title = "preview — " + title
@@ -1105,9 +1157,6 @@ func (m *Model) navView() string {
 		e := m.active()
 		title = bufferTitle(e) + m.diagChip(e) + m.agentChip(e) + m.pairBadge() + m.pairChip(e.Path())
 		main = m.bufferView()
-	case m.mode == modeResults:
-		main = m.resultsBlock()
-		title = "results"
 	case m.openPath != "":
 		main = strings.Join([]string{
 			theme.TabActive().Render(m.openVPath),
@@ -1139,7 +1188,7 @@ func (m *Model) navView() string {
 	if m.mode == modeResults || m.active() != nil {
 		centered = main // lists and buffers are left-aligned
 	}
-	if m.active() != nil {
+	if m.active() != nil && m.mode != modeResults {
 		centered = joinV(tabStrip(m.bufs, m.activeTab, mainW-2), centered)
 	}
 	mainPanel := kit.NewPanel(title, true)
@@ -1148,6 +1197,12 @@ func (m *Model) navView() string {
 	mainPanel.Height = bodyH
 
 	out := mainPanel.View()
+	mdPreview := m.previewOn && m.active() != nil && preview.IsMarkdown(m.active().Path())
+	if m.mode != modeResults && !mdPreview && m.splitActive() {
+		if panes := m.splitPanels(mainW, bodyH); panes != "" {
+			out = panes
+		}
+	}
 	if railW > 0 {
 		out = joinH(rail.View(), out)
 	}
@@ -1194,6 +1249,10 @@ func (m *Model) railW() int {
 
 // ExecEx implements textbuf.CommandDelegate: buffer-list ex commands.
 func (m *Model) ExecEx(requester *textbuf.Editor, cmd string) bool {
+	if msg, ok := m.splitCommand(cmd); ok {
+		requester.SetMessage(msg)
+		return true
+	}
 	if msg, ok := m.pairCommand(cmd); ok {
 		requester.SetMessage(msg)
 		if strings.HasPrefix(cmd, "pair") && m.pairAgent != "" {
@@ -1402,6 +1461,9 @@ func (m *Model) handleSearchKey(key string) bool {
 	case "esc":
 		m.mode = modeNav
 		return true
+	case "ctrl+r":
+		m.searchRegex = !m.searchRegex
+		return true
 	case "enter":
 		if q := strings.TrimSpace(string(m.searchQuery)); q != "" {
 			m.startSearch(q)
@@ -1428,13 +1490,26 @@ func (m *Model) startSearch(q string) {
 	m.hits = nil
 	m.hitList = kit.List{Width: m.hitList.Width, Height: m.hitList.Height}
 	m.lastQueryText = q
+	m.lastQueryRegex = m.searchRegex
+	m.replace, m.replaceNote = nil, ""
 	m.mode = modeResults
 
 	roots := make([]string, len(m.members))
 	for i, mem := range m.members {
 		roots[i] = mem.path
 	}
-	ch, err := m.searcher.Search(ctx, q, roots)
+	var ch <-chan search.Hit
+	var err error
+	if m.searchRegex {
+		rx, ok := m.searcher.(search.RegexSearcher)
+		if !ok {
+			err = fmt.Errorf("regex search is not available here (ctrl+r for fixed-string)")
+		} else {
+			ch, err = rx.SearchRegex(ctx, q, roots)
+		}
+	} else {
+		ch, err = m.searcher.Search(ctx, q, roots)
+	}
 	if err != nil {
 		m.searching = false
 		m.hitsCh = nil
@@ -1444,6 +1519,7 @@ func (m *Model) startSearch(q string) {
 	m.searchErr = ""
 	m.searching = true
 	m.hitsCh = ch
+	m.queued = m.listenHits() // the shell pumps the stream from here
 }
 
 func (m *Model) cancelSearch() {
@@ -1456,6 +1532,9 @@ func (m *Model) cancelSearch() {
 }
 
 func (m *Model) handleResultsKey(key string) bool {
+	if m.replace != nil {
+		return m.handleReplaceKey(key)
+	}
 	switch key {
 	case "esc":
 		m.cancelSearch()
@@ -1463,6 +1542,9 @@ func (m *Model) handleResultsKey(key string) bool {
 		return true
 	case "enter", "l":
 		return m.jumpHit()
+	case "r":
+		m.openReplace()
+		return true
 	}
 	return m.hitList.HandleKey(key)
 }
@@ -1492,7 +1574,16 @@ func (m *Model) jumpHit() bool {
 }
 
 func (m *Model) resultsBlock() string {
+	if m.replace != nil {
+		return m.replaceBlock(maxInt(m.width-m.railW()-8, 20))
+	}
 	head := theme.TabActive().Render("results for " + strconv.Quote(m.lastQueryText))
+	if m.lastQueryRegex {
+		head += theme.Hint().Render(" (regex)")
+	}
+	if m.replaceNote != "" {
+		head += "\n" + theme.SuccessText().Render(theme.GlyphCheck+" "+m.replaceNote)
+	}
 	switch {
 	case m.searchErr != "":
 		return head + "\n\n" + theme.DangerText().Render(m.searchErr)
@@ -1503,7 +1594,7 @@ func (m *Model) resultsBlock() string {
 	}
 	count := theme.Hint().Render(itoa(len(m.hits)) + " hit(s)" + searchStateSuffix(m.searching))
 	lines := append([]string{head + "  " + count, ""}, splitLines(m.hitList.View())...)
-	lines = append(lines, "", theme.Hint().Render("⏎ jump · esc back"))
+	lines = append(lines, "", theme.Hint().Render("⏎ jump · r replace · esc back"))
 	return strings.Join(lines, "\n")
 }
 
@@ -1516,10 +1607,14 @@ func searchStateSuffix(searching bool) string {
 
 func (m *Model) searchView() string {
 	head := "/ " + string(m.searchQuery) + "▌"
+	mode := "fixed-string search across all member repos · ctrl+r regex"
+	if m.searchRegex {
+		mode = "regex search across all member repos · ctrl+r fixed-string"
+	}
 	body := []string{
 		theme.Brand().Render(head),
 		"",
-		theme.TextDim().Render("fixed-string content search across all member repos"),
+		theme.TextDim().Render(mode),
 	}
 	overlay := kit.NewPanel("search", true)
 	overlay.SetContent(body...)

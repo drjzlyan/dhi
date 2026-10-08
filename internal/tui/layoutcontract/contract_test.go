@@ -140,6 +140,9 @@ func TestEditorStatesFillTheViewport(t *testing.T) {
 		ed.HandleKey("ctrl+j")
 		check(t, "editor buffer+git", ed, w, h)
 		ed.HandleKey("ctrl+j")
+		ed.HandleKey("ctrl+w")
+		ed.HandleKey("v")
+		check(t, "editor split", ed, w, h)
 	}
 }
 

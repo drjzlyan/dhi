@@ -63,6 +63,14 @@ type InputCapturer interface {
 	CapturesInput() bool
 }
 
+// CmdSource lets a surface start async work from a key: HandleKey cannot
+// return a tea.Cmd, so the surface queues one and the shell drains it
+// right after the key (nil = nothing queued). Without it, work started
+// from a key (the editor's streaming search) would never be pumped.
+type CmdSource interface {
+	TakeCmd() tea.Cmd
+}
+
 // Emitter (F-051) is the action-report seam: the shell hands a surface a
 // function and the surface calls it, on the UI goroutine only, when the user
 // does something a tutorial can wait for ("editor.save", "task.created", …;

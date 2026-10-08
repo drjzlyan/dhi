@@ -127,7 +127,7 @@ func (m *Model) bufferView() string {
 		out = append(out, gutter+marker+text)
 	}
 
-	if popup := m.popupRows(); len(popup) > 0 {
+	if popup := m.popupRows(); len(popup) > 0 && !m.renderingSplit {
 		// F-026 P4: completions/code-actions/hover float as a bordered
 		// dialog anchored under the cursor cell — not plain rows
 		// appended below the buffer.

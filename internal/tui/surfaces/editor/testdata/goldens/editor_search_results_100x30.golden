@@ -4,7 +4,7 @@
 │                          ││ ▌ alpha/src/main.go:3  func main() {                                │
 │                          ││   alpha/app.go:7  // main entrypoint                                │
 │                          ││                                                                     │
-│                          ││ ⏎ jump · esc back                                                   │
+│                          ││ ⏎ jump · r replace · esc back                                       │
 │                          ││                                                                     │
 │                          ││                                                                     │
 │                          ││                                                                     │

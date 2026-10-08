@@ -40,19 +40,35 @@ type Ripgrep struct {
 // flood the UI.
 const maxHits = 2000
 
-// Search implements Searcher.
+// RegexSearcher is implemented by searchers that also take a regular
+// expression (F-056: the editor's regex mode). Searchers without it
+// stay fixed-string only.
+type RegexSearcher interface {
+	SearchRegex(ctx context.Context, pattern string, roots []string) (<-chan Hit, error)
+}
+
+// Search implements Searcher (fixed-string).
 func (r Ripgrep) Search(ctx context.Context, query string, roots []string) (<-chan Hit, error) {
+	return r.run(ctx, query, roots, true)
+}
+
+// SearchRegex implements RegexSearcher (rg's regex syntax).
+func (r Ripgrep) SearchRegex(ctx context.Context, pattern string, roots []string) (<-chan Hit, error) {
+	return r.run(ctx, pattern, roots, false)
+}
+
+func (r Ripgrep) run(ctx context.Context, query string, roots []string, fixed bool) (<-chan Hit, error) {
 	if len(roots) == 0 {
 		return nil, fmt.Errorf("search: no roots given")
 	}
 	if strings.TrimSpace(query) == "" {
 		return nil, fmt.Errorf("search: empty query")
 	}
-	cmd := exec.CommandContext(ctx, r.Bin,
-		"--json", "-F", "-S", "--no-require-git",
-		"--max-filesize", "1M",
-		query,
-	)
+	args := []string{"--json", "-S", "--no-require-git", "--max-filesize", "1M"}
+	if fixed {
+		args = append(args, "-F")
+	}
+	cmd := exec.CommandContext(ctx, r.Bin, append(args, "-e", query)...)
 	cmd.Args = append(cmd.Args, roots...)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {

@@ -984,7 +984,9 @@ GitHub setup, a real release, and every deferral either done or specced.
 - [x] P3 Interaction polish (F-055): clicks in lists/lanes/diff/hint bar, Notice/Loading,
       identity accents, theme follows the terminal, wide inbox preview, readable cards and chat,
       editor tab expansion; `scripts/demo` seeds a realistic workspace
-- [ ] P4 Editor deferrals: regex project replace, split panes
+- [x] P4 Editor deferrals: regex project replace with preview (F-056), split panes (F-057); found +
+      fixed: workspace search never streamed results in the real app (surfaces.CmdSource), search
+      results hidden while a file was open, a query starting with `-` parsed as an rg flag
 - [ ] P5 README with screenshots, community files, GitHub settings
 - [ ] P6 Releases (v0.1.0-rc1 → v0.1.0), new platform pins, live verifications
 - [ ] P7 Big deferrals, spec first

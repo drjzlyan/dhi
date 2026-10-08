@@ -164,6 +164,30 @@ func (b *Buffer) SubstituteAll(pat, rep string, all, global bool) (lines, hits i
 	return lines, hits
 }
 
+// ReplaceLines sets the given 0-based lines (out-of-range ones are
+// ignored) as one undo step; it returns how many lines changed (F-056).
+func (b *Buffer) ReplaceLines(edits map[int]string) int {
+	changed := 0
+	for i, text := range edits {
+		if i >= 0 && i < len(b.lines) && b.lines[i] != text {
+			changed++
+		}
+	}
+	if changed == 0 {
+		return 0
+	}
+	b.snapshotBefore()
+	for i, text := range edits {
+		if i >= 0 && i < len(b.lines) {
+			b.lines[i] = text
+		}
+	}
+	b.clampCursor()
+	b.dirty = true
+	b.seq++
+	return changed
+}
+
 // Cursor returns the current position.
 func (b *Buffer) Cursor() Pos { return b.cursor }
 

@@ -401,6 +401,11 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, cmd
 		}
 		a.Active().HandleKey(key)
+		// A key may start async work (a search streaming hits): surfaces
+		// cannot return commands from HandleKey, so they queue one.
+		if cs, ok := a.Active().(surfaces.CmdSource); ok {
+			return a, cs.TakeCmd()
+		}
 		return a, nil
 
 	case tea.MouseWheelMsg:
