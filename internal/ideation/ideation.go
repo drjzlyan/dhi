@@ -387,6 +387,12 @@ func (s *Store) Get(id string) (Session, bool) {
 // ChannelFor is the canonical channel name for a session id.
 func ChannelFor(id string) string { return "#ideation-" + id }
 
+// IsSessionChannel reports whether ch is an ideation session channel.
+// Those channels are routed by the ideator's floor protocol (moderator,
+// turn grants, the round-table turn cap); the runtime must not also
+// dispatch agent @mentions there.
+func IsSessionChannel(ch string) bool { return strings.HasPrefix(ch, "#ideation-") }
+
 // CreateOptions describes a new session (F-033). Mode defaults to group;
 // parent names the session a breakout nests under.
 type CreateOptions struct {

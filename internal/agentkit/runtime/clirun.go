@@ -72,10 +72,14 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message) er
 
 		if run.Status == tasks.RunOK {
 			if run.Summary != "" {
-				_, _ = r.cfg.Bus.Post(bus.Message{
+				// F-036: the final reply re-enters dispatch so an
+				// @mention hands the work to the addressee.
+				if posted, err := r.cfg.Bus.Post(bus.Message{
 					Channel: trigger.Channel, Thread: trigger.Thread,
 					Author: e.m.ID, Text: run.Summary,
-				})
+				}); err == nil {
+					r.Handle(context.WithoutCancel(ctx), posted)
+				}
 			}
 			return nil
 		}
@@ -305,6 +309,7 @@ func (r *Runtime) serveTools(e *entry, trigger bus.Message) *serveSession {
 			Channel:   trigger.Channel,
 			Thread:    trigger.Thread,
 			Workdir:   r.cliWorkdir(trigger),
+			Relay:     func(m bus.Message) { r.Handle(context.Background(), m) },
 		}.Handler()
 	}
 	// Third-party MCP servers (F-034 part C): dialed under the sandbox,

@@ -348,6 +348,14 @@ func (e *Editor) keyVisual(key string) {
 
 	a, z := e.visualSpan()
 	switch key {
+	case ":":
+		// Like vim, ":" from visual mode opens the command line; the
+		// selection is kept so ex commands (:ask) can still use it.
+		if text, from, to, ok := e.Selection(); ok {
+			e.lastSel = &Selected{Text: text, From: from, To: to}
+		}
+		e.mode = ModeCommand
+		e.cmdline = nil
 	case "d", "x":
 		e.register, e.registerLW = e.buf.yankRange(a, z), false
 		e.buf.deleteRange(a, z)
@@ -414,7 +422,7 @@ func (e *Editor) execCommand(cmd string) {
 		if err := e.Save(); err != nil {
 			e.message = err.Error()
 		} else {
-			e.message = `"` + e.path + `" written`
+			e.message = `"` + e.path + `" written` + e.saveNote
 		}
 	case "q":
 		if e.buf.Dirty() && !e.closeForced {
@@ -516,8 +524,18 @@ func (e *Editor) Save() error {
 		e.message = "no file name"
 		return errNoFile
 	}
+	e.saveNote = ""
+	if e.beforeSave != nil {
+		e.saveNote = e.beforeSave(e)
+	}
 	return e.buf.Save(e.path)
 }
+
+// SetBeforeSave registers a hook that runs just before :w / :wq write the
+// file (format-on-save). The hook may edit the buffer; a non-empty return
+// is shown after the "written" message, and a failing hook never blocks
+// the write.
+func (e *Editor) SetBeforeSave(fn func(*Editor) string) { e.beforeSave = fn }
 
 type simpleError string
 

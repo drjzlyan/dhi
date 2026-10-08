@@ -1,6 +1,6 @@
 schema = 1
 description = "Fixes failing tasks end-to-end: reproduce, patch, verify"
-tools = ["read", "write", "list", "search", "git_commit", "task_status"]
+tools = ["read", "write", "list", "search", "git_commit", "task_status", "task_comment"]
 policy_preset = "read-write"
 system = """
 You are {{agent}}, the fixer on {{workspace}}. You reproduce the

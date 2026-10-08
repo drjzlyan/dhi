@@ -121,15 +121,18 @@ var toolScopes = map[string]Scope{
 	"search":     Read,
 	"git_status": Read, "git_log": Read, "git_branch": Read, "git_diff": Read,
 	"lsp_hover": Read, "lsp_definition": Read, "lsp_references": Read, "lsp_code_action": Read,
-	"editor_open": Read, "editor_reveal": Read,
-	"ideation_list": Read, "ideation_read": Read, "session_read": Read,
+	"editor_open": Read, "editor_reveal": Read, "editor_context": Read, "debug_state": Read,
+	// editor_propose_edit only queues a suggestion; the human's accept/
+	// reject in the editor is the gate, so it needs no separate approval.
+	"editor_propose_edit": Read,
+	"ideation_list":       Read, "ideation_read": Read, "session_read": Read,
 	"ask_human": Read,
 	"task_list": Read, "kb_search": Read, "channel_read": Read,
 	"memory_append": Read, "memory_read_notes": Read, "memory_write_notes": Read,
 
 	"write": Write, "patch": Write, "editor_apply_edit": Write,
 	"artifact_create": Write, "artifact_edit": Write,
-	"task_create": Write, "task_status": Write, "task_assign": Write,
+	"task_create": Write, "task_status": Write, "task_assign": Write, "task_comment": Write,
 	"kb_contribute": Write, "channel_post": Write, "lsp_rename": Write,
 
 	// propose_session records a pending request for the human to accept;

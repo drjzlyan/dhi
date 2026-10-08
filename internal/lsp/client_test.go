@@ -379,3 +379,54 @@ func TestPrepareRenameShapes(t *testing.T) {
 		})
 	}
 }
+
+func TestFormattingEditsAndNull(t *testing.T) {
+	c := startFake(t, func(method string, _ json.RawMessage) (any, bool) {
+		if method != "textDocument/formatting" {
+			return nil, false
+		}
+		return []map[string]any{{
+			"range": map[string]any{
+				"start": map[string]any{"line": 0, "character": 0},
+				"end":   map[string]any{"line": 0, "character": 4}},
+			"newText": "func",
+		}}, true
+	})
+	edits, err := c.Formatting("/ws/a.go", 4, false)
+	if err != nil || len(edits) != 1 || edits[0].NewText != "func" || edits[0].Range.End.Character != 4 {
+		t.Fatalf("edits = %+v err=%v", edits, err)
+	}
+	c2 := startFake(t, func(string, json.RawMessage) (any, bool) { return nil, true })
+	if edits, err := c2.Formatting("/ws/a.go", 4, false); err != nil || edits != nil {
+		t.Fatalf("null = %+v err=%v", edits, err)
+	}
+}
+
+func TestDocumentSymbolsBothShapes(t *testing.T) {
+	pos := func(l, ch int) map[string]any { return map[string]any{"line": l, "character": ch} }
+	rng := func(l int) map[string]any { return map[string]any{"start": pos(l, 5), "end": pos(l, 9)} }
+	hier := startFake(t, func(string, json.RawMessage) (any, bool) {
+		return []map[string]any{{
+			"name": "Server", "kind": 23, "range": rng(2), "selectionRange": rng(2),
+			"children": []map[string]any{{"name": "Start", "kind": 6, "range": rng(5), "selectionRange": rng(5)}},
+		}}, true
+	})
+	got, err := hier.DocumentSymbols("/ws/a.go")
+	if err != nil || len(got) != 2 {
+		t.Fatalf("hier = %+v err=%v", got, err)
+	}
+	if got[0] != (Symbol{Name: "Server", Kind: "struct", Line: 2, Col: 5, Depth: 0}) ||
+		got[1] != (Symbol{Name: "Start", Kind: "method", Line: 5, Col: 5, Depth: 1}) {
+		t.Fatalf("hier = %+v", got)
+	}
+	flat := startFake(t, func(string, json.RawMessage) (any, bool) {
+		return []map[string]any{{
+			"name": "Run", "kind": 12, "containerName": "main",
+			"location": map[string]any{"uri": "file:///ws/a.go", "range": rng(9)},
+		}}, true
+	})
+	got, err = flat.DocumentSymbols("/ws/a.go")
+	if err != nil || len(got) != 1 || got[0].Name != "main.Run" || got[0].Kind != "func" || got[0].Line != 9 {
+		t.Fatalf("flat = %+v err=%v", got, err)
+	}
+}

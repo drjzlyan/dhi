@@ -79,14 +79,14 @@ var (
 var BuiltinTools = []string{
 	"read", "write", "patch", "list", "glob", "search",
 	"git_status", "git_log", "git_branch", "git_diff", "git_commit", "git_push",
-	"task_create", "task_status", "task_assign", "pr_open",
+	"task_create", "task_status", "task_assign", "task_comment", "pr_open",
 	"task_list", "kb_search", "kb_contribute",
 	"memory_append", "memory_read_notes", "memory_write_notes",
 	"channel_post", "channel_read", "workspace_search",
 	"ideation_list", "ideation_read", "session_read",
 	"artifact_create", "artifact_edit", "propose_session",
 	"run", "ask_human",
-	"editor_open", "editor_reveal", "editor_apply_edit",
+	"editor_open", "editor_reveal", "editor_apply_edit", "editor_context", "editor_propose_edit", "debug_state",
 	"lsp_hover", "lsp_definition", "lsp_references", "lsp_rename", "lsp_code_action",
 }
 

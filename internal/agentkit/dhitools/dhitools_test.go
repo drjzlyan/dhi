@@ -357,3 +357,71 @@ func TestSkillRunTool(t *testing.T) {
 		t.Fatalf("no library = %q isErr=%v", out, isErr)
 	}
 }
+
+// TestTaskCreateFieldsAndHandoff covers F-036: task_create carries
+// assignee/team/labels/priority and hands the brief to the assignee
+// through the team channel with a relayed @mention.
+func TestTaskCreateFieldsAndHandoff(t *testing.T) {
+	f, m := newFixture(t, "task_create")
+	var relayed []bus.Message
+	h := Deps{Agent: m, Tasks: f.tasks, Bus: f.bus, Approvals: f.approvals,
+		Channel: "#general", Relay: func(msg bus.Message) { relayed = append(relayed, msg) }}.Handler()
+
+	out, isErr := callAsync(h, "task_create",
+		`{"slug":"login","title":"Fix login","assignee":"bo","team":"web","labels":["bug"],"priority":"high"}`, f)(t)
+	if isErr {
+		t.Fatalf("create = %q", out)
+	}
+	tk, ok := f.tasks.Get("login")
+	if !ok || tk.Assignee != "bo" || tk.Team != "web" || tk.Priority != "high" || len(tk.Labels) != 1 {
+		t.Fatalf("card = %+v ok=%v", tk, ok)
+	}
+	hist := f.bus.History("#web", 0)
+	if len(hist) != 1 || !strings.HasPrefix(hist[0].Text, "@bo ") || hist[0].Author != "scout" {
+		t.Fatalf("handoff post = %+v", hist)
+	}
+	if len(relayed) != 1 || relayed[0].ID != hist[0].ID {
+		t.Fatalf("relay = %+v", relayed)
+	}
+
+	// A bad priority names itself; the card still exists.
+	out, isErr = callAsync(h, "task_create", `{"slug":"p","title":"t","priority":"bogus"}`, f)(t)
+	if !isErr || !strings.Contains(out, "priority refused") {
+		t.Fatalf("bad priority = %q isErr=%v", out, isErr)
+	}
+}
+
+// TestTaskCommentTool covers F-037: agents comment on cards, attributed
+// to themselves, and the status tool attributes its activity entry.
+func TestTaskCommentTool(t *testing.T) {
+	f, m := newFixture(t, "task_create", "task_comment", "task_status")
+	h := Deps{Agent: m, Tasks: f.tasks, Bus: f.bus, Approvals: f.approvals, Channel: "#general"}.Handler()
+	if err := f.tasks.Create("c1", "Card", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if out, isErr := callAsync(h, "task_comment", `{"slug":"c1","text":"found the cause"}`, f)(t); isErr {
+		t.Fatalf("comment = %q", out)
+	}
+	if out, isErr := callAsync(h, "task_status", `{"slug":"c1","status":"active"}`, f)(t); isErr {
+		t.Fatalf("status = %q", out)
+	}
+	tk, _ := f.tasks.Get("c1")
+	if len(tk.Comments) != 1 || tk.Comments[0].Author != "scout" || tk.Comments[0].Text != "found the cause" {
+		t.Fatalf("comments = %+v", tk.Comments)
+	}
+	var st *tasks.Activity
+	for i := range tk.Activity {
+		if tk.Activity[i].Kind == tasks.ActStatus {
+			st = &tk.Activity[i]
+		}
+	}
+	if st == nil || st.Actor != "scout" || st.From != "backlog" || st.To != "active" {
+		t.Fatalf("status activity = %+v", tk.Activity)
+	}
+	if out, isErr := callAsync(h, "task_comment", `{"slug":"c1","text":"  "}`, f)(t); !isErr || !strings.Contains(out, "text required") {
+		t.Fatalf("empty comment = %q isErr=%v", out, isErr)
+	}
+	if _, isErr := callAsync(h, "task_comment", `{"slug":"nope","text":"x"}`, f)(t); !isErr {
+		t.Fatal("unknown task must refuse")
+	}
+}

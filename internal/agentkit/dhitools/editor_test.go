@@ -176,3 +176,94 @@ func TestLSPToolsRefuseWithoutSeam(t *testing.T) {
 		t.Fatalf("no-seam hover = %q isErr=%v", out, isErr)
 	}
 }
+
+// fakePair adds the PairAPI (F-038) to fakeEditor.
+type fakePair struct {
+	fakeEditor
+	ctxText  string
+	proposed [5]string
+}
+
+func (f *fakePair) Context(context.Context) (string, error) { return f.ctxText, f.err }
+func (f *fakePair) Propose(_ context.Context, path, old, new, note, from string) error {
+	f.proposed = [5]string{path, old, new, note, from}
+	return f.err
+}
+
+func TestPairToolsServedAndRoute(t *testing.T) {
+	for _, s := range []string{"editor_context", "editor_propose_edit"} {
+		if !Serves(s) {
+			t.Fatalf("%s is not a served slug", s)
+		}
+	}
+	f, m := newFixture(t, "editor_context", "editor_propose_edit")
+	fp := &fakePair{ctxText: "file: api/main.go\ncursor: line 3 col 0"}
+	h := Deps{Agent: m, WS: f.ws, Editor: fp, Approvals: f.approvals}.Handler()
+
+	out, isErr := call(h, t, "editor_context", `{}`)
+	if isErr || !strings.Contains(out, "cursor: line 3") {
+		t.Fatalf("context = %q isErr=%v", out, isErr)
+	}
+	// A proposal does not mutate, so it must not park in the approvals
+	// queue: the human's accept/reject in the editor is the gate.
+	out, isErr = call(h, t, "editor_propose_edit", `{"path":"api/main.go","old":"a","new":"b","note":"why"}`)
+	if isErr {
+		t.Fatalf("propose refused: %s", out)
+	}
+	if fp.proposed != [5]string{"api/main.go", "a", "b", "why", "scout"} {
+		t.Fatalf("proposed = %v", fp.proposed)
+	}
+	if n := len(f.approvals.List()); n != 0 {
+		t.Fatalf("propose must not enqueue approvals, got %d", n)
+	}
+}
+
+func TestPairToolsRefuseWithoutPairAPI(t *testing.T) {
+	f, m := newFixture(t, "editor_context", "editor_propose_edit")
+	// A plain EditorAPI (no PairAPI) refuses by name.
+	h := Deps{Agent: m, WS: f.ws, Editor: &fakeEditor{}, Approvals: f.approvals}.Handler()
+	if out, isErr := call(h, t, "editor_context", `{}`); !isErr || !strings.Contains(out, "pair programming") {
+		t.Fatalf("context = %q isErr=%v", out, isErr)
+	}
+	// No editor surface at all also refuses.
+	h = Deps{Agent: m, WS: f.ws, Approvals: f.approvals}.Handler()
+	if out, isErr := call(h, t, "editor_propose_edit", `{"path":"api/x","old":"a","new":"b"}`); !isErr || !strings.Contains(out, "editor unavailable") {
+		t.Fatalf("propose = %q isErr=%v", out, isErr)
+	}
+	// Bad args are strict.
+	h = Deps{Agent: m, WS: f.ws, Editor: &fakePair{}, Approvals: f.approvals}.Handler()
+	if _, isErr := call(h, t, "editor_propose_edit", `{"path":"api/x","old":"","new":"b"}`); !isErr {
+		t.Fatal("empty old must refuse")
+	}
+	if _, isErr := call(h, t, "editor_propose_edit", `{"path":"api/x","old":"a","new":"b","bogus":1}`); !isErr {
+		t.Fatal("unknown arg must refuse")
+	}
+}
+
+type fakeDebug struct {
+	fakeEditor
+	state string
+}
+
+func (f *fakeDebug) DebugState(context.Context) (string, error) { return f.state, f.err }
+
+func TestDebugStateToolRoutesAndRefuses(t *testing.T) {
+	if !Serves("debug_state") {
+		t.Fatal("debug_state is not a served slug")
+	}
+	f, m := newFixture(t, "debug_state")
+	fd := &fakeDebug{state: "stopped: breakpoint\n#0 main.run api/main.go:10"}
+	h := Deps{Agent: m, WS: f.ws, Editor: fd, Approvals: f.approvals}.Handler()
+	out, isErr := call(h, t, "debug_state", `{}`)
+	if isErr || !strings.Contains(out, "stopped: breakpoint") {
+		t.Fatalf("debug_state = %q isErr=%v", out, isErr)
+	}
+	if n := len(f.approvals.List()); n != 0 {
+		t.Fatalf("read-only tool must not enqueue approvals, got %d", n)
+	}
+	// An editor without the debugger extension refuses by name.
+	h = Deps{Agent: m, WS: f.ws, Editor: &fakeEditor{}, Approvals: f.approvals}.Handler()
+	if out, isErr := call(h, t, "debug_state", `{}`); !isErr || !strings.Contains(out, "debugger") {
+		t.Fatalf("no-debug = %q isErr=%v", out, isErr)
+	}
+}

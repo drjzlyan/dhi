@@ -35,6 +35,16 @@ import (
 	"github.com/drjzlyan/dhi/internal/workspace"
 )
 
+// taskCreateArgs is the strict decode shape of task_create.
+type taskCreateArgs struct {
+	Slug     string   `json:"slug"`
+	Title    string   `json:"title"`
+	Assignee string   `json:"assignee"`
+	Team     string   `json:"team"`
+	Labels   []string `json:"labels"`
+	Priority string   `json:"priority"`
+}
+
 // Deps carries the stores one agent's tool surface operates on. The
 // instances are the SAME ones the TUI opened (single process, single
 // truth). Zero-value store refs simply omit their tools.
@@ -70,6 +80,11 @@ type Deps struct {
 	// default to the thread the turn started from.
 	Channel string
 	Thread  int64
+
+	// Relay re-enters runtime dispatch for a message this agent posted
+	// (F-036), so a channel_post @mention wakes its addressee. nil = the
+	// post lands on the bus without routing.
+	Relay func(bus.Message)
 
 	// Workdir is the turn's working directory (the task worktree when the
 	// trigger is bound to one, else the workspace root). The git tools
@@ -112,7 +127,8 @@ var servedSlugs = []string{
 	"run", "ask_human", "skill_run",
 	"editor_open", "editor_reveal", "editor_apply_edit",
 	"lsp_hover", "lsp_definition", "lsp_references", "lsp_rename", "lsp_code_action",
-	"task_list", "task_create", "task_status", "task_assign", "pr_open",
+	"task_list", "task_create", "task_status", "task_assign", "task_comment", "pr_open",
+	"editor_context", "editor_propose_edit", "debug_state",
 	"kb_search", "kb_contribute",
 	"memory_append", "memory_read_notes", "memory_write_notes",
 	"channel_read", "channel_post",
@@ -271,28 +287,45 @@ func (d Deps) taskTools() []tool {
 	out = append(out, tool{
 		info: mcp.ToolInfo{
 			Name:        "task_create",
-			Description: "Create a task card. Args: {\"slug\": \"short-kebab-id\", \"title\": \"what and why\"}.",
-			InputSchema: json.RawMessage(`{"type":"object","required":["slug","title"],"properties":{"slug":{"type":"string"},"title":{"type":"string"}},"additionalProperties":false}`),
+			Description: "Create a task card. Args: {\"slug\": \"short-kebab-id\", \"title\": \"what and why\", optional \"assignee\": \"agent-id\", \"team\": \"team\", \"labels\": [\"x\"], \"priority\": \"low|medium|high|urgent\"}. An assignee is @mentioned in the team channel (when a team is given) so it picks the task up.",
+			InputSchema: json.RawMessage(`{"type":"object","required":["slug","title"],"properties":{"slug":{"type":"string"},"title":{"type":"string"},"assignee":{"type":"string"},"team":{"type":"string"},"labels":{"type":"array","items":{"type":"string"}},"priority":{"type":"string"}},"additionalProperties":false}`),
 		},
 		parse: func(raw json.RawMessage) (any, error) {
-			var a struct {
-				Slug  string `json:"slug"`
-				Title string `json:"title"`
-			}
+			var a taskCreateArgs
 			if err := args(raw, &a); err != nil {
 				return nil, err
 			}
 			return a, nil
 		},
 		exec: func(ctx context.Context, dec any) (string, error) {
-			a := dec.(struct {
-				Slug  string `json:"slug"`
-				Title string `json:"title"`
-			})
-			if err := d.Tasks.Create(strings.TrimSpace(a.Slug), strings.TrimSpace(a.Title), "", ""); err != nil {
+			a := dec.(taskCreateArgs)
+			slug := strings.TrimSpace(a.Slug)
+			if err := d.Tasks.Create(slug, strings.TrimSpace(a.Title), strings.TrimSpace(a.Assignee), strings.TrimSpace(a.Team)); err != nil {
 				return "", err
 			}
-			return "created task " + a.Slug, nil
+			// Each follow-up names itself on failure; the card exists
+			// either way, so the refusal says what did not apply.
+			if len(a.Labels) > 0 {
+				if err := d.Tasks.SetLabels(slug, a.Labels); err != nil {
+					return "", fmt.Errorf("created task %s but labels refused: %w", slug, err)
+				}
+			}
+			if a.Priority != "" {
+				if err := d.Tasks.SetPriority(slug, tasks.Priority(a.Priority)); err != nil {
+					return "", fmt.Errorf("created task %s but priority refused: %w", slug, err)
+				}
+			}
+			// Hand the brief to the assignee through the team channel so
+			// the F-036 dispatch wakes it (agent @mentions route).
+			if a.Assignee != "" && a.Team != "" && d.Bus != nil {
+				if posted, err := d.Bus.Post(bus.Message{
+					Channel: "#" + strings.TrimSpace(a.Team), Author: d.Agent.ID,
+					Text: fmt.Sprintf("@%s new task %s: %s", strings.TrimSpace(a.Assignee), slug, strings.TrimSpace(a.Title)),
+				}); err == nil && d.Relay != nil {
+					d.Relay(posted)
+				}
+			}
+			return "created task " + slug, nil
 		},
 	})
 	out = append(out, tool{
@@ -316,10 +349,37 @@ func (d Deps) taskTools() []tool {
 				Slug   string `json:"slug"`
 				Status string `json:"status"`
 			})
-			if err := d.Tasks.SetStatus(strings.TrimSpace(a.Slug), tasks.Status(a.Status)); err != nil {
+			if err := d.Tasks.SetStatusAs(strings.TrimSpace(a.Slug), tasks.Status(a.Status), d.Agent.ID); err != nil {
 				return "", err
 			}
 			return "task " + a.Slug + " → " + a.Status, nil
+		},
+	})
+	out = append(out, tool{
+		info: mcp.ToolInfo{
+			Name:        "task_comment",
+			Description: "Add a durable comment to a task card (progress, findings, blockers, decisions). Args: {\"slug\": \"...\", \"text\": \"...\"}.",
+			InputSchema: json.RawMessage(`{"type":"object","required":["slug","text"],"properties":{"slug":{"type":"string"},"text":{"type":"string"}},"additionalProperties":false}`),
+		},
+		parse: func(raw json.RawMessage) (any, error) {
+			var a struct {
+				Slug string `json:"slug"`
+				Text string `json:"text"`
+			}
+			if err := args(raw, &a); err != nil {
+				return nil, err
+			}
+			return a, nil
+		},
+		exec: func(ctx context.Context, dec any) (string, error) {
+			a := dec.(struct {
+				Slug string `json:"slug"`
+				Text string `json:"text"`
+			})
+			if err := d.Tasks.AddComment(strings.TrimSpace(a.Slug), d.Agent.ID, a.Text); err != nil {
+				return "", err
+			}
+			return "commented on " + a.Slug, nil
 		},
 	})
 	out = append(out, tool{
@@ -343,7 +403,7 @@ func (d Deps) taskTools() []tool {
 				Slug     string `json:"slug"`
 				Assignee string `json:"assignee"`
 			})
-			if err := d.Tasks.Assign(strings.TrimSpace(a.Slug), strings.TrimSpace(a.Assignee)); err != nil {
+			if err := d.Tasks.AssignAs(strings.TrimSpace(a.Slug), strings.TrimSpace(a.Assignee), d.Agent.ID); err != nil {
 				return "", err
 			}
 			return "task " + a.Slug + " assigned to " + orNone(a.Assignee), nil
@@ -648,6 +708,9 @@ func (d Deps) channelTools() []tool {
 			})
 			if err != nil {
 				return "", err
+			}
+			if d.Relay != nil {
+				d.Relay(posted)
 			}
 			return fmt.Sprintf("posted %s to %s", itoa64(posted.ID), ch), nil
 		},

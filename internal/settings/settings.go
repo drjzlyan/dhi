@@ -135,8 +135,8 @@ func validate(c Config) error {
 		return fmt.Errorf("settings: schema %d, want %d", c.Schema, SchemaVersion)
 	}
 	if !themeExists(c.Theme) {
-		return fmt.Errorf("settings: unknown theme %q (want %s or %s)",
-			c.Theme, theme.Dark().Name, theme.Light().Name)
+		return fmt.Errorf("settings: unknown theme %q (want one of: %s)",
+			c.Theme, strings.Join(ThemeNames(), ", "))
 	}
 	if c.Editor.TabWidth <= 0 || c.Editor.TabWidth > 16 {
 		return fmt.Errorf("settings: editor.tab_width %d out of range 1..16", c.Editor.TabWidth)
@@ -235,8 +235,15 @@ func (f fileLayer) mergeInto(dst *Config) {
 // themeExists checks the theme registry (kept here to avoid an import
 // cycle from theme → settings).
 var themeRegistry = map[string]func() theme.Tokens{
-	theme.Dark().Name:  theme.Dark,
-	theme.Light().Name: theme.Light,
+	theme.Dark().Name:         theme.Dark,
+	theme.Light().Name:        theme.Light,
+	theme.HighContrast().Name: theme.HighContrast,
+}
+
+// ThemeNames lists the registered themes in a stable display order
+// (default first), for pickers and error messages.
+func ThemeNames() []string {
+	return []string{theme.Dark().Name, theme.Light().Name, theme.HighContrast().Name}
 }
 
 func themeExists(name string) bool {

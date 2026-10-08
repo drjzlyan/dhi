@@ -26,6 +26,34 @@ type EditorAPI interface {
 	LSP(ctx context.Context, op, path string, line, col int, arg string) (string, error)
 }
 
+// PairAPI is the optional pair-programming extension of EditorAPI
+// (F-038). The app's bridge implements both; fakes that only implement
+// EditorAPI simply make the pairing tools refuse by name.
+type PairAPI interface {
+	// Context describes the human's active file, cursor, selection,
+	// nearby lines and diagnostics.
+	Context(ctx context.Context) (string, error)
+	// Propose queues a suggested replacement for the human's review.
+	Propose(ctx context.Context, path, old, new, note, from string) error
+}
+
+// DebugAPI is the optional debugger extension of EditorAPI (F-039): a
+// read-only view of the human's debug session.
+type DebugAPI interface {
+	DebugState(ctx context.Context) (string, error)
+}
+
+func (d Deps) pairAPI() (PairAPI, error) {
+	if d.Editor == nil {
+		return nil, fmt.Errorf("editor unavailable (no editor surface this session)")
+	}
+	p, ok := d.Editor.(PairAPI)
+	if !ok {
+		return nil, fmt.Errorf("editor does not support pair programming")
+	}
+	return p, nil
+}
+
 // editorTools is the editor navigation surface (F-030 P1, ADR-0023).
 // apply-edit and the LSP verbs land on the same seam next.
 func (d Deps) editorTools() []tool {
@@ -99,6 +127,86 @@ func (d Deps) editorTools() []tool {
 		},
 		{
 			info: mcp.ToolInfo{
+				Name:        "editor_context",
+				Description: "See what the human is looking at: active file, cursor, selection, nearby lines and diagnostics (0-based positions). Use this before suggesting changes while pairing. Args: {}.",
+				InputSchema: json.RawMessage(`{"type":"object","properties":{},"additionalProperties":false}`),
+			},
+			parse: func(raw json.RawMessage) (any, error) {
+				var a struct{}
+				if err := args(raw, &a); err != nil {
+					return nil, err
+				}
+				return a, nil
+			},
+			exec: func(ctx context.Context, dec any) (string, error) {
+				p, err := d.pairAPI()
+				if err != nil {
+					return "", err
+				}
+				return p.Context(ctx)
+			},
+		},
+		{
+			info: mcp.ToolInfo{
+				Name:        "debug_state",
+				Description: "Read the human's debug session: whether the program is stopped, the call stack, local variables and recent output. Read-only. Args: {}.",
+				InputSchema: json.RawMessage(`{"type":"object","properties":{},"additionalProperties":false}`),
+			},
+			parse: func(raw json.RawMessage) (any, error) {
+				var a struct{}
+				if err := args(raw, &a); err != nil {
+					return nil, err
+				}
+				return a, nil
+			},
+			exec: func(ctx context.Context, dec any) (string, error) {
+				if d.Editor == nil {
+					return "", fmt.Errorf("editor unavailable (no editor surface this session)")
+				}
+				dbg, ok := d.Editor.(DebugAPI)
+				if !ok {
+					return "", fmt.Errorf("editor does not expose a debugger")
+				}
+				return dbg.DebugState(ctx)
+			},
+		},
+		{
+			info: mcp.ToolInfo{
+				Name:        "editor_propose_edit",
+				Description: "Suggest a code change for the human to review (shown as a diff; they accept or reject). Prefer this over editor_apply_edit while pairing. Args: {\"path\": \"<member>/<rel>\", \"old\": \"exact text, must occur once\", \"new\": \"replacement\", \"note\": \"why\"}.",
+				InputSchema: json.RawMessage(`{"type":"object","required":["path","old","new"],"properties":{"path":{"type":"string"},"old":{"type":"string"},"new":{"type":"string"},"note":{"type":"string"}},"additionalProperties":false}`),
+			},
+			parse: func(raw json.RawMessage) (any, error) {
+				var a proposePlan
+				if err := args(raw, &a); err != nil {
+					return nil, err
+				}
+				if strings.TrimSpace(a.Path) == "" {
+					return nil, fmt.Errorf("path is required")
+				}
+				if a.Old == "" {
+					return nil, fmt.Errorf("old text is required")
+				}
+				return a, nil
+			},
+			exec: func(ctx context.Context, dec any) (string, error) {
+				p, err := d.pairAPI()
+				if err != nil {
+					return "", err
+				}
+				a := dec.(proposePlan)
+				from := ""
+				if d.Agent != nil {
+					from = d.Agent.ID
+				}
+				if err := p.Propose(ctx, a.Path, a.Old, a.New, a.Note, from); err != nil {
+					return "", err
+				}
+				return "proposal queued for " + a.Path + "; the human will accept or reject it", nil
+			},
+		},
+		{
+			info: mcp.ToolInfo{
 				Name:        "editor_apply_edit",
 				Description: "Replace exact text in a file through the editor (live buffer when open, one undo step). Args: {\"path\": \"<member>/<rel>\", \"old\": \"...\", \"new\": \"...\", \"replace_all\": false}. Refuses absent/ambiguous matches. Mutating: crosses approvals.",
 				InputSchema: json.RawMessage(`{"type":"object","required":["path","old","new"],"properties":{"path":{"type":"string"},"old":{"type":"string"},"new":{"type":"string"},"replace_all":{"type":"boolean"}},"additionalProperties":false}`),
@@ -133,6 +241,13 @@ func (d Deps) editorTools() []tool {
 			},
 		},
 	}
+}
+
+type proposePlan struct {
+	Path string `json:"path"`
+	Old  string `json:"old"`
+	New  string `json:"new"`
+	Note string `json:"note"`
 }
 
 type applyPlan struct {

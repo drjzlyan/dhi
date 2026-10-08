@@ -124,6 +124,11 @@ type Runtime struct {
 	// live "working" indicator (F-035 Part D). Key: channel + "#" + root.
 	workMu sync.Mutex
 	work   map[string]int
+
+	// hops counts agent-authored dispatches per channel since the last
+	// human message (F-036 hop budget).
+	hopMu sync.Mutex
+	hops  map[string]int
 }
 
 // workKey identifies the thread a turn belongs to (a top-level trigger
@@ -140,6 +145,18 @@ func (r *Runtime) Working(channel string, thread int64) bool {
 	r.workMu.Lock()
 	defer r.workMu.Unlock()
 	return r.work[workKey(channel, thread)] > 0
+}
+
+// ActiveCount is how many agent turns are in flight right now across
+// every thread (the shell's "N working" presence chip).
+func (r *Runtime) ActiveCount() int {
+	r.workMu.Lock()
+	defer r.workMu.Unlock()
+	n := 0
+	for _, c := range r.work {
+		n += c
+	}
+	return n
 }
 
 func (r *Runtime) workStart(key string) {
@@ -434,15 +451,105 @@ func (r *Runtime) Bus() *bus.Bus { return r.cfg.Bus }
 // will repopulate it as a forward adapter feature.
 func (r *Runtime) Approvals() *tools.Approvals { return r.cfg.Approvals }
 
+// maxAgentHops bounds how many agent-authored dispatches may follow one
+// human message in a channel (F-036). Two agents addressing each other
+// stop here with a visible notice instead of looping.
+const maxAgentHops = 8
+
+// systemAuthor signs runtime notices posted to the bus.
+const systemAuthor = "dhi"
+
 // Handle processes one inbound message: any mentioned rostered agent
-// (or the sole DM addressee) runs a turn in its own goroutine. It returns
-// immediately after dispatching.
+// (or the sole DM addressee, or a team lead for a bare team-channel
+// post) runs a turn in its own goroutine. Agent-authored messages
+// dispatch too (F-036) so @mentions between agents form a delegation
+// chain, bounded per channel by maxAgentHops. It returns immediately
+// after dispatching.
 func (r *Runtime) Handle(ctx context.Context, msg bus.Message) {
-	for _, id := range r.targets(msg) {
+	fromAgent := r.isAgent(msg.Author)
+	// Ideation round-tables own their routing: the floor protocol hands
+	// the floor on (ordered, moderated, capped at roundTableMaxTurns).
+	// Dispatching an agent's @mention here too would wake the addressee
+	// twice and bypass the floor accounting.
+	if fromAgent && ideation.IsSessionChannel(msg.Channel) {
+		return
+	}
+	targets := r.targets(msg)
+	if !fromAgent {
+		r.resetHops(msg.Channel)
+		if len(targets) == 0 {
+			r.teamLeadNotice(msg)
+		}
+	} else if len(targets) > 0 && !r.takeHop(msg.Channel) {
+		_, _ = r.cfg.Bus.Post(bus.Message{
+			Channel: msg.Channel, Thread: msg.Thread, Author: systemAuthor,
+			Text: fmt.Sprintf("hand-off limit (%d) reached in this channel; a human message resumes agent-to-agent routing", maxAgentHops),
+		})
+		return
+	}
+	for _, id := range targets {
 		go func(id string) {
 			_ = r.Turn(ctx, id, msg)
 		}(id)
 	}
+}
+
+func (r *Runtime) isAgent(id string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	_, ok := r.agents[id]
+	return ok
+}
+
+func (r *Runtime) resetHops(channel string) {
+	r.hopMu.Lock()
+	delete(r.hops, channel)
+	r.hopMu.Unlock()
+}
+
+// takeHop spends one hop for channel, reporting false when the budget
+// is exhausted.
+func (r *Runtime) takeHop(channel string) bool {
+	r.hopMu.Lock()
+	defer r.hopMu.Unlock()
+	if r.hops == nil {
+		r.hops = map[string]int{}
+	}
+	if r.hops[channel] >= maxAgentHops {
+		return false
+	}
+	r.hops[channel]++
+	return true
+}
+
+// teamLead resolves the agent that receives a bare post in a team
+// channel: the team's lead when it is a rostered agent.
+func (r *Runtime) teamLead(channel string) (team org.Team, lead string, isTeam bool) {
+	if r.cfg.Org == nil || !strings.HasPrefix(channel, "#") {
+		return org.Team{}, "", false
+	}
+	t, ok := r.cfg.Org.Team(strings.TrimPrefix(channel, "#"))
+	if !ok {
+		return org.Team{}, "", false
+	}
+	if r.isAgent(t.Lead) {
+		return t, t.Lead, true
+	}
+	return t, "", true
+}
+
+// teamLeadNotice tells the human why a mention-less team post woke no
+// one (ADR-0011: no silent no-op) — only for team channels whose lead is
+// unset. A human lead reads the channel themselves, so it stays quiet.
+func (r *Runtime) teamLeadNotice(msg bus.Message) {
+	t, lead, isTeam := r.teamLead(msg.Channel)
+	if !isTeam || lead != "" || t.Lead != "" || len(bus.Mentions(msg.Text)) > 0 {
+		return
+	}
+	_, _ = r.cfg.Bus.Post(bus.Message{
+		Channel: msg.Channel, Thread: msg.Thread, Author: systemAuthor,
+		Text: fmt.Sprintf("team %s has no lead; set one in Settings → TEAMS or @mention a member", t.Name),
+	})
 }
 
 // targets resolves which agents a message addresses.
@@ -458,6 +565,12 @@ func (r *Runtime) targets(msg bus.Message) []string {
 	for _, id := range bus.Mentions(msg.Text) {
 		if _, ok := r.agents[id]; ok && id != msg.Author {
 			out = append(out, id)
+		}
+	}
+	// A bare human post in a team channel goes to the team lead (F-036).
+	if len(out) == 0 && !r.isAgent(msg.Author) {
+		if _, lead, isTeam := r.teamLead(msg.Channel); isTeam && lead != "" {
+			out = append(out, lead)
 		}
 	}
 	return out

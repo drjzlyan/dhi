@@ -264,3 +264,36 @@ func TestPushRoundTripToBare(t *testing.T) {
 func sig() *object.Signature {
 	return &object.Signature{Name: "t", Email: "t@t", When: time.Now()}
 }
+
+func TestHeadContent(t *testing.T) {
+	rp, dir := initRepo(t)
+	got, ok, err := rp.HeadContent("hello.txt")
+	if err != nil || !ok || got != "hi\n" {
+		t.Fatalf("tracked = %q ok=%v err=%v", got, ok, err)
+	}
+	// Working-tree edits do not change HEAD's view.
+	if err := os.WriteFile(filepath.Join(dir, "hello.txt"), []byte("changed\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got, _, _ := rp.HeadContent("hello.txt"); got != "hi\n" {
+		t.Fatalf("HEAD content must ignore the worktree, got %q", got)
+	}
+	// Untracked path: normal, not an error.
+	if _, ok, err := rp.HeadContent("nope.txt"); ok || err != nil {
+		t.Fatalf("untracked ok=%v err=%v", ok, err)
+	}
+}
+
+func TestHeadContentEmptyRepo(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := git.PlainInit(dir, false); err != nil {
+		t.Fatal(err)
+	}
+	rp, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := rp.HeadContent("a.txt"); ok || err != nil {
+		t.Fatalf("no commits: ok=%v err=%v", ok, err)
+	}
+}

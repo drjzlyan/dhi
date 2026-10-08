@@ -26,8 +26,9 @@ import (
 
 // SchemaVersion is the task-card schema this build understands. Schema 2
 // adds labels/priority/epic/due (F-035 board depth); schema-1 cards load
-// unchanged with those fields unset.
-const SchemaVersion = 2
+// unchanged with those fields unset. Schema 3 adds comments and the
+// activity trail (F-037); schema-1/2 cards load unchanged.
+const SchemaVersion = 3
 
 // Dir is the reserved tasks tree under the workspace root.
 const Dir = ".dhi/tasks"
@@ -178,6 +179,11 @@ type Task struct {
 	PRNumber int    // GitHub PR created from this card's branch (0 = none)
 	PRURL    string // PR URL once created
 
+	// Comments are durable notes by agents and the human; Activity is
+	// the audit trail of changes (F-037).
+	Comments []Comment
+	Activity []Activity
+
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
@@ -254,6 +260,8 @@ type file struct {
 	Propagations  []Propagation `toml:"propagation,omitempty"`
 	PRNumber      int           `toml:"pr_number,omitempty"`
 	PRURL         string        `toml:"pr_url,omitempty"`
+	Comments      []Comment     `toml:"comment,omitempty"`
+	Activity      []Activity    `toml:"activity,omitempty"`
 	CreatedAt     time.Time     `toml:"created_at"`
 	UpdatedAt     time.Time     `toml:"updated_at"`
 }
@@ -270,6 +278,7 @@ type DetachFn func(taskSlug, relPath string) error
 type Store struct {
 	ws *workspace.Workspace
 
+	mutMu  sync.Mutex // serializes mutate's read-modify-write
 	mu     sync.RWMutex
 	tasks  map[string]Task
 	order  []string // slugs sorted for deterministic listing
@@ -350,7 +359,7 @@ func parseCard(path, slug string) (Task, error) {
 		}
 		return Task{}, fmt.Errorf("tasks: %s: unknown key(s): %s", slug, strings.Join(keys, ", "))
 	}
-	if f.Schema != SchemaVersion && f.Schema != 1 {
+	if f.Schema != SchemaVersion && f.Schema != 1 && f.Schema != 2 {
 		return Task{}, fmt.Errorf("tasks: %s: schema %d, want %d", slug, f.Schema, SchemaVersion)
 	}
 	if !slugRe.MatchString(slug) {
@@ -376,6 +385,16 @@ func parseCard(path, slug string) (Task, error) {
 	for i, r := range f.Runs {
 		if perr := validateRun(r); perr != nil {
 			return Task{}, fmt.Errorf("tasks: %s: run %d: %w", slug, i, perr)
+		}
+	}
+	for i, c := range f.Comments {
+		if !validMember(c.Author) || strings.TrimSpace(c.Text) == "" {
+			return Task{}, fmt.Errorf("tasks: %s: comment %d needs a valid author and text", slug, i)
+		}
+	}
+	for i, a := range f.Activity {
+		if !validActivityKind(a.Kind) {
+			return Task{}, fmt.Errorf("tasks: %s: activity %d bad kind %q", slug, i, a.Kind)
 		}
 	}
 	for i, p := range f.Propagations {
@@ -408,6 +427,8 @@ func parseCard(path, slug string) (Task, error) {
 		Propagations:  f.Propagations,
 		PRNumber:      f.PRNumber,
 		PRURL:         f.PRURL,
+		Comments:      f.Comments,
+		Activity:      f.Activity,
 		CreatedAt:     f.CreatedAt,
 		UpdatedAt:     f.UpdatedAt,
 	}, nil
@@ -509,7 +530,7 @@ func (s *Store) SetStatus(slug string, st Status) error {
 	if !ValidStatus(st) {
 		return fmt.Errorf("tasks: bad status %q", st)
 	}
-	return s.mutate(slug, func(t *Task) { t.Status = st })
+	return s.SetStatusAs(slug, st, "")
 }
 
 // SetWorkflow records the task's active feature workflow slug (F-031).
@@ -526,7 +547,12 @@ func (s *Store) SetTestsPass(slug string, ok bool) error {
 // SetLabels replaces a card's labels (F-035).
 func (s *Store) SetLabels(slug string, labels []string) error {
 	clean := NormalizeLabels(labels)
-	return s.mutate(slug, func(t *Task) { t.Labels = clean })
+	return s.mutate(slug, func(t *Task) {
+		if strings.Join(t.Labels, ",") != strings.Join(clean, ",") {
+			t.record(ActLabels, strings.Join(t.Labels, ","), strings.Join(clean, ","), "", s.now())
+		}
+		t.Labels = clean
+	})
 }
 
 // SetPriority sets a card's priority ("" clears it).
@@ -535,7 +561,12 @@ func (s *Store) SetPriority(slug string, p Priority) error {
 	if !ValidPriority(p) {
 		return fmt.Errorf("tasks: bad priority %q", p)
 	}
-	return s.mutate(slug, func(t *Task) { t.Priority = p })
+	return s.mutate(slug, func(t *Task) {
+		if t.Priority != p {
+			t.record(ActPriority, string(t.Priority), string(p), "", s.now())
+		}
+		t.Priority = p
+	})
 }
 
 // SetEpic sets a card's epic/grouping name ("" clears it).
@@ -658,7 +689,7 @@ func (s *Store) Assign(slug, who string) error {
 	if who != "" && !validMember(who) {
 		return fmt.Errorf("tasks: bad assignee %q", who)
 	}
-	return s.mutate(slug, func(t *Task) { t.Assignee = who })
+	return s.AssignAs(slug, who, "")
 }
 
 // BindThread records the conversation that carries this task's progress.
@@ -800,6 +831,7 @@ func (s *Store) RecordRun(slug string, r Run) error {
 	}
 	return s.mutate(slug, func(t *Task) {
 		t.Runs = append(t.Runs, r)
+		t.record(ActRun, "", string(r.Status), r.Agent, s.now())
 	})
 }
 
@@ -845,6 +877,10 @@ func (s *Store) Remove(slug string) error {
 // mutate loads → applies → persists → commits, keeping disk ahead of
 // memory like the other registries.
 func (s *Store) mutate(slug string, apply func(*Task)) error {
+	// Serialize read-modify-write so concurrent agents' comments and
+	// moves cannot overwrite each other's card writes.
+	s.mutMu.Lock()
+	defer s.mutMu.Unlock()
 	s.mu.Lock()
 	t, ok := s.tasks[slug]
 	s.mu.Unlock()
@@ -867,6 +903,7 @@ func writeCard(path string, t Task) error {
 		Labels: t.Labels, Priority: t.Priority, Epic: t.Epic, Due: t.Due,
 		ThreadChannel: t.ThreadChannel, ThreadID: t.ThreadID,
 		PRNumber: t.PRNumber, PRURL: t.PRURL,
+		Comments: t.Comments, Activity: t.Activity,
 		ChangeSets: t.ChangeSets,
 		Runs:       t.Runs,
 		Workflow:   t.Workflow, TestsPass: t.TestsPass,

@@ -41,6 +41,9 @@ type Editor struct {
 	pendingCnt  int
 	cntDigits   []rune
 	visualStart Pos
+	beforeSave  func(*Editor) string
+	saveNote    string
+	lastSel     *Selected // selection captured when ":" left visual mode
 
 	cmdline    []rune // content after ':'
 	message    string // transient status message ("", "3 fewer lines", errors)

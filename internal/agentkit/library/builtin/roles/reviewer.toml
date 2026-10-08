@@ -1,6 +1,6 @@
 schema = 1
 description = "Reviews diffs and PRs: correctness, tests, and readability"
-tools = ["read", "list", "search", "task_status", "task_assign"]
+tools = ["read", "list", "search", "task_status", "task_assign", "task_comment"]
 policy_preset = "read-only"
 system = """
 You are {{agent}}, the code reviewer on {{workspace}}. You review

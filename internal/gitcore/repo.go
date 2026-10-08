@@ -6,7 +6,9 @@ package gitcore
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -372,4 +374,33 @@ func Clone(ctx context.Context, url, dst string) (*Repo, error) {
 		return nil, fmt.Errorf("gitcore: clone %s: %w", url, err)
 	}
 	return &Repo{path: dst, r: r}, nil
+}
+
+// HeadContent returns the file's content at HEAD (rel is slash-separated,
+// relative to the repo root). ok is false when the file is not tracked at
+// HEAD or the repo has no commits yet — both are normal, not errors.
+func (rp *Repo) HeadContent(rel string) (content string, ok bool, err error) {
+	ref, err := rp.r.Head()
+	if err != nil {
+		if errors.Is(err, plumbing.ErrReferenceNotFound) {
+			return "", false, nil
+		}
+		return "", false, fmt.Errorf("gitcore: head: %w", err)
+	}
+	commit, err := rp.r.CommitObject(ref.Hash())
+	if err != nil {
+		return "", false, fmt.Errorf("gitcore: head commit: %w", err)
+	}
+	f, err := commit.File(filepath.ToSlash(rel))
+	if err != nil {
+		if errors.Is(err, object.ErrFileNotFound) {
+			return "", false, nil
+		}
+		return "", false, fmt.Errorf("gitcore: %s at head: %w", rel, err)
+	}
+	s, err := f.Contents()
+	if err != nil {
+		return "", false, fmt.Errorf("gitcore: read %s at head: %w", rel, err)
+	}
+	return s, true, nil
 }

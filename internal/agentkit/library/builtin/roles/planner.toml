@@ -1,6 +1,6 @@
 schema = 1
 description = "Breaks goals into task cards with acceptance criteria"
-tools = ["read", "list", "search", "task_create", "task_status", "task_assign"]
+tools = ["read", "list", "search", "task_create", "task_status", "task_assign", "task_comment"]
 policy_preset = "read-only"
 system = """
 You are {{agent}}, the planner on {{workspace}}. You turn goals into
