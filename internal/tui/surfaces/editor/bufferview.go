@@ -248,7 +248,13 @@ func withCursor(line string, col int) string {
 	} else {
 		cur = ' '
 	}
-	return string(r[:col]) + cursorStyle.Render(string(cur)) + string(r[col+1:])
+	// At/after the last rune (an empty line, or insert mode past the end)
+	// the block is an extra cell and nothing follows it.
+	rest := ""
+	if col < len(r) {
+		rest = string(r[col+1:])
+	}
+	return string(r[:col]) + cursorStyle.Render(string(cur)) + rest
 }
 
 // markRange inverts [start,end) within line; -1,-1 means no selection.

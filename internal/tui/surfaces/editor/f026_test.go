@@ -88,3 +88,19 @@ func TestBufferViewCursorLineStaysPlain(t *testing.T) {
 		t.Fatalf("cursor line missing from the render: %q", out)
 	}
 }
+
+// A cursor on an empty line, or past the last rune, renders as a block
+// instead of slicing out of range (it crashed the app on any blank line).
+func TestWithCursorSurvivesEmptyLinesAndLineEnds(t *testing.T) {
+	for _, c := range []struct {
+		line string
+		col  int
+		want string
+	}{
+		{"", 0, " "}, {"", 5, " "}, {"ab", 2, "ab "}, {"ab", 9, "ab "}, {"ab", 1, "ab"}, {"ab", -1, "ab"},
+	} {
+		if got := ansi.Strip(withCursor(c.line, c.col)); got != c.want {
+			t.Errorf("withCursor(%q,%d) = %q, want %q", c.line, c.col, got, c.want)
+		}
+	}
+}
