@@ -89,7 +89,8 @@ type Model struct {
 
 	form formState
 
-	composer *composer // active comment input (nil = none)
+	composer *composer    // active comment input (nil = none)
+	draft    *submitDraft // the review being composed in the submit dialog
 
 	rowsCache  []viewRow // diffRows flatten cache (F-026 P6)
 	rowsFP     string
@@ -120,7 +121,8 @@ type revEvent struct {
 	err  string
 	id   string
 	msg  bus.Message
-	n    int // PR number for evPosted, added-comment count for evImported
+	n    int // PR number for evPosted, added-comment count for evImported, comments sent for evSubmitted
+	url  string
 }
 
 func itoa(n int) string { return strconv.Itoa(n) }
@@ -132,7 +134,7 @@ const (
 	evDiscardDone
 	evBus
 	evAgentDone
-	evPosted
+	evSubmitted // a whole review was sent (F-049)
 	evPRCreated
 	evImported
 )
@@ -284,12 +286,19 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 			if ev.err != "" {
 				m.opErr = ev.err
 			}
-		case evPosted:
+		case evSubmitted:
 			m.busy = false
 			if ev.err != "" {
 				m.opErr = ev.err
 			} else {
-				m.closeFormWithFlash("posted to PR #" + itoa(ev.n))
+				msg := "review sent as you"
+				if ev.n > 0 {
+					msg += " (" + plural(ev.n, "comment") + ")"
+				}
+				if ev.url != "" {
+					msg += " — " + ev.url
+				}
+				m.closeFormWithFlash(msg)
 			}
 		case evPRCreated:
 			m.busy = false
@@ -470,6 +479,9 @@ func (m *Model) sectionKey(key string) bool {
 	case "]":
 		m.sec = (m.sec + 1) % secCount
 		return true
+	case "S":
+		m.openSubmit()
+		return true
 	case "R":
 		if r, ok := m.openReview(); ok && r.Target.PRNumber > 0 {
 			m.refreshRemote()
@@ -566,20 +578,8 @@ func (m *Model) reviewsKey(key string) bool {
 			return true
 		}
 	case "s":
-		if sel := selReview(rows, *c); sel != nil && sel.PendingCount() > 0 {
-			if err := m.svc.Store().Submit(sel.ID); err != nil {
-				m.opErr = err.Error()
-				return true
-			}
-			m.closeFormWithFlash("submitted " + sel.ID +
-				" (" + itoa(sel.PendingCount()) + " comments)")
-			return true
-		}
-	case "P":
-		if sel := selReview(rows, *c); sel != nil && sel.Status == review.Submitted {
-			m.postToPR()
-			return true
-		}
+		m.openSubmit()
+		return true
 	case "C":
 		if sel := selReview(rows, *c); sel != nil {
 			switch {

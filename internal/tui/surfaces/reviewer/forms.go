@@ -22,6 +22,8 @@ const (
 	fRemoveConfirm
 	fAgentReview
 	fCreatePR
+	fSubmit        // verdict + summary (F-049)
+	fSubmitConfirm // exactly what will be sent
 )
 
 // field is one modal input: free text or a cycling toggle.
@@ -81,6 +83,14 @@ func (m *Model) formKey(key string) bool {
 		return true // swallow while async work runs
 	}
 	switch f.kind {
+	case fSubmitConfirm:
+		switch key {
+		case "enter", "y":
+			m.sendSubmit()
+		case "esc", "n":
+			f.kind, f.err = fSubmit, "" // back to edit the verdict / summary
+		}
+		return true
 	case fDiscardConfirm, fRemoveConfirm:
 		switch key {
 		case "enter":
@@ -134,6 +144,9 @@ func (m *Model) formKey(key string) bool {
 func (m *Model) submitForm() {
 	f := &m.form
 	switch f.kind {
+	case fSubmit:
+		m.planSubmit()
+		return
 	case fCreatePR:
 		title := strings.TrimSpace(f.fields[0].text())
 		base := strings.TrimSpace(f.fields[1].text())

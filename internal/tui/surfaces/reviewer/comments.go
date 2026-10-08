@@ -265,6 +265,9 @@ func (m *Model) threadsKey(key string) bool {
 			}
 			return true
 		}
+	case "S":
+		m.openSubmit()
+		return true
 	case "esc", "t", "q":
 		m.threadOpen = false
 		return true

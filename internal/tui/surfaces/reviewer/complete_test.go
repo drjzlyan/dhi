@@ -10,7 +10,6 @@ import (
 	git "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 
-	"github.com/drjzlyan/dhi/internal/gitcore"
 	"github.com/drjzlyan/dhi/internal/gitdiff"
 	"github.com/drjzlyan/dhi/internal/review"
 	"github.com/drjzlyan/dhi/internal/tasks"
@@ -45,7 +44,7 @@ func (g *ghFake) Login(context.Context) (string, error)     { return g.login, ni
 func (g *ghFake) Available() bool                           { return true }
 func (g *ghFake) AuthToken(context.Context) (string, error) { return "tok", nil }
 func (g *ghFake) PR(context.Context, string, string) (review.PRMeta, error) {
-	return review.PRMeta{}, nil
+	return review.PRMeta{Author: g.prAuthor}, nil
 }
 func (g *ghFake) Diff(context.Context, string, string) (string, error) { return "", nil }
 func (g *ghFake) PostComment(_ context.Context, repo, number, body string) error {
@@ -111,134 +110,116 @@ func prFixture(t *testing.T) (*Model, *review.Store, *ghFake) {
 	return m, st, fgh
 }
 
-func TestPostToPRExternalPublishesConsolidated(t *testing.T) {
+// pumpSubmit drains the async submit started by the confirm screen.
+func pumpSubmit(t *testing.T, m *Model) {
+	t.Helper()
+	_ = m.Update(pumpCmd(t, m.listen()))
+}
+
+func TestSubmitDialogSendsOneReviewAsTheHuman(t *testing.T) {
 	m, st, fgh := prFixture(t)
-	m.cursors[secReviews] = 0
-	// Add a resolved thread and a pending draft: neither may be posted.
-	resID, err := st.AddThread("api-pr-42", review.Thread{File: "gone.go", Line: 1,
-		Comments: []review.Comment{{Author: "you", Text: "old nit"}}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := st.SetResolved("api-pr-42", resID, true); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := st.AddThread("api-pr-42", review.Thread{File: "draft.go", Line: 5,
-		Comments: []review.Comment{{Author: "you", Text: "draft", Pending: true}}}); err != nil {
-		t.Fatal(err)
-	}
+	// Things that must NOT go out: a resolved-but-sent note, an employee's
+	// open suggestion, and a draft that is the human's (that one MUST go).
+	st.AddThread("api-pr-42", review.Thread{File: "main.go", Line: 3, Comments: []review.Comment{
+		{Author: "rev", Text: "SUGGESTION-ONLY", Suggested: true}}})
+	st.AddThread("api-pr-42", review.Thread{File: "main.go", Line: 1, Comments: []review.Comment{
+		{Author: "you", Text: "a draft of mine", Pending: true}}})
 
-	m.postToPR()
+	m.HandleKey("S")
+	if m.form.kind != fSubmit {
+		t.Fatalf("S did not open the submit dialog (kind=%v err=%q)", m.form.kind, m.opErr)
+	}
+	m.form.fields[1].runes = []rune("Overall: ok")
+	m.HandleKey("enter")
+	if m.form.kind != fSubmitConfirm {
+		t.Fatalf("no confirmation (kind=%v err=%q)", m.form.kind, m.form.err)
+	}
+	screen := ansiStrip(strings.Join(m.modalLines(), "\n"))
+	for _, want := range []string{"ONE review as you", "verdict   comment", "2 comments on the diff",
+		"Overall: ok", "1 suggestion from your team undecided — NOT sent"} {
+		if !strings.Contains(screen, want) {
+			t.Errorf("confirmation lacks %q:\n%s", want, screen)
+		}
+	}
+	if len(fgh.submitted) != 0 {
+		t.Fatal("sent before confirmation")
+	}
+	m.HandleKey("enter")
+	pumpSubmit(t, m)
 
-	msg := pumpCmd(t, m.listen())
-	_ = m.Update(msg)
 	if m.opErr != "" || m.busy {
 		t.Fatalf("err=%q busy=%v", m.opErr, m.busy)
 	}
-	if !strings.Contains(fgh.body, "#42") {
-		t.Fatalf("posted to wrong target: %q", fgh.body)
+	if len(fgh.submitted) != 1 {
+		t.Fatalf("%d reviews sent, want 1", len(fgh.submitted))
 	}
-	if !strings.Contains(fgh.body, "rename this") ||
-		!strings.Contains(fgh.body, "checked: fine") {
-		t.Fatalf("summary missing comments:\n%s", fgh.body)
+	sub := fgh.submitted[0]
+	blob := sub.Body
+	for _, c := range sub.Comments {
+		blob += "\n" + c.Body
 	}
-	if strings.Contains(fgh.body, "_DHI agent") {
-		t.Fatalf("external PR must not expose agent attribution:\n%s", fgh.body)
+	for _, leak := range []string{"SUGGESTION-ONLY", "checked: fine", "rev", "_DHI agent"} {
+		if strings.Contains(blob, leak) {
+			t.Fatalf("%q leaked into the review:\n%s", leak, blob)
+		}
 	}
-	// F-029: no agent handle in any bullet — the body reads as the
-	// user's own summary.
-	if strings.Contains(fgh.body, "- **") {
-		t.Fatalf("external PR bullets must carry no agent handle:\n%s", fgh.body)
+	if sub.Body != "Overall: ok" || len(sub.Comments) != 2 {
+		t.Fatalf("review = %+v", sub)
 	}
-	if strings.Contains(fgh.body, "old nit") || strings.Contains(fgh.body, "draft") {
-		t.Fatalf("resolved/pending threads must not be posted:\n%s", fgh.body)
-	}
-	if len(fgh.posted) != 0 {
-		t.Fatalf("external PR must not post threaded review comments: %v", fgh.posted)
+	if !strings.Contains(m.form.flash, "review sent as you") || !strings.Contains(m.form.flash, "2 comments") {
+		t.Fatalf("flash = %q", m.form.flash)
 	}
 	got, _ := st.Get("api-pr-42")
-	if !got.Posted {
-		t.Error("Posted flag not recorded")
-	}
-
-	// branch-backed review refuses posting
-	br := review.Review{ID: "api-branch-x", Target: review.Target{
-		Kind: review.KindBranch, Member: "api", Base: "main", Head: "dev"},
-		Status: review.Submitted, Viewed: map[string]bool{},
-		CreatedAt: timeNow(), UpdatedAt: timeNow()}
-	if err := st.Create(br); err != nil {
-		t.Fatal(err)
-	}
-	m.openID = br.ID
-	m.postToPR()
-	if !strings.Contains(m.opErr, "not a PR review") {
-		t.Fatalf("opErr = %q", m.opErr)
+	if !got.Posted || got.Verdict != "comment" || got.Summary != "Overall: ok" {
+		t.Fatalf("review not recorded: %+v", got)
 	}
 }
 
-func TestPostToPROwnPublishesThreaded(t *testing.T) {
+func TestSubmitDialogEscStepsBackAndOwnPRApprovalIsRefused(t *testing.T) {
+	m, _, fgh := prFixture(t)
+	fgh.login, fgh.prAuthor = "me", "me"
+	m.HandleKey("S")
+	m.form.fields[0].val = 1 // approve
+	m.HandleKey("enter")
+	if m.form.kind != fSubmitConfirm {
+		t.Fatalf("kind = %v err=%q", m.form.kind, m.form.err)
+	}
+	m.HandleKey("esc") // back to edit
+	if m.form.kind != fSubmit {
+		t.Fatalf("esc should return to the dialog, kind=%v", m.form.kind)
+	}
+	m.HandleKey("enter")
+	m.HandleKey("enter")
+	pumpSubmit(t, m)
+	if !strings.Contains(m.opErr, "your own pull request") || len(fgh.submitted) != 0 {
+		t.Fatalf("opErr=%q submitted=%d", m.opErr, len(fgh.submitted))
+	}
+}
+
+func TestSubmitDialogRefusesAnEmptyCommentReview(t *testing.T) {
+	m, st, _ := prFixture(t)
+	// Mark the fixture's only sendable comment as already sent.
+	cur, _ := st.Get("api-pr-42")
+	if err := st.RecordSubmission("api-pr-42", "comment", "", "", []review.SentRef{{Thread: cur.Threads[0].ID, Index: 0}}); err != nil {
+		t.Fatal(err)
+	}
+	m.HandleKey("S")
+	m.HandleKey("enter")
+	if m.form.kind != fSubmit || !strings.Contains(m.form.err, "nothing to send") {
+		t.Fatalf("kind=%v err=%q", m.form.kind, m.form.err)
+	}
+}
+
+func TestSubmitOnABranchReviewJustFinalizesDrafts(t *testing.T) {
 	m, ws, st, _ := newSurface(t)
-	fgh := &ghFake{}
-	m.svc = review.NewService(ws, st, nil, fgh)
-
-	// Own the PR by binding the head branch that exists locally in the
-	// fixture member repo.
-	mem, ok := ws.Member("api")
-	if !ok {
-		t.Fatal("member api gone")
-	}
-	repo, err := gitcore.Open(mem.Path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	branches, err := repo.Branches()
-	if err != nil || len(branches) == 0 {
-		t.Fatalf("fixture member has no branches: %v", err)
-	}
-
-	r := review.Review{
-		ID: "api-pr-42", Title: "Add feature",
-		Target:    review.Target{Kind: review.KindPR, Member: "api", Base: branches[0], Head: "abc1234", PRNumber: 42, HeadBranch: branches[0]},
-		Status:    review.Submitted,
-		Viewed:    map[string]bool{},
-		Channel:   "#api-pr-42",
-		WorkRel:   ".dhi/reviews/api-pr-42/api",
-		CreatedAt: timeNow(), UpdatedAt: timeNow(),
-	}
-	r.Threads = []review.Thread{{ID: 1, File: "main.go", Line: 2, Comments: []review.Comment{
-		{Author: "you", Text: "rename this"},
-		{Author: "rev", Text: "checked: fine"},
-	}}}
-	if err := st.Create(r); err != nil {
-		t.Fatal(err)
-	}
-	m.openID = r.ID
-	m.files = gitdiff.Parse(samplePatch)
-	m.diffFor = r.ID
-
-	m.postToPR()
-
-	msg := pumpCmd(t, m.listen())
-	_ = m.Update(msg)
-	if m.opErr != "" || m.busy {
-		t.Fatalf("err=%q busy=%v", m.opErr, m.busy)
-	}
-	if len(fgh.posted) != 2 {
-		t.Fatalf("expected 2 threaded comments, got %v", fgh.posted)
-	}
-	if !strings.HasPrefix(fgh.posted[0], "main.go:2:RIGHT:0|") ||
-		!strings.Contains(fgh.posted[0], "rename this") {
-		t.Fatalf("root comment wrong: %q", fgh.posted[0])
-	}
-	if !strings.Contains(fgh.posted[1], "checked: fine") {
-		t.Fatalf("reply comment wrong: %q", fgh.posted[1])
-	}
-	if fgh.body != "" {
-		t.Fatalf("own PR must not post a consolidated comment: %q", fgh.body)
-	}
-	got, _ := st.Get("api-pr-42")
-	if !got.Posted {
-		t.Error("Posted flag not recorded")
+	_ = ws
+	r := startBranchReview(t, m, st)
+	commentOnFirstLine(t, m, "nit")
+	m.HandleKey("S")
+	got, _ := st.Get(r.ID)
+	if m.form.kind != fNone || got.PendingCount() != 0 || got.Status != review.Submitted ||
+		!strings.Contains(m.form.flash, "no PR to send it to") {
+		t.Fatalf("kind=%v pending=%d status=%s flash=%q", m.form.kind, got.PendingCount(), got.Status, m.form.flash)
 	}
 }
 

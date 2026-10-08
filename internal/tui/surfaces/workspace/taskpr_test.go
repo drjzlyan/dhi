@@ -26,7 +26,11 @@ type ghStub struct {
 	created []string
 }
 
-func (g *ghStub) Available() bool { return true }
+func (g *ghStub) SubmitReview(context.Context, string, string, review.ReviewSubmission) (string, error) {
+	return "", nil
+}
+func (g *ghStub) Login(context.Context) (string, error) { return "", nil }
+func (g *ghStub) Available() bool                       { return true }
 func (g *ghStub) AuthToken(context.Context) (string, error) {
 	return "", context.Canceled
 }

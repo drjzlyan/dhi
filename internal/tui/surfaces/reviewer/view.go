@@ -161,11 +161,11 @@ func (m *Model) statusFlash() string {
 func (m *Model) sectionHints() []string {
 	switch m.sec {
 	case secReviews:
-		return []string{"n new", "enter open", "s submit", "P post", "F fixer"}
+		return []string{"n new", "enter open", "S submit review", "F fixer"}
 	case secFiles:
-		return []string{"enter diff", "v viewed", "A agent review"}
+		return []string{"enter diff", "v viewed", "A agent review", "S submit"}
 	case secDiff:
-		return []string{"c comment", "t threads", "T transcript", "\\ split", "n/p file"}
+		return []string{"c comment", "t threads", "S submit", "T transcript", "\\ split", "n/p file"}
 	}
 	return nil
 }
@@ -475,6 +475,8 @@ func (m *Model) modalView(body string) string {
 func (m *Model) modalLines() []string {
 	f := &m.form
 	switch f.kind {
+	case fSubmit, fSubmitConfirm:
+		return m.submitLines()
 	case fCreatePR:
 		lines := []string{
 			theme.TextDim().Render("pushes " + f.orig + " and opens a PR"),
@@ -571,6 +573,8 @@ func modalTitle(k modalKind) string {
 		return "agent review"
 	case fCreatePR:
 		return "create PR"
+	case fSubmit, fSubmitConfirm:
+		return "submit review"
 	}
 	return ""
 }

@@ -1,7 +1,6 @@
 package reviewer
 
 import (
-	"context"
 	"path/filepath"
 	"time"
 
@@ -11,27 +10,6 @@ import (
 
 // fixerTimeout bounds the synchronous task-store work in dispatchFixer.
 const fixerTimeout = 30 * time.Second
-
-// postToPR publishes the review's threads to the PR: threaded review
-// comments on own PRs, a consolidated summary on external PRs.
-// (PR-backed reviews only.)
-func (m *Model) postToPR() {
-	r, ok := m.requireReview()
-	if !ok {
-		return
-	}
-	if r.Target.Kind != review.KindPR || r.Target.PRNumber <= 0 {
-		m.opErr = "not a PR review — nothing to post to"
-		return
-	}
-	m.busy = true
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), opTimeout)
-		defer cancel()
-		err := m.svc.PublishThreads(ctx, r)
-		m.send(revEvent{kind: evPosted, id: r.ID, err: errString(err), n: r.Target.PRNumber})
-	}()
-}
 
 // dispatchFixer creates a task card for the review findings and binds it
 // to the SAME worktree the review used, so a fixing agent works exactly
