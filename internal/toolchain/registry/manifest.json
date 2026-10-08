@@ -164,19 +164,33 @@
       ],
       "version": "2.55.0",
       "platforms": {
-        "darwin/arm64": {
-          "url": "https://github.com/drjzlyan/dhi/releases/download/hermetic-git-v2.55.0/dhi-git-2.55.0-darwin-arm64.tar.gz",
-          "sha256": "5a72f4075ae0d76a770d163116222319fd391716baf56ba26d571e4eab843a52",
+        "darwin/amd64": {
+          "url": "https://github.com/drjzlyan/dhi/releases/download/hermetic-git-v2.55.0/dhi-git-2.55.0-darwin-amd64.tar.gz",
+          "sha256": "acf077a0277c54dc66a9cc1865038c7aef4647a103d339e8e5806b1513921dda",
           "format": "tar.gz",
           "bin_dir": "bin",
-          "size": 2016187
+          "size": 2133044
+        },
+        "darwin/arm64": {
+          "url": "https://github.com/drjzlyan/dhi/releases/download/hermetic-git-v2.55.0/dhi-git-2.55.0-darwin-arm64.tar.gz",
+          "sha256": "3b4bf086525b46831523c2b8e67cc5e50a4bb894754f2bf574980d48912e466c",
+          "format": "tar.gz",
+          "bin_dir": "bin",
+          "size": 2016228
         },
         "linux/amd64": {
           "url": "https://github.com/drjzlyan/dhi/releases/download/hermetic-git-v2.55.0/dhi-git-2.55.0-linux-amd64.tar.gz",
-          "sha256": "1a2fc404435c28045d41a908f677f1c7465d5441163e1b1bf59f730b93b8c13b",
+          "sha256": "0f531a94b4ff47015761e311eaf8e4055152002c27887cb4e664d59f99cbdb5f",
           "format": "tar.gz",
           "bin_dir": "bin",
-          "size": 9613662
+          "size": 9613627
+        },
+        "linux/arm64": {
+          "url": "https://github.com/drjzlyan/dhi/releases/download/hermetic-git-v2.55.0/dhi-git-2.55.0-linux-arm64.tar.gz",
+          "sha256": "06d3c9ea502972dd78b9a8b2af129dc15e2f8adbc44c26ad826e2e536fced1e2",
+          "format": "tar.gz",
+          "bin_dir": "bin",
+          "size": 9470849
         }
       }
     },
