@@ -19,6 +19,22 @@
           "strip": 1,
           "bin_dir": "bin",
           "size": 70523269
+        },
+        "darwin/amd64": {
+          "url": "https://go.dev/dl/go1.27.0.darwin-amd64.tar.gz",
+          "sha256": "d3314e25496e4381d71a5c51d2907e7af655d199f6780b549f015bd85fef4986",
+          "format": "tar.gz",
+          "strip": 1,
+          "bin_dir": "bin",
+          "size": 71684980
+        },
+        "linux/arm64": {
+          "url": "https://go.dev/dl/go1.27.0.linux-arm64.tar.gz",
+          "sha256": "51798d2c42d0e1c6ed7fd9f48728b4193abac9e8aad6dbac2fe96a81f5909bda",
+          "format": "tar.gz",
+          "strip": 1,
+          "bin_dir": "bin",
+          "size": 66988980
         }
       },
       "shims": [
@@ -42,6 +58,20 @@
           "format": "tar.gz",
           "strip": 1,
           "size": 2265718
+        },
+        "darwin/amd64": {
+          "url": "https://github.com/BurntSushi/ripgrep/releases/download/15.2.0/ripgrep-15.2.0-x86_64-apple-darwin.tar.gz",
+          "sha256": "af7825fcc69a2afc7a7aea55fc9af90e26421d8f20fe59df32e233c0b8a231c1",
+          "format": "tar.gz",
+          "strip": 1,
+          "size": 1878284
+        },
+        "linux/arm64": {
+          "url": "https://github.com/BurntSushi/ripgrep/releases/download/15.2.0/ripgrep-15.2.0-aarch64-unknown-linux-gnu.tar.gz",
+          "sha256": "a740b91c82eaf9914cfedd353572f2791cbe0162c84101ee0951058f4dcbc90d",
+          "format": "tar.gz",
+          "strip": 1,
+          "size": 1854661
         }
       },
       "shims": [
@@ -64,6 +94,20 @@
           "format": "tar.gz",
           "strip": 1,
           "size": 23015306
+        },
+        "darwin/amd64": {
+          "url": "https://github.com/astral-sh/uv/releases/download/0.12.5/uv-x86_64-apple-darwin.tar.gz",
+          "sha256": "b3b2137477cf96c9686ebfb71524614cec780c673fd73e59bce099aef02e70e8",
+          "format": "tar.gz",
+          "strip": 1,
+          "size": 20848713
+        },
+        "linux/arm64": {
+          "url": "https://github.com/astral-sh/uv/releases/download/0.12.5/uv-aarch64-unknown-linux-gnu.tar.gz",
+          "sha256": "9bf43b4d1a07665bf64d4c4e710930b382321a785e0eb10aac07f46471f86a31",
+          "format": "tar.gz",
+          "strip": 1,
+          "size": 21478307
         }
       },
       "shims": [
@@ -89,6 +133,22 @@
           "strip": 1,
           "bin_dir": "bin",
           "size": 57409532
+        },
+        "darwin/amd64": {
+          "url": "https://nodejs.org/dist/v24.19.0/node-v24.19.0-darwin-x64.tar.gz",
+          "sha256": "d1b5e999db158c62fe8f7267a4476b035d8bd93b1a605bac24a3f0dd166e3316",
+          "format": "tar.gz",
+          "strip": 1,
+          "bin_dir": "bin",
+          "size": 53439583
+        },
+        "linux/arm64": {
+          "url": "https://nodejs.org/dist/v24.19.0/node-v24.19.0-linux-arm64.tar.gz",
+          "sha256": "d28c8a5bf0a808f0ed434a1dce8c54ae98f0371c0bd86ac58abc613f73e6643f",
+          "format": "tar.gz",
+          "strip": 1,
+          "bin_dir": "bin",
+          "size": 57128466
         }
       },
       "shims": [
@@ -141,6 +201,22 @@
           "strip": 1,
           "bin_dir": "bin",
           "size": 15152253
+        },
+        "darwin/amd64": {
+          "url": "https://github.com/cli/cli/releases/download/v2.100.0/gh_2.100.0_macOS_amd64.zip",
+          "sha256": "fcd7799e85eb575f3c7d2b1679bfbfedaefa1269d4bc7d096b51e10939b4812b",
+          "format": "zip",
+          "strip": 1,
+          "bin_dir": "bin",
+          "size": 15818005
+        },
+        "linux/arm64": {
+          "url": "https://github.com/cli/cli/releases/download/v2.100.0/gh_2.100.0_linux_arm64.tar.gz",
+          "sha256": "ea4e7a581a32ccad6cc7923cb1576ac5859ba4b9a16ab22eb8f8a96e78e2e961",
+          "format": "tar.gz",
+          "strip": 1,
+          "bin_dir": "bin",
+          "size": 13783869
         }
       }
     }

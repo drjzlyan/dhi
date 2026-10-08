@@ -2,5 +2,10 @@
 # Each MUST be pinned for every tool in the toolchain manifest, or first run
 # refuses to boot (ADR-0011). internal/toolchain tests enforce this; extend the
 # manifest (and the hermetic-git CI matrix) first, then add the platform here.
+#
+# darwin/amd64 and linux/arm64: go, rg, uv, node and gh are pinned (scripts/pin-platform.py,
+# checked against the vendors' own checksums). The hermetic git for them is built by
+# .github/workflows/release-git.yml, which has not run yet; once its pin PR is merged,
+# add both platforms below.
 darwin/arm64
 linux/amd64

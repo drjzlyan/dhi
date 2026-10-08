@@ -32,7 +32,13 @@ real delve v1.27.2 — see F-039; `dlv` provisioning still open.)
   conventions are a `conventions.Source` read at use (commit/PR/branch/header/prompt) and re-read
   when the layer files change (`settings.LiveConventions`); the runtime re-opens the library when
   `library.Fingerprint` changes. Found by -race: `review.Store.mutate` aliased snapshots (fixed).
-- Next: configurable worktree root + darwin/amd64, linux/arm64 pins (ROADMAP M26). Push NOT done.
+- F-053 DONE: `internal/worktrees` layout; `worktrees.root` setting + Settings row; boot creates the
+  base and allows it in the sandbox; runtime `ExtraRoots`.
+- Platforms: darwin/amd64 + linux/arm64 pinned for go/rg/uv/node/gh (all matched vendor checksums).
+  NOT shippable yet: hermetic git must be built by CI (`release-git.yml` matrix now has macos-13 and
+  ubuntu-24.04-arm; needs a push + dispatch), merge its pin PR, then add both platforms to
+  `scripts/release-platforms.txt` (guard test enforces it). Untested: the CI changes themselves.
+- All four deferred items done. Push NOT done: ask the user where to push.
 
 ### Session 49 (M25 P1: layered conventions, F-042)
 

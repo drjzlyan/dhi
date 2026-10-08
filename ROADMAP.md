@@ -966,4 +966,4 @@ Seven phases, one commit each; push deferred to the end.
 - [x] Tutorial steps that watch real actions (F-051): `do:<event>` awaits, `surfaces.Emitter`, review lesson
 - [x] Persona authoring in Settings + live reload of conventions/personas/library (F-052): `conventions.Source`/`Live`, `library.Fingerprint`
 - [x] Configurable worktree root (F-053)
-- [ ] darwin/amd64 + linux/arm64 pins (non-git tools pinned; hermetic git needs CI)
+- [~] darwin/amd64 + linux/arm64: go/rg/uv/node/gh pinned and vendor-checksum-verified (`scripts/pin-platform.py`); hermetic git needs the `release-git` CI run (matrix extended), then add both to `scripts/release-platforms.txt`

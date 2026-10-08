@@ -22,7 +22,9 @@ import sys
 
 SLUG_TO_PLATFORM = {
     "darwin-arm64": "darwin/arm64",
+    "darwin-amd64": "darwin/amd64",
     "linux-amd64": "linux/amd64",
+    "linux-arm64": "linux/arm64",
 }
 
 
@@ -81,6 +83,7 @@ def main():
                    f"hermetic-git-v{args.version}/{fname}",
             "sha256": actual,
             "format": "tar.gz",
+            "bin_dir": "bin",
             "size": os.path.getsize(path),
         }
 
