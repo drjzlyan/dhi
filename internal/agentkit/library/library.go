@@ -237,12 +237,40 @@ type Store struct {
 	sources  map[string]string // slug+kind → source
 	warnings []string
 	root     string // workspace root ("" for a builtins-only store)
+	fp       string // Fingerprint of the local cards when this snapshot was read
 }
+
+// Fingerprint summarises the local role, skill and persona cards (names,
+// sizes, modification times). It changes whenever a card is added, edited or
+// removed, which is how a long-running crew notices a library edit (F-052).
+func Fingerprint(ws *workspace.Workspace) string {
+	if ws == nil {
+		return ""
+	}
+	var b strings.Builder
+	for _, dir := range []string{workspace.DirRoles, workspace.DirSkills, workspace.DirPersonas} {
+		entries, err := os.ReadDir(filepath.Join(ws.Root, dir))
+		if err != nil {
+			continue
+		}
+		b.WriteString(dir + ":")
+		for _, e := range entries {
+			if info, err := e.Info(); err == nil {
+				fmt.Fprintf(&b, "%s|%d|%d;", e.Name(), info.Size(), info.ModTime().UnixNano())
+			}
+		}
+	}
+	return b.String()
+}
+
+// Stale reports whether the local cards changed since this snapshot was read.
+func (s *Store) Stale(ws *workspace.Workspace) bool { return s.fp != Fingerprint(ws) }
 
 // Open loads the merged library for ws (builtins + .dhi/roles +
 // .dhi/skills). ws may be nil for a builtins-only store (tests).
 func Open(ws *workspace.Workspace) *Store {
 	s := &Store{roles: map[string]*Role{}, skills: map[string]*Skill{}, personas: map[string]*Persona{}, sources: map[string]string{}}
+	s.fp = Fingerprint(ws) // before reading, so an edit mid-load is seen as stale next time
 	s.loadPersonas(ws)
 	if ws != nil {
 		s.root = ws.Root
@@ -506,9 +534,12 @@ func (s *Store) Delete(ws *workspace.Workspace, kind, slug string) error {
 		return fmt.Errorf("library: %s %q is %s — only local cards can be deleted", kind, slug, orBuiltin(src))
 	}
 	var path string
-	if kind == "role" {
+	switch kind {
+	case "role":
 		path = filepath.Join(ws.Root, workspace.DirRoles, slug+".toml")
-	} else {
+	case "persona":
+		path = filepath.Join(ws.Root, workspace.DirPersonas, slug+".toml")
+	default:
 		path = filepath.Join(ws.Root, workspace.DirSkills, slug+".md")
 	}
 	if err := os.Remove(path); err != nil {

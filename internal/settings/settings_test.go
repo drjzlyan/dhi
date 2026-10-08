@@ -512,3 +512,50 @@ func TestEditorLanguagesLayerAndAreAcceptedKeys(t *testing.T) {
 		t.Fatalf("languages after round trip = %+v", back.Editor.Languages)
 	}
 }
+
+func TestLiveConventionsFollowTheFilesWithoutARestart(t *testing.T) {
+	dir := t.TempDir()
+	user := filepath.Join(dir, "user", "config.toml")
+	ws := filepath.Join(dir, "ws", ".dhi", "config.toml")
+	team := ConventionsPath(ws)
+	for _, p := range []string{user, ws} {
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	initial, err := Load(user, ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+	live := LiveConventions(user, ws, initial.Conventions)
+	if got := live.Get().Branch.Task; got != conventions.Defaults().Branch.Task {
+		t.Fatalf("starts from %q", got)
+	}
+
+	// The team edits the tracked file (what Settings' save does).
+	next := conventions.Defaults()
+	next.Branch.Task = "feature/{slug}"
+	if err := SaveConventions(team, next); err != nil {
+		t.Fatal(err)
+	}
+	if got := live.Get().Branch.Task; got != "feature/{slug}" {
+		t.Fatalf("a saved edit is not live: %q", got)
+	}
+
+	// A half-typed edit keeps the rules in force and names the problem.
+	if err := os.WriteFile(team, []byte("[conventions.branch]\ntask = \n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := live.Get().Branch.Task; got != "feature/{slug}" {
+		t.Fatalf("a broken file dropped the rules: %q", got)
+	}
+	if live.Err() == nil || !strings.Contains(live.Err().Error(), "conventions.toml") {
+		t.Fatalf("Err = %v", live.Err())
+	}
+	if err := SaveConventions(team, next); err != nil {
+		t.Fatal(err)
+	}
+	if live.Get(); live.Err() != nil {
+		t.Fatalf("not recovered: %v", live.Err())
+	}
+}

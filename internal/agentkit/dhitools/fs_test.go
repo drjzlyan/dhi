@@ -292,7 +292,7 @@ func TestWriteAddsTheCopyrightHeaderToNewFilesOnly(t *testing.T) {
 	api := memberDir(t, f.ws, "api")
 	conv := conventions.Defaults()
 	conv.Copyright = conventions.Copyright{Enabled: true, Holder: "Acme Inc", License: "MIT", Year: "2026"}
-	h := Deps{Agent: m, WS: f.ws, Approvals: f.approvals, Conventions: &conv}.Handler()
+	h := Deps{Agent: m, WS: f.ws, Approvals: f.approvals, Conventions: conventions.Static(conv)}.Handler()
 
 	resolve := callAsync(h, "write", `{"path":"api/new.go","content":"package api\n"}`, f)
 	if out, isErr := resolve(t); isErr {
@@ -321,7 +321,7 @@ func TestWriteAddsTheCopyrightHeaderToNewFilesOnly(t *testing.T) {
 		t.Fatalf("markdown got a header: %q", got)
 	}
 	off := conventions.Defaults()
-	h2 := Deps{Agent: m, WS: f.ws, Approvals: f.approvals, Conventions: &off}.Handler()
+	h2 := Deps{Agent: m, WS: f.ws, Approvals: f.approvals, Conventions: conventions.Static(off)}.Handler()
 	resolve = callAsync(h2, "write", `{"path":"api/other.go","content":"package api\n"}`, f)
 	resolve(t)
 	if got, _ := os.ReadFile(filepath.Join(api, "other.go")); string(got) != "package api\n" {

@@ -964,5 +964,5 @@ Seven phases, one commit each; push deferred to the end.
       highlights; expandable context; FILES | DIFF | CONVERSATION at ≥120 cols
 - [x] Multi-language editor (F-050, ADR-0029): language table, TS/Python/Bash/YAML/JSON servers via confirm-gated `:lsp install`, capability-gated + external formatters; also fixed LSP never starting in the app and a blank-line crash
 - [x] Tutorial steps that watch real actions (F-051): `do:<event>` awaits, `surfaces.Emitter`, review lesson
-- [ ] Persona authoring in Settings + live reload of conventions/personas
+- [x] Persona authoring in Settings + live reload of conventions/personas/library (F-052): `conventions.Source`/`Live`, `library.Fingerprint`
 - [ ] Configurable worktree root + darwin/amd64, linux/arm64 pins

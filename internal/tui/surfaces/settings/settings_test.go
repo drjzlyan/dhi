@@ -167,7 +167,7 @@ func TestConventionRowsCycleAndPersist(t *testing.T) {
 	m.cfg.Conventions.Commit.CoAuthor = "Bot <bot@x.io>"
 	feed(m, "enter")
 
-	if !strings.Contains(m.flash, "applies on restart") {
+	if !strings.Contains(m.flash, "agents use it from their next action") {
 		t.Errorf("flash = %q", m.flash)
 	}
 	back, err := settings.Load(path, "")

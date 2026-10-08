@@ -67,8 +67,10 @@ type Deps struct {
 	PR        PRSeam               // opens task PRs (F-020/F-032); nil refuses pr_open
 	Skills    *library.Store       // behaviour library; nil refuses skill_run
 	// Conventions are the team commit rules (F-042); nil = no extra
-	// validation (defaults are permissive).
-	Conventions *conventions.Config
+	// validation (defaults are permissive). It is a Source, read at the
+	// moment of each commit / file write / PR, so an edit to the
+	// conventions file governs the running crew (F-052).
+	Conventions conventions.Source
 
 	// Gate enforces the active feature workflow (F-031) at a seam: it
 	// returns the refusal reasons for acting on seam ("git:commit",
@@ -453,8 +455,8 @@ func (d Deps) taskTools() []tool {
 			}
 			var opened, failures []string
 			title := a.Title
-			if d.Conventions != nil { // conventions.pr.title (F-042)
-				title = conventions.Render(d.Conventions.PR.Title, map[string]string{"title": a.Title, "slug": slug})
+			if cv := d.conv(); cv != nil { // conventions.pr.title (F-042)
+				title = conventions.Render(cv.PR.Title, map[string]string{"title": a.Title, "slug": slug})
 			}
 			for _, cs := range t.ChangeSets {
 				res, err := d.PR(ctx, cs.Member, cs.Branch, title, a.Base)
@@ -804,4 +806,12 @@ func shortenPath(p, root string) string {
 		return rel
 	}
 	return p
+}
+
+// conv is the conventions in force right now, or nil for none.
+func (d Deps) conv() *conventions.Config {
+	if d.Conventions == nil {
+		return nil
+	}
+	return d.Conventions()
 }

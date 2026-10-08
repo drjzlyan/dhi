@@ -62,7 +62,7 @@ body  = "Created from DHI worktree `{branch}`."     # every PR DHI opens: {branc
 | Agent awareness | `Config.Guidance()` joins the system prompt (`cliPrompt`) so agents comply before a gate refuses |
 | New-file copyright header | the served `write` tool prepends `copyright` to a file that does not yet exist (language-aware, shebang-safe, idempotent); overwrites are left exactly as given |
 | PR title / body | `pr_open` renders `pr.title`; `review.Service.CreatePRForBranch` renders `pr.body` for every PR (agent or Reviewer); unknown placeholders are refused at load |
-| Settings UI | rows for branch preset, commit format, co-author toggle (needs a value), copyright toggle (needs `holder`); saved to `conventions.toml`, flash says "applies on restart" |
+| Settings UI | rows for branch preset, commit format, co-author toggle (needs a value), copyright toggle (needs `holder`); saved to `conventions.toml`, flash says changes are live (F-052) |
 | Preview | Settings "effective standards" shows standards + conventions, in the order `cliPrompt` appends them |
 
 ## Acceptance criteria

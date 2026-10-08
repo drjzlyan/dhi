@@ -201,6 +201,31 @@ func Load(userPath, wsPath string) (Config, error) {
 	return cfg, nil
 }
 
+// LiveConventions serves the layered conventions and re-reads them when any
+// of the files behind them (user config, user conventions, team conventions,
+// workspace config) changes, so a Settings edit — or a hand edit of the
+// tracked .dhi/conventions.toml — governs the running crew without a restart
+// (F-052). A broken edit keeps the previous rules; Err() names the problem.
+func LiveConventions(userPath, wsPath string, initial conventions.Config) *conventions.Live {
+	paths := []string{userPath, ConventionsPath(userPath), ConventionsPath(wsPath), wsPath}
+	fingerprint := func() string {
+		var b strings.Builder
+		for _, p := range paths {
+			if p == "" {
+				continue
+			}
+			if st, err := os.Stat(p); err == nil {
+				fmt.Fprintf(&b, "%s|%d|%d;", p, st.Size(), st.ModTime().UnixNano())
+			}
+		}
+		return b.String()
+	}
+	return conventions.NewLive(initial, fingerprint, func() (conventions.Config, error) {
+		c, err := Load(userPath, wsPath)
+		return c.Conventions, err
+	})
+}
+
 // validate rejects invalid merged values by name — no silent
 // substitution (F-011). Every branch names the offending key + value.
 func validate(c Config) error {

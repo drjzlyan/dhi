@@ -433,7 +433,7 @@ func TestPROpenAppliesTheTitleTemplate(t *testing.T) {
 	var title string
 	conv := conventions.Defaults()
 	conv.PR.Title = "[{slug}] {title}"
-	h := Deps{Agent: m, Tasks: f.tasks, Approvals: f.approvals, Channel: "#general", Conventions: &conv,
+	h := Deps{Agent: m, Tasks: f.tasks, Approvals: f.approvals, Channel: "#general", Conventions: conventions.Static(conv),
 		PR: func(_ context.Context, _, _, tt, _ string) (string, error) { title = tt; return "PR #1", nil }}.Handler()
 	f.tasks.Create("feat-9", "Feature", "", "")
 	if err := f.tasks.RecordChangeSet("feat-9", tasks.ChangeSet{Member: "api", Branch: "task/feat-9", Path: "wt"}); err != nil {

@@ -215,8 +215,10 @@ func (d Deps) fsTools() []tool {
 			content := p.content
 			// A NEW file gets the team's copyright header (F-042); an
 			// existing file is overwritten exactly as given.
-			if _, err := os.Stat(p.abs); os.IsNotExist(err) && d.Conventions != nil {
-				content = d.Conventions.Copyright.EnsureHeader(p.abs, content, time.Now())
+			if cv := d.conv(); cv != nil {
+				if _, err := os.Stat(p.abs); os.IsNotExist(err) {
+					content = cv.Copyright.EnsureHeader(p.abs, content, time.Now())
+				}
 			}
 			if err := os.WriteFile(p.abs, []byte(content), 0o644); err != nil {
 				return "", fmt.Errorf("%s: %w", p.path, err)

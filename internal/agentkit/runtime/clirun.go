@@ -507,7 +507,9 @@ func (r *Runtime) cliPrompt(ctx context.Context, e *entry, trigger bus.Message, 
 		system += "\n\n" + standards.Resolve(r.cfg.WS.Root, e.m.ID, r.teamLookup())
 	}
 	if r.cfg.Conventions != nil {
-		system += "\n\n" + r.cfg.Conventions.Guidance()
+		if cv := r.cfg.Conventions(); cv != nil {
+			system += "\n\n" + cv.Guidance()
+		}
 	}
 	if wfText != "" {
 		system += "\n\n" + wfText

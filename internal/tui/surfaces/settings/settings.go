@@ -440,13 +440,13 @@ func (m *Model) applyAndPersist() {
 		return
 	}
 	// Conventions are a separate, tracked file shared with the team and
-	// are read at launch, so say so.
+	// are re-read while DHI runs (F-052), so say so.
 	if m.cursor >= rowBranchTask {
 		if err := settings.SaveConventions(settings.ConventionsPath(m.savePath), m.cfg.Conventions); err != nil {
 			m.flash = "save failed: " + err.Error()
 			return
 		}
-		m.flash = "saved to " + settings.ConventionsFile + " (applies on restart)"
+		m.flash = "saved to " + settings.ConventionsFile + " (live — agents use it from their next action)"
 		return
 	}
 	m.flash = "saved"
@@ -1110,7 +1110,7 @@ func (m *Model) sectionHints() []string {
 	case secWorkflows:
 		sec = []string{"n new", "d default", "v preview"}
 	case secLibrary:
-		sec = []string{"n new", "e edit", "x delete", "r run script", "v card"}
+		sec = []string{"n new", "p persona", "e edit", "x delete", "r run script", "v card"}
 	case secAutopilots:
 		sec = []string{"n new", "e arm/pause", "r run now", "c task cards", "o last run", "x remove"}
 	case secMarketplace:

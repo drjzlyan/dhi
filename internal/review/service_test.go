@@ -593,3 +593,20 @@ func TestPRBodyFollowsTheConfiguredTemplate(t *testing.T) {
 		t.Fatalf("body = %q", fg.body)
 	}
 }
+
+func TestPRBodyTemplateIsReadWhenThePRIsOpened(t *testing.T) {
+	w, st, fg, memPath, head, _ := bareFixture(t)
+	svc := NewService(w, st, nil, fg)
+	tpl := "first {title}"
+	svc.SetPRBodyFunc(func() string { return tpl })
+	mr, _ := git.PlainOpen(memPath)
+	mr.Storer.SetReference(plumbing.NewHashReference(
+		plumbing.ReferenceName("refs/heads/task/feat-4"), plumbing.NewHash(head)))
+	tpl = "edited {title}" // the conventions file changed after startup
+	if _, err := svc.CreatePRForBranch(context.Background(), "api", "task/feat-4", "Add feat", "master"); err != nil {
+		t.Fatal(err)
+	}
+	if fg.body != "edited Add feat" {
+		t.Fatalf("body = %q", fg.body)
+	}
+}

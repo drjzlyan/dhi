@@ -72,7 +72,7 @@ type Config struct {
 	Standards bool
 	// Conventions are the team style rules (F-042): injected into the
 	// system prompt and enforced at git_commit. nil = none.
-	Conventions *conventions.Config
+	Conventions conventions.Source
 	// ToolBin are DHI's tool-shim directories, put first on a bridged
 	// stdio MCP server's PATH so `uvx`/`npx` are the hermetic ones.
 	ToolBin []string
@@ -127,8 +127,8 @@ type Runtime struct {
 	agents map[string]*entry
 	roster chan struct{} // pinged after every Reload
 
-	libOnce sync.Once
-	libRef  *library.Store
+	libMu  sync.Mutex
+	libRef *library.Store
 
 	// work tracks in-flight turns per thread so the board can show a
 	// live "working" indicator (F-035 Part D). Key: channel + "#" + root.
@@ -195,7 +195,13 @@ func (r *Runtime) lib() *library.Store {
 	if r.cfg.WS == nil {
 		return nil
 	}
-	r.libOnce.Do(func() { r.libRef = library.Open(r.cfg.WS) })
+	// Re-read when a role, skill or persona card changed on disk, so edits made
+	// in Settings (or by hand) govern the next turn without a restart (F-052).
+	r.libMu.Lock()
+	defer r.libMu.Unlock()
+	if r.libRef == nil || r.libRef.Stale(r.cfg.WS) {
+		r.libRef = library.Open(r.cfg.WS)
+	}
 	return r.libRef
 }
 

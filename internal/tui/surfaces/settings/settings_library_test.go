@@ -341,7 +341,7 @@ func TestLibraryRunSkillScript(t *testing.T) {
 	}
 }
 
-func TestLibraryListsPersonasReadOnly(t *testing.T) {
+func TestLibraryListsPersonasAndShowsTheirCard(t *testing.T) {
 	m, _ := libSurface(t)
 	var personaRow = -1
 	for i, r := range m.libRows() {
@@ -362,12 +362,97 @@ func TestLibraryListsPersonasReadOnly(t *testing.T) {
 		t.Fatalf("persona card:\n%s", card)
 	}
 	m.closeDialog()
-	feed(m, "e")
-	if !strings.Contains(m.flash, ".dhi/personas/mentor.toml") {
-		t.Fatalf("edit flash = %q", m.flash)
+	feed(m, "x") // a builtin is never deleted
+	if !strings.Contains(m.flash, "read-only") || m.dlg != nil {
+		t.Fatalf("delete builtin: flash=%q dialog=%v", m.flash, m.dlg != nil)
 	}
-	feed(m, "x")
-	if !strings.Contains(m.flash, "plain files") {
-		t.Fatalf("delete flash = %q", m.flash)
+}
+
+// personaFields fills the persona form's text fields in order, skipping the
+// verbosity toggle at index 3.
+func personaFields(m *Model, vals map[int]string) {
+	for idx, v := range vals {
+		for m.dform.Cur() != idx {
+			feed(m, "tab")
+		}
+		for _, r := range v {
+			m.HandleKey(string(r))
+		}
+	}
+}
+
+func TestAuthoringALocalPersonaRoundTrips(t *testing.T) {
+	m, ws := libSurface(t)
+	if !m.HandleKey("p") || m.dkind != dlgPersona {
+		t.Fatalf("p did not open the persona form (dkind=%v)", m.dkind)
+	}
+	personaFields(m, map[int]string{0: "night-owl", 1: "Dry humour, short sentences", 2: "wry and brief", 4: "never apologise; cite the file", 5: "Sign off with a moon."})
+	for m.dform.Cur() != 3 {
+		feed(m, "tab")
+	}
+	feed(m, "left") // balanced → terse
+	feed(m, "enter")
+	if m.dform != nil {
+		t.Fatalf("form still open: %s", m.dform.Err)
+	}
+	if !strings.Contains(m.flash, "persona night-owl saved") || !strings.Contains(m.flash, "next turn") {
+		t.Fatalf("flash = %q", m.flash)
+	}
+	p, ok := library.Open(ws).Persona("night-owl")
+	if !ok || p.Tone != "wry and brief" || p.Verbosity != "terse" || len(p.Traits) != 2 || p.Traits[1] != "cite the file" {
+		t.Fatalf("persisted persona = %+v ok=%v", p, ok)
+	}
+	if library.Open(ws).Source("persona", "night-owl") != "local" {
+		t.Fatal("authored persona is not local")
+	}
+	if !strings.Contains(ansi.Strip(m.libraryBody(90)), "night-owl") {
+		t.Fatal("new persona missing from the list")
+	}
+}
+
+func TestPersonaFormNamesTheProblemAndKeepsTheDialogOpen(t *testing.T) {
+	m, _ := libSurface(t)
+	m.HandleKey("p")
+	personaFields(m, map[int]string{0: "Bad Slug", 1: "x"})
+	feed(m, "enter")
+	if m.dform == nil || !strings.Contains(m.dform.Err, "slug") {
+		t.Fatalf("a bad slug must keep the form open with the reason, err=%v", m.dform)
+	}
+}
+
+func TestEditingABuiltinPersonaSavesALocalCopyThatShadowsIt(t *testing.T) {
+	m, ws := libSurface(t)
+	for i, r := range m.libRows() {
+		if r.kind == "persona" && r.slug == "terse" {
+			m.libCur = i
+		}
+	}
+	builtin, _ := library.Open(ws).Persona("terse")
+	if !m.HandleKey("e") || m.dkind != dlgPersona {
+		t.Fatalf("e on a persona did not open the form (dkind=%v flash=%q)", m.dkind, m.flash)
+	}
+	if got := m.dform.Values()[0]; got != "terse" {
+		t.Fatalf("slug prefill = %q", got)
+	}
+	if !strings.Contains(m.dlg.Title, "saves a local copy") {
+		t.Fatalf("title = %q", m.dlg.Title)
+	}
+	personaFields(m, map[int]string{2: ", but warm"})
+	feed(m, "enter")
+	lib := library.Open(ws)
+	p, _ := lib.Persona("terse")
+	if lib.Source("persona", "terse") != "local" || p.Tone != builtin.Tone+", but warm" {
+		t.Fatalf("local copy = %+v source=%q", p, lib.Source("persona", "terse"))
+	}
+	// Deleting the local copy restores the builtin.
+	for i, r := range m.libRows() {
+		if r.kind == "persona" && r.slug == "terse" {
+			m.libCur = i
+		}
+	}
+	feed(m, "x", "enter")
+	lib = library.Open(ws)
+	if lib.Source("persona", "terse") != "builtin" {
+		t.Fatalf("after delete source = %q, want builtin back", lib.Source("persona", "terse"))
 	}
 }

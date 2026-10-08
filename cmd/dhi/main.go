@@ -140,6 +140,10 @@ func runTUI() (relaunch bool) {
 		os.Exit(1)
 	}
 	cfg.Apply()
+	// Conventions are re-read when their files change, so Settings edits and
+	// hand edits of .dhi/conventions.toml govern branch names, commits, PRs and
+	// the agents' prompts without a restart (F-052).
+	convLive := settings.LiveConventions(userCfg, wsCfg, cfg.Conventions)
 	savePath := userCfg
 	if ws != nil {
 		savePath = wsCfg // nearest file wins for persistence
@@ -225,9 +229,9 @@ func runTUI() (relaunch bool) {
 		if ts, err := tasks.Open(ws); err == nil {
 			taskStore = ts
 			taskStore.SetIdentity(identityFn)
-			wireTaskSeam(ws, ts, cfg.Conventions.Branch.Task)
+			wireTaskSeam(ws, ts, func() string { return convLive.Get().Branch.Task })
 		}
-		reviewSvc = openReviewService(ws, cfg.Conventions.Branch.Review, cfg.Conventions.PR.Body)
+		reviewSvc = openReviewService(ws, func() conventions.Config { return convLive.Get() })
 		mcpStore = mcpserver.Open(ws.Root)
 		if ss, err := ideation.Open(ws); err == nil {
 			sessionStore = ss
@@ -248,7 +252,7 @@ func runTUI() (relaunch bool) {
 		// under .dhi/agents/. Guards carry the audited OS-sandbox
 		// adapter (nil here is impossible: the audit blocked first).
 		if messageBus != nil {
-			agentRT = newAgentRuntime(ws, messageBus, decision.Sandbox, termEnv, cfg.Engine, gitRunner, identityFn, sessionStore, runRunner, editorBridge, wsScopes, taskStore, reviewSvc, rgSearcher, mcpStore, &cfg.Conventions, cliLook, toolBin, mcpHome)
+			agentRT = newAgentRuntime(ws, messageBus, decision.Sandbox, termEnv, cfg.Engine, gitRunner, identityFn, sessionStore, runRunner, editorBridge, wsScopes, taskStore, reviewSvc, rgSearcher, mcpStore, convLive.Source(), cliLook, toolBin, mcpHome)
 			if agentRT != nil {
 				edOpts = append(edOpts, editor.WithChat(agentRT))
 			}
@@ -759,7 +763,8 @@ func needsBootstrap(root string) bool {
 // openReviewService builds the review orchestration layer: TOML store
 // always; worktree seam + diff runner light up with the hermetic git
 // shim; PR inputs additionally need the host gh CLI.
-func openReviewService(ws *workspace.Workspace, branchPattern, prBody string) *review.Service {
+func openReviewService(ws *workspace.Workspace, conv func() conventions.Config) *review.Service {
+	prBody := func() string { return conv().PR.Body }
 	st, err := review.Open(ws)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "dhi: review store:", err)
@@ -775,7 +780,7 @@ func openReviewService(ws *workspace.Workspace, branchPattern, prBody string) *r
 	}
 	gh := review.NewGHCLI(ghShim)
 	svc := review.NewService(ws, st, nil, gh)
-	svc.SetPRBody(prBody)
+	svc.SetPRBodyFunc(prBody)
 	svc.SetTokenFn(func(ctx context.Context) (string, error) {
 		return gh.AuthToken(ctx)
 	})
@@ -788,7 +793,7 @@ func openReviewService(ws *workspace.Workspace, branchPattern, prBody string) *r
 		return svc // pre-release: shim absent; diffs degrade visibly
 	}
 	svc = review.NewService(ws, st, runner, gh)
-	svc.SetPRBody(prBody)
+	svc.SetPRBodyFunc(prBody)
 	svc.SetTokenFn(func(ctx context.Context) (string, error) {
 		return gh.AuthToken(ctx)
 	})
@@ -802,7 +807,7 @@ func openReviewService(ws *workspace.Workspace, branchPattern, prBody string) *r
 			dst := filepath.Join(ws.Root, rel)
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 			defer cancel()
-			branch, err := conventions.ExpandBranch(branchPattern, branchVars(id))
+			branch, err := conventions.ExpandBranch(conv().Branch.Review, branchVars(id))
 			if err != nil {
 				return "", err
 			}
@@ -830,7 +835,7 @@ func openReviewService(ws *workspace.Workspace, branchPattern, prBody string) *r
 
 // wireTaskSeam connects task ChangeSets to hermetic-git worktrees when
 // the shim exists; without it, attaching reports a visible error.
-func wireTaskSeam(ws *workspace.Workspace, ts *tasks.Store, branchPattern string) {
+func wireTaskSeam(ws *workspace.Workspace, ts *tasks.Store, branchPattern func() string) {
 	root, err := toolchain.DefaultRoot()
 	if err != nil {
 		return
@@ -847,7 +852,7 @@ func wireTaskSeam(ws *workspace.Workspace, ts *tasks.Store, branchPattern string
 			}
 			if branch == "" {
 				var err error
-				if branch, err = conventions.ExpandBranch(branchPattern, branchVars(slug)); err != nil {
+				if branch, err = conventions.ExpandBranch(branchPattern(), branchVars(slug)); err != nil {
 					return "", err
 				}
 			}
@@ -1043,7 +1048,7 @@ func (r execRunner) Run(ctx context.Context, dir string, argv []string, allowNet
 	return out, err
 }
 
-func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cliEnv []string, defaultEngine string, gitRunner *gitcore.Runner, identityFn gitcore.IdentityFunc, sessionStore *ideation.Store, runRunner dhitools.CommandRunner, editor dhitools.EditorAPI, workspaceScopes scopes.Set, taskStore *tasks.Store, reviewSvc *review.Service, kbSearcher search.Searcher, mcpStore *mcpserver.Store, conv *conventions.Config, cliLook func(string) (string, error), toolBin []string, mcpHome string) *agentkitRuntime.Runtime {
+func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cliEnv []string, defaultEngine string, gitRunner *gitcore.Runner, identityFn gitcore.IdentityFunc, sessionStore *ideation.Store, runRunner dhitools.CommandRunner, editor dhitools.EditorAPI, workspaceScopes scopes.Set, taskStore *tasks.Store, reviewSvc *review.Service, kbSearcher search.Searcher, mcpStore *mcpserver.Store, conv conventions.Source, cliLook func(string) (string, error), toolBin []string, mcpHome string) *agentkitRuntime.Runtime {
 	roster, err := manifest.LoadDir(filepath.Join(ws.Root, workspace.DirAgents))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "dhi: agent roster:", err)

@@ -183,11 +183,14 @@ func (m *Model) libraryKey(key string) bool {
 			kit.NewTextField("body  ", ""),
 		)
 		return true
+	case "p":
+		m.openPersonaForm("")
+		return true
 	case "e":
 		if m.libCur < len(rows) {
 			r := rows[m.libCur]
 			if r.kind == "persona" {
-				m.flash = "personas are plain files — edit .dhi/personas/" + r.slug + ".toml"
+				m.openPersonaForm(r.slug)
 				return true
 			}
 			if r.source != "local" {
@@ -200,10 +203,6 @@ func (m *Model) libraryKey(key string) bool {
 	case "x":
 		if m.libCur < len(rows) && m.d.WS != nil {
 			r := rows[m.libCur]
-			if r.kind == "persona" {
-				m.flash = "personas are plain files — remove .dhi/personas/" + r.slug + ".toml"
-				return true
-			}
 			if r.source != "local" {
 				m.flash = "failed: builtin " + r.kind + "s are read-only"
 				return true
@@ -430,4 +429,74 @@ func (m *Model) submitLibraryDelete(target string) {
 	m.closeDialog()
 	m.lib = library.Open(m.d.WS)
 	m.flash = kind + " " + slug + " deleted"
+}
+
+// verbosities are the persona verbosity levels, in toggle order.
+var verbosities = []string{library.VerbosityTerse, library.VerbosityBalanced, library.VerbosityThorough}
+
+// openPersonaForm opens the persona authoring form: empty for a new card,
+// prefilled from an existing one. Editing a builtin writes a LOCAL card with
+// the same slug, which shadows the builtin — the builtin itself is never
+// touched, and deleting the local card restores it.
+func (m *Model) openPersonaForm(slug string) {
+	if m.d.WS == nil || m.libStore() == nil {
+		m.flash = "failed: library unavailable — not inside a workspace"
+		return
+	}
+	title, target := "new persona", ""
+	p := &library.Persona{Verbosity: library.VerbosityBalanced}
+	if slug != "" {
+		cur, ok := m.libStore().Persona(slug)
+		if !ok {
+			return
+		}
+		p, title, target = cur, "edit persona "+slug, "persona/"+slug
+		if m.libStore().Source("persona", slug) != "local" {
+			title = "customize persona " + slug + " (saves a local copy)"
+		}
+	}
+	vi := 1
+	for i, v := range verbosities {
+		if v == p.Verbosity {
+			vi = i
+		}
+	}
+	m.openFormDialog(title, dlgPersona, target,
+		kit.NewTextField("slug     ", slug),
+		kit.NewTextField("desc     ", p.Description),
+		kit.NewTextField("tone     ", p.Tone),
+		kit.NewToggleField("verbosity", verbosities, vi),
+		kit.NewTextField("traits   ", strings.Join(p.Traits, "; ")),
+		kit.NewTextField("guidance ", p.Guidance),
+	)
+}
+
+// submitPersona writes the persona card through the store's strict
+// round-trip; the running crew picks it up on its next turn (the runtime
+// re-reads the library when its files change).
+func (m *Model) submitPersona() {
+	if m.d.WS == nil || m.libStore() == nil {
+		m.closeDialog()
+		m.flash = "failed: library unavailable — not inside a workspace"
+		return
+	}
+	vals := m.dform.Values()
+	slug := strings.TrimSpace(vals[0])
+	var traits []string
+	for _, t := range strings.Split(vals[4], ";") {
+		if t = strings.TrimSpace(t); t != "" {
+			traits = append(traits, t)
+		}
+	}
+	err := m.lib.WritePersona(m.d.WS, &library.Persona{
+		Slug: slug, Description: strings.TrimSpace(vals[1]), Tone: strings.TrimSpace(vals[2]),
+		Verbosity: strings.TrimSpace(vals[3]), Traits: traits, Guidance: strings.TrimSpace(vals[5]),
+	})
+	if err != nil {
+		m.dform.SetError(err.Error())
+		return
+	}
+	m.closeDialog()
+	m.lib = library.Open(m.d.WS) // fresh snapshot
+	m.flash = "persona " + slug + " saved — agents use it from their next turn"
 }

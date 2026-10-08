@@ -271,7 +271,7 @@ func TestGitCommitEnforcesConventions(t *testing.T) {
 	conv.Commit.CoAuthor = "Bot <bot@example.com>"
 	conv.Commit.CoAuthorEnabled = true
 	h := Deps{Agent: m, WS: f.ws, Workdir: api, Identity: testIdentity(),
-		Approvals: f.approvals, Conventions: &conv}.Handler()
+		Approvals: f.approvals, Conventions: conventions.Static(conv)}.Handler()
 
 	// A non-conventional subject is refused before an approval is spent.
 	if out, isErr := call(h, t, "git_commit", `{"message":"did stuff"}`); !isErr || !strings.Contains(out, "conventional") {
@@ -287,5 +287,31 @@ func TestGitCommitEnforcesConventions(t *testing.T) {
 	want := "feat(api): add v2\n\nCo-Authored-By: Bot <bot@example.com>\n"
 	if c.Message != want {
 		t.Fatalf("message = %q, want %q", c.Message, want)
+	}
+}
+
+// The commit rules are read when the commit happens: a Source that changes
+// between two commits changes what is accepted (F-052).
+func TestGitCommitFollowsAChangingConventionsSource(t *testing.T) {
+	f, m := newFixture(t, "git_commit")
+	api := memberDir(t, f.ws, "api")
+	initRepo(t, api)
+	writeFile(t, api, "a.go", "package a // v2\n")
+
+	strict := conventions.Defaults()
+	strict.Commit.Format = conventions.FormatConventional
+	current := strict
+	src := func() *conventions.Config { c := current; return &c }
+	h := Deps{Agent: m, WS: f.ws, Workdir: api, Identity: testIdentity(),
+		Approvals: f.approvals, Conventions: src}.Handler()
+
+	if out, isErr := call(h, t, "git_commit", `{"message":"did stuff"}`); !isErr || !strings.Contains(out, "conventional") {
+		t.Fatalf("strict rules did not refuse: %q isErr=%v", out, isErr)
+	}
+	current = conventions.Defaults() // the team relaxes the rule; no restart
+	current.Commit.Format = conventions.FormatFree
+	resolve := callAsync(h, "git_commit", `{"message":"did stuff"}`, f)
+	if out, isErr := resolve(t); isErr {
+		t.Fatalf("the relaxed rule is not live: %s", out)
 	}
 }

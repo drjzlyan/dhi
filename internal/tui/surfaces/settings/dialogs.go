@@ -31,6 +31,7 @@ const (
 	dlgLibEdit
 	dlgLibDelete
 	dlgLibRunSkill
+	dlgPersona
 	dlgRegistrySource
 	dlgRegistryInstall
 	dlgRegistryTrustKey
@@ -116,6 +117,8 @@ func (m *Model) submitDialog() {
 		m.submitAutoNew()
 	case dlgLibNew, dlgLibEdit:
 		m.submitLibrary()
+	case dlgPersona:
+		m.submitPersona()
 	case dlgRegistrySource:
 		m.submitRegistrySource()
 	case dlgRegistryTrustKey:

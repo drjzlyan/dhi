@@ -187,8 +187,8 @@ func (d Deps) gitTools() []tool {
 				if strings.TrimSpace(a.Message) == "" {
 					return nil, fmt.Errorf("commit message is required")
 				}
-				if d.Conventions != nil {
-					if err := d.Conventions.Commit.CheckCommit(a.Message); err != nil {
+				if cv := d.conv(); cv != nil {
+					if err := cv.Commit.CheckCommit(a.Message); err != nil {
 						return nil, fmt.Errorf("conventions: %w", err)
 					}
 				}
@@ -221,8 +221,8 @@ func (d Deps) gitTools() []tool {
 				msg := dec.(struct {
 					Message string `json:"message"`
 				}).Message
-				if d.Conventions != nil {
-					msg = d.Conventions.Commit.Finalize(msg)
+				if cv := d.conv(); cv != nil {
+					msg = cv.Commit.Finalize(msg)
 				}
 				hash, err := repo.Commit(gitcore.CommitOptions{
 					Message: msg,

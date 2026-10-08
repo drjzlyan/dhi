@@ -36,7 +36,8 @@ type Service struct {
 	tokenFn func(ctx context.Context) (string, error)
 	// prBody is the PR body template (conventions.pr.body, F-042); "" keeps
 	// the built-in line.
-	prBody string
+	prBody   string
+	prBodyFn func() string // live source; wins over prBody when set
 }
 
 // NewService wires the orchestration layer. runner and gh may be nil;
@@ -60,6 +61,10 @@ func (s *Service) Store() *Store { return s.store }
 func (s *Service) SetDiffForTest(fn func(ctx context.Context, dir string, args ...string) (string, error)) {
 	s.diffFn = fn
 }
+
+// SetPRBodyFunc installs a source for the PR body template, read each time a
+// PR is opened, so an edit to the conventions applies without a restart.
+func (s *Service) SetPRBodyFunc(fn func() string) { s.prBodyFn = fn }
 
 // SetPRBody installs the PR body template. Placeholders: {branch},
 // {member}, {title}.
@@ -259,6 +264,9 @@ func (s *Service) CreatePRForBranch(ctx context.Context, memberName, branch, tit
 	// F-029: no DHI footer crosses to the outside; the branch line is
 	// context for the user's own PR.
 	tpl := s.prBody
+	if s.prBodyFn != nil {
+		tpl = s.prBodyFn()
+	}
 	if tpl == "" {
 		tpl = "Created from DHI worktree `{branch}`."
 	}
