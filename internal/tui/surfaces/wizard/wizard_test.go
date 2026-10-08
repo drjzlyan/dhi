@@ -1000,3 +1000,68 @@ func TestGoldenIntegrations(t *testing.T) {
 	key(m, "s")
 	golden.Snapshot(t, "wizard_integrations_info", plain(m))
 }
+
+// ---- tour offer (F-048) ----
+
+func TestDoneStepOffersTheTourOnlyWhenWired(t *testing.T) {
+	f := newFixture(t, true)
+	m := f.wizard()
+	key(m, "enter", "enter", "enter") // → done
+	if v := plain(m); strings.Contains(v, "Press t") {
+		t.Fatalf("tour offered with no hook:\n%s", v)
+	}
+	key(m, "t") // ignored without a hook: the done step takes enter only
+	if m.Finished() {
+		t.Fatal("'t' finished the wizard with no tour wired")
+	}
+
+	g := newFixture(t, true)
+	g.env.StartTour = func() {}
+	m2 := g.wizard()
+	key(m2, "enter", "enter", "enter")
+	if v := plain(m2); !strings.Contains(v, "Press t for a 2-minute guided tour first.") {
+		t.Fatalf("tour offer missing:\n%s", v)
+	}
+}
+
+func TestTourStartsInProcessWhenNothingNeedsARelaunch(t *testing.T) {
+	f := newFixture(t, true)
+	started, queued := 0, 0
+	f.env.StartTour = func() { started++ }
+	f.env.QueueTour = func() error { queued++; return nil }
+	m := f.wizard()
+	key(m, "enter", "enter", "enter", "t")
+	if !m.Finished() || m.NeedsRelaunch() || started != 1 || queued != 0 {
+		t.Fatalf("finished=%v relaunch=%v started=%d queued=%d", m.Finished(), m.NeedsRelaunch(), started, queued)
+	}
+}
+
+func TestTourIsQueuedAcrossARelaunch(t *testing.T) {
+	f := newFixture(t, false) // creating a workspace forces a relaunch
+	started, queued := 0, 0
+	f.env.StartTour = func() { started++ }
+	f.env.QueueTour = func() error { queued++; return nil }
+	m := f.wizard()
+	key(m, "enter", "enter") // welcome, create the workspace
+	key(m, "ctrl+x")         // skip the rest → finish
+	if !m.NeedsRelaunch() {
+		t.Fatal("expected a relaunch")
+	}
+	// Asking for the tour at the done step queues it instead of starting it.
+	g := newFixture(t, false)
+	s2, q2 := 0, 0
+	g.env.StartTour = func() { s2++ }
+	g.env.QueueTour = func() error { q2++; return nil }
+	m2 := g.wizard()
+	key(m2, "enter", "enter", "enter", "enter", "enter") // welcome, workspace, identity, conventions
+	if m2.steps[m2.idx].ID() != "done" {
+		t.Fatalf("on %s", m2.steps[m2.idx].ID())
+	}
+	key(m2, "t")
+	if !m2.NeedsRelaunch() || q2 != 1 || s2 != 0 {
+		t.Fatalf("relaunch=%v queued=%d started=%d", m2.NeedsRelaunch(), q2, s2)
+	}
+	if started != 0 || queued != 0 {
+		t.Fatal("declining the tour must not queue it")
+	}
+}

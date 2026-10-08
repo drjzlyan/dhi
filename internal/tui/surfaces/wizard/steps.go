@@ -439,11 +439,23 @@ func (s *doneStep) View(w, f int) []string {
 		out = append(out, ok(a))
 	}
 	out = append(out, "")
+	verb := "start"
 	if s.env.Changed {
-		out = append(out, theme.TextStyle().Render("DHI will restart to apply these — press enter."))
-	} else {
-		out = append(out, theme.TextStyle().Render("Press enter to start."))
+		verb = "restart DHI and start"
 	}
-	out = append(out, dim("Re-run any time: ctrl+p → Run setup wizard."))
+	out = append(out, theme.TextStyle().Render("Press enter to "+verb+"."))
+	if s.env.StartTour != nil || s.env.QueueTour != nil {
+		out = append(out, theme.AccentText().Render("Press t")+theme.TextStyle().Render(" for a 2-minute guided tour first."))
+	}
+	out = append(out, dim("Re-run any time: ctrl+p → Run setup wizard · lessons: ctrl+p → Tutorial."))
 	return out
+}
+
+// HandleKey: enter finishes; t finishes and asks for the tour.
+func (s *doneStep) HandleKey(key string) Action {
+	if key == "t" && (s.env.StartTour != nil || s.env.QueueTour != nil) {
+		s.env.TourRequested = true
+		return Next
+	}
+	return s.base.HandleKey(key)
 }

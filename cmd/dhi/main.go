@@ -60,6 +60,7 @@ import (
 	settingsview "github.com/drjzlyan/dhi/internal/tui/surfaces/settings"
 	"github.com/drjzlyan/dhi/internal/tui/surfaces/wizard"
 	wsview "github.com/drjzlyan/dhi/internal/tui/surfaces/workspace"
+	"github.com/drjzlyan/dhi/internal/tutorial"
 	"github.com/drjzlyan/dhi/internal/unread"
 	"github.com/drjzlyan/dhi/internal/version"
 	"github.com/drjzlyan/dhi/internal/workspace"
@@ -359,12 +360,48 @@ func runTUI() (relaunch bool) {
 		a.SetActivity(agentRT.ActiveCount)
 	}
 
+	// Tutorials (F-048): lessons in the palette; progress lives in the user
+	// setup state, so a finished lesson shows a check everywhere.
+	startLesson := func(slug string) {
+		if t, ok := tutorial.Get(slug); ok && appRef != nil {
+			appRef.StartTutorial(t)
+		}
+	}
+	a.SetTutorials(tutorial.All(), app.TutorialHooks{
+		Done: func(slug string) bool {
+			p, err := setup.UserStatePath()
+			if err != nil {
+				return false
+			}
+			st, _ := setup.LoadState(p)
+			return st.Has("tutorial:" + slug)
+		},
+		OnEnd: func(slug string, finished bool) {
+			if !finished {
+				return
+			}
+			if p, err := setup.UserStatePath(); err == nil {
+				st, _ := setup.LoadState(p)
+				st.Mark("tutorial:"+slug, time.Now())
+				_ = setup.SaveState(p, st)
+			}
+		},
+	})
+	// A tour queued by a wizard that relaunched starts now.
+	if p, err := tourMarker(); err == nil {
+		if _, serr := os.Stat(p); serr == nil {
+			_ = os.Remove(p)
+			startLesson("tour")
+		}
+	}
+
 	// Setup wizard (F-043). It auto-runs for a first-time user only; every
 	// other launch reaches it from the palette. Each run gets a fresh Env
 	// so a palette re-run starts from the state on disk.
 	var wizards []*wizard.Model
 	newWizard := func(forced bool) *wizard.Model {
-		env := newSetupEnv(cwd, ws, userCfg, toolRoot, cfg.Conventions, cfg.Engine, identityFn, cliLook)
+		env := newSetupEnv(cwd, ws, userCfg, toolRoot, cfg.Conventions, cfg.Engine, identityFn, cliLook,
+			func() { startLesson("tour") })
 		w := wizard.New(env, loadSetupState(ws), wizard.DefaultSteps(env, version.Version)...)
 		wizards = append(wizards, w)
 		return w
@@ -450,6 +487,16 @@ func runTUI() (relaunch bool) {
 	return tail != nil && tail.NeedsRelaunch()
 }
 
+// tourMarker is the file a relaunching wizard leaves to say "start the
+// tour next launch".
+func tourMarker() (string, error) {
+	p, err := setup.UserStatePath()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(filepath.Dir(p), "tour.pending"), nil
+}
+
 // toolsFingerprint captures which hermetic tools exist: the services read
 // them once at launch (git runner, ripgrep searcher, terminal env), so a
 // change means they are stale.
@@ -458,7 +505,7 @@ func toolsFingerprint(root string) string {
 		return ""
 	}
 	var b strings.Builder
-	for _, rel := range []string{"git", "rg", "go", "gopls"} {
+	for _, rel := range []string{"git", "rg", "go", "gopls", "dlv"} {
 		if _, err := os.Stat(filepath.Join(root, "bin", rel)); err == nil {
 			b.WriteString(rel + ";")
 		}
@@ -504,7 +551,7 @@ func loadSetupState(ws *workspace.Workspace) setup.State {
 // explains the manual fix instead of guessing.
 func newSetupEnv(cwd string, ws *workspace.Workspace, userCfg, toolRoot string,
 	conv conventions.Config, engine string, identityFn gitcore.IdentityFunc,
-	cliLook func(string) (string, error)) *wizard.Env {
+	cliLook func(string) (string, error), startTour func()) *wizard.Env {
 	env := &wizard.Env{
 		Version: version.Version, CWD: cwd,
 		Discover: setup.DiscoverMembers, InitWorkspace: setup.InitWorkspace,
@@ -634,6 +681,19 @@ func newSetupEnv(cwd string, ws *workspace.Workspace, userCfg, toolRoot string,
 		}
 		return catalog.Enable(w, o, e, ids)
 	}
+	// Tour: begin in this process when the wizard does not relaunch, else
+	// leave a marker for the next launch.
+	env.QueueTour = func() error {
+		p, err := tourMarker()
+		if err != nil {
+			return err
+		}
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			return err
+		}
+		return os.WriteFile(p, []byte("tour\n"), 0o644)
+	}
+	env.StartTour = startTour
 	env.SetEngine = func(engine string) error {
 		wsCfg := filepath.Join(env.Root, workspace.DHIDir, "config.toml")
 		c, err := settings.Load(userCfg, wsCfg)

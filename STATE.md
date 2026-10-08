@@ -79,6 +79,14 @@ real delve v1.27.2 — see F-039; `dlv` provisioning still open.)
   servers were not started. Teams needs an OAuth client (not built).
 - Gotcha: to add a catalog entry, read the vendor docs, pin the version from the
   registry, and the catalog tests enforce pinning/validity.
+- **P7 shipped (F-048):** `toolchain.Delve()`/`SourceBuilt()`, boot offers + bootgate
+  build queue (failures now SHOWN — they used to vanish), real delve built + live
+  smoke passed. `internal/tutorial` (4 lessons) + `app/coach.go` (4-row strip,
+  `observe` events, `ctrl+]` / `ctrl+\`), palette entries, wizard tour offer
+  (`t`; marker `tour.pending` across a relaunch).
+- **Programme M25 P1–P7 complete.** Not pushed (per instruction). Open: LSPs for
+  other languages need editor support first; releases need a pushed tag to exercise
+  `release.yml`; Teams needs an OAuth client.
 - Decision: missing agent CLIs get a confirm-gated install (P5); needs a
   new ADR superseding 0012.
 - Gotchas: Go `iota` stops when one const gets an explicit expression

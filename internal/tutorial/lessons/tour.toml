@@ -1,0 +1,31 @@
+schema = 1
+name = "Find your way around"
+description = "The map of DHI: views, the command palette and help. About two minutes."
+
+[[step]]
+title = "Switch views"
+body = "DHI is a set of views: Workspace, Editor, Ideator, Reviewer, Settings. Press 2 to open the Editor."
+await = "view:editor"
+
+[[step]]
+title = "Come back"
+body = "Press 1 to return to the Workspace — your inbox, task board, channels and repos."
+await = "view:workspace"
+
+[[step]]
+title = "Search every action"
+body = "Press ctrl+p. The command palette lists everything you can do from here; type to filter, enter to run, esc to close."
+await = "palette"
+
+[[step]]
+title = "Ask for help anywhere"
+body = "Close the palette with esc, then press ? — the keys for exactly where you are."
+await = "help"
+
+[[step]]
+title = "Sections inside a view"
+body = "Close help with ? again. In the Workspace, [ and ] move between INBOX · BOARD · CHANNELS · REPOS. Try them, then continue."
+
+[[step]]
+title = "That's the map"
+body = "You can replay this or start another lesson from the palette any time (ctrl+p → Tutorial)."

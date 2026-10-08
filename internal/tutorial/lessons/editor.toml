@@ -1,0 +1,24 @@
+schema = 1
+name = "Edit with an agent beside you"
+description = "Modal editing, saving, and pairing with an employee."
+
+[[step]]
+title = "Open the Editor"
+body = "Press 2."
+await = "view:editor"
+
+[[step]]
+title = "Open a file"
+body = "Move to a file in the list and press enter. Use / to find a file by name, s to search the whole workspace."
+
+[[step]]
+title = "Insert and save"
+body = "The editor is modal. i starts typing, esc returns to normal mode, :w saves, :q quits the buffer."
+
+[[step]]
+title = "Pair with an employee"
+body = "Type :pair <name> to invite an employee to pair on this file. They propose edits; press ctrl+y to review and accept or reject each one."
+
+[[step]]
+title = "Test and format"
+body = ":test runs the Go tests (failures list jumps to the line). :fmt formats; saving formats automatically unless you :set nofmt."

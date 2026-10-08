@@ -94,6 +94,13 @@ type Env struct {
 	Persist func(root string, s setup.State) error
 	Now     func() time.Time
 
+	// Tour (F-048): the done step offers a 2-minute walkthrough. StartTour
+	// begins it in this process; QueueTour leaves a marker so the next
+	// launch (after a relaunch) begins it. Both nil = no offer.
+	StartTour     func()
+	QueueTour     func() error
+	TourRequested bool
+
 	// Results, filled by steps.
 	Changed bool     // something launch-time services read was modified
 	Applied []string // one human line per applied change, for the summary
@@ -303,9 +310,15 @@ func (m *Model) finish() {
 	m.state.Finished = true
 	m.persist()
 	if m.env.Changed {
+		if m.env.TourRequested && m.env.QueueTour != nil {
+			_ = m.env.QueueTour() // best effort: the tour is a courtesy
+		}
 		m.relaunch = true
 		m.pending = tea.Quit
 		return
+	}
+	if m.env.TourRequested && m.env.StartTour != nil {
+		m.env.StartTour()
 	}
 	m.finished = true
 }

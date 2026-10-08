@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/drjzlyan/dhi/internal/testutil/dapfake"
+	"github.com/drjzlyan/dhi/internal/toolchain"
 )
 
 func newFake(t *testing.T) (*Client, *dapfake.Adapter) {
@@ -201,5 +202,12 @@ func TestRefusedLaunchFailsFastWithTheAdaptersReason(t *testing.T) {
 	}
 	if took := time.Since(start); took > 5*time.Second {
 		t.Fatalf("refusal took %s; it must surface immediately, not after the launch timeout", took)
+	}
+}
+
+// The debugger client and the toolchain must agree on the delve release.
+func TestVerifiedDelveMatchesTheToolchainPin(t *testing.T) {
+	if VerifiedDelve != toolchain.DelveVersion {
+		t.Fatalf("dap.VerifiedDelve = %s, toolchain.DelveVersion = %s", VerifiedDelve, toolchain.DelveVersion)
 	}
 }

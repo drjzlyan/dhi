@@ -144,8 +144,10 @@ func Audit(in Input) Decision {
 			d.Offer = missingTools(mgr)
 			d.OfferBytes, d.OfferTotal = offerSizes(d.Offer)
 			d.OfferRoot = in.ToolRoot
-			if !hasShim(in.ToolRoot, "gopls") {
-				d.Offer = append(d.Offer, "gopls (built from source)")
+			for _, spec := range toolchain.SourceBuilt() {
+				if !hasShim(in.ToolRoot, spec.Name) {
+					d.Offer = append(d.Offer, spec.Name+" (built from source)")
+				}
 			}
 		}
 	}

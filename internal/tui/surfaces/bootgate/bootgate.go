@@ -30,6 +30,7 @@ const (
 	phaseConfirm
 	phaseInstalling
 	phaseBuilding
+	phaseBuildFailed // a source build failed: show why, wait for a key
 	phaseDone
 )
 
@@ -40,10 +41,16 @@ type Model struct {
 	width, height int
 	phase         phase
 
-	inner    *bootstrap.Model // owns the manifest install phase
-	mgr      *toolchain.Manager
-	buildErr string
-	pending  tea.Cmd // command queued by HandleKey (confirm → install)
+	inner   *bootstrap.Model // owns the manifest install phase
+	mgr     *toolchain.Manager
+	pending tea.Cmd // command queued by HandleKey (confirm → install)
+
+	// Source-built tools (gopls, dlv) compile one after another once the
+	// manifest install is done; failures are collected and SHOWN.
+	queue      []toolchain.BuildSpec
+	buildTotal int
+	buildErrs  []string
+	build      func(ctx context.Context, spec toolchain.BuildSpec) error // nil = mgr.BuildInstall
 }
 
 // Compile-time check against the shell's gate contract.
@@ -94,16 +101,18 @@ func (m *Model) Init() tea.Cmd {
 // does — quitting is the only exit.
 func (m *Model) Finished() bool { return m.phase == phaseDone }
 
-type buildDoneMsg struct{ err error }
+type buildDoneMsg struct {
+	name string
+	err  error
+}
 
 func (m *Model) Update(msg tea.Msg) tea.Cmd {
 	switch msg := msg.(type) {
 	case buildDoneMsg:
 		if msg.err != nil {
-			m.buildErr = msg.err.Error()
+			m.buildErrs = append(m.buildErrs, msg.name+": "+msg.err.Error())
 		}
-		m.phase = phaseDone
-		return nil
+		return m.nextBuild()
 	}
 	if m.phase == phaseInstalling && m.inner != nil {
 		cmd := m.inner.Update(msg)
@@ -126,12 +135,10 @@ func (m *Model) HandleKey(key string) bool {
 		case key == "enter" || key == "esc" || key == "q":
 			m.phase = phaseDone // skip: capabilities refuse at use
 		}
-	case phaseBuilding:
-		if m.buildErr != "" {
-			switch key {
-			case "enter", "esc", "q":
-				m.phase = phaseDone // refuse-at-use for LSP
-			}
+	case phaseBuildFailed:
+		switch key {
+		case "enter", "esc", "q":
+			m.phase = phaseDone // those tools refuse at use, by name
 		}
 	}
 	return true
@@ -153,26 +160,59 @@ func (m *Model) startInstall() {
 	m.pending = m.inner.Init() // start install + event pump + tick
 }
 
-// afterInstall builds gopls from source when the manifest install did
-// not provide it and the go shim exists to do the build.
+// afterInstall queues every source-built tool (gopls, dlv) the manifest
+// install did not provide and starts compiling them with the go shim.
 func (m *Model) afterInstall() tea.Cmd {
 	if m.mgr == nil {
 		m.phase = phaseDone
 		return nil
 	}
-	if _, err := os.Stat(filepath.Join(m.mgr.ShimDir(), "gopls")); err == nil {
+	for _, spec := range toolchain.SourceBuilt() {
+		if _, err := os.Stat(filepath.Join(m.mgr.ShimDir(), spec.Name)); err != nil {
+			m.queue = append(m.queue, spec)
+		}
+	}
+	if len(m.queue) == 0 {
 		m.phase = phaseDone
 		return nil
 	}
-	if _, err := os.Stat(filepath.Join(m.mgr.ShimDir(), "go")); err != nil {
-		m.buildErr = "gopls needs the go toolchain (install it via bootstrap)"
-		m.phase = phaseDone
+	if _, err := os.Stat(filepath.Join(m.mgr.ShimDir(), "go")); err != nil && m.build == nil {
+		for _, spec := range m.queue {
+			m.buildErrs = append(m.buildErrs, spec.Name+": needs the go toolchain (install it via bootstrap)")
+		}
+		m.queue = nil
+		m.phase = phaseBuildFailed
 		return nil
 	}
+	m.buildTotal = len(m.queue)
 	m.phase = phaseBuilding
+	return m.buildHead()
+}
+
+// nextBuild pops the finished tool and starts the next, or settles.
+func (m *Model) nextBuild() tea.Cmd {
+	if len(m.queue) > 0 {
+		m.queue = m.queue[1:]
+	}
+	if len(m.queue) > 0 {
+		return m.buildHead()
+	}
+	if len(m.buildErrs) > 0 {
+		m.phase = phaseBuildFailed
+	} else {
+		m.phase = phaseDone
+	}
+	return nil
+}
+
+func (m *Model) buildHead() tea.Cmd {
+	spec := m.queue[0]
+	build := m.build
+	if build == nil {
+		build = m.mgr.BuildInstall
+	}
 	return func() tea.Msg {
-		err := m.mgr.BuildInstall(context.Background(), toolchain.Gopls())
-		return buildDoneMsg{err}
+		return buildDoneMsg{name: spec.Name, err: build(context.Background(), spec)}
 	}
 }
 
@@ -189,11 +229,11 @@ func (m *Model) View() string {
 		if m.inner != nil {
 			base = m.inner.View() + "\n"
 		}
-		if m.buildErr != "" {
-			return base + theme.DangerText().Render("gopls build failed: "+m.buildErr) +
-				"\n" + theme.Hint().Render("LSP will refuse until built — press enter to continue")
-		}
-		return base + theme.Hint().Render("building gopls from source…")
+		done := m.buildTotal - len(m.queue)
+		return base + theme.Hint().Render(fmt.Sprintf("building %s from source (%d/%d)…",
+			m.queue[0].Name, done+1, m.buildTotal))
+	case phaseBuildFailed:
+		return m.buildFailedView()
 	case phaseInstalling:
 		if m.inner != nil {
 			return m.inner.View()
@@ -202,6 +242,25 @@ func (m *Model) View() string {
 	default:
 		return ""
 	}
+}
+
+func (m *Model) buildFailedView() string {
+	w := max(m.width-14, 30)
+	var lines []string
+	push := func(s string) { lines = append(lines, wrapLine(s, w)...) }
+	push(theme.DangerText().Render("some tools could not be built"))
+	lines = append(lines, "")
+	for _, e := range m.buildErrs {
+		push("  · " + e)
+	}
+	lines = append(lines, "")
+	push(theme.TextDim().Render("Language support (gopls) and debugging (dlv) refuse by name until they are built; `dhi doctor` shows which. Re-run the install by deleting the toolchain folder."))
+	lines = append(lines, "", theme.Hint().Render("press enter to continue"))
+	p := kit.NewPanel("dhi "+m.version, false)
+	p.SetContent(lines...)
+	p.Width = max(m.width-6, 40)
+	p.Height = max(m.height-4, 12)
+	return kit.Center(p.View(), p.Width, p.Height)
 }
 
 func (m *Model) blockView() string {

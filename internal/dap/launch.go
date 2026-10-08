@@ -16,7 +16,7 @@ import (
 // VerifiedDelve is the delve release confirmed to build with DHI's pinned
 // Go toolchain (go1.27.0, CGO_ENABLED=0) and to speak the DAP dialect this
 // client expects through initialize → launch → build.
-const VerifiedDelve = "v1.27.2"
+const VerifiedDelve = "v1.27.2" // must equal toolchain.DelveVersion
 
 // listenLine is what `dlv dap` prints once it accepts connections.
 var listenLine = regexp.MustCompile(`DAP server listening at:\s*(\S+)`)

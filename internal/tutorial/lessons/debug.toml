@@ -1,0 +1,24 @@
+schema = 1
+name = "Debug Go with breakpoints"
+description = "Set a breakpoint, run, step and inspect — all inside the editor."
+
+[[step]]
+title = "Open the Editor"
+body = "Press 2 and open a Go file."
+await = "view:editor"
+
+[[step]]
+title = "Set a breakpoint"
+body = "Put the cursor on a line of code and type :break."
+
+[[step]]
+title = "Start debugging"
+body = ":debug builds and runs the program under the debugger. It stops at your breakpoint and shows the frames and local variables."
+
+[[step]]
+title = "Move through the code"
+body = ":next steps over, :step steps in, :out steps out, :cont runs on, :eval <expr> evaluates an expression, :stop ends the session."
+
+[[step]]
+title = "If :debug refuses"
+body = "Debugging needs the delve adapter (dlv). DHI builds it on first run; if you skipped that, run setup again from the palette (ctrl+p → Run setup wizard)."

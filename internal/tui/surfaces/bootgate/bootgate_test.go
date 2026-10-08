@@ -1,6 +1,9 @@
 package bootgate
 
 import (
+	tea "charm.land/bubbletea/v2"
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -72,13 +75,15 @@ func TestConfirmInstallDelegatesToBootstrap(t *testing.T) {
 	if m.phase != phaseInstalling || m.inner == nil {
 		t.Fatalf("install phase not entered: %v", m.phase)
 	}
-	// afterInstall at this point: no gopls, no go shim → finishes with
-	// a named refusal, no build scheduled
+	// afterInstall at this point: no gopls, no go shim → a named refusal
+	// that is SHOWN, and no build scheduled
 	if cmd := m.afterInstall(); cmd != nil {
-		t.Error("missing go shim must not schedule a gopls build")
+		t.Error("missing go shim must not schedule a build")
 	}
-	if m.phase != phaseDone || !strings.Contains(m.buildErr, "go toolchain") {
-		t.Fatalf("phase=%v buildErr=%q", m.phase, m.buildErr)
+	if m.phase != phaseBuildFailed || len(m.buildErrs) != 2 ||
+		!strings.Contains(strings.Join(m.buildErrs, "|"), "gopls: needs the go toolchain") ||
+		!strings.Contains(strings.Join(m.buildErrs, "|"), "dlv: needs the go toolchain") {
+		t.Fatalf("phase=%v errs=%v", m.phase, m.buildErrs)
 	}
 }
 
@@ -236,5 +241,101 @@ func TestFirstRunShowsTheRealInstallRoot(t *testing.T) {
 	}
 	if got := tildePath(filepath.Join(os.Getenv("HOME"), ".local", "share", "dhi")); got != "~/.local/share/dhi" {
 		t.Fatalf("tildePath = %q", got)
+	}
+}
+
+// ---- source-built tools (gopls, dlv) ----
+
+// drive runs the queued build commands to completion like the shell would.
+func drive(t *testing.T, m *Model, cmd tea.Cmd) {
+	t.Helper()
+	for i := 0; cmd != nil; i++ {
+		if i > 10 {
+			t.Fatal("build queue did not settle")
+		}
+		cmd = m.Update(cmd())
+	}
+}
+
+func readyForBuilds(t *testing.T, build func(context.Context, toolchain.BuildSpec) error) *Model {
+	t.Helper()
+	root := t.TempDir()
+	mgr := toolchain.New(root)
+	if err := os.MkdirAll(mgr.ShimDir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(mgr.ShimDir(), "go"), []byte("#!/bin/sh\n"), 0o755)
+	m := New("test", boot.Decision{}, mgr)
+	m.build = build
+	return m
+}
+
+func TestBothSourceBuiltToolsAreBuiltInOrder(t *testing.T) {
+	var built []string
+	m := readyForBuilds(t, func(_ context.Context, s toolchain.BuildSpec) error {
+		built = append(built, s.Name)
+		return nil
+	})
+	cmd := m.afterInstall()
+	if m.phase != phaseBuilding || !strings.Contains(plain(m.View()), "building gopls from source (1/2)") {
+		t.Fatalf("phase=%v view=%q", m.phase, m.View())
+	}
+	drive(t, m, cmd)
+	if strings.Join(built, ",") != "gopls,dlv" || m.phase != phaseDone {
+		t.Fatalf("built=%v phase=%v", built, m.phase)
+	}
+}
+
+func TestAnAlreadyBuiltToolIsNotRebuilt(t *testing.T) {
+	var built []string
+	m := readyForBuilds(t, func(_ context.Context, s toolchain.BuildSpec) error {
+		built = append(built, s.Name)
+		return nil
+	})
+	os.WriteFile(filepath.Join(m.mgr.ShimDir(), "gopls"), []byte("#!/bin/sh\n"), 0o755)
+	drive(t, m, m.afterInstall())
+	if strings.Join(built, ",") != "dlv" {
+		t.Fatalf("built = %v, want only dlv", built)
+	}
+}
+
+// A failed build used to release the shell with the error text thrown away.
+func TestAFailedBuildIsShownAndWaitsForAKey(t *testing.T) {
+	theme.SwapForTest(t, theme.Dark())
+	m := readyForBuilds(t, func(_ context.Context, s toolchain.BuildSpec) error {
+		if s.Name == "gopls" {
+			return errors.New("proxy: 503")
+		}
+		return nil
+	})
+	m.Resize(90, 30)
+	drive(t, m, m.afterInstall())
+	if m.Finished() || m.phase != phaseBuildFailed {
+		t.Fatalf("phase=%v finished=%v; a failure must not silently release the shell", m.phase, m.Finished())
+	}
+	v := ansi.Strip(m.View())
+	if !strings.Contains(v, "gopls: proxy: 503") || strings.Contains(v, "dlv:") {
+		t.Fatalf("failure view:\n%s", v)
+	}
+	m.HandleKey("enter")
+	if !m.Finished() {
+		t.Fatal("enter should continue")
+	}
+}
+
+func TestOfferNamesEverySourceBuiltTool(t *testing.T) {
+	for _, spec := range toolchain.SourceBuilt() {
+		if spec.Name == "" || spec.Version == "" || spec.Module == "" {
+			t.Errorf("incomplete spec %+v", spec)
+		}
+	}
+	if names := func() string {
+		var n []string
+		for _, s := range toolchain.SourceBuilt() {
+			n = append(n, s.Name)
+		}
+		return strings.Join(n, ",")
+	}(); names != "gopls,dlv" {
+		t.Fatalf("source-built = %s", names)
 	}
 }

@@ -35,6 +35,24 @@ func Gopls() BuildSpec {
 	}
 }
 
+// DelveVersion is the delve release verified to build with DHI's pinned Go
+// (CGO off) and to speak the DAP dialect the debugger client expects;
+// internal/dap's VerifiedDelve must equal it (a test enforces that).
+const DelveVersion = "v1.27.2"
+
+// Delve is the debugger adapter `:debug` needs (F-039).
+func Delve() BuildSpec {
+	return BuildSpec{
+		Name:    "dlv",
+		Version: DelveVersion,
+		Module:  "github.com/go-delve/delve/cmd/dlv",
+		Shims:   []string{"dlv"},
+	}
+}
+
+// SourceBuilt lists every tool DHI compiles from source with its own Go.
+func SourceBuilt() []BuildSpec { return []BuildSpec{Gopls(), Delve()} }
+
 // BuildInstall compiles spec with the installed go shim and activates
 // it like any other tool: tools/<name>/<version>/bin/<bin>, shims
 // linked, lockfile updated. Requires the "go" tool to be installed.

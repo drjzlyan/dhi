@@ -954,5 +954,5 @@ Seven phases, one commit each; push deferred to the end.
 - [x] P4 Employees: starter teams (solo/squad/studio) + personas (F-045)
 - [x] P5 Agent CLI onboarding: confirm-gated npm install into a DHI-owned folder, version-drift policy (F-046, ADR-0027)
 - [x] P6 Integrations catalog: Jira+Confluence, GitHub, Linear, Notion, Slack; Teams listed as unavailable (F-047, ADR-0028)
-- [ ] P7 Tools (LSP/dlv/formatters) + interactive tutorials
+- [x] P7 Debugger (`dlv`) provisioned like gopls + interactive tutorials (F-048). Deferred: LSPs for other languages (editor is Go-only), surface-level lesson steps
 - [ ] P7a Finish F-042: copyright header injection on agent file writes; `pr.title`/`pr.body` consumed by `pr_open`

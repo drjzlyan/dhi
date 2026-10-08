@@ -46,6 +46,8 @@ cd your-project && dhi
    command palette (`ctrl+p` → *Run setup wizard*).
 
 `dhi version` prints the build identity; `dhi doctor` diagnoses an install.
+Learn the IDE with the guided lessons: `ctrl+p` → *Tutorial* (a coach strip runs
+under the live UI and advances as you do things).
 
 ## From source
 

@@ -1,0 +1,26 @@
+schema = 1
+name = "Work with your team"
+description = "Hand work to employees: tasks, channels and mentions."
+
+[[step]]
+title = "Open the Workspace"
+body = "Press 1. This is where work and conversations live."
+await = "view:workspace"
+
+[[step]]
+title = "The task board"
+body = "Press ] until you reach BOARD. Tasks move across backlog · active · in-review · done. Press n to create one and assign it to an employee."
+
+[[step]]
+title = "Channels"
+body = "Go to CHANNELS. Each team has a #channel. A plain message there goes to the team lead; start a message with @name to hand work to one employee."
+
+[[step]]
+title = "Review what they did"
+body = "Press 4 for the Reviewer: diffs, threads and the review an employee leaves are all here."
+await = "view:reviewer"
+
+[[step]]
+title = "Settings: your team"
+body = "Press 5. AGENTS lists your employees (n adds one), TEAMS groups them, LIBRARY holds roles, skills and personas."
+await = "view:settings"

@@ -14,6 +14,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/tui/kit"
 	"github.com/drjzlyan/dhi/internal/tui/surfaces"
 	"github.com/drjzlyan/dhi/internal/tui/theme"
+	"github.com/drjzlyan/dhi/internal/tutorial"
 )
 
 // View-transition fade-in (F-012): a surface switch renders the new body
@@ -59,6 +60,10 @@ type App struct {
 	gate      Gate
 	gateRan   bool
 	setupGate func() Gate // palette "Run setup wizard" (F-043)
+
+	coach     *coach // running tutorial lesson (F-048); nil = none
+	tutorials []tutorial.Tutorial
+	tutHooks  TutorialHooks
 
 	transLeft int // fade-in frames remaining for the active surface
 
@@ -336,6 +341,9 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// would be no later message to notice it.
 			return a, a.releaseGate(cmd)
 		}
+		if a.coachActive() && a.coachKey(key) {
+			return a, nil
+		}
 		if a.welcome {
 			switch key {
 			case "ctrl+c", "ctrl+q":
@@ -457,6 +465,9 @@ func (a *App) handleGlobal(key string, capturing bool) (tea.Cmd, bool) {
 	switch key {
 	case "?":
 		a.showHelp = !a.showHelp
+		if a.showHelp {
+			a.observe("help")
+		}
 		return nil, true
 	case "tab":
 		a.selectSurface((a.active + 1) % len(a.surfaces))
@@ -550,17 +561,20 @@ func (a *App) openPalette() {
 	if a.setupGate != nil {
 		add("Setup", "Run setup wizard", "", func() tea.Cmd { return a.StartGate(a.setupGate()) })
 	}
-	add("", "Show keyboard help", "?", func() tea.Cmd { a.showHelp = true; return nil })
+	add("", "Show keyboard help", "?", func() tea.Cmd { a.showHelp = true; a.observe("help"); return nil })
+	a.coachCommands(add)
 	add("Theme", "Dark", "", func() tea.Cmd { theme.Current = theme.Dark(); return nil })
 	add("Theme", "Light", "", func() tea.Cmd { theme.Current = theme.Light(); return nil })
 	add("", "Quit DHI", "ctrl+c", func() tea.Cmd { a.quitting = true; return tea.Quit })
 	a.palette = kit.NewPalette(items)
+	a.observe("palette")
 }
 
 func (a *App) selectSurface(i int) {
 	if a.tabs.SetActive(i) {
 		a.active = i
 		a.startTransition()
+		a.observe("view:" + a.Active().Meta().ID)
 	}
 }
 
@@ -701,6 +715,9 @@ func (a *App) attentionCount() int {
 func (a *App) bodyWidth() int { return a.width }
 func (a *App) bodyHeight() int {
 	h := a.height - theme.Current.HeightTab - theme.Current.HeightState
+	if a.coach != nil {
+		h -= coachHeight // the lesson strip sits under the live UI
+	}
 	if h < 3 {
 		h = 3
 	}
@@ -766,6 +783,9 @@ func (a *App) compose() string {
 		body = theme.Faint(body)
 	}
 	out := bar + "\n" + body + "\n" + statusLine
+	if a.coach != nil {
+		out = bar + "\n" + body + "\n" + a.coachView() + "\n" + statusLine
+	}
 	if a.welcome && !a.gateActive() {
 		out = kit.Overlay(strings.Split(out, "\n"), a.welcomeView(), a.width, a.height)
 	} else if a.palette != nil {
