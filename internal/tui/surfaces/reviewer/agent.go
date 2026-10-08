@@ -107,17 +107,17 @@ func (m *Model) mirrorBus(msg bus.Message) {
 			return
 		}
 	}
-	// Unmatched: a whole-review response becomes its own resolved=false
-	// file-level thread authored by the agent.
-	id, err := st.AddThread(r.ID, review.Thread{
-		File: "(review)", Side: review.SideNew, BusThread: root,
-		Comments: []review.Comment{{Author: msg.Author, Text: msg.Text}},
-	})
-	if err != nil {
-		m.opErr = err.Error()
-		return
+	// Unmatched: a whole-review answer. The employee is asked for
+	// structured findings; each becomes a SUGGESTION anchored to its line
+	// (F-049) — not sent until the human accepts it. An unstructured reply
+	// is kept whole as one review-level suggestion.
+	if strings.HasPrefix(strings.TrimSpace(msg.Text), "retrying (attempt") {
+		return // the runtime's retry notice is status, not a finding
 	}
-	_ = id
+	found, _ := review.ParseFindings(msg.Text)
+	if _, err := st.AddSuggestions(r.ID, msg.Author, found, msg.Text); err != nil {
+		m.opErr = err.Error()
+	}
 }
 
 // requestAgentReview posts the diff to the crew channel and asks the
@@ -150,7 +150,12 @@ func (m *Model) requestAgentReview(agent string, files []string) {
 			scope = strings.Join(files, ", ")
 		}
 		text := fmt.Sprintf("@%s please review these changes (%s → %s, %s).\n"+
-			"Answer with concrete findings per file; say LGTM when clean.\n"+
+			"Reply with ONE fenced json block and nothing else important outside it:\n"+
+			"```json\n{\"summary\": \"one or two sentences\", \"findings\": [\n"+
+			"  {\"file\": \"path exactly as in the diff\", \"line\": 12, \"side\": \"new\", "+
+			"\"severity\": \"nit|warn|issue\", \"comment\": \"specific and actionable\"}\n]}\n```\n"+
+			"line is the line number on that side of the diff (side \"old\" for a removed line). "+
+			"Use an empty findings list when the change is clean.\n"+
 			"```diff\n%s\n```",
 			agent, r.Target.Base, shortSHA(r.Target.Head), scope, patch)
 		posted, perr := m.bus.Post(bus.Message{

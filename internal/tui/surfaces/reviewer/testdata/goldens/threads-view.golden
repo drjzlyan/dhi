@@ -1,6 +1,6 @@
   REVIEWS          1╭─ › diff ─────────────────────────────────────────────────────────────────────╮
-  FILES            2│ threads — main.go     a reply · e edit · x delete · r resolve · esc back     │
-▌ DIFF            11│ 1 pending — submit from REVIEWS with s                                       │
+  FILES            2│ threads — main.go   a reply · y accept · e edit · x drop · r resolve · esc   │
+▌ DIFF            11│ 1 pending draft(s) — send them as one review with S                          │
                     │ ▌ #1 main.go:1n                                                              │
                     │   ● you why here?                                                            │
                     │                                                                              │

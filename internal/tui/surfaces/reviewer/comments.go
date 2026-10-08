@@ -4,6 +4,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/drjzlyan/dhi/internal/ansi"
 	"github.com/drjzlyan/dhi/internal/review"
 	"github.com/drjzlyan/dhi/internal/tui/kit"
 	"github.com/drjzlyan/dhi/internal/tui/theme"
@@ -16,7 +17,8 @@ type composer struct {
 	line    int
 	side    review.Side
 	replyTo int64
-	editIdx int // >=0 edits that pending comment instead of appending
+	editIdx int  // >=0 edits that pending comment instead of appending
+	accept  bool // editIdx names an employee's suggestion: saving ACCEPTS it as the human's (F-049)
 	runes   []rune
 }
 
@@ -105,6 +107,9 @@ func (m *Model) composerKey(key string) bool {
 		var err error
 		var threadID int64
 		switch {
+		case c.editIdx >= 0 && c.accept:
+			err = st.AcceptSuggestion(m.openID, c.replyTo, c.editIdx, busHuman(), txt)
+			threadID = c.replyTo
 		case c.editIdx >= 0:
 			err = st.EditComment(m.openID, c.replyTo, c.editIdx, txt)
 			threadID = c.replyTo
@@ -140,7 +145,7 @@ func (m *Model) composerKey(key string) bool {
 	return false
 }
 
-func busHuman() string { return "you" }
+func busHuman() string { return review.Human }
 
 // ---- thread view ----
 
@@ -160,9 +165,18 @@ func flatThreads(r review.Review, file string) ([]threadRow, map[int64]*review.T
 		if t.File != file {
 			continue
 		}
+		var visible []int
+		for ci, c := range t.Comments {
+			if !c.Dismissed {
+				visible = append(visible, ci)
+			}
+		}
+		if len(visible) == 0 {
+			continue // everything in this thread was dismissed
+		}
 		order[t.ID] = t
 		rows = append(rows, threadRow{thread: t.ID, comment: -1, resolved: t.Resolved})
-		for ci := range t.Comments {
+		for _, ci := range visible {
 			rows = append(rows, threadRow{thread: t.ID, comment: ci, resolved: t.Resolved})
 		}
 	}
@@ -199,9 +213,24 @@ func (m *Model) threadsKey(key string) bool {
 			m.openComposer(tr.thread, 0, 0)
 			return true
 		}
+	case "y":
+		if tr := cur(); tr != nil && tr.comment >= 0 {
+			if t, okT := order[tr.thread]; okT && t.Comments[tr.comment].Suggested {
+				if err := m.svc.Store().AcceptSuggestion(r.ID, tr.thread, tr.comment, busHuman(), ""); err != nil {
+					m.opErr = err.Error()
+				}
+				return true
+			}
+		}
 	case "e":
 		if tr := cur(); tr != nil && tr.comment >= 0 {
-			if t, okT := order[tr.thread]; okT && t.Comments[tr.comment].Pending &&
+			t, okT := order[tr.thread]
+			if okT && t.Comments[tr.comment].Suggested {
+				m.openComposer(0, tr.thread, tr.comment)
+				m.composer.accept = true
+				return true
+			}
+			if okT && t.Comments[tr.comment].Pending &&
 				t.Comments[tr.comment].Author == busHuman() {
 				m.openComposer(0, tr.thread, tr.comment)
 				return true
@@ -209,6 +238,15 @@ func (m *Model) threadsKey(key string) bool {
 		}
 	case "x", "d":
 		if tr := cur(); tr != nil && tr.comment >= 0 {
+			if t, okT := order[tr.thread]; okT && t.Comments[tr.comment].Suggested {
+				if err := m.svc.Store().DismissSuggestion(r.ID, tr.thread, tr.comment); err != nil {
+					m.opErr = err.Error()
+				}
+				fresh, _ := m.openReview()
+				rows2, _ := flatThreads(fresh, m.threadFile)
+				clampCursor(&m.threadCur, len(rows2))
+				return true
+			}
 			if t, okT := order[tr.thread]; okT && t.Comments[tr.comment].Pending &&
 				t.Comments[tr.comment].Author == busHuman() {
 				if err := m.svc.Store().DeleteComment(r.ID, tr.thread, tr.comment); err != nil {
@@ -248,7 +286,7 @@ func (m *Model) renderThreads(w, h int) string {
 		return theme.TextDim().Render("(no review open)")
 	}
 	out := []string{theme.Hint().Render("threads — "+m.threadFile) +
-		theme.TextDim().Render("     a reply · e edit · x delete · r resolve · esc back")}
+		theme.TextDim().Render("   a reply · y accept · e edit · x drop · r resolve · esc")}
 	rows, order := flatThreads(r, m.threadFile)
 	if len(rows) == 0 {
 		out = append(out, theme.TextDim().Render("(none — press c on a diff line to start one)"))
@@ -256,7 +294,11 @@ func (m *Model) renderThreads(w, h int) string {
 	pending := r.PendingCount()
 	if pending > 0 {
 		out = append(out, theme.WarningText().Render(
-			strconv.Itoa(pending)+" pending — submit from REVIEWS with s"))
+			strconv.Itoa(pending)+" pending draft(s) — send them as one review with S"))
+	}
+	if n := r.OpenSuggestions(); n > 0 {
+		out = append(out, theme.AccentText().Render(
+			strconv.Itoa(n)+" suggestion(s) from your team await your decision — they are not sent unless you accept them"))
 	}
 	for i, tr := range rows {
 		t := order[tr.thread]
@@ -279,8 +321,16 @@ func (m *Model) renderThreads(w, h int) string {
 		}
 		c := t.Comments[tr.comment]
 		mark := " "
+		who := c.Author
 		if c.Pending {
 			mark = "●"
+		}
+		if c.Suggested {
+			mark = "◇"
+			who = c.Author + " suggests"
+			if c.Severity != "" {
+				who += " (" + c.Severity + ")"
+			}
 		}
 		style := theme.TextDim
 		if i == m.threadCur {
@@ -289,8 +339,8 @@ func (m *Model) renderThreads(w, h int) string {
 		// Comment text word-wraps into the pane with the author as the
 		// hanging prefix (F-026 P6 — one-line crops hid the content).
 		prefix := cursorGlyph(i == m.threadCur) +
-			theme.TextDim().Render(mark+" "+c.Author+" ")
-		indent := strings.Repeat(" ", 10)
+			theme.TextDim().Render(mark+" "+who+" ")
+		indent := strings.Repeat(" ", len([]rune(ansi.Strip(prefix))))
 		for j, seg := range kit.WrapWords(c.Text, maxInt(w-12, 8)) {
 			if j == 0 {
 				out = append(out, prefix+style().Render(seg))

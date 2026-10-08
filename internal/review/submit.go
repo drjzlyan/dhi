@@ -130,7 +130,7 @@ func (s *Service) PlanReview(ctx context.Context, r Review, verdict Verdict, sum
 		idx = buildAnchors(files)
 	}
 	plan := SubmitPlan{Event: verdict.event(), Suggested: cur.OpenSuggestions()}
-	var spill []string
+	var spill, notes []string
 	for _, t := range cur.Threads {
 		var refs []SentRef
 		var texts []string
@@ -154,6 +154,14 @@ func (s *Service) PlanReview(ctx context.Context, r Review, verdict Verdict, sum
 			continue
 		}
 		body := strings.Join(texts, "\n\n")
+		if t.File == SummaryFile { // a review-level note: part of the summary, not "off-diff"
+			notes = append(notes, body)
+			plan.InBody += len(refs)
+			for _, ref := range refs {
+				plan.Inline = append(plan.Inline, plannedComment{ref: ref})
+			}
+			continue
+		}
 		if !idx.ok(t.File, t.Side, t.Line) {
 			loc := t.File
 			if t.Line > 0 {
@@ -179,6 +187,12 @@ func (s *Service) PlanReview(ctx context.Context, r Review, verdict Verdict, sum
 		}
 	}
 	plan.Body = strings.TrimSpace(summary)
+	for _, n := range notes {
+		if plan.Body != "" {
+			plan.Body += "\n\n"
+		}
+		plan.Body += n
+	}
 	if len(spill) > 0 {
 		if plan.Body != "" {
 			plan.Body += "\n\n"
