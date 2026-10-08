@@ -319,3 +319,29 @@ func TestFormAcceptsSpace(t *testing.T) {
 		t.Fatalf("value = %q", got)
 	}
 }
+
+func TestSecretFieldNeverRendersTheValue(t *testing.T) {
+	f := NewForm("t", NewTextField("email", "me@acme.com"), NewSecretField("token"))
+	f.HandleKey("tab")
+	for _, r := range "sup3r-s3cret" {
+		f.HandleKey(string(r))
+	}
+	if got := f.Values()[1]; got != "sup3r-s3cret" {
+		t.Fatalf("the form must still return the real value, got %q", got)
+	}
+	for _, focus := range []bool{true, false} {
+		if !focus {
+			f.HandleKey("shift+tab") // token no longer active
+		}
+		out := ansi.Strip(strings.Join(f.View(), "\n"))
+		if strings.Contains(out, "sup3r") || strings.Contains(out, "s3cret") {
+			t.Fatalf("secret leaked into the render (focused=%v):\n%s", focus, out)
+		}
+		if !strings.Contains(out, "••••••••••••") {
+			t.Fatalf("no mask of the right length (focused=%v):\n%s", focus, out)
+		}
+		if !strings.Contains(out, "me@acme.com") {
+			t.Fatal("an ordinary field must still show its value")
+		}
+	}
+}

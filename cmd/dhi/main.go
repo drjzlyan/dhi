@@ -21,11 +21,13 @@ import (
 	"charm.land/bubbletea/v2"
 
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
+	"github.com/drjzlyan/dhi/internal/agentkit/catalog"
 	"github.com/drjzlyan/dhi/internal/agentkit/clirun"
 	"github.com/drjzlyan/dhi/internal/agentkit/dhitools"
 	"github.com/drjzlyan/dhi/internal/agentkit/knowledge"
 	"github.com/drjzlyan/dhi/internal/agentkit/library"
 	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
+	"github.com/drjzlyan/dhi/internal/agentkit/mcpbridge"
 	"github.com/drjzlyan/dhi/internal/agentkit/mcpserver"
 	"github.com/drjzlyan/dhi/internal/agentkit/memory"
 	agentkitOrg "github.com/drjzlyan/dhi/internal/agentkit/org"
@@ -37,6 +39,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/autopilot"
 	"github.com/drjzlyan/dhi/internal/boot"
 	"github.com/drjzlyan/dhi/internal/conventions"
+	"github.com/drjzlyan/dhi/internal/credstore"
 	"github.com/drjzlyan/dhi/internal/doctor"
 	"github.com/drjzlyan/dhi/internal/gitcore"
 	"github.com/drjzlyan/dhi/internal/ideation"
@@ -101,6 +104,10 @@ func runTUI() (relaunch bool) {
 	// Coding CLIs resolve from PATH first, then DHI's managed folder
 	// (ADR-0027); every consumer shares the one lookup.
 	cliLook := clirun.ManagedLook(toolRoot, exec.LookPath)
+	var toolBin []string // tool shims for bridged MCP servers (uvx/npx)
+	if toolRoot != "" {
+		toolBin = []string{toolchain.New(toolRoot).ShimDir()}
+	}
 
 	// The boot audit resolves everything up front (F-011 / ADR-0011):
 	// proceed, offer confirmation-gated installs, or block with named
@@ -220,7 +227,7 @@ func runTUI() (relaunch bool) {
 		// under .dhi/agents/. Guards carry the audited OS-sandbox
 		// adapter (nil here is impossible: the audit blocked first).
 		if messageBus != nil {
-			agentRT = newAgentRuntime(ws, messageBus, decision.Sandbox, termEnv, cfg.Engine, gitRunner, identityFn, sessionStore, runRunner, editorBridge, wsScopes, taskStore, reviewSvc, rgSearcher, mcpStore, &cfg.Conventions, cliLook)
+			agentRT = newAgentRuntime(ws, messageBus, decision.Sandbox, termEnv, cfg.Engine, gitRunner, identityFn, sessionStore, runRunner, editorBridge, wsScopes, taskStore, reviewSvc, rgSearcher, mcpStore, &cfg.Conventions, cliLook, toolBin)
 			if agentRT != nil {
 				edOpts = append(edOpts, editor.WithChat(agentRT))
 			}
@@ -573,6 +580,60 @@ func newSetupEnv(cwd string, ws *workspace.Workspace, userCfg, toolRoot string,
 		}
 		return starter.Apply(w, o, library.Open(w), tpl)
 	}
+	// Integrations step: credentials live in the user-level file, the card in
+	// the workspace; both resolve env.Root at call time.
+	env.CredentialsPath, _ = credstore.DefaultPath()
+	env.IntegrationRows = func() []wizard.IntegrationRow {
+		var rows []wizard.IntegrationRow
+		for _, e := range catalog.Entries() {
+			rows = append(rows, wizard.IntegrationRow{
+				Entry: e, State: catalog.Status(env.Root, e, mcpbridge.DefaultLookup)})
+		}
+		return rows
+	}
+	env.SetupIntegration = func(slug string, inputs map[string]string, who string) ([]string, error) {
+		e, ok := catalog.Get(slug)
+		if !ok {
+			return nil, fmt.Errorf("unknown integration %q", slug)
+		}
+		st, err := credstore.Open()
+		if err != nil {
+			return nil, err
+		}
+		if err := catalog.Install(env.Root, st, e, inputs); err != nil {
+			return nil, err
+		}
+		w, err := workspace.Load(env.Root)
+		if err != nil {
+			return nil, err
+		}
+		o, err := agentkitOrg.Load(env.Root)
+		if err != nil {
+			return nil, err
+		}
+		roster, err := agentkitOrg.LoadRoster(w)
+		if err != nil {
+			return nil, err
+		}
+		var ids []string
+		switch who {
+		case "every employee":
+			for _, a := range roster {
+				ids = append(ids, a.ID)
+			}
+		case "the team lead only":
+			for _, t := range o.Teams() { // teams are sorted; the first agent lead wins
+				if t.Lead != "" && t.Lead != agentkitOrg.Human {
+					ids = append(ids, t.Lead)
+					break
+				}
+			}
+		}
+		if len(ids) == 0 {
+			return nil, nil
+		}
+		return catalog.Enable(w, o, e, ids)
+	}
 	env.SetEngine = func(engine string) error {
 		wsCfg := filepath.Join(env.Root, workspace.DHIDir, "config.toml")
 		c, err := settings.Load(userCfg, wsCfg)
@@ -900,7 +961,7 @@ func (r execRunner) Run(ctx context.Context, dir string, argv []string, allowNet
 	return out, err
 }
 
-func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cliEnv []string, defaultEngine string, gitRunner *gitcore.Runner, identityFn gitcore.IdentityFunc, sessionStore *ideation.Store, runRunner dhitools.CommandRunner, editor dhitools.EditorAPI, workspaceScopes scopes.Set, taskStore *tasks.Store, reviewSvc *review.Service, kbSearcher search.Searcher, mcpStore *mcpserver.Store, conv *conventions.Config, cliLook func(string) (string, error)) *agentkitRuntime.Runtime {
+func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cliEnv []string, defaultEngine string, gitRunner *gitcore.Runner, identityFn gitcore.IdentityFunc, sessionStore *ideation.Store, runRunner dhitools.CommandRunner, editor dhitools.EditorAPI, workspaceScopes scopes.Set, taskStore *tasks.Store, reviewSvc *review.Service, kbSearcher search.Searcher, mcpStore *mcpserver.Store, conv *conventions.Config, cliLook func(string) (string, error), toolBin []string) *agentkitRuntime.Runtime {
 	roster, err := manifest.LoadDir(filepath.Join(ws.Root, workspace.DirAgents))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "dhi: agent roster:", err)
@@ -940,6 +1001,7 @@ func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cl
 		Org:           company,
 		Standards:     true,
 		Conventions:   conv,
+		ToolBin:       toolBin,
 		Workflows:     true,
 		Sandbox:       sb,
 		Memory:        memStore,

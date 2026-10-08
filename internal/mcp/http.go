@@ -25,6 +25,33 @@ type HTTP struct {
 	conn    *conn
 }
 
+// BearerClient returns an HTTP client that sends
+// "Authorization: Bearer <token>" on every request (ADR-0028), for hosted
+// servers that accept a personal access token or API key.
+func BearerClient(token string, base *http.Client) *http.Client {
+	if base == nil {
+		base = http.DefaultClient
+	}
+	rt := base.Transport
+	if rt == nil {
+		rt = http.DefaultTransport
+	}
+	c := *base
+	c.Transport = bearerTransport{token: token, next: rt}
+	return &c
+}
+
+type bearerTransport struct {
+	token string
+	next  http.RoundTripper
+}
+
+func (b bearerTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	r2 := r.Clone(r.Context()) // never mutate the caller's request
+	r2.Header.Set("Authorization", "Bearer "+b.token)
+	return b.next.RoundTrip(r2)
+}
+
 // DialHTTP connects to an MCP streamable-HTTP endpoint and handshakes.
 func DialHTTP(ctx context.Context, endpoint string, client *http.Client) (*HTTP, error) {
 	if client == nil {

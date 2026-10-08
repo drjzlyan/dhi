@@ -1,0 +1,34 @@
+
+
+
+
+
+        DHI setup
+        ✓ welcome › ✓ identity › ✓ conventions › ◐ integrations › ○ done
+        
+        Connect the tools your employees work in
+        Optional — you can do this later from the wizard (ctrl+p → Run setup wizard).
+        
+        ▌ Jira + Confluence   not connected · s sets it up
+          GitHub              not connected · s sets it up
+          Linear              not connected · s sets it up
+          Notion              ✓ connected
+          Slack               not connected · s sets it up
+          Microsoft Teams     not available yet
+        
+        Jira + Confluence — Search and update Jira issues, read and write Confluence pages.
+        
+        community project, runs locally with your token
+        mcp-atlassian is a community project (sooperset/mcp-atlassian), not
+        Atlassian's. It runs locally and sees your API token.
+        
+        Before you continue:
+          1. Open the API-token page and create a token (a label like “dhi”).
+          2. Your site is the address you use for Jira, e.g. acme.atlassian.net.
+          3. Atlassian Cloud only here; Server / Data Center use a personal token —
+             edit the card for that.
+        
+        create it here: https://id.atlassian.com/manage-profile/security/api-tokens
+        enter continue · esc back
+        
+        enter continue · esc skip step · ctrl+b back · ctrl+x skip setup

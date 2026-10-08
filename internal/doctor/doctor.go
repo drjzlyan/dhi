@@ -28,6 +28,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/dhitools"
 	"github.com/drjzlyan/dhi/internal/agentkit/library"
 	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
+	"github.com/drjzlyan/dhi/internal/agentkit/mcpbridge"
 	"github.com/drjzlyan/dhi/internal/agentkit/mcpserver"
 	"github.com/drjzlyan/dhi/internal/agentkit/org"
 	"github.com/drjzlyan/dhi/internal/agentkit/pack"
@@ -840,7 +841,7 @@ func MCPServers(wsRoot string) []Check {
 	if len(servers) == 0 {
 		return nil
 	}
-	var parts []string
+	var parts, missing []string
 	for _, s := range servers {
 		posture := string(s.Transport)
 		if len(s.Origins) > 0 {
@@ -849,8 +850,27 @@ func MCPServers(wsRoot string) []Check {
 			posture += " (no network)"
 		}
 		parts = append(parts, s.Slug+" ["+posture+"]")
+		// Names only, never values (ADR-0028): which declared credentials
+		// resolve from the environment, credentials file or keychain.
+		need := append([]string(nil), s.Env...)
+		if s.AuthEnv != "" {
+			need = append(need, s.AuthEnv)
+		}
+		for _, name := range need {
+			if _, ok := mcpbridge.DefaultLookup(name); !ok {
+				missing = append(missing, s.Slug+": "+name)
+			}
+		}
 	}
-	return []Check{{Name: "mcp/servers", Status: OK, Detail: strings.Join(parts, "; ")}}
+	checks := []Check{{Name: "mcp/servers", Status: OK, Detail: strings.Join(parts, "; ")}}
+	if len(missing) > 0 {
+		sort.Strings(missing)
+		checks = append(checks, Check{Name: "mcp/credentials", Status: Warn,
+			Detail: "not set — " + strings.Join(missing, ", ") + " (add them in the setup wizard, or export them)"})
+	} else {
+		checks = append(checks, Check{Name: "mcp/credentials", Status: OK, Detail: "every declared credential resolves"})
+	}
+	return checks
 }
 
 // Autopilots probes .dhi/autopilots/ (F-015): malformed cards FAIL

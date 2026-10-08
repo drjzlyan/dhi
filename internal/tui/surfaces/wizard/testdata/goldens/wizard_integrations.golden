@@ -1,0 +1,29 @@
+
+
+
+
+
+
+
+
+
+
+           DHI setup
+           ✓ welcome › ✓ identity › ✓ conventions › ◐ integrations › ○ done
+           
+           Connect the tools your employees work in
+           Optional — you can do this later from the wizard (ctrl+p → Run setup wizard).
+           
+           ▌ Jira + Confluence   not connected · s sets it up
+             GitHub              not connected · s sets it up
+             Linear              not connected · s sets it up
+             Notion              ✓ connected
+             Slack               not connected · s sets it up
+             Microsoft Teams     not available yet
+           
+           Search and update Jira issues, read and write Confluence pages.
+           community project, runs locally with your token
+           
+           ↑/↓ select · s set up · enter continue
+           
+           enter continue · esc skip step · ctrl+b back · ctrl+x skip setup

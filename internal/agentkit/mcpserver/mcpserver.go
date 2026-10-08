@@ -22,8 +22,9 @@ import (
 	"github.com/drjzlyan/dhi/internal/workspace"
 )
 
-// SchemaVersion is the server-card schema this build understands.
-const SchemaVersion = 1
+// SchemaVersion is the server-card schema this build writes (2: + auth_env,
+// ADR-0028). Schema 1 cards still load.
+const SchemaVersion = 2
 
 // Dir is the reserved tree holding server cards.
 const Dir = workspace.DirMCP
@@ -54,6 +55,9 @@ type Server struct {
 	URL         string   // http: endpoint
 	Env         []string // declared env var NAMES (values resolved at spawn)
 	Origins     []string // declared network origins (host[:port])
+	// AuthEnv (http only) names the credential sent as a Bearer token;
+	// the value is resolved at dial time, never stored in the card.
+	AuthEnv string
 }
 
 type file struct {
@@ -66,6 +70,7 @@ type file struct {
 	URL         string   `toml:"url"`
 	Env         []string `toml:"env"`
 	Origins     []string `toml:"origins"`
+	AuthEnv     string   `toml:"auth_env"`
 }
 
 // Parse decodes and validates one server card strictly.
@@ -86,8 +91,8 @@ func Parse(slug string, data []byte) (*Server, error) {
 		sort.Strings(keys)
 		return nil, fmt.Errorf("mcp: %s: unknown key(s): %s (bump schema?)", slug, strings.Join(keys, ", "))
 	}
-	if f.Schema != SchemaVersion {
-		return nil, fmt.Errorf("mcp: %s: schema %d, want %d", slug, f.Schema, SchemaVersion)
+	if f.Schema < 1 || f.Schema > SchemaVersion {
+		return nil, fmt.Errorf("mcp: %s: schema %d, want 1..%d", slug, f.Schema, SchemaVersion)
 	}
 	s := &Server{
 		Slug:        slug,
@@ -99,6 +104,15 @@ func Parse(slug string, data []byte) (*Server, error) {
 		URL:         strings.TrimSpace(f.URL),
 		Env:         cleanStrings(f.Env),
 		Origins:     cleanStrings(f.Origins),
+		AuthEnv:     strings.TrimSpace(f.AuthEnv),
+	}
+	if s.AuthEnv != "" {
+		if f.Schema < 2 {
+			return nil, fmt.Errorf("mcp: %s: auth_env requires schema = 2", slug)
+		}
+		if !envNameRe.MatchString(s.AuthEnv) {
+			return nil, fmt.Errorf("mcp: %s: auth_env %q is not a variable name (declare the name, never the value)", slug, s.AuthEnv)
+		}
 	}
 	if s.Name == "" {
 		return nil, fmt.Errorf("mcp: %s: name is required", slug)
@@ -111,6 +125,9 @@ func Parse(slug string, data []byte) (*Server, error) {
 		if s.URL != "" {
 			return nil, fmt.Errorf("mcp: %s: stdio server must not set url", slug)
 		}
+		if s.AuthEnv != "" {
+			return nil, fmt.Errorf("mcp: %s: auth_env is for http servers (a stdio server takes its credentials through env)", slug)
+		}
 	case HTTP:
 		if s.URL == "" {
 			return nil, fmt.Errorf("mcp: %s: http server needs a url", slug)
@@ -120,6 +137,9 @@ func Parse(slug string, data []byte) (*Server, error) {
 		}
 		if !strings.HasPrefix(s.URL, "https://") && !isLoopbackHTTP(s.URL) {
 			return nil, fmt.Errorf("mcp: %s: url must be https (http only for loopback tests)", slug)
+		}
+		if s.AuthEnv != "" && !strings.HasPrefix(s.URL, "https://") {
+			return nil, fmt.Errorf("mcp: %s: a bearer token is only sent over https", slug)
 		}
 	default:
 		return nil, fmt.Errorf("mcp: %s: bad transport %q (want stdio or http)", slug, f.Transport)
@@ -149,6 +169,7 @@ func Write(root string, s *Server) error {
 	f.URL = s.URL
 	f.Env = cleanStrings(s.Env)
 	f.Origins = cleanStrings(s.Origins)
+	f.AuthEnv = s.AuthEnv
 	var buf strings.Builder
 	if err := toml.NewEncoder(&buf).Encode(f); err != nil {
 		return fmt.Errorf("mcp: encode: %w", err)

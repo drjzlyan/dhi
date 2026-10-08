@@ -73,13 +73,21 @@ type Env struct {
 	// CLI step (F-046). CLIStatus lists the registered coding CLIs with
 	// their detected state; InstallCLI installs one through the toolchain
 	// seam after the user confirmed the exact command (nil = guided only).
-	CLIStatus   func() []CLIRow
-	InstallCLI  func(ctx context.Context, name string) error
-	CLIPrefix   func(name string) string // where a managed install lands
-	RosterCount func() int
-	DetectCLIs  func() map[string]string
-	ApplyTeam   func(templateSlug string) (starter.Result, error)
-	SetEngine   func(engine string) error
+	CLIStatus  func() []CLIRow
+	InstallCLI func(ctx context.Context, name string) error
+	CLIPrefix  func(name string) string // where a managed install lands
+
+	// Integrations step (F-047). SetupIntegration installs the card and
+	// credentials for slug from the user's inputs and enables it for the
+	// chosen employees ("every employee" / "the team lead only" / "nobody
+	// yet"), returning the ids it was enabled for.
+	IntegrationRows  func() []IntegrationRow
+	SetupIntegration func(slug string, inputs map[string]string, who string) ([]string, error)
+	CredentialsPath  string // shown before anything is stored
+	RosterCount      func() int
+	DetectCLIs       func() map[string]string
+	ApplyTeam        func(templateSlug string) (starter.Result, error)
+	SetEngine        func(engine string) error
 
 	// Persist stores progress (user scope always, workspace scope when
 	// root != ""). nil = progress is not remembered.
@@ -141,6 +149,7 @@ func DefaultSteps(env *Env, version string) []Step {
 		&conventionsStep{env: env},
 		&cliStep{env: env},
 		&teamStep{env: env},
+		&integrationsStep{env: env},
 		&doneStep{env: env},
 	}
 }

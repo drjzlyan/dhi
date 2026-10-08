@@ -319,11 +319,12 @@ func (r *Runtime) serveTools(e *entry, trigger bus.Message) *serveSession {
 	if wantBridge && r.cfg.MCPServers != nil {
 		dialCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		bridge = mcpbridge.New(dialCtx, mcpbridge.Deps{
-			Servers:   r.cfg.MCPServers,
-			Agent:     e.m,
-			Sandbox:   r.cfg.Sandbox,
-			Approvals: r.cfg.Approvals,
-			Scopes:    r.agentScopes(e.m),
+			Servers:    r.cfg.MCPServers,
+			Agent:      e.m,
+			Sandbox:    r.cfg.Sandbox,
+			Approvals:  r.cfg.Approvals,
+			Scopes:     r.agentScopes(e.m),
+			PathPrefix: r.cfg.ToolBin,
 		})
 		cancel()
 		if len(bridge.Tools()) > 0 {

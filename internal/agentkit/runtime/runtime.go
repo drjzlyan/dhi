@@ -73,6 +73,9 @@ type Config struct {
 	// Conventions are the team style rules (F-042): injected into the
 	// system prompt and enforced at git_commit. nil = none.
 	Conventions *conventions.Config
+	// ToolBin are DHI's tool-shim directories, put first on a bridged
+	// stdio MCP server's PATH so `uvx`/`npx` are the hermetic ones.
+	ToolBin []string
 	// Workflows resolves and injects the agent's active feature workflow
 	// (F-031) and enforces its gates at DHI's seams. A malformed
 	// workflow definition refuses the turn by name (ADR-0011).

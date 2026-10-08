@@ -223,3 +223,29 @@ func TestLibraryCheckNamesDanglingReferences(t *testing.T) {
 		t.Errorf("resolving agent flagged: %s", c.Detail)
 	}
 }
+
+func TestMCPCredentialsAreReportedByNameNeverValue(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("DHI_DOC_TOKEN", "")
+	root := wsFixture(t)
+	dir := filepath.Join(root, workspace.DHIDir, "mcp")
+	os.MkdirAll(dir, 0o755)
+	card := "schema = 2\nname = \"L\"\ntransport = \"http\"\nurl = \"https://mcp.example.com/mcp\"\norigins = [\"mcp.example.com\"]\nauth_env = \"DHI_DOC_TOKEN\"\n"
+	os.WriteFile(filepath.Join(dir, "linear.toml"), []byte(card), 0o644)
+
+	c, ok := statusOf(MCPServers(root), "mcp/credentials")
+	if !ok || c.Status != Warn || !strings.Contains(c.Detail, "linear: DHI_DOC_TOKEN") {
+		t.Fatalf("missing credential = %+v ok=%v", c, ok)
+	}
+
+	t.Setenv("DHI_DOC_TOKEN", "super-secret-value")
+	c, _ = statusOf(MCPServers(root), "mcp/credentials")
+	if c.Status != OK {
+		t.Fatalf("resolving credential = %+v", c)
+	}
+	for _, ch := range MCPServers(root) {
+		if strings.Contains(ch.Detail, "super-secret-value") {
+			t.Fatalf("doctor printed a credential value: %+v", ch)
+		}
+	}
+}

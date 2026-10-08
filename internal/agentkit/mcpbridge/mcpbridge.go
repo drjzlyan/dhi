@@ -17,6 +17,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
@@ -28,6 +29,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/mcpserver"
 	"github.com/drjzlyan/dhi/internal/agentkit/scopes"
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
+	"github.com/drjzlyan/dhi/internal/credstore"
 	"github.com/drjzlyan/dhi/internal/mcp"
 	"github.com/drjzlyan/dhi/internal/sandbox"
 )
@@ -65,6 +67,9 @@ type Deps struct {
 	Scopes    scopes.Set
 	Dial      Dialer // nil = DialDefault
 	Lookup    Lookup // nil = DefaultLookup
+	// PathPrefix directories go first on a stdio server's PATH — DHI's
+	// tool shims, so `uvx`/`npx` are the pinned hermetic ones (ADR-0028).
+	PathPrefix []string
 }
 
 // Bridge is the dialed set of servers whose tools the agent allowlists.
@@ -208,7 +213,19 @@ func (b *Bridge) dialDefault(ctx context.Context, srv mcpserver.Server) (mcp.Cal
 		if !originDeclared(srv, u.Host) {
 			return nil, fmt.Errorf("url host %q is not a declared origin", u.Host)
 		}
-		return mcp.DialHTTP(ctx, srv.URL, nil)
+		var client *http.Client
+		if srv.AuthEnv != "" {
+			lookup := b.deps.Lookup
+			if lookup == nil {
+				lookup = DefaultLookup
+			}
+			token, ok := lookup(srv.AuthEnv)
+			if !ok {
+				return nil, fmt.Errorf("credential %s is not set (add it in the setup wizard, or export it)", srv.AuthEnv)
+			}
+			client = mcp.BearerClient(token, nil)
+		}
+		return mcp.DialHTTP(ctx, srv.URL, client)
 	default:
 		return nil, fmt.Errorf("unknown transport %q", srv.Transport)
 	}
@@ -240,8 +257,17 @@ func (b *Bridge) stdioArgv(srv mcpserver.Server) ([]string, error) {
 // credential is a named refusal (never an empty value).
 func (b *Bridge) stdioEnv(srv mcpserver.Server) ([]string, error) {
 	env := []string{}
-	if p := os.Getenv("PATH"); p != "" {
-		env = append(env, "PATH="+p)
+	path := os.Getenv("PATH")
+	if len(b.deps.PathPrefix) > 0 {
+		pre := strings.Join(b.deps.PathPrefix, string(os.PathListSeparator))
+		if path == "" {
+			path = pre
+		} else {
+			path = pre + string(os.PathListSeparator) + path
+		}
+	}
+	if path != "" {
+		env = append(env, "PATH="+path)
 	}
 	lookup := b.deps.Lookup
 	if lookup == nil {
@@ -264,11 +290,17 @@ func DialDefault(ctx context.Context, srv mcpserver.Server, sb sandbox.Sandbox, 
 	return b.dialDefault(ctx, srv)
 }
 
-// DefaultLookup resolves a credential from the environment, then (on
-// macOS) the login keychain. Values never come from .dhi/.
+// DefaultLookup resolves a credential from the environment, then the
+// user-level credentials file, then (on macOS) the login keychain. Values
+// never come from .dhi/ (ADR-0028).
 func DefaultLookup(name string) (string, bool) {
 	if v, ok := os.LookupEnv(name); ok && v != "" {
 		return v, true
+	}
+	if st, err := credstore.Open(); err == nil {
+		if v, ok := st.Lookup(name); ok {
+			return v, true
+		}
 	}
 	if runtime.GOOS == "darwin" {
 		if v, ok := keychainLookup(name); ok {
@@ -310,6 +342,10 @@ func agentAllows(a *manifest.Agent, name string) bool {
 	}
 	for _, t := range a.Tools {
 		if t == name {
+			return true
+		}
+		// mcp__<server>__* allowlists every tool of that server.
+		if strings.HasSuffix(t, "__*") && strings.HasPrefix(name, strings.TrimSuffix(t, "*")) {
 			return true
 		}
 	}

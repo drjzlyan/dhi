@@ -14,8 +14,27 @@ type Field struct {
 	Label  string
 	Value  string   // text fields
 	Toggle []string // non-empty: left/right cycles choices
-	sel    int      // selected toggle index
-	cur    int      // text-field cursor (rune index)
+	// Secret masks the value on screen (credentials): the form still holds
+	// and returns the real text, but nothing readable is ever rendered.
+	Secret bool
+	sel    int // selected toggle index
+	cur    int // text-field cursor (rune index)
+}
+
+// NewSecretField builds an empty masked text field.
+func NewSecretField(label string) Field {
+	f := NewTextField(label, "")
+	f.Secret = true
+	return f
+}
+
+// masked returns fl with its text replaced by bullets when Secret, so every
+// rendering path shows the same length but never the characters.
+func (fl Field) masked() Field {
+	if fl.Secret {
+		fl.Value = strings.Repeat("•", utf8.RuneCountInString(fl.Value))
+	}
+	return fl
 }
 
 // NewTextField builds a free-text field pre-filled with value; the
@@ -277,9 +296,9 @@ func (f *Form) View() []string {
 		if len(fl.Toggle) > 0 {
 			val = mark + "[" + fl.Toggle[fl.sel] + "]"
 		} else if active {
-			val = fl.CursorValue()
+			val = fl.masked().CursorValue()
 		} else {
-			val = " " + fl.Value
+			val = " " + fl.masked().Value
 		}
 		if active {
 			out = append(out, label+theme.TabActive().Render(val))

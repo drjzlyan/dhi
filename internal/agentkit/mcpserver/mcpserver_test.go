@@ -78,3 +78,46 @@ func TestStoreRoundTripAndWarnings(t *testing.T) {
 		t.Fatalf("delete missing: %v", err)
 	}
 }
+
+func TestAuthEnvRulesAndSchemaCompat(t *testing.T) {
+	ok := "schema = 2\nname = \"Linear\"\ntransport = \"http\"\nurl = \"https://mcp.linear.app/mcp\"\norigins = [\"mcp.linear.app\"]\nauth_env = \"LINEAR_API_KEY\"\n"
+	s, err := Parse("linear", []byte(ok))
+	if err != nil || s.AuthEnv != "LINEAR_API_KEY" {
+		t.Fatalf("auth_env card = %+v err=%v", s, err)
+	}
+	bad := map[string]string{
+		"schema 1 + auth_env": strings.Replace(ok, "schema = 2", "schema = 1", 1),
+		"stdio + auth_env":    "schema = 2\nname = \"x\"\ntransport = \"stdio\"\ncommand = \"c\"\nauth_env = \"TOK\"\n",
+		"bad name":            strings.Replace(ok, "LINEAR_API_KEY", "not a name", 1),
+		"a value, not a name": strings.Replace(ok, "LINEAR_API_KEY", "ghp_abc123=", 1),
+		"loopback http":       "schema = 2\nname = \"x\"\ntransport = \"http\"\nurl = \"http://127.0.0.1:9\"\nauth_env = \"TOK\"\n",
+		"schema 3":            strings.Replace(ok, "schema = 2", "schema = 3", 1),
+	}
+	for name, doc := range bad {
+		if _, err := Parse("x", []byte(doc)); err == nil {
+			t.Errorf("%s accepted", name)
+		}
+	}
+	// Existing schema-1 cards keep loading.
+	old := "schema = 1\nname = \"Files\"\ntransport = \"stdio\"\ncommand = \"fs-server\"\n"
+	if _, err := Parse("files", []byte(old)); err != nil {
+		t.Fatalf("schema 1 card no longer loads: %v", err)
+	}
+}
+
+func TestAuthEnvRoundTripsThroughWrite(t *testing.T) {
+	root := t.TempDir()
+	in := &Server{Slug: "linear", Name: "Linear", Transport: HTTP, URL: "https://mcp.linear.app/mcp",
+		Origins: []string{"mcp.linear.app"}, AuthEnv: "LINEAR_API_KEY"}
+	if err := Write(root, in); err != nil {
+		t.Fatal(err)
+	}
+	got, ok := Open(root).Get("linear")
+	if !ok || got.AuthEnv != "LINEAR_API_KEY" {
+		t.Fatalf("round trip = %+v ok=%v", got, ok)
+	}
+	data, _ := os.ReadFile(Path(root, "linear"))
+	if !strings.Contains(string(data), "schema = 2") || strings.Contains(string(data), "Bearer") {
+		t.Fatalf("card:\n%s", data)
+	}
+}

@@ -200,3 +200,52 @@ func mustJSON(t *testing.T, v any) json.RawMessage {
 	}
 	return b
 }
+
+// BearerClient must put the token on every request without touching the
+// caller's own request, and a server that demands it must be reachable.
+func TestBearerClientSendsTheTokenOnEveryRequest(t *testing.T) {
+	var seen []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = append(seen, r.Header.Get("Authorization"))
+		if r.Header.Get("Authorization") != "Bearer tok-123" {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		body, _ := io.ReadAll(r.Body)
+		var in rpcRequest
+		json.Unmarshal(body, &in)
+		w.Header().Set("content-type", "application/json")
+		var result any = map[string]any{}
+		if in.Method == "tools/list" {
+			result = map[string]any{"tools": []map[string]any{{"name": "t"}}}
+		}
+		out, _ := json.Marshal(rpcResponse{JSONRPC: "2.0", ID: in.ID, Result: mustJSON(t, result)})
+		w.Write(out)
+	}))
+	defer srv.Close()
+
+	// Without the token the handshake is refused.
+	if _, err := DialHTTP(context.Background(), srv.URL, srv.Client()); err == nil {
+		t.Fatal("a server demanding a token accepted an anonymous client")
+	}
+
+	h, err := DialHTTP(context.Background(), srv.URL, BearerClient("tok-123", srv.Client()))
+	if err != nil {
+		t.Fatalf("DialHTTP with token: %v", err)
+	}
+	defer h.Close()
+	if tools, err := h.Tools(context.Background()); err != nil || len(tools) != 1 {
+		t.Fatalf("tools = %+v err = %v", tools, err)
+	}
+	for i, a := range seen[1:] { // skip the anonymous attempt
+		if a != "Bearer tok-123" {
+			t.Errorf("request %d carried %q", i, a)
+		}
+	}
+
+	req, _ := http.NewRequest(http.MethodGet, srv.URL, nil)
+	BearerClient("x", srv.Client()).Do(req)
+	if req.Header.Get("Authorization") != "" {
+		t.Fatal("BearerClient mutated the caller's request")
+	}
+}

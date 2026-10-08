@@ -69,6 +69,16 @@ real delve v1.27.2 — see F-039; `dlv` provisioning still open.)
   no verified command.
 - Gotcha: `dhi doctor` resolves the workspace from the CWD, so run it from the
   project you mean (the tmux shell resets cwd to the repo).
+- **P6 shipped (F-047, ADR-0028):** `internal/credstore` (plain-text 0600 file,
+  lookup env → file → keychain); MCP card schema 2 `auth_env` (Bearer) +
+  `mcp.BearerClient`; bridge: shim dirs first on stdio PATH (`Config.ToolBin`),
+  `mcp__<server>__*`; `agentkit/catalog` (atlassian, github, linear, notion,
+  slack, teams=unavailable; pinned, with trust labels); wizard `integrations`
+  step; `kit.NewSecretField`; doctor `mcp/credentials` (names only).
+- **NOT verified:** any call to a vendor service with a real credential; Slack/Notion
+  servers were not started. Teams needs an OAuth client (not built).
+- Gotcha: to add a catalog entry, read the vendor docs, pin the version from the
+  registry, and the catalog tests enforce pinning/validity.
 - Decision: missing agent CLIs get a confirm-gated install (P5); needs a
   new ADR superseding 0012.
 - Gotchas: Go `iota` stops when one const gets an explicit expression

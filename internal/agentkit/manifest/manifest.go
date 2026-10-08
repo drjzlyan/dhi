@@ -64,8 +64,10 @@ func ParseEngine(engine string) (string, error) {
 }
 
 var (
-	idRe      = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]*$`)
-	mcpToolRe = regexp.MustCompile(`^mcp__[a-z0-9_]+__[a-z0-9_]+$`)
+	idRe = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]*$`)
+	// mcp__<server>__<tool>, or mcp__<server>__* for every tool of a server
+	// (ADR-0028; each call still needs approval).
+	mcpToolRe = regexp.MustCompile(`^mcp__[a-z0-9_]+__([a-z0-9_]+|\*)$`)
 )
 
 // BuiltinTools are the native tool names a manifest may allowlist.

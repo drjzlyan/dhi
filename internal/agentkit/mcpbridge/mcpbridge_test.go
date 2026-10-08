@@ -3,6 +3,10 @@ package mcpbridge
 import (
 	"context"
 	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -12,6 +16,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/mcpserver"
 	"github.com/drjzlyan/dhi/internal/agentkit/scopes"
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
+	"github.com/drjzlyan/dhi/internal/credstore"
 	"github.com/drjzlyan/dhi/internal/mcp"
 )
 
@@ -230,4 +235,94 @@ func contains(list []string, v string) bool {
 		}
 	}
 	return false
+}
+
+// ---- ADR-0028: bearer auth, shim PATH, wildcard, credential file ----
+
+func TestHTTPServerGetsItsBearerCredential(t *testing.T) {
+	var got string
+	hs := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.Header.Get("Authorization")
+		body, _ := io.ReadAll(r.Body)
+		var in struct {
+			ID     json.RawMessage `json:"id"`
+			Method string          `json:"method"`
+		}
+		json.Unmarshal(body, &in)
+		w.Header().Set("content-type", "application/json")
+		w.Write([]byte(`{"jsonrpc":"2.0","id":` + string(in.ID) + `,"result":{}}`))
+	}))
+	defer hs.Close()
+	u, _ := url.Parse(hs.URL)
+	srv := mcpserver.Server{Slug: "linear", Name: "L", Transport: mcpserver.HTTP, URL: hs.URL,
+		Origins: []string{u.Host}, AuthEnv: "LINEAR_API_KEY"}
+
+	b := &Bridge{deps: Deps{Lookup: func(n string) (string, bool) {
+		return "key-xyz", n == "LINEAR_API_KEY"
+	}}}
+	c, err := b.dialDefault(context.Background(), srv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.Close()
+	if got != "Bearer key-xyz" {
+		t.Fatalf("Authorization = %q", got)
+	}
+
+	missing := &Bridge{deps: Deps{Lookup: func(string) (string, bool) { return "", false }}}
+	if _, err := missing.dialDefault(context.Background(), srv); err == nil ||
+		!strings.Contains(err.Error(), "credential LINEAR_API_KEY is not set") {
+		t.Fatalf("missing credential = %v; it must refuse by name", err)
+	}
+}
+
+func TestStdioPathStartsWithTheToolShims(t *testing.T) {
+	t.Setenv("PATH", "/usr/bin:/bin")
+	b := &Bridge{deps: Deps{PathPrefix: []string{"/dhi/bin", "/dhi/other"}}}
+	env, err := b.stdioEnv(mcpserver.Server{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(env) != 1 || env[0] != "PATH=/dhi/bin:/dhi/other:/usr/bin:/bin" {
+		t.Fatalf("env = %v", env)
+	}
+	plain := &Bridge{}
+	env, _ = plain.stdioEnv(mcpserver.Server{})
+	if len(env) != 1 || env[0] != "PATH=/usr/bin:/bin" {
+		t.Fatalf("no prefix must leave PATH alone: %v", env)
+	}
+}
+
+func TestWildcardToolRefAllowsOnlyThatServer(t *testing.T) {
+	a := &manifest.Agent{ID: "a", Tools: []string{"mcp__jira__*", "mcp__slack__post"}}
+	for name, want := range map[string]bool{
+		"mcp__jira__search": true, "mcp__jira__create_issue": true,
+		"mcp__slack__post": true, "mcp__slack__delete": false,
+		"mcp__jiraextra__x": false, "mcp__other__x": false,
+	} {
+		if got := agentAllows(a, name); got != want {
+			t.Errorf("agentAllows(%s) = %v, want %v", name, got, want)
+		}
+	}
+	if !manifest.ValidToolRef("mcp__jira__*") || manifest.ValidToolRef("mcp__jira__") || manifest.ValidToolRef("mcp__*") {
+		t.Fatal("wildcard grammar wrong")
+	}
+}
+
+func TestDefaultLookupReadsTheCredentialFileAfterTheEnvironment(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	st, err := credstore.Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Set(map[string]string{"DHI_TEST_CRED": "from-file"}); err != nil {
+		t.Fatal(err)
+	}
+	if v, ok := DefaultLookup("DHI_TEST_CRED"); !ok || v != "from-file" {
+		t.Fatalf("file lookup = %q %v", v, ok)
+	}
+	t.Setenv("DHI_TEST_CRED", "from-env")
+	if v, _ := DefaultLookup("DHI_TEST_CRED"); v != "from-env" {
+		t.Fatalf("the environment must win, got %q", v)
+	}
 }
