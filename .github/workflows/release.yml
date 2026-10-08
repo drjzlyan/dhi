@@ -1,0 +1,94 @@
+name: release
+
+# Publishes the `dhi` binary. Push a tag `vX.Y.Z` (or `vX.Y.Z-rc1` for a
+# pre-release); this job tests, builds every platform in
+# scripts/release-platforms.txt, signs checksums.txt with cosign keyless
+# (GitHub OIDC — no signing key to manage), and attaches:
+#   dhi_<os>_<arch>.tar.gz · checksums.txt · checksums.txt.sigstore.json
+#   install.sh (the curl|sh installer) · dhi.rb (Homebrew formula)
+#
+# Optional Homebrew tap: set the repository variable HOMEBREW_TAP_REPO
+# (e.g. "drjzlyan/homebrew-tap") and the secret HOMEBREW_TAP_TOKEN (a token
+# that can push to it). Unset, the formula is still attached to the release.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    strategy:
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go vet ./...
+      - run: go test -race ./...
+
+  release:
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the release
+      id-token: write # cosign keyless signing
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build every platform
+        run: scripts/build-release.sh "$GITHUB_REF_NAME" dist
+
+      - name: Smoke-test the linux artifact
+        run: |
+          tar -xzf dist/dhi_linux_amd64.tar.gz -C "$RUNNER_TEMP" dhi
+          out="$("$RUNNER_TEMP/dhi" version)"
+          echo "$out"
+          case "$out" in
+            "dhi ${GITHUB_REF_NAME#v} "*) ;;
+            *) echo "version stamp missing from the artifact" >&2; exit 1 ;;
+          esac
+
+      - uses: sigstore/cosign-installer@v3
+      - name: Sign checksums (keyless)
+        run: cosign sign-blob --yes --bundle dist/checksums.txt.sigstore.json dist/checksums.txt
+
+      - name: Homebrew formula + installer
+        run: |
+          scripts/gen-formula.sh "$GITHUB_REF_NAME" dist/checksums.txt > dist/dhi.rb
+          cp scripts/install.sh dist/install.sh
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          flags=""
+          case "$GITHUB_REF_NAME" in *-*) flags="--prerelease" ;; esac
+          gh release create "$GITHUB_REF_NAME" dist/* --title "$GITHUB_REF_NAME" --generate-notes $flags
+
+      - name: Publish to the Homebrew tap
+        if: ${{ vars.HOMEBREW_TAP_REPO != '' }}
+        env:
+          TAP_REPO: ${{ vars.HOMEBREW_TAP_REPO }}
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          [ -n "$TAP_TOKEN" ] || { echo "HOMEBREW_TAP_REPO is set but HOMEBREW_TAP_TOKEN is not" >&2; exit 1; }
+          git clone "https://x-access-token:${TAP_TOKEN}@github.com/${TAP_REPO}.git" tap
+          mkdir -p tap/Formula
+          cp dist/dhi.rb tap/Formula/dhi.rb
+          cd tap
+          git config user.name "dhi-release"
+          git config user.email "dhi-release@users.noreply.github.com"
+          git add Formula/dhi.rb
+          git commit -m "dhi ${GITHUB_REF_NAME}"
+          git push

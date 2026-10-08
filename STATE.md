@@ -36,6 +36,17 @@ real delve v1.27.2 — see F-039; `dlv` provisioning still open.)
   at f=0 under reduced motion; verify E2E with tmux + fresh `HOME` /
   `XDG_CONFIG_HOME` and the real `XDG_DATA_HOME` (toolchain) so the real git
   config is never touched.
+- **P3 shipped (F-044):** `internal/version` vars + `dhi version`;
+  `scripts/{release-platforms.txt,build-release.sh,install.sh,gen-formula.sh,pin-sizes.py}`;
+  `.github/workflows/release.yml` (cosign keyless; optional tap via
+  `HOMEBREW_TAP_REPO` var + `HOMEBREW_TAP_TOKEN` secret). Manifest pins carry
+  `size`; first run now ASKS (bootgate FirstRun, sizes/total/root) and the
+  bootstrap view has an overall progress bar. Release platforms are guarded
+  against the manifest by a test.
+- **NOT verified:** release.yml has never run (needs a tag); cosign verify path
+  in install.sh untested. Run a `v0.1.1-rc1` tag to exercise both.
+- Gotcha: after changing any pin run `scripts/pin-sizes.py` (the test fails
+  without sizes).
 - Decision: missing agent CLIs get a confirm-gated install (P5); needs a
   new ADR superseding 0012.
 - Gotchas: Go `iota` stops when one const gets an explicit expression

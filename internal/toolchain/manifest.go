@@ -64,6 +64,9 @@ type PlatformSpec struct {
 	// BinDir is the directory relative to the extraction root that holds
 	// executables; empty means the root itself.
 	BinDir string `json:"bin_dir,omitempty"`
+	// Size is the download size in bytes (scripts/pin-sizes.py), shown on
+	// the first-run screen before anything is fetched. 0 = unknown.
+	Size int64 `json:"size,omitempty"`
 }
 
 // PlatformKey is the manifest key for the running platform ("os/arch").
@@ -173,4 +176,25 @@ func isLoopback(u *url.URL) bool {
 		return true
 	}
 	return false
+}
+
+// DownloadSize reports the per-tool and total download bytes for names on
+// this platform (all tools when names is empty). Tools without a pin for
+// this platform or without a recorded size contribute 0.
+func (mf *Manifest) DownloadSize(names []string) (per map[string]int64, total int64) {
+	if len(names) == 0 {
+		for n := range mf.Tools {
+			names = append(names, n)
+		}
+	}
+	per = map[string]int64{}
+	for _, n := range names {
+		spec, ok := mf.Tools[n].Platforms[PlatformKey()]
+		if !ok {
+			continue
+		}
+		per[n] = spec.Size
+		total += spec.Size
+	}
+	return per, total
 }

@@ -9,6 +9,7 @@ package boot
 import (
 	"os"
 	"path/filepath"
+	"sort"
 
 	"github.com/drjzlyan/dhi/internal/sandbox"
 	"github.com/drjzlyan/dhi/internal/settings"
@@ -36,6 +37,15 @@ type Decision struct {
 	// Offer lists missing hermetic pieces for the confirmation-gated
 	// install (empty when nothing is missing or boot is blocked).
 	Offer []string
+	// OfferBytes are the per-tool download sizes behind Offer (this
+	// platform), OfferTotal their sum; 0 = unknown. FirstRun marks the
+	// one-time install of the whole toolchain (no lockfile yet).
+	OfferBytes map[string]int64
+	OfferTotal int64
+	FirstRun   bool
+	// OfferRoot is where the install lands (the hermetic prefix), shown
+	// to the user before they agree.
+	OfferRoot string
 
 	// Sandbox is the adapter for runtime.Config (nil when no workspace
 	// is loaded — the runtime is never built then — or boot blocked).
@@ -132,6 +142,8 @@ func Audit(in Input) Decision {
 		}
 		if lf != nil && len(lf.Tools) > 0 {
 			d.Offer = missingTools(mgr)
+			d.OfferBytes, d.OfferTotal = offerSizes(d.Offer)
+			d.OfferRoot = in.ToolRoot
 			if !hasShim(in.ToolRoot, "gopls") {
 				d.Offer = append(d.Offer, "gopls (built from source)")
 			}
@@ -177,4 +189,31 @@ func SandboxMode(userCfg, wsCfg string) string {
 		return settings.SandboxAuto
 	}
 	return cfg.Security.Sandbox
+}
+
+// offerSizes looks up the pinned download size of each offered tool.
+func offerSizes(names []string) (map[string]int64, int64) {
+	mf, err := toolchain.Embedded()
+	if err != nil || len(names) == 0 {
+		return nil, 0
+	}
+	return mf.DownloadSize(names)
+}
+
+// FirstRunOffer describes the one-time install of the whole embedded
+// toolchain (everything the manifest pins for this platform), sorted by
+// name, so the first launch can ask before downloading anything.
+func FirstRunOffer() (names []string, bytes map[string]int64, total int64) {
+	mf, err := toolchain.Embedded()
+	if err != nil {
+		return nil, nil, 0
+	}
+	for n, t := range mf.Tools {
+		if _, ok := t.Platforms[toolchain.PlatformKey()]; ok {
+			names = append(names, n)
+		}
+	}
+	sort.Strings(names)
+	bytes, total = mf.DownloadSize(names)
+	return names, bytes, total
 }

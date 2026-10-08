@@ -1,0 +1,6 @@
+# Platforms DHI ships a binary for: os/arch, one per line.
+# Each MUST be pinned for every tool in the toolchain manifest, or first run
+# refuses to boot (ADR-0011). internal/toolchain tests enforce this; extend the
+# manifest (and the hermetic-git CI matrix) first, then add the platform here.
+darwin/arm64
+linux/amd64

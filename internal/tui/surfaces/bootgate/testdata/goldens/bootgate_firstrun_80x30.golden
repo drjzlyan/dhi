@@ -1,0 +1,26 @@
+╭─ › dhi test ───────────────────────────────────────────────────────────╮
+│ Welcome to DHI — one-time setup                                        │
+│                                                                        │
+│ DHI keeps its own pinned tools, so every project builds the same       │
+│ way. Nothing touches your system and no sudo is used.                  │
+│                                                                        │
+│   git   version control                                     2.0 MB     │
+│   go    Go compiler and tools                              68.3 MB     │
+│   gh    GitHub CLI                                         14.2 MB     │
+│   node  JavaScript runtime                                 52.2 MB     │
+│   rg    fast code search                                    1.8 MB     │
+│   uv    Python package manager                             18.5 MB     │
+│ ────────────────────────────────────────────                           │
+│   total download                                          157.0 MB     │
+│                                                                        │
+│ installs under ~/.local/share/dhi/toolchain ·                          │
+│ remove that folder to uninstall                                        │
+│                                                                        │
+│ enter install · esc skip (capabilities refuse until installed)         │
+│                                                                        │
+│                                                                        │
+│                                                                        │
+│                                                                        │
+│                                                                        │
+│                                                                        │
+╰────────────────────────────────────────────────────────────────────────╯

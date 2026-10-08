@@ -1,17 +1,17 @@
 ╭─ › dhi test ─────────────────────────────────────────────────╮
 │ missing hermetic components:                                 │
 │                                                              │
-│   · rg                                                       │
-│   · uv                                                       │
-│   · node                                                     │
-│   · git                                                      │
-│   · gopls (built from source)                                │
-│                                                              │
+│   rg    fast code search                                     │
+│   uv    Python package manager                               │
+│   node  JavaScript runtime                                   │
+│   git   version control                                      │
+│   gopls (built from source)                                  │
 │                                                              │
 │ os sandbox disabled by config                                │
 │ (explicit opt-out; path-jail + policy still apply)           │
 │                                                              │
-│ i install now · enter skip (capabilities refuse until instal │
+│ i install now · enter skip (capabilities refuse until        │
+│ installed)                                                   │
 │                                                              │
 │                                                              │
 │                                                              │

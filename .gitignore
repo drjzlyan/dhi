@@ -20,3 +20,7 @@ dhi-git-*.sha256
 .dhi/org.toml
 .dhi/config.toml
 .dhi/agents/.archived/
+
+# Python bytecode from scripts/, and per-agent run logs (runtime state).
+__pycache__/
+.dhi/agents/*/runs/

@@ -93,3 +93,15 @@ func TestGoldenProgress(t *testing.T) {
 	}
 	golden.Snapshot(t, "progress_bars", strings.TrimSuffix(b.String(), "\n"))
 }
+
+func TestFormatBytes(t *testing.T) {
+	cases := map[int64]string{
+		-1: "—", 0: "0 B", 999: "999 B", 1000: "1.0 kB", 1764284: "1.8 MB",
+		68303667: "68.3 MB", 157_000_000: "157.0 MB", 2_500_000_000: "2.5 GB",
+	}
+	for in, want := range cases {
+		if got := FormatBytes(in); got != want {
+			t.Errorf("FormatBytes(%d) = %q, want %q", in, got, want)
+		}
+	}
+}

@@ -224,3 +224,48 @@ func TestLongErrorTruncated(t *testing.T) {
 		t.Error("truncation marker missing")
 	}
 }
+
+// barCells counts filled progress cells on the "N/M tools" line (the hero
+// logo is made of the same block glyph).
+func barCells(v string) int {
+	for _, l := range strings.Split(v, "\n") {
+		if strings.Contains(l, "tools") {
+			return strings.Count(l, "█")
+		}
+	}
+	return -1
+}
+
+func TestOverallProgressBarTracksTools(t *testing.T) {
+	theme.SwapForTest(t, theme.Dark())
+	theme.MotionForTest(t, false)
+	m := newTestModel()
+	if strings.Contains(plain(m), "tools") {
+		t.Fatal("no bar before the plan is known")
+	}
+
+	feed(m, toolchain.Event{Kind: toolchain.EventResolved, Detail: "4 action(s)", Count: 4})
+	if v := plain(m); !strings.Contains(v, "0/4 tools") || barCells(v) != 0 {
+		t.Fatalf("empty bar expected:\n%s", v)
+	}
+
+	// One tool finished and one in flight → 1.5 / 4 of the bar, 1/4 label.
+	feed(m,
+		toolchain.Event{Kind: toolchain.EventDownloadStart, Tool: "go"},
+		toolchain.Event{Kind: toolchain.EventToolDone, Tool: "go"},
+		toolchain.Event{Kind: toolchain.EventDownloadStart, Tool: "node"},
+	)
+	v := plain(m)
+	if !strings.Contains(v, "1/4 tools") {
+		t.Fatalf("label wrong:\n%s", v)
+	}
+	filled := barCells(v)
+	if filled != 14 { // round(36 * 1.5/4) = 14
+		t.Fatalf("filled cells = %d, want 14:\n%s", filled, v)
+	}
+
+	m.Update(installDoneMsg{})
+	if v := plain(m); barCells(v) != 36 {
+		t.Fatalf("finished install must fill the bar:\n%s", v)
+	}
+}

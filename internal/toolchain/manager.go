@@ -36,6 +36,9 @@ type Event struct {
 	Kind   EventKind
 	Tool   string
 	Detail string
+	// Count is the number of planned tool actions (EventResolved only), so
+	// a UI can show overall progress without parsing Detail.
+	Count int
 }
 
 // Manager drives the resolve→download→verify→extract→activate pipeline
@@ -185,7 +188,7 @@ func (m *Manager) install(ctx context.Context, mf *Manifest, names []string) err
 	if err != nil {
 		return err
 	}
-	m.emit(Event{Kind: EventResolved, Detail: fmt.Sprintf("%d action(s)", len(plan))})
+	m.emit(Event{Kind: EventResolved, Detail: fmt.Sprintf("%d action(s)", len(plan)), Count: len(plan)})
 
 	stagingBase := filepath.Join(m.root, "staging")
 	if err := os.MkdirAll(stagingBase, 0o755); err != nil {

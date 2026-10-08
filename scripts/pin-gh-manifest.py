@@ -55,12 +55,14 @@ def main():
             except Exception as e:  # noqa: BLE001 — die visibly
                 sys.exit(f"download failed for {plat}: {e}")
             digest = sha256_file(local)
+            size = os.path.getsize(local)
         platforms[plat] = {
             "url": url,
             "sha256": digest,
             "format": fmt,
             "strip": 1,
             "bin_dir": "bin",
+            "size": size,
         }
 
     with open(args.registry) as f:

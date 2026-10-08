@@ -81,6 +81,7 @@ def main():
                    f"hermetic-git-v{args.version}/{fname}",
             "sha256": actual,
             "format": "tar.gz",
+            "size": os.path.getsize(path),
         }
 
     with open(args.registry) as f:

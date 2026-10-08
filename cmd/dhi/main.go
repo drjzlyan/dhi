@@ -66,9 +66,12 @@ func main() {
 		switch os.Args[1] {
 		case "doctor":
 			os.Exit(runDoctor(os.Args[2:]))
+		case "version", "--version", "-v":
+			fmt.Println(version.String())
+			return
 		default:
 			fmt.Fprintf(os.Stderr, "dhi: unknown command %q\n", os.Args[1])
-			fmt.Fprintln(os.Stderr, "usage: dhi [doctor [--json]]")
+			fmt.Fprintln(os.Stderr, "usage: dhi [doctor [--json] | version]")
 			os.Exit(2)
 		}
 	}
@@ -385,8 +388,24 @@ func runTUI() (relaunch bool) {
 	case needsBootstrap(toolRoot):
 		mgr := toolchain.New(toolchainRoot())
 		// DHI_REGISTRY overrides the embedded manifest with a remote one
-		// (loopback http allowed) for testing the pipeline end-to-end.
-		gates = append(gates, bootstrap.New(version.Version, mgr, os.Getenv("DHI_REGISTRY")))
+		// (loopback http allowed) for testing the pipeline end-to-end; that
+		// path stays the unattended classic bootstrap.
+		if os.Getenv("DHI_REGISTRY") != "" {
+			gates = append(gates, bootstrap.New(version.Version, mgr, os.Getenv("DHI_REGISTRY")))
+			break
+		}
+		// A real first run asks before downloading ~150 MB: what, how big,
+		// where it goes (F-044). Skipping is allowed; capabilities then
+		// refuse by name until it is installed.
+		first := decision
+		first.FirstRun = true
+		first.OfferRoot = mgr.Root()
+		first.Offer, first.OfferBytes, first.OfferTotal = boot.FirstRunOffer()
+		if len(first.Offer) == 0 {
+			gates = append(gates, bootstrap.New(version.Version, mgr, ""))
+			break
+		}
+		gates = append(gates, bootgate.New(version.Version, first, mgr))
 	}
 	if autoWizard {
 		gates = append(gates, newWizard(false))

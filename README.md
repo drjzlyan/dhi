@@ -16,24 +16,55 @@ Everything is **worktree-first**, **multi-repo aware**, and
  ██║  ██║███████║██║
 ```
 
-## Status
-
-Foundation milestone **M0 complete** — see [ROADMAP.md](ROADMAP.md) and
-[STATE.md](STATE.md). This is pre-alpha; surfaces beyond Home are scoped
-placeholders.
-
-## Run
+## Install
 
 ```sh
-go run ./cmd/dhi          # launch (requires Go 1.26+)
+curl -fsSL https://github.com/drjzlyan/dhi/releases/latest/download/install.sh | sh
 ```
 
-Keys: `1-9` switch workspace · `tab`/`shift+tab` cycle · `?` help · `ctrl+c` quit.
+The installer picks the build for your machine, **verifies its SHA-256**
+(and its cosign signature when `cosign` is installed), and puts `dhi` in
+`~/.local/bin` — no sudo. Pin a version with `DHI_VERSION=0.2.0`, or choose
+the directory with `DHI_INSTALL_DIR`. Homebrew users: `dhi.rb` is attached to
+every release (and published to a tap when one is configured).
+
+Supported today: **macOS on Apple silicon** and **Linux x86_64** — exactly the
+platforms DHI can pin a complete hermetic toolchain for. Others are refused at
+install time with a named reason, not a broken first run.
+
+## First run
+
+```sh
+cd your-project && dhi
+```
+
+1. **Toolchain** — DHI shows what it will download (about 157 MB: Go, Node, uv,
+   ripgrep, git, gh), where it goes, and asks. Everything lands under
+   `~/.local/share/dhi`; delete that folder to uninstall.
+2. **Setup wizard** — workspace, git identity, team conventions (commit format,
+   branch names, co-author, copyright). Skip anything; re-run any time from the
+   command palette (`ctrl+p` → *Run setup wizard*).
+
+`dhi version` prints the build identity; `dhi doctor` diagnoses an install.
+
+## From source
+
+```sh
+go run ./cmd/dhi          # requires Go 1.26+
+make verify               # fmt + vet + build + race tests
+```
+
+Keys: `1-9` switch views · `tab`/`shift+tab` cycle · `ctrl+p` palette · `?` help · `ctrl+c` quit.
+
+## Status
+
+Milestones M0–M24 are complete; see [ROADMAP.md](ROADMAP.md) (M25 is the
+install → setup → first-use programme) and [STATE.md](STATE.md).
 
 ## Principles
 
 - **Hermetic:** DHI manages its own toolchain (ADR-0005); no system installers.
-- **Minimal CLI:** only `dhi` / `dhi doctor`; all work happens in-TUI (ADR-0004).
+- **Minimal CLI:** only `dhi` / `dhi doctor` / `dhi version`; all work happens in-TUI (ADR-0004).
 - **Tested UI:** golden snapshots + scripted key tests; no manual QA required (docs/testing.md).
 - **Session-resumable knowledge:** ROADMAP/STATE/features/ADRs updated every session (AGENTS.md).
 

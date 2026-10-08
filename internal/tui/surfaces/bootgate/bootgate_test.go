@@ -1,9 +1,12 @@
 package bootgate
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/drjzlyan/dhi/internal/ansi"
 	"github.com/drjzlyan/dhi/internal/boot"
 	"github.com/drjzlyan/dhi/internal/testutil/golden"
 	"github.com/drjzlyan/dhi/internal/toolchain"
@@ -138,5 +141,100 @@ func TestConfirmInstallQueuesInitCommand(t *testing.T) {
 		if m2.TakeCmd() != nil {
 			t.Errorf("decision %+v queued a command", d)
 		}
+	}
+}
+
+func firstRunDecision() boot.Decision {
+	return boot.Decision{
+		FirstRun:   true,
+		Offer:      []string{"git", "go", "gh", "node", "rg", "uv"},
+		OfferBytes: map[string]int64{"git": 2016187, "go": 68303667, "gh": 14212224, "node": 52234372, "rg": 1764284, "uv": 18518284},
+		OfferTotal: 157048998,
+	}
+}
+
+func TestFirstRunScreenGolden(t *testing.T) {
+	theme.SwapForTest(t, theme.Dark())
+	m := New("test", firstRunDecision(), nil)
+	m.Resize(80, 30)
+	golden.Snapshot(t, "bootgate_firstrun_80x30", m.View())
+}
+
+func TestFirstRunShowsSizesTotalAndWhere(t *testing.T) {
+	theme.SwapForTest(t, theme.Dark())
+	m := New("test", firstRunDecision(), nil)
+	m.Resize(80, 30)
+	v := plain(m.View())
+	for _, want := range []string{"Welcome to DHI", "68.3 MB", "1.8 MB", "total download", "157.0 MB",
+		"~/.local/share/dhi/toolchain", "no sudo", "enter install"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("first-run screen lacks %q:\n%s", want, v)
+		}
+	}
+}
+
+// First run asks once, and the primary key installs; the older
+// missing-pieces offer keeps "enter = skip".
+func TestFirstRunEnterInstallsEscSkips(t *testing.T) {
+	m := New("test", firstRunDecision(), toolchain.New(t.TempDir()))
+	m.Resize(80, 24)
+	m.HandleKey("enter")
+	if m.phase != phaseInstalling || m.TakeCmd() == nil {
+		t.Fatalf("enter must start the install on first run (phase=%v)", m.phase)
+	}
+
+	skip := New("test", firstRunDecision(), toolchain.New(t.TempDir()))
+	skip.HandleKey("esc")
+	if skip.phase != phaseDone || skip.inner != nil {
+		t.Fatal("esc must skip without installing")
+	}
+
+	old := New("test", boot.Decision{Offer: []string{"rg"}}, toolchain.New(t.TempDir()))
+	old.HandleKey("enter")
+	if old.phase != phaseDone || old.inner != nil {
+		t.Fatal("non-first-run offers keep enter = skip")
+	}
+}
+
+func TestConfirmHintWrapsInsteadOfClipping(t *testing.T) {
+	theme.SwapForTest(t, theme.Dark())
+	m := New("test", firstRunDecision(), nil)
+	m.Resize(60, 30)
+	// Drop the panel borders, collapse the wrap, and the whole hint must be there.
+	flat := strings.Join(strings.Fields(strings.NewReplacer("│", " ", "╭", " ", "╮", " ", "╰", " ", "╯", " ", "─", " ").Replace(ansi.Strip(m.View()))), " ")
+	if !strings.Contains(flat, "enter install · esc skip (capabilities refuse until installed)") {
+		t.Fatalf("hint clipped:\n%s", plain(m.View()))
+	}
+}
+
+func TestWrapLineHasNoEmptyLines(t *testing.T) {
+	for _, in := range []string{
+		"one two three four five six seven eight nine ten",
+		"averyveryverylongwordthatexceedsthewidthcompletely and more",
+		"short",
+	} {
+		for _, l := range wrapLine(in, 12) {
+			if l == "" {
+				t.Fatalf("wrapLine(%q) emitted an empty line: %q", in, wrapLine(in, 12))
+			}
+			if len(l) > 12 {
+				t.Fatalf("line %q exceeds width", l)
+			}
+		}
+	}
+}
+
+func TestFirstRunShowsTheRealInstallRoot(t *testing.T) {
+	theme.SwapForTest(t, theme.Dark())
+	d := firstRunDecision()
+	d.OfferRoot = "/srv/data/dhi/toolchain"
+	m := New("test", d, nil)
+	m.Resize(100, 30)
+	v := ansi.Strip(m.View())
+	if !strings.Contains(v, "/srv/data/dhi/toolchain") || strings.Contains(v, "~/.local/share") {
+		t.Fatalf("install root not shown:\n%s", v)
+	}
+	if got := tildePath(filepath.Join(os.Getenv("HOME"), ".local", "share", "dhi")); got != "~/.local/share/dhi" {
+		t.Fatalf("tildePath = %q", got)
 	}
 }

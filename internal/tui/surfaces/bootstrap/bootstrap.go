@@ -6,6 +6,7 @@ package bootstrap
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -61,6 +62,8 @@ type Model struct {
 	clockArmed   bool // a tick timer is currently in flight
 	phase        phase
 	errText      string
+	planned      int // tools the plan will install (EventResolved)
+	done         int // tools finished so far
 }
 
 var _ surfaces.Surface = (*Model)(nil)
@@ -200,6 +203,7 @@ func (m *Model) applyEvent(ev toolchain.Event) {
 	case toolchain.EventManifestFetched:
 		m.setRow("registry", "registry manifest", ev.Detail, statusOK)
 	case toolchain.EventResolved:
+		m.planned = ev.Count
 		detail := ev.Detail
 		if strings.Contains(detail, "0 action") {
 			detail = "up to date"
@@ -216,6 +220,7 @@ func (m *Model) applyEvent(ev toolchain.Event) {
 	case toolchain.EventActivated:
 		m.setRow("tool/"+ev.Tool, ev.Tool, "activated", statusActive)
 	case toolchain.EventToolDone:
+		m.done++
 		m.setRow("tool/"+ev.Tool, ev.Tool, "installed", statusOK)
 	case toolchain.EventDone:
 		if r, ok := m.rows["plan"]; ok && strings.Contains(ev.Detail, "up to date") {
@@ -262,6 +267,9 @@ func (m *Model) View() string {
 	}
 	body := append([]string{}, hero...)
 	body = append(body, "", headline, "")
+	if bar := m.progressLine(); bar != "" {
+		body = append(body, bar, "")
+	}
 
 	for _, key := range m.order {
 		r := m.rows[key]
@@ -276,6 +284,26 @@ func (m *Model) View() string {
 	}
 
 	return kit.Center(strings.Join(body, "\n"), m.width, m.height)
+}
+
+// progressLine is the overall bar: finished tools count fully, the ones
+// in flight count half, so it moves while a large download runs.
+func (m *Model) progressLine() string {
+	if m.planned <= 0 {
+		return ""
+	}
+	active := 0
+	for key, r := range m.rows {
+		if strings.HasPrefix(key, "tool/") && r.status == statusActive {
+			active++
+		}
+	}
+	frac := (float64(m.done) + 0.5*float64(active)) / float64(m.planned)
+	if m.phase == phaseDone {
+		frac = 1
+	}
+	return "  " + kit.ProgressBar{Width: 36, Fraction: frac}.View() +
+		theme.TextDim().Render(fmt.Sprintf("  %d/%d tools", min(m.done, m.planned), m.planned))
 }
 
 func stageLine(r *row, frame int) string {
