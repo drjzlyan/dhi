@@ -254,6 +254,7 @@ func (m *Model) submitConfirm() {
 		if m.openID == id {
 			m.openID = ""
 			m.files = nil
+			m.resetGapState()
 			m.diffFor = ""
 		}
 		m.closeForm()

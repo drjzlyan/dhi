@@ -94,6 +94,11 @@ type Model struct {
 	// styleCache holds per-file syntax and changed-word styles (F-049);
 	// it is dropped whenever the diff rows are rebuilt.
 	styleCache map[int]map[gitdiff.MarkKey]lineStyle
+	// Collapsed-context state (F-049): the new-side source of each file,
+	// the lines of expanded regions, and which regions are open.
+	srcCache map[int][]string
+	gapCache map[gapKey][]gitdiff.Line
+	expanded map[gapKey]bool
 
 	rowsCache  []viewRow // diffRows flatten cache (F-026 P6)
 	rowsFP     string
@@ -271,6 +276,7 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 				m.opErr = ""
 				m.cursor, m.scroll = 0, 0
 				m.fileCur = 0
+				m.resetGapState() // a new diff: forget the old file contents and expansions
 			}
 		case evDiscardDone:
 			m.busy = false
@@ -737,6 +743,11 @@ func (m *Model) diffKey(key string) bool {
 			m.threadFile = path
 			m.threadCur = 0
 			m.threadOpen = true
+			return true
+		}
+	case "e":
+		if row := m.rowAt(m.cursor); row != nil && row.kind == vrGap {
+			m.expandGap(row.gap)
 			return true
 		}
 	case "T":

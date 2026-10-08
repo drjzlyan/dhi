@@ -21,6 +21,7 @@ const (
 	vrLineUnified
 	vrSideBySide
 	vrBinary
+	vrGap // collapsed unchanged lines (F-049)
 )
 
 // viewRow is one logical row. For unified rows Left carries the line;
@@ -30,6 +31,7 @@ type viewRow struct {
 	file        int
 	left, right *gitdiff.Line
 	text        string // headers / binary notice
+	gap         gapKey // vrGap: the region this row stands for
 }
 
 // diffRows flattens the open diff into logical rows for the active
@@ -49,8 +51,33 @@ func (m *Model) diffRows() []viewRow {
 				text: "binary file — not shown"})
 			continue
 		}
+		gaps := m.gaps(fi)
+		// emitGap adds the collapsed row for a region, or its lines when open.
+		emitGap := func(g gapSpan) {
+			if !m.expanded[g.key] {
+				rows = append(rows, viewRow{kind: vrGap, file: fi, gap: g.key, text: gapText(g)})
+				return
+			}
+			lines := m.gapLines(g)
+			for li := range lines {
+				if m.layout == layoutSideBySide {
+					rows = append(rows, viewRow{kind: vrSideBySide, file: fi, left: &lines[li], right: &lines[li]})
+				} else {
+					rows = append(rows, viewRow{kind: vrLineUnified, file: fi, left: &lines[li]})
+				}
+			}
+		}
+		gapBefore := func(hi int) {
+			first, _ := hunkNewRange(f.Hunks[hi])
+			for _, g := range gaps {
+				if g.to == first-1 {
+					emitGap(g)
+				}
+			}
+		}
 		for hi := range f.Hunks {
 			h := &f.Hunks[hi]
+			gapBefore(hi)
 			head := fmt.Sprintf("@@ -%d,%d +%d,%d @@ %s",
 				h.OldStart, h.OldLines, h.NewStart, h.NewLines, h.Header)
 			rows = append(rows, viewRow{kind: vrHunkHeader, file: fi, text: strings.TrimSpace(head)})
@@ -65,6 +92,14 @@ func (m *Model) diffRows() []viewRow {
 				}
 			}
 		}
+		if len(f.Hunks) > 0 { // unchanged code after the last hunk
+			_, lastNew := hunkNewRange(f.Hunks[len(f.Hunks)-1])
+			for _, g := range gaps {
+				if g.from == lastNew+1 && g.to > g.from-1 {
+					emitGap(g)
+				}
+			}
+		}
 	}
 	m.rowsFP = fp
 	m.rowsCache = rows
@@ -76,7 +111,7 @@ func (m *Model) diffRows() []viewRow {
 // shape) so the flatten cache invalidates without walking hunks.
 func (m *Model) diffFingerprint() string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "layout=%d n=%d", m.layout, len(m.files))
+	fmt.Fprintf(&b, "layout=%d n=%d exp=%d", m.layout, len(m.files), len(m.expanded))
 	for fi := range m.files {
 		f := &m.files[fi]
 		fmt.Fprintf(&b, "|%s:%d", f.DisplayPath(), len(f.Hunks))
@@ -141,6 +176,8 @@ func (m *Model) diffSegmentsView(w int, viewed map[string]bool) ([]diffSeg, []in
 			lines = []string{m.hunkHeader(row.text, bodyW)}
 		case vrBinary:
 			lines = []string{theme.TextDim().Render(crop(row.text, bodyW))}
+		case vrGap:
+			lines = []string{m.gapRow("   "+row.text, bodyW)}
 		case vrLineUnified:
 			lines = m.unifiedLine(row.left, row.file, bodyW)
 		case vrSideBySide:
