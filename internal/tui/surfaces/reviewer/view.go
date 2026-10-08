@@ -46,6 +46,9 @@ func (m *Model) compactBody() string {
 }
 
 func (m *Model) dockedView() string {
+	if m.screenMode() {
+		return m.screenView()
+	}
 	paneW := m.width - railWidth
 	if paneW < 40 {
 		paneW = 40
@@ -58,6 +61,9 @@ func (m *Model) dockedView() string {
 // Click implements the clickHandler seam (F-041): a click on a rail row
 // jumps to that section. Only the docked layout has a rail.
 func (m *Model) Click(x, y int) bool {
+	if m.screenMode() {
+		return m.clickScreen(x, y)
+	}
 	if m.width < kit.WDock || x >= railWidth {
 		return false
 	}

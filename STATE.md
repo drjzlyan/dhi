@@ -6,6 +6,20 @@ debugging/test runner/format/symbols/git gutter, UX polish incl. a
 typing-hijack bug fix. `make verify` green. Debugging verified against
 real delve v1.27.2 — see F-039; `dlv` provisioning still open.)
 
+### Session 50 (M26: review screen F-049, then deferred M25 items)
+
+- F-049 DONE (commits a5be362..): review cards schema 2; suggestions vs
+  human comments; `S` submit dialog → one `POST pulls/{n}/reviews` as the
+  human (`internal/review/submit.go`); `internal/tui/syntax` is the only chroma
+  importer; word marks in `gitdiff/words.go`; `reviewer/gaps.go` expandable
+  context (`e` on a `⋯` row, reads the worktree copy); `reviewer/screen.go`
+  three columns when `width >= kit.WWide` and a review is open on DIFF.
+- Gotchas: never pipe `go test | tail` into a commit (it hides failures); fakes
+  of `review.GH` (3 of them) must implement `SubmitReview`/`Login`.
+- NOT verified: a real review POST (needs a scratch PR and the user's OK;
+  `DHI_SMOKE_GH` live test is read-only); no tmux walk of the 3-column screen.
+- Next: the four deferred items in ROADMAP M26, in order. Push NOT done.
+
 ### Session 49 (M25 P1: layered conventions, F-042)
 
 - Plan: `~/.claude/plans/lets-work-on-user-agile-kazoo.md` — 7 phases, a

@@ -1,0 +1,32 @@
+╭─ › files ──────────────────╮╭─ › diff ─────────────────────────────────────────────────────────────╮╭─ › conversation ───────────────────╮
+│ api-branch-master          ││ ▌main.go  +2 -1                                                      ││ review · pending                   │
+│ 0/1 viewed                 ││     ⋯ 2 unchanged lines  ·  e to expand                              ││ ● 1 draft(s) · S sends one review  │
+│                            ││  @@ -3,3 +3,3 @@                                                     ││                                    │
+│ ▌   main.go          +2 -1 ││      3     3   line3                                                 ││ main.go                            │
+│                            ││      4       - line4                                                 ││                                    │
+│                            ││            4 + LINE4                                                 ││ line 4                             │
+│                            ││      5     5   line5                                                 ││ ● you                              │
+│                            ││     ⋯ 13 unchanged lines  ·  e to expand                             ││   why uppercase?                   │
+│                            ││  @@ -19,3 +19,4 @@                                                   ││                                    │
+│                            ││     19    19   line19                                                ││                                    │
+│                            ││     20    20   line20                                                ││                                    │
+│                            ││           21 + extra                                                 ││                                    │
+│                            ││     21    22   line21                                                ││                                    │
+│                            ││     ⋯ 9 unchanged lines  ·  e to expand                              ││                                    │
+│                            ││                                                                      ││                                    │
+│                            ││                                                                      ││                                    │
+│                            ││                                                                      ││                                    │
+│                            ││                                                                      ││                                    │
+│                            ││                                                                      ││                                    │
+│                            ││                                                                      ││                                    │
+│                            ││                                                                      ││                                    │
+│                            ││                                                                      ││                                    │
+│                            ││                                                                      ││                                    │
+│                            ││                                                                      ││                                    │
+│                            ││                                                                      ││                                    │
+│                            ││                                                                      ││                                    │
+│                            ││                                                                      ││                                    │
+│                            ││                                                                      ││                                    │
+│                            ││                                                                      ││                                    │
+│ n/p file · v viewed        ││ c comment • t threads • S submit • T transcript • \ split • n/p file ││ t threads · S submit               │
+╰────────────────────────────╯╰──────────────────────────────────────────────────────────────────────╯╰────────────────────────────────────╯

@@ -87,6 +87,10 @@ type Model struct {
 	cursor  int // diff cursor (logical rows)
 	fileCur int // FILES cursor mirrored into DIFF jumps
 
+	// screenRows/screenFirst: header rows and first file shown in the
+	// three-column FILES column, for click mapping (F-049 R-E).
+	screenRows, screenFirst int
+
 	form formState
 
 	composer *composer    // active comment input (nil = none)

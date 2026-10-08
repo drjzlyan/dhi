@@ -956,3 +956,13 @@ Seven phases, one commit each; push deferred to the end.
 - [x] P6 Integrations catalog: Jira+Confluence, GitHub, Linear, Notion, Slack; Teams listed as unavailable (F-047, ADR-0028)
 - [x] P7 Debugger (`dlv`) provisioned like gopls + interactive tutorials (F-048). Deferred: LSPs for other languages (editor is Go-only), surface-level lesson steps
 - [x] P7a Finish F-042: copyright header on new files written through DHI's `write` tool; `pr.title` applied by `pr_open`, `pr.body` by every PR DHI opens (a CLI agent's own file edits get the header as a prompt instruction only)
+
+## M26 — Review screen + deferred M25 items (session 50)
+
+- [x] F-049 Review screen: employees *suggest*, you decide; ONE GitHub review
+      goes out as the human (no employee names); syntax + word-level diff
+      highlights; expandable context; FILES | DIFF | CONVERSATION at ≥120 cols
+- [ ] Multi-language editor (LSP + formatters, confirm-gated provisioning)
+- [ ] Tutorial steps that watch real actions
+- [ ] Persona authoring in Settings + live reload of conventions/personas
+- [ ] Configurable worktree root + darwin/amd64, linux/arm64 pins

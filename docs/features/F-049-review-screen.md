@@ -55,17 +55,17 @@ handlers, so every key keeps working. Narrower terminals keep the section view.
 
 ## Acceptance criteria
 (ticked as they land)
-- [ ] gh repo normalisation: https / ssh / scp forms, `.git`, trailing slash, enterprise host
-- [ ] SubmitReview payload shape (event, commit, inline + file-level comments)
-- [ ] only the human's unsent comments go; suggestions/dismissed/posted never; no agent text
-- [ ] off-diff comment falls back into the body; replies to remote threads thread correctly
-- [ ] own-PR approve/request-changes refused with the fix; comment allowed
-- [ ] second submit sends only new comments; schema 1 cards load
-- [ ] structured findings parse into anchored suggestions; garbage becomes one file-level suggestion
-- [ ] accept / edit / dismiss; undecided count shown at submit
-- [ ] submit dialog end to end
-- [ ] syntax + word-level + expandable context
-- [ ] three-column screen at ≥ 120 cols, section view below
+- [x] gh repo normalisation: https / ssh / scp forms, `.git`, trailing slash, enterprise host
+- [x] SubmitReview payload shape (event, commit, inline + file-level comments)
+- [x] only the human's unsent comments go; suggestions/dismissed/posted never; no agent text
+- [x] off-diff comment falls back into the body; replies to remote threads thread correctly
+- [x] own-PR approve/request-changes refused with the fix; comment allowed
+- [x] second submit sends only new comments; schema 1 cards load
+- [x] structured findings parse into anchored suggestions; garbage becomes one file-level suggestion
+- [x] accept / edit / dismiss; undecided count shown at submit
+- [x] submit dialog end to end
+- [x] syntax + word-level + expandable context
+- [x] three-column screen at ≥ 120 cols, section view below
 - [ ] walked in tmux; a live review against GitHub only with the user's go-ahead
 
 ## Not verified without your go-ahead
