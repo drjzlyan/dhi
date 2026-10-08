@@ -8,6 +8,7 @@ import (
 
 	"charm.land/bubbletea/v2"
 
+	"github.com/drjzlyan/dhi/internal/ansi"
 	"github.com/drjzlyan/dhi/internal/testutil/golden"
 	"github.com/drjzlyan/dhi/internal/tui/surfaces"
 	"github.com/drjzlyan/dhi/internal/tui/surfaces/placeholder"
@@ -219,7 +220,7 @@ func TestHelpTogglesAndQuitReturnsCmd(t *testing.T) {
 	if a.showHelp {
 		t.Fatal("? did not close help")
 	}
-	if _, ok := a.handleGlobal("ctrl+c"); !ok {
+	if _, ok := a.handleGlobal("ctrl+c", false); !ok {
 		t.Fatal("ctrl+c must be handled globally")
 	}
 	if !a.quitting {
@@ -471,5 +472,262 @@ func TestEditorRequestLSPRoutes(t *testing.T) {
 	}
 	if ed.lspOp != "hover" {
 		t.Fatalf("lspOp = %q", ed.lspOp)
+	}
+}
+
+// capturingSurface is a stub that reports whether it is collecting text.
+type capturingSurface struct {
+	stubSurface
+	typing bool
+}
+
+func (c *capturingSurface) CapturesInput() bool { return c.typing }
+
+func TestTypingSurfaceKeepsDigitsQuestionMarkAndTab(t *testing.T) {
+	theme.SwapForTest(t, theme.Dark())
+	cs := &capturingSurface{stubSurface: stubSurface{id: "editor", title: "Editor", consumeKeys: true}, typing: true}
+	other := &stubSurface{id: "b", title: "B"}
+	a := New("t", cs, other)
+	a.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+
+	for _, k := range []string{"2", "?", "tab", "shift+tab", "1"} {
+		a.Update(keyPress(k))
+	}
+	if a.active != 0 || a.showHelp {
+		t.Fatalf("typing surface lost focus: active=%d help=%v", a.active, a.showHelp)
+	}
+	if got := strings.Join(cs.keys, ","); got != "2,?,tab,shift+tab,1" {
+		t.Fatalf("surface saw %q", got)
+	}
+
+	// ctrl+c still quits, even mid-typing.
+	if _, cmd := a.Update(keyPress("ctrl+c")); cmd == nil {
+		t.Fatal("ctrl+c must stay global while typing")
+	}
+
+	// Not typing → the global bindings are back.
+	cs.typing = false
+	a.quitting = false
+	a.Update(keyPress("2"))
+	if a.active != 1 {
+		t.Fatalf("digit should switch views when not typing, active=%d", a.active)
+	}
+}
+
+// cmdSurface offers palette commands and records their execution.
+type cmdSurface struct {
+	stubSurface
+	ran []string
+}
+
+func (c *cmdSurface) Commands() []surfaces.Command {
+	return []surfaces.Command{
+		{Group: "Stub", Title: "Do the thing", Hint: ":thing", Run: func() tea.Cmd { c.ran = append(c.ran, "thing"); return nil }},
+	}
+}
+
+func TestPaletteOpensListsAndRunsSurfaceCommand(t *testing.T) {
+	theme.SwapForTest(t, theme.Dark())
+	cs := &cmdSurface{stubSurface: stubSurface{id: "a", title: "Alpha"}}
+	other := &stubSurface{id: "b", title: "Beta"}
+	a := New("t", cs, other)
+	a.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+
+	a.Update(keyPress("ctrl+p"))
+	if a.palette == nil {
+		t.Fatal("ctrl+p must open the palette")
+	}
+	view := a.compose()
+	for _, want := range []string{"command palette", "Go to Alpha", "Go to Beta", "Do the thing", "Show keyboard help", "Quit DHI"} {
+		if !strings.Contains(stripAll(view), want) {
+			t.Errorf("palette missing %q", want)
+		}
+	}
+	// Keys belong to the palette while it is open: "2" is typed, not a view switch.
+	a.Update(keyPress("t"))
+	a.Update(keyPress("h"))
+	a.Update(keyPress("i"))
+	a.Update(keyPress("n"))
+	a.Update(keyPress("g"))
+	if a.active != 0 || a.palette.Query() != "thing" {
+		t.Fatalf("active=%d query=%q", a.active, a.palette.Query())
+	}
+	a.Update(keyPress("enter"))
+	if a.palette != nil || len(cs.ran) != 1 || cs.ran[0] != "thing" {
+		t.Fatalf("palette=%v ran=%v", a.palette != nil, cs.ran)
+	}
+	if len(cs.keys) != 0 {
+		t.Fatalf("palette keys leaked to the surface: %v", cs.keys)
+	}
+}
+
+func TestPaletteGoToAndEscAndClick(t *testing.T) {
+	theme.SwapForTest(t, theme.Dark())
+	a, _ := newTestApp(t)
+	a.Update(keyPress("ctrl+p"))
+	for _, k := range []string{"t", "r", "e", "e", "s"} { // "Go to Trees"
+		a.Update(keyPress(k))
+	}
+	a.Update(keyPress("enter"))
+	if a.active != 2 {
+		t.Fatalf("Go to Trees → active=%d", a.active)
+	}
+	a.Update(keyPress("ctrl+p"))
+	a.Update(keyPress("esc"))
+	if a.palette != nil {
+		t.Fatal("esc closes the palette")
+	}
+	a.Update(keyPress("ctrl+p"))
+	a.Update(tea.MouseClickMsg{X: 5, Y: 5, Button: tea.MouseLeft})
+	if a.palette != nil {
+		t.Fatal("a click dismisses the palette")
+	}
+}
+
+func TestPaletteWorksWhileASurfaceIsTyping(t *testing.T) {
+	theme.SwapForTest(t, theme.Dark())
+	cs := &capturingSurface{stubSurface: stubSurface{id: "e", title: "Editor", consumeKeys: true}, typing: true}
+	a := New("t", cs, &stubSurface{id: "b", title: "B"})
+	a.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	a.Update(keyPress("ctrl+p"))
+	if a.palette == nil {
+		t.Fatal("ctrl+p must work mid-typing (it is the escape hatch from a capturing surface)")
+	}
+}
+
+func TestStatuslineHintsFollowTypingState(t *testing.T) {
+	theme.SwapForTest(t, theme.Dark())
+	cs := &capturingSurface{stubSurface: stubSurface{id: "e", title: "Editor"}}
+	a := New("t", cs, &stubSurface{id: "b", title: "B"})
+	a.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+	if got := stripAll(a.compose()); !strings.Contains(got, "1-2") || !strings.Contains(got, "views") || !strings.Contains(got, "palette") {
+		t.Fatalf("idle statusline:\n%s", got)
+	}
+	cs.typing = true
+	got := stripAll(a.compose())
+	if strings.Contains(got, "views") || strings.Contains(got, "help") || !strings.Contains(got, "palette") {
+		t.Fatalf("typing statusline must drop view/help hints:\n%s", got)
+	}
+}
+
+func stripAll(s string) string { return ansi.Strip(s) }
+
+func TestWelcomeShowsOnceAndOwnsTheKeyboard(t *testing.T) {
+	theme.SwapForTest(t, theme.Dark())
+	a, stubs := newTestApp(t)
+	dismissed := 0
+	a.SetWelcome(func() { dismissed++ })
+
+	view := stripAll(a.compose())
+	for _, want := range []string{"Welcome to DHI", "Home · Editor · Trees", "ctrl+p", "press enter to begin"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("welcome missing %q", want)
+		}
+	}
+	// Digits, ?, tab and arbitrary keys must not reach the app or surfaces.
+	for _, k := range []string{"2", "?", "tab", "j", "ctrl+p"} {
+		a.Update(keyPress(k))
+	}
+	if a.active != 0 || a.showHelp || a.palette != nil || len(stubs[0].keys) != 0 || dismissed != 0 {
+		t.Fatalf("welcome leaked keys: active=%d help=%v palette=%v keys=%v dismissed=%d",
+			a.active, a.showHelp, a.palette != nil, stubs[0].keys, dismissed)
+	}
+	a.Update(keyPress("enter"))
+	if a.welcome || dismissed != 1 {
+		t.Fatalf("enter should dismiss once: welcome=%v dismissed=%d", a.welcome, dismissed)
+	}
+	if strings.Contains(stripAll(a.compose()), "Welcome to DHI") {
+		t.Fatal("card still drawn after dismiss")
+	}
+	a.Update(keyPress("enter")) // a later enter is an ordinary key
+	if dismissed != 1 {
+		t.Fatal("dismiss callback must run exactly once")
+	}
+	a.Update(keyPress("2"))
+	if a.active != 1 {
+		t.Fatal("global keys work again after the card")
+	}
+}
+
+func TestWelcomeQuitsAndDismissesOnClickAndWaitsForTheGate(t *testing.T) {
+	theme.SwapForTest(t, theme.Dark())
+	a, _ := newTestApp(t)
+	a.SetWelcome(nil)
+	if _, cmd := a.Update(keyPress("ctrl+c")); cmd == nil {
+		t.Fatal("ctrl+c must quit even over the card")
+	}
+	a.quitting = false
+	a.Update(tea.MouseClickMsg{X: 3, Y: 3, Button: tea.MouseLeft})
+	if a.welcome {
+		t.Fatal("a click dismisses the card (nil callback is fine)")
+	}
+
+	// While a boot gate owns the screen the card is held back.
+	b, _ := newTestApp(t)
+	b.SetGate(&stubGate{})
+	b.SetWelcome(nil)
+	if strings.Contains(stripAll(b.compose()), "Welcome to DHI") {
+		t.Fatal("welcome must wait for the gate to release")
+	}
+}
+
+func TestActivityChipShowsWhileAgentsWorkAndAnimates(t *testing.T) {
+	theme.SwapForTest(t, theme.Dark())
+	theme.MotionForTest(t, true)
+	a, _ := newTestApp(t)
+	a.width = 120
+	n := 0
+	a.SetActivity(func() int { return n })
+
+	if got := stripAll(a.compose()); strings.Contains(got, "working") {
+		t.Fatalf("idle bar must not show the chip:\n%s", got)
+	}
+	n = 1
+	bar := strings.SplitN(stripAll(a.compose()), "\n", 2)[0]
+	if !strings.Contains(bar, "1 agent working") {
+		t.Fatalf("bar = %q", bar)
+	}
+	n = 3
+	if bar := strings.SplitN(stripAll(a.compose()), "\n", 2)[0]; !strings.Contains(bar, "3 agents working") {
+		t.Fatalf("bar = %q", bar)
+	}
+	if got := len([]rune(strings.SplitN(stripAll(a.compose()), "\n", 2)[0])); got != 120 {
+		t.Fatalf("bar width = %d, want exactly 120", got)
+	}
+
+	// The chain arms once and each tick advances the frame.
+	_, cmd := a.Update(keyPress("j"))
+	if cmd == nil || !a.armed {
+		t.Fatalf("activity should arm a tick (cmd=%v armed=%v)", cmd != nil, a.armed)
+	}
+	before := a.spin
+	_, cmd = a.Update(activityTickMsg{})
+	if a.spin != before+1 || cmd == nil {
+		t.Fatalf("tick: spin %d→%d, re-arm cmd=%v", before, a.spin, cmd != nil)
+	}
+	n = 0
+	if _, cmd = a.Update(activityTickMsg{}); cmd != nil {
+		t.Fatal("the chain must stop when nothing is working")
+	}
+}
+
+func TestActivityChipIsStaticUnderReducedMotionAndDroppedWhenNarrow(t *testing.T) {
+	theme.SwapForTest(t, theme.Dark())
+	theme.MotionForTest(t, false)
+	a, _ := newTestApp(t)
+	a.width = 120
+	a.SetActivity(func() int { return 2 })
+	bar := strings.SplitN(stripAll(a.compose()), "\n", 2)[0]
+	if !strings.Contains(bar, theme.GlyphBusy+" 2 agents working") {
+		t.Fatalf("reduced motion should show the static glyph: %q", bar)
+	}
+	if _, cmd := a.Update(keyPress("j")); a.armed || cmd != nil {
+		t.Fatal("reduced motion must not tick")
+	}
+
+	a.width = 30 // too narrow for tabs + chip: the chip is dropped, never clipped
+	bar = strings.SplitN(stripAll(a.compose()), "\n", 2)[0]
+	if strings.Contains(bar, "working") || len([]rune(bar)) > 30 {
+		t.Fatalf("narrow bar = %q", bar)
 	}
 }

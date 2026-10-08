@@ -13,6 +13,9 @@ type Tabs struct {
 	Items  []Tab
 	Active int
 	Width  int
+	// Right is an optional right-aligned status chip (agent presence).
+	// It is dropped, never clipped, when the bar is too narrow for it.
+	Right string
 }
 
 // Tab is one entry in the navigation bar.
@@ -68,7 +71,14 @@ func (t *Tabs) View() string {
 		parts = append(parts, st.Render(" "+label+" "))
 	}
 
-	line := padTo(theme.Brand().Render(" ◆ DHI ")+strings.Join(parts, theme.Hint().Render(theme.GlyphChevron)), t.Width)
+	left := theme.Brand().Render(" ◆ DHI ") + strings.Join(parts, theme.Hint().Render(theme.GlyphChevron))
+	if t.Right != "" && t.Width > 0 {
+		lw, rw := runeWidth(ansi.Strip(left)), runeWidth(ansi.Strip(t.Right))
+		if lw+2+rw <= t.Width {
+			left += strings.Repeat(" ", t.Width-lw-rw-1) + t.Right + " "
+		}
+	}
+	line := padTo(left, t.Width)
 	// Many surfaces or long labels clip with an ellipsis marker instead
 	// of overflowing the terminal width (F-026 P1).
 	return ClipEllipsis(line, t.Width)

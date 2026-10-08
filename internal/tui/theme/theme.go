@@ -60,7 +60,7 @@ func Dark() Tokens {
 		BgPanel:     c("#10141B"),
 		BgElevated:  c("#151B26"),
 		BgInset:     c("#07090D"),
-		BgChrome:    c("#262F3E"),
+		BgChrome:    c("#1C2430"),
 		BgSelection: c("#1B2739"),
 		BgOverlay:   c("#05070B"),
 		BgAdd:       c("#0D2B22"),
@@ -70,10 +70,10 @@ func Dark() Tokens {
 		// edge reads as attention, not brand emphasis (F-026 P1).
 		BorderFocused: c("#67E8F9"),
 		Text:          c("#E6EDF3"),
-		TextDim:       c("#8B98A9"),
-		TextMuted:     c("#58657A"),
+		TextDim:       c("#9AA7B8"),
+		TextMuted:     c("#8391A5"), // WCAG AA (4.5:1) on every surface incl. the hint bar
 		Accent:        c("#22D3EE"),
-		AccentDim:     c("#0E7490"),
+		AccentDim:     c("#1083A3"),
 		Accent2:       c("#A78BFA"),
 		Info:          c("#60A5FA"),
 		Success:       c("#34D399"),
@@ -105,15 +105,51 @@ func Light() Tokens {
 		Border:        c("#D8D2C4"),
 		BorderFocused: c("#0891B2"),
 		Text:          c("#1F2937"),
-		TextDim:       c("#5B6472"),
-		TextMuted:     c("#8B93A1"),
-		Accent:        c("#0E7490"),
-		AccentDim:     c("#4E8FA3"),
+		TextDim:       c("#4B5563"),
+		TextMuted:     c("#5C6472"), // WCAG AA on every surface incl. the hint bar
+		Accent:        c("#0D6B84"),
+		AccentDim:     c("#4A879A"),
 		Accent2:       c("#6D28D9"),
 		Info:          c("#1D4ED8"),
-		Success:       c("#047857"),
-		Warning:       c("#B45309"),
+		Success:       c("#047152"),
+		Warning:       c("#A14A08"),
 		Danger:        c("#B91C1C"),
+
+		PadX:        1,
+		HeightTab:   1,
+		HeightState: 1,
+	}
+}
+
+// HighContrast is the accessibility theme: true-black canvas, white text
+// and saturated accents, every text token at or above 6:1 on every
+// surface and borders that read against the background.
+func HighContrast() Tokens {
+	c := lipgloss.Color
+	return Tokens{
+		Name: "high-contrast",
+
+		Bg:            c("#000000"),
+		BgPanel:       c("#000000"),
+		BgElevated:    c("#0A0A0A"),
+		BgInset:       c("#000000"),
+		BgChrome:      c("#1A1A1A"),
+		BgSelection:   c("#1F3A5F"),
+		BgOverlay:     c("#000000"),
+		BgAdd:         c("#003D1F"),
+		BgDel:         c("#4A0F0F"),
+		Border:        c("#7C8AA0"),
+		BorderFocused: c("#00E5FF"),
+		Text:          c("#FFFFFF"),
+		TextDim:       c("#E0E6ED"),
+		TextMuted:     c("#C2CAD6"),
+		Accent:        c("#00E5FF"),
+		AccentDim:     c("#4DD0E1"),
+		Accent2:       c("#C4B5FD"),
+		Info:          c("#7DB7FF"),
+		Success:       c("#4ADE80"),
+		Warning:       c("#FFD54A"),
+		Danger:        c("#FF8A8A"),
 
 		PadX:        1,
 		HeightTab:   1,
@@ -383,15 +419,17 @@ func f32(v uint32) float64 { return float64(v>>8) / 255 }
 // ---------------------------------------------------------------------------
 
 var (
-	GlyphDot     = "●" // presence/status indicator
-	GlyphCursor  = "▌" // list cursor
-	GlyphChevron = "›" // breadcrumb separator
-	GlyphCheck   = "✓"
-	GlyphCross   = "✗"
-	GlyphDiamond = "◆" // approval pending
-	GlyphAt      = "@" // mention
-	GlyphBullet  = "•"
-	GlyphBusy    = "◐" // static activity indicator (reduced motion)
-	GlyphBranch  = "⎇" // git branch marker (F-026 P4 git panel)
-	GlyphSpark   = "✦" // agent activity / transcript agent author (F-026 P1e)
+	GlyphDot       = "●" // presence/status indicator
+	GlyphCursor    = "▌" // list cursor
+	GlyphChevron   = "›" // breadcrumb separator
+	GlyphCheck     = "✓"
+	GlyphCross     = "✗"
+	GlyphDiamond   = "◆" // approval pending
+	GlyphAt        = "@" // mention
+	GlyphBullet    = "•"
+	GlyphBusy      = "◐" // static activity indicator (reduced motion)
+	GlyphBranch    = "⎇" // git branch marker (F-026 P4 git panel)
+	GlyphGutterBar = "▎" // git gutter: added/modified line (F-040)
+	GlyphGutterDel = "▁" // git gutter: lines deleted below
+	GlyphSpark     = "✦" // agent activity / transcript agent author (F-026 P1e)
 )

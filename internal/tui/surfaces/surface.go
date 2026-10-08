@@ -35,6 +35,34 @@ type Surface interface {
 	View() string
 }
 
+// Command is one palette entry a surface contributes (F-041). Run may
+// return a tea.Cmd; it executes on the UI loop.
+type Command struct {
+	Group string // short dim prefix, usually the surface or area
+	Title string
+	Hint  string // a key or short note shown right-aligned
+	Run   func() tea.Cmd
+}
+
+// CommandProvider is the palette seam: the active surface lists what it
+// can do right now (the palette is context-aware — it reflects the
+// surface and mode the user is in). Surfaces without it contribute
+// nothing beyond the shell's global commands.
+type CommandProvider interface {
+	Commands() []Command
+}
+
+// InputCapturer (F-041) is the text-input seam: a surface that is
+// collecting free text right now — an insert-mode buffer, a form field, a
+// composer, a filter, a terminal — reports true. The shell then leaves
+// every printable key, tab and "?" to it; only ctrl-chords (quit, the
+// command palette) stay global. Without it the shell would turn the "2"
+// of "2+2" into a view switch and the "?" of a question into the help
+// overlay.
+type InputCapturer interface {
+	CapturesInput() bool
+}
+
 // Mouse seams (F-026 P2): narrow interface assertions satisfied by
 // individual surfaces — the Surface contract is untouched, and surfaces
 // without them degrade (no mouse behavior, never a crash). The shell

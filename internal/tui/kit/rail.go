@@ -64,6 +64,23 @@ func (r *Rail) View() string {
 	return strings.Join(lines[:h], "\n")
 }
 
+// RowAt maps a rail-local row y (0 = top of the rail) to the index of the
+// nav row drawn there, accounting for the title row and the scroll
+// window. ok is false over the title, the foot, blank fill or past the
+// last row. Mouse clicks ride it (F-041).
+func (r *Rail) RowAt(y int) (int, bool) {
+	r.ensureActive()
+	y -= boolInt(r.Title != "")
+	if y < 0 {
+		return -1, false
+	}
+	start, end := r.window()
+	if i := start + y; i < end {
+		return i, true
+	}
+	return -1, false
+}
+
 // renderRow renders row i (marker, optional glyph, label + tail).
 func (r *Rail) renderRow(i int) string {
 	row := r.Rows[i]

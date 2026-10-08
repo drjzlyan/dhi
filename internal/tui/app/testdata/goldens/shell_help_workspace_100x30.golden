@@ -1,30 +1,30 @@
  ◆ DHI  1 Workspace › 2 Editor › 3 Settings                                                         
                                                                                                     
-                                                                                                    
-                            ╔══════════════════════════════════════════╗                            
-                            ║                                          ║                            
-                            ║  DHI — global keys                       ║                            
-                            ║                                          ║                            
-                            ║    1-3               jump between views  ║                            
-                            ║    tab / shift+tab   cycle views         ║                            
-                            ║    ?                 toggle this help    ║                            
-                            ║    ctrl+c            quit DHI            ║                            
-                            ║                                          ║                            
-                            ║  Workspace — here                        ║                            
-                            ║                                          ║                            
-                            ║    [ / ]             switch sections     ║                            
-                            ║    j / k             move the cursor     ║                            
-                            ║    h/l               lane                ║                            
-                            ║    n                 new                 ║                            
-                            ║    s/S               status              ║                            
-                            ║    m                 move                ║                            
-                            ║    /                 filter              ║                            
-                            ║    L/P/E/D           meta                ║                            
-                            ║    space             mark                ║                            
-                            ║    M                 bulk                ║                            
-                            ║                                          ║                            
-                            ╚══════════════════════════════════════════╝                            
-                                                                                                    
+                  ╔═════════════════════════════════════════════════════════════╗                   
+                  ║                                                             ║                   
+                  ║  DHI — global keys                                          ║                   
+                  ║                                                             ║                   
+                  ║    1-3               jump between views                     ║                   
+                  ║    tab / shift+tab   cycle views                            ║                   
+                  ║    ctrl+p            command palette (search every action)  ║                   
+                  ║    ?                 toggle this help                       ║                   
+                  ║    ctrl+c            quit DHI                               ║                   
+                  ║                                                             ║                   
+                  ║  Workspace — here                                           ║                   
+                  ║                                                             ║                   
+                  ║    [ / ]             switch sections                        ║                   
+                  ║    j / k             move the cursor                        ║                   
+                  ║    h/l               lane                                   ║                   
+                  ║    n                 new                                    ║                   
+                  ║    s/S               status                                 ║                   
+                  ║    m                 move                                   ║                   
+                  ║    /                 filter                                 ║                   
+                  ║    L/P/E/D           meta                                   ║                   
+                  ║    N                 comment                                ║                   
+                  ║    space             mark                                   ║                   
+                  ║    M                 bulk                                   ║                   
+                  ║                                                             ║                   
+                  ╚═════════════════════════════════════════════════════════════╝                   
                                                                                                     
                                                                                                     
                                                                                                     

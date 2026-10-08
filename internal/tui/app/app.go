@@ -27,6 +27,14 @@ var (
 
 type transitionMsg struct{}
 
+// activityTickMsg advances the presence spinner while agents work.
+type activityTickMsg struct{}
+
+// activityInterval is the spinner cadence.
+const activityInterval = 120 * time.Millisecond
+
+var spinFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+
 // Gate is a full-body takeover shown before normal surfaces (first-run
 // bootstrap, boot gates). While the gate is active it owns Update/View
 // and receives every key via HandleKey; global keys still quit, and
@@ -56,6 +64,21 @@ type App struct {
 	width, height int
 	showHelp      bool
 	quitting      bool
+
+	// welcome is the one-time first-run card (F-041); nil once dismissed.
+	// onWelcomeDismiss records that it was seen.
+	welcome          bool
+	onWelcomeDismiss func()
+
+	// activity reports in-flight agent turns for the presence chip;
+	// nil hides the chip. spin advances the spinner frame; armed marks a
+	// pending activity tick (so one chain runs at a time).
+	activity func() int
+	spin     int
+	armed    bool
+
+	// palette is the open command palette (ctrl+p); nil when closed.
+	palette *kit.Palette
 }
 
 // New wires the shell around an ordered surface registry (index i answers
@@ -72,6 +95,49 @@ func New(version string, regs ...surfaces.Surface) *App {
 
 // Active returns the focused surface.
 func (a *App) Active() surfaces.Surface { return a.surfaces[a.active] }
+
+// SetWelcome arms the one-time welcome card, shown after any boot gate
+// has released. onDismiss runs once when the user closes it (the caller
+// persists "seen"). Call before Init.
+func (a *App) SetWelcome(onDismiss func()) {
+	a.welcome, a.onWelcomeDismiss = true, onDismiss
+}
+
+// SetActivity installs the agent-activity source behind the tab-bar
+// presence chip ("⠹ 2 agents working"). Call before Init.
+func (a *App) SetActivity(fn func() int) { a.activity = fn }
+
+// activityChip renders the presence chip, "" when nothing is running.
+func (a *App) activityChip() string {
+	if a.activity == nil {
+		return ""
+	}
+	n := a.activity()
+	if n <= 0 {
+		return ""
+	}
+	glyph := theme.GlyphBusy // reduced motion: a static glyph, no ticking
+	if theme.Motion {
+		glyph = spinFrames[a.spin%len(spinFrames)]
+	}
+	noun := "agent working"
+	if n > 1 {
+		noun = fmt.Sprintf("%d agents working", n)
+	} else {
+		noun = "1 " + noun
+	}
+	return theme.SuccessText().Render(glyph + " " + noun)
+}
+
+// activityCmd arms the spinner tick chain when agents are working and
+// motion is on; at most one chain runs.
+func (a *App) activityCmd() tea.Cmd {
+	if a.activity == nil || a.armed || !theme.Motion || a.activity() <= 0 {
+		return nil
+	}
+	a.armed = true
+	return tea.Tick(activityInterval, func(time.Time) tea.Msg { return activityTickMsg{} })
+}
 
 // SetGate installs a first-run gate (e.g. toolchain bootstrap). Call
 // before Init.
@@ -101,7 +167,7 @@ func (a *App) Init() tea.Cmd {
 // Update loop (ADR-0023): the runtime's editor seam sends it and blocks
 // on Reply. Paths are absolute; the seam resolves VPaths before sending.
 type EditorRequest struct {
-	Op    string // "open" | "reveal" | "apply"
+	Op    string // "open" | "reveal" | "apply" | "context" | "propose" | "lsp"
 	Paths []string
 	// Path/Old/New/All carry an "apply" edit.
 	Path string
@@ -113,6 +179,9 @@ type EditorRequest struct {
 	Line  int
 	Col   int
 	Arg   string
+	// Op "propose" carries the suggestion note and proposing agent.
+	Note  string
+	From  string
 	Reply chan EditorReply
 }
 
@@ -147,12 +216,51 @@ func (a *App) handleEditorRequest(r EditorRequest) {
 		}
 	case "apply":
 		errStr = a.applyInEditor(r.Path, r.Old, r.New, r.All)
+	case "context", "propose", "debug":
+		text, err := a.pairInEditor(r)
+		if err != nil {
+			errStr = err.Error()
+		}
+		if r.Reply != nil {
+			r.Reply <- EditorReply{Text: text, Err: errStr}
+		}
+		return
 	default:
 		errStr = "unknown editor request " + r.Op
 	}
 	if r.Reply != nil {
 		r.Reply <- EditorReply{Err: errStr}
 	}
+}
+
+// pairInEditor routes a pair-programming request (F-038) to the editor
+// surface: "context" reads the human's position, "propose" queues a
+// suggestion for their review.
+func (a *App) pairInEditor(r EditorRequest) (string, error) {
+	for _, s := range a.surfaces {
+		if s.Meta().ID != "editor" {
+			continue
+		}
+		if r.Op == "debug" {
+			dbg, ok := s.(interface{ DebugState() (string, error) })
+			if !ok {
+				return "", fmt.Errorf("editor does not expose a debugger")
+			}
+			return dbg.DebugState()
+		}
+		pr, ok := s.(interface {
+			Context() (string, error)
+			Propose(abs, old, new, note, from string) error
+		})
+		if !ok {
+			return "", fmt.Errorf("editor does not support pair programming")
+		}
+		if r.Op == "context" {
+			return pr.Context()
+		}
+		return "", pr.Propose(r.Path, r.Old, r.New, r.Note, r.From)
+	}
+	return "", fmt.Errorf("editor surface unavailable")
 }
 
 // lspInEditor routes one LSP verb to the editor surface (ADR-0023).
@@ -175,7 +283,23 @@ func (a *App) lspInEditor(r EditorRequest) (string, error) {
 // Update routes messages: gate → global keys → surface keys; broadcast
 // resizes.
 func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	m, cmd := a.update(msg)
+	if ac := a.activityCmd(); ac != nil {
+		if cmd == nil {
+			return m, ac
+		}
+		return m, tea.Batch(cmd, ac)
+	}
+	return m, cmd
+}
+
+func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case activityTickMsg:
+		a.armed = false
+		a.spin++
+		return a, nil // Update re-arms while agents are still working
+
 	case EditorRequest:
 		a.handleEditorRequest(msg)
 		return a, nil
@@ -208,7 +332,24 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return a, nil
 		}
-		if cmd, handled := a.handleGlobal(msg.String()); handled {
+		if a.welcome {
+			switch msg.String() {
+			case "ctrl+c", "ctrl+q":
+				a.quitting = true
+				return a, tea.Quit
+			case "enter", "esc", " ", "q":
+				a.dismissWelcome()
+			}
+			return a, nil // the card owns the keyboard until dismissed
+		}
+		if a.palette != nil {
+			return a, a.paletteKey(msg.String())
+		}
+		if msg.String() == "ctrl+p" {
+			a.openPalette()
+			return a, nil
+		}
+		if cmd, handled := a.handleGlobal(msg.String(), a.activeCapturesInput()); handled {
 			return a, cmd
 		}
 		a.Active().HandleKey(msg.String())
@@ -264,11 +405,23 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 }
 
-func (a *App) handleGlobal(key string) (tea.Cmd, bool) {
+// activeCapturesInput reports whether the focused surface is collecting
+// free text (surfaces.InputCapturer); such a surface owns plain keys.
+func (a *App) activeCapturesInput() bool {
+	c, ok := a.Active().(surfaces.InputCapturer)
+	return ok && c.CapturesInput()
+}
+
+func (a *App) handleGlobal(key string, capturing bool) (tea.Cmd, bool) {
 	switch key {
 	case "ctrl+c", "ctrl+q":
 		a.quitting = true
 		return tea.Quit, true
+	}
+	if capturing {
+		return nil, false // typing: digits, "?" and tab belong to the surface
+	}
+	switch key {
 	case "?":
 		a.showHelp = !a.showHelp
 		return nil, true
@@ -286,6 +439,86 @@ func (a *App) handleGlobal(key string) (tea.Cmd, bool) {
 		}
 	}
 	return nil, false
+}
+
+func (a *App) dismissWelcome() {
+	if !a.welcome {
+		return
+	}
+	a.welcome = false
+	if a.onWelcomeDismiss != nil {
+		a.onWelcomeDismiss()
+	}
+}
+
+// welcomeView is the first-run card: the five things worth knowing.
+func (a *App) welcomeView() string {
+	titles := make([]string, len(a.surfaces))
+	for i, s := range a.surfaces {
+		titles[i] = s.Meta().Title
+	}
+	rows := [][2]string{
+		{fmt.Sprintf("1-%d", len(a.surfaces)), strings.Join(titles, " · ")},
+		{"ctrl+p", "command palette — search every action"},
+		{"?", "keyboard help for where you are"},
+		{"[  ]", "switch sections inside a view"},
+		{"@name", "mention an agent in any channel to hand it work"},
+	}
+	lines := []string{theme.Brand().Render("Welcome to DHI"),
+		theme.TextDim().Render("Your virtual office — agents work beside you."), ""}
+	for _, r := range rows {
+		lines = append(lines, "  "+keycap(r[0])+"  "+theme.TextDim().Render(r[1]))
+	}
+	lines = append(lines, "", theme.Hint().Render("press enter to begin"))
+	m := kit.Modal{Title: "welcome", Lines: lines, Width: 74}
+	return m.View()
+}
+
+// paletteKey routes a key to the open palette; a pick runs its command.
+func (a *App) paletteKey(key string) tea.Cmd {
+	picked, closed := a.palette.HandleKey(key)
+	if !closed {
+		return nil
+	}
+	a.palette = nil
+	if picked == nil {
+		return nil
+	}
+	if run, ok := picked.Data.(func() tea.Cmd); ok && run != nil {
+		return run()
+	}
+	return nil
+}
+
+// openPalette builds the context-aware command list: the shell's global
+// commands first, then whatever the active surface offers right now.
+func (a *App) openPalette() {
+	var items []kit.PaletteItem
+	add := func(group, title, hint string, run func() tea.Cmd) {
+		items = append(items, kit.PaletteItem{Group: group, Title: title, Hint: hint, Data: run})
+	}
+	for i, s := range a.surfaces {
+		i := i
+		hint := ""
+		if i < 9 {
+			hint = strconv.Itoa(i + 1)
+		}
+		add("Go to", s.Meta().Title, hint, func() tea.Cmd {
+			a.selectSurface(i)
+			return a.transitionCmd()
+		})
+	}
+	if cp, ok := a.Active().(surfaces.CommandProvider); ok {
+		for _, c := range cp.Commands() {
+			c := c
+			add(c.Group, c.Title, c.Hint, c.Run)
+		}
+	}
+	add("", "Show keyboard help", "?", func() tea.Cmd { a.showHelp = true; return nil })
+	add("Theme", "Dark", "", func() tea.Cmd { theme.Current = theme.Dark(); return nil })
+	add("Theme", "Light", "", func() tea.Cmd { theme.Current = theme.Light(); return nil })
+	add("", "Quit DHI", "ctrl+c", func() tea.Cmd { a.quitting = true; return tea.Quit })
+	a.palette = kit.NewPalette(items)
 }
 
 func (a *App) selectSurface(i int) {
@@ -454,6 +687,14 @@ func (a *App) View() tea.View {
 // click, row 0 hits the tab bar, else the active surface decides via
 // its Click seam (nil-safe — surfaces without mouse behavior ignore it).
 func (a *App) handleClick(x, y int) tea.Cmd {
+	if a.welcome {
+		a.dismissWelcome()
+		return nil
+	}
+	if a.palette != nil {
+		a.palette = nil // a click outside dismisses the palette
+		return nil
+	}
 	if a.showHelp {
 		a.showHelp = false
 		return nil
@@ -475,6 +716,7 @@ func (a *App) handleClick(x, y int) tea.Cmd {
 
 func (a *App) compose() string {
 	a.tabs.Width = a.width
+	a.tabs.Right = a.activityChip()
 	bar := a.tabs.View()
 
 	statusLine := a.buildStatus().View()
@@ -488,7 +730,12 @@ func (a *App) compose() string {
 		body = theme.Faint(body)
 	}
 	out := bar + "\n" + body + "\n" + statusLine
-	if a.showHelp {
+	if a.welcome && !a.gateActive() {
+		out = kit.Overlay(strings.Split(out, "\n"), a.welcomeView(), a.width, a.height)
+	} else if a.palette != nil {
+		box := a.palette.View(min(70, max(a.width-4, 40)))
+		out = kit.Overlay(strings.Split(out, "\n"), box, a.width, a.height)
+	} else if a.showHelp {
 		// The help dialog overlays the composed view over a dimmed
 		// backdrop (F-024) — the surface stays visible beneath it.
 		box := a.helpView()
@@ -509,6 +756,14 @@ type statusContext interface{ StatusContext() (zone, mode string) }
 // zone changes render live without a surface switch.
 func (a *App) buildStatus() *kit.StatusLine {
 	sl := kit.DefaultStatusLine(a.Active().Meta().Title)
+	// Hints are derived from the live state: the view count follows the
+	// registry, and while a surface is taking text the digit/tab/? keys
+	// are not offered (they would be typed, not obeyed).
+	if a.activeCapturesInput() {
+		sl.Hints = []string{"^p palette", "^c quit"}
+	} else {
+		sl.Hints = []string{fmt.Sprintf("1-%d views", len(a.surfaces)), "tab next", "^p palette", "? help", "^c quit"}
+	}
 	if sc, ok := a.Active().(statusContext); ok {
 		zone, mode := sc.StatusContext()
 		left := make([]kit.StatusSegment, 0, 3)
@@ -549,6 +804,7 @@ func (a *App) helpView() string {
 	rows := [][2]string{
 		{fmt.Sprintf("1-%d", n), "jump between views"},
 		{"tab / shift+tab", "cycle views"},
+		{"ctrl+p", "command palette (search every action)"},
 		{"?", "toggle this help"},
 		{"ctrl+c", "quit DHI"},
 	}
