@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/drjzlyan/dhi/internal/gitdiff"
 	"github.com/drjzlyan/dhi/internal/review"
 	"github.com/drjzlyan/dhi/internal/testutil/golden"
 	"github.com/drjzlyan/dhi/internal/tui/kit"
@@ -66,11 +67,23 @@ func TestReviewScreenKeysStillWork(t *testing.T) {
 
 func TestClickingAFileJumpsTheDiff(t *testing.T) {
 	m := screenModel(t, 140)
+	m.files = gitdiff.Parse(twoHunkPatch + `diff --git a/util.go b/util.go
+new file mode 100644
+--- /dev/null
++++ b/util.go
+@@ -0,0 +1,2 @@
++package util
++
+`)
+	m.resetGapState()
 	_ = m.View()
 	if m.Click(screenFilesW+5, 5) {
 		t.Fatal("click in the diff column was swallowed")
 	}
-	if !m.Click(2, 1+m.screenRows) || m.fileCur != 0 {
-		t.Fatalf("click on the first file: fileCur=%d", m.fileCur)
+	if !m.Click(2, 1+m.screenRows+1) || m.fileCur != 1 {
+		t.Fatalf("click on the second file: fileCur=%d", m.fileCur)
+	}
+	if row := m.rowAt(m.cursor); row == nil || row.kind != vrFileHeader || row.file != 1 {
+		t.Fatalf("diff cursor did not jump to util.go: %+v", row)
 	}
 }
