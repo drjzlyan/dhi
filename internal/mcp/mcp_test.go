@@ -249,3 +249,43 @@ func TestBearerClientSendsTheTokenOnEveryRequest(t *testing.T) {
 		t.Fatal("BearerClient mutated the caller's request")
 	}
 }
+
+// A server that dies on start must fail the dial at once, saying why — not
+// after the caller's whole timeout (a sandboxed uvx/npx used to hang a turn).
+func TestStdioChildThatExitsFailsFastWithItsStderr(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	start := time.Now()
+	_, err := DialStdio(ctx, nil, "/bin/sh", "-c", "echo 'error: cache is read-only' >&2; echo 'second line' >&2; exit 3")
+	if err == nil {
+		t.Fatal("a dead server was accepted")
+	}
+	if time.Since(start) > 10*time.Second {
+		t.Fatalf("took %s — it waited for the timeout instead of noticing the exit", time.Since(start))
+	}
+	if !strings.Contains(err.Error(), "server exited") || !strings.Contains(err.Error(), "cache is read-only") {
+		t.Fatalf("err = %v; it should carry the child's own stderr", err)
+	}
+}
+
+func TestStdioCallsAfterTheChildDiesFailImmediately(t *testing.T) {
+	ctx := context.Background()
+	s, err := DialStdio(ctx, nil, "/bin/sh", "-c",
+		`read l; echo '{"jsonrpc":"2.0","id":1,"result":{}}'; read l; exit 0`)
+	if err != nil {
+		t.Fatalf("handshake: %v", err)
+	}
+	defer s.Close()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		cctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		start := time.Now()
+		_, err := s.Tools(cctx)
+		cancel()
+		if err != nil && time.Since(start) < time.Second {
+			return // failed fast
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatal("calls to a dead server did not fail promptly")
+}

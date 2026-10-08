@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/drjzlyan/dhi/internal/conventions"
 	"github.com/drjzlyan/dhi/internal/mcp"
 	"github.com/drjzlyan/dhi/internal/workspace"
 )
@@ -281,5 +282,49 @@ func TestFSWritePatchServed(t *testing.T) {
 		if !Serves(s) {
 			t.Fatalf("%s is not a served slug", s)
 		}
+	}
+}
+
+// ---- conventions: copyright header on new files (F-042) ----
+
+func TestWriteAddsTheCopyrightHeaderToNewFilesOnly(t *testing.T) {
+	f, m := newFixture(t, "write")
+	api := memberDir(t, f.ws, "api")
+	conv := conventions.Defaults()
+	conv.Copyright = conventions.Copyright{Enabled: true, Holder: "Acme Inc", License: "MIT", Year: "2026"}
+	h := Deps{Agent: m, WS: f.ws, Approvals: f.approvals, Conventions: &conv}.Handler()
+
+	resolve := callAsync(h, "write", `{"path":"api/new.go","content":"package api\n"}`, f)
+	if out, isErr := resolve(t); isErr {
+		t.Fatalf("write refused: %s", out)
+	}
+	got, _ := os.ReadFile(filepath.Join(api, "new.go"))
+	want := "// Copyright (c) 2026 Acme Inc\n// SPDX-License-Identifier: MIT\n\npackage api\n"
+	if string(got) != want {
+		t.Fatalf("new file =\n%q\nwant\n%q", got, want)
+	}
+
+	// An existing file is overwritten exactly as the agent gave it.
+	resolve = callAsync(h, "write", `{"path":"api/new.go","content":"package api // v2\n"}`, f)
+	if out, isErr := resolve(t); isErr {
+		t.Fatalf("overwrite refused: %s", out)
+	}
+	got, _ = os.ReadFile(filepath.Join(api, "new.go"))
+	if string(got) != "package api // v2\n" {
+		t.Fatalf("overwrite gained a header: %q", got)
+	}
+
+	// Unknown languages and a disabled setting add nothing.
+	resolve = callAsync(h, "write", `{"path":"api/notes.md","content":"hi\n"}`, f)
+	resolve(t)
+	if got, _ := os.ReadFile(filepath.Join(api, "notes.md")); string(got) != "hi\n" {
+		t.Fatalf("markdown got a header: %q", got)
+	}
+	off := conventions.Defaults()
+	h2 := Deps{Agent: m, WS: f.ws, Approvals: f.approvals, Conventions: &off}.Handler()
+	resolve = callAsync(h2, "write", `{"path":"api/other.go","content":"package api\n"}`, f)
+	resolve(t)
+	if got, _ := os.ReadFile(filepath.Join(api, "other.go")); string(got) != "package api\n" {
+		t.Fatalf("disabled setting still added a header: %q", got)
 	}
 }

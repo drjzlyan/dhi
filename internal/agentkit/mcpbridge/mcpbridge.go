@@ -21,6 +21,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"sort"
 	"strings"
@@ -70,6 +71,13 @@ type Deps struct {
 	// PathPrefix directories go first on a stdio server's PATH — DHI's
 	// tool shims, so `uvx`/`npx` are the pinned hermetic ones (ADR-0028).
 	PathPrefix []string
+	// HomeDir, when set, is the stdio server's HOME and (under it) TMPDIR.
+	// It must be inside the sandbox's writable roots: uvx and npx write
+	// caches, logs and temp files, and under the OS sandbox they cannot
+	// write the user's real ~/.cache or ~/.npm — they failed, then the
+	// dial hung (ADR-0028). It also keeps third-party servers out of the
+	// user's real home.
+	HomeDir string
 }
 
 // Bridge is the dialed set of servers whose tools the agent allowlists.
@@ -273,6 +281,13 @@ func (b *Bridge) stdioEnv(srv mcpserver.Server) ([]string, error) {
 	if lookup == nil {
 		lookup = DefaultLookup
 	}
+	if home := b.deps.HomeDir; home != "" {
+		tmp := filepath.Join(home, "tmp")
+		if err := os.MkdirAll(tmp, 0o700); err != nil {
+			return nil, fmt.Errorf("mcp home %s: %w", home, err)
+		}
+		env = append(env, "HOME="+home, "TMPDIR="+tmp)
+	}
 	for _, name := range srv.Env {
 		val, ok := lookup(name)
 		if !ok {
@@ -287,6 +302,13 @@ func (b *Bridge) stdioEnv(srv mcpserver.Server) ([]string, error) {
 // tests that want the real argv/env assembly with a fake transport).
 func DialDefault(ctx context.Context, srv mcpserver.Server, sb sandbox.Sandbox, lookup Lookup) (mcp.Caller, error) {
 	b := &Bridge{deps: Deps{Sandbox: sb, Lookup: lookup}}
+	return b.dialDefault(ctx, srv)
+}
+
+// DialWith is DialDefault with the full production Deps (shim PATH, private
+// HOME, credential lookup) — what the runtime's bridge uses per server.
+func DialWith(ctx context.Context, srv mcpserver.Server, d Deps) (mcp.Caller, error) {
+	b := &Bridge{deps: d}
 	return b.dialDefault(ctx, srv)
 }
 

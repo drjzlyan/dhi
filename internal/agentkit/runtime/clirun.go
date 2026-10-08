@@ -325,6 +325,7 @@ func (r *Runtime) serveTools(e *entry, trigger bus.Message) *serveSession {
 			Approvals:  r.cfg.Approvals,
 			Scopes:     r.agentScopes(e.m),
 			PathPrefix: r.cfg.ToolBin,
+			HomeDir:    r.cfg.MCPHome,
 		})
 		cancel()
 		if len(bridge.Tools()) > 0 {

@@ -40,7 +40,6 @@ type cliInstalledMsg struct {
 // missing one (ADR-0027): npm-distributed CLIs install after the exact
 // command is shown and confirmed; the rest show the vendor's command.
 type cliStep struct {
-	base
 	env     *Env
 	rows    []CLIRow
 	cur     int
@@ -136,6 +135,49 @@ func (s *cliStep) HandleKey(key string) Action {
 	return Stay
 }
 
+// usable reports a CLI that is installed and not in a different major
+// version than DHI was verified against.
+func usable(r CLIRow) bool {
+	return r.Version != "" && r.Verdict != clirun.VerdictMajor && r.Verdict != clirun.VerdictUnknown
+}
+
+// defaultEngine is the engine this step will set when the workspace has
+// none: the most preferred usable CLI. "" = nothing to set (an engine is
+// already configured, there is no workspace, or no CLI is usable).
+func (s *cliStep) defaultEngine() string {
+	if s.env.Engine != "" || s.env.Root == "" || s.env.SetEngine == nil {
+		return ""
+	}
+	var ready []string
+	for _, r := range s.rows {
+		if usable(r) {
+			ready = append(ready, r.Name)
+		}
+	}
+	if len(ready) == 0 {
+		return ""
+	}
+	return "cli:" + orderEngines(ready)[0]
+}
+
+// Apply gives a workspace without a default engine one, so employees on a
+// freshly cloned team workspace can think without anyone hand-editing a
+// config (the team step only runs for an empty roster).
+func (s *cliStep) Apply() error {
+	engine := s.defaultEngine()
+	if engine == "" {
+		return nil
+	}
+	if err := s.env.SetEngine(engine); err != nil {
+		s.errText = "could not save the default engine: " + err.Error()
+		return err
+	}
+	s.env.Engine = engine
+	s.env.Changed = true
+	s.env.Applied = append(s.env.Applied, "default engine "+engine)
+	return nil
+}
+
 func (s *cliStep) start(row CLIRow) {
 	s.phase = cliInstalling
 	install, name := s.env.InstallCLI, row.Name
@@ -201,12 +243,14 @@ func (s *cliStep) View(w, f int) []string {
 	}
 	readyAny := false
 	for _, r := range s.rows {
-		if r.Version != "" && r.Verdict != clirun.VerdictMajor && r.Verdict != clirun.VerdictUnknown {
+		if usable(r) {
 			readyAny = true
 		}
 	}
 	if !readyAny {
 		out = append(out, "", warn("No CLI is ready yet — employees can't think until one is."))
+	} else if e := s.defaultEngine(); e != "" {
+		out = append(out, "", dim("default engine for this workspace: "+e+" (change it later in Settings)"))
 	}
 
 	row, hasRow := s.selected()

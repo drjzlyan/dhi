@@ -452,8 +452,12 @@ func (d Deps) taskTools() []tool {
 				return "", fmt.Errorf("task %s has no worktree — attach one first", slug)
 			}
 			var opened, failures []string
+			title := a.Title
+			if d.Conventions != nil { // conventions.pr.title (F-042)
+				title = conventions.Render(d.Conventions.PR.Title, map[string]string{"title": a.Title, "slug": slug})
+			}
 			for _, cs := range t.ChangeSets {
-				res, err := d.PR(ctx, cs.Member, cs.Branch, a.Title, a.Base)
+				res, err := d.PR(ctx, cs.Member, cs.Branch, title, a.Base)
 				if err != nil {
 					failures = append(failures, cs.Member+": "+err.Error())
 					continue

@@ -22,8 +22,10 @@ it from reaching the tools companies actually use:
 1. **HTTP cards may declare `auth_env`** — the *name* of a credential sent as
    `Authorization: Bearer <value>`. Card schema 2 (1 still loads). The value is
    resolved at dial time; a missing credential is a named refusal.
-2. **Stdio servers launch with DHI's tool shims first on `PATH`**, so `uvx` and
-   `npx` are the pinned hermetic ones.
+2. **Stdio servers launch with DHI's tool shims first on `PATH`** (so `uvx` and `npx`
+   are the pinned hermetic ones) **and a private `HOME`/`TMPDIR` inside the sandbox's
+   writable toolchain prefix.** Without the latter they cannot write their caches
+   under the OS sandbox and fail; with it they also never touch the user's real home.
 3. **Credentials resolve: environment → `credentials.toml` → macOS keychain.**
    `credentials.toml` lives in the user config dir (never `.dhi/`), directory
    `0700`, file `0600`, written atomically. It is plaintext, like `~/.aws/credentials`;

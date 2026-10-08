@@ -48,8 +48,8 @@ license = ""                # SPDX id
 year    = ""                # "" = current year
 
 [conventions.pr]
-title = "{title}"
-body  = "{summary}"
+title = "{title}"                                   # agent-chosen titles: {title} {slug}
+body  = "Created from DHI worktree `{branch}`."     # every PR DHI opens: {branch} {member} {title}
 ```
 
 ## Enforcement points
@@ -60,6 +60,8 @@ body  = "{summary}"
 | Commit format + subject length | `git_commit` validates in `parse` (before an approval is spent) with a message telling the author the fix |
 | Co-author trailer | `git_commit` appends once (idempotent), only when `co_author_enabled`; the value must be set explicitly |
 | Agent awareness | `Config.Guidance()` joins the system prompt (`cliPrompt`) so agents comply before a gate refuses |
+| New-file copyright header | the served `write` tool prepends `copyright` to a file that does not yet exist (language-aware, shebang-safe, idempotent); overwrites are left exactly as given |
+| PR title / body | `pr_open` renders `pr.title`; `review.Service.CreatePRForBranch` renders `pr.body` for every PR (agent or Reviewer); unknown placeholders are refused at load |
 | Settings UI | rows for branch preset, commit format, co-author toggle (needs a value), copyright toggle (needs `holder`); saved to `conventions.toml`, flash says "applies on restart" |
 | Preview | Settings "effective standards" shows standards + conventions, in the order `cliPrompt` appends them |
 
@@ -76,9 +78,8 @@ body  = "{summary}"
 ## Deferred
 
 - Worktree root location (`tasks.Dir` is the store layout; moving it is a migration).
-- **Copyright header injection on agent file writes** and **`pr.title`/`pr.body`
-  consumption by `pr_open`** — today copyright exists only as prompt
-  text and the PR templates only parse and validate. Scheduled as an
-  explicit line in ROADMAP M25 (P7a).
+- **A CLI agent's own file edits.** The header is applied by DHI's served `write` tool.
+  Coding CLIs (claude, codex…) write files with their *own* tools, which DHI cannot
+  intercept, so for them the header remains an instruction in the system prompt only.
 - Live reload: edits apply on restart (the wizard relaunches; Settings says so).
 - Free-text editing of patterns inside the TUI (hand-edit `config.toml`).

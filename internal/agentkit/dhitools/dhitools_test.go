@@ -16,6 +16,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/memory"
 	"github.com/drjzlyan/dhi/internal/agentkit/scopes"
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
+	"github.com/drjzlyan/dhi/internal/conventions"
 	"github.com/drjzlyan/dhi/internal/mcp"
 	"github.com/drjzlyan/dhi/internal/sandbox"
 	"github.com/drjzlyan/dhi/internal/tasks"
@@ -423,5 +424,25 @@ func TestTaskCommentTool(t *testing.T) {
 	}
 	if _, isErr := callAsync(h, "task_comment", `{"slug":"nope","text":"x"}`, f)(t); !isErr {
 		t.Fatal("unknown task must refuse")
+	}
+}
+
+// conventions.pr.title is applied to the title an agent chooses (F-042).
+func TestPROpenAppliesTheTitleTemplate(t *testing.T) {
+	f, m := newFixture(t, "pr_open")
+	var title string
+	conv := conventions.Defaults()
+	conv.PR.Title = "[{slug}] {title}"
+	h := Deps{Agent: m, Tasks: f.tasks, Approvals: f.approvals, Channel: "#general", Conventions: &conv,
+		PR: func(_ context.Context, _, _, tt, _ string) (string, error) { title = tt; return "PR #1", nil }}.Handler()
+	f.tasks.Create("feat-9", "Feature", "", "")
+	if err := f.tasks.RecordChangeSet("feat-9", tasks.ChangeSet{Member: "api", Branch: "task/feat-9", Path: "wt"}); err != nil {
+		t.Fatal(err)
+	}
+	if out, isErr := callAsync(h, "pr_open", `{"slug":"feat-9","title":"Add search","base":"main"}`, f)(t); isErr {
+		t.Fatalf("pr_open: %s", out)
+	}
+	if title != "[feat-9] Add search" {
+		t.Fatalf("title = %q", title)
 	}
 }

@@ -106,8 +106,10 @@ func runTUI() (relaunch bool) {
 	// (ADR-0027); every consumer shares the one lookup.
 	cliLook := clirun.ManagedLook(toolRoot, exec.LookPath)
 	var toolBin []string // tool shims for bridged MCP servers (uvx/npx)
+	mcpHome := ""        // their private HOME, inside the sandbox's writable prefix
 	if toolRoot != "" {
 		toolBin = []string{toolchain.New(toolRoot).ShimDir()}
+		mcpHome = filepath.Join(toolRoot, "mcp-home")
 	}
 
 	// The boot audit resolves everything up front (F-011 / ADR-0011):
@@ -207,7 +209,7 @@ func runTUI() (relaunch bool) {
 			taskStore.SetIdentity(identityFn)
 			wireTaskSeam(ws, ts, cfg.Conventions.Branch.Task)
 		}
-		reviewSvc = openReviewService(ws, cfg.Conventions.Branch.Review)
+		reviewSvc = openReviewService(ws, cfg.Conventions.Branch.Review, cfg.Conventions.PR.Body)
 		mcpStore = mcpserver.Open(ws.Root)
 		if ss, err := ideation.Open(ws); err == nil {
 			sessionStore = ss
@@ -228,7 +230,7 @@ func runTUI() (relaunch bool) {
 		// under .dhi/agents/. Guards carry the audited OS-sandbox
 		// adapter (nil here is impossible: the audit blocked first).
 		if messageBus != nil {
-			agentRT = newAgentRuntime(ws, messageBus, decision.Sandbox, termEnv, cfg.Engine, gitRunner, identityFn, sessionStore, runRunner, editorBridge, wsScopes, taskStore, reviewSvc, rgSearcher, mcpStore, &cfg.Conventions, cliLook, toolBin)
+			agentRT = newAgentRuntime(ws, messageBus, decision.Sandbox, termEnv, cfg.Engine, gitRunner, identityFn, sessionStore, runRunner, editorBridge, wsScopes, taskStore, reviewSvc, rgSearcher, mcpStore, &cfg.Conventions, cliLook, toolBin, mcpHome)
 			if agentRT != nil {
 				edOpts = append(edOpts, editor.WithChat(agentRT))
 			}
@@ -399,7 +401,7 @@ func runTUI() (relaunch bool) {
 	// other launch reaches it from the palette. Each run gets a fresh Env
 	// so a palette re-run starts from the state on disk.
 	var wizards []*wizard.Model
-	newWizard := func(forced bool) *wizard.Model {
+	newWizard := func() *wizard.Model {
 		env := newSetupEnv(cwd, ws, userCfg, toolRoot, cfg.Conventions, cfg.Engine, identityFn, cliLook,
 			func() { startLesson("tour") })
 		w := wizard.New(env, loadSetupState(ws), wizard.DefaultSteps(env, version.Version)...)
@@ -407,9 +409,9 @@ func runTUI() (relaunch bool) {
 		return w
 	}
 	if decision.Block == "" {
-		a.SetSetupGate(func() app.Gate { return newWizard(true) })
+		a.SetSetupGate(func() app.Gate { return newWizard() })
 	}
-	autoWizard := decision.Block == "" && shouldAutoRunSetup(ws, userCfg)
+	autoWizard := decision.Block == "" && shouldAutoRunSetup(ws)
 
 	// First run in this workspace: show the welcome card once (F-041). The
 	// marker is per-workspace runtime state, gitignored like unread.json.
@@ -457,7 +459,7 @@ func runTUI() (relaunch bool) {
 		gates = append(gates, bootgate.New(version.Version, first, mgr))
 	}
 	if autoWizard {
-		gates = append(gates, newWizard(false))
+		gates = append(gates, newWizard())
 	}
 	toolsAtLaunch := toolsFingerprint(toolRoot)
 	var tail *gatechain.RelaunchGate
@@ -514,7 +516,7 @@ func toolsFingerprint(root string) string {
 }
 
 // shouldAutoRunSetup applies the launch policy for the setup wizard.
-func shouldAutoRunSetup(ws *workspace.Workspace, userCfg string) bool {
+func shouldAutoRunSetup(ws *workspace.Workspace) bool {
 	in := setup.AutoRunInput{HasWorkspace: ws != nil}
 	if p, err := setup.UserStatePath(); err == nil {
 		if st, err := setup.LoadState(p); err == nil {
@@ -739,7 +741,7 @@ func needsBootstrap(root string) bool {
 // openReviewService builds the review orchestration layer: TOML store
 // always; worktree seam + diff runner light up with the hermetic git
 // shim; PR inputs additionally need the host gh CLI.
-func openReviewService(ws *workspace.Workspace, branchPattern string) *review.Service {
+func openReviewService(ws *workspace.Workspace, branchPattern, prBody string) *review.Service {
 	st, err := review.Open(ws)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "dhi: review store:", err)
@@ -755,6 +757,7 @@ func openReviewService(ws *workspace.Workspace, branchPattern string) *review.Se
 	}
 	gh := review.NewGHCLI(ghShim)
 	svc := review.NewService(ws, st, nil, gh)
+	svc.SetPRBody(prBody)
 	svc.SetTokenFn(func(ctx context.Context) (string, error) {
 		return gh.AuthToken(ctx)
 	})
@@ -767,6 +770,7 @@ func openReviewService(ws *workspace.Workspace, branchPattern string) *review.Se
 		return svc // pre-release: shim absent; diffs degrade visibly
 	}
 	svc = review.NewService(ws, st, runner, gh)
+	svc.SetPRBody(prBody)
 	svc.SetTokenFn(func(ctx context.Context) (string, error) {
 		return gh.AuthToken(ctx)
 	})
@@ -1021,7 +1025,7 @@ func (r execRunner) Run(ctx context.Context, dir string, argv []string, allowNet
 	return out, err
 }
 
-func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cliEnv []string, defaultEngine string, gitRunner *gitcore.Runner, identityFn gitcore.IdentityFunc, sessionStore *ideation.Store, runRunner dhitools.CommandRunner, editor dhitools.EditorAPI, workspaceScopes scopes.Set, taskStore *tasks.Store, reviewSvc *review.Service, kbSearcher search.Searcher, mcpStore *mcpserver.Store, conv *conventions.Config, cliLook func(string) (string, error), toolBin []string) *agentkitRuntime.Runtime {
+func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cliEnv []string, defaultEngine string, gitRunner *gitcore.Runner, identityFn gitcore.IdentityFunc, sessionStore *ideation.Store, runRunner dhitools.CommandRunner, editor dhitools.EditorAPI, workspaceScopes scopes.Set, taskStore *tasks.Store, reviewSvc *review.Service, kbSearcher search.Searcher, mcpStore *mcpserver.Store, conv *conventions.Config, cliLook func(string) (string, error), toolBin []string, mcpHome string) *agentkitRuntime.Runtime {
 	roster, err := manifest.LoadDir(filepath.Join(ws.Root, workspace.DirAgents))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "dhi: agent roster:", err)
@@ -1062,6 +1066,7 @@ func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cl
 		Standards:     true,
 		Conventions:   conv,
 		ToolBin:       toolBin,
+		MCPHome:       mcpHome,
 		Workflows:     true,
 		Sandbox:       sb,
 		Memory:        memStore,

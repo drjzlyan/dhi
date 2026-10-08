@@ -126,7 +126,6 @@ type Model struct {
 
 	idx        int
 	skipped    map[string]bool
-	err        string // last Apply error for the active step is shown by the step; this is wizard-level
 	frame      int
 	enterFrame int
 	clockArmed bool
@@ -361,7 +360,8 @@ func (m *Model) stepItems() []kit.StepItem {
 	for i, s := range m.steps {
 		// A step that no longer applies (the workspace now exists) stays
 		// visible if it was done or skipped on the way here.
-		if !s.Applies() && i != m.idx && !(i < m.idx && (m.state.Has(s.ID()) || m.skipped[s.ID()])) {
+		doneBefore := i < m.idx && (m.state.Has(s.ID()) || m.skipped[s.ID()])
+		if !s.Applies() && i != m.idx && !doneBefore {
 			continue
 		}
 		st := kit.StepPending

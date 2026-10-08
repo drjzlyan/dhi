@@ -56,7 +56,9 @@ type Copyright struct {
 	Year    string `toml:"year"`    // "" = current year at write time
 }
 
-// PR templates; {title} {slug} {summary} are substituted.
+// PR templates. Title (applied to titles agents choose in pr_open) may use
+// {title} and {slug}; Body (every PR DHI opens) may use {branch}, {member}
+// and {title}. Unknown placeholders are refused, not silently kept.
 type PR struct {
 	Title string `toml:"title"`
 	Body  string `toml:"body"`
@@ -71,7 +73,7 @@ func Defaults() Config {
 			TicketPattern: `[A-Z][A-Z0-9]+-\d+`,
 			MaxSubject:    72,
 		},
-		PR: PR{Title: "{title}", Body: "{summary}"},
+		PR: PR{Title: "{title}", Body: "Created from DHI worktree `{branch}`."},
 	}
 }
 
@@ -116,7 +118,7 @@ func checkRef(ref string) error {
 	case ref == "" || strings.HasPrefix(ref, "/") || strings.HasSuffix(ref, "/"):
 		return fmt.Errorf("empty or slash-bounded ref")
 	case strings.Contains(ref, "//") || strings.Contains(ref, ".."):
-		return fmt.Errorf("contains // or ..")
+		return fmt.Errorf("contains a double slash or dot-dot")
 	case strings.HasSuffix(ref, ".lock") || strings.HasSuffix(ref, "."):
 		return fmt.Errorf("bad suffix")
 	}
@@ -158,6 +160,26 @@ func (c Config) Validate() error {
 	}
 	if c.Copyright.Enabled && strings.TrimSpace(c.Copyright.Holder) == "" {
 		return fmt.Errorf("copyright.holder is required when copyright.enabled")
+	}
+	if err := checkPlaceholders("pr.title", c.PR.Title, "title", "slug"); err != nil {
+		return err
+	}
+	if err := checkPlaceholders("pr.body", c.PR.Body, "branch", "member", "title"); err != nil {
+		return err
+	}
+	return nil
+}
+
+// checkPlaceholders refuses a template that uses a {name} outside allowed.
+func checkPlaceholders(key, tpl string, allowed ...string) error {
+	ok := map[string]bool{}
+	for _, a := range allowed {
+		ok[a] = true
+	}
+	for _, m := range placeholderRe.FindAllStringSubmatch(tpl, -1) {
+		if !ok[m[1]] {
+			return fmt.Errorf("%s: unknown placeholder {%s} (allowed: {%s})", key, m[1], strings.Join(allowed, "}, {"))
+		}
 	}
 	return nil
 }

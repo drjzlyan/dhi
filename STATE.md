@@ -75,8 +75,11 @@ real delve v1.27.2 — see F-039; `dlv` provisioning still open.)
   `mcp__<server>__*`; `agentkit/catalog` (atlassian, github, linear, notion,
   slack, teams=unavailable; pinned, with trust labels); wizard `integrations`
   step; `kit.NewSecretField`; doctor `mcp/credentials` (names only).
-- **NOT verified:** any call to a vendor service with a real credential; Slack/Notion
-  servers were not started. Teams needs an OAuth client (not built).
+- **Verified under the real seatbelt sandbox:** atlassian (98 tools), notion (24),
+  slack (8) start and list tools with a private `HOME` (`<prefix>/mcp-home`) — the
+  first probe without the sandbox had hidden that every stdio server failed under it.
+  **NOT verified:** any call to a vendor service with a real credential; the Linux
+  bubblewrap profile. Teams needs an OAuth client (not built).
 - Gotcha: to add a catalog entry, read the vendor docs, pin the version from the
   registry, and the catalog tests enforce pinning/validity.
 - **P7 shipped (F-048):** `toolchain.Delve()`/`SourceBuilt()`, boot offers + bootgate
@@ -84,7 +87,11 @@ real delve v1.27.2 — see F-039; `dlv` provisioning still open.)
   smoke passed. `internal/tutorial` (4 lessons) + `app/coach.go` (4-row strip,
   `observe` events, `ctrl+]` / `ctrl+\`), palette entries, wizard tour offer
   (`t`; marker `tour.pending` across a relaunch).
-- **Programme M25 P1–P7 complete.** Not pushed (per instruction). Open: LSPs for
+- **Review pass (advisor) closed four gaps before wrap-up:** copyright header + PR
+  title/body templates are now enforced where DHI controls the write (P7a); the CLI
+  step sets a default engine when a cloned team workspace has none; MCP stdio servers
+  are verified under the real OS sandbox (see F-047); CI lint was run.
+- **Programme M25 P1–P7 complete.** Open: LSPs for
   other languages need editor support first; releases need a pushed tag to exercise
   `release.yml`; Teams needs an OAuth client.
 - Decision: missing agent CLIs get a confirm-gated install (P5); needs a

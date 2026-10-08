@@ -14,6 +14,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	httptransport "github.com/go-git/go-git/v5/plumbing/transport/http"
 
+	"github.com/drjzlyan/dhi/internal/conventions"
 	"github.com/drjzlyan/dhi/internal/gitcore"
 	"github.com/drjzlyan/dhi/internal/gitdiff"
 	"github.com/drjzlyan/dhi/internal/workspace"
@@ -34,6 +35,9 @@ type Service struct {
 	diffFn func(ctx context.Context, dir string, args ...string) (string, error)
 	// tokenFn mints push credentials (gh auth token in production).
 	tokenFn func(ctx context.Context) (string, error)
+	// prBody is the PR body template (conventions.pr.body, F-042); "" keeps
+	// the built-in line.
+	prBody string
 }
 
 // NewService wires the orchestration layer. runner and gh may be nil;
@@ -57,6 +61,10 @@ func (s *Service) Store() *Store { return s.store }
 func (s *Service) SetDiffForTest(fn func(ctx context.Context, dir string, args ...string) (string, error)) {
 	s.diffFn = fn
 }
+
+// SetPRBody installs the PR body template. Placeholders: {branch},
+// {member}, {title}.
+func (s *Service) SetPRBody(tpl string) { s.prBody = tpl }
 
 // SetTokenFn installs the credential source for pushes (production:
 // gh auth token; tests: nil keeps local remotes auth-free).
@@ -251,7 +259,11 @@ func (s *Service) CreatePRForBranch(ctx context.Context, memberName, branch, tit
 	}
 	// F-029: no DHI footer crosses to the outside; the branch line is
 	// context for the user's own PR.
-	body := fmt.Sprintf("Created from DHI worktree `%s`.", branch)
+	tpl := s.prBody
+	if tpl == "" {
+		tpl = "Created from DHI worktree `{branch}`."
+	}
+	body := conventions.Render(tpl, map[string]string{"branch": branch, "member": memberName, "title": title})
 	meta, err := s.gh.CreatePR(ctx, repoURL, title, body, base, branch)
 	if err != nil {
 		return PRMeta{}, err

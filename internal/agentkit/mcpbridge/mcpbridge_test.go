@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -324,5 +325,26 @@ func TestDefaultLookupReadsTheCredentialFileAfterTheEnvironment(t *testing.T) {
 	t.Setenv("DHI_TEST_CRED", "from-env")
 	if v, _ := DefaultLookup("DHI_TEST_CRED"); v != "from-env" {
 		t.Fatalf("the environment must win, got %q", v)
+	}
+}
+
+func TestStdioServerGetsAPrivateHomeAndTmp(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "mcp-home")
+	b := &Bridge{deps: Deps{HomeDir: home}}
+	env, err := b.stdioEnv(mcpserver.Server{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(env, "\n")
+	if !strings.Contains(joined, "HOME="+home) || !strings.Contains(joined, "TMPDIR="+filepath.Join(home, "tmp")) {
+		t.Fatalf("env = %v", env)
+	}
+	if fi, err := os.Stat(filepath.Join(home, "tmp")); err != nil || !fi.IsDir() {
+		t.Fatalf("tmp dir not created: %v", err)
+	}
+	// Without a HomeDir the server keeps the process environment untouched.
+	plain, _ := (&Bridge{}).stdioEnv(mcpserver.Server{})
+	if strings.Contains(strings.Join(plain, "\n"), "HOME=") {
+		t.Fatalf("HOME set without a HomeDir: %v", plain)
 	}
 }

@@ -23,7 +23,7 @@ func TestExpandBranch(t *testing.T) {
 		{"feature/{ticket}", "", "unknown placeholder {ticket}"},
 		{"", "", "empty branch pattern"},
 		{"task/{slug}/", "", "slash-bounded"},
-		{"task//{slug}", "", "// or .."},
+		{"task//{slug}", "", "double slash"},
 	}
 	for _, c := range cases {
 		got, err := ExpandBranch(c.pattern, vars)
@@ -89,6 +89,8 @@ func TestValidateRejects(t *testing.T) {
 		func(c *Config) { c.Commit.CoAuthor = "no-email" },
 		func(c *Config) { c.Commit.CoAuthorEnabled = true },
 		func(c *Config) { c.Copyright.Enabled = true },
+		func(c *Config) { c.PR.Title = "{ticket}: {title}" },
+		func(c *Config) { c.PR.Body = "see {summary}" },
 	}
 	for i, mut := range bad {
 		c := Defaults()
@@ -135,5 +137,17 @@ func TestEnsureHeader(t *testing.T) {
 func TestRender(t *testing.T) {
 	if got := Render("{title} ({slug}) {typo}", map[string]string{"title": "T", "slug": "s"}); got != "T (s) {typo}" {
 		t.Errorf("render = %q", got)
+	}
+}
+
+func TestPRTemplatesAcceptTheirOwnPlaceholders(t *testing.T) {
+	c := Defaults()
+	c.PR.Title = "[{slug}] {title}"
+	c.PR.Body = "{title} on {branch} in {member}"
+	if err := c.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if got := Render(c.PR.Title, map[string]string{"title": "Add x", "slug": "x-1"}); got != "[x-1] Add x" {
+		t.Fatalf("title = %q", got)
 	}
 }

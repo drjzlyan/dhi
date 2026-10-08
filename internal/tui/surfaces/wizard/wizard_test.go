@@ -1065,3 +1065,77 @@ func TestTourIsQueuedAcrossARelaunch(t *testing.T) {
 		t.Fatal("declining the tour must not queue it")
 	}
 }
+
+// ---- default engine for an existing roster (cloned team workspace) ----
+
+func TestCLIStepSetsTheDefaultEngineForAClonedWorkspace(t *testing.T) {
+	f := newCLIFixture(t)
+	var set []string
+	f.env.SetEngine = func(e string) error { set = append(set, e); return nil }
+	f.installed = map[string]string{"codex": "0.147.0", "claude": "2.1.285"}
+	m := f.toCLI(t)
+	if !strings.Contains(plain(m), "default engine for this workspace: cli:claude") {
+		t.Fatalf("the default must be visible before it is applied:\n%s", plain(m))
+	}
+	key(m, "enter")
+	if strings.Join(set, ",") != "cli:claude" || f.env.Engine != "cli:claude" || !f.env.Changed {
+		t.Fatalf("set=%v engine=%q changed=%v", set, f.env.Engine, f.env.Changed)
+	}
+	if !strings.Contains(strings.Join(f.env.Applied, "|"), "default engine cli:claude") {
+		t.Fatalf("applied = %v", f.env.Applied)
+	}
+}
+
+func TestCLIStepLeavesAConfiguredOrImpossibleEngineAlone(t *testing.T) {
+	cases := map[string]func(*cliFixture){
+		"already configured": func(f *cliFixture) { f.env.Engine = "cli:codex" },
+		"no CLI usable":      func(f *cliFixture) { f.installed = map[string]string{} },
+		"no workspace":       func(f *cliFixture) { f.env.Root = "" },
+		"no way to save":     func(f *cliFixture) { f.env.SetEngine = nil },
+	}
+	for name, mutate := range cases {
+		f := newCLIFixture(t)
+		calls := 0
+		f.env.SetEngine = func(string) error { calls++; return nil }
+		mutate(f)
+		m := f.wizard()
+		key(m, "enter", "enter", "enter")
+		if m.steps[m.idx].ID() != "cli" {
+			continue // step not shown for this variant (e.g. no workspace → the workspace step runs)
+		}
+		key(m, "enter")
+		if calls != 0 {
+			t.Errorf("%s: SetEngine called %d time(s)", name, calls)
+		}
+	}
+}
+
+func TestCLIEngineSaveFailureKeepsTheStep(t *testing.T) {
+	f := newCLIFixture(t)
+	f.env.SetEngine = func(string) error { return errors.New("config is read-only") }
+	m := f.toCLI(t)
+	key(m, "enter")
+	if m.steps[m.idx].ID() != "cli" || !strings.Contains(plain(m), "could not save the default engine: config is read-only") {
+		t.Fatalf("failure not surfaced:\n%s", plain(m))
+	}
+}
+
+func TestTeamStepStartsFromTheEngineTheCLIStepChose(t *testing.T) {
+	f := newTeamFixture(t)
+	f.env.SetEngine = func(e string) error { f.engines = append(f.engines, e); return nil }
+	f.env.CLIStatus = func() []CLIRow {
+		r := CLIRow{Name: "codex", Version: "0.147.0", Tested: "0.147.0"}
+		r.Plan, _ = clirun.PlanFor("codex")
+		return []CLIRow{r}
+	}
+	f.env.DetectCLIs = func() map[string]string { return map[string]string{"codex": "0.147.0", "claude": "2.1.0"} }
+	m := f.wizard()
+	key(m, "enter", "enter", "enter") // welcome, identity, conventions → cli
+	key(m, "enter")                   // cli: sets cli:codex (the only usable one it lists)
+	if m.steps[m.idx].ID() != "team" || f.env.Engine != "cli:codex" {
+		t.Fatalf("step=%s engine=%q", m.steps[m.idx].ID(), f.env.Engine)
+	}
+	if !strings.Contains(plain(m), "[codex]") {
+		t.Fatalf("team step must preselect the engine already chosen:\n%s", plain(m))
+	}
+}

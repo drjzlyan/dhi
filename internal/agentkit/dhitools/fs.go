@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/drjzlyan/dhi/internal/mcp"
 	"github.com/drjzlyan/dhi/internal/workspace"
@@ -211,10 +212,16 @@ func (d Deps) fsTools() []tool {
 			if err := os.MkdirAll(filepath.Dir(p.abs), 0o755); err != nil {
 				return "", fmt.Errorf("%s: %w", p.path, err)
 			}
-			if err := os.WriteFile(p.abs, []byte(p.content), 0o644); err != nil {
+			content := p.content
+			// A NEW file gets the team's copyright header (F-042); an
+			// existing file is overwritten exactly as given.
+			if _, err := os.Stat(p.abs); os.IsNotExist(err) && d.Conventions != nil {
+				content = d.Conventions.Copyright.EnsureHeader(p.abs, content, time.Now())
+			}
+			if err := os.WriteFile(p.abs, []byte(content), 0o644); err != nil {
 				return "", fmt.Errorf("%s: %w", p.path, err)
 			}
-			return fmt.Sprintf("wrote %s (%d bytes)", p.path, len(p.content)), nil
+			return fmt.Sprintf("wrote %s (%d bytes)", p.path, len(content)), nil
 		},
 	})
 	out = append(out, tool{

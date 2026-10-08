@@ -76,6 +76,9 @@ type Config struct {
 	// ToolBin are DHI's tool-shim directories, put first on a bridged
 	// stdio MCP server's PATH so `uvx`/`npx` are the hermetic ones.
 	ToolBin []string
+	// MCPHome is the private HOME for bridged stdio servers; it must sit
+	// inside the sandbox's writable roots (the toolchain prefix).
+	MCPHome string
 	// Workflows resolves and injects the agent's active feature workflow
 	// (F-031) and enforces its gates at DHI's seams. A malformed
 	// workflow definition refuses the turn by name (ADR-0011).

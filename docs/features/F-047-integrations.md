@@ -40,15 +40,25 @@ right server and its env names, and exporting secrets yourself (Linux has no sto
 - [x] wizard step: list, trust label, steps + token URL, masked fields, validation before any write, who-gets-it, confirmation naming the storage, esc steps back without writing, failure reported and not marked changed
 - [x] masked input never renders the secret (kit test + the step's screens + a real terminal)
 - [x] doctor reports unresolved credentials by name only
-- [x] a real stdio server (`mcp-atlassian@0.23.1`) started through the bridge's dialer with hermetic `uvx` listed 98 tools (matches the maintainer's README)
+- [x] all three stdio catalog servers started through the bridge's own dialer **under the real macOS seatbelt sandbox** with dummy credentials and listed their tools: `mcp-atlassian@0.23.1` 98 (README: 98), `@notionhq/notion-mcp-server@2.5.2` 24, `@zencoderai/slack-mcp-server@0.0.1` 8 (README: 8)
+- [x] a server that dies on start fails the dial in about a second with its own stderr (it used to be discarded and the dial waited out its whole timeout)
 - [x] walked end to end in tmux: connect Linear → `0700` dir, `0600` credentials file, secret-free card, `mcp__linear__*` on every employee
+
+## Found by running it under the sandbox
+The first probe ran without the sandbox and passed. Under the real seatbelt profile
+**every stdio entry failed**: `uv` and `npm` write caches/logs/temp under `~`, which the
+sandbox forbids, and the failure surfaced only as a 3-minute hang (stderr was discarded
+and a dead child was never noticed). Fixed twice over: stdio servers now get a private
+`HOME` and `TMPDIR` inside the writable toolchain prefix (`<prefix>/mcp-home`,
+`Deps.HomeDir`, which also keeps third-party code out of the user's real home), and
+`mcp.Stdio` keeps the last 2 KB of stderr and fails every pending call the moment the
+child exits. Only the seatbelt profile was exercised (macOS); the Linux bubblewrap
+profile has not been run.
 
 ## Not verified here
 - No call was made to a vendor service with a real credential (no accounts here); the
   Linear and GitHub bearer path is covered by a test server, Atlassian by a live start
   with dummy credentials (it lists tools without authenticating).
-- Slack's and Notion's servers were not started (only their documented command, package
-  and environment names were checked, and the versions pinned from npm).
 - Credentials are stored in plain text (documented, owner-only); keychain writes are deferred.
 
 ## Deferred

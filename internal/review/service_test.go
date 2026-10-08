@@ -564,3 +564,18 @@ func TestImportCommentsMergeAndDedupe(t *testing.T) {
 		t.Errorf("threads grew on re-import")
 	}
 }
+
+func TestPRBodyFollowsTheConfiguredTemplate(t *testing.T) {
+	w, st, fg, memPath, head, _ := bareFixture(t)
+	svc := NewService(w, st, nil, fg)
+	svc.SetPRBody("{title} ({member}:{branch})\n\nSee the board.")
+	mr, _ := git.PlainOpen(memPath)
+	mr.Storer.SetReference(plumbing.NewHashReference(
+		plumbing.ReferenceName("refs/heads/task/feat-3"), plumbing.NewHash(head)))
+	if _, err := svc.CreatePRForBranch(context.Background(), "api", "task/feat-3", "Add feat", "master"); err != nil {
+		t.Fatal(err)
+	}
+	if fg.body != "Add feat (api:task/feat-3)\n\nSee the board." {
+		t.Fatalf("body = %q", fg.body)
+	}
+}

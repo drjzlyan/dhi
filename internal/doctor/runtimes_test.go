@@ -91,7 +91,9 @@ func TestRuntimesAtFindsManagedInstall(t *testing.T) {
 	root := t.TempDir()
 	bin := filepath.Join(root, "clis", "claude", "node_modules", ".bin")
 	os.MkdirAll(bin, 0o755)
-	writeExecutable(t, bin, "claude", versionedClaude)
+	if err := os.WriteFile(filepath.Join(bin, "claude"), []byte(versionedClaude), 0o755); err != nil {
+		t.Fatal(err)
+	}
 
 	if c, _ := statusOf(RuntimesAt(""), "runtime/claude"); c.Status != Fail {
 		t.Fatalf("without the managed root claude must be missing: %+v", c)

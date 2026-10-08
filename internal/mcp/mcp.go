@@ -63,6 +63,8 @@ type rpcResponse struct {
 	ID      int64           `json:"id"`
 	Result  json.RawMessage `json:"result"`
 	Error   *rpcError       `json:"error,omitempty"`
+	// fail carries a transport-level failure (never on the wire).
+	fail error `json:"-"`
 }
 
 // conn serializes request writes and correlates replies by id. It is
@@ -74,6 +76,23 @@ type conn struct {
 
 	muOut   sync.Mutex
 	pending map[int64]chan rpcResponse
+	dead    error // set once the peer is gone; every call then fails at once
+}
+
+// fail marks the connection dead (the server process exited or the stream
+// ended) and wakes every pending call with err, so callers learn why
+// immediately instead of waiting out their timeout.
+func (c *conn) fail(err error) {
+	c.muOut.Lock()
+	defer c.muOut.Unlock()
+	if c.dead != nil {
+		return
+	}
+	c.dead = err
+	for id, ch := range c.pending {
+		ch <- rpcResponse{ID: id, fail: err}
+		delete(c.pending, id)
+	}
 }
 
 type writer interface {
@@ -99,6 +118,12 @@ func (c *conn) call(ctx context.Context, method string, params any, out any) err
 	id := c.nextID
 	ch := make(chan rpcResponse, 1)
 	c.muOut.Lock()
+	if c.dead != nil {
+		err := c.dead
+		c.muOut.Unlock()
+		c.mu.Unlock()
+		return err
+	}
 	c.pending[id] = ch
 	c.muOut.Unlock()
 	req, err := json.Marshal(rpcRequest{JSONRPC: "2.0", ID: id, Method: method, Params: raw})
@@ -116,6 +141,9 @@ func (c *conn) call(ctx context.Context, method string, params any, out any) err
 
 	select {
 	case resp := <-ch:
+		if resp.fail != nil {
+			return resp.fail
+		}
 		if resp.Error != nil {
 			return resp.Error.err()
 		}
