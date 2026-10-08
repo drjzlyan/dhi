@@ -98,6 +98,10 @@ func runTUI() (relaunch bool) {
 		toolRoot = root
 	}
 
+	// Coding CLIs resolve from PATH first, then DHI's managed folder
+	// (ADR-0027); every consumer shares the one lookup.
+	cliLook := clirun.ManagedLook(toolRoot, exec.LookPath)
+
 	// The boot audit resolves everything up front (F-011 / ADR-0011):
 	// proceed, offer confirmation-gated installs, or block with named
 	// reasons. No fallbacks live below this line.
@@ -216,7 +220,7 @@ func runTUI() (relaunch bool) {
 		// under .dhi/agents/. Guards carry the audited OS-sandbox
 		// adapter (nil here is impossible: the audit blocked first).
 		if messageBus != nil {
-			agentRT = newAgentRuntime(ws, messageBus, decision.Sandbox, termEnv, cfg.Engine, gitRunner, identityFn, sessionStore, runRunner, editorBridge, wsScopes, taskStore, reviewSvc, rgSearcher, mcpStore, &cfg.Conventions)
+			agentRT = newAgentRuntime(ws, messageBus, decision.Sandbox, termEnv, cfg.Engine, gitRunner, identityFn, sessionStore, runRunner, editorBridge, wsScopes, taskStore, reviewSvc, rgSearcher, mcpStore, &cfg.Conventions, cliLook)
 			if agentRT != nil {
 				edOpts = append(edOpts, editor.WithChat(agentRT))
 			}
@@ -253,7 +257,7 @@ func runTUI() (relaunch bool) {
 			} else {
 				wsAuto = autoStore
 			}
-			cliRegistry = clirun.NewRegistry(exec.LookPath)
+			cliRegistry = clirun.NewRegistry(cliLook)
 			settingsDeps = settingsview.Deps{
 				WS:         ws,
 				Org:        company,
@@ -353,7 +357,7 @@ func runTUI() (relaunch bool) {
 	// so a palette re-run starts from the state on disk.
 	var wizards []*wizard.Model
 	newWizard := func(forced bool) *wizard.Model {
-		env := newSetupEnv(cwd, ws, userCfg, toolRoot, cfg.Conventions, cfg.Engine, identityFn)
+		env := newSetupEnv(cwd, ws, userCfg, toolRoot, cfg.Conventions, cfg.Engine, identityFn, cliLook)
 		w := wizard.New(env, loadSetupState(ws), wizard.DefaultSteps(env, version.Version)...)
 		wizards = append(wizards, w)
 		return w
@@ -492,7 +496,8 @@ func loadSetupState(ws *workspace.Workspace) setup.State {
 // capability is absent (no toolchain root → no git), and the step then
 // explains the manual fix instead of guessing.
 func newSetupEnv(cwd string, ws *workspace.Workspace, userCfg, toolRoot string,
-	conv conventions.Config, engine string, identityFn gitcore.IdentityFunc) *wizard.Env {
+	conv conventions.Config, engine string, identityFn gitcore.IdentityFunc,
+	cliLook func(string) (string, error)) *wizard.Env {
 	env := &wizard.Env{
 		Version: version.Version, CWD: cwd,
 		Discover: setup.DiscoverMembers, InitWorkspace: setup.InitWorkspace,
@@ -526,7 +531,33 @@ func newSetupEnv(cwd string, ws *workspace.Workspace, userCfg, toolRoot string,
 		}
 		return len(roster)
 	}
-	env.DetectCLIs = clirun.NewRegistry(exec.LookPath).Detect
+	env.DetectCLIs = clirun.NewRegistry(cliLook).Detect
+	env.CLIPrefix = func(name string) string { return clirun.ManagedDir(toolRoot, name) }
+	env.CLIStatus = func() []wizard.CLIRow {
+		reg := clirun.NewRegistry(cliLook)
+		detected := reg.Detect()
+		var rows []wizard.CLIRow
+		for _, c := range reg.All() {
+			row := wizard.CLIRow{Name: c.Name, Version: detected[c.Name], Tested: c.Tested}
+			row.Plan, _ = clirun.PlanFor(c.Name)
+			if row.Version != "" {
+				row.Verdict, row.Why = clirun.Assess(c.Tested, row.Version)
+			}
+			rows = append(rows, row)
+		}
+		return rows
+	}
+	if toolRoot != "" {
+		mgr := toolchain.New(toolRoot)
+		env.InstallCLI = func(ctx context.Context, name string) error {
+			plan, ok := clirun.PlanFor(name)
+			if !ok || plan.Method != clirun.MethodNPM {
+				return fmt.Errorf("%s is not installed by DHI (guided manual install)", name)
+			}
+			_, err := mgr.NPMInstall(ctx, clirun.ManagedDir(toolRoot, name), plan.Package)
+			return err
+		}
+	}
 	env.ApplyTeam = func(slug string) (starter.Result, error) {
 		tpl, ok := starter.Get(slug)
 		if !ok {
@@ -869,7 +900,7 @@ func (r execRunner) Run(ctx context.Context, dir string, argv []string, allowNet
 	return out, err
 }
 
-func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cliEnv []string, defaultEngine string, gitRunner *gitcore.Runner, identityFn gitcore.IdentityFunc, sessionStore *ideation.Store, runRunner dhitools.CommandRunner, editor dhitools.EditorAPI, workspaceScopes scopes.Set, taskStore *tasks.Store, reviewSvc *review.Service, kbSearcher search.Searcher, mcpStore *mcpserver.Store, conv *conventions.Config) *agentkitRuntime.Runtime {
+func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cliEnv []string, defaultEngine string, gitRunner *gitcore.Runner, identityFn gitcore.IdentityFunc, sessionStore *ideation.Store, runRunner dhitools.CommandRunner, editor dhitools.EditorAPI, workspaceScopes scopes.Set, taskStore *tasks.Store, reviewSvc *review.Service, kbSearcher search.Searcher, mcpStore *mcpserver.Store, conv *conventions.Config, cliLook func(string) (string, error)) *agentkitRuntime.Runtime {
 	roster, err := manifest.LoadDir(filepath.Join(ws.Root, workspace.DirAgents))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "dhi: agent roster:", err)
@@ -899,7 +930,7 @@ func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cl
 		// these, resolved on the host PATH. Absent CLIs refuse roster
 		// agents that declare them, and doctor names the installation —
 		// never a fallback.
-		CLIs: clirun.NewRegistry(exec.LookPath),
+		CLIs: clirun.NewRegistry(cliLook),
 		// DefaultEngine is the workspace default (ADR-0019): an agent
 		// that omits `engine` inherits it; with none set the agent
 		// refuses by name at build time.

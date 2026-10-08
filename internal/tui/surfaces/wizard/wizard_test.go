@@ -11,6 +11,7 @@ import (
 
 	"charm.land/bubbletea/v2"
 
+	"github.com/drjzlyan/dhi/internal/agentkit/clirun"
 	"github.com/drjzlyan/dhi/internal/agentkit/starter"
 	"github.com/drjzlyan/dhi/internal/ansi"
 	"github.com/drjzlyan/dhi/internal/conventions"
@@ -568,4 +569,196 @@ func TestConfiguredEngineIsPreselected(t *testing.T) {
 	if strings.Join(f.engines, ",") != "cli:opencode" {
 		t.Fatalf("a configured engine must stay the default, got %v", f.engines)
 	}
+}
+
+// ---- coding-CLI step (F-046) ----
+
+type cliFixture struct {
+	*fixture
+	installs  []string
+	installed map[string]string // name → version once "installed"
+	installFn func(string) error
+}
+
+func newCLIFixture(t *testing.T) *cliFixture {
+	t.Helper()
+	f := &cliFixture{fixture: newFixture(t, true), installed: map[string]string{"claude": "2.1.285"}}
+	f.env.CLIPrefix = func(n string) string { return "/dhi/clis/" + n }
+	f.env.CLIStatus = func() []CLIRow {
+		var rows []CLIRow
+		for _, name := range []string{"claude", "codex", "cursor-agent"} {
+			r := CLIRow{Name: name, Version: f.installed[name], Tested: "2.1.177"}
+			r.Plan, _ = clirun.PlanFor(name)
+			if r.Version != "" {
+				r.Verdict, r.Why = clirun.Assess("2.1.177", r.Version)
+			}
+			rows = append(rows, r)
+		}
+		return rows
+	}
+	f.env.InstallCLI = func(_ context.Context, name string) error {
+		f.installs = append(f.installs, name)
+		if f.installFn != nil {
+			if err := f.installFn(name); err != nil {
+				return err
+			}
+		}
+		f.installed[name] = "0.147.0"
+		return nil
+	}
+	return f
+}
+
+func (f *cliFixture) toCLI(t *testing.T) *Model {
+	t.Helper()
+	m := f.wizard()
+	key(m, "enter", "enter", "enter") // welcome, identity, conventions
+	if m.steps[m.idx].ID() != "cli" {
+		t.Fatalf("on %s, want cli:\n%s", m.steps[m.idx].ID(), plain(m))
+	}
+	return m
+}
+
+func TestCLIStepListsStatusAndSignInHint(t *testing.T) {
+	f := newCLIFixture(t)
+	m := f.toCLI(t)
+	v := plain(m)
+	for _, want := range []string{"claude", "2.1.285", "ready", "newer than verified 2.1.177",
+		"codex", "not installed · i installs it", "cursor-agent", "not installed · i shows how",
+		"sign in: run `claude`"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("cli step lacks %q:\n%s", want, v)
+		}
+	}
+	key(m, "j")
+	if !strings.Contains(plain(m), "sign in: run `codex`") {
+		t.Fatalf("hint did not follow the cursor:\n%s", plain(m))
+	}
+}
+
+func TestCLIInstallShowsTheExactCommandAndCancelDoesNothing(t *testing.T) {
+	f := newCLIFixture(t)
+	m := f.toCLI(t)
+	key(m, "j", "i")
+	v := plain(m)
+	if !strings.Contains(v, "npm install --prefix /dhi/clis/codex @openai/codex") ||
+		!strings.Contains(v, "no sudo, nothing global") {
+		t.Fatalf("exact command not shown:\n%s", v)
+	}
+	if len(f.installs) != 0 {
+		t.Fatal("installed before confirmation")
+	}
+	key(m, "esc")
+	if len(f.installs) != 0 || !strings.Contains(plain(m), "↑/↓ select") {
+		t.Fatalf("cancel must return to the list without installing:\n%s", plain(m))
+	}
+}
+
+func TestCLIInstallRunsRefreshesAndFlagsRelaunch(t *testing.T) {
+	f := newCLIFixture(t)
+	m := f.toCLI(t)
+	key(m, "j", "i", "enter")
+	if strings.Join(f.installs, ",") != "codex" {
+		t.Fatalf("installs = %v", f.installs)
+	}
+	v := plain(m)
+	if !strings.Contains(v, "codex installed") || strings.Contains(v, "not installed · i installs it") {
+		t.Fatalf("list not refreshed after install:\n%s", v)
+	}
+	if !f.env.Changed || !strings.Contains(strings.Join(f.env.Applied, "|"), "installed codex (@openai/codex)") {
+		t.Fatalf("changed=%v applied=%v", f.env.Changed, f.env.Applied)
+	}
+}
+
+func TestCLIInstallFailureIsShownAndNothingIsMarkedChanged(t *testing.T) {
+	f := newCLIFixture(t)
+	f.installFn = func(string) error { return errors.New("npm ERR! 404 Not Found") }
+	m := f.toCLI(t)
+	key(m, "j", "i", "enter")
+	v := plain(m)
+	if !strings.Contains(v, "installing codex failed: npm ERR! 404 Not Found") || f.env.Changed {
+		t.Fatalf("failure not reported cleanly (changed=%v):\n%s", f.env.Changed, v)
+	}
+	if m.steps[m.idx].ID() != "cli" {
+		t.Fatal("a failed install must keep the step")
+	}
+}
+
+func TestCLIStepBlocksNavigationWhileInstalling(t *testing.T) {
+	f := newCLIFixture(t)
+	m := f.toCLI(t)
+	key(m, "j", "i")
+	m.HandleKey("enter") // confirm: starts, but we do NOT drain the command yet
+	if !m.cur().(*cliStep).Busy() {
+		t.Fatal("step should be busy during the install")
+	}
+	m.HandleKey("ctrl+x")
+	m.HandleKey("ctrl+b")
+	m.HandleKey("esc")
+	if m.Finished() || m.steps[m.idx].ID() != "cli" {
+		t.Fatal("navigation must be ignored while an install is running")
+	}
+	run(m, m.TakeCmd()) // let it finish
+	if m.cur().(*cliStep).Busy() {
+		t.Fatal("still busy after the result")
+	}
+}
+
+func TestCLIManualInstallShowsVendorCommandAndNeverRunsIt(t *testing.T) {
+	f := newCLIFixture(t)
+	m := f.toCLI(t)
+	key(m, "j", "j", "i")
+	v := plain(m)
+	for _, want := range []string{"Install cursor-agent yourself", "curl https://cursor.com/install -fsS | bash",
+		"https://cursor.com/docs/cli/overview"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("manual view lacks %q:\n%s", want, v)
+		}
+	}
+	if len(f.installs) != 0 {
+		t.Fatal("a manual CLI must never be installed by DHI")
+	}
+	f.installed["cursor-agent"] = "2026.09.26"
+	key(m, "esc", "r")
+	if !strings.Contains(plain(m), "2026.09.26") {
+		t.Fatalf("r should re-detect:\n%s", plain(m))
+	}
+}
+
+func TestCLIAlreadyInstalledAndNoCLIReady(t *testing.T) {
+	f := newCLIFixture(t)
+	m := f.toCLI(t)
+	key(m, "i")
+	if !strings.Contains(plain(m), "claude is already installed") || len(f.installs) != 0 {
+		t.Fatalf("installed CLI must not be reinstalled:\n%s", plain(m))
+	}
+
+	g := newCLIFixture(t)
+	g.installed = map[string]string{}
+	m2 := g.toCLI(t)
+	if !strings.Contains(plain(m2), "No CLI is ready yet") {
+		t.Fatalf("missing-everything warning absent:\n%s", plain(m2))
+	}
+}
+
+func TestCLIStepHiddenWithoutStatusAndGuidedWithoutInstaller(t *testing.T) {
+	f := newFixture(t, true)
+	if strings.Contains(strings.Join(titles(f.wizard()), ","), "coding CLI") {
+		t.Fatal("step shown with no CLIStatus")
+	}
+	g := newCLIFixture(t)
+	g.env.InstallCLI = nil // no toolchain
+	m := g.toCLI(t)
+	key(m, "j", "i")
+	if !strings.Contains(plain(m), "Install codex yourself") {
+		t.Fatalf("without an installer an npm CLI must fall back to guidance:\n%s", plain(m))
+	}
+}
+
+func TestGoldenCLIStep(t *testing.T) {
+	f := newCLIFixture(t)
+	m := f.toCLI(t)
+	golden.Snapshot(t, "wizard_cli", plain(m))
+	key(m, "j", "i")
+	golden.Snapshot(t, "wizard_cli_confirm", plain(m))
 }

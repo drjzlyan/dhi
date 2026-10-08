@@ -1,0 +1,29 @@
+
+
+
+
+
+
+
+
+
+
+
+              DHI setup
+              ✓ welcome › ✓ identity › ✓ conventions › ◐ coding CLI › ○ done
+              
+              Coding CLIs — the engines your employees think with
+              DHI drives the CLI you already use; install one here if you have none.
+              
+                claude       2.1.285    ✓ ready (newer than verified 2.1.177)
+              ▌ codex        —          not installed · i installs it
+                cursor-agent —          not installed · i shows how
+              
+              DHI will run, with its own npm (no sudo, nothing global):
+              
+                npm install --prefix /dhi/clis/codex @openai/codex
+              
+              Installs into DHI's folder only. Source: https://github.com/openai/codex
+              enter / y to install · esc / n to cancel
+              
+              enter continue · esc skip step · ctrl+b back · ctrl+x skip setup

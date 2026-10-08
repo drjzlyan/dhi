@@ -1,6 +1,7 @@
 # ADR-0012: Host agent CLIs as opt-in runtimes
 
-Date: 2026-09-08 · Status: accepted · Superseded by: ADR-0013 in part
+Date: 2026-09-08 · Status: accepted · Superseded by: ADR-0027 in part
+(§2 "DHI never installs" and the exact-version rule), ADR-0013 in part
 (the `runtime = "" | "anthropic"` default is gone; CLI runtimes are now
 the ONLY kind — everything else, incl. the sandbox boundary and exact
 env pass-through, stands) · Companion to: ADR-0003 (provider

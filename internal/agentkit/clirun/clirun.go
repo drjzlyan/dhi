@@ -4,9 +4,10 @@
 // ships its own engine (ADR-0013). Each adapter declares its binary, the
 // tested version, its headless invocation, its stream parser, its cost
 // extraction, and the EXACT environment pass-through. The registry is
-// static and strict: DHI never installs these CLIs, an unknown runtime
-// name is a refusal, and a missing binary is a named doctor row — never
-// a fallback.
+// static and strict: an unknown runtime name is a refusal and a missing
+// binary is a named doctor row — never a fallback. DHI installs a CLI
+// only after the user confirms the exact command, through the toolchain
+// seam (ADR-0027, install.go); authentication stays the CLI's own.
 package clirun
 
 import (
@@ -223,7 +224,7 @@ func (r *Registry) Path(name string) (string, error) {
 	}
 	p, err := r.look(c.Bin)
 	if err != nil {
-		return "", fmt.Errorf("clirun: %s not found on PATH (install it; DHI never installs host CLIs)", c.Bin)
+		return "", fmt.Errorf("clirun: %s not found on PATH or in DHI's managed folder (install it: ctrl+p → Run setup wizard)", c.Bin)
 	}
 	return p, nil
 }

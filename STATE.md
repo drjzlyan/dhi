@@ -58,6 +58,17 @@ real delve v1.27.2 — see F-039; `dlv` provisioning still open.)
   reviewer `fakeCrew` race.
 - Gotcha: to add a manifest field, bump `SchemaVersion`, gate it with
   "requires schema" in Parse, write it in Marshal AND the round-trip compare.
+- **P5 shipped (F-046, ADR-0027):** `clirun/{assess,install}.go` (version policy:
+  same-major drift warns, major change fails; install catalog verified against
+  vendor docs; `ManagedLook` = PATH first then `<toolchain>/clis/*/node_modules/.bin`),
+  `toolchain.Manager.NPMInstall` (hermetic npm, private cache), wizard `cli` step
+  (before `team`), doctor `RuntimesAt(toolRoot)`. A step can now queue a command
+  from a key (`TakeCmd`) and block navigation (`Busy`).
+- **NOT verified:** a real vendor npm install (tests + tmux use a fake npm).
+  cursor-agent is manual (script only; binary may be `agent`), antigravity has
+  no verified command.
+- Gotcha: `dhi doctor` resolves the workspace from the CWD, so run it from the
+  project you mean (the tmux shell resets cwd to the repo).
 - Decision: missing agent CLIs get a confirm-gated install (P5); needs a
   new ADR superseding 0012.
 - Gotchas: Go `iota` stops when one const gets an explicit expression

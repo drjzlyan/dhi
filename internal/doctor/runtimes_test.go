@@ -67,7 +67,37 @@ func TestRuntimes(t *testing.T) {
 	if c, _ := statusOf(checks, "runtime/claude"); c.Status != Fail {
 		t.Errorf("untested version = %v, want fail (%+v)", c.Status, checks)
 	}
-	if c, _ := statusOf(checks, "runtime/claude"); !strings.Contains(c.Detail, "9.9.9 untested") {
-		t.Errorf("untested detail wrong: %s", c.Detail)
+	if c, _ := statusOf(checks, "runtime/claude"); !strings.Contains(c.Detail, "different major") {
+		t.Errorf("major-change detail wrong: %s", c.Detail)
+	}
+
+	// same major, newer minor: usable, so a warning rather than a failure
+	drift := t.TempDir()
+	writeExecutable(t, drift, "claude", "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo \"2.1.285 (Claude Code)\"; fi\n")
+	lookPath = stubLook(drift)
+	checks = Runtimes()
+	c, _ := statusOf(checks, "runtime/claude")
+	if c.Status != Warn || !strings.Contains(c.Detail, "newer than the verified 2.1.177") {
+		t.Errorf("same-major drift = %v %q, want a warning", c.Status, c.Detail)
+	}
+}
+
+// A CLI DHI installed into its managed folder is found when it is not on PATH.
+func TestRuntimesAtFindsManagedInstall(t *testing.T) {
+	orig := lookPath
+	t.Cleanup(func() { lookPath = orig })
+	lookPath = stubLook(t.TempDir()) // nothing on PATH
+
+	root := t.TempDir()
+	bin := filepath.Join(root, "clis", "claude", "node_modules", ".bin")
+	os.MkdirAll(bin, 0o755)
+	writeExecutable(t, bin, "claude", versionedClaude)
+
+	if c, _ := statusOf(RuntimesAt(""), "runtime/claude"); c.Status != Fail {
+		t.Fatalf("without the managed root claude must be missing: %+v", c)
+	}
+	c, _ := statusOf(RuntimesAt(root), "runtime/claude")
+	if c.Status != OK || !strings.Contains(c.Detail, "2.1.177") {
+		t.Fatalf("managed claude = %+v", c)
 	}
 }

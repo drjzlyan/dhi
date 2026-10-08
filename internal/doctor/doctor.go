@@ -83,7 +83,7 @@ func Run(toolRoot, wsRoot string) Report {
 	r.Checks = append(r.Checks, Standards(wsRoot)...)
 	r.Checks = append(r.Checks, Workflows(wsRoot)...)
 	r.Checks = append(r.Checks, Dependencies(wsRoot)...)
-	r.Checks = append(r.Checks, Runtimes()...)
+	r.Checks = append(r.Checks, RuntimesAt(toolRoot)...)
 	r.Checks = append(r.Checks, Tasks(wsRoot)...)
 	r.Checks = append(r.Checks, RunStore(wsRoot)...)
 	r.Checks = append(r.Checks, Autopilots(wsRoot)...)
@@ -450,14 +450,19 @@ func Library(wsRoot string) []Check {
 	return []Check{{Name: "agents/library", Status: Warn, Detail: strings.Join(problems, "; ")}}
 }
 
-// Runtimes probes the registered host agent CLIs (F-013, ADR-0012):
-// a missing binary is a FAIL (DHI never installs host CLIs — install
-// it or roster the agent to another runtime), a present-but-untested
-// version is a FAIL (adapters pin exact versions; re-verify and bump
-// the pin, or pin the CLI), and unset declared pass-through vars warn
-// so auth failures surface before a run, not mid-run.
-func Runtimes() []Check {
-	reg := clirun.NewRegistry(lookPath)
+// Runtimes probes the registered host agent CLIs without a DHI toolchain
+// root (PATH only); see RuntimesAt.
+func Runtimes() []Check { return RuntimesAt("") }
+
+// RuntimesAt probes the registered host agent CLIs (F-013, ADR-0012,
+// ADR-0027): a missing binary is a FAIL that points at the wizard (PATH
+// first, then the DHI-managed folder under toolRoot), a version in a
+// different major than the adapter was verified against is a FAIL, a
+// same-major difference is a WARN (auto-updating CLIs must not turn the
+// report red), and unset declared pass-through vars warn so auth
+// failures surface before a run, not mid-run.
+func RuntimesAt(toolRoot string) []Check {
+	reg := clirun.NewRegistry(clirun.ManagedLook(toolRoot, lookPath))
 	if len(reg.Names()) == 0 {
 		return nil
 	}
@@ -467,16 +472,22 @@ func Runtimes() []Check {
 		v := detected[c.Name]
 		if v == "" {
 			checks = append(checks, Check{Name: "runtime/" + c.Name, Status: Fail,
-				Detail: c.Bin + " not found on PATH (DHI never installs host CLIs)"})
+				Detail: c.Bin + " not found on PATH or in DHI's managed folder — install it from the setup wizard (ctrl+p → Run setup wizard) or see the vendor docs"})
 			continue
 		}
-		if v != c.Tested {
+		verdict, why := clirun.Assess(c.Tested, v)
+		switch verdict {
+		case clirun.VerdictMajor, clirun.VerdictUnknown:
 			checks = append(checks, Check{Name: "runtime/" + c.Name, Status: Fail,
-				Detail: fmt.Sprintf("%s %s untested (adapter pinned to %s); re-verify and bump the pin, or pin the CLI", c.Bin, v, c.Tested)})
+				Detail: fmt.Sprintf("%s %s: %s; re-verify the adapter, or pin the CLI", c.Bin, v, why)})
 			continue
+		case clirun.VerdictDrift:
+			checks = append(checks, Check{Name: "runtime/" + c.Name, Status: Warn,
+				Detail: fmt.Sprintf("%s %s: %s", c.Bin, v, why)})
+		default:
+			checks = append(checks, Check{Name: "runtime/" + c.Name, Status: OK,
+				Detail: fmt.Sprintf("%s %s (adapter pinned)", c.Bin, v)})
 		}
-		checks = append(checks, Check{Name: "runtime/" + c.Name, Status: OK,
-			Detail: fmt.Sprintf("%s %s (adapter pinned)", c.Bin, v)})
 		for _, k := range c.EnvPass {
 			if k == "HOME" {
 				continue // always set; not worth a row

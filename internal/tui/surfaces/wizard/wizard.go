@@ -68,7 +68,14 @@ type Env struct {
 	// Team step (F-045). RosterCount nil = unknown (offer the step);
 	// ApplyTeam nil hides it. DetectCLIs maps a CLI name to its version
 	// ("" = not installed); SetEngine stores the workspace default engine.
-	Engine      string // the configured default engine ("cli:<name>" or "")
+	Engine string // the configured default engine ("cli:<name>" or "")
+
+	// CLI step (F-046). CLIStatus lists the registered coding CLIs with
+	// their detected state; InstallCLI installs one through the toolchain
+	// seam after the user confirmed the exact command (nil = guided only).
+	CLIStatus   func() []CLIRow
+	InstallCLI  func(ctx context.Context, name string) error
+	CLIPrefix   func(name string) string // where a managed install lands
 	RosterCount func() int
 	DetectCLIs  func() map[string]string
 	ApplyTeam   func(templateSlug string) (starter.Result, error)
@@ -132,6 +139,7 @@ func DefaultSteps(env *Env, version string) []Step {
 		&workspaceStep{env: env},
 		&identityStep{env: env},
 		&conventionsStep{env: env},
+		&cliStep{env: env},
 		&teamStep{env: env},
 		&doneStep{env: env},
 	}
@@ -204,6 +212,15 @@ func (m *Model) HandleKey(key string) bool {
 	if m.finished {
 		return false
 	}
+	// A step running something it cannot cancel (an install) owns the
+	// screen: navigating away would orphan the result.
+	busy := false
+	if b, ok := m.cur().(interface{ Busy() bool }); ok {
+		busy = b.Busy()
+	}
+	if busy {
+		return true
+	}
 	switch key {
 	case "ctrl+b":
 		m.act(Back)
@@ -212,7 +229,13 @@ func (m *Model) HandleKey(key string) bool {
 		m.finish()
 		return true
 	}
-	m.act(m.cur().HandleKey(key))
+	step := m.cur()
+	m.act(step.HandleKey(key))
+	// A step may start async work from a key (the CLI install); like the
+	// gates themselves it queues the command for the shell to drain.
+	if t, ok := step.(interface{ TakeCmd() tea.Cmd }); ok {
+		m.pending = tea.Batch(m.pending, t.TakeCmd())
+	}
 	return true
 }
 

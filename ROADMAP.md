@@ -952,7 +952,7 @@ Seven phases, one commit each; push deferred to the end.
 - [x] P2 Wizard framework + animation kit, palette-run setup, workspace init, relaunch loop (F-043, ADR-0026)
 - [x] P3 Distribution: release pipeline, installer, first-run consent + sizes (F-044); more platforms need manifest pins first
 - [x] P4 Employees: starter teams (solo/squad/studio) + personas (F-045)
-- [ ] P5 Agent CLI onboarding (confirm-gated install; supersedes ADR-0012)
+- [x] P5 Agent CLI onboarding: confirm-gated npm install into a DHI-owned folder, version-drift policy (F-046, ADR-0027)
 - [ ] P6 Integrations catalog (Jira, Confluence, Slack, Teams, …)
 - [ ] P7 Tools (LSP/dlv/formatters) + interactive tutorials
 - [ ] P7a Finish F-042: copyright header injection on agent file writes; `pr.title`/`pr.body` consumed by `pr_open`
