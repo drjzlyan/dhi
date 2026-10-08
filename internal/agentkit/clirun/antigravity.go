@@ -118,6 +118,11 @@ func antigravityMCPGeminiDir(realGeminiDir, baseDir, configBody string) (string,
 	cleanup := func() { _ = os.RemoveAll(dir) }
 	linkAllExcept := func(src, dst, skip string) error {
 		ents, err := os.ReadDir(src)
+		if os.IsNotExist(err) {
+			// A fresh install (no ~/.gemini yet, or no config/ in it) mirrors
+			// as empty; agy creates what it needs on first use.
+			return nil
+		}
 		if err != nil {
 			return err
 		}
@@ -257,7 +262,7 @@ func antigravityFinalize(final string) (string, Usage, error) {
 
 // antigravityVersion extracts the version token from `agy --version`.
 func antigravityVersion(ctx context.Context, path string) (string, error) {
-	out, err := probeVersion(ctx, path, "--version")
+	out, err := probeVersion(ctx, path)
 	if err != nil {
 		return "", err
 	}

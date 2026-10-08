@@ -336,7 +336,7 @@ func (w *Workspace) DependentsOf(from string) []Dependency {
 func (w *Workspace) SetDependencies(deps []Dependency) error {
 	raw := make([]dependency, 0, len(deps))
 	for _, d := range deps {
-		raw = append(raw, dependency{From: d.From, To: d.To, Kind: d.Kind})
+		raw = append(raw, dependency(d))
 	}
 	parsed, err := parseDeps(raw)
 	if err != nil {
@@ -434,7 +434,7 @@ func saveConfig(root string, members []Member, deps []Dependency) error {
 		cfg.Members[m.Name] = member{Path: p}
 	}
 	for _, d := range deps {
-		cfg.Dependencies = append(cfg.Dependencies, dependency{From: d.From, To: d.To, Kind: d.Kind})
+		cfg.Dependencies = append(cfg.Dependencies, dependency(d))
 	}
 
 	cfgPath := filepath.Join(root, ConfigFile)

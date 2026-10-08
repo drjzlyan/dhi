@@ -89,7 +89,7 @@ func (fl Field) Cur() int {
 func (fl Field) CursorValue() string {
 	rs := []rune(fl.Value)
 	cur := fl.Cur()
-	out := string(rs[:cur]) + string(theme.GlyphCursor)
+	out := string(rs[:cur]) + theme.GlyphCursor
 	if cur < len(rs) {
 		out += string(rs[cur:])
 	}
@@ -289,7 +289,7 @@ func (f *Form) View() []string {
 		label := theme.TextDim().Render(padTo(fl.Label, 10))
 		mark := " "
 		if i == f.cur {
-			mark = string(theme.GlyphCursor)
+			mark = theme.GlyphCursor
 		}
 		var val string
 		active := i == f.cur

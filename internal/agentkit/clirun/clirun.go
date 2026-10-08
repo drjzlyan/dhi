@@ -346,10 +346,10 @@ func parseJSONLine(line string) (map[string]any, error) {
 	return m, nil
 }
 
-// probeVersion runs `path flag` (context-bounded) and returns the
+// probeVersion runs `path --version` (context-bounded) and returns the
 // combined output; adapters extract the version token.
-func probeVersion(ctx context.Context, path, flag string) (string, error) {
-	cmd := exec.CommandContext(ctx, path, flag)
+func probeVersion(ctx context.Context, path string) (string, error) {
+	cmd := exec.CommandContext(ctx, path, "--version")
 	out, err := cmd.Output()
 	if err != nil {
 		if ctx.Err() != nil {

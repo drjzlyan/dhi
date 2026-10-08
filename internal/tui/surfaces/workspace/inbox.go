@@ -177,7 +177,7 @@ func (m *Model) inboxJump(it inbox.Item) {
 			m.inboxHint = "run jump: no run recorded for " + it.TaskSlug
 			return
 		}
-		m.replay = openReplay(it.Run)
+		m.replay = openReplay(it.Run, m.wsRoot())
 		m.replay.refresh(m.replayWidth(), m.replayHeight())
 		m.sec = secBoard
 		// Lane cursors: select the failed card inside its status lane.

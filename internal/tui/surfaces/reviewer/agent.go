@@ -7,7 +7,6 @@ import (
 
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/review"
-	"github.com/drjzlyan/dhi/internal/tui/theme"
 )
 
 // mentionedAgent returns the first rostered @mention in text.
@@ -146,7 +145,7 @@ func (m *Model) requestAgentReview(agent string, files []string) {
 			patch = patch[:maxPromptPatch] + "\n… (truncated)"
 		}
 		scope := "all files"
-		if len(files) > 0 && !(len(files) == 1 && files[0] == ".") {
+		if len(files) > 0 && (len(files) != 1 || files[0] != ".") {
 			scope = strings.Join(files, ", ")
 		}
 		text := fmt.Sprintf("@%s please review these changes (%s → %s, %s).\n"+
@@ -182,12 +181,4 @@ func threadRoot(msg bus.Message) int64 {
 		return msg.Thread
 	}
 	return msg.ID
-}
-
-// agentBanner is the shared degradation notice for agent features.
-func (m *Model) agentBanner() string {
-	if m.canAgent() {
-		return ""
-	}
-	return theme.TextDim().Render("(agents offline — no bus/runtime)")
 }

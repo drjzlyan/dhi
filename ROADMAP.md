@@ -59,18 +59,18 @@ features (M7).
 - [x] PTY terminal drawer: one cwd-pinned tab per member repo (+ alt+n
       extra tabs), DHI toolchain PATH via Manager.Env; ANSI-stripped
       scrollback MVP (full VT emulation deferred to M7 polish)
-- [~] Markdown preview (GitHub-style via glamour; ctrl+g on .md buffers,
+- [x] Markdown preview (GitHub-style via glamour; ctrl+g on .md buffers,
       live re-render on edit)
 - [x] Git view MVP (go-git, ADR-0008): status/stage/unstage/commit +
       log in a ctrl+j bottom panel; per-buffer repo selection
-- [~] LSP foundation: minimal stdio JSON-RPC client (`internal/lsp`),
+- [x] LSP foundation: minimal stdio JSON-RPC client (`internal/lsp`),
   servers resolved via toolchain shims; didOpen/didChange, diagnostics
   in gutter + title chip, ctrl+space completion popup. Go pinned in the
   registry (go1.27.0, digests cross-checked vs go.dev/dl) and gopls
   builds hermetically from source through it (`BuildInstall`, live
   smoke `DHI_SMOKE_BUILD=1`) since upstream ships no binaries
   (golang/go#79066); bootstrap auto-build + richer features track later
-- [~] Settings skeleton: typed TOML schema, defaults<user<workspace
+- [x] Settings skeleton: typed TOML schema, defaults<user<workspace
       precedence, unknown-key doctor warnings, live theme switch
       (`internal/settings`, real Settings view); keybinding overrides +
       remaining sections track later milestones
@@ -967,3 +967,24 @@ Seven phases, one commit each; push deferred to the end.
 - [x] Persona authoring in Settings + live reload of conventions/personas/library (F-052): `conventions.Source`/`Live`, `library.Fingerprint`
 - [x] Configurable worktree root (F-053)
 - [~] darwin/amd64 + linux/arm64: go/rg/uv/node/gh pinned and vendor-checksum-verified (`scripts/pin-platform.py`); hermetic git needs the `release-git` CI run (matrix extended), then add both to `scripts/release-platforms.txt`
+
+## M27 — Public readiness (session 51)
+
+Green CI, a TUI that fits any window, a README people want to read, standard
+GitHub setup, a real release, and every deferral either done or specced.
+
+- [x] P0 Deferral inventory: M1 `[~]` items closed by M7/F-050/settings work; MCP stdio
+      spawn wrapping and the `dhi-action` fallback already done. Still open (→ P7): full VT
+      emulation, pack signature verification, embedding retrieval, keybinding overrides,
+      ideation artifact export, ro-root policy
+- [ ] P1 CI green: 69 lint findings; Linux-only test failures (GNU base64 wrap, antigravity
+      mirror failed without `~/.gemini` — a real bug, replay golden carried a temp path)
+- [ ] P2 Layout contract: every view fills exactly the terminal at any size; help overlay
+      fits and is searchable; compact tab bar
+- [ ] P3 Use of space + empty states: flexible board lanes + wide detail pane, settings
+      columns, editor welcome, consistent empty states, Notice/Loading, list/lane clicks
+- [ ] P4 Editor deferrals: regex project replace, split panes
+- [ ] P5 README with screenshots, community files, GitHub settings
+- [ ] P6 Releases (v0.1.0-rc1 → v0.1.0), new platform pins, live verifications
+- [ ] P7 Big deferrals, spec first
+

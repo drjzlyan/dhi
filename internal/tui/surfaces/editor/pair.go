@@ -215,9 +215,7 @@ func (m *Model) reviewView() string {
 		theme.TextDim().Render(p.vp))
 	if p.note != "" {
 		body = append(body, "")
-		for _, l := range kit.WrapWords(p.note, 70) {
-			body = append(body, l)
-		}
+		body = append(body, kit.WrapWords(p.note, 70)...)
 	}
 	body = append(body, "")
 	for _, l := range strings.Split(p.old, "\n") {

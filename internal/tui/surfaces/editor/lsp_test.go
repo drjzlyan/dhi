@@ -433,7 +433,7 @@ func TestWordAt(t *testing.T) {
 		{"  x", 2, "x"},
 	}
 	for _, c := range cases {
-		w, _, _ := wordAt(c.line, c.col)
+		w, _ := wordAt(c.line, c.col)
 		if w != c.word {
 			t.Errorf("wordAt(%q, %d) = %q, want %q", c.line, c.col, w, c.word)
 		}

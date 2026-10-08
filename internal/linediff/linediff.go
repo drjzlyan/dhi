@@ -76,7 +76,7 @@ func Diff(older, newer []string) (marks []Mark, ok bool) {
 			continue
 		}
 		di, dj := i, j
-		for (i < len(a) || j < len(b)) && !(i < len(a) && j < len(b) && a[i] == b[j]) {
+		for (i < len(a) || j < len(b)) && (i >= len(a) || j >= len(b) || a[i] != b[j]) {
 			switch {
 			case j >= len(b):
 				i++

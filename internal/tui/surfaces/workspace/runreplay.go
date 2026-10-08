@@ -3,6 +3,7 @@ package workspace
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/drjzlyan/dhi/internal/jsonl"
@@ -24,7 +25,7 @@ type replayEvent struct {
 // missing or pruned transcript renders the named refusal, never fake data.
 type runReplay struct {
 	run    tasks.Run
-	readAt string // resolved transcript path (as stored on the record)
+	readAt string // transcript path for display: workspace-relative when inside it
 	events []replayEvent
 	err    string   // transcript read failure, shown as the named refusal
 	lines  []string // cached wrapped render, refreshed on geometry change
@@ -34,8 +35,9 @@ type runReplay struct {
 }
 
 // openReplay loads the transcript for r, tolerating an absent file.
-func openReplay(r tasks.Run) *runReplay {
-	rp := &runReplay{run: r, readAt: r.Transcript}
+// root (the workspace root, may be "") shortens the displayed path.
+func openReplay(r tasks.Run, root string) *runReplay {
+	rp := &runReplay{run: r, readAt: displayPath(r.Transcript, root)}
 	if r.Transcript == "" {
 		rp.err = "no transcript recorded for this run"
 		return rp
@@ -57,6 +59,17 @@ func openReplay(r tasks.Run) *runReplay {
 		rp.err = "transcript empty — no events persisted"
 	}
 	return rp
+}
+
+// displayPath shows p relative to root when it lives inside it.
+func displayPath(p, root string) string {
+	if root == "" || p == "" {
+		return p
+	}
+	if rel, err := filepath.Rel(root, p); err == nil && !strings.HasPrefix(rel, "..") {
+		return rel
+	}
+	return p
 }
 
 func (rp *runReplay) Key(key string, m *Model) bool {

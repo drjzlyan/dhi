@@ -158,6 +158,22 @@ func TestAntigravityGeminiDirMirror(t *testing.T) {
 	}
 }
 
+// TestAntigravityGeminiDirMirrorFreshInstall pins the first-use case:
+// no ~/.gemini yet still yields a mirror carrying DHI's config (it used
+// to fail, silently dropping served tools for the turn).
+func TestAntigravityGeminiDirMirrorFreshInstall(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "no-such-gemini")
+	dir, cleanup, err := antigravityMCPGeminiDir(missing, t.TempDir(), Antigravity.MCPConfigFile("http://127.0.0.1:9/mcp"))
+	if err != nil {
+		t.Fatalf("mirror of a missing dir: %v", err)
+	}
+	defer cleanup()
+	body, err := os.ReadFile(filepath.Join(dir, "config", "mcp_config.json"))
+	if err != nil || !strings.Contains(string(body), "127.0.0.1:9") {
+		t.Fatalf("mcp body = %q err=%v", body, err)
+	}
+}
+
 func TestAntigravityMCPArgs(t *testing.T) {
 	args := strings.Join(Antigravity.BuildArgs(RunInput{Prompt: "p", MCPGeminiDir: "/x/gemini"}), "\x00")
 	if !strings.Contains(args, "--gemini_dir=/x/gemini") {

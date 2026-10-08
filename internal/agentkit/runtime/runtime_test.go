@@ -22,24 +22,17 @@ import (
 
 // echoStub is a fixture claude CLI: it base64-encodes each argv entry
 // into $DUMPDIR/cli-args.dump (one per line, robust against embedded
-// newlines), JSON-escapes the prompt text, and returns it as the final
+// newlines; GNU base64 wraps at 76 columns, hence the tr), JSON-escapes the prompt text, and returns it as the final
 // result. argv is ["-p", <prompt>, ...], so the prompt is $2.
 const echoStub = `#!/bin/sh
 : > "$DUMPDIR/cli-args.dump"
 for a in "$@"; do
-  printf '%s' "$a" | base64 >> "$DUMPDIR/cli-args.dump"
+  printf '%s' "$a" | base64 | tr -d '\n' >> "$DUMPDIR/cli-args.dump"
   printf '\n' >> "$DUMPDIR/cli-args.dump"
 done
 RES=$(printf '%s' "$2" | awk '{ if (NR>1) printf "%s", "\\n"; gsub(/"/, "\\\""); printf "%s", $0 }')
 printf '%s\n' '{"type":"system","subtype":"init"}'
 printf '%s\n' "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"$RES\",\"total_cost_usd\":0,\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}"
-exit 0
-`
-
-// replyStub returns the fixed summary string as its final result.
-const replyStub = `#!/bin/sh
-echo '{"type":"system","subtype":"init"}'
-echo '{"type":"result","subtype":"success","is_error":false,"result":"All quiet on the western front.","total_cost_usd":0}'
 exit 0
 `
 

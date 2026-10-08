@@ -217,7 +217,7 @@ func cursorFinalize(final string) (string, Usage, error) {
 
 // cursorVersion extracts the version token from `cursor-agent --version`.
 func cursorVersion(ctx context.Context, path string) (string, error) {
-	out, err := probeVersion(ctx, path, "--version")
+	out, err := probeVersion(ctx, path)
 	if err != nil {
 		return "", err
 	}

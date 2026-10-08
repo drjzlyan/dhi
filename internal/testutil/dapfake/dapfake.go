@@ -88,7 +88,7 @@ func (a *Adapter) write(v map[string]any) {
 	v["seq"] = a.seq
 	a.mu.Unlock()
 	data, _ := json.Marshal(v)
-	fmt.Fprintf(a.conn, "Content-Length: %d\r\n\r\n%s", len(data), data)
+	_, _ = fmt.Fprintf(a.conn, "Content-Length: %d\r\n\r\n%s", len(data), data)
 }
 
 func (a *Adapter) respond(req map[string]any, body any) {
@@ -128,7 +128,7 @@ func readFrame(r *bufio.Reader) ([]byte, error) {
 			break
 		}
 		if k, v, ok := strings.Cut(line, ":"); ok && strings.EqualFold(k, "Content-Length") {
-			fmt.Sscanf(strings.TrimSpace(v), "%d", &length)
+			_, _ = fmt.Sscanf(strings.TrimSpace(v), "%d", &length)
 		}
 	}
 	if length < 0 {

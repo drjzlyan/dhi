@@ -94,8 +94,6 @@ type roleFile struct {
 	System      string   `toml:"system"`
 }
 
-var slugRe = func(c byte) bool { return false } // placeholder, replaced below
-
 // validSlug mirrors the manifest id grammar.
 func validSlug(s string) bool {
 	if s == "" {

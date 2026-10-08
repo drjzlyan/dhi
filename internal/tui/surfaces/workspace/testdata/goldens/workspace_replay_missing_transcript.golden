@@ -1,6 +1,6 @@
   INBOX                  1╭─ › board ────────────────────────────────────────────────────────────────────────╮
 ▌ BOARD                  1│ replay run-gone · cli:claude/- · error · 30.0s · -                               │
-  CHANNELS                │ transcript unavailable at /var/folders/pf/bxyv0n957731p7w6xb338yyr0000gn/T/TestR │
+  CHANNELS                │ transcript unavailable at .dhi/agents/alice/runs/pruned.jsonl                    │
   REPOS                  2│   transcript file missing                                                        │
                           │                                                                                  │
                           │                                                                                  │

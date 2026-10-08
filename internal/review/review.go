@@ -329,9 +329,7 @@ func parseCard(path, id string) (Review, error) {
 		t := Thread{ID: tf.ID, File: tf.File, Line: tf.Line, Side: tf.Side,
 			Resolved: tf.Resolved, BusThread: tf.BusThread, RemoteRoot: tf.RemoteRoot}
 		for _, cf := range tf.Comments {
-			t.Comments = append(t.Comments, Comment{Author: cf.Author, Text: cf.Text, At: cf.At, Pending: cf.Pending,
-				RemoteID: cf.RemoteID, Side: cf.Side, Line: cf.Line,
-				Posted: cf.Posted, Suggested: cf.Suggested, Dismissed: cf.Dismissed, Severity: cf.Severity})
+			t.Comments = append(t.Comments, Comment(cf))
 		}
 		r.Threads = append(r.Threads, t)
 	}
@@ -679,9 +677,7 @@ func writeCard(path string, r Review) error {
 		tf := threadFile{ID: t.ID, File: t.File, Line: t.Line, Side: t.Side,
 			Resolved: t.Resolved, BusThread: t.BusThread, RemoteRoot: t.RemoteRoot}
 		for _, c := range t.Comments {
-			tf.Comments = append(tf.Comments, commentFile{Author: c.Author, Text: c.Text, At: c.At, Pending: c.Pending,
-				RemoteID: c.RemoteID, Side: c.Side, Line: c.Line,
-				Posted: c.Posted, Suggested: c.Suggested, Dismissed: c.Dismissed, Severity: c.Severity})
+			tf.Comments = append(tf.Comments, commentFile(c))
 		}
 		f.Threads = append(f.Threads, tf)
 	}

@@ -204,14 +204,6 @@ func humanTokens(n int) string {
 	}
 }
 
-// runMs is the wall-clock span of a run in milliseconds.
-func runMs(r Run) int64 {
-	if r.Finished.Before(r.Started) {
-		return 0
-	}
-	return r.Finished.Sub(r.Started).Milliseconds()
-}
-
 // DurationText renders a run's wall-clock span compactly (e.g. "1.2s").
 func DurationText(ms int64) string {
 	switch {

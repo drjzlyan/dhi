@@ -159,13 +159,9 @@ func Parse(patch string) []FileDiff {
 			case strings.HasPrefix(line, "Binary files ") || line == "GIT binary patch":
 				cur.IsBinary = true
 			case strings.HasPrefix(line, "--- "):
-				if p, ok := diffPath(strings.TrimPrefix(line, "--- ")); ok {
-					cur.OldPath = p
-				}
+				cur.OldPath = diffPath(strings.TrimPrefix(line, "--- "))
 			case strings.HasPrefix(line, "+++ "):
-				if p, ok := diffPath(strings.TrimPrefix(line, "+++ ")); ok {
-					cur.NewPath = p
-				}
+				cur.NewPath = diffPath(strings.TrimPrefix(line, "+++ "))
 			}
 
 		default: // inside a hunk body
@@ -275,19 +271,19 @@ func stripAB(p string) string {
 }
 
 // diffPath parses a ---/+++ argument: /dev/null means "no file".
-func diffPath(tok string) (string, bool) {
+func diffPath(tok string) string {
 	tok = strings.TrimSpace(tok)
 	if i := strings.Index(tok, "\t"); i >= 0 {
 		tok = tok[:i]
 	}
 	tok = strings.TrimSuffix(tok, "\r")
 	if tok == "/dev/null" {
-		return "", true
+		return ""
 	}
 	if v, ok := unquote(tok); ok {
-		return stripAB(v), true
+		return stripAB(v)
 	}
-	return stripAB(tok), true
+	return stripAB(tok)
 }
 
 // field returns the last whitespace-separated token (mode values).

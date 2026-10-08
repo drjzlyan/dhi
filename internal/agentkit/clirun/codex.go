@@ -237,7 +237,7 @@ func codexFinalize(final string) (string, Usage, error) {
 // codexVersion extracts the version token from `codex --version`
 // ("codex-cli 0.147.0").
 func codexVersion(ctx context.Context, path string) (string, error) {
-	out, err := probeVersion(ctx, path, "--version")
+	out, err := probeVersion(ctx, path)
 	if err != nil {
 		return "", err
 	}

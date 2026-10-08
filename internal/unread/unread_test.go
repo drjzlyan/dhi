@@ -11,10 +11,6 @@ import (
 	"github.com/drjzlyan/dhi/internal/workspace"
 )
 
-func clock(y, m, d, hh, mm int) time.Time {
-	return time.Date(y, time.Month(m), d, hh, mm, 0, 0, time.UTC)
-}
-
 func testWS(t *testing.T) *workspace.Workspace {
 	t.Helper()
 	return &workspace.Workspace{Root: t.TempDir()}

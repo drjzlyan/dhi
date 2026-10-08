@@ -406,7 +406,7 @@ func (m *Model) canvasBody(w, h int) string {
 		avail = 3
 	}
 	rel, _ := m.artifactRelAt(c)
-	e, _ := m.loadPreview(w)
+	e := m.loadPreview(w)
 	total := len(e.lines)
 	top := m.previewTop
 	if top > total {

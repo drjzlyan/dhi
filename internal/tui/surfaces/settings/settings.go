@@ -616,13 +616,6 @@ const (
 	formSource
 )
 
-func (f *agentForm) fields() []kit.Field {
-	if f.f == nil {
-		return nil
-	}
-	return f.f.Fields
-}
-
 func (f *agentForm) values() []string {
 	if f.f == nil {
 		return nil
@@ -1061,22 +1054,22 @@ func (m *Model) sectionPane(w, h int) string {
 	p := kit.NewPanel(strings.ToLower(m.sec.label()), true)
 
 	var content []string
-	switch {
-	case m.sec == secAgents:
+	switch m.sec {
+	case secAgents:
 		content = m.agentsView()
-	case m.sec == secLibrary:
+	case secLibrary:
 		content = strings.Split(m.libraryBody(w), "\n")
-	case m.sec == secTeams:
+	case secTeams:
 		content = m.teamsView()
-	case m.sec == secPacks:
+	case secPacks:
 		content = m.packsView()
-	case m.sec == secStandards:
+	case secStandards:
 		content = m.standardsView()
-	case m.sec == secWorkflows:
+	case secWorkflows:
 		content = m.workflowsView()
-	case m.sec == secAutopilots:
+	case secAutopilots:
 		content = m.autopilotsView()
-	case m.sec == secMarketplace:
+	case secMarketplace:
 		content = m.marketplaceView(w)
 	default:
 		content = m.configView()

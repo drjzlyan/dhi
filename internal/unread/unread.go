@@ -115,7 +115,7 @@ func Decode(raw []byte) (Data, error) {
 			if err := json.Unmarshal(keys["channel"], &ch); err != nil || ch == "" {
 				return Data{}, fmt.Errorf("unread: snoozes[%d].channel %s is not a non-empty string", i, orNull(keys["channel"]))
 			}
-			id, err := strconv.ParseInt(string(orNum(keys["messageID"])), 10, 64)
+			id, err := strconv.ParseInt(orNum(keys["messageID"]), 10, 64)
 			if err != nil {
 				return Data{}, fmt.Errorf("unread: snoozes[%d].messageID %s is not an integer", i, orNull(keys["messageID"]))
 			}

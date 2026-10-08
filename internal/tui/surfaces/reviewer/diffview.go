@@ -415,35 +415,6 @@ func (m *Model) clampScroll() {}
 
 // ---- shared text helpers ----
 
-// wrapSegments wraps plain text to width, prefixing only the first
-// visual line with gutter.
-func wrapSegments(gutter, text string, style lipgloss.Style, w int) []string {
-	lines := wrapPlain(text, maxInt(w, 8))
-	out := make([]string, 0, len(lines))
-	for i, l := range lines {
-		if i == 0 {
-			out = append(out, gutter+style.Render(l))
-		} else {
-			out = append(out, strings.Repeat(" ", lipgloss.Width(gutter))+style.Render(l))
-		}
-	}
-	return out
-}
-
-func wrapPlain(s string, w int) []string {
-	s = strings.ReplaceAll(s, "\t", "    ") // terminals vary; fix at 4
-	if s == "" {
-		return []string{""}
-	}
-	r := []rune(s)
-	var out []string
-	for start := 0; start < len(r); start += w {
-		end := minInt(start+w, len(r))
-		out = append(out, string(r[start:end]))
-	}
-	return out
-}
-
 func crop(s string, w int) string {
 	r := []rune(s)
 	if len(r) <= w {

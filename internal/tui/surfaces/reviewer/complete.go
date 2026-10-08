@@ -2,14 +2,10 @@ package reviewer
 
 import (
 	"path/filepath"
-	"time"
 
 	"github.com/drjzlyan/dhi/internal/review"
 	"github.com/drjzlyan/dhi/internal/tasks"
 )
-
-// fixerTimeout bounds the synchronous task-store work in dispatchFixer.
-const fixerTimeout = 30 * time.Second
 
 // dispatchFixer creates a task card for the review findings and binds it
 // to the SAME worktree the review used, so a fixing agent works exactly

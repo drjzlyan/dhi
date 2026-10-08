@@ -230,8 +230,6 @@ func (s *Service) pushBranch(ctx context.Context, memberPath, branch string) err
 	return nil
 }
 
-var prCreateTimeout = 5 * time.Minute
-
 // CreatePRForBranch pushes an existing branch of a member repo and opens
 // a PR against base. Used by both the Reviewer (review/<id> branches)
 // and task cards (task/<slug> branches).
@@ -510,11 +508,4 @@ func (s *Service) fetchPRHead(ctx context.Context, memberPath string, prNum int)
 		return "", fmt.Errorf("review: fetch pull/%d: %w", prNum, err)
 	}
 	return sha, nil
-}
-
-func shortSHA(s string) string {
-	if len(s) > 7 {
-		return s[:7]
-	}
-	return s
 }

@@ -39,10 +39,6 @@ func (m *Model) View() string {
 	return m.dockedView()
 }
 
-// dockMinWidth is the narrowest terminal that still fits rail + a
-// usable pane.
-const dockMinWidth = 84
-
 const railWidth = 26
 
 func (m *Model) compactBody() string {
@@ -475,9 +471,7 @@ func boardDetailLines(tk tasks.Task, wrapW int, wsRoot string) []string {
 	lines := []string{
 		theme.Brand().Render(tk.Slug) + "  " + theme.Chip().Render(string(tk.Status)),
 	}
-	for _, l := range kit.WrapWords(tk.Title, clampInt(wrapW, 20, 72)) {
-		lines = append(lines, l)
-	}
+	lines = append(lines, kit.WrapWords(tk.Title, clampInt(wrapW, 20, 72))...)
 	if tk.Title == "" {
 		lines = append(lines, "-")
 	}
@@ -803,46 +797,12 @@ func timeAgo(at, now time.Time) string {
 // wordWrap was the duplicated F-016 wrap; the shared kit.WrapWords
 // (word-boundary + hard-break contract) replaced it.
 
-func taskDetail(tk tasks.Task) string {
-	var parts []string
-	for _, cs := range tk.ChangeSets {
-		parts = append(parts, cs.Member+"@"+cs.Branch)
-	}
-	thread := ""
-	if tk.ThreadChannel != "" {
-		thread = fmt.Sprintf("thread %s", threadRef(tk.ThreadChannel, tk.ThreadID))
-	}
-	if tk.PRNumber > 0 {
-		pr := fmt.Sprintf("PR #%d", tk.PRNumber)
-		if thread != "" {
-			pr += " "
-		}
-		thread = strings.TrimSpace(pr + thread)
-	}
-	if len(parts) > 0 {
-		thread = strings.TrimSpace(strings.Join([]string{thread, "·"}, " "))
-	}
-	all := parts
-	if thread != "" {
-		all = append(all, thread)
-	}
-	// Run accounting (F-014 §Part B): a runs suffix only when the card
-	// has history — "cost partial" marks a cost-less run in the set.
-	if len(tk.Runs) > 0 {
-		rl := tasks.RollupRuns(tk.Runs)
-		all = append(all, fmt.Sprintf("%d runs · %s", len(tk.Runs), rl.CostText()))
-	}
-	return strings.Join(all, "  ")
-}
-
 func threadRef(channel string, id int64) string {
 	if id == 0 {
 		return channel
 	}
 	return fmt.Sprintf("%s#%d", channel, id)
 }
-
-const nameCol = 14
 
 // ---- REPOS (member repos) ----
 

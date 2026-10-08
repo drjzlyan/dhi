@@ -155,17 +155,18 @@ func (s *Screen) escape(chunk []byte, i int) int {
 
 // csi applies one control sequence (params + final byte).
 func (s *Screen) csi(params string, final byte) {
-	n := func(def int) int {
+	// n is the count parameter; absent, zero or malformed means 1.
+	n := func() int {
 		v := 0
 		for _, c := range params {
 			if c >= '0' && c <= '9' {
 				v = v*10 + int(c-'0')
 			} else {
-				return def
+				return 1
 			}
 		}
 		if v == 0 {
-			return def
+			return 1
 		}
 		return v
 	}
@@ -176,16 +177,16 @@ func (s *Screen) csi(params string, final byte) {
 			s.lines[s.row] += "\x1b[" + params + "m"
 		}
 	case 'A':
-		s.row = max(s.row-n(1), 0)
+		s.row = max(s.row-n(), 0)
 	case 'B', 'e':
-		s.row += n(1)
+		s.row += n()
 		s.ensureRow()
 	case 'C':
-		s.col += n(1)
+		s.col += n()
 	case 'D':
-		s.col = max(s.col-n(1), 0)
+		s.col = max(s.col-n(), 0)
 	case 'G', '`':
-		s.col = max(n(1)-1, 0)
+		s.col = max(n()-1, 0)
 	case 'H', 'f':
 		row, col := 1, 1
 		parts := strings.SplitN(params, ";", 2)
@@ -201,14 +202,14 @@ func (s *Screen) csi(params string, final byte) {
 		s.ensureRow()
 		s.col = max(col-1, 0)
 	case 'E':
-		s.row += n(1)
+		s.row += n()
 		s.col = 0
 		s.ensureRow()
 	case 'F':
-		s.row = max(s.row-n(1), 0)
+		s.row = max(s.row-n(), 0)
 		s.col = 0
 	case 'd':
-		s.row = max(n(1)-1, 0)
+		s.row = max(n()-1, 0)
 		s.ensureRow()
 	case 'J':
 		s.eraseDisplay(atoi(params))
@@ -381,11 +382,4 @@ func atoi(s string) int {
 		v = v*10 + int(c-'0')
 	}
 	return v
-}
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }

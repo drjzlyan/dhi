@@ -350,10 +350,7 @@ func parseCard(path, id string) (Session, error) {
 			return Session{}, fmt.Errorf("artifact %q: bad status %q", af.Path, af.Status)
 		}
 		artSeen[af.Path] = true
-		arts = append(arts, Artifact{
-			Path: af.Path, Author: af.Author, Status: af.Status,
-			Notes: af.Notes, Hash: af.Hash, UpdatedAt: af.UpdatedAt,
-		})
+		arts = append(arts, Artifact(af))
 	}
 	sort.Slice(arts, func(i, j int) bool { return arts[i].Path < arts[j].Path })
 
@@ -877,13 +874,10 @@ func writeCard(path string, sess Session) error {
 		CreatedAt: sess.CreatedAt, UpdatedAt: sess.UpdatedAt,
 	}
 	for _, t := range sess.Turns {
-		f.Turns = append(f.Turns, turnF{Speaker: t.Speaker, At: t.At})
+		f.Turns = append(f.Turns, turnF(t))
 	}
 	for _, a := range sess.Artifacts {
-		f.Artifacts = append(f.Artifacts, artifactF{
-			Path: a.Path, Author: a.Author, Status: a.Status, Notes: a.Notes,
-			Hash: a.Hash, UpdatedAt: a.UpdatedAt,
-		})
+		f.Artifacts = append(f.Artifacts, artifactF(a))
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("ideation: write: %w", err)

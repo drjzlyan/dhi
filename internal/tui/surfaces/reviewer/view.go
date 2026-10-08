@@ -13,9 +13,6 @@ import (
 	"github.com/drjzlyan/dhi/internal/tui/theme"
 )
 
-// dockMinWidth is the narrowest terminal that still fits rail + pane.
-const dockMinWidth = 84
-
 const railWidth = 20
 
 // View renders the reviewer floor: docked rail + active pane on wide

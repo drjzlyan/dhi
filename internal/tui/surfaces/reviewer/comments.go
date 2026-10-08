@@ -279,12 +279,6 @@ func (m *Model) threadsKey(key string) bool {
 	return false
 }
 
-// flatThreadsRows re-counts rows after mutations.
-func flatThreadsRows(r review.Review, file string) int {
-	n, _ := flatThreads(r, file)
-	return len(n)
-}
-
 // renderThreads paints the thread view for the anchored file.
 func (m *Model) renderThreads(w, h int) string {
 	r, ok := m.openReview()

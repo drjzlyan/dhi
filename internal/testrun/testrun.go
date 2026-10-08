@@ -146,7 +146,7 @@ func locate(lines []string, build bool, root, pkg string) (file string, line int
 			continue
 		}
 		n := 0
-		fmt.Sscanf(m[2], "%d", &n)
+		_, _ = fmt.Sscanf(m[2], "%d", &n)
 		return resolveFile(root, pkg, m[1]), n, strings.TrimSpace(m[3])
 	}
 	return "", 0, ""

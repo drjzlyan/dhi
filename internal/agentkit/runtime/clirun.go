@@ -239,7 +239,7 @@ func (r *Runtime) saveTranscript(events []clirun.StreamEvent, run tasks.Run) str
 	if err != nil {
 		return ""
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	enc := json.NewEncoder(f)
 	for _, ev := range events {
 		if ev.Detail == "" {
@@ -663,7 +663,7 @@ func runID(t time.Time) string { return "run-" + t.Format("20060102-150405.000")
 func cliErrText(err error) string {
 	var ee *exec.ExitError
 	if errors.As(err, &ee) {
-		return fmt.Sprintf("exit %d", ee.ProcessState.ExitCode())
+		return fmt.Sprintf("exit %d", ee.ExitCode())
 	}
 	return err.Error()
 }
@@ -673,7 +673,7 @@ func cliErrText(err error) string {
 func exitCode(err error) int {
 	var ee *exec.ExitError
 	if errors.As(err, &ee) {
-		return ee.ProcessState.ExitCode()
+		return ee.ExitCode()
 	}
 	return 0
 }

@@ -138,12 +138,11 @@ type Model struct {
 var _ surfaces.Surface = (*Model)(nil)
 
 type wsEvent struct {
-	kind       uint8 // evPing | evCloneDone | evTaskPRDone
-	err        string
-	packName   string // task slug for evTaskPRDone
-	packAgents []string
-	prNum      int
-	flash      string
+	kind     uint8 // evPing | evCloneDone | evTaskPRDone
+	err      string
+	packName string // task slug for evTaskPRDone
+	prNum    int
+	flash    string
 }
 
 const (
@@ -592,17 +591,6 @@ func openForm(kind modalKind, orig string, fields ...field) formState {
 	return f
 }
 
-// csv splits comma-separated entries and trims blanks.
-func csv(s string) []string {
-	var out []string
-	for _, part := range strings.Split(s, ",") {
-		if p := strings.TrimSpace(part); p != "" {
-			out = append(out, p)
-		}
-	}
-	return out
-}
-
 // ---- key routing ----
 
 func (m *Model) HandleKey(key string) bool {
@@ -933,7 +921,7 @@ func (m *Model) boardKey(key string) bool {
 		m.form = openForm(fTaskPush, tk.Slug)
 	case "r":
 		if run, ok := tk.NewestRun(); ok {
-			m.replay = openReplay(run)
+			m.replay = openReplay(run, m.wsRoot())
 			return true
 		}
 		m.flashErr("card has no recorded runs")
@@ -1536,4 +1524,12 @@ func (m *Model) handoff(tk tasks.Task) {
 	if m.rt != nil {
 		m.rt.Handle(context.Background(), posted)
 	}
+}
+
+// wsRoot is the workspace root, "" without a workspace.
+func (m *Model) wsRoot() string {
+	if m.ws == nil {
+		return ""
+	}
+	return m.ws.Root
 }

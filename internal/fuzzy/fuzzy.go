@@ -82,7 +82,7 @@ func Rank(pattern string, items []string) []Result {
 	for i, s := range items {
 		trs[i] = []rune(strings.ToLower(s))
 	}
-	return rankRunes(pr, items, trs)
+	return rankRunes(pr, trs)
 }
 
 // Index is a pre-lowered candidate set: built once per (re)index, so
@@ -108,12 +108,12 @@ func (ix *Index) Items() []string { return ix.items }
 // Rank works like Rank over the pre-lowered set; only the pattern is
 // lowered per call.
 func (ix *Index) Rank(pattern string) []Result {
-	return rankRunes([]rune(strings.ToLower(pattern)), ix.items, ix.trs)
+	return rankRunes([]rune(strings.ToLower(pattern)), ix.trs)
 }
 
 // rankRunes scores every candidate from pre-lowered rune slices and
 // returns matches best-first.
-func rankRunes(pr []rune, items []string, trs [][]rune) []Result {
+func rankRunes(pr []rune, trs [][]rune) []Result {
 	type scored struct {
 		idx   int
 		score int

@@ -220,7 +220,7 @@ func copilotFinalize(final string) (string, Usage, error) {
 
 // copilotVersion extracts the version token from `copilot --version`.
 func copilotVersion(ctx context.Context, path string) (string, error) {
-	out, err := probeVersion(ctx, path, "--version")
+	out, err := probeVersion(ctx, path)
 	if err != nil {
 		return "", err
 	}

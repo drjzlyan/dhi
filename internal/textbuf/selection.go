@@ -12,25 +12,26 @@ func (e *Editor) Selection() (text string, from, to Pos, ok bool) {
 	a, z := e.visualSpan()
 	if a.Line == z.Line {
 		r := e.buf.runes(a.Line)
-		lo, hi := clampInt(a.Col, 0, len(r)), clampInt(z.Col, 0, len(r))
+		lo, hi := clampCol(a.Col, len(r)), clampCol(z.Col, len(r))
 		return string(r[lo:hi]), a, z, true
 	}
 	var b strings.Builder
 	first := e.buf.runes(a.Line)
-	b.WriteString(string(first[clampInt(a.Col, 0, len(first)):]))
+	b.WriteString(string(first[clampCol(a.Col, len(first)):]))
 	for l := a.Line + 1; l < z.Line; l++ {
 		b.WriteByte('\n')
 		b.WriteString(e.buf.lines[l])
 	}
 	last := e.buf.runes(z.Line)
 	b.WriteByte('\n')
-	b.WriteString(string(last[:clampInt(z.Col, 0, len(last))]))
+	b.WriteString(string(last[:clampCol(z.Col, len(last))]))
 	return b.String(), a, z, true
 }
 
-func clampInt(v, lo, hi int) int {
-	if v < lo {
-		return lo
+// clampCol bounds a column to [0, hi].
+func clampCol(v, hi int) int {
+	if v < 0 {
+		return 0
 	}
 	if v > hi {
 		return hi

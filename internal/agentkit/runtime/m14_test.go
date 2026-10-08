@@ -260,6 +260,7 @@ func TestNoServedToolsNoSession(t *testing.T) {
 // a served allowlist now gets a per-turn session whose --gemini_dir
 // mirror carries DHI's loopback endpoint, and stop() removes it.
 func TestServeToolsGeminiDirForAntigravity(t *testing.T) {
+	t.Setenv("HOME", t.TempDir()) // no ~/.gemini, as on CI; never the developer's
 	h := newHarnessMulti(t, docTools("antigravity", `"memory_append"`),
 		map[string]string{"agy": silentStub})
 	h.rt.cfg.Memory = memory.Open(h.ws)

@@ -88,7 +88,7 @@ func (t *Transcript) View() []string {
 	for ri, r := range t.Rows {
 		marker := ""
 		if ri == t.CursorAt {
-			marker = string(theme.GlyphCursor) + " "
+			marker = theme.GlyphCursor + " "
 		}
 		if !r.At.IsZero() {
 			day := r.At.Format("Mon Jan 2")

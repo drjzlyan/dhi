@@ -709,25 +709,6 @@ func (r *Runtime) workflowEnforcer(m *manifest.Agent, trigger bus.Message) (gate
 	return gate, onRun
 }
 
-// taskWorkflowGate builds a gate for a task from its durable workflow
-// state (worktree + tests-pass) and the agent's active workflow. Used at
-// seams that run outside a served-tool turn (the PR action).
-func (r *Runtime) taskWorkflowGate(m *manifest.Agent, task tasks.Task) func(string) []string {
-	if !r.cfg.Workflows {
-		return nil
-	}
-	_, def, err := r.activeWorkflow(m)
-	if err != nil || def == nil {
-		return nil
-	}
-	p := workflow.Progress{
-		Worktree:  len(task.ChangeSets) > 0,
-		TestsPass: task.TestsPass,
-		Reviewed:  len(task.Bypasses) > 0,
-	}
-	return func(seam string) []string { return verdictReasons(def.CheckGate(seam, p)) }
-}
-
 func verdictReasons(vs []workflow.Verdict) []string {
 	if len(vs) == 0 {
 		return nil
@@ -745,16 +726,6 @@ func (r *Runtime) taskFor(trigger bus.Message) (tasks.Task, bool) {
 		return tasks.Task{}, false
 	}
 	return r.cfg.Tasks.FindByThread(trigger.Channel, trigger.Thread)
-}
-
-// taskHasWorktree reports whether the task bound to the trigger has an
-// attached worktree (its commit/PR actions must happen there).
-func (r *Runtime) taskHasWorktree(trigger bus.Message) bool {
-	if r.cfg.Tasks == nil {
-		return false
-	}
-	t, ok := r.cfg.Tasks.FindByThread(trigger.Channel, trigger.Thread)
-	return ok && len(t.ChangeSets) > 0
 }
 
 // teamLookup adapts the org registry for standards resolution; nil org

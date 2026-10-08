@@ -23,20 +23,20 @@ var previewCache = map[string]previewEntry{}
 // loadPreview renders the artifact under the CANVAS cursor. Markdown
 // gets the GitHub-style glamour treatment; mermaid diagrams get the
 // deterministic ASCII outline (F-033 Part B); anything else renders raw.
-func (m *Model) loadPreview(width int) (previewEntry, bool) {
+func (m *Model) loadPreview(width int) previewEntry {
 	rel, ok := m.artifactRelAt(m.cursors[secCanvas])
 	if !ok || m.store == nil {
-		return previewEntry{}, false
+		return previewEntry{}
 	}
 	abs := m.store.ArtifactPath(m.openID, rel)
 	data, err := os.ReadFile(abs)
 	if err != nil {
-		return previewEntry{lines: []string{theme.DangerText().Render("unreadable: " + err.Error())}}, true
+		return previewEntry{lines: []string{theme.DangerText().Render("unreadable: " + err.Error())}}
 	}
 	sum := sha256.Sum256(data)
 	key := abs + "\x00" + string(sum[:]) + "\x00" + itoa(width)
 	if e, ok := previewCache[key]; ok {
-		return e, true
+		return e
 	}
 	text := string(data)
 	var lines []string
@@ -64,7 +64,7 @@ func (m *Model) loadPreview(width int) (previewEntry, bool) {
 	}
 	e := previewEntry{lines: lines, isMD: isMD, isMermaid: isMermaid}
 	previewCache[key] = e
-	return e, true
+	return e
 }
 
 func (m *Model) previewHeight() int {
@@ -73,7 +73,7 @@ func (m *Model) previewHeight() int {
 
 func (m *Model) previewLines() []string {
 	w := maxInt(m.width-railWidth-8, 40)
-	e, _ := m.loadPreview(w)
+	e := m.loadPreview(w)
 	return e.lines
 }
 

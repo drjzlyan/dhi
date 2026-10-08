@@ -206,7 +206,7 @@ func opencodeFinalize(final string) (string, Usage, error) {
 // opencodeVersion extracts the version token from `opencode --version`
 // ("1.18.25").
 func opencodeVersion(ctx context.Context, path string) (string, error) {
-	out, err := probeVersion(ctx, path, "--version")
+	out, err := probeVersion(ctx, path)
 	if err != nil {
 		return "", err
 	}

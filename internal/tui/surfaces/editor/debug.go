@@ -228,7 +228,7 @@ func (m *Model) applyDebugUpdate() {
 			m.mode = modeNav
 		}
 		if d.client != nil {
-			go d.client.Close()
+			go func() { _ = d.client.Close() }()
 		}
 		m.dbg = nil
 		if e := m.active(); e != nil {

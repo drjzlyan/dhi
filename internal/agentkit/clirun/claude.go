@@ -90,28 +90,6 @@ func allAdapters() []*CLI {
 	return []*CLI{Claude, Codex, OpenCode, CursorAgent, Copilot, Antigravity}
 }
 
-// claudeContentBlock is one piece of a message's content array.
-type claudeContentBlock struct {
-	Type    string          `json:"type"`
-	Text    string          `json:"text"`
-	Name    string          `json:"name"`
-	Input   json.RawMessage `json:"input"`
-	Content json.RawMessage `json:"content"`
-	IsError bool            `json:"is_error"`
-}
-
-// claudeMessage is the message envelope inside assistant/user events.
-type claudeMessage struct {
-	Content []claudeContentBlock `json:"content"`
-}
-
-// claudeEvent is the union shape of one stream-json line.
-type claudeEvent struct {
-	Type    string        `json:"type"`
-	Subtype string        `json:"subtype"`
-	Message claudeMessage `json:"message"`
-}
-
 func claudeParseStream(r io.Reader) <-chan StreamEvent {
 	ch := make(chan StreamEvent)
 	go func() {
@@ -255,7 +233,7 @@ func claudeFinalize(final string) (string, Usage, error) {
 // claudeVersion extracts the version token from `claude --version`
 // ("2.1.177 (Claude Code)").
 func claudeVersion(ctx context.Context, path string) (string, error) {
-	out, err := probeVersion(ctx, path, "--version")
+	out, err := probeVersion(ctx, path)
 	if err != nil {
 		return "", err
 	}

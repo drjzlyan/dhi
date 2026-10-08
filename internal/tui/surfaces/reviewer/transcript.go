@@ -131,8 +131,10 @@ func (m *Model) renderTranscript(w, h int) string {
 	head := theme.TextDim().Render(m.transcriptTitle)
 	hint := theme.Hint().Render(fmt.Sprintf("  %d/%d · j/k scroll · esc back",
 		minInt(end, len(m.transcriptLines)), len(m.transcriptLines)))
-	out := []string{head, hint}
-	out = append(out, m.transcriptLines[m.transcriptScroll:end]...)
+	out := []string{kit.ClipEllipsis(head, w), kit.ClipEllipsis(hint, w)}
+	for _, l := range m.transcriptLines[m.transcriptScroll:end] {
+		out = append(out, kit.ClipEllipsis(l, w))
+	}
 	return strings.Join(out, "\n")
 }
 

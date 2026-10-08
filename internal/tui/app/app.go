@@ -391,7 +391,8 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, nil
 		}
 		m := msg.Mouse()
-		return a, a.handleClick(m.X, m.Y)
+		a.handleClick(m.X, m.Y)
+		return a, nil
 
 	case transitionMsg:
 		if a.transLeft > 0 {
@@ -744,32 +745,31 @@ func (a *App) View() tea.View {
 // handleClick routes body-local clicks: the help overlay closes on any
 // click, row 0 hits the tab bar, else the active surface decides via
 // its Click seam (nil-safe — surfaces without mouse behavior ignore it).
-func (a *App) handleClick(x, y int) tea.Cmd {
+func (a *App) handleClick(x, y int) {
 	if a.welcome {
 		a.dismissWelcome()
-		return nil
+		return
 	}
 	if a.palette != nil {
 		a.palette = nil // a click outside dismisses the palette
-		return nil
+		return
 	}
 	if a.showHelp {
 		a.showHelp = false
-		return nil
+		return
 	}
 	if y == 0 {
 		if i, ok := a.tabs.Hit(x); ok {
 			a.selectSurface(i)
 		}
-		return nil
+		return
 	}
 	if y >= a.height-1 { // statusline: no action
-		return nil
+		return
 	}
 	if ch, ok := a.Active().(interface{ Click(x, y int) bool }); ok {
 		ch.Click(x, y-1)
 	}
-	return nil
 }
 
 func (a *App) compose() string {

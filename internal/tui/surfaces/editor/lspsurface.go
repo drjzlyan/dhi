@@ -165,15 +165,15 @@ func (m *Model) lspClient() *lsp.Client {
 }
 
 // wordAt extracts the identifier around col on line, returning the
-// word plus its [start,end) rune columns (empty word when none).
-func wordAt(line string, col int) (string, int, int) {
+// word plus its start rune column (empty word when none).
+func wordAt(line string, col int) (string, int) {
 	r := []rune(line)
 	if col >= len(r) || !isIdent(r[col]) {
 		// sitting on the char after the word: step back one
 		if col > 0 && col <= len(r) && isIdent(r[col-1]) {
 			col--
 		} else {
-			return "", 0, 0
+			return "", 0
 		}
 	}
 	start := col
@@ -184,7 +184,7 @@ func wordAt(line string, col int) (string, int, int) {
 	for end < len(r) && isIdent(r[end]) {
 		end++
 	}
-	return string(r[start:end]), start, end
+	return string(r[start:end]), start
 }
 
 func isIdent(r rune) bool {
@@ -200,7 +200,7 @@ func (m *Model) requestHover() {
 	}
 	cur := e.Buffer().Cursor()
 	line := e.Buffer().Line(cur.Line)
-	word, start, _ := wordAt(line, cur.Col)
+	word, start := wordAt(line, cur.Col)
 	if word == "" {
 		e.SetMessage("lsp: no identifier under cursor")
 		return
@@ -230,7 +230,7 @@ func (m *Model) startRename() {
 		return
 	}
 	cur := e.Buffer().Cursor()
-	word, _, _ := wordAt(e.Buffer().Line(cur.Line), cur.Col)
+	word, _ := wordAt(e.Buffer().Line(cur.Line), cur.Col)
 	if word == "" {
 		e.SetMessage("lsp: no identifier under cursor")
 		return
@@ -277,7 +277,7 @@ func (m *Model) dispatchRename(newName string) {
 		return
 	}
 	cur := e.Buffer().Cursor()
-	_, clientStart, _ := wordAt(e.Buffer().Line(cur.Line), cur.Col)
+	_, clientStart := wordAt(e.Buffer().Line(cur.Line), cur.Col)
 	path := e.Path()
 	go func() {
 		// Validate and anchor the edit with the server (F-009): a range

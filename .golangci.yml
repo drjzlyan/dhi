@@ -10,6 +10,10 @@ linters:
       # Tests routinely ignore setup/teardown errors on purpose.
       - path: _test\.go
         linters: [errcheck]
+      # Test helpers keep explicit constant arguments (clock(2026, ...),
+      # fixture names) because the call site reads better with them.
+      - path: _test\.go
+        linters: [unparam]
   enable:
     - govet
     - staticcheck
