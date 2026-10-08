@@ -22,6 +22,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/pack"
 	"github.com/drjzlyan/dhi/internal/agentkit/registry"
 	"github.com/drjzlyan/dhi/internal/autopilot"
+	"github.com/drjzlyan/dhi/internal/conventions"
 	"github.com/drjzlyan/dhi/internal/gitcore"
 	"github.com/drjzlyan/dhi/internal/settings"
 	"github.com/drjzlyan/dhi/internal/tasks"
@@ -335,8 +336,29 @@ const (
 	rowLineNumbers
 	rowScrollback
 	rowScopesBase // then 7 capability-scope rows (F-030 P2)
-	rowCount      = rowScopesBase + 7
+	// Conventions rows (F-042) follow the scopes so existing positions hold.
+	rowBranchTask     = rowScopesBase + 7
+	rowCommitFormat   = rowBranchTask + 1
+	rowCommitCoAuthor = rowBranchTask + 2
+	rowCopyright      = rowBranchTask + 3
+	rowCount          = rowBranchTask + 4
 )
+
+// branchPresets is the cycle for conventions.branch.task; any other
+// pattern is hand-edited in config.toml and shows as-is.
+var branchPresets = []string{"task/{slug}", "feature/{slug}", "{user}/{slug}", "{user}/{date}-{slug}"}
+
+// coAuthorTrailer is the value the Co-Authored-By row toggles to.
+const coAuthorTrailer = "Claude <noreply@anthropic.com>"
+
+func cycleString(cur string, opts []string, dir int) string {
+	for i, o := range opts {
+		if o == cur {
+			return opts[(i+dir+len(opts))%len(opts)]
+		}
+	}
+	return opts[0]
+}
 
 // scopeRowNames orders the settings scope rows.
 var scopeRowNames = []string{"read", "write", "exec", "network", "git", "push", "admin"}
@@ -372,8 +394,25 @@ func (m *Model) cycle(dir int) {
 		if m.cfg.Terminal.Scrollback+step >= 100 {
 			m.cfg.Terminal.Scrollback += step
 		}
+	case rowBranchTask:
+		m.cfg.Conventions.Branch.Task = cycleString(m.cfg.Conventions.Branch.Task, branchPresets, dir)
+	case rowCommitFormat:
+		m.cfg.Conventions.Commit.Format = cycleString(m.cfg.Conventions.Commit.Format,
+			[]string{conventions.FormatFree, conventions.FormatConventional, conventions.FormatTicket}, dir)
+	case rowCommitCoAuthor:
+		if m.cfg.Conventions.Commit.CoAuthor == "" {
+			m.cfg.Conventions.Commit.CoAuthor = coAuthorTrailer
+		} else {
+			m.cfg.Conventions.Commit.CoAuthor = ""
+		}
+	case rowCopyright:
+		if !m.cfg.Conventions.Copyright.Enabled && strings.TrimSpace(m.cfg.Conventions.Copyright.Holder) == "" {
+			m.flash = "set conventions.copyright.holder in config.toml first"
+			return
+		}
+		m.cfg.Conventions.Copyright.Enabled = !m.cfg.Conventions.Copyright.Enabled
 	default:
-		if m.cursor >= rowScopesBase {
+		if m.cursor >= rowScopesBase && m.cursor < rowScopesBase+7 {
 			name := scopeRowNames[m.cursor-rowScopesBase]
 			if m.cfg.Scopes == nil {
 				m.cfg.Scopes = map[string]string{}
@@ -1083,7 +1122,20 @@ func (m *Model) configView() []string {
 		}
 		rows = append(rows, settingRow(m.cursor == rowScopesBase+i, "scopes."+name, valueText(val)))
 	}
-	return rows
+	co := m.cfg.Conventions.Commit.CoAuthor
+	if co == "" {
+		co = "off"
+	}
+	return append(rows,
+		settingRow(m.cursor == rowBranchTask, "conventions.branch.task",
+			valueText(m.cfg.Conventions.Branch.Task)),
+		settingRow(m.cursor == rowCommitFormat, "conventions.commit.format",
+			valueText(m.cfg.Conventions.Commit.Format)),
+		settingRow(m.cursor == rowCommitCoAuthor, "conventions.commit.co_author",
+			valueText(co)),
+		settingRow(m.cursor == rowCopyright, "conventions.copyright.enabled",
+			valueText(boolStr(m.cfg.Conventions.Copyright.Enabled))),
+	)
 }
 
 func (m *Model) agentsView() []string {

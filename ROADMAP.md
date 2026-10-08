@@ -943,3 +943,15 @@ could not hand work to each other and team leads were inert.
       presence chip, welcome card, empty states, WCAG-AA tokens +
       high-contrast theme, rail clicks, inbox stamp alignment. Deferred:
       searchable help, Notice/Loading, list/lane clicks, wide detail pane
+
+## M25 — Install → setup → first-use UX (session 49 programme)
+
+Seven phases, one commit each; push deferred to the end.
+
+- [x] P1 Layered conventions: branch / commit / copyright / PR text (F-042)
+- [ ] P2 Wizard framework + animation kit, `dhi setup`, workspace init
+- [ ] P3 Distribution: release pipeline, installer, platforms
+- [ ] P4 Employees: starter teams + persona schema
+- [ ] P5 Agent CLI onboarding (confirm-gated install; supersedes ADR-0012)
+- [ ] P6 Integrations catalog (Jira, Confluence, Slack, Teams, …)
+- [ ] P7 Tools (LSP/dlv/formatters) + interactive tutorials

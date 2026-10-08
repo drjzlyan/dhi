@@ -187,6 +187,11 @@ func (d Deps) gitTools() []tool {
 				if strings.TrimSpace(a.Message) == "" {
 					return nil, fmt.Errorf("commit message is required")
 				}
+				if d.Conventions != nil {
+					if err := d.Conventions.Commit.CheckCommit(a.Message); err != nil {
+						return nil, fmt.Errorf("conventions: %w", err)
+					}
+				}
 				// Workflow gate (F-031): worktree-before-commit is a hard
 				// block; refuse before spending an approval.
 				if reasons := d.checkGate("git:commit"); len(reasons) > 0 {
@@ -213,11 +218,15 @@ func (d Deps) gitTools() []tool {
 				if err := repo.Stage("."); err != nil {
 					return "", err
 				}
+				msg := dec.(struct {
+					Message string `json:"message"`
+				}).Message
+				if d.Conventions != nil {
+					msg = d.Conventions.Commit.Finalize(msg)
+				}
 				hash, err := repo.Commit(gitcore.CommitOptions{
-					Message: dec.(struct {
-						Message string `json:"message"`
-					}).Message,
-					Author: id.Name, Email: id.Email,
+					Message: msg,
+					Author:  id.Name, Email: id.Email,
 				})
 				if err != nil {
 					return "", err

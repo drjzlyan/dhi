@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/drjzlyan/dhi/internal/conventions"
 	"github.com/drjzlyan/dhi/internal/tui/theme"
 )
 
@@ -365,5 +366,58 @@ func TestWorkspaceScopes(t *testing.T) {
 	// Unknown effect refuses.
 	if _, err := Load(write("schema = 1\n[scopes]\nwrite = \"maybe\"\n"), ""); err == nil {
 		t.Fatal("bad effect must refuse")
+	}
+}
+
+func TestConventionsDefaultsAndLayering(t *testing.T) {
+	dir := t.TempDir()
+	user := filepath.Join(dir, "user.toml")
+	ws := filepath.Join(dir, "ws.toml")
+	os.WriteFile(user, []byte("[conventions.commit]\nformat = \"conventional\"\nco_author = \"Bot <bot@x.io>\"\n"), 0o644)
+	os.WriteFile(ws, []byte("[conventions.branch]\ntask = \"{user}/{slug}\"\n[conventions.commit]\nformat = \"ticket\"\n"), 0o644)
+
+	def, err := Load("", "")
+	if err != nil || def.Conventions.Branch.Task != "task/{slug}" || def.Conventions.Commit.Format != "free" {
+		t.Fatalf("defaults = %+v err=%v", def.Conventions, err)
+	}
+	cfg, err := Load(user, ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := cfg.Conventions
+	if c.Commit.Format != "ticket" || c.Commit.CoAuthor != "Bot <bot@x.io>" ||
+		c.Branch.Task != "{user}/{slug}" || c.Branch.Review != "review/{id}" {
+		t.Fatalf("layering wrong: %+v", c)
+	}
+}
+
+func TestConventionsRefuseBadValuesAndTypos(t *testing.T) {
+	dir := t.TempDir()
+	cases := map[string]string{
+		"[conventions.commit]\nformat = \"wild\"\n":   "commit.format",
+		"[conventions.branch]\ntask = \"a/{nope}\"\n": "unknown placeholder",
+		"[conventions.commit]\nformat_x = \"free\"\n": "unknown keys",
+		"[conventions.copyright]\nenabled = true\n":   "copyright.holder",
+	}
+	for body, want := range cases {
+		p := filepath.Join(dir, "c.toml")
+		os.WriteFile(p, []byte(body), 0o644)
+		if _, err := Load(p, ""); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%q: err = %v, want %q", body, err, want)
+		}
+	}
+}
+
+func TestConventionsRoundTrip(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "c.toml")
+	cfg := Defaults()
+	cfg.Conventions.Commit.Format = "conventional"
+	cfg.Conventions.Copyright = conventions.Copyright{Enabled: true, Holder: "Acme", License: "MIT"}
+	if err := cfg.Save(p); err != nil {
+		t.Fatal(err)
+	}
+	back, err := Load(p, "")
+	if err != nil || back.Conventions.Commit.Format != "conventional" || !back.Conventions.Copyright.Enabled {
+		t.Fatalf("round trip = %+v err=%v", back.Conventions, err)
 	}
 }

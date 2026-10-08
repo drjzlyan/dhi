@@ -289,27 +289,28 @@ func (r *Runtime) serveTools(e *entry, trigger bus.Message) *serveSession {
 	if wantDHI {
 		gate, onRun := r.workflowEnforcer(e.m, trigger)
 		handler = dhitools.Deps{
-			Agent:     e.m,
-			Tasks:     r.cfg.Tasks,
-			KB:        r.cfg.Knowledge,
-			Memory:    r.cfg.Memory,
-			Bus:       r.cfg.Bus,
-			WS:        r.cfg.WS,
-			Search:    r.cfg.Search,
-			Approvals: r.cfg.Approvals,
-			Git:       r.cfg.Git,
-			Identity:  r.cfg.Identity,
-			Sessions:  r.cfg.Sessions,
-			Editor:    r.cfg.Editor,
-			Scopes:    r.agentScopes(e.m),
-			Gate:      gate,
-			OnRun:     onRun,
-			PR:        r.cfg.PR,
-			Skills:    r.lib(),
-			Channel:   trigger.Channel,
-			Thread:    trigger.Thread,
-			Workdir:   r.cliWorkdir(trigger),
-			Relay:     func(m bus.Message) { r.Handle(context.Background(), m) },
+			Agent:       e.m,
+			Tasks:       r.cfg.Tasks,
+			KB:          r.cfg.Knowledge,
+			Memory:      r.cfg.Memory,
+			Bus:         r.cfg.Bus,
+			WS:          r.cfg.WS,
+			Search:      r.cfg.Search,
+			Approvals:   r.cfg.Approvals,
+			Git:         r.cfg.Git,
+			Identity:    r.cfg.Identity,
+			Sessions:    r.cfg.Sessions,
+			Editor:      r.cfg.Editor,
+			Scopes:      r.agentScopes(e.m),
+			Gate:        gate,
+			OnRun:       onRun,
+			PR:          r.cfg.PR,
+			Skills:      r.lib(),
+			Conventions: r.cfg.Conventions,
+			Channel:     trigger.Channel,
+			Thread:      trigger.Thread,
+			Workdir:     r.cliWorkdir(trigger),
+			Relay:       func(m bus.Message) { r.Handle(context.Background(), m) },
 		}.Handler()
 	}
 	// Third-party MCP servers (F-034 part C): dialed under the sandbox,
@@ -500,6 +501,9 @@ func (r *Runtime) cliPrompt(ctx context.Context, e *entry, trigger bus.Message, 
 	system += r.knowledgeBlock(ctx, trigger.Text)
 	if r.cfg.Standards {
 		system += "\n\n" + standards.Resolve(r.cfg.WS.Root, e.m.ID, r.teamLookup())
+	}
+	if r.cfg.Conventions != nil {
+		system += "\n\n" + r.cfg.Conventions.Guidance()
 	}
 	if wfText != "" {
 		system += "\n\n" + wfText

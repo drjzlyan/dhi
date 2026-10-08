@@ -28,6 +28,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/standards"
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
 	"github.com/drjzlyan/dhi/internal/agentkit/workflow"
+	"github.com/drjzlyan/dhi/internal/conventions"
 	"github.com/drjzlyan/dhi/internal/gitcore"
 	"github.com/drjzlyan/dhi/internal/ideation"
 	"github.com/drjzlyan/dhi/internal/sandbox"
@@ -69,6 +70,9 @@ type Config struct {
 	// Standards injects layered coding instructions into every turn's
 	// system prompt (built-ins apply even without a document).
 	Standards bool
+	// Conventions are the team style rules (F-042): injected into the
+	// system prompt and enforced at git_commit. nil = none.
+	Conventions *conventions.Config
 	// Workflows resolves and injects the agent's active feature workflow
 	// (F-031) and enforces its gates at DHI's seams. A malformed
 	// workflow definition refuses the turn by name (ADR-0011).

@@ -6,6 +6,23 @@ debugging/test runner/format/symbols/git gutter, UX polish incl. a
 typing-hijack bug fix. `make verify` green. Debugging verified against
 real delve v1.27.2 — see F-039; `dlv` provisioning still open.)
 
+### Session 49 (M25 P1: layered conventions, F-042)
+
+- Plan: `~/.claude/plans/lets-work-on-user-agile-kazoo.md` — 7 phases, a
+  commit each, **no push until all done** (user instruction).
+- P1 shipped: `internal/conventions` (pure) embedded as
+  `settings.Config.Conventions`; branch patterns replace the hardcoded
+  `task/<slug>`/`review/<id>`; `git_commit` validates + appends the
+  co-author trailer; `Guidance()` rides the agent system prompt;
+  Settings rows. `settings.UnknownKeys` now recurses.
+- Decision: missing agent CLIs get a confirm-gated install (P5); needs a
+  new ADR superseding 0012.
+- Gotchas: Go `iota` stops when one const gets an explicit expression
+  (settings row constants); worktree root + copyright-on-write + `pr`
+  templates are deferred (F-042).
+- Untracked noise to ignore in P7 housekeeping: `.dhi/agents/*/runs/`,
+  `scripts/__pycache__/`.
+
 ### Session 48 (M21: agent hand-offs + team lead routing, F-036)
 
 - Gap audit vs the brief produced the M21–M24 plan (ROADMAP tail). M21

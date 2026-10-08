@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	osuser "os/user"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -34,6 +35,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
 	"github.com/drjzlyan/dhi/internal/autopilot"
 	"github.com/drjzlyan/dhi/internal/boot"
+	"github.com/drjzlyan/dhi/internal/conventions"
 	"github.com/drjzlyan/dhi/internal/doctor"
 	"github.com/drjzlyan/dhi/internal/gitcore"
 	"github.com/drjzlyan/dhi/internal/ideation"
@@ -177,9 +179,9 @@ func runTUI() {
 		if ts, err := tasks.Open(ws); err == nil {
 			taskStore = ts
 			taskStore.SetIdentity(identityFn)
-			wireTaskSeam(ws, ts)
+			wireTaskSeam(ws, ts, cfg.Conventions.Branch.Task)
 		}
-		reviewSvc = openReviewService(ws)
+		reviewSvc = openReviewService(ws, cfg.Conventions.Branch.Review)
 		mcpStore = mcpserver.Open(ws.Root)
 		if ss, err := ideation.Open(ws); err == nil {
 			sessionStore = ss
@@ -200,7 +202,7 @@ func runTUI() {
 		// under .dhi/agents/. Guards carry the audited OS-sandbox
 		// adapter (nil here is impossible: the audit blocked first).
 		if messageBus != nil {
-			agentRT = newAgentRuntime(ws, messageBus, decision.Sandbox, termEnv, cfg.Engine, gitRunner, identityFn, sessionStore, runRunner, editorBridge, wsScopes, taskStore, reviewSvc, rgSearcher, mcpStore)
+			agentRT = newAgentRuntime(ws, messageBus, decision.Sandbox, termEnv, cfg.Engine, gitRunner, identityFn, sessionStore, runRunner, editorBridge, wsScopes, taskStore, reviewSvc, rgSearcher, mcpStore, &cfg.Conventions)
 			if agentRT != nil {
 				edOpts = append(edOpts, editor.WithChat(agentRT))
 			}
@@ -385,7 +387,7 @@ func needsBootstrap(root string) bool {
 // openReviewService builds the review orchestration layer: TOML store
 // always; worktree seam + diff runner light up with the hermetic git
 // shim; PR inputs additionally need the host gh CLI.
-func openReviewService(ws *workspace.Workspace) *review.Service {
+func openReviewService(ws *workspace.Workspace, branchPattern string) *review.Service {
 	st, err := review.Open(ws)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "dhi: review store:", err)
@@ -426,7 +428,10 @@ func openReviewService(ws *workspace.Workspace) *review.Service {
 			dst := filepath.Join(ws.Root, rel)
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 			defer cancel()
-			branch := "review/" + id
+			branch, err := conventions.ExpandBranch(branchPattern, branchVars(id))
+			if err != nil {
+				return "", err
+			}
 			if err := runner.WorktreeAdd(ctx, mem.Path, dst, branch, startpoint); err != nil {
 				return "", err
 			}
@@ -451,7 +456,7 @@ func openReviewService(ws *workspace.Workspace) *review.Service {
 
 // wireTaskSeam connects task ChangeSets to hermetic-git worktrees when
 // the shim exists; without it, attaching reports a visible error.
-func wireTaskSeam(ws *workspace.Workspace, ts *tasks.Store) {
+func wireTaskSeam(ws *workspace.Workspace, ts *tasks.Store, branchPattern string) {
 	root, err := toolchain.DefaultRoot()
 	if err != nil {
 		return
@@ -467,7 +472,10 @@ func wireTaskSeam(ws *workspace.Workspace, ts *tasks.Store) {
 				return "", fmt.Errorf("unknown member %q", member)
 			}
 			if branch == "" {
-				branch = "task/" + slug
+				var err error
+				if branch, err = conventions.ExpandBranch(branchPattern, branchVars(slug)); err != nil {
+					return "", err
+				}
 			}
 			rel := filepath.Join(tasks.Dir, slug, member)
 			dst := filepath.Join(ws.Root, rel)
@@ -661,7 +669,7 @@ func (r execRunner) Run(ctx context.Context, dir string, argv []string, allowNet
 	return out, err
 }
 
-func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cliEnv []string, defaultEngine string, gitRunner *gitcore.Runner, identityFn gitcore.IdentityFunc, sessionStore *ideation.Store, runRunner dhitools.CommandRunner, editor dhitools.EditorAPI, workspaceScopes scopes.Set, taskStore *tasks.Store, reviewSvc *review.Service, kbSearcher search.Searcher, mcpStore *mcpserver.Store) *agentkitRuntime.Runtime {
+func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cliEnv []string, defaultEngine string, gitRunner *gitcore.Runner, identityFn gitcore.IdentityFunc, sessionStore *ideation.Store, runRunner dhitools.CommandRunner, editor dhitools.EditorAPI, workspaceScopes scopes.Set, taskStore *tasks.Store, reviewSvc *review.Service, kbSearcher search.Searcher, mcpStore *mcpserver.Store, conv *conventions.Config) *agentkitRuntime.Runtime {
 	roster, err := manifest.LoadDir(filepath.Join(ws.Root, workspace.DirAgents))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "dhi: agent roster:", err)
@@ -700,6 +708,7 @@ func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cl
 		Tasks:         taskStore,
 		Org:           company,
 		Standards:     true,
+		Conventions:   conv,
 		Workflows:     true,
 		Sandbox:       sb,
 		Memory:        memStore,
@@ -734,6 +743,20 @@ func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cl
 		return nil
 	}
 	return rt
+}
+
+// branchVars supplies the placeholders a branch pattern may use:
+// {slug}/{id} (the task slug or review id), {user} (the OS account, as
+// a ref-safe token) and {date} (YYYYMMDD).
+func branchVars(id string) map[string]string {
+	user := "user"
+	if u, err := osuser.Current(); err == nil && u.Username != "" {
+		user = strings.ToLower(u.Username)
+	}
+	return map[string]string{
+		"slug": id, "id": id, "user": user,
+		"date": time.Now().Format("20060102"),
+	}
 }
 
 // runDoctor executes the shared check suite and prints a report.

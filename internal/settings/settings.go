@@ -14,6 +14,7 @@ import (
 	"github.com/BurntSushi/toml"
 
 	"github.com/drjzlyan/dhi/internal/agentkit/scopes"
+	"github.com/drjzlyan/dhi/internal/conventions"
 	"github.com/drjzlyan/dhi/internal/tui/theme"
 )
 
@@ -72,16 +73,20 @@ type Config struct {
 	Editor   Editor            `toml:"editor"`
 	Terminal Terminal          `toml:"terminal"`
 	Security Security          `toml:"security"`
+	// Conventions is the team-style layer (F-042): branch names, commit
+	// format, copyright header, PR text.
+	Conventions conventions.Config `toml:"conventions"`
 }
 
 // Defaults returns the built-in baseline every layer merges onto.
 func Defaults() Config {
 	return Config{
-		Schema:   SchemaVersion,
-		Theme:    theme.Dark().Name,
-		Editor:   Editor{TabWidth: 4, LineNumbers: true},
-		Terminal: Terminal{Scrollback: 1000},
-		Security: Security{Sandbox: SandboxAuto},
+		Schema:      SchemaVersion,
+		Theme:       theme.Dark().Name,
+		Editor:      Editor{TabWidth: 4, LineNumbers: true},
+		Terminal:    Terminal{Scrollback: 1000},
+		Security:    Security{Sandbox: SandboxAuto},
+		Conventions: conventions.Defaults(),
 	}
 }
 
@@ -91,7 +96,13 @@ func Known() []string {
 		"terminal", "security", "editor.tab_width", "editor.line_numbers",
 		"terminal.scrollback", "security.sandbox",
 		"scopes.read", "scopes.write", "scopes.exec", "scopes.network",
-		"scopes.git", "scopes.push", "scopes.admin"}
+		"scopes.git", "scopes.push", "scopes.admin",
+		"conventions.branch.task", "conventions.branch.review",
+		"conventions.commit.format", "conventions.commit.ticket_pattern",
+		"conventions.commit.max_subject", "conventions.commit.co_author",
+		"conventions.copyright.enabled", "conventions.copyright.holder",
+		"conventions.copyright.license", "conventions.copyright.year",
+		"conventions.pr.title", "conventions.pr.body"}
 }
 
 // Load merges defaults ← user ← workspace. Missing files are fine;
@@ -158,6 +169,9 @@ func validate(c Config) error {
 			return fmt.Errorf("settings: scopes.%s: %w", name, err)
 		}
 	}
+	if err := c.Conventions.Validate(); err != nil {
+		return fmt.Errorf("settings: conventions.%w", err)
+	}
 	if c.Engine != "" {
 		kind, name, ok := strings.Cut(strings.TrimSpace(c.Engine), ":")
 		if !ok || kind != "cli" || !engineNameRe.MatchString(name) {
@@ -200,6 +214,35 @@ type fileLayer struct {
 	Security struct {
 		Sandbox string `toml:"sandbox"`
 	} `toml:"security"`
+	Conventions struct {
+		Branch struct {
+			Task   string `toml:"task"`
+			Review string `toml:"review"`
+		} `toml:"branch"`
+		Commit struct {
+			Format        string `toml:"format"`
+			TicketPattern string `toml:"ticket_pattern"`
+			MaxSubject    int    `toml:"max_subject"`
+			CoAuthor      string `toml:"co_author"`
+		} `toml:"commit"`
+		Copyright struct {
+			Enabled *bool  `toml:"enabled"`
+			Holder  string `toml:"holder"`
+			License string `toml:"license"`
+			Year    string `toml:"year"`
+		} `toml:"copyright"`
+		PR struct {
+			Title string `toml:"title"`
+			Body  string `toml:"body"`
+		} `toml:"pr"`
+	} `toml:"conventions"`
+}
+
+// setStr overwrites dst with a trimmed non-empty layer value.
+func setStr(dst *string, v string) {
+	if v = strings.TrimSpace(v); v != "" {
+		*dst = v
+	}
 }
 
 func (f fileLayer) mergeInto(dst *Config) {
@@ -230,6 +273,23 @@ func (f fileLayer) mergeInto(dst *Config) {
 	if f.Security.Sandbox != "" {
 		dst.Security.Sandbox = strings.TrimSpace(f.Security.Sandbox)
 	}
+	cv, d := f.Conventions, &dst.Conventions
+	setStr(&d.Branch.Task, cv.Branch.Task)
+	setStr(&d.Branch.Review, cv.Branch.Review)
+	setStr(&d.Commit.Format, cv.Commit.Format)
+	setStr(&d.Commit.TicketPattern, cv.Commit.TicketPattern)
+	setStr(&d.Commit.CoAuthor, cv.Commit.CoAuthor)
+	if cv.Commit.MaxSubject != 0 {
+		d.Commit.MaxSubject = cv.Commit.MaxSubject
+	}
+	if cv.Copyright.Enabled != nil {
+		d.Copyright.Enabled = *cv.Copyright.Enabled
+	}
+	setStr(&d.Copyright.Holder, cv.Copyright.Holder)
+	setStr(&d.Copyright.License, cv.Copyright.License)
+	setStr(&d.Copyright.Year, cv.Copyright.Year)
+	setStr(&d.PR.Title, cv.PR.Title)
+	setStr(&d.PR.Body, cv.PR.Body)
 }
 
 // themeExists checks the theme registry (kept here to avoid an import
@@ -274,20 +334,23 @@ func UnknownKeys(data []byte) ([]string, error) {
 		known[k] = true
 	}
 	var out []string
-	for k, v := range raw {
-		if sub, ok := v.(map[string]any); ok {
-			for sk := range sub {
-				dotted := k + "." + sk
-				if !known[dotted] {
-					out = append(out, dotted)
-				}
+	var walk func(prefix string, m map[string]any)
+	walk = func(prefix string, m map[string]any) {
+		for k, v := range m {
+			dotted := k
+			if prefix != "" {
+				dotted = prefix + "." + k
 			}
-			continue
-		}
-		if !known[k] {
-			out = append(out, k)
+			if sub, ok := v.(map[string]any); ok {
+				walk(dotted, sub)
+				continue
+			}
+			if !known[dotted] {
+				out = append(out, dotted)
+			}
 		}
 	}
+	walk("", raw)
 	sortStrings(out)
 	return out, nil
 }

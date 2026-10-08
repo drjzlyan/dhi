@@ -26,6 +26,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/memory"
 	"github.com/drjzlyan/dhi/internal/agentkit/scopes"
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
+	"github.com/drjzlyan/dhi/internal/conventions"
 	"github.com/drjzlyan/dhi/internal/gitcore"
 	"github.com/drjzlyan/dhi/internal/ideation"
 	"github.com/drjzlyan/dhi/internal/mcp"
@@ -65,6 +66,9 @@ type Deps struct {
 	Scopes    scopes.Set           // capability effects; nil = scopes.Default()
 	PR        PRSeam               // opens task PRs (F-020/F-032); nil refuses pr_open
 	Skills    *library.Store       // behaviour library; nil refuses skill_run
+	// Conventions are the team commit rules (F-042); nil = no extra
+	// validation (defaults are permissive).
+	Conventions *conventions.Config
 
 	// Gate enforces the active feature workflow (F-031) at a seam: it
 	// returns the refusal reasons for acting on seam ("git:commit",

@@ -152,3 +152,32 @@ func TestScopesEditorCyclesAndPersists(t *testing.T) {
 		t.Error("scope row not rendered")
 	}
 }
+
+func TestConventionRowsCycleAndPersist(t *testing.T) {
+	m, path := newSurface(t)
+	m.cursor = rowCommitFormat
+	feed(m, "l") // free → conventional
+	m.cursor = rowBranchTask
+	feed(m, "l") // task/{slug} → feature/{slug}
+	m.cursor = rowCommitCoAuthor
+	feed(m, "enter")
+
+	back, err := settings.Load(path, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := back.Conventions
+	if c.Commit.Format != "conventional" || c.Branch.Task != "feature/{slug}" || c.Commit.CoAuthor != coAuthorTrailer {
+		t.Fatalf("persisted conventions = %+v", c)
+	}
+}
+
+func TestCopyrightRowNeedsHolder(t *testing.T) {
+	m, _ := newSurface(t)
+	m.cursor = rowCopyright
+	feed(m, "enter")
+	if m.cfg.Conventions.Copyright.Enabled || !strings.Contains(m.flash, "holder") {
+		t.Fatalf("enabled=%v flash=%q; want refusal naming the holder key",
+			m.cfg.Conventions.Copyright.Enabled, m.flash)
+	}
+}

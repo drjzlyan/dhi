@@ -9,6 +9,7 @@ import (
 
 	git "github.com/go-git/go-git/v5"
 
+	"github.com/drjzlyan/dhi/internal/conventions"
 	"github.com/drjzlyan/dhi/internal/gitcore"
 	"github.com/go-git/go-git/v5/plumbing/object"
 )
@@ -257,5 +258,33 @@ func TestGitCommitBlockedByWorkflow(t *testing.T) {
 	}.Handler()
 	if out, isErr := call(h, t, "git_commit", `{"message":"v2"}`); !isErr || !strings.Contains(out, "workflow blocks commit") {
 		t.Fatalf("workflow-blocked commit = %q isErr=%v", out, isErr)
+	}
+}
+
+func TestGitCommitEnforcesConventions(t *testing.T) {
+	f, m := newFixture(t, "git_commit")
+	api := memberDir(t, f.ws, "api")
+	initRepo(t, api)
+	writeFile(t, api, "a.go", "package a // v2\n")
+	conv := conventions.Defaults()
+	conv.Commit.Format = conventions.FormatConventional
+	conv.Commit.CoAuthor = "Bot <bot@example.com>"
+	h := Deps{Agent: m, WS: f.ws, Workdir: api, Identity: testIdentity(),
+		Approvals: f.approvals, Conventions: &conv}.Handler()
+
+	// A non-conventional subject is refused before an approval is spent.
+	if out, isErr := call(h, t, "git_commit", `{"message":"did stuff"}`); !isErr || !strings.Contains(out, "conventional") {
+		t.Fatalf("bad subject = %q isErr=%v", out, isErr)
+	}
+	resolve := callAsync(h, "git_commit", `{"message":"feat(api): add v2"}`, f)
+	if out, isErr := resolve(t); isErr {
+		t.Fatalf("valid commit refused: %s", out)
+	}
+	repo, _ := git.PlainOpen(api)
+	head, _ := repo.Head()
+	c, _ := repo.CommitObject(head.Hash())
+	want := "feat(api): add v2\n\nCo-Authored-By: Bot <bot@example.com>\n"
+	if c.Message != want {
+		t.Fatalf("message = %q, want %q", c.Message, want)
 	}
 }
