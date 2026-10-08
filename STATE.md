@@ -38,7 +38,11 @@ real delve v1.27.2 — see F-039; `dlv` provisioning still open.)
   NOT shippable yet: hermetic git must be built by CI (`release-git.yml` matrix now has macos-13 and
   ubuntu-24.04-arm; needs a push + dispatch), merge its pin PR, then add both platforms to
   `scripts/release-platforms.txt` (guard test enforces it). Untested: the CI changes themselves.
-- All four deferred items done. Push NOT done: ask the user where to push.
+- All four deferred items done and PUSHED to origin/main (acce501..77477ea, 2026-10-09).
+- Open, needs the user: (1) dispatch `release-git` on GitHub, merge its pin PR, add darwin/amd64 +
+  linux/arm64 to `scripts/release-platforms.txt`; (2) live GitHub review test against a scratch PR
+  (never run); (3) three-column review screen never walked in tmux; worktrees.root never run with a
+  real git worktree end to end.
 
 ### Session 49 (M25 P1: layered conventions, F-042)
 
