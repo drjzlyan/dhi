@@ -28,8 +28,20 @@ type ghFake struct {
 	issueComments  []review.RemoteComment
 	// posted records review-comment posts as "file:line:side:replyTo|body".
 	posted []string
+	// submitted records whole-review submissions (F-049).
+	submitted []review.ReviewSubmission
+	login     string
+	prAuthor  string
 }
 
+func (g *ghFake) SubmitReview(_ context.Context, _, num string, sub review.ReviewSubmission) (string, error) {
+	g.submitted = append(g.submitted, sub)
+	if g.err != nil {
+		return "", g.err
+	}
+	return "https://github.com/acme/api/pull/" + num + "#review", nil
+}
+func (g *ghFake) Login(context.Context) (string, error)     { return g.login, nil }
 func (g *ghFake) Available() bool                           { return true }
 func (g *ghFake) AuthToken(context.Context) (string, error) { return "tok", nil }
 func (g *ghFake) PR(context.Context, string, string) (review.PRMeta, error) {

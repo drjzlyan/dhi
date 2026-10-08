@@ -27,6 +27,13 @@ type fakeGH struct {
 	body           string   // last PR body
 	reviewComments []RemoteComment
 	issueComments  []RemoteComment
+
+	submitted  []ReviewSubmission
+	submitRepo string
+	submitErr  error
+	replies    []string
+	replyErr   error
+	login      string
 }
 
 func (f *fakeGH) Available() bool { return true }
@@ -46,9 +53,16 @@ func (f *fakeGH) CreatePR(_ context.Context, repo, title, body, base, head strin
 	f.body = body
 	return PRMeta{Number: 7, Title: title, URL: "https://github.com/acme/api/pull/7", BaseRef: base}, nil
 }
-func (f *fakeGH) PostReviewComment(context.Context, string, string, string, string, int, string, string, int64) error {
-	return nil
+func (f *fakeGH) PostReviewComment(_ context.Context, repo, num, sha, path string, line int, side, body string, inReplyTo int64) error {
+	f.replies = append(f.replies, fmt.Sprintf("%s#%s %s:%d %s reply-to=%d %q", repo, num, path, line, side, inReplyTo, body))
+	return f.replyErr
 }
+func (f *fakeGH) SubmitReview(_ context.Context, repo, num string, sub ReviewSubmission) (string, error) {
+	f.submitted = append(f.submitted, sub)
+	f.submitRepo = repo
+	return "https://github.com/acme/api/pull/" + num + "#pullrequestreview-9", f.submitErr
+}
+func (f *fakeGH) Login(context.Context) (string, error) { return f.login, nil }
 func (f *fakeGH) ReviewComments(context.Context, string, string) ([]RemoteComment, error) {
 	return f.reviewComments, nil
 }

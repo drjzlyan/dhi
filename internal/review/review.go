@@ -22,8 +22,10 @@ import (
 	"github.com/drjzlyan/dhi/internal/workspace"
 )
 
-// SchemaVersion is the review-card schema this build understands.
-const SchemaVersion = 1
+// SchemaVersion is the review-card schema this build writes (2: comments
+// gain posted/suggested/dismissed/severity, reviews gain verdict/summary,
+// F-049). Schema 1 cards still load.
+const SchemaVersion = 2
 
 // Dir is the reserved reviews tree under the workspace root.
 const Dir = ".dhi/reviews"
@@ -88,6 +90,21 @@ type Comment struct {
 	RemoteID int64
 	Side     Side // SideNew or SideOld (for line-anchored comments)
 	Line     int  // 1-based line number on the given side; 0 = file-level
+
+	// Posted: this comment has gone out in a submitted review.
+	Posted bool
+	// Suggested marks an employee's finding awaiting the human's decision;
+	// it is never sent as-is. Dismissed suggestions stay on the card, hidden.
+	Suggested bool
+	Dismissed bool
+	// Severity is the employee's own label for a suggestion ("" = none).
+	Severity string
+}
+
+// Sendable reports whether the comment belongs in the human's review:
+// written (or accepted) by the human, not yet sent, not a suggestion.
+func (c Comment) Sendable(human string) bool {
+	return c.Author == human && !c.Suggested && !c.Dismissed && !c.Posted && c.RemoteID == 0
 }
 
 // Thread is a discussion rooted at one file line (Line 0 = file level).
@@ -117,6 +134,10 @@ type Review struct {
 	Done    bool   // worktree discarded
 	Posted  bool   // comments posted to the PR via gh
 	PRURL   string // GitHub PR URL once one is created/linked
+
+	// Verdict and Summary are what the last submitted review said.
+	Verdict string
+	Summary string
 
 	CreatedAt time.Time
 	UpdatedAt time.Time
@@ -150,6 +171,8 @@ type file struct {
 	WorkRel    string    `toml:"worktree"`
 	Posted     bool      `toml:"posted"`
 	PRURL      string    `toml:"pr_url,omitempty"`
+	Verdict    string    `toml:"verdict,omitempty"`
+	Summary    string    `toml:"summary,omitempty"`
 	Viewed     []string  `toml:"viewed"`
 	Done       bool      `toml:"done"`
 	CreatedAt  time.Time `toml:"created_at"`
@@ -177,6 +200,11 @@ type commentFile struct {
 	RemoteID int64     `toml:"remote_id,omitempty"`
 	Side     Side      `toml:"side,omitempty"`
 	Line     int       `toml:"line,omitempty"`
+
+	Posted    bool   `toml:"posted,omitempty"`
+	Suggested bool   `toml:"suggested,omitempty"`
+	Dismissed bool   `toml:"dismissed,omitempty"`
+	Severity  string `toml:"severity,omitempty"`
 }
 
 // WorktreeFn creates the dedicated review worktree for one member and
@@ -268,8 +296,8 @@ func parseCard(path, id string) (Review, error) {
 		}
 		return Review{}, fmt.Errorf("review: %s: unknown key(s): %s", id, strings.Join(keys, ", "))
 	}
-	if f.Schema != SchemaVersion {
-		return Review{}, fmt.Errorf("review: %s: schema %d, want %d", id, f.Schema, SchemaVersion)
+	if f.Schema < 1 || f.Schema > SchemaVersion {
+		return Review{}, fmt.Errorf("review: %s: schema %d, want 1..%d", id, f.Schema, SchemaVersion)
 	}
 	if !slugRe.MatchString(id) {
 		return Review{}, fmt.Errorf("review: bad id %q", id)
@@ -291,7 +319,7 @@ func parseCard(path, id string) (Review, error) {
 		ID: id, Title: strings.TrimSpace(f.Title),
 		Target: Target{Kind: f.Kind, Member: f.Member, Base: f.Base, Head: f.Head, HeadBranch: f.HeadBranch, PRNumber: f.PRNumber},
 		Status: st, Viewed: map[string]bool{}, Channel: f.Channel, WorkRel: f.WorkRel, Done: f.Done,
-		Posted: f.Posted, PRURL: f.PRURL,
+		Posted: f.Posted, PRURL: f.PRURL, Verdict: f.Verdict, Summary: f.Summary,
 		CreatedAt: f.CreatedAt, UpdatedAt: f.UpdatedAt,
 	}
 	for _, vf := range f.Viewed {
@@ -301,7 +329,9 @@ func parseCard(path, id string) (Review, error) {
 		t := Thread{ID: tf.ID, File: tf.File, Line: tf.Line, Side: tf.Side,
 			Resolved: tf.Resolved, BusThread: tf.BusThread, RemoteRoot: tf.RemoteRoot}
 		for _, cf := range tf.Comments {
-			t.Comments = append(t.Comments, Comment{Author: cf.Author, Text: cf.Text, At: cf.At, Pending: cf.Pending, RemoteID: cf.RemoteID, Side: cf.Side, Line: cf.Line})
+			t.Comments = append(t.Comments, Comment{Author: cf.Author, Text: cf.Text, At: cf.At, Pending: cf.Pending,
+				RemoteID: cf.RemoteID, Side: cf.Side, Line: cf.Line,
+				Posted: cf.Posted, Suggested: cf.Suggested, Dismissed: cf.Dismissed, Severity: cf.Severity})
 		}
 		r.Threads = append(r.Threads, t)
 	}
@@ -613,6 +643,7 @@ func writeCard(path string, r Review) error {
 		Kind: r.Target.Kind, Member: r.Target.Member, Base: r.Target.Base,
 		Head: r.Target.Head, HeadBranch: r.Target.HeadBranch, PRNumber: r.Target.PRNumber,
 		Channel: r.Channel, WorkRel: r.WorkRel, Done: r.Done, Posted: r.Posted, PRURL: r.PRURL,
+		Verdict: r.Verdict, Summary: r.Summary,
 		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 	}
 	for p := range r.Viewed {
@@ -625,7 +656,9 @@ func writeCard(path string, r Review) error {
 		tf := threadFile{ID: t.ID, File: t.File, Line: t.Line, Side: t.Side,
 			Resolved: t.Resolved, BusThread: t.BusThread, RemoteRoot: t.RemoteRoot}
 		for _, c := range t.Comments {
-			tf.Comments = append(tf.Comments, commentFile{Author: c.Author, Text: c.Text, At: c.At, Pending: c.Pending, RemoteID: c.RemoteID, Side: c.Side, Line: c.Line})
+			tf.Comments = append(tf.Comments, commentFile{Author: c.Author, Text: c.Text, At: c.At, Pending: c.Pending,
+				RemoteID: c.RemoteID, Side: c.Side, Line: c.Line,
+				Posted: c.Posted, Suggested: c.Suggested, Dismissed: c.Dismissed, Severity: c.Severity})
 		}
 		f.Threads = append(f.Threads, tf)
 	}
