@@ -1,6 +1,6 @@
 ╭─ › files ──────────────────────╮╭─ › app.go  NORMAL ────────────────────────────────────────────╮
 │   alpha/                       ││ [app.go]                                                      │
-│     src/                       ││ 1 package main// touched                                      │
+│     src/                       ││ 1▎package main// touched                                      │
 │ ▌   app.go                     ││ 2                                                             │
 │   beta/ ▸                      ││                                                               │
 │                                ││ "alpha/app.go" written                                        │

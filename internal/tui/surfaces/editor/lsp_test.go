@@ -25,6 +25,14 @@ type goplusFake struct {
 	// declinePrepare makes prepareRename answer null (symbol not
 	// renameable), for the F-009 validation path.
 	declinePrepare bool
+	// formatEdits is the textDocument/formatting reply; formatFail
+	// answers with a JSON-RPC error instead (F-040).
+	formatEdits []map[string]any
+	formatFail  bool
+	// events records didChange/formatting in arrival order; lastChange is
+	// the text of the latest didChange (what the "server" believes).
+	events     []string
+	lastChange string
 }
 
 func startFakeServer(t *testing.T) (*goplusFake, *lsp.Manager) {
@@ -118,6 +126,46 @@ func (f *goplusFake) serve() {
 					}, "newText": p.NewName},
 				},
 			}})
+
+		case "textDocument/didChange":
+			var p struct {
+				ContentChanges []struct {
+					Text string `json:"text"`
+				} `json:"contentChanges"`
+			}
+			json.Unmarshal(msg.Params, &p)
+			f.mu.Lock()
+			f.events = append(f.events, "didChange")
+			if len(p.ContentChanges) > 0 {
+				f.lastChange = p.ContentChanges[0].Text
+			}
+			f.mu.Unlock()
+
+		case "textDocument/formatting":
+			f.mu.Lock()
+			f.events = append(f.events, "formatting")
+			f.mu.Unlock()
+			f.mu.Lock()
+			edits, fail := f.formatEdits, f.formatFail
+			f.mu.Unlock()
+			if fail {
+				f.writeJSON(map[string]any{"jsonrpc": "2.0", "id": *msg.ID,
+					"error": map[string]any{"code": -32603, "message": "gofmt: syntax error"}})
+				break
+			}
+			f.reply(*msg.ID, edits)
+
+		case "textDocument/documentSymbol":
+			sel := func(l int) map[string]any {
+				return map[string]any{
+					"start": map[string]any{"line": l, "character": 5},
+					"end":   map[string]any{"line": l, "character": 9}}
+			}
+			f.reply(*msg.ID, []map[string]any{
+				{"name": "main", "kind": 12, "range": sel(0), "selectionRange": sel(0)},
+				{"name": "Config", "kind": 23, "range": sel(0), "selectionRange": sel(0),
+					"children": []map[string]any{{"name": "Load", "kind": 6, "range": sel(1), "selectionRange": sel(1)}}},
+			})
 
 		case "textDocument/codeAction":
 			var p struct {

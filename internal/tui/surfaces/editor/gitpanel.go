@@ -157,6 +157,7 @@ func (m *Model) handleCommitInput(key string) bool {
 			m.gitErr = err.Error()
 			return true
 		}
+		defer m.invalidateGutters() // HEAD moves on commit
 		hash, err := m.gitRepo.Commit(gitcore.CommitOptions{
 			Message: msg, Author: id.Name, Email: id.Email,
 		})

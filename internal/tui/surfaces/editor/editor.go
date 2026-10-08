@@ -22,6 +22,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/lsp"
 	"github.com/drjzlyan/dhi/internal/preview"
 	"github.com/drjzlyan/dhi/internal/search"
+	"github.com/drjzlyan/dhi/internal/testrun"
 	"github.com/drjzlyan/dhi/internal/textbuf"
 	"github.com/drjzlyan/dhi/internal/tui/kit"
 	"github.com/drjzlyan/dhi/internal/tui/surfaces"
@@ -46,6 +47,9 @@ const (
 	modeFind
 	modeSearchQuery
 	modeResults
+	modeSymbols
+	modeTests
+	modeDebug
 )
 
 // Option configures optional editor capabilities.
@@ -117,6 +121,18 @@ type Model struct {
 	// buffer title can show an active-editing indicator (F-035 Part B).
 	agentEditPath string
 	agentEditAt   time.Time
+
+	// Pair programming (F-038): agent suggestions awaiting review.
+	proposals    []proposal
+	reviewOpen   bool
+	pairNote     string
+	breakpoints  map[string][]int // abs path → sorted 1-based lines (F-039)
+	dbg          *dbgState
+	dapStart     dapStarter    // adapter launcher; nil = delve (tests inject)
+	testing      *testState    // :test results (modeTests)
+	syms         *symbolPicker // :sym outline picker (modeSymbols)
+	formatOnSave bool          // :set fmt|nofmt; default on (Go + live server only)
+	pairAgent    string        // pairing partner (F-038); "" = no session
 
 	drawerOpen  bool
 	termFocus   bool
@@ -193,6 +209,8 @@ func New(version string, ws *workspace.Workspace, opts ...Option) *Model {
 		memEvents: make(chan struct{}, 8),
 		lspSent:   map[string]string{},
 		lspDiags:  map[string][]lsp.Diagnostic{},
+
+		formatOnSave: true,
 	}
 	if ws != nil {
 		for _, mem := range ws.Members() {
@@ -213,6 +231,8 @@ func (m *Model) Meta() surfaces.Meta { return surfaces.Meta{ID: "editor", Title:
 // keys, and the live mode chip (buffer modal states, finder, chat).
 func (m *Model) StatusContext() (string, string) {
 	switch {
+	case m.reviewOpen && len(m.proposals) > 0:
+		return "suggestion", "REVIEW"
 	case m.chat != nil && m.chat.open && m.chat.focus:
 		return "crew", "CHAT"
 	case m.mode == modeFind:
@@ -221,6 +241,12 @@ func (m *Model) StatusContext() (string, string) {
 		return "search", "SEARCH"
 	case m.mode == modeResults:
 		return "results", ""
+	case m.mode == modeSymbols:
+		return "symbols", "SYMBOLS"
+	case m.mode == modeTests:
+		return "tests", "TESTS"
+	case m.mode == modeDebug:
+		return "debugger", "DEBUG"
 	case m.drawerOpen && m.termFocus:
 		return "terminal", "TERM"
 	case m.gitOpen && m.gitFocus:
@@ -235,6 +261,23 @@ func (m *Model) StatusContext() (string, string) {
 		return "buffer", ""
 	}
 	return "files", ""
+}
+
+// CapturesInput implements surfaces.InputCapturer. A focused buffer owns
+// every plain key (insert text, vim counts like 3dd, tab); so do the
+// terminal, chat composer, git panel and the file/search/symbol prompts.
+// Leave the buffer with esc to get the digit view-switch keys back, or
+// use the command palette from anywhere.
+func (m *Model) CapturesInput() bool {
+	switch {
+	case m.drawerOpen && m.termFocus,
+		m.chat != nil && m.chat.open && m.chat.focus,
+		m.gitOpen && m.gitFocus:
+		return true
+	case m.mode == modeFind, m.mode == modeSearchQuery, m.mode == modeSymbols:
+		return true
+	}
+	return m.bufFocus && m.active() != nil
 }
 
 // Wheel routes wheel events to the focused pane (F-026 P2): three
@@ -296,6 +339,11 @@ func (m *Model) HelpSections() [][2]string {
 			[2]string{"i / esc", "insert · back to normal"},
 			[2]string{":w :q :wq :e", "save · quit · reload"},
 			[2]string{"K gr ga", "hover · rename · code actions"},
+			[2]string{":pair <agent>", "invite an agent to pair (:ask · :unpair)"},
+			[2]string{":break · :debug", "breakpoint · start debugging (:cont :next :step :out :stop :eval)"},
+			[2]string{":test [all|name]", "run Go tests · failures list jumps to the line"},
+			[2]string{":fmt · :sym", "format · outline / go to symbol (format on save: :set nofmt)"},
+			[2]string{"ctrl+y", "review agent suggestions"},
 			[2]string{"ctrl+g", "markdown preview"},
 			[2]string{":s/old/new/[g]", "replace"})
 	case m.mode == modeResults:
@@ -441,6 +489,8 @@ type teaMsg struct {
 	edit      *lsp.WorkspaceEdit
 	actions   []lsp.CodeAction
 	note      string
+	testRep   *testrun.Report
+	dbgStart  *dbgStarted
 }
 
 const (
@@ -452,6 +502,9 @@ const (
 	lspMsgEdit
 	lspMsgAction
 	lspMsgNote
+	testMsgDone
+	dbgMsgStarted
+	dbgMsgUpdate
 )
 
 func (m *Model) Resize(w, h int) {
@@ -497,6 +550,12 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 			m.termExited(msg.tab)
 		case lspMsgDiag, lspMsgComp, lspMsgHover, lspMsgEdit, lspMsgAction, lspMsgNote:
 			m.applyLSPUpdate(msg)
+		case testMsgDone:
+			m.applyTestDone(msg.testRep)
+		case dbgMsgStarted:
+			m.applyDebugStarted(msg.dbgStart)
+		case dbgMsgUpdate:
+			m.applyDebugUpdate()
 		}
 		return m.listenTerm()
 	case chatEvent:
@@ -544,6 +603,17 @@ func (m *Model) HandleKey(key string) bool {
 		return false
 	}
 
+	if m.reviewOpen && len(m.proposals) > 0 {
+		return m.handleReviewKey(key)
+	}
+	if key == "ctrl+d" && m.dbg != nil && m.dbg.st.Stopped {
+		m.mode = modeDebug
+		return true
+	}
+	if key == "ctrl+y" && len(m.proposals) > 0 {
+		m.reviewOpen = true
+		return true
+	}
 	if key == "ctrl+t" {
 		m.ToggleDrawer()
 		return true
@@ -587,6 +657,12 @@ func (m *Model) HandleKey(key string) bool {
 		return m.handleSearchKey(key)
 	case modeResults:
 		return m.handleResultsKey(key)
+	case modeSymbols:
+		return m.handleSymbolKey(key)
+	case modeTests:
+		return m.handleTestKey(key)
+	case modeDebug:
+		return m.handleDebugKey(key)
 	}
 
 	if m.bufFocus && m.active() != nil {
@@ -806,6 +882,7 @@ type bufTab struct {
 	vp     string
 	path   string
 	syntax *highlighter // per-tab buffer colorizer (F-026 P4)
+	gutter gutterState  // git change markers (F-040)
 }
 
 // active returns the focused tab's editor, or nil.
@@ -839,6 +916,7 @@ func (m *Model) open(n *node) {
 		return
 	}
 	be.SetCommandDelegate(m)
+	be.SetBeforeSave(m.beforeSave)
 	tab := &bufTab{ed: be, vp: m.openVPath, path: n.path, syntax: &highlighter{path: n.path}}
 	m.bufs = append(m.bufs, tab)
 	m.activeTab = len(m.bufs) - 1
@@ -896,6 +974,18 @@ func (m *Model) View() string {
 			m.width, m.height,
 		)
 	}
+	if m.reviewOpen && len(m.proposals) > 0 {
+		return m.reviewView()
+	}
+	if m.mode == modeSymbols && m.syms != nil {
+		return m.symbolsView()
+	}
+	if m.mode == modeTests && m.testing != nil {
+		return m.testsView()
+	}
+	if m.mode == modeDebug && m.dbg != nil {
+		return m.debugView()
+	}
 	switch m.mode {
 	case modeFind:
 		return m.findView()
@@ -943,7 +1033,7 @@ func (m *Model) navView() string {
 		title = "preview — " + title
 	case m.active() != nil:
 		e := m.active()
-		title = bufferTitle(e) + m.diagChip(e) + m.agentChip(e)
+		title = bufferTitle(e) + m.diagChip(e) + m.agentChip(e) + m.pairBadge() + m.pairChip(e.Path())
 		main = m.bufferView()
 	case m.mode == modeResults:
 		main = m.resultsBlock()
@@ -995,6 +1085,26 @@ func (m *Model) navView() string {
 
 // ExecEx implements textbuf.CommandDelegate: buffer-list ex commands.
 func (m *Model) ExecEx(requester *textbuf.Editor, cmd string) bool {
+	if msg, ok := m.pairCommand(cmd); ok {
+		requester.SetMessage(msg)
+		return true
+	}
+	if msg, ok := m.fmtCommand(cmd); ok {
+		requester.SetMessage(msg)
+		return true
+	}
+	if msg, ok := m.symCommand(cmd); ok {
+		requester.SetMessage(msg)
+		return true
+	}
+	if msg, ok := m.testCommand(cmd); ok {
+		requester.SetMessage(msg)
+		return true
+	}
+	if msg, ok := m.debugCommand(cmd); ok {
+		requester.SetMessage(msg)
+		return true
+	}
 	switch {
 	case cmd == "bn" && len(m.bufs) > 0:
 		m.activeTab = (m.activeTab + 1) % len(m.bufs)

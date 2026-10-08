@@ -61,7 +61,31 @@ func newChatEditor(t *testing.T, reply string) *chatHarness {
 	}
 	m := New("test", ws, WithChat(rt))
 	m.Resize(120, 30)
+	// The sidebar (and :pair/:ask) dispatch real turns, so a test can end
+	// while a stub CLI is still running and writing under the workspace
+	// TempDir. Registered after the TempDir, so it runs before its removal.
+	t.Cleanup(func() { waitRuntimeIdle(rt) })
 	return &chatHarness{m: m, rt: rt, apprs: ap, ws: ws}
+}
+
+// waitRuntimeIdle blocks until no agent turn has been in flight for a
+// short settle window (a dispatched turn is started on a goroutine, so a
+// single zero reading could precede its start), bounded so a wedged turn
+// cannot hang the suite.
+func waitRuntimeIdle(rt *runtime.Runtime) {
+	deadline := time.Now().Add(20 * time.Second)
+	quiet := 0
+	for time.Now().Before(deadline) {
+		if rt.ActiveCount() == 0 {
+			quiet++
+			if quiet >= 4 {
+				return
+			}
+		} else {
+			quiet = 0
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 }
 
 func (h *chatHarness) openFocused() {
@@ -97,7 +121,7 @@ func TestChatSendPostsToBus(t *testing.T) {
 	typeKeys(h.m, "@scout please look")
 	h.m.HandleKey("enter")
 	msgs := h.rt.Bus().History("#general", 0)
-	if len(msgs) != 1 || msgs[0].Text != "@scout please look" || msgs[0].Author != bus.Human {
+	if len(msgs) < 1 || msgs[0].Text != "@scout please look" || msgs[0].Author != bus.Human {
 		t.Fatalf("history = %+v", msgs)
 	}
 	if got := string(h.m.chat.input); got != "" {

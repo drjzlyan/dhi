@@ -365,25 +365,7 @@ func (m *Model) applyWorkspaceEdit(edit *lsp.WorkspaceEdit) {
 			skipped++
 			continue
 		}
-		edits := make([]lsp.TextEdit, len(f.Edits))
-		copy(edits, f.Edits)
-		sort.Slice(edits, func(i, j int) bool {
-			a, z := edits[i].Range.Start, edits[j].Range.Start
-			if a.Line != z.Line {
-				return a.Line > z.Line
-			}
-			return a.Character > z.Character
-		})
-		buf := b.ed.Buffer()
-		buf.BeginUndoGroup()
-		for _, te := range edits {
-			buf.ApplyEdit(
-				textbuf.Pos{Line: te.Range.Start.Line, Col: te.Range.Start.Character},
-				textbuf.Pos{Line: te.Range.End.Line, Col: te.Range.End.Character},
-				te.NewText,
-			)
-		}
-		buf.EndUndoGroup()
+		applyTextEdits(b.ed.Buffer(), f.Edits)
 	}
 	if skipped > 0 {
 		if e := m.active(); e != nil {
@@ -391,6 +373,29 @@ func (m *Model) applyWorkspaceEdit(edit *lsp.WorkspaceEdit) {
 		}
 	}
 	m.lspSync()
+}
+
+// applyTextEdits folds server edits into buf bottom-up inside one undo
+// group, so earlier ranges stay valid and a single `u` reverts them all.
+func applyTextEdits(buf *textbuf.Buffer, in []lsp.TextEdit) {
+	edits := make([]lsp.TextEdit, len(in))
+	copy(edits, in)
+	sort.Slice(edits, func(i, j int) bool {
+		a, z := edits[i].Range.Start, edits[j].Range.Start
+		if a.Line != z.Line {
+			return a.Line > z.Line
+		}
+		return a.Character > z.Character
+	})
+	buf.BeginUndoGroup()
+	for _, te := range edits {
+		buf.ApplyEdit(
+			textbuf.Pos{Line: te.Range.Start.Line, Col: te.Range.Start.Character},
+			textbuf.Pos{Line: te.Range.End.Line, Col: te.Range.End.Character},
+			te.NewText,
+		)
+	}
+	buf.EndUndoGroup()
 }
 
 // handleCompletionKey processes keys while the popup is open.

@@ -1,6 +1,7 @@
 package editor
 
 import (
+	"context"
 	"strings"
 	"time"
 
@@ -145,6 +146,30 @@ func (c *chatModel) refreshRoster() {
 	}
 }
 
+// SelectChannel switches the sidebar to channel ch (false when unknown).
+func (c *chatModel) SelectChannel(ch string) bool {
+	for i, name := range c.channels {
+		if name == ch {
+			c.active = i
+			c.resubscribe()
+			c.markChannelRead()
+			return true
+		}
+	}
+	return false
+}
+
+// postHuman posts text as the human on the active channel and dispatches
+// it to the crew.
+func (c *chatModel) postHuman(text string) {
+	if c.bus == nil {
+		return
+	}
+	if posted, err := c.bus.Post(bus.Message{Channel: c.channelName(), Author: bus.Human, Text: text}); err == nil && c.rt != nil {
+		c.rt.Handle(context.Background(), posted)
+	}
+}
+
 // Focus opens the sidebar if closed and moves input focus onto it,
 // without the toggle-off case (F-016 approval-jump seam).
 func (c *chatModel) Focus() {
@@ -254,7 +279,11 @@ func (c *chatModel) handleKey(key string, apply func(string)) bool {
 	case "enter":
 		text := strings.TrimSpace(string(c.input))
 		if text != "" {
-			_, _ = c.bus.Post(bus.Message{Channel: c.channelName(), Author: bus.Human, Text: text})
+			// Dispatch the post (F-036 follow-up): without Handle the
+			// sidebar only wrote to the bus and no agent ever answered.
+			if posted, err := c.bus.Post(bus.Message{Channel: c.channelName(), Author: bus.Human, Text: text}); err == nil && c.rt != nil {
+				c.rt.Handle(context.Background(), posted)
+			}
 			c.input = nil
 			c.markChannelRead() // posting reads the channel (F-017)
 		}

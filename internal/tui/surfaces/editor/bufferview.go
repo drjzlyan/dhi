@@ -82,6 +82,7 @@ func (m *Model) bufferView() string {
 	var out []string
 	path := e.Path()
 	syntax := m.syntaxFor(e)
+	marks := m.gutterMarks(m.bufs[m.activeTab])
 	curLine := b.Cursor().Line
 	curCol := b.Cursor().Col
 	for l := top; l < end; l++ {
@@ -113,7 +114,11 @@ func (m *Model) bufferView() string {
 				text = st
 			}
 		}
-		out = append(out, gutter+" "+text)
+		marker := gitMarkGlyph(marks, l)
+		if g, ok := m.debugGutter(path, l); ok {
+			marker = g // a breakpoint or the stop line beats a git change mark
+		}
+		out = append(out, gutter+marker+text)
 	}
 
 	if popup := m.popupRows(); len(popup) > 0 {
