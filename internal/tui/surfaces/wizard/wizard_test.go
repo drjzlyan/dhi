@@ -11,6 +11,7 @@ import (
 
 	"charm.land/bubbletea/v2"
 
+	"github.com/drjzlyan/dhi/internal/agentkit/starter"
 	"github.com/drjzlyan/dhi/internal/ansi"
 	"github.com/drjzlyan/dhi/internal/conventions"
 	"github.com/drjzlyan/dhi/internal/gitcore"
@@ -398,5 +399,173 @@ func TestRerunHidesInapplicableStepsAheadOfYou(t *testing.T) {
 	m := New(f.env, st, DefaultSteps(f.env, "9.9.9")...)
 	if strings.Contains(strings.Join(titles(m), ","), "workspace") {
 		t.Fatalf("stepper = %v", titles(m))
+	}
+}
+
+// ---- team step (F-045) ----
+
+type teamFixture struct {
+	*fixture
+	applied []string
+	engines []string
+	roster  int
+}
+
+func newTeamFixture(t *testing.T) *teamFixture {
+	t.Helper()
+	f := &teamFixture{fixture: newFixture(t, true)}
+	f.env.RosterCount = func() int { return f.roster }
+	f.env.DetectCLIs = func() map[string]string {
+		return map[string]string{"claude": "2.1.0", "codex": "", "opencode": "0.9"}
+	}
+	f.env.ApplyTeam = func(slug string) (starter.Result, error) {
+		f.applied = append(f.applied, slug)
+		return starter.Result{Team: slug, Created: []string{"atlas", "forge"}, TeamCreated: true}, nil
+	}
+	f.env.SetEngine = func(e string) error { f.engines = append(f.engines, e); return nil }
+	return f
+}
+
+// toTeam walks welcome → identity → conventions to land on the team step.
+func (f *teamFixture) toTeam(t *testing.T) *Model {
+	t.Helper()
+	m := f.wizard()
+	key(m, "enter", "enter", "enter")
+	if m.steps[m.idx].ID() != "team" {
+		t.Fatalf("on step %s, want team:\n%s", m.steps[m.idx].ID(), plain(m))
+	}
+	return m
+}
+
+func TestTeamStepPreviewsTheTeamAndItsLead(t *testing.T) {
+	f := newTeamFixture(t)
+	m := f.toTeam(t)
+	v := plain(m)
+	for _, want := range []string{"Squad", "Atlas", "planner", "mentor", "★ lead", "Forge", "coding CLIs found: claude, opencode"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("team step lacks %q:\n%s", want, v)
+		}
+	}
+	if strings.Contains(v, "codex") {
+		t.Errorf("an uninstalled CLI must not be offered as an engine:\n%s", v)
+	}
+	key(m, "right") // squad → studio
+	if !strings.Contains(plain(m), "Anvil") {
+		t.Fatalf("preview did not follow the template toggle:\n%s", plain(m))
+	}
+	key(m, "left", "left") // → solo
+	if v := plain(m); !strings.Contains(v, "you lead this team") || strings.Contains(v, "★ lead") {
+		t.Fatalf("solo is led by the human:\n%s", v)
+	}
+}
+
+func TestTeamStepAppliesTeamAndEngineAndRelaunches(t *testing.T) {
+	f := newTeamFixture(t)
+	m := f.toTeam(t)
+	key(m, "enter")
+	if strings.Join(f.applied, ",") != "squad" || strings.Join(f.engines, ",") != "cli:claude" {
+		t.Fatalf("applied=%v engines=%v", f.applied, f.engines)
+	}
+	if !f.env.Changed || !strings.Contains(strings.Join(f.env.Applied, "|"), "team squad created: atlas, forge") ||
+		!strings.Contains(strings.Join(f.env.Applied, "|"), "default engine cli:claude") {
+		t.Fatalf("env = changed:%v applied:%v", f.env.Changed, f.env.Applied)
+	}
+	key(m, "enter") // done → relaunch
+	if !m.NeedsRelaunch() {
+		t.Fatal("creating a team must relaunch so the runtime sees the roster")
+	}
+}
+
+func TestTeamStepDecideLaterLeavesEngineAlone(t *testing.T) {
+	f := newTeamFixture(t)
+	m := f.toTeam(t)
+	key(m, "tab", "left") // engine: claude → decide later (wraps)
+	key(m, "enter")
+	if len(f.applied) != 1 || len(f.engines) != 0 {
+		t.Fatalf("applied=%v engines=%v; 'decide later' must not set an engine", f.applied, f.engines)
+	}
+}
+
+func TestTeamStepHiddenWhenAgentsExistOrNoWorkspace(t *testing.T) {
+	f := newTeamFixture(t)
+	f.roster = 3
+	if strings.Contains(strings.Join(titles(f.wizard()), ","), "team") {
+		t.Fatal("team step shown for a workspace that already has employees")
+	}
+	g := newFixture(t, false)
+	g.env.ApplyTeam = func(string) (starter.Result, error) { return starter.Result{}, nil }
+	if strings.Contains(strings.Join(titles(g.wizard()), ","), "team") {
+		t.Fatal("team step shown with no workspace to put a team in")
+	}
+}
+
+func TestTeamStepApplyFailureKeepsTheStepWithTheError(t *testing.T) {
+	f := newTeamFixture(t)
+	f.env.ApplyTeam = func(string) (starter.Result, error) {
+		return starter.Result{}, errors.New("agent \"sage\" is archived")
+	}
+	m := f.toTeam(t)
+	key(m, "enter")
+	if m.steps[m.idx].ID() != "team" || !strings.Contains(plain(m), "archived") || f.env.Changed {
+		t.Fatalf("failure must keep the step, show why, and not mark changed:\n%s", plain(m))
+	}
+}
+
+func TestTeamStepEngineSaveFailureIsReportedAfterTheTeamExists(t *testing.T) {
+	f := newTeamFixture(t)
+	f.env.SetEngine = func(string) error { return errors.New("config is read-only") }
+	m := f.toTeam(t)
+	key(m, "enter")
+	v := plain(m)
+	if m.steps[m.idx].ID() != "team" || !strings.Contains(v, "team created, but the default engine was not saved") {
+		t.Fatalf("engine failure not surfaced:\n%s", v)
+	}
+	if !f.env.Changed {
+		t.Fatal("the team was created, so the run changed launch-time state")
+	}
+}
+
+func TestTeamStepWithoutAnyCLIExplainsAndStillWorks(t *testing.T) {
+	f := newTeamFixture(t)
+	f.env.DetectCLIs = func() map[string]string { return map[string]string{"claude": ""} }
+	m := f.toTeam(t)
+	if v := plain(m); !strings.Contains(v, "No coding CLI found") {
+		t.Fatalf("no-CLI guidance missing:\n%s", v)
+	}
+	key(m, "enter")
+	if len(f.applied) != 1 || len(f.engines) != 0 {
+		t.Fatalf("applied=%v engines=%v", f.applied, f.engines)
+	}
+}
+
+func TestGoldenTeamStep(t *testing.T) {
+	f := newTeamFixture(t)
+	m := f.toTeam(t)
+	golden.Snapshot(t, "wizard_team", plain(m))
+}
+
+func TestDefaultEngineFollowsPreferenceNotAlphabet(t *testing.T) {
+	f := newTeamFixture(t)
+	f.env.DetectCLIs = func() map[string]string {
+		return map[string]string{"antigravity": "1", "codex": "1", "claude": "1", "zed-agent": "1"}
+	}
+	m := f.toTeam(t)
+	if v := plain(m); !strings.Contains(v, "[claude]") ||
+		!strings.Contains(v, "coding CLIs found: claude, codex, antigravity, zed-agent") {
+		t.Fatalf("default engine must be claude, in preference order:\n%s", v)
+	}
+	key(m, "enter")
+	if strings.Join(f.engines, ",") != "cli:claude" {
+		t.Fatalf("engines = %v", f.engines)
+	}
+}
+
+func TestConfiguredEngineIsPreselected(t *testing.T) {
+	f := newTeamFixture(t)
+	f.env.Engine = "cli:opencode"
+	m := f.toTeam(t)
+	key(m, "enter")
+	if strings.Join(f.engines, ",") != "cli:opencode" {
+		t.Fatalf("a configured engine must stay the default, got %v", f.engines)
 	}
 }

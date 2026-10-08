@@ -47,6 +47,17 @@ real delve v1.27.2 — see F-039; `dlv` provisioning still open.)
   in install.sh untested. Run a `v0.1.1-rc1` tag to exercise both.
 - Gotcha: after changing any pin run `scripts/pin-sizes.py` (the test fails
   without sizes).
+- **P4 shipped (F-045):** personas are a library kind (`library/persona.go`, 5
+  built-ins, `.dhi/personas/`); manifest schema 6 `persona`; `Compose` order is
+  manifest → role → Voice → skills; `model = "default"` = the CLI's own model.
+  `internal/agentkit/starter` (templates solo/squad/studio, atomic `Apply`);
+  wizard `team` step (`wizard/team.go`, Env: RosterCount/DetectCLIs/ApplyTeam/
+  SetEngine/Engine); doctor `agents/library`.
+- **Latent bugs fixed:** policy presets used ops the sandbox rejects; Settings
+  agent edit dropped policy/scopes/workflow/etc. (now edits the stored manifest);
+  reviewer `fakeCrew` race.
+- Gotcha: to add a manifest field, bump `SchemaVersion`, gate it with
+  "requires schema" in Parse, write it in Marshal AND the round-trip compare.
 - Decision: missing agent CLIs get a confirm-gated install (P5); needs a
   new ADR superseding 0012.
 - Gotchas: Go `iota` stops when one const gets an explicit expression

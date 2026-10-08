@@ -122,7 +122,7 @@ func TestParseErrors(t *testing.T) {
 	}{
 		{"bad id", "Big-Agent", "schema = 1\nname = \"n\"\nmodel = \"m\"\n", "bad agent id"},
 		{"unknown key", "a", "schema = 1\nname = \"n\"\nmodel = \"m\"\ntemperament = \"calm\"\n", "unknown key"},
-		{"bad schema", "a", "schema = 6\nname = \"n\"\nmodel = \"m\"\n", "schema 6"},
+		{"bad schema", "a", "schema = 7\nname = \"n\"\nmodel = \"m\"\n", "schema 7"},
 		{"missing name", "a", "schema = 1\nmodel = \"m\"\n", "name is required"},
 		{"missing model", "a", "schema = 1\nname = \"n\"\n", "model is required"},
 		{"missing runtime", "a", "schema = 1\nname = \"n\"\nmodel = \"m\"\n", "runtime"},
@@ -373,5 +373,42 @@ func TestBadWorkflowSlugRefuses(t *testing.T) {
 	doc := "schema = 5\nname = \"E\"\nmodel = \"m\"\nengine = \"cli:claude\"\nworkflow = \"Bad Slug\"\n"
 	if _, err := Parse("e", []byte(doc)); err == nil || !strings.Contains(err.Error(), "workflow") {
 		t.Fatalf("bad workflow slug must refuse: %v", err)
+	}
+}
+
+func TestPersonaParsesRoundTripsAndNeedsSchema6(t *testing.T) {
+	doc := "schema = 6\nname = \"E\"\nmodel = \"m\"\nengine = \"cli:claude\"\npersona = \"mentor\"\n"
+	a, err := Parse("e", []byte(doc))
+	if err != nil || a.Persona != "mentor" {
+		t.Fatalf("persona = %q err=%v", a.Persona, err)
+	}
+	data, err := Marshal(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "persona = 'mentor'") && !strings.Contains(string(data), `persona = "mentor"`) {
+		t.Fatalf("persona not written:\n%s", data)
+	}
+	back, err := Parse("e", data)
+	if err != nil || back.Persona != "mentor" {
+		t.Fatalf("round trip: %+v err=%v", back, err)
+	}
+
+	old := "schema = 5\nname = \"E\"\nmodel = \"m\"\nengine = \"cli:claude\"\npersona = \"mentor\"\n"
+	if _, err := Parse("e", []byte(old)); err == nil || !strings.Contains(err.Error(), "persona requires schema") {
+		t.Fatalf("schema 5 + persona = %v", err)
+	}
+	bad := "schema = 6\nname = \"E\"\nmodel = \"m\"\nengine = \"cli:claude\"\npersona = \"Bad Slug\"\n"
+	if _, err := Parse("e", []byte(bad)); err == nil || !strings.Contains(err.Error(), "persona") {
+		t.Fatalf("bad persona slug = %v", err)
+	}
+}
+
+func TestModelDefaultSentinel(t *testing.T) {
+	if got := (&Agent{Model: ModelDefault}).CLIModel(); got != "" {
+		t.Errorf("default model forwarded as %q", got)
+	}
+	if got := (&Agent{Model: "claude-sonnet-4-5"}).CLIModel(); got != "claude-sonnet-4-5" {
+		t.Errorf("explicit model = %q", got)
 	}
 }

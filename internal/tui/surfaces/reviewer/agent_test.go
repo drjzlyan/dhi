@@ -3,6 +3,7 @@ package reviewer
 import (
 	"context"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
@@ -16,18 +17,28 @@ import (
 
 // fakeCrew records Handle dispatches without running a real runtime.
 type fakeCrew struct {
+	mu      sync.Mutex // Handle runs on a command goroutine
 	handled []bus.Message
 	ids     []string
 	reply   func(bus.Message) // optional synchronous reply simulation
 }
 
 func (f *fakeCrew) Handle(_ context.Context, msg bus.Message) {
+	f.mu.Lock()
 	f.handled = append(f.handled, msg)
+	f.mu.Unlock()
 	if f.reply != nil {
 		f.reply(msg)
 	}
 }
 func (f *fakeCrew) AgentIDs() []string { return f.ids }
+
+// calls is a race-free snapshot of what Handle has seen.
+func (f *fakeCrew) calls() []bus.Message {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]bus.Message(nil), f.handled...)
+}
 
 // newAgentSurface wires the reviewer with a real bus + fake crew over
 // the standard fixture workspace.
@@ -66,12 +77,12 @@ func TestInviteDispatchesAndMirrorsReply(t *testing.T) {
 	commentOnFirstLine(t, m, "@rev why this locking approach?")
 
 	// invite dispatched to the crew with our mention text
-	if len(fc.handled) != 1 {
-		t.Fatalf("crew handled = %d", len(fc.handled))
+	if len(fc.calls()) != 1 {
+		t.Fatalf("crew handled = %d", len(fc.calls()))
 	}
-	if !strings.Contains(fc.handled[0].Text, "@rev") ||
-		fc.handled[0].Channel != r.Channel {
-		t.Fatalf("dispatched = %+v", fc.handled[0])
+	if !strings.Contains(fc.calls()[0].Text, "@rev") ||
+		fc.calls()[0].Channel != r.Channel {
+		t.Fatalf("dispatched = %+v", fc.calls()[0])
 	}
 
 	// thread now carries the bus root for reply correlation
@@ -133,10 +144,10 @@ func TestCompleteAgentReviewMode(t *testing.T) {
 	// completion event arrives after the synchronous fake dispatch
 	msg2 := pumpCmd(t, m.listen())
 	_ = m.Update(msg2)
-	if len(fc.handled) != 1 {
+	if len(fc.calls()) != 1 {
 		t.Fatal("complete-review request never dispatched")
 	}
-	msg := fc.handled[0]
+	msg := fc.calls()[0]
 	if !strings.Contains(msg.Text, "@rev") || !strings.Contains(msg.Text, "```diff") {
 		t.Fatalf("prompt = %q", msg.Text)
 	}
@@ -155,7 +166,7 @@ func TestCompleteAgentReviewUnknownAgentRejected(t *testing.T) {
 	if m.form.err == "" {
 		t.Fatal("unknown agent accepted")
 	}
-	if len(fc.handled) != 0 {
+	if len(fc.calls()) != 0 {
 		t.Fatal("dispatched despite unknown agent")
 	}
 }

@@ -72,16 +72,12 @@ func PolicyPresetJSON(preset string) (string, error) {
 	case PresetReadOnly:
 		return `{"rules":[` +
 			`{"op":"read","path":"**","effect":"allow"},` +
-			`{"op":"list","path":"**","effect":"allow"},` +
-			`{"op":"search","path":"**","effect":"allow"},` +
 			`{"op":"write","path":"**","effect":"deny"},` +
 			`{"op":"exec","path":"**","effect":"deny"},` +
 			`{"op":"net","path":"**","effect":"deny"}]}`, nil
 	case PresetReadWrite:
 		return `{"rules":[` +
 			`{"op":"read","path":"**","effect":"allow"},` +
-			`{"op":"list","path":"**","effect":"allow"},` +
-			`{"op":"search","path":"**","effect":"allow"},` +
 			`{"op":"write","path":"**","effect":"allow"},` +
 			`{"op":"exec","path":"**","effect":"deny"},` +
 			`{"op":"net","path":"**","effect":"deny"}]}`, nil
@@ -237,6 +233,7 @@ func WriteSkill(ws *workspace.Workspace, k *Skill) error {
 type Store struct {
 	roles    map[string]*Role
 	skills   map[string]*Skill
+	personas map[string]*Persona
 	sources  map[string]string // slug+kind → source
 	warnings []string
 	root     string // workspace root ("" for a builtins-only store)
@@ -245,7 +242,8 @@ type Store struct {
 // Open loads the merged library for ws (builtins + .dhi/roles +
 // .dhi/skills). ws may be nil for a builtins-only store (tests).
 func Open(ws *workspace.Workspace) *Store {
-	s := &Store{roles: map[string]*Role{}, skills: map[string]*Skill{}, sources: map[string]string{}}
+	s := &Store{roles: map[string]*Role{}, skills: map[string]*Skill{}, personas: map[string]*Persona{}, sources: map[string]string{}}
+	s.loadPersonas(ws)
 	if ws != nil {
 		s.root = ws.Root
 	}

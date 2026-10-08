@@ -1,0 +1,17 @@
+schema = 1
+name = "Solo"
+description = "You lead. A fixer takes the work, a reviewer double-checks it."
+team = "crew"
+lead = "you"
+
+[[employee]]
+id = "forge"
+name = "Forge"
+role = "fixer"
+persona = "pragmatic"
+
+[[employee]]
+id = "sage"
+name = "Sage"
+role = "reviewer"
+persona = "meticulous"

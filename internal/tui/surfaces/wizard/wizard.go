@@ -11,6 +11,7 @@ import (
 
 	"charm.land/bubbletea/v2"
 
+	"github.com/drjzlyan/dhi/internal/agentkit/starter"
 	"github.com/drjzlyan/dhi/internal/conventions"
 	"github.com/drjzlyan/dhi/internal/gitcore"
 	"github.com/drjzlyan/dhi/internal/setup"
@@ -63,6 +64,15 @@ type Env struct {
 
 	Conventions     conventions.Config
 	SaveConventions func(root string, c conventions.Config) error // root "" = user scope
+
+	// Team step (F-045). RosterCount nil = unknown (offer the step);
+	// ApplyTeam nil hides it. DetectCLIs maps a CLI name to its version
+	// ("" = not installed); SetEngine stores the workspace default engine.
+	Engine      string // the configured default engine ("cli:<name>" or "")
+	RosterCount func() int
+	DetectCLIs  func() map[string]string
+	ApplyTeam   func(templateSlug string) (starter.Result, error)
+	SetEngine   func(engine string) error
 
 	// Persist stores progress (user scope always, workspace scope when
 	// root != ""). nil = progress is not remembered.
@@ -122,6 +132,7 @@ func DefaultSteps(env *Env, version string) []Step {
 		&workspaceStep{env: env},
 		&identityStep{env: env},
 		&conventionsStep{env: env},
+		&teamStep{env: env},
 		&doneStep{env: env},
 	}
 }

@@ -1,0 +1,46 @@
+schema = 1
+name = "Studio"
+description = "The full crew: planner, two fixers, reviewer, scout and scribe."
+team = "studio"
+lead = "atlas"
+
+[[employee]]
+id = "atlas"
+name = "Atlas"
+role = "planner"
+persona = "mentor"
+
+[[employee]]
+id = "forge"
+name = "Forge"
+role = "fixer"
+persona = "pragmatic"
+skills = ["test-writing"]
+
+[[employee]]
+id = "anvil"
+name = "Anvil"
+role = "fixer"
+persona = "terse"
+skills = ["test-writing"]
+
+[[employee]]
+id = "sage"
+name = "Sage"
+role = "reviewer"
+persona = "meticulous"
+skills = ["code-review"]
+
+[[employee]]
+id = "scout"
+name = "Scout"
+role = "scout"
+persona = "friendly"
+skills = ["incident-triage"]
+
+[[employee]]
+id = "quill"
+name = "Quill"
+role = "scribe"
+persona = "friendly"
+skills = ["docs"]

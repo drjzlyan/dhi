@@ -5,9 +5,11 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
 	"github.com/drjzlyan/dhi/internal/agentkit/org"
+	"github.com/drjzlyan/dhi/internal/agentkit/scopes"
 	"github.com/drjzlyan/dhi/internal/ansi"
 	dhisettings "github.com/drjzlyan/dhi/internal/settings"
 	"github.com/drjzlyan/dhi/internal/testutil/golden"
@@ -234,5 +236,65 @@ func TestEffectiveBlockIncludesConventions(t *testing.T) {
 	block := m.effectiveBlock("")
 	if !strings.Contains(block, "Team conventions") || !strings.Contains(block, "Conventional Commits") {
 		t.Fatalf("preview lacks conventions:\n%s", block)
+	}
+}
+
+// Editing an agent in Settings must change only what the form shows. It
+// used to rebuild the manifest from the form fields and silently drop the
+// sandbox policy, scopes, workflow, timeout and retries.
+func TestEditKeepsEverythingTheFormDoesNotShow(t *testing.T) {
+	m, ws, o, _ := agentSurface(t)
+	orig := &manifest.Agent{
+		ID: "forge", Name: "Forge", Model: "default", Runtime: "claude", Role: "fixer",
+		Persona: "pragmatic", Tools: []string{"read", "write"},
+		Workflow: "feature", Retries: 2, Timeout: 90 * time.Second,
+		Scopes: scopes.Set{scopes.Push: scopes.Deny},
+	}
+	if err := orig.SetPolicyJSON(`{"rules":[{"op":"read","path":"**","effect":"allow"},{"op":"net","path":"**","effect":"deny"}]}`); err != nil {
+		t.Fatal(err)
+	}
+	if err := o.CreateAgent(ws, orig); err != nil {
+		t.Fatal(err)
+	}
+
+	m.form = m.editAgentForm(orig, []string{"claude", "codex"})
+	m.form.f.Fields[1] = kit.NewTextField("name   ", "Forge II") // the only edit
+	m.submitAgent()
+	if m.form.open {
+		t.Fatalf("form still open: %s", m.form.err)
+	}
+
+	roster, err := org.LoadRoster(ws)
+	if err != nil || len(roster) != 1 {
+		t.Fatalf("roster = %d err=%v", len(roster), err)
+	}
+	got := roster[0]
+	if got.Name != "Forge II" {
+		t.Fatalf("edit not applied: %q", got.Name)
+	}
+	if got.Persona != "pragmatic" || got.Workflow != "feature" || got.Retries != 2 ||
+		got.Timeout != 90*time.Second || got.Scopes[scopes.Push] != scopes.Deny {
+		t.Fatalf("form-invisible fields were lost: %+v", got)
+	}
+	if p := got.Policy(); p == nil || len(p.Rules) != 2 {
+		t.Fatalf("sandbox policy was dropped: %+v", p)
+	}
+}
+
+func TestPersonaFieldRoundTripsThroughTheForm(t *testing.T) {
+	m, ws, o, _ := agentSurface(t)
+	a := &manifest.Agent{ID: "sage", Name: "Sage", Model: "default", Runtime: "claude", Persona: "meticulous"}
+	if err := o.CreateAgent(ws, a); err != nil {
+		t.Fatal(err)
+	}
+	m.form = m.editAgentForm(a, []string{"claude", "codex"})
+	if got := m.form.f.Values()[8]; got != "meticulous" {
+		t.Fatalf("persona prefill = %q", got)
+	}
+	m.form.f.Fields[8] = kit.NewTextField("persona", "terse")
+	m.submitAgent()
+	roster, _ := org.LoadRoster(ws)
+	if len(roster) != 1 || roster[0].Persona != "terse" {
+		t.Fatalf("persona not saved: %+v", roster)
 	}
 }

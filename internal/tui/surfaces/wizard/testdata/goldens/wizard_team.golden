@@ -1,0 +1,29 @@
+
+
+
+
+
+
+
+
+
+
+         DHI setup
+         ✓ welcome › ✓ identity › ✓ conventions › ◐ team › ○ done
+         
+         Who's on your team?
+         A starter team gives you working employees now; edit or replace any of them later.
+         
+         team      ▌[squad]
+         engine     [claude]
+         coding CLIs found: claude, opencode — ←/→ picks the default engine
+         
+         Squad
+         A planner leads: breaks work down, a fixer builds, a reviewer checks, a
+         scribe documents.
+           Atlas    planner   mentor  ★ lead
+           Forge    fixer     pragmatic
+           Sage     reviewer  meticulous
+           Quill    scribe    friendly
+         
+         enter continue · esc skip step · ctrl+b back · ctrl+x skip setup

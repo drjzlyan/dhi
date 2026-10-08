@@ -162,8 +162,11 @@ func TestAgentFormCarriesRoleAndSkills(t *testing.T) {
 	if !m.HandleKey("n") {
 		t.Fatal("n refused")
 	}
-	if len(m.form.f.Fields) != 8 {
-		t.Fatalf("agent form fields = %d, want 8 (id/name/model/system/runtime/tools/role/skills)", len(m.form.f.Fields))
+	if len(m.form.f.Fields) != 9 {
+		t.Fatalf("agent form fields = %d, want 9 (id/name/model/system/runtime/tools/role/skills/persona)", len(m.form.f.Fields))
+	}
+	if m.form.f.Fields[8].Label != "persona" {
+		t.Fatalf("persona label = %q", m.form.f.Fields[8].Label)
 	}
 	if m.form.f.Fields[6].Label != "role   " || m.form.f.Fields[7].Label != "skills " {
 		t.Fatalf("role/skills labels missing: %q %q", m.form.f.Fields[6].Label, m.form.f.Fields[7].Label)
@@ -335,5 +338,36 @@ func TestLibraryRunSkillScript(t *testing.T) {
 	}
 	if len(run.argv) != 1 || run.argv[0] != script || run.net {
 		t.Fatalf("runner argv=%v net=%v", run.argv, run.net)
+	}
+}
+
+func TestLibraryListsPersonasReadOnly(t *testing.T) {
+	m, _ := libSurface(t)
+	var personaRow = -1
+	for i, r := range m.libRows() {
+		if r.kind == "persona" && r.slug == "mentor" {
+			personaRow = i
+		}
+	}
+	if personaRow < 0 {
+		t.Fatalf("mentor persona missing from LIBRARY: %+v", m.libRows())
+	}
+	if !strings.Contains(ansi.Strip(m.libraryBody(90)), "PERSONAS") {
+		t.Fatal("no PERSONAS group heading")
+	}
+	m.libCur = personaRow
+	feed(m, "v")
+	card := ansi.Strip(strings.Join(m.libCardLines(m.libRows()[personaRow]), "\n"))
+	if !strings.Contains(card, "Voice: patient and encouraging") {
+		t.Fatalf("persona card:\n%s", card)
+	}
+	m.closeDialog()
+	feed(m, "e")
+	if !strings.Contains(m.flash, ".dhi/personas/mentor.toml") {
+		t.Fatalf("edit flash = %q", m.flash)
+	}
+	feed(m, "x")
+	if !strings.Contains(m.flash, "plain files") {
+		t.Fatalf("delete flash = %q", m.flash)
 	}
 }

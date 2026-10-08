@@ -648,6 +648,7 @@ func newAgentForm(clis []string, runtimeIdx int) agentForm {
 		kit.NewTextField("tools  ", ""),
 		kit.NewTextField("role   ", ""),
 		kit.NewTextField("skills ", ""),
+		kit.NewTextField("persona", ""),
 	)
 	return f
 }
@@ -688,6 +689,7 @@ func (m *Model) editAgentForm(a *manifest.Agent, clis []string) agentForm {
 	f.f.Fields[5] = kit.NewTextField("tools  ", strings.Join(a.Tools, ", "))
 	f.f.Fields[6] = kit.NewTextField("role   ", a.Role)
 	f.f.Fields[7] = kit.NewTextField("skills ", strings.Join(a.Skills, ", "))
+	f.f.Fields[8] = kit.NewTextField("persona", a.Persona)
 	for i, c := range clis {
 		if c == a.Runtime {
 			f.f.Fields[4] = kit.NewToggleField("runtime", clis, i)
@@ -747,6 +749,7 @@ func (m *Model) submitAgent() {
 			skills = append(skills, s)
 		}
 	}
+	persona := strings.TrimSpace(vals[8])
 	if f.orig != "" && id != f.orig {
 		f.setErr("id is immutable — archive this agent and create a new one")
 		return
@@ -754,7 +757,25 @@ func (m *Model) submitAgent() {
 	a := &manifest.Agent{
 		ID: id, Name: name, Model: model, System: system,
 		Runtime: runtime, Tools: tools,
-		Role: role, Skills: skills,
+		Role: role, Persona: persona, Skills: skills,
+	}
+	// An edit changes only what the form shows. Everything else the
+	// manifest carries (sandbox policy, scopes, workflow, engine,
+	// timeout, retries) must survive — rebuilding from the form alone
+	// silently dropped them.
+	if f.orig != "" {
+		if roster, err := loadDiskRoster(m.d.WS); err == nil {
+			for _, cur := range roster.agents {
+				if cur.ID == f.orig {
+					keep := *cur
+					keep.Name, keep.Model, keep.System = name, model, system
+					keep.Runtime, keep.Engine = runtime, ""
+					keep.Tools, keep.Role, keep.Persona, keep.Skills = tools, role, persona, skills
+					a = &keep
+					break
+				}
+			}
+		}
 	}
 	// Strict round-trip: Marshal → Parse names every validation error
 	// before anything touches disk.

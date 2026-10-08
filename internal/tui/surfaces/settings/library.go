@@ -18,7 +18,7 @@ import (
 
 // libRow is one flat listing entry plus its kind for key dispatch.
 type libRow struct {
-	kind   string // "role" | "skill"
+	kind   string // "role" | "skill" | "persona"
 	slug   string
 	source string // "builtin" | "local"
 }
@@ -52,6 +52,9 @@ func (m *Model) libRows() []libRow {
 	}
 	for _, e := range lib.Skills() {
 		rows = append(rows, libRow{kind: "skill", slug: e.Slug, source: e.Source})
+	}
+	for _, e := range lib.Personas() {
+		rows = append(rows, libRow{kind: "persona", slug: e.Slug, source: e.Source})
 	}
 	return rows
 }
@@ -147,6 +150,11 @@ func (m *Model) libEntry(r libRow) (library.Entry, bool) {
 			return e, true
 		}
 	}
+	for _, e := range lib.Personas() {
+		if r.kind == "persona" && e.Slug == r.slug {
+			return e, true
+		}
+	}
 	return library.Entry{}, false
 }
 
@@ -178,6 +186,10 @@ func (m *Model) libraryKey(key string) bool {
 	case "e":
 		if m.libCur < len(rows) {
 			r := rows[m.libCur]
+			if r.kind == "persona" {
+				m.flash = "personas are plain files — edit .dhi/personas/" + r.slug + ".toml"
+				return true
+			}
 			if r.source != "local" {
 				m.flash = "failed: builtin " + r.kind + "s are read-only — press n to author a local " + r.kind
 				return true
@@ -188,6 +200,10 @@ func (m *Model) libraryKey(key string) bool {
 	case "x":
 		if m.libCur < len(rows) && m.d.WS != nil {
 			r := rows[m.libCur]
+			if r.kind == "persona" {
+				m.flash = "personas are plain files — remove .dhi/personas/" + r.slug + ".toml"
+				return true
+			}
 			if r.source != "local" {
 				m.flash = "failed: builtin " + r.kind + "s are read-only"
 				return true
@@ -286,6 +302,19 @@ func (m *Model) libCardLines(r libRow) []string {
 			theme.Hint().Render("policy preset: " + orDash(role.Preset)),
 			"",
 			role.System,
+		}
+	}
+	if r.kind == "persona" {
+		p, ok := lib.Persona(r.slug)
+		if !ok {
+			return []string{theme.DangerText().Render("(card unavailable)")}
+		}
+		return []string{
+			theme.TextDim().Render(p.Description),
+			"",
+			theme.Hint().Render("tone: " + orDash(p.Tone) + " · verbosity: " + orDash(p.Verbosity)),
+			"",
+			p.Render(),
 		}
 	}
 	skill, ok := lib.Skill(r.slug)

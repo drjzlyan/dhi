@@ -193,3 +193,33 @@ func TestDependenciesDoctor(t *testing.T) {
 		t.Fatalf("dangling row = %+v", c)
 	}
 }
+
+func TestLibraryCheckNamesDanglingReferences(t *testing.T) {
+	root := wsFixture(t)
+	if got := Library(root); len(got) != 0 {
+		t.Fatalf("no roster should add no check: %+v", got)
+	}
+	dir := filepath.Join(root, workspace.DirAgents)
+	good := "schema = 6\nname = \"G\"\nmodel = \"m\"\nengine = \"cli:claude\"\nrole = \"fixer\"\nskills = [\"docs\"]\npersona = \"mentor\"\n"
+	os.WriteFile(filepath.Join(dir, "good.toml"), []byte(good), 0o644)
+	c, ok := statusOf(Library(root), "agents/library")
+	if !ok || c.Status != OK {
+		t.Fatalf("all-resolving roster = %+v", c)
+	}
+
+	bad := "schema = 6\nname = \"B\"\nmodel = \"m\"\nengine = \"cli:claude\"\nrole = \"wizard\"\nskills = [\"nope\"]\npersona = \"grumpy\"\n"
+	os.WriteFile(filepath.Join(dir, "bad.toml"), []byte(bad), 0o644)
+	os.WriteFile(filepath.Join(root, workspace.DirPersonas, "broken.toml"), []byte("schema = 1\n"), 0o644)
+	c, _ = statusOf(Library(root), "agents/library")
+	if c.Status != Warn {
+		t.Fatalf("status = %v", c.Status)
+	}
+	for _, want := range []string{"bad: role wizard", "bad: skill nope", "bad: persona grumpy", "broken.toml"} {
+		if !strings.Contains(c.Detail, want) {
+			t.Errorf("detail lacks %q: %s", want, c.Detail)
+		}
+	}
+	if strings.Contains(c.Detail, "good:") {
+		t.Errorf("resolving agent flagged: %s", c.Detail)
+	}
+}

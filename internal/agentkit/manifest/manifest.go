@@ -25,11 +25,11 @@ import (
 )
 
 // SchemaVersion is the agent manifest schema this build WRITES
-// (F-031: + workflow). Parse still accepts schema 1 (no role/skills),
+// (F-045: + persona; F-031: + workflow). Parse still accepts schema 1 (no role/skills),
 // schema 2 (role/skills, `runtime`), 3 (engine), and 4 (scopes) for
 // back-compat — such files load with their engine derived from
 // `runtime` — but Marshal always emits the current version.
-const SchemaVersion = 5
+const SchemaVersion = 6
 
 // EngineCLIPrefix marks a CLI engine declaration: the host CLI is the
 // inference engine (ADR-0019).
@@ -120,6 +120,9 @@ type Agent struct {
 	// Dangling references load and turn fine — doctor warns by name.
 	Role   string
 	Skills []string
+	// Persona references a communication-style card in the library
+	// (F-045); empty = none. Schema 6.
+	Persona string
 
 	// Engine is the full engine declaration (ADR-0019), e.g.
 	// "cli:claude". Empty means "inherit the workspace default engine".
@@ -142,6 +145,34 @@ type Agent struct {
 	policy *sandbox.Policy // parsed from policy_json; nil if absent
 }
 
+// ModelDefault is the manifest model value that means "the CLI's own
+// default model": no --model flag is sent. Starter teams use it because
+// no model name exists for every CLI.
+const ModelDefault = "default"
+
+// CLIModel is the model string to hand the CLI adapter ("" = its default).
+func (a *Agent) CLIModel() string {
+	if a.Model == ModelDefault {
+		return ""
+	}
+	return a.Model
+}
+
+// SetPolicyJSON parses and installs the agent's sandbox policy from its
+// canonical JSON (what `policy_json` holds). Empty clears it.
+func (a *Agent) SetPolicyJSON(raw string) error {
+	if strings.TrimSpace(raw) == "" {
+		a.policy = nil
+		return nil
+	}
+	p, err := sandbox.ParsePolicy([]byte(raw))
+	if err != nil {
+		return fmt.Errorf("agentkit/manifest: %s: policy_json: %w", a.ID, err)
+	}
+	a.policy = p
+	return nil
+}
+
 // Policy returns the agent's sandbox policy, or nil when the manifest
 // declares none (the runtime then applies a deny-all default).
 func (a *Agent) Policy() *sandbox.Policy { return a.policy }
@@ -159,6 +190,7 @@ type file struct {
 	Tools     []string          `toml:"tools"`
 	Role      string            `toml:"role"`
 	Skills    []string          `toml:"skills"`
+	Persona   string            `toml:"persona"`
 	PolicyRaw string            `toml:"policy_json"`
 	Engine    string            `toml:"engine"`
 	Scopes    map[string]string `toml:"scopes"`
@@ -212,6 +244,15 @@ func Parse(id string, data []byte) (*Agent, error) {
 	}
 	if a.Role != "" && !idRe.MatchString(a.Role) {
 		return nil, fmt.Errorf("agentkit/manifest: %s: role %q is not a library slug (lowercase [a-z0-9._-])", id, a.Role)
+	}
+	a.Persona = strings.TrimSpace(f.Persona)
+	if a.Persona != "" {
+		if !idRe.MatchString(a.Persona) {
+			return nil, fmt.Errorf("agentkit/manifest: %s: persona %q is not a library slug (lowercase [a-z0-9._-])", id, a.Persona)
+		}
+		if f.Schema < 6 {
+			return nil, fmt.Errorf("agentkit/manifest: %s: persona requires schema = %d", id, SchemaVersion)
+		}
 	}
 	seenSkill := map[string]bool{}
 	for i, s := range a.Skills {
@@ -386,6 +427,7 @@ func Marshal(a *Agent) ([]byte, error) {
 	f.Tools = append([]string(nil), a.Tools...)
 	f.Role = a.Role
 	f.Skills = append([]string(nil), a.Skills...)
+	f.Persona = a.Persona
 	// Emit the engine; derive it from Runtime when only the CLI name is
 	// set (callers that predate the engine field keep working).
 	switch {
@@ -434,7 +476,7 @@ func Marshal(a *Agent) ([]byte, error) {
 	}
 	if back.Name != a.Name || back.Model != a.Model || back.System != a.System ||
 		strings.Join(back.Tools, ",") != strings.Join(a.Tools, ",") ||
-		back.Role != a.Role || strings.Join(back.Skills, ",") != strings.Join(a.Skills, ",") ||
+		back.Role != a.Role || back.Persona != a.Persona || strings.Join(back.Skills, ",") != strings.Join(a.Skills, ",") ||
 		back.Engine != wantEngine || back.Runtime != wantRuntime ||
 		!scopesEqual(back.Scopes, a.Scopes) ||
 		back.Timeout != a.Timeout || back.Retries != a.Retries {

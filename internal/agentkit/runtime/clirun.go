@@ -111,7 +111,7 @@ func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Messag
 	started := time.Now().UTC()
 	run := tasks.Run{
 		ID: runID(started), Agent: e.m.ID,
-		Runtime: "cli:" + e.m.Runtime, Model: e.m.Model, Attempt: attempt,
+		Runtime: "cli:" + e.m.Runtime, Model: e.m.CLIModel(), Attempt: attempt,
 		Started: started, Finished: time.Now().UTC(),
 		TokensIn: -1, TokensOut: -1,
 	}
@@ -143,7 +143,7 @@ func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Messag
 	// and the reply came back as plain text (no stream-json at all).
 	argv := append([]string{e.cliPath}, e.cli.BuildArgs(clirun.RunInput{
 		Prompt: prompt, System: system,
-		Model: e.m.Model, Workdir: workdir, Stdin: stdin,
+		Model: e.m.CLIModel(), Workdir: workdir, Stdin: stdin,
 		MCPConfig: mcpConfig, MCPURL: mcpEndpoint, MCPGeminiDir: mcpGeminiDir,
 	})...)
 	wrapped, err := e.guard.Sandbox.Wrap(argv)
@@ -482,12 +482,14 @@ func (r *Runtime) cliPrompt(ctx context.Context, e *entry, trigger bus.Message, 
 	// runtime-owned layers (grounding, actions, memory, KB, standards)
 	// appended after it, exactly as the Settings preview renders.
 	role, skills := behavior.Resolve(e.m, r.lib())
+	persona := behavior.ResolvePersona(e.m, r.lib())
 	wsName := filepath.Base(r.cfg.WS.Root)
 	system = behavior.Compose(behavior.Input{
 		AgentID:        e.m.ID,
 		Workspace:      wsName,
 		ManifestSystem: e.m.System,
 		Role:           role,
+		Persona:        persona,
 		Skills:         skills,
 	})
 	var members []string

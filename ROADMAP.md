@@ -951,7 +951,7 @@ Seven phases, one commit each; push deferred to the end.
 - [x] P1 Layered conventions: branch / commit / copyright / PR text (F-042)
 - [x] P2 Wizard framework + animation kit, palette-run setup, workspace init, relaunch loop (F-043, ADR-0026)
 - [x] P3 Distribution: release pipeline, installer, first-run consent + sizes (F-044); more platforms need manifest pins first
-- [ ] P4 Employees: starter teams + persona schema
+- [x] P4 Employees: starter teams (solo/squad/studio) + personas (F-045)
 - [ ] P5 Agent CLI onboarding (confirm-gated install; supersedes ADR-0012)
 - [ ] P6 Integrations catalog (Jira, Confluence, Slack, Teams, …)
 - [ ] P7 Tools (LSP/dlv/formatters) + interactive tutorials

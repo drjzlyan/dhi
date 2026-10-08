@@ -19,13 +19,14 @@ type Input struct {
 	AgentID        string
 	Workspace      string // workspace name for {{workspace}}
 	ManifestSystem string
-	Role           *library.Role   // nil = no role
-	Skills         []library.Skill // in manifest order
+	Role           *library.Role    // nil = no role
+	Persona        *library.Persona // nil = no persona (F-045)
+	Skills         []library.Skill  // in manifest order
 }
 
 // Compose renders the effective system block:
 //
-//	manifest system → role template → skills (manifest order)
+//	manifest system → role template → persona voice → skills (manifest order)
 //
 // Empty parts vanish (no stray blank sections); the whole result is
 // trimmed. Skills extend the role, the role extends the manifest,
@@ -41,6 +42,7 @@ func Compose(in Input) string {
 	if in.Role != nil {
 		add(substitute(in.Role.System, in))
 	}
+	add(in.Persona.Render()) // role says what the job is, persona how they speak
 	for _, k := range in.Skills {
 		add(k.Body)
 	}
@@ -51,6 +53,16 @@ func Compose(in Input) string {
 func substitute(tpl string, in Input) string {
 	out := strings.ReplaceAll(tpl, "{{agent}}", in.AgentID)
 	return strings.ReplaceAll(out, "{{workspace}}", in.Workspace)
+}
+
+// ResolvePersona looks up the manifest's persona; a dangling or absent
+// reference is nil (doctor names it).
+func ResolvePersona(m *manifest.Agent, lib *library.Store) *library.Persona {
+	if lib == nil || m == nil || m.Persona == "" {
+		return nil
+	}
+	p, _ := lib.Persona(m.Persona)
+	return p
 }
 
 // Resolve looks up the role + skills for a manifest against the

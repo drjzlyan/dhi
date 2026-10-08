@@ -26,6 +26,7 @@ import (
 
 	"github.com/drjzlyan/dhi/internal/agentkit/clirun"
 	"github.com/drjzlyan/dhi/internal/agentkit/dhitools"
+	"github.com/drjzlyan/dhi/internal/agentkit/library"
 	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
 	"github.com/drjzlyan/dhi/internal/agentkit/mcpserver"
 	"github.com/drjzlyan/dhi/internal/agentkit/org"
@@ -77,6 +78,7 @@ func Run(toolRoot, wsRoot string) Report {
 	r.Checks = append(r.Checks, Config(wsRoot)...)
 	r.Checks = append(r.Checks, Agents(wsRoot)...)
 	r.Checks = append(r.Checks, AgentTools(wsRoot)...)
+	r.Checks = append(r.Checks, Library(wsRoot)...)
 	r.Checks = append(r.Checks, Authority(wsRoot)...)
 	r.Checks = append(r.Checks, Standards(wsRoot)...)
 	r.Checks = append(r.Checks, Workflows(wsRoot)...)
@@ -401,6 +403,51 @@ func Agents(wsRoot string) []Check {
 	}
 	return []Check{{Name: "agents/roster", Status: OK,
 		Detail: fmt.Sprintf("%d agent(s): %s", len(roster), joinIDs(roster))}}
+}
+
+// Library checks the behaviour library the roster leans on (F-027/F-045):
+// malformed role/skill/persona cards, and agents whose role, skills or
+// persona name something the library does not have. Both only degrade a
+// turn (a dangling reference is simply omitted), so they warn by name.
+func Library(wsRoot string) []Check {
+	if wsRoot == "" {
+		return nil
+	}
+	ws, err := workspace.Load(wsRoot)
+	if err != nil {
+		return nil // workspace/config already reported
+	}
+	roster, err := manifest.LoadDir(filepath.Join(wsRoot, workspace.DirAgents))
+	if err != nil || len(roster) == 0 {
+		return nil // agents/roster reports a broken roster
+	}
+	lib := library.Open(ws)
+	var problems []string
+	problems = append(problems, lib.Warnings()...)
+	for _, a := range roster {
+		if a.Role != "" {
+			if _, ok := lib.Role(a.Role); !ok {
+				problems = append(problems, a.ID+": role "+a.Role+" not in the library")
+			}
+		}
+		for _, s := range a.Skills {
+			if _, ok := lib.Skill(s); !ok {
+				problems = append(problems, a.ID+": skill "+s+" not in the library")
+			}
+		}
+		if a.Persona != "" {
+			if _, ok := lib.Persona(a.Persona); !ok {
+				problems = append(problems, a.ID+": persona "+a.Persona+" not in the library")
+			}
+		}
+	}
+	if len(problems) == 0 {
+		return []Check{{Name: "agents/library", Status: OK,
+			Detail: fmt.Sprintf("%d role(s), %d skill(s), %d persona(s); every reference resolves",
+				len(lib.Roles()), len(lib.Skills()), len(lib.Personas()))}}
+	}
+	sort.Strings(problems)
+	return []Check{{Name: "agents/library", Status: Warn, Detail: strings.Join(problems, "; ")}}
 }
 
 // Runtimes probes the registered host agent CLIs (F-013, ADR-0012):

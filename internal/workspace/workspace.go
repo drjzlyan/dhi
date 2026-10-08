@@ -41,6 +41,7 @@ const (
 	DirAutopilots = ".dhi/autopilots"
 	DirRoles      = ".dhi/roles"    // behaviour library: role cards (F-027)
 	DirSkills     = ".dhi/skills"   // behaviour library: skill docs (F-027)
+	DirPersonas   = ".dhi/personas" // behaviour library: persona cards (F-045)
 	DirMCP        = ".dhi/mcp"      // installed MCP server cards (F-034)
 	DirRegistry   = ".dhi/registry" // cached signed pack index (F-034)
 )
@@ -129,7 +130,7 @@ func CreateWith(root string, members map[string]string) error {
 			return fmt.Errorf("workspace: %w", err)
 		}
 	}
-	for _, dir := range []string{DirAgents, DirMemory, DirKnowledge, DirChannels, DirTasks, DirSessions, DirAutopilots, DirRoles, DirSkills, DirMCP, DirRegistry} {
+	for _, dir := range []string{DirAgents, DirMemory, DirKnowledge, DirChannels, DirTasks, DirSessions, DirAutopilots, DirRoles, DirSkills, DirPersonas, DirMCP, DirRegistry} {
 		if err := os.MkdirAll(filepath.Join(root, dir), 0o755); err != nil {
 			return fmt.Errorf("workspace: reserve %s: %w", dir, err)
 		}

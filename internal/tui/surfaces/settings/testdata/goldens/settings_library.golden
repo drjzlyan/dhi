@@ -10,12 +10,12 @@
                 │   docs               builtin Writing docs that a newcomer can act on   │
                 │   incident-triage    builtin First response for a failing system — con │
                 │   test-writing       builtin How to add tests that fail honestly and p │
-                │                                                                        │
-                │                                                                        │
-                │                                                                        │
-                │                                                                        │
-                │                                                                        │
-                │                                                                        │
+                │  PERSONAS                                                              │
+                │   friendly           builtin Warm and upbeat, still to the point       │
+                │   mentor             builtin Patient teacher: explains the why and the │
+                │   meticulous         builtin Careful and exact: verifies before claimi │
+                │   pragmatic          builtin Direct and practical: the answer first, t │
+                │   terse              builtin Minimal words: one-line answers, no pream │
                 │                                                                        │
                 │                                                                        │
                 │                                                                        │

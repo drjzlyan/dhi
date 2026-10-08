@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/drjzlyan/dhi/internal/sandbox"
 	"github.com/drjzlyan/dhi/internal/workspace"
 )
 
@@ -247,5 +248,34 @@ func TestSkillScriptFrontmatterValidation(t *testing.T) {
 	back, ok := Open(ws).Skill("a")
 	if !ok || back.Script != "run.sh" {
 		t.Fatalf("round-trip script = %+v ok=%v", back, ok)
+	}
+}
+
+// The presets must be valid sandbox policies: they once named "list" and
+// "search" ops the sandbox rejects, so every role-based agent would have
+// failed to load the moment a preset was applied.
+func TestPolicyPresetsAreValidSandboxPolicies(t *testing.T) {
+	for _, preset := range []string{PresetReadOnly, PresetReadWrite} {
+		raw, err := PolicyPresetJSON(preset)
+		if err != nil {
+			t.Fatal(err)
+		}
+		p, err := sandbox.ParsePolicy([]byte(raw))
+		if err != nil {
+			t.Fatalf("preset %s is not a valid sandbox policy: %v", preset, err)
+		}
+		if got := p.Evaluate(sandbox.OpExec, "anywhere").Effect; got != sandbox.Deny {
+			t.Errorf("%s allows exec", preset)
+		}
+		if got := p.Evaluate(sandbox.OpNet, "example.com").Effect; got != sandbox.Deny {
+			t.Errorf("%s allows net", preset)
+		}
+		write := p.Evaluate(sandbox.OpWrite, "a/b.go").Effect
+		if (preset == PresetReadOnly) != (write == sandbox.Deny) {
+			t.Errorf("%s write decision = %v", preset, write)
+		}
+		if p.Evaluate(sandbox.OpRead, "a/b.go").Effect != sandbox.Allow {
+			t.Errorf("%s blocks read", preset)
+		}
 	}
 }

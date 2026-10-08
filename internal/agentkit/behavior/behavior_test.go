@@ -54,3 +54,25 @@ func TestResolveDropsDanglingRefs(t *testing.T) {
 	}
 	_ = strings.TrimSpace("")
 }
+
+func TestComposeOrdersPersonaBetweenRoleAndSkills(t *testing.T) {
+	out := Compose(Input{
+		AgentID: "forge", Workspace: "acme",
+		ManifestSystem: "MANIFEST",
+		Role:           &library.Role{System: "ROLE for {{agent}}"},
+		Persona:        &library.Persona{Tone: "calm", Verbosity: library.VerbosityTerse},
+		Skills:         []library.Skill{{Body: "SKILL"}},
+	})
+	order := []string{"MANIFEST", "ROLE for forge", "Voice: calm.", "SKILL"}
+	last := -1
+	for _, want := range order {
+		i := strings.Index(out, want)
+		if i < 0 || i <= last {
+			t.Fatalf("%q out of order (at %d, previous %d) in:\n%s", want, i, last, out)
+		}
+		last = i
+	}
+	if strings.Contains(Compose(Input{ManifestSystem: "x", Persona: &library.Persona{}}), "Voice") {
+		t.Fatal("an empty persona must add no block")
+	}
+}

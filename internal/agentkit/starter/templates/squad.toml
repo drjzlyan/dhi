@@ -1,0 +1,30 @@
+schema = 1
+name = "Squad"
+description = "A planner leads: breaks work down, a fixer builds, a reviewer checks, a scribe documents."
+team = "squad"
+lead = "atlas"
+
+[[employee]]
+id = "atlas"
+name = "Atlas"
+role = "planner"
+persona = "mentor"
+
+[[employee]]
+id = "forge"
+name = "Forge"
+role = "fixer"
+persona = "pragmatic"
+
+[[employee]]
+id = "sage"
+name = "Sage"
+role = "reviewer"
+persona = "meticulous"
+
+[[employee]]
+id = "quill"
+name = "Quill"
+role = "scribe"
+persona = "friendly"
+skills = ["docs"]

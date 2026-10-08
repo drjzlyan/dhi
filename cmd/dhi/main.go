@@ -32,6 +32,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/registry"
 	agentkitRuntime "github.com/drjzlyan/dhi/internal/agentkit/runtime"
 	"github.com/drjzlyan/dhi/internal/agentkit/scopes"
+	"github.com/drjzlyan/dhi/internal/agentkit/starter"
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
 	"github.com/drjzlyan/dhi/internal/autopilot"
 	"github.com/drjzlyan/dhi/internal/boot"
@@ -352,7 +353,7 @@ func runTUI() (relaunch bool) {
 	// so a palette re-run starts from the state on disk.
 	var wizards []*wizard.Model
 	newWizard := func(forced bool) *wizard.Model {
-		env := newSetupEnv(cwd, ws, userCfg, toolRoot, cfg.Conventions, identityFn)
+		env := newSetupEnv(cwd, ws, userCfg, toolRoot, cfg.Conventions, cfg.Engine, identityFn)
 		w := wizard.New(env, loadSetupState(ws), wizard.DefaultSteps(env, version.Version)...)
 		wizards = append(wizards, w)
 		return w
@@ -491,11 +492,11 @@ func loadSetupState(ws *workspace.Workspace) setup.State {
 // capability is absent (no toolchain root → no git), and the step then
 // explains the manual fix instead of guessing.
 func newSetupEnv(cwd string, ws *workspace.Workspace, userCfg, toolRoot string,
-	conv conventions.Config, identityFn gitcore.IdentityFunc) *wizard.Env {
+	conv conventions.Config, engine string, identityFn gitcore.IdentityFunc) *wizard.Env {
 	env := &wizard.Env{
 		Version: version.Version, CWD: cwd,
 		Discover: setup.DiscoverMembers, InitWorkspace: setup.InitWorkspace,
-		Identity: identityFn, Conventions: conv,
+		Identity: identityFn, Conventions: conv, Engine: engine,
 	}
 	if ws != nil {
 		env.Root = ws.Root
@@ -512,6 +513,43 @@ func newSetupEnv(cwd string, ws *workspace.Workspace, userCfg, toolRoot string,
 			path = filepath.Join(root, workspace.DHIDir, settings.ConventionsFile)
 		}
 		return settings.SaveConventions(path, c)
+	}
+	// Team step: everything resolves the workspace from env.Root at call
+	// time, because the wizard itself may have just created it.
+	env.RosterCount = func() int {
+		if env.Root == "" {
+			return 0
+		}
+		roster, err := manifest.LoadDir(filepath.Join(env.Root, workspace.DirAgents))
+		if err != nil {
+			return 1 // a broken roster is not an empty one: don't offer to add to it
+		}
+		return len(roster)
+	}
+	env.DetectCLIs = clirun.NewRegistry(exec.LookPath).Detect
+	env.ApplyTeam = func(slug string) (starter.Result, error) {
+		tpl, ok := starter.Get(slug)
+		if !ok {
+			return starter.Result{}, fmt.Errorf("unknown starter team %q", slug)
+		}
+		w, err := workspace.Load(env.Root)
+		if err != nil {
+			return starter.Result{}, err
+		}
+		o, err := agentkitOrg.Load(env.Root)
+		if err != nil {
+			return starter.Result{}, err
+		}
+		return starter.Apply(w, o, library.Open(w), tpl)
+	}
+	env.SetEngine = func(engine string) error {
+		wsCfg := filepath.Join(env.Root, workspace.DHIDir, "config.toml")
+		c, err := settings.Load(userCfg, wsCfg)
+		if err != nil {
+			return err
+		}
+		c.Engine = engine
+		return c.Save(wsCfg)
 	}
 	env.Persist = func(root string, st setup.State) error {
 		var firstErr error
