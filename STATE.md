@@ -20,6 +20,22 @@ real delve v1.27.2 — see F-039; `dlv` provisioning still open.)
   team conventions < personal config); `Config.Save` never writes them,
   `settings.SaveConventions` does. Co-author needs an explicit value +
   `co_author_enabled` (pointer in the layer so a layer can switch it off).
+- **P2 shipped (F-043, ADR-0026):** `kit/anim.go` (SpinnerGlyph, ProgressBar,
+  Typewriter, Stepper — pure, caller owns the clock); `internal/setup`
+  (state, auto-run policy, member discovery, `InitWorkspace` + `.dhi/.gitignore`);
+  `workspace.CreateWith/SanitizeName`; `gitcore.SetIdentity/IdentityCommands`;
+  `surfaces/wizard` (Gate; `Step` interface — later phases append steps to
+  `wizard.DefaultSteps`); `surfaces/gatechain` (+ `RelaunchGate`);
+  `App.StartGate/SetSetupGate` + palette "Run setup wizard"; `runTUI` returns
+  `relaunch bool` and `main` loops. No `dhi setup` subcommand.
+- **Bugs fixed on the way:** (1) the space key never reached any text input
+  (`"space"` vs `" "`) — `keyString` in the shell; (2) a gate finished by a
+  KEY press was not released until the next message; (3) services captured at
+  launch never saw git installed by the first-run bootstrap — `RelaunchGate`.
+- Gotchas: wizard steps get `f` = frames since entry and must render complete
+  at f=0 under reduced motion; verify E2E with tmux + fresh `HOME` /
+  `XDG_CONFIG_HOME` and the real `XDG_DATA_HOME` (toolchain) so the real git
+  config is never touched.
 - Decision: missing agent CLIs get a confirm-gated install (P5); needs a
   new ADR superseding 0012.
 - Gotchas: Go `iota` stops when one const gets an explicit expression

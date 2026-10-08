@@ -43,15 +43,18 @@ import (
 	"github.com/drjzlyan/dhi/internal/sandbox"
 	"github.com/drjzlyan/dhi/internal/search"
 	"github.com/drjzlyan/dhi/internal/settings"
+	"github.com/drjzlyan/dhi/internal/setup"
 	"github.com/drjzlyan/dhi/internal/tasks"
 	"github.com/drjzlyan/dhi/internal/toolchain"
 	"github.com/drjzlyan/dhi/internal/tui/app"
 	"github.com/drjzlyan/dhi/internal/tui/surfaces/bootgate"
 	"github.com/drjzlyan/dhi/internal/tui/surfaces/bootstrap"
 	"github.com/drjzlyan/dhi/internal/tui/surfaces/editor"
+	"github.com/drjzlyan/dhi/internal/tui/surfaces/gatechain"
 	ideator "github.com/drjzlyan/dhi/internal/tui/surfaces/ideator"
 	reviewer "github.com/drjzlyan/dhi/internal/tui/surfaces/reviewer"
 	settingsview "github.com/drjzlyan/dhi/internal/tui/surfaces/settings"
+	"github.com/drjzlyan/dhi/internal/tui/surfaces/wizard"
 	wsview "github.com/drjzlyan/dhi/internal/tui/surfaces/workspace"
 	"github.com/drjzlyan/dhi/internal/unread"
 	"github.com/drjzlyan/dhi/internal/version"
@@ -69,10 +72,17 @@ func main() {
 			os.Exit(2)
 		}
 	}
-	runTUI()
+	// A relaunch is a fresh process image's worth of state: services read
+	// the workspace, settings and toolchain once at launch, so when setup
+	// or the bootstrap changed any of them we start over rather than
+	// hot-swap (F-043).
+	for runTUI() {
+	}
 }
 
-func runTUI() {
+// runTUI runs one session and reports whether the program should be
+// started again.
+func runTUI() (relaunch bool) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "dhi:", err)
@@ -334,28 +344,65 @@ func runTUI() {
 		a.SetActivity(agentRT.ActiveCount)
 	}
 
-	// First run in this workspace: show the welcome card once (F-041).
-	// The marker is per-workspace runtime state, gitignored like unread.json.
-	if ws != nil {
+	// Setup wizard (F-043). It auto-runs for a first-time user only; every
+	// other launch reaches it from the palette. Each run gets a fresh Env
+	// so a palette re-run starts from the state on disk.
+	var wizards []*wizard.Model
+	newWizard := func(forced bool) *wizard.Model {
+		env := newSetupEnv(cwd, ws, userCfg, toolRoot, cfg.Conventions, identityFn)
+		w := wizard.New(env, loadSetupState(ws), wizard.DefaultSteps(env, version.Version)...)
+		wizards = append(wizards, w)
+		return w
+	}
+	if decision.Block == "" {
+		a.SetSetupGate(func() app.Gate { return newWizard(true) })
+	}
+	autoWizard := decision.Block == "" && shouldAutoRunSetup(ws, userCfg)
+
+	// First run in this workspace: show the welcome card once (F-041). The
+	// marker is per-workspace runtime state, gitignored like unread.json.
+	// The wizard replaces it for first-time users; a workspace the wizard
+	// has onboarded never shows it.
+	if ws != nil && !autoWizard {
 		marker := filepath.Join(ws.Root, ".dhi", "welcome.seen")
-		if _, statErr := os.Stat(marker); os.IsNotExist(statErr) {
+		_, seenErr := os.Stat(marker)
+		_, setupErr := os.Stat(setup.WorkspaceStatePath(ws.Root))
+		if os.IsNotExist(seenErr) && os.IsNotExist(setupErr) {
 			a.SetWelcome(func() { _ = os.WriteFile(marker, []byte("seen\n"), 0o644) })
 		}
 	}
 
 	// Gates, in strict order: a block never releases; missing pieces
 	// offer the confirmation-gated install; first-run (no lockfile)
-	// keeps the classic full bootstrap.
+	// keeps the classic full bootstrap. The setup wizard follows, then a
+	// tail that relaunches when the toolchain changed under the services.
+	var gates []gatechain.Gate
 	switch {
 	case decision.Block != "":
-		a.SetGate(bootgate.New(version.Version, decision, nil))
+		gates = append(gates, bootgate.New(version.Version, decision, nil))
 	case len(decision.Offer) > 0:
-		a.SetGate(bootgate.New(version.Version, decision, toolchain.New(toolRoot)))
+		gates = append(gates, bootgate.New(version.Version, decision, toolchain.New(toolRoot)))
 	case needsBootstrap(toolRoot):
 		mgr := toolchain.New(toolchainRoot())
 		// DHI_REGISTRY overrides the embedded manifest with a remote one
 		// (loopback http allowed) for testing the pipeline end-to-end.
-		a.SetGate(bootstrap.New(version.Version, mgr, os.Getenv("DHI_REGISTRY")))
+		gates = append(gates, bootstrap.New(version.Version, mgr, os.Getenv("DHI_REGISTRY")))
+	}
+	if autoWizard {
+		gates = append(gates, newWizard(false))
+	}
+	toolsAtLaunch := toolsFingerprint(toolRoot)
+	var tail *gatechain.RelaunchGate
+	if decision.Block == "" && len(gates) > 0 {
+		tail = gatechain.Relaunch(func() bool { return toolsFingerprint(toolRoot) != toolsAtLaunch })
+		gates = append(gates, tail)
+	}
+	switch len(gates) {
+	case 0:
+	case 1:
+		a.SetGate(gates[0])
+	default:
+		a.SetGate(gatechain.New(gates...))
 	}
 
 	p := tea.NewProgram(a)
@@ -364,6 +411,102 @@ func runTUI() {
 		fmt.Fprintln(os.Stderr, "dhi:", err)
 		os.Exit(1)
 	}
+	for _, w := range wizards {
+		if w.NeedsRelaunch() {
+			return true
+		}
+	}
+	return tail != nil && tail.NeedsRelaunch()
+}
+
+// toolsFingerprint captures which hermetic tools exist: the services read
+// them once at launch (git runner, ripgrep searcher, terminal env), so a
+// change means they are stale.
+func toolsFingerprint(root string) string {
+	if root == "" {
+		return ""
+	}
+	var b strings.Builder
+	for _, rel := range []string{"git", "rg", "go", "gopls"} {
+		if _, err := os.Stat(filepath.Join(root, "bin", rel)); err == nil {
+			b.WriteString(rel + ";")
+		}
+	}
+	return b.String()
+}
+
+// shouldAutoRunSetup applies the launch policy for the setup wizard.
+func shouldAutoRunSetup(ws *workspace.Workspace, userCfg string) bool {
+	in := setup.AutoRunInput{HasWorkspace: ws != nil}
+	if p, err := setup.UserStatePath(); err == nil {
+		if st, err := setup.LoadState(p); err == nil {
+			in.UserFinished = st.Finished
+		}
+	}
+	if ws != nil {
+		_, err := os.Stat(setup.WorkspaceStatePath(ws.Root))
+		in.WorkspaceSetup = err == nil
+		_, err = os.Stat(filepath.Join(ws.Root, ".dhi", "welcome.seen"))
+		in.WelcomeSeen = err == nil
+	}
+	return setup.ShouldAutoRun(in)
+}
+
+// loadSetupState reads the progress the wizard resumes from: the
+// workspace's when it has one, else the user's.
+func loadSetupState(ws *workspace.Workspace) setup.State {
+	if ws != nil {
+		if st, err := setup.LoadState(setup.WorkspaceStatePath(ws.Root)); err == nil && (st.Finished || len(st.Steps) > 0) {
+			return st
+		}
+	}
+	if p, err := setup.UserStatePath(); err == nil {
+		if st, err := setup.LoadState(p); err == nil {
+			return st
+		}
+	}
+	return setup.State{}
+}
+
+// newSetupEnv wires the wizard to real services. Funcs stay nil when the
+// capability is absent (no toolchain root → no git), and the step then
+// explains the manual fix instead of guessing.
+func newSetupEnv(cwd string, ws *workspace.Workspace, userCfg, toolRoot string,
+	conv conventions.Config, identityFn gitcore.IdentityFunc) *wizard.Env {
+	env := &wizard.Env{
+		Version: version.Version, CWD: cwd,
+		Discover: setup.DiscoverMembers, InitWorkspace: setup.InitWorkspace,
+		Identity: identityFn, Conventions: conv,
+	}
+	if ws != nil {
+		env.Root = ws.Root
+	}
+	if toolRoot != "" {
+		mgr := toolchain.New(toolRoot)
+		env.SetIdentity = func(ctx context.Context, id gitcore.Identity) error {
+			return gitcore.SetIdentity(ctx, gitcore.NewRunner(mgr.GitBin(), mgr.GitIdentityEnv(nil)), id)
+		}
+	}
+	env.SaveConventions = func(root string, c conventions.Config) error {
+		path := settings.ConventionsPath(userCfg)
+		if root != "" {
+			path = filepath.Join(root, workspace.DHIDir, settings.ConventionsFile)
+		}
+		return settings.SaveConventions(path, c)
+	}
+	env.Persist = func(root string, st setup.State) error {
+		var firstErr error
+		if p, err := setup.UserStatePath(); err == nil {
+			firstErr = setup.SaveState(p, st)
+		}
+		if root != "" {
+			if err := setup.SaveState(setup.WorkspaceStatePath(root), st); err != nil && firstErr == nil {
+				firstErr = err
+			}
+		}
+		return firstErr
+	}
+	return env
 }
 
 // toolchainRoot resolves the hermetic prefix, falling back to a

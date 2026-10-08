@@ -33,7 +33,7 @@ type activityTickMsg struct{}
 // activityInterval is the spinner cadence.
 const activityInterval = 120 * time.Millisecond
 
-var spinFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+var spinFrames = kit.SpinnerFrames
 
 // Gate is a full-body takeover shown before normal surfaces (first-run
 // bootstrap, boot gates). While the gate is active it owns Update/View
@@ -56,8 +56,9 @@ type App struct {
 	active   int
 	tabs     *kit.Tabs
 
-	gate    Gate
-	gateRan bool
+	gate      Gate
+	gateRan   bool
+	setupGate func() Gate // palette "Run setup wizard" (F-043)
 
 	transLeft int // fade-in frames remaining for the active surface
 
@@ -315,25 +316,28 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case tea.KeyPressMsg:
+		key := keyString(msg)
 		if a.gateActive() {
-			switch msg.String() {
+			switch key {
 			case "ctrl+c", "ctrl+q":
 				a.quitting = true
 				return a, tea.Quit
 			}
-			a.gate.HandleKey(msg.String()) // the gate owns all other input
+			a.gate.HandleKey(key) // the gate owns all other input
 			// A key may START work (bootgate confirm → install): gates
 			// cannot return commands from HandleKey, so they queue one
 			// and the shell drains it here.
+			var cmd tea.Cmd
 			if cg, ok := a.gate.(interface{ TakeCmd() tea.Cmd }); ok {
-				if cmd := cg.TakeCmd(); cmd != nil {
-					return a, cmd
-				}
+				cmd = cg.TakeCmd()
 			}
-			return a, nil
+			// A key can also be the thing that finishes the gate (the
+			// setup wizard's last enter); without a timer running there
+			// would be no later message to notice it.
+			return a, a.releaseGate(cmd)
 		}
 		if a.welcome {
-			switch msg.String() {
+			switch key {
 			case "ctrl+c", "ctrl+q":
 				a.quitting = true
 				return a, tea.Quit
@@ -343,16 +347,16 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, nil // the card owns the keyboard until dismissed
 		}
 		if a.palette != nil {
-			return a, a.paletteKey(msg.String())
+			return a, a.paletteKey(key)
 		}
-		if msg.String() == "ctrl+p" {
+		if key == "ctrl+p" {
 			a.openPalette()
 			return a, nil
 		}
-		if cmd, handled := a.handleGlobal(msg.String(), a.activeCapturesInput()); handled {
+		if cmd, handled := a.handleGlobal(key, a.activeCapturesInput()); handled {
 			return a, cmd
 		}
-		a.Active().HandleKey(msg.String())
+		a.Active().HandleKey(key)
 		return a, nil
 
 	case tea.MouseWheelMsg:
@@ -385,25 +389,54 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	default:
 		if a.gateActive() {
-			cmd := a.gate.Update(msg)
-			if a.gate.Finished() {
-				a.gateRan = true
-				// The gate→shell handoff fades in like a surface switch
-				// (F-012); reduced motion keeps it a hard cut.
-				a.startTransition()
-				if c := a.transitionCmd(); c != nil {
-					if cmd == nil {
-						cmd = c
-					} else {
-						cmd = tea.Batch(cmd, c)
-					}
-				}
-			}
-			return a, cmd
+			return a, a.releaseGate(a.gate.Update(msg))
 		}
 		return a, a.Active().Update(msg)
 	}
 }
+
+// keyString is the key as surfaces see it. Bubble Tea names the space bar
+// "space", which no text input would accept as a character (every one
+// takes single printable runes), so spaces could not be typed in forms,
+// composers or the editor's insert mode. A bare space is passed as " ";
+// chords (ctrl+space) keep their names.
+func keyString(msg tea.KeyPressMsg) string {
+	if msg.Code == tea.KeySpace && msg.Mod == 0 {
+		return " "
+	}
+	return msg.String()
+}
+
+// releaseGate hands the body back to the shell once the gate reports
+// Finished, batching cmd with the fade-in. The handoff fades in like a
+// surface switch (F-012); reduced motion keeps it a hard cut.
+func (a *App) releaseGate(cmd tea.Cmd) tea.Cmd {
+	if !a.gateActive() || !a.gate.Finished() {
+		return cmd
+	}
+	a.gateRan = true
+	a.startTransition()
+	if c := a.transitionCmd(); c != nil {
+		if cmd == nil {
+			return c
+		}
+		return tea.Batch(cmd, c)
+	}
+	return cmd
+}
+
+// StartGate installs g as the active gate from a running shell (the
+// palette's "Run setup wizard") and returns its Init command.
+func (a *App) StartGate(g Gate) tea.Cmd {
+	a.gate, a.gateRan = g, false
+	a.palette = nil
+	g.Resize(a.bodyWidth(), a.bodyHeight())
+	return g.Init()
+}
+
+// SetSetupGate registers the factory behind the palette's "Run setup
+// wizard"; nil hides the entry.
+func (a *App) SetSetupGate(f func() Gate) { a.setupGate = f }
 
 // activeCapturesInput reports whether the focused surface is collecting
 // free text (surfaces.InputCapturer); such a surface owns plain keys.
@@ -513,6 +546,9 @@ func (a *App) openPalette() {
 			c := c
 			add(c.Group, c.Title, c.Hint, c.Run)
 		}
+	}
+	if a.setupGate != nil {
+		add("Setup", "Run setup wizard", "", func() tea.Cmd { return a.StartGate(a.setupGate()) })
 	}
 	add("", "Show keyboard help", "?", func() tea.Cmd { a.showHelp = true; return nil })
 	add("Theme", "Dark", "", func() tea.Cmd { theme.Current = theme.Dark(); return nil })

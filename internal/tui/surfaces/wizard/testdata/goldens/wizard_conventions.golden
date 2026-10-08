@@ -1,0 +1,28 @@
+
+
+
+
+
+
+
+
+
+
+
+
+           DHI setup
+           ✓ welcome › – workspace › ✓ identity › ◐ conventions › ○ done
+           
+           How should your team's work look?
+           ←/→ cycles · leave co-author and copyright empty to keep them off.
+           
+           commits   ▌[free]
+           branch     [task/{slug}]
+           co-author  
+           copyright  
+           license    
+           
+           co-author: "Name <email>", added to commits as a Co-Authored-By trailer.
+           copyright: the holder named in new-file headers; license is an SPDX id (MIT).
+           
+           enter continue · esc skip step · ctrl+b back · ctrl+x skip setup

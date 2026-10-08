@@ -309,3 +309,13 @@ func TestRailView(t *testing.T) {
 		t.Fatalf("bare rail rows=%d, want 2", got)
 	}
 }
+
+func TestFormAcceptsSpace(t *testing.T) {
+	f := NewForm("t", NewTextField("name", ""))
+	for _, k := range []string{"A", "d", "a", " ", "L"} {
+		f.HandleKey(k)
+	}
+	if got := f.Values()[0]; got != "Ada L" {
+		t.Fatalf("value = %q", got)
+	}
+}

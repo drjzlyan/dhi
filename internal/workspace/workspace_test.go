@@ -312,3 +312,42 @@ func TestSetDependenciesPersistsAndPreservesMembers(t *testing.T) {
 		t.Fatal("bad kind must refuse")
 	}
 }
+
+func TestCreateWithInPlaceMember(t *testing.T) {
+	root := t.TempDir()
+	if err := CreateWith(root, map[string]string{"myrepo": "."}); err != nil {
+		t.Fatal(err)
+	}
+	ws, err := Load(root)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	m, ok := ws.Member("myrepo")
+	if !ok || m.Path != filepath.Clean(root) {
+		t.Fatalf("member = %+v ok=%v, want path %s", m, ok, root)
+	}
+	if err := CreateWith(root, map[string]string{"x": "."}); err == nil {
+		t.Fatal("existing workspace must not be overwritten")
+	}
+}
+
+func TestCreateWithRejectsBadName(t *testing.T) {
+	if err := CreateWith(t.TempDir(), map[string]string{"Bad Name": "."}); err == nil {
+		t.Fatal("bad member name accepted")
+	}
+}
+
+func TestSanitizeName(t *testing.T) {
+	cases := map[string]string{
+		"My Project": "my-project", "_hidden": "hidden", "API.v2": "api.v2",
+		"日本語": "", "ok-name_1": "ok-name_1",
+	}
+	for in, want := range cases {
+		if got := SanitizeName(in); got != want {
+			t.Errorf("SanitizeName(%q) = %q, want %q", in, got, want)
+		}
+		if want != "" && ValidateName(SanitizeName(in)) != nil {
+			t.Errorf("SanitizeName(%q) = %q is not a valid member name", in, want)
+		}
+	}
+}

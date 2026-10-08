@@ -826,7 +826,7 @@ func termKeyBytes(key string) ([]byte, bool) {
 		return []byte{0x0c}, true
 	case "ctrl+u":
 		return []byte{0x15}, true
-	case "space":
+	case "space", " ":
 		return []byte{' '}, true
 	}
 	if r := []rune(key); len(r) == 1 && r[0] >= 32 {
@@ -970,7 +970,8 @@ func (m *Model) refreshRows() {
 func (m *Model) View() string {
 	if m.ws == nil {
 		return kit.Center(
-			theme.TextDim().Render("no workspace loaded — open DHI inside a directory with .dhi/workspace.toml"),
+			theme.TextDim().Render("no workspace loaded — open DHI inside a directory with .dhi/workspace.toml")+
+				"\n\n"+theme.AccentText().Render("or press ctrl+p → Run setup wizard to create one here"),
 			m.width, m.height,
 		)
 	}

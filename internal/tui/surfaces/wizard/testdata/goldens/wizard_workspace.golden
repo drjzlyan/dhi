@@ -1,0 +1,26 @@
+
+
+
+
+
+
+
+
+
+
+
+
+
+                 DHI setup
+                 ✓ welcome › ◐ workspace › ○ identity › ○ conventions › ○ done
+                 
+                 No DHI workspace here yet.
+                 /work/acme
+                 
+                 Create one with these members:
+                   acme  →  .
+                 
+                 Writes .dhi/workspace.toml and a .dhi/.gitignore that keeps chat,
+                 memory and task state out of version control.
+                 
+                 enter continue · esc skip step · ctrl+b back · ctrl+x skip setup

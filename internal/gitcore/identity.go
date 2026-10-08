@@ -48,3 +48,50 @@ func (r *Runner) configGet(ctx context.Context, key string) string {
 	}
 	return strings.TrimSpace(out)
 }
+
+// IdentityCommands returns the exact `git config --global` invocations
+// SetIdentity runs, for display before the user confirms (F-043).
+func IdentityCommands(id Identity) []string {
+	return []string{
+		"git config --global user.name " + shellQuote(id.Name),
+		"git config --global user.email " + shellQuote(id.Email),
+	}
+}
+
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// ValidateIdentity rejects values git would store but commits would
+// misattribute: empty parts, control characters, an email with no '@'.
+func ValidateIdentity(id Identity) error {
+	name, email := strings.TrimSpace(id.Name), strings.TrimSpace(id.Email)
+	if name == "" {
+		return errors.New("name is required")
+	}
+	if email == "" || !strings.Contains(email, "@") || strings.ContainsAny(email, " <>") {
+		return errors.New("email must look like you@example.com")
+	}
+	for _, r := range name + email {
+		if r < 0x20 || r == 0x7f {
+			return errors.New("name and email cannot contain control characters")
+		}
+	}
+	return nil
+}
+
+// SetIdentity writes user.name/user.email to the user's GLOBAL git config.
+// The Runner must carry the identity environment (host HOME, no forced
+// GIT_CONFIG_GLOBAL — toolchain.GitIdentityEnv), the same named exception
+// ResolveIdentity uses; callers confirm with the user before calling.
+func SetIdentity(ctx context.Context, r *Runner, id Identity) error {
+	if err := ValidateIdentity(id); err != nil {
+		return err
+	}
+	id = Identity{Name: strings.TrimSpace(id.Name), Email: strings.TrimSpace(id.Email)}
+	if _, _, err := r.Run(ctx, "", "config", "--global", "user.name", id.Name); err != nil {
+		return err
+	}
+	_, _, err := r.Run(ctx, "", "config", "--global", "user.email", id.Email)
+	return err
+}

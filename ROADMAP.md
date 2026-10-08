@@ -949,7 +949,7 @@ could not hand work to each other and team leads were inert.
 Seven phases, one commit each; push deferred to the end.
 
 - [x] P1 Layered conventions: branch / commit / copyright / PR text (F-042)
-- [ ] P2 Wizard framework + animation kit, `dhi setup`, workspace init
+- [x] P2 Wizard framework + animation kit, palette-run setup, workspace init, relaunch loop (F-043, ADR-0026)
 - [ ] P3 Distribution: release pipeline, installer, platforms
 - [ ] P4 Employees: starter teams + persona schema
 - [ ] P5 Agent CLI onboarding (confirm-gated install; supersedes ADR-0012)

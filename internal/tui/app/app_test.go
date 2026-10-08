@@ -731,3 +731,113 @@ func TestActivityChipIsStaticUnderReducedMotionAndDroppedWhenNarrow(t *testing.T
 		t.Fatalf("narrow bar = %q", bar)
 	}
 }
+
+// finishOnKey finishes when it sees the key — the wizard's last enter.
+type finishOnKey struct {
+	stubGate
+	on string
+}
+
+func (g *finishOnKey) HandleKey(k string) bool {
+	if k == g.on {
+		g.finished = true
+	}
+	return g.stubGate.HandleKey(k)
+}
+
+// A gate finished by a KEY press must release the shell at once: with
+// no timer running (reduced motion) no later message would arrive.
+func TestGateFinishedByKeyReleasesShell(t *testing.T) {
+	theme.MotionForTest(t, false)
+	a, _ := newTestApp(t)
+	g := &finishOnKey{on: "enter"}
+	a.SetGate(g)
+	a.Init()
+	if !a.gateActive() {
+		t.Fatal("gate should own the body first")
+	}
+	a.Update(keyPress("x"))
+	if !a.gateActive() {
+		t.Fatal("a non-finishing key must not release the gate")
+	}
+	a.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if a.gateActive() {
+		t.Fatal("gate finished by a key but the shell never took over")
+	}
+}
+
+type recordingGate struct {
+	stubGate
+	inited int
+}
+
+func (g *recordingGate) Init() tea.Cmd { g.inited++; return nil }
+
+func TestPaletteRunSetupWizardStartsGate(t *testing.T) {
+	theme.MotionForTest(t, false)
+	a, _ := newTestApp(t)
+	a.Init()
+	g := &recordingGate{}
+	a.SetSetupGate(func() Gate { return g })
+
+	a.openPalette()
+	var found bool
+	for _, it := range a.palette.Matches() {
+		if it.Title == "Run setup wizard" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("palette lacks Run setup wizard")
+	}
+	for _, r := range "run setup" {
+		a.Update(keyPress(string(r)))
+	}
+	a.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if !a.gateActive() || g.inited != 1 {
+		t.Fatalf("gateActive=%v inited=%d; the palette entry must start the gate", a.gateActive(), g.inited)
+	}
+	if a.palette != nil {
+		t.Fatal("palette should close")
+	}
+}
+
+func TestPaletteHidesSetupWithoutFactory(t *testing.T) {
+	a, _ := newTestApp(t)
+	a.openPalette()
+	for _, it := range a.palette.Matches() {
+		if it.Title == "Run setup wizard" {
+			t.Fatal("entry shown without a factory")
+		}
+	}
+}
+
+// Bubble Tea names the space bar "space"; the shell must hand surfaces a
+// literal " " or no text input can ever receive a space.
+func TestSpaceKeyIsDeliveredAsSpace(t *testing.T) {
+	space := tea.KeyPressMsg{Code: tea.KeySpace, Text: " "}
+	if space.String() != "space" {
+		t.Fatalf("premise changed: space.String() = %q", space.String())
+	}
+
+	a, st := newTestApp(t)
+	a.Update(space)
+	if got := st[0].keys; len(got) != 1 || got[0] != " " {
+		t.Fatalf("surface saw %q, want [\" \"]", got)
+	}
+
+	g := &stubGate{}
+	a2, _ := newTestApp(t)
+	a2.SetGate(g)
+	a2.Update(space)
+	if len(g.keys) != 1 || g.keys[0] != " " {
+		t.Fatalf("gate saw %q, want [\" \"]", g.keys)
+	}
+
+	// A chord keeps its name.
+	a3, st3 := newTestApp(t)
+	a3.Update(tea.KeyPressMsg{Code: tea.KeySpace, Mod: tea.ModCtrl})
+	if got := st3[0].keys; len(got) != 1 || got[0] != "ctrl+space" {
+		t.Fatalf("chord = %q", got)
+	}
+}

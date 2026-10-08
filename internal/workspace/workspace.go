@@ -105,12 +105,29 @@ type member struct {
 }
 
 // Create writes an initial workspace.toml under root and reserves the
-// `.dhi/` schema directories. Existing configs are never overwritten —
-// call Load instead.
+// `.dhi/` schema directories. Each name becomes a member whose path is
+// the directory of the same name. Existing configs are never overwritten
+// — call Load instead.
 func Create(root string, names ...string) error {
+	members := map[string]string{}
+	for _, name := range names {
+		members[name] = name
+	}
+	return CreateWith(root, members)
+}
+
+// CreateWith is Create with explicit member paths (name → path relative
+// to root, or "." for the root itself — how a single repo is opened in
+// place). Names are validated with the member naming rule.
+func CreateWith(root string, members map[string]string) error {
 	cfgPath := filepath.Join(root, ConfigFile)
 	if _, err := os.Stat(cfgPath); err == nil {
 		return fmt.Errorf("workspace: %s already exists", cfgPath)
+	}
+	for name := range members {
+		if err := ValidateName(name); err != nil {
+			return fmt.Errorf("workspace: %w", err)
+		}
 	}
 	for _, dir := range []string{DirAgents, DirMemory, DirKnowledge, DirChannels, DirTasks, DirSessions, DirAutopilots, DirRoles, DirSkills, DirMCP, DirRegistry} {
 		if err := os.MkdirAll(filepath.Join(root, dir), 0o755); err != nil {
@@ -118,8 +135,8 @@ func Create(root string, names ...string) error {
 		}
 	}
 	cfg := config{Schema: SchemaVersion, Members: map[string]member{}}
-	for _, name := range names {
-		cfg.Members[name] = member{Path: name}
+	for name, path := range members {
+		cfg.Members[name] = member{Path: path}
 	}
 	f, err := os.Create(cfgPath)
 	if err != nil {
@@ -131,6 +148,21 @@ func Create(root string, names ...string) error {
 		return fmt.Errorf("workspace: encode config: %w", err)
 	}
 	return nil
+}
+
+// SanitizeName turns an arbitrary directory name into a valid member name
+// (lowercase [a-z0-9._-], alphanumeric start); "" if nothing survives.
+func SanitizeName(s string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(s) {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '.', r == '_', r == '-':
+			b.WriteRune(r)
+		case r == ' ':
+			b.WriteRune('-')
+		}
+	}
+	return strings.TrimLeft(b.String(), "._-")
 }
 
 // ErrNotWorkspace marks a directory holding no .dhi/workspace.toml.

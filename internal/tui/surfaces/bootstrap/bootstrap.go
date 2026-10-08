@@ -18,8 +18,9 @@ import (
 	"github.com/drjzlyan/dhi/internal/tui/theme"
 )
 
-// spinnerFrames renders the activity indicator; index advances per tick.
-var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+// spinnerFrames is the shared activity indicator (kit.SpinnerFrames);
+// the index advances per tick.
+var spinnerFrames = kit.SpinnerFrames
 
 const tickInterval = 120 * time.Millisecond
 
@@ -287,13 +288,8 @@ func stageLine(r *row, frame int) string {
 	case statusFail:
 		glyph = theme.DangerText().Render(theme.GlyphCross)
 	case statusActive:
-		// Reduced motion (F-012): a static busy glyph instead of an
-		// advancing frame.
-		if theme.Motion {
-			glyph = theme.Brand().Render(spinnerFrames[frame%len(spinnerFrames)])
-		} else {
-			glyph = theme.Brand().Render(theme.GlyphBusy)
-		}
+		// Reduced motion (F-012) is handled inside the shared spinner.
+		glyph = kit.SpinnerGlyph(frame)
 	default:
 		glyph = theme.TextDim().Render("·")
 	}

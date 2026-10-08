@@ -173,7 +173,7 @@ func normalMotion(key string) (motion, bool) {
 	switch key {
 	case "h", "left":
 		return motLeft, true
-	case "l", "right", "space":
+	case "l", "right", "space", " ":
 		return motRight, true
 	case "j", "down", "enter":
 		return motDown, true

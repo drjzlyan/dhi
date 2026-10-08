@@ -254,3 +254,24 @@ func TestPendingEscapeCancels(t *testing.T) {
 		t.Fatalf("after esc+dd: %q", e.Buffer().Text())
 	}
 }
+
+// The shell passes a bare space as " " (the key name "space" is not a
+// printable rune); insert mode must accept it and normal mode must still
+// treat it as a right motion.
+func TestSpaceKeyBothSpellings(t *testing.T) {
+	e := NewEditor("ab")
+	feed(e, "A")
+	feed(e, " ")
+	feed(e, "c")
+	feed(e, "esc")
+	if got := e.Buffer().Text(); got != "ab c" {
+		t.Fatalf("insert-mode space dropped: %q", got)
+	}
+	for _, k := range []string{" ", "space"} {
+		e := NewEditor("abc")
+		feed(e, k)
+		if c := e.Buffer().Cursor(); c.Col != 1 {
+			t.Errorf("normal-mode %q moved cursor to col %d, want 1", k, c.Col)
+		}
+	}
+}
