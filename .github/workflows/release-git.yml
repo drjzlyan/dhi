@@ -42,7 +42,7 @@ jobs:
       matrix:
         include:
           - os: macos-latest # darwin/arm64
-          - os: macos-13 # darwin/amd64 (Intel runner)
+          - os: macos-15-intel # darwin/amd64 (macos-13 was retired in Dec 2025)
           - os: ubuntu-latest # linux/amd64
           - os: ubuntu-24.04-arm # linux/arm64
     runs-on: ${{ matrix.os }}

@@ -67,6 +67,12 @@ fi
 echo "==> checking out verified tree"
 git -C "$work/src" checkout -q "tags/v${VERSION}"
 
+# macOS: target the same floor as Go itself (macOS 12) instead of the
+# runner's own version, so one artifact runs on every supported Mac.
+if [ "$(uname -s)" = Darwin ]; then
+    export MACOSX_DEPLOYMENT_TARGET=12.0
+fi
+
 echo "==> building (transport-free: NO_CURL NO_EXPAT NO_GETTEXT NO_PERL NO_TCLTK)"
 make -C "$work/src" -j "$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)" \
     git \
