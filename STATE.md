@@ -1,9 +1,61 @@
 # STATE — current position
 
-Updated: 2026-10-04 (session 47: F-025 per-pane scrollbars COMPLETE —
-reviewer REVIEWS + editor files rail added; BOARD documented as
-per-lane Columns. Roadmap M15–M20 and all follow-ons complete;
-`make verify` green.)
+Updated: 2026-10-08 (session 48: audit-driven M21–M24 landed — agent
+hand-offs + team-lead routing, task comments/activity, editor pairing/
+debugging/test runner/format/symbols/git gutter, UX polish incl. a
+typing-hijack bug fix. `make verify` green. Debugging verified against
+real delve v1.27.2 — see F-039; `dlv` provisioning still open.)
+
+### Session 48 (M21: agent hand-offs + team lead routing, F-036)
+
+- Gap audit vs the brief produced the M21–M24 plan (ROADMAP tail). M21
+  shipped: `Runtime.Handle` now also dispatches agent-authored messages
+  (final reply in `cliTurn`, and `channel_post` via `dhitools.Deps.Relay`)
+  with `maxAgentHops=8` per channel, reset by any human post. Bare human
+  post in `#<team>` goes to `org.Team.Lead` when a rostered agent.
+- Board `n` form gained `assign`/`team`; `Model.handoff` posts the brief
+  (bound thread → `#team` → `dm:assignee`) and dispatches; also on assign.
+  `task_create` gained assignee/team/labels/priority.
+- Gotchas: hop key is the CHANNEL (thread roots differ between a
+  top-level trigger and its reply); dispatched Turns use
+  `context.WithoutCancel` (the spawning turn's ctx is cancelled on
+  return); tests for routing build a `Runtime{}` with empty `entry`s and
+  never reach `Turn`. macOS `sed -i` needs `''` — use Edit.
+- **M22 (F-037) shipped same session:** task schema 3 comments +
+  activity (`internal/tasks/comments.go`), `task_comment` tool, board `N`
+  + side-pane notes; `Store.mutate` is now serialized (`mutMu`).
+- **M23 shipped (F-038/F-039/F-040):** `editor/pair.go` (`:pair :ask
+  :unpair`, `editor_context` + `editor_propose_edit` tools via optional
+  `dhitools.PairAPI`, review overlay `y/n/A`, `ctrl+y`); editor chat now
+  dispatches turns (it never did — a real bug); `internal/dap` + `dapfake`
+  (testutil) + `editor/debug.go` (`:break :debug :cont :next :step :out
+  :stop :eval`, panel, `debug_state` tool via `DebugAPI`);
+  `internal/testrun` + `editor/tests.go` (`:test`); `editor/format.go`
+  (format-on-save via `textbuf.SetBeforeSave`, `:fmt`, `:set [no]fmt`),
+  `editor/symbols.go` (`:sym`), `editor/gitgutter.go` + `internal/linediff`
+  + `gitcore.Repo.HeadContent`. `:` from visual mode now keeps the
+  selection (`textbuf.TakeSelection`).
+- Gotchas: `Buffer.Text()` keeps the trailing newline of a file; gutter
+  marker column is the old single space (layout unchanged); `dlv` is NOT
+  provisioned hermetically yet; editor-side async results ride
+  `termMsgs` (add a `teaMsg` kind, handle in `Update`).
+- **M24 shipped (F-041).** BUG FIXED: the shell used to take `1-9 ? tab`
+  before surfaces saw them (typing `2+2?` switched views) — now
+  `surfaces.InputCapturer.CapturesInput()` (editor: focused buffer/term/
+  chat/git/prompts; workspace/ideator/reviewer/settings: forms, composers,
+  filters). `ctrl+p` palette (`kit.Palette`, `surfaces.CommandProvider`),
+  tab-bar presence chip (`Runtime.ActiveCount`, one tick chain,
+  `App.SetActivity`), welcome card (`App.SetWelcome`, `.dhi/welcome.seen`),
+  `kit.EmptyState`, `kit.Rail.RowAt` + `Click` on 4 surfaces, tokens raised
+  to WCAG AA + `high-contrast` theme (`theme/contrast_test.go`),
+  `settings.ThemeNames()`.
+- Gotchas: tests that drove `HandleKey` directly never hit the shell's
+  global key handling — test shell-level behavior through `App.Update`;
+  `handleGlobal(key, capturing)`; app `Update` wraps `update` to arm the
+  activity tick; goldens for every empty state / inbox / shell statusline
+  changed deliberately.
+- All of M21–M24 landed in session 48; nothing from the audit plan is
+  left except the items listed as Deferred in F-039/F-040/F-041.
 
 ### Session 47 (F-025: reviewer REVIEWS + editor rail; F-025 closed)
 
@@ -399,6 +451,13 @@ per-lane Columns. Roadmap M15–M20 and all follow-ons complete;
 
 ## Where we are
 
+**Session 48 added M21–M24 on top of M15–M20 (all landed; nothing committed
+at the time of writing — see the working tree).** Open items after it:
+hermetic `dlv` provisioning (the real-delve run is done); the deferred lists in F-039/F-040/F-041 (split panes, regex
+project replace, terminal alt-screen, searchable help, list/lane clicks).
+Behavior change to know: with an editor buffer focused (normal mode too)
+`?` and `tab` no longer reach the shell — `esc` first, or `ctrl+p`.
+
 **The planned roadmap M15–M20 is fully landed (M20 complete 2026-09-29,
 M15 complete 2026-09-30); `make verify` green.** M15 engine inversion
 (the host CLI is the engine; all six adapters serve DHI tools over the
@@ -774,7 +833,8 @@ catalog).
 
 ## Next up
 
-1. **Optional follow-ons**: none — all landed.
+1. **Optional follow-ons**: provision `dlv` (see "Where we are"); then the
+   Deferred lists in F-039/F-040/F-041.
 2. **Engine kinds**: `cli:<name>` only (ADR-0024 dropped the `api:`
    path). Reinstating a direct-API engine would be a fresh ADR + spec.
 3. **(Deferred, F-026/F-017/F-027/F-020/M11)** — the older, unspecified

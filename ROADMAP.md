@@ -919,3 +919,27 @@ live work log in the task thread.
       shows a `●` working glyph on the bound card and a live detail line,
       alongside the already-streamed progress/command/error events)
 
+## M21 — Real team collaboration (F-036)
+
+Status: complete (2026-10-08). ADR-0025. Audit-driven (session 48): agents
+could not hand work to each other and team leads were inert.
+
+- [x] Agent replies + `channel_post` dispatch @mentions under a per-channel
+      hop budget; visible notice at the limit
+- [x] Bare human post in `#<team>` routes to the lead; no-lead notice
+- [x] Board create/assign hand-off (bound thread → team → DM) and
+      `task_create` assignee/team/labels/priority
+
+## M22–M24 — planned (from the session-48 gap audit)
+
+- [x] M22 JIRA depth: task comments + activity history, `task_comment` tool (F-037, 2026-10-08)
+- [x] M23 Editor: pairing session with diff accept/reject (F-038), DAP
+      debugging (F-039; verified against real delve v1.27.2 on macOS; `:debug`
+      still refuses until `dlv` is provisioned), test runner, format-on-save, symbols, git gutter
+      (F-040) — 2026-10-08. Deferred: hermetic `dlv` provisioning, split
+      panes, regex project replace, terminal alt-screen
+- [x] M24 UX polish (F-041, 2026-10-08): typing-safe shell (InputCapturer —
+      fixes digits/?/tab being stolen while typing), command palette,
+      presence chip, welcome card, empty states, WCAG-AA tokens +
+      high-contrast theme, rail clicks, inbox stamp alignment. Deferred:
+      searchable help, Notice/Loading, list/lane clicks, wide detail pane
