@@ -377,6 +377,7 @@ func (m *Model) cycle(dir int) {
 		for i, n := range names {
 			if n == m.cfg.Theme {
 				m.cfg.Theme = names[(i+dir+len(names))%len(names)]
+				m.cfg.ThemeSet = true // a choice: saved, and no longer follows the terminal
 				break
 			}
 		}
@@ -986,8 +987,22 @@ func isURL(s string) bool {
 // jumps to that section (dialogs and forms swallow clicks).
 func (m *Model) Click(x, y int) bool {
 	const railW = 16
-	if m.dlg != nil || m.form.open || x >= railW {
+	if m.dlg != nil || m.form.open {
 		return false
+	}
+	if x >= railW {
+		// CONFIG rows (F-055): content line i is setting i (no scroll
+		// window); click selects, a second click changes it like enter.
+		row := y - 1 // panel top border
+		if m.sec != secConfig || row < 0 || row >= len(m.configView()) || row >= m.height-4 {
+			return false
+		}
+		if m.cursor == row {
+			m.HandleKey("enter")
+		} else {
+			m.cursor = row
+		}
+		return true
 	}
 	rail := &kit.Rail{Rows: m.railRows(), Active: int(m.sec), Width: railW, Height: maxInt(m.height, 10)}
 	if i, ok := rail.RowAt(y); ok {
@@ -1131,8 +1146,7 @@ func (m *Model) formTitle() string {
 
 func (m *Model) configView() []string {
 	rows := []string{
-		settingRow(m.cursor == rowTheme, "theme",
-			valueText(m.cfg.Theme)),
+		settingRow(m.cursor == rowTheme, "theme", m.themeValue()),
 		settingRow(m.cursor == rowReducedMotion, "reduced_motion",
 			valueText(boolStr(m.cfg.ReducedMotion))),
 		settingRow(m.cursor == rowTabWidth, "editor.tab_width",
@@ -1226,6 +1240,15 @@ func settingRow(selected bool, name, value string) string {
 }
 
 func valueText(v string) string { return v }
+
+// themeValue shows "auto" while no theme was chosen: the live theme then
+// follows the terminal's background (F-055).
+func (m *Model) themeValue() string {
+	if !m.cfg.ThemeSet {
+		return "auto · " + theme.Current.Name + theme.Hint().Render("  (follows the terminal)")
+	}
+	return m.cfg.Theme
+}
 
 func boolStr(b bool) string {
 	if b {

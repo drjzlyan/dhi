@@ -20,6 +20,7 @@ const railWidth = 20
 // terminals, full-width stack on middle widths, centered fallback on
 // truly tiny ones, brand hero when not inside a workspace (F-025).
 func (m *Model) View() string {
+	m.hits.Reset()
 	if m.ws == nil {
 		return branding.NoWorkspace(m.width, m.height, m.version)
 	}
@@ -34,6 +35,7 @@ func (m *Model) compactBody() string {
 	// and the same panel (body + hint bar) takes the full width (F-054):
 	// narrow terminals get the real UI, never a stripped-down stack.
 	strip := kit.ClipEllipsis(m.sectionStrip(), m.width)
+	m.hits.SetOrigin(2, 2) // panel border + padding, under the strip
 	return strip + "\n" + m.mainPane(m.width, m.height-1)
 }
 
@@ -43,6 +45,7 @@ func (m *Model) dockedView() string {
 		paneW = 40
 	}
 	rail := m.railView(m.height)
+	m.hits.SetOrigin(railWidth+2, 1) // panel border + padding, right of the rail
 	pane := m.mainPane(paneW, m.height)
 	return lipgloss.JoinHorizontal(lipgloss.Top, rail, pane)
 }
@@ -50,15 +53,37 @@ func (m *Model) dockedView() string {
 // Click implements the clickHandler seam (F-041): a click on a rail row
 // jumps to that section. Only the docked layout has a rail.
 func (m *Model) Click(x, y int) bool {
-	if m.width < kit.WDock || x >= railWidth {
+	if m.modalOpen() {
+		return false // a dialog owns the screen; keys close it
+	}
+	if m.width >= kit.WDock && x < railWidth {
+		rail := &kit.Rail{Rows: make([]kit.RailRow, secCount), Active: int(m.sec), Width: railWidth, Height: m.height}
+		if i, ok := rail.RowAt(y); ok {
+			m.selectSection(sectionID(i))
+			return true
+		}
 		return false
 	}
-	rail := &kit.Rail{Rows: make([]kit.RailRow, secCount), Active: int(m.sec), Width: railWidth, Height: m.height, Foot: "x"}
-	if i, ok := rail.RowAt(y); ok {
-		m.sec = sectionID(i)
-		return true
+	// Section strip, list rows and lanes: zones recorded by the last View.
+	return m.hits.Click(x, y)
+}
+
+// clickRow selects row i of a list section; clicking the selected row
+// again does what enter does there.
+func (m *Model) clickRow(sec sectionID, i int) {
+	if m.cursors[sec] == i {
+		m.HandleKey("enter")
+		return
 	}
-	return false
+	m.cursors[sec] = i
+}
+
+// modalOpen reports a dialog over the pane (clicks then do nothing).
+func (m *Model) modalOpen() bool { return m.form.kind != fNone }
+
+// selectSection switches the active section (rail or strip click).
+func (m *Model) selectSection(s sectionID) {
+	m.sec = s
 }
 
 func (m *Model) railView(h int) string {
@@ -113,6 +138,12 @@ func (m *Model) mainPane(w, h int) string {
 	}
 	content = content[:h-3]
 	content = append(content, kit.HintBar(inner, m.statusFlash(), m.sectionHints()...))
+	// The keymap row is clickable (F-055): a hint acts like its key.
+	m.hits.Add(0, h-3, inner, 1, func(dx, _ int) {
+		if k, ok := kit.HintKeyAt(inner, m.statusFlash(), dx, m.sectionHints()...); ok {
+			m.HandleKey(k)
+		}
+	})
 	p.SetContent(content...)
 	p.Width, p.Height = w, h
 	pane := p.View()
@@ -165,28 +196,28 @@ func (m *Model) activeSectionFor(w, h int) string {
 }
 
 func (m *Model) sectionStrip() string {
-	var parts []string
+	labels := make([]string, secCount)
 	for s := sectionID(0); s < secCount; s++ {
-		label := s.label()
-		if s == m.sec {
-			parts = append(parts, theme.TabActive().Render("["+label+"]"))
-		} else {
-			parts = append(parts, theme.TextDim().Render(label))
-		}
+		labels[s] = s.label()
 	}
-	line := strings.Join(parts, theme.TextDim().Render(" · "))
-	flash := ""
+	line, spans := kit.SectionStrip(labels, int(m.sec))
+	for i, sp := range spans {
+		sec := sectionID(i)
+		m.hits.Add(sp[0], 0, sp[1]-sp[0], 1, func(int, int) { m.selectSection(sec) })
+	}
 	if m.form.flash != "" {
-		flash = "   " + theme.SuccessText().Render(m.form.flash)
+		line += "   " + theme.SuccessText().Render(m.form.flash)
 	}
-	return line + flash
+	return line
 }
 
 // ---- SESSIONS ----
 
 func (m *Model) sessionsBody(w, h int) string {
 	if m.store == nil {
-		return theme.DangerText().Render("(session store unavailable)")
+		return kit.Notice{What: "Sessions are unavailable",
+			Why:   "the session store under .dhi/ideation could not open.",
+			Retry: "run dhi doctor for the cause"}.String(w)
 	}
 	var out []string
 	if warn := m.store.Warnings(); len(warn) > 0 {
@@ -204,6 +235,12 @@ func (m *Model) sessionsBody(w, h int) string {
 		}.Lines(w, h-len(out))...)
 	}
 	for i, row := range rows {
+		// Click zone (F-055) over this row's lines, registered once it
+		// knows its height: select; click again to open.
+		y0, item := len(out), i
+		zone := func() {
+			m.hits.Add(0, y0, w, len(out)-y0, func(int, int) { m.clickRow(secSessions, item) })
+		}
 		active := i == c
 		style := theme.TextDim()
 		if active {
@@ -221,6 +258,7 @@ func (m *Model) sessionsBody(w, h int) string {
 				out = append(out, indent+"      "+theme.TextDim().Render(
 					"a accept · x decline · does not open until you accept"))
 			}
+			zone()
 			continue
 		}
 		s := row.sess
@@ -244,6 +282,7 @@ func (m *Model) sessionsBody(w, h int) string {
 			}
 			out = append(out, indent+"      "+theme.TextDim().Render(crop(detail, maxInt(w-8, 12))))
 		}
+		zone()
 	}
 	return strings.Join(out, "\n")
 }

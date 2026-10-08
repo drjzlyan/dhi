@@ -71,7 +71,7 @@ func fixtureWS(t *testing.T) *workspace.Workspace {
 	if err := os.MkdirAll(filepath.Join(root, "api"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "api", "main.go"), []byte("package main\n\nfunc main() {}\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "api", "main.go"), []byte("package main\n\nimport \"fmt\"\n\nfunc main() {\n\tfor i := 0; i < 3; i++ {\n\t\tfmt.Println(\"tab-indented\", i)\t// trailing\n\t}\n}\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(filepath.Join(root, ".dhi"), 0o755); err != nil {
@@ -110,6 +110,12 @@ func check(t *testing.T, name string, s surfaces.Surface, w, h int) {
 	for i, l := range lines {
 		if lw := ansi.Width(l); lw > w {
 			t.Errorf("%s at %dx%d: row %d is %d cells wide: %q", name, w, h, i, lw, ansi.Strip(l))
+			break
+		}
+		// A raw tab measures 0 cells here but jumps to the terminal's next
+		// tab stop, pushing the row past the panel edge.
+		if strings.ContainsRune(l, '\t') {
+			t.Errorf("%s at %dx%d: row %d contains a raw tab: %q", name, w, h, i, ansi.Strip(l))
 			break
 		}
 	}

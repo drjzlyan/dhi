@@ -70,6 +70,7 @@ func (s sectionID) label() string {
 
 // Model is the Workspace landing surface.
 type Model struct {
+	hits    kit.HitMap         // click zones recorded by the last View (F-055)
 	emit    func(event string) // tutorial action events (F-051); nil = not wired
 	version string
 	ws      *workspace.Workspace

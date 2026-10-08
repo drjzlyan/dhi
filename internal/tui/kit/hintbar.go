@@ -53,3 +53,35 @@ func HintBar(width int, status string, hints ...string) string {
 	}
 	return row
 }
+
+// HintKeyAt maps a click at column x of a HintBar(width, status, hints...)
+// row to the key its hint names (F-055: the keymap is clickable). The key
+// is the first alternative of the hint's key part ("s/S status" → "s",
+// "[ ] sections" → "[", "space mark" → " "). False on the status, a
+// separator, or the clipped tail.
+func HintKeyAt(width int, status string, x int, hints ...string) (string, bool) {
+	col := runeWidth(ansi.Strip(status))
+	if status != "" {
+		col += 2
+	}
+	limit := width - 1 // the last visible cell may be the "…" marker
+	for i, h := range hints {
+		if i > 0 {
+			col += 3 // " • "
+		}
+		w := runeWidth(h)
+		if x >= col && x < col+w && x < limit {
+			rows := HintRows(h)
+			if len(rows) == 0 {
+				return "", false
+			}
+			k := strings.Fields(strings.ReplaceAll(rows[0][0], "/", " "))[0]
+			if k == "space" {
+				k = " "
+			}
+			return k, true
+		}
+		col += w
+	}
+	return "", false
+}

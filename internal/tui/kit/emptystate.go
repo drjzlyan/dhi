@@ -16,6 +16,8 @@ type EmptyState struct {
 	Title  string
 	Why    string // optional explanation, word-wrapped
 	Action string // optional, e.g. "press n to start a session"
+
+	glyphReady bool // Glyph is pre-styled (Notice); render it as is
 }
 
 // Lines renders the block centered horizontally within width and, when
@@ -33,7 +35,10 @@ func (e EmptyState) Lines(width, height int) []string {
 	if inner < 12 {
 		inner = 12
 	}
-	block := []string{theme.AccentText().Render(glyph), theme.TextStyle().Render(e.Title)}
+	if !e.glyphReady {
+		glyph = theme.AccentText().Render(glyph)
+	}
+	block := []string{glyph, theme.TextStyle().Render(e.Title)}
 	if e.Why != "" {
 		block = append(block, "")
 		for _, l := range WrapWords(e.Why, inner) {

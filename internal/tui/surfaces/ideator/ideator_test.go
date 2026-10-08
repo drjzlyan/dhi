@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"charm.land/bubbletea/v2"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/ideation"

@@ -9,6 +9,7 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/drjzlyan/dhi/internal/gitdiff"
+	"github.com/drjzlyan/dhi/internal/tui/kit"
 	"github.com/drjzlyan/dhi/internal/tui/theme"
 )
 
@@ -199,15 +200,18 @@ func (m *Model) renderDiff(w, h int, viewed map[string]bool) string {
 		r, ok := m.openReview()
 		switch {
 		case !ok:
-			return theme.TextDim().Render("(no review open — pick one under REVIEWS)")
+			return strings.Join(kit.EmptyState{Title: "No review open",
+				Why: "The diff belongs to one review.", Action: "pick one under REVIEWS ([)"}.Lines(w, h), "\n")
 		case m.busy:
-			return theme.TabActive().Render(theme.GlyphBusy + " working…")
+			return strings.Join(kit.Loading("working…", 0, w, 4), "\n")
 		case m.opErr != "":
 			return theme.DangerText().Render(m.opErr)
 		case r.Done:
 			return theme.TextDim().Render("(worktree discarded)")
 		default:
-			return theme.TextDim().Render("(no diff — hermetic git unavailable?)")
+			return kit.Notice{Kind: kit.NoticeWarning, What: "No diff to show",
+				Why:   "the review has no changes, or the hermetic git could not run.",
+				Retry: "run dhi doctor if you expected changes"}.String(w)
 		}
 	}
 
@@ -227,6 +231,10 @@ func (m *Model) renderDiff(w, h int, viewed map[string]bool) string {
 			break
 		}
 		line := s.txt
+		// Click zone (F-055): a click puts the diff cursor on this line
+		// (where c comments and e expands context).
+		row := s.row
+		m.hits.Add(0, len(out), w, 1, func(int, int) { m.cursor = row })
 		if s.row == m.cursor {
 			line = theme.GlyphCursor + line
 		} else {

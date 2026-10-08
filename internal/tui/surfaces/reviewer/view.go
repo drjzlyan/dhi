@@ -19,6 +19,7 @@ const railWidth = 20
 // terminals, centered stack on narrow ones, brand hero when not inside
 // a workspace.
 func (m *Model) View() string {
+	m.hits.Reset()
 	if m.ws == nil {
 		return branding.NoWorkspace(m.width, m.height, m.version)
 	}
@@ -33,6 +34,7 @@ func (m *Model) compactBody() string {
 	// and the same panel (body + hint bar) takes the full width (F-054):
 	// narrow terminals get the real UI, never a stripped-down stack.
 	strip := kit.ClipEllipsis(m.sectionStrip(), m.width)
+	m.hits.SetOrigin(2, 2) // panel border + padding, under the strip
 	return strip + "\n" + m.mainPane(m.width, m.height-1)
 }
 
@@ -45,6 +47,7 @@ func (m *Model) dockedView() string {
 		paneW = 40
 	}
 	rail := m.railView(m.height)
+	m.hits.SetOrigin(railWidth+2, 1) // panel border + padding, right of the rail
 	pane := m.mainPane(paneW, m.height)
 	return lipgloss.JoinHorizontal(lipgloss.Top, rail, pane)
 }
@@ -55,15 +58,37 @@ func (m *Model) Click(x, y int) bool {
 	if m.screenMode() {
 		return m.clickScreen(x, y)
 	}
-	if m.width < kit.WDock || x >= railWidth {
+	if m.modalOpen() {
+		return false // a dialog owns the screen; keys close it
+	}
+	if m.width >= kit.WDock && x < railWidth {
+		rail := &kit.Rail{Rows: make([]kit.RailRow, secCount), Active: int(m.sec), Width: railWidth, Height: m.height}
+		if i, ok := rail.RowAt(y); ok {
+			m.selectSection(sectionID(i))
+			return true
+		}
 		return false
 	}
-	rail := &kit.Rail{Rows: make([]kit.RailRow, secCount), Active: int(m.sec), Width: railWidth, Height: m.height, Foot: "x"}
-	if i, ok := rail.RowAt(y); ok {
-		m.sec = sectionID(i)
-		return true
+	// Section strip, list rows and lanes: zones recorded by the last View.
+	return m.hits.Click(x, y)
+}
+
+// clickRow selects row i of a list section; clicking the selected row
+// again does what enter does there (open the review / the file's diff).
+func (m *Model) clickRow(sec sectionID, i int) {
+	if m.cursors[sec] == i {
+		m.HandleKey("enter")
+		return
 	}
-	return false
+	m.cursors[sec] = i
+}
+
+// modalOpen reports a dialog over the pane (clicks then do nothing).
+func (m *Model) modalOpen() bool { return m.form.kind != fNone || m.composer != nil }
+
+// selectSection switches the active section (rail or strip click).
+func (m *Model) selectSection(s sectionID) {
+	m.sec = s
 }
 
 func (m *Model) railView(h int) string {
@@ -106,6 +131,12 @@ func (m *Model) mainPane(w, h int) string {
 	content = content[:h-3]
 	p.SetContent(content...)
 	p.SetFooter(kit.HintBar(inner, m.statusFlash(), m.sectionHints()...))
+	// The keymap row is clickable (F-055): a hint acts like its key.
+	m.hits.Add(0, h-3, inner, 1, func(dx, _ int) {
+		if k, ok := kit.HintKeyAt(inner, m.statusFlash(), dx, m.sectionHints()...); ok {
+			m.HandleKey(k)
+		}
+	})
 	p.Width, p.Height = w, h
 	// Per-pane scrollbar: the diff viewport is the one section with a
 	// real scroll window (F-025); the HintBar is a footer row, so the
@@ -209,21 +240,19 @@ func (m *Model) activeSectionFor(w, h int) string {
 }
 
 func (m *Model) sectionStrip() string {
-	var parts []string
+	labels := make([]string, secCount)
 	for s := sectionID(0); s < secCount; s++ {
-		label := s.label()
-		if s == m.sec {
-			parts = append(parts, theme.TabActive().Render("["+label+"]"))
-		} else {
-			parts = append(parts, theme.TextDim().Render(label))
-		}
+		labels[s] = s.label()
 	}
-	line := strings.Join(parts, theme.TextDim().Render(" · "))
-	flash := ""
+	line, spans := kit.SectionStrip(labels, int(m.sec))
+	for i, sp := range spans {
+		sec := sectionID(i)
+		m.hits.Add(sp[0], 0, sp[1]-sp[0], 1, func(int, int) { m.selectSection(sec) })
+	}
 	if m.form.flash != "" {
-		flash = "   " + theme.SuccessText().Render(m.form.flash)
+		line += "   " + theme.SuccessText().Render(m.form.flash)
 	}
-	return line + flash
+	return line
 }
 
 // ---- section bodies ----
@@ -235,7 +264,9 @@ func (m *Model) reviewsBody(w, h int) string {
 
 	out := []string{}
 	if m.svc == nil {
-		out = append(out, theme.DangerText().Render("(review service unavailable)"))
+		out = append(out, kit.Notice{What: "Reviews are unavailable (review service unavailable)",
+			Why:   "the review service needs the workspace git and GitHub tooling.",
+			Retry: "run dhi doctor for the cause"}.Lines(w, h)...)
 		return strings.Join(out, "\n")
 	}
 	if warns := m.svc.Store().Warnings(); len(warns) > 0 {
@@ -283,6 +314,12 @@ func (m *Model) reviewsBody(w, h int) string {
 		window, _ = render(start)
 	}
 	m.offsets[secReviews] = start
+	// Click zones (F-055): select a review; click it again to open it.
+	heights := make([]int, len(groups))
+	for i, g := range groups {
+		heights[i] = len(g)
+	}
+	m.hits.AddRows(len(out), w, start, heights, len(window), func(i int) { m.clickRow(secReviews, i) })
 	out = append(out, window...)
 	return strings.Join(out, "\n")
 }
@@ -351,7 +388,8 @@ func (m *Model) filesBody(w, h int) string {
 	var out []string
 	r, ok := m.openReview()
 	if !ok {
-		out = append(out, theme.TextDim().Render("(no review open — pick one under REVIEWS)"))
+		out = append(out, kit.EmptyState{Title: "No review open",
+			Why: "Files and the diff belong to one review.", Action: "pick one under REVIEWS ([)"}.Lines(w, h)...)
 		return strings.Join(out, "\n")
 	}
 	head := fmt.Sprintf("%s  %s...%s", r.ID, r.Target.Base, shortSHA(r.Target.Head))
@@ -366,14 +404,15 @@ func (m *Model) filesBody(w, h int) string {
 	}
 	out = append(out, theme.TextDim().Render(head))
 	if m.busy && m.diffFor == "" {
-		out = append(out, theme.TabActive().Render("loading diff…"))
+		out = append(out, kit.Loading("loading diff…", 0, w, 4)...)
 		return strings.Join(out, "\n")
 	}
 	if m.opErr != "" && m.diffFor != r.ID {
 		out = append(out, theme.DangerText().Render(m.opErr))
 	}
 	if len(m.files) == 0 {
-		out = append(out, theme.TextDim().Render("(no files)"))
+		out = append(out, kit.EmptyState{Glyph: theme.GlyphCheck, Title: "No changed files",
+			Why: "This review's diff is empty."}.Lines(w, h-len(out))...)
 		return strings.Join(out, "\n")
 	}
 	c := m.cursors[secFiles]
@@ -420,6 +459,7 @@ func (m *Model) filesBody(w, h int) string {
 	m.offsets[secFiles] = off
 	end := minInt(off+avail, len(rows))
 	if end > off {
+		m.hits.AddRows(len(out), w, off, kit.Ones(len(rows)), end-off, func(i int) { m.clickRow(secFiles, i) })
 		out = append(out, rows[off:end]...)
 	}
 	return strings.Join(out, "\n")
@@ -445,11 +485,13 @@ func remoteCount(r review.Review) int {
 	return n
 }
 
+// shortSHA abbreviates a commit hash to 7 characters; anything else (a
+// branch name like feat/rate-limit) is shown whole.
 func shortSHA(s string) string {
-	if len(s) > 7 {
-		return s[:7]
+	if len(s) <= 7 || strings.Trim(s, "0123456789abcdef") != "" {
+		return s
 	}
-	return s
+	return s[:7]
 }
 
 // ---- modals ----

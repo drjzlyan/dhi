@@ -292,9 +292,44 @@ func RailMuted() lipgloss.Style {
 
 func panelEdge(focused bool) color.Color {
 	if focused {
-		return Current.BorderFocused
+		return SurfaceAccent()
 	}
 	return Current.Border
+}
+
+// surface is the active view's id; the shell sets it on every switch.
+var surface string
+
+// SetSurface records the active view for its identity accent (F-055).
+func SetSurface(id string) { surface = id }
+
+// SurfaceAccent is the active view's identity color, used on its focused
+// panel edges and its tab, so a glance tells where you are: Workspace
+// keeps the brand cyan, Editor violet, Ideator amber, Reviewer green,
+// Settings neutral. High contrast keeps one focus color for clarity.
+func SurfaceAccent() color.Color {
+	if Current.Name == HighContrast().Name {
+		return Current.BorderFocused
+	}
+	switch surface {
+	case "editor":
+		return Current.Accent2
+	case "ideator":
+		return Current.Warning
+	case "reviewer":
+		return Current.Success
+	case "settings":
+		return Current.TextDim
+	}
+	return Current.BorderFocused
+}
+
+// TabCurrent styles the active view's tab in its identity accent.
+func TabCurrent() lipgloss.Style {
+	return lipgloss.NewStyle().
+		Background(Current.BgSelection).
+		Foreground(SurfaceAccent()).
+		Bold(true)
 }
 
 // PanelTitle styles panel titles rendered onto top borders.

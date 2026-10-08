@@ -511,3 +511,17 @@ func TestInboxPaneScrollWindow(t *testing.T) {
 		t.Fatal("expected a right-edge scrollbar on INBOX")
 	}
 }
+
+// TestInboxWidePreviewGolden pins F-055: on a wide pane the selected
+// item's preview docks beside the list and follows the cursor.
+func TestInboxWidePreviewGolden(t *testing.T) {
+	m, _ := newSurface(t)
+	seedInbox(t, m)
+	gotoInbox(m)
+	m.Resize(176, 24)
+	golden.Snapshot(t, "workspace_inbox_wide_preview", m.View())
+	m.HandleKey("j")
+	if !strings.Contains(ansi.Strip(m.View()), "Run failed") {
+		t.Fatalf("preview did not follow the cursor:\n%s", ansi.Strip(m.View()))
+	}
+}

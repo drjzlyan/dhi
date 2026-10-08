@@ -86,7 +86,16 @@ type App struct {
 
 	// palette is the open command palette (ctrl+p); nil when closed.
 	palette *kit.Palette
+
+	// onBackground receives the terminal's background darkness once at
+	// startup (F-055); nil skips the query.
+	onBackground func(dark bool)
 }
+
+// SetBackgroundHook asks the terminal for its background color at start
+// and hands fn whether it is dark (the initial theme follows it unless
+// the user chose one).
+func (a *App) SetBackgroundHook(fn func(dark bool)) { a.onBackground = fn }
 
 // New wires the shell around an ordered surface registry (index i answers
 // key strconv.Itoa(i+1)).
@@ -101,6 +110,9 @@ func New(version string, regs ...surfaces.Surface) *App {
 		if em, ok := s.(surfaces.Emitter); ok {
 			em.SetEmitter(func(event string) { a.observe("do:" + event) })
 		}
+	}
+	if len(regs) > 0 {
+		theme.SetSurface(regs[0].Meta().ID)
 	}
 	return a
 }
@@ -168,6 +180,9 @@ func (a *App) Init() tea.Cmd {
 		if c := s.Init(); c != nil {
 			cmds = append(cmds, c)
 		}
+	}
+	if a.onBackground != nil {
+		cmds = append(cmds, tea.RequestBackgroundColor)
 	}
 	if len(cmds) == 0 {
 		return nil
@@ -314,6 +329,12 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case EditorRequest:
 		a.handleEditorRequest(msg)
+		return a, nil
+
+	case tea.BackgroundColorMsg:
+		if a.onBackground != nil {
+			a.onBackground(msg.IsDark())
+		}
 		return a, nil
 
 	case tea.WindowSizeMsg:
@@ -479,7 +500,7 @@ func (a *App) handleGlobal(key string, capturing bool) (tea.Cmd, bool) {
 		return nil, false // typing: digits, "?" and tab belong to the surface
 	}
 	switch key {
-	case "?":
+	case "?", "ctrl+/", "ctrl+_": // many terminals send ctrl+_ for ctrl+/
 		a.openHelp()
 		return nil, true
 	case "tab":
@@ -586,6 +607,7 @@ func (a *App) openPalette() {
 func (a *App) selectSurface(i int) {
 	if a.tabs.SetActive(i) {
 		a.active = i
+		theme.SetSurface(a.Active().Meta().ID)
 		a.startTransition()
 		a.observe("view:" + a.Active().Meta().ID)
 	}

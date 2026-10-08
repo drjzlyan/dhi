@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"charm.land/lipgloss/v2"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/textbuf"
 	"github.com/drjzlyan/dhi/internal/tui/kit"
 	"github.com/drjzlyan/dhi/internal/tui/theme"
+	"github.com/mattn/go-runewidth"
 )
 
 func minInt(a, b int) int {
@@ -84,12 +86,16 @@ func (m *Model) bufferView() string {
 	syntax := m.syntaxFor(e)
 	marks := m.gutterMarks(m.bufs[m.activeTab])
 	curLine := b.Cursor().Line
-	curCol := b.Cursor().Col
+	curCol := visCol(b.Line(curLine), b.Cursor().Col)
 	for l := top; l < end; l++ {
 		num := strconv.Itoa(l + 1)
 		plain := padLeft(num, gutW-len(num))
 		gutter := m.gutterFor(path, l, plain)
-		text := b.Line(l)
+		// Tabs render as spaces to the next tab stop (a raw tab would let
+		// the terminal jump past the panel edge); columns that index the
+		// raw line go through visCol.
+		raw := b.Line(l)
+		text := expandTabs(raw)
 
 		if visual {
 			selStart, selEnd := 0, len([]rune(text))
@@ -97,21 +103,21 @@ func (m *Model) bufferView() string {
 			case l < a.Line || l > z.Line:
 				selStart, selEnd = -1, -1 // untouched line
 			case l == a.Line && l == z.Line:
-				selStart, selEnd = min(a.Col, z.Col), maxInt(a.Col, z.Col)
+				selStart, selEnd = visCol(raw, min(a.Col, z.Col)), visCol(raw, maxInt(a.Col, z.Col))
 			case l == a.Line:
-				selStart = a.Col
+				selStart = visCol(raw, a.Col)
 			case l == z.Line:
-				selEnd = min(z.Col, len([]rune(text)))
+				selEnd = min(visCol(raw, z.Col), len([]rune(text)))
 			}
 			text = markRange(text, selStart, selEnd)
 		} else if l == curLine {
-			text = withCursor(text, b.Cursor().Col)
+			text = withCursor(text, curCol)
 		} else if syntax != nil {
 			// Colorized lines keep the raw text underneath (F-026 P4);
 			// cursor and selection lines render plain so the rune-level
 			// inversion stays exact.
 			if st := syntax.styled(l); st != "" {
-				text = st
+				text = expandTabs(st) // escapes never contain a tab
 			}
 		}
 		marker := gitMarkGlyph(marks, l)
@@ -369,4 +375,62 @@ func tabStrip(bufs []*bufTab, active, avail int) string {
 			r--
 		}
 	}
+}
+
+// tabStop is the display width of a tab in the buffer view.
+const tabStop = 4
+
+// expandTabs replaces each tab with spaces up to the next tab stop,
+// counting visible cells (escape sequences in styled lines are skipped).
+func expandTabs(s string) string {
+	if !strings.Contains(s, "\t") {
+		return s
+	}
+	var b strings.Builder
+	col := 0
+	for i := 0; i < len(s); {
+		if s[i] == 0x1b { // copy an escape sequence through, width 0
+			j := i + 1
+			for j < len(s) && (s[j] < 'A' || s[j] > 'Z') && (s[j] < 'a' || s[j] > 'z') {
+				j++
+			}
+			if j < len(s) {
+				j++
+			}
+			b.WriteString(s[i:j])
+			i = j
+			continue
+		}
+		r, size := utf8.DecodeRuneInString(s[i:])
+		if r == '\t' {
+			n := tabStop - col%tabStop
+			b.WriteString(strings.Repeat(" ", n))
+			col += n
+		} else {
+			b.WriteRune(r)
+			col += runewidth.RuneWidth(r)
+		}
+		i += size
+	}
+	return b.String()
+}
+
+// visCol maps a rune column of the raw line to its column in the
+// tab-expanded line.
+func visCol(raw string, col int) int {
+	v := 0
+	for i, r := range []rune(raw) {
+		if i >= col {
+			break
+		}
+		if r == '\t' {
+			v += tabStop - v%tabStop
+		} else {
+			v++
+		}
+	}
+	if n := len([]rune(raw)); col > n {
+		v += col - n // past the end (insert mode after the last rune)
+	}
+	return v
 }

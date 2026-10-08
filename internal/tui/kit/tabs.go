@@ -97,7 +97,7 @@ func barWidth(labels []string) int {
 // View renders "1 Home  2 Editor …" with the active tab highlighted and the
 // whole bar padded to Width cells.
 func (t *Tabs) View() string {
-	active := theme.TabActive()
+	active := theme.TabCurrent()
 	inactive := theme.TabInactive()
 
 	var parts []string

@@ -114,3 +114,23 @@ func TestNoRawColorsOutsideTheme(t *testing.T) {
 			strings.Join(offenders, "\n"))
 	}
 }
+
+func TestSurfaceAccentsIdentifyViews(t *testing.T) {
+	SwapForTest(t, Dark())
+	t.Cleanup(func() { SetSurface("") })
+	seen := map[string]string{}
+	for _, id := range []string{"workspace", "editor", "ideator", "reviewer", "settings"} {
+		SetSurface(id)
+		r, g, b, _ := SurfaceAccent().RGBA()
+		key := fmt.Sprint(r, g, b)
+		if other, dup := seen[key]; dup {
+			t.Errorf("%s and %s share an accent", id, other)
+		}
+		seen[key] = id
+	}
+	Current = HighContrast()
+	SetSurface("editor")
+	if SurfaceAccent() != Current.BorderFocused {
+		t.Error("high contrast must keep one focus color")
+	}
+}

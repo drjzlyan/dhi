@@ -102,6 +102,15 @@ func (c *Columns) laneWindow(i, rows int) (start, end int) {
 	return off, off + vis
 }
 
+// Window returns lane i's visible [start, end) rows as last rendered by
+// View (click zones map a screen row back to a card with it).
+func (c *Columns) Window(i int) (start, end int) {
+	if i < 0 || i >= len(c.Cols) {
+		return 0, 0
+	}
+	return c.laneWindow(i, c.Height)
+}
+
 // Selected returns the active lane index and its cursor row.
 func (c *Columns) Selected() (int, int) {
 	if c.Active < 0 || c.Active >= len(c.Cols) {
@@ -177,9 +186,9 @@ func (c *Columns) View() string {
 			} else if start+y < end && start+y < len(col.Rows) {
 				row = clip(col.Rows[start+y], laneW-1)
 				if i == c.Active && start+y == col.Cursor {
-					row = sel.Render(row)
+					row = Restyle(sel, padTo(row, laneW-1))
 				} else {
-					row = inset.Render(row)
+					row = Restyle(inset, padTo(row, laneW-1))
 				}
 			} else {
 				row = inset.Render(strings.Repeat(" ", laneW-1))

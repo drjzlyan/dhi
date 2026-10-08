@@ -63,6 +63,7 @@ func (s sectionID) label() string {
 
 // Model is the Ideator surface.
 type Model struct {
+	hits    kit.HitMap // click zones recorded by the last View (F-055)
 	version string
 	ws      *workspace.Workspace
 	store   *ideation.Store // nil = whole surface degrades visibly

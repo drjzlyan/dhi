@@ -435,6 +435,11 @@ func runTUI() (relaunch bool) {
 	if decision.Block == "" {
 		a.SetSetupGate(func() app.Gate { return newWizard() })
 	}
+	if !cfg.ThemeSet {
+		// No theme chosen anywhere: match the terminal (light terminals
+		// get the light theme) instead of forcing dark on everyone.
+		a.SetBackgroundHook(cfg.FollowBackground)
+	}
 	autoWizard := decision.Block == "" && shouldAutoRunSetup(ws)
 
 	// First run in this workspace: show the welcome card once (F-041). The

@@ -1038,6 +1038,30 @@ func (m *Model) View() string {
 	}
 }
 
+// Click implements the shell's click seam (F-055): a file-tree row is
+// selected (and the tree focused); clicking the selected row again opens
+// the file or toggles the folder, like enter.
+func (m *Model) Click(x, y int) bool {
+	if m.ws == nil || m.mode != modeNav || m.reviewOpen {
+		return false
+	}
+	railW := m.railW()
+	if railW == 0 || x >= railW {
+		return false
+	}
+	i, ok := m.list.RowAt(y - 1) // panel top border
+	if !ok {
+		return false
+	}
+	m.bufFocus = false
+	if m.list.Cursor == i {
+		m.HandleKey("enter")
+		return true
+	}
+	m.list.Cursor = i
+	return true
+}
+
 func (m *Model) navView() string {
 	bodyH := m.height
 	if m.drawerOpen {
@@ -1053,7 +1077,10 @@ func (m *Model) navView() string {
 		}
 	}
 	rail := kit.NewPanel("files", false)
-	hint := theme.Hint().Render("⏎ open · / find · s search")
+	hint := theme.Hint().Render(kit.ClipEllipsis("⏎ open · / find · s search", m.railW()-4))
+	if m.railW() < 32 {
+		hint = theme.Hint().Render("⏎ open · / find") // s search: see ? help
+	}
 	savedListH := m.list.Height
 	m.list.Width = maxInt(m.railW()-4, 8)
 	m.list.Height = bodyH - 4 // hint row, spacer, panel padding

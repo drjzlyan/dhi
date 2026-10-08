@@ -107,8 +107,12 @@ const (
 // from Defaults.
 type Config struct {
 	Schema        int    `toml:"schema"`
-	Theme         string `toml:"theme"`
+	Theme         string `toml:"theme,omitempty"`
 	ReducedMotion bool   `toml:"reduced_motion"`
+	// ThemeSet reports that a config layer named the theme. When none
+	// did, the app follows the terminal's background (light terminals
+	// get the light theme). Never written.
+	ThemeSet bool `toml:"-"`
 	// Engine is the workspace default engine (ADR-0019), "cli:<name>".
 	// Empty means agents must name an engine in their manifest; an agent
 	// that omits `engine` inherits this one.
@@ -354,6 +358,7 @@ func (f fileLayer) mergeInto(dst *Config) {
 	}
 	if f.Theme != "" {
 		dst.Theme = strings.TrimSpace(f.Theme)
+		dst.ThemeSet = true
 	}
 	if f.ReducedMotion != nil {
 		dst.ReducedMotion = *f.ReducedMotion
@@ -437,6 +442,20 @@ func (c Config) Apply() {
 	theme.SetMotion(!c.ReducedMotion)
 }
 
+// FollowBackground picks the live theme from the terminal background when
+// no config layer named one: light terminals get the light theme. It
+// does nothing when the user chose a theme.
+func (c Config) FollowBackground(dark bool) {
+	if c.ThemeSet {
+		return
+	}
+	if dark {
+		theme.Current = theme.Dark()
+	} else {
+		theme.Current = theme.Light()
+	}
+}
+
 // UnknownKeys parses data and returns top-level/dotted keys not in the
 // schema — doctor surfaces these as warnings (F-006 acceptance).
 func UnknownKeys(data []byte) ([]string, error) {
@@ -492,6 +511,9 @@ func sortStrings(s []string) {
 func (c Config) Save(path string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("settings: save: %w", err)
+	}
+	if !c.ThemeSet {
+		c.Theme = "" // never chosen: keep following the terminal (F-055)
 	}
 	var sb strings.Builder
 	sb.WriteString("# DHI configuration (hand-editable)\n")

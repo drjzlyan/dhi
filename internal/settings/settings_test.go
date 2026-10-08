@@ -91,7 +91,7 @@ func TestRoundTripAndSanitize(t *testing.T) {
 	p := filepath.Join(dir, "config.toml")
 
 	cfg := Defaults()
-	cfg.Theme = "light-paper"
+	cfg.Theme, cfg.ThemeSet = "light-paper", true
 	cfg.Editor.TabWidth = 2
 	cfg.Terminal.Scrollback = 250
 	if err := cfg.Save(p); err != nil {
@@ -557,5 +557,42 @@ func TestLiveConventionsFollowTheFilesWithoutARestart(t *testing.T) {
 	}
 	if live.Get(); live.Err() != nil {
 		t.Fatalf("not recovered: %v", live.Err())
+	}
+}
+
+func TestFollowBackgroundOnlyWithoutAChosenTheme(t *testing.T) {
+	orig := theme.Current
+	t.Cleanup(func() { theme.Current = orig })
+
+	Config{}.FollowBackground(false)
+	if theme.Current.Name != theme.Light().Name {
+		t.Fatalf("light terminal, no theme set: got %s", theme.Current.Name)
+	}
+	Config{}.FollowBackground(true)
+	if theme.Current.Name != theme.Dark().Name {
+		t.Fatalf("dark terminal: got %s", theme.Current.Name)
+	}
+	theme.Current = theme.HighContrast()
+	Config{ThemeSet: true}.FollowBackground(false)
+	if theme.Current.Name != theme.HighContrast().Name {
+		t.Fatal("a chosen theme must never be overridden")
+	}
+}
+
+func TestThemeSetTracksLayers(t *testing.T) {
+	dir := t.TempDir()
+	user := filepath.Join(dir, "user.toml")
+	if err := os.WriteFile(user, []byte("schema = 1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load(user, "")
+	if err != nil || c.ThemeSet {
+		t.Fatalf("no theme key: ThemeSet=%v err=%v", c.ThemeSet, err)
+	}
+	if err := os.WriteFile(user, []byte("schema = 1\ntheme = \"light-paper\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if c, _ = Load(user, ""); !c.ThemeSet {
+		t.Fatal("theme key in a layer must set ThemeSet")
 	}
 }

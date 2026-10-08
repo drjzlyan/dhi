@@ -88,6 +88,16 @@ func (l *List) scroll() {
 }
 
 // Selected returns the current item (ok=false when empty).
+// RowAt maps a visible row (0 = the first rendered row) to its item
+// index; false past the end (F-055 click routing).
+func (l *List) RowAt(y int) (int, bool) {
+	i := l.offset + y
+	if y < 0 || i >= len(l.Items) || (l.Height > 0 && y >= l.Height) {
+		return 0, false
+	}
+	return i, true
+}
+
 func (l *List) Selected() (Item, bool) {
 	if l.Cursor < len(l.Items) {
 		return l.Items[l.Cursor], true
@@ -153,7 +163,7 @@ func (l *List) View() string {
 			gap := l.Width - runeWidth(line) - runeWidth(badge)
 			line += strings.Repeat(" ", clamp(gap, 1, l.Width)) + theme.Hint().Render(badge)
 		}
-		out = append(out, padTo(st.Render(line), l.Width))
+		out = append(out, Restyle(st, padTo(line, l.Width)))
 	}
 	return strings.Join(out, "\n")
 }

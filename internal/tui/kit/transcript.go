@@ -4,6 +4,7 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/lipgloss/v2"
 	"github.com/mattn/go-runewidth"
 
 	"github.com/drjzlyan/dhi/internal/tui/theme"
@@ -119,8 +120,8 @@ func (t *Transcript) View() []string {
 			labelW = col - 8
 		}
 		label := ClipEllipsis(author, clamp(labelW, 1, col-6))
-		prefix := marker + theme.TextMuted().Render(
-			padTo(label, labelW)+" "+stamp)
+		prefix := marker + authorStyle(r.Kind).Render(padTo(label, labelW)) +
+			theme.TextMuted().Render(" "+stamp)
 		indent := strings.Repeat(" ", col+2)
 		firstLineOf[ri] = len(out)
 		for i, tl := range t.textLines(r, textW) {
@@ -162,11 +163,11 @@ func (t *Transcript) textLines(r TrnRow, textW int) []string {
 			text = rendered
 		}
 	}
-	st := theme.TabActive() // human rows carry the selection accent
-	switch r.Kind {
-	case TrnAgent:
-		st = theme.Brand()
-	case TrnSystem:
+	// Bodies read in the primary text color; who spoke is carried by the
+	// author label's color (F-055) — an all-accent transcript is hard to
+	// read and leaves the accent meaning nothing.
+	st := theme.TextStyle()
+	if r.Kind == TrnSystem {
 		st = theme.TextMuted()
 	}
 	if strings.TrimSpace(text) == "" {
@@ -235,4 +236,16 @@ func WrapWords(text string, width int) []string {
 		}
 	}
 	return out
+}
+
+// authorStyle colors a transcript author label by who spoke: you in the
+// brand accent, agents in the secondary accent, system lines muted.
+func authorStyle(k TrnAuthor) lipgloss.Style {
+	switch k {
+	case TrnHuman:
+		return theme.AccentText()
+	case TrnAgent:
+		return lipgloss.NewStyle().Foreground(theme.Current.Accent2)
+	}
+	return theme.TextMuted()
 }

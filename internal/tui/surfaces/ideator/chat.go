@@ -136,7 +136,9 @@ func (m *Model) chatBody(w, h int) string {
 			sess.Mode, floorName(holder), len(sess.Turns)))
 	out := []string{head}
 	if m.bus == nil {
-		out = append(out, theme.DangerText().Render("(no message bus — install a crew)"))
+		out = append(out, kit.Notice{Kind: kit.NoticeWarning, What: "No message bus",
+			Why:   "the round-table runs over the agent bus, which starts with the agent runtime.",
+			Retry: "add agents in Settings › AGENTS, then restart"}.Lines(w, 0)...)
 		return strings.Join(out, "\n")
 	}
 	out = append(out, theme.Brand().Render(sess.Channel))

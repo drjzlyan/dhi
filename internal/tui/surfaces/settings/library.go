@@ -85,7 +85,9 @@ func (m *Model) libPackBadges() map[string]string {
 // libraryBody renders the grouped listing with source badges.
 func (m *Model) libraryBody(w int) string {
 	if m.d.WS == nil {
-		return theme.TextDim().Render("(library unavailable — not inside a workspace)")
+		return kit.Notice{Kind: kit.NoticeInfo, What: "The library needs a workspace",
+			Why:   "skills, personas and packs live in the workspace's .dhi folder.",
+			Retry: "ctrl+p → Run setup wizard to create one here"}.String(w)
 	}
 	lib := m.libStore()
 	rows := m.libRows()

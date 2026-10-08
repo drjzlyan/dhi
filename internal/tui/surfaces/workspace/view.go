@@ -24,6 +24,7 @@ import (
 // tiny terminals center (F-025 Part D). Not-inside-a-workspace keeps
 // the brand hero.
 func (m *Model) View() string {
+	m.hits.Reset()
 	if m.ws == nil {
 		return branding.NoWorkspace(m.width, m.height, m.version)
 	}
@@ -41,6 +42,7 @@ func (m *Model) compactBody() string {
 	// and the same panel (body + hint bar) takes the full width (F-054):
 	// narrow terminals get the real UI, never a stripped-down stack.
 	strip := kit.ClipEllipsis(m.sectionStrip(), m.width)
+	m.hits.SetOrigin(2, 2) // panel border + padding, under the strip
 	return strip + "\n" + m.mainPane(m.width, m.height-1)
 }
 
@@ -50,6 +52,7 @@ func (m *Model) dockedView() string {
 		paneW = 40
 	}
 	rail := m.railView(m.height)
+	m.hits.SetOrigin(railWidth+2, 1) // panel border + padding, right of the rail
 	pane := m.mainPane(paneW, m.height)
 	return lipgloss.JoinHorizontal(lipgloss.Top, rail, pane)
 }
@@ -57,16 +60,28 @@ func (m *Model) dockedView() string {
 // Click implements the clickHandler seam (F-041): a click on a rail row
 // jumps to that section. Only the docked layout has a rail.
 func (m *Model) Click(x, y int) bool {
-	if m.width < kit.WDock || x >= railWidth {
+	if m.modalOpen() {
+		return false // a dialog owns the screen; keys close it
+	}
+	if m.width >= kit.WDock && x < railWidth {
+		rail := &kit.Rail{Rows: make([]kit.RailRow, secCount), Active: int(m.sec), Width: railWidth, Height: m.height}
+		if i, ok := rail.RowAt(y); ok {
+			m.selectSection(sectionID(i))
+			return true
+		}
 		return false
 	}
-	rail := &kit.Rail{Rows: make([]kit.RailRow, secCount), Active: int(m.sec), Width: railWidth, Height: m.height, Foot: "x"}
-	if i, ok := rail.RowAt(y); ok {
-		m.replay = nil
-		m.sec = sectionID(i)
-		return true
-	}
-	return false
+	// Section strip, list rows and lanes: zones recorded by the last View.
+	return m.hits.Click(x, y)
+}
+
+// modalOpen reports a dialog over the pane (clicks then do nothing).
+func (m *Model) modalOpen() bool { return m.form.kind != fNone }
+
+// selectSection switches the active section (rail or strip click).
+func (m *Model) selectSection(s sectionID) {
+	m.replay = nil
+	m.sec = s
 }
 
 // railView renders the always-visible section switcher with live item
@@ -131,6 +146,12 @@ func (m *Model) mainPane(w, h int) string {
 	content = content[:h-3]
 	p.SetContent(content...)
 	p.SetFooter(kit.HintBar(inner, m.statusFlash(), m.sectionHints()...))
+	// The keymap row is clickable (F-055): a hint acts like its key.
+	m.hits.Add(0, h-3, inner, 1, func(dx, _ int) {
+		if k, ok := kit.HintKeyAt(inner, m.statusFlash(), dx, m.sectionHints()...); ok {
+			m.HandleKey(k)
+		}
+	})
 	p.Width, p.Height = w, h
 	// Per-pane scrollbar (F-025): REPOS windows by row (members lead the
 	// dependency lines) and owns offsets[secRepos]; paint the thumb when
@@ -223,7 +244,9 @@ func (m *Model) activeSectionFor(w, h int) string {
 	case secChannels:
 		if m.pane == nil {
 			// The bus failed to open (named at launch); never a crash.
-			return kit.Center(theme.TextDim().Render("channels unavailable — the message bus could not open"), w, maxInt(h, 3))
+			return strings.Join(kit.Notice{What: "Channels are unavailable",
+				Why:   "the message bus could not open; the cause was named at launch.",
+				Retry: "run dhi doctor for the cause"}.Lines(w, maxInt(h, 3)), "\n")
 		}
 		return strings.Join(m.pane.render(w, maxInt(h, 12)), "\n")
 	case secInbox:
@@ -237,23 +260,19 @@ func (m *Model) activeSectionFor(w, h int) string {
 
 // sectionStrip renders the switchable pane tabs with the active one lit.
 func (m *Model) sectionStrip() string {
-	var parts []string
+	labels := make([]string, secCount)
 	for s := sectionID(0); s < secCount; s++ {
-		label := s.label()
-		if s == m.sec {
-			parts = append(parts, theme.TabActive().Render("["+label+"]"))
-		} else {
-			parts = append(parts, theme.TextDim().Render(label))
-		}
+		labels[s] = s.label()
 	}
-	// Flash outcomes announce ONCE, on the chrome HintBar (F-026 P3 —
-	// the strip's second announcement is deleted).
-	return strings.Join(parts, theme.TextDim().Render(" · "))
+	line, spans := kit.SectionStrip(labels, int(m.sec))
+	for i, sp := range spans {
+		sec := sectionID(i)
+		m.hits.Add(sp[0], 0, sp[1]-sp[0], 1, func(int, int) { m.selectSection(sec) })
+	}
+	return line
 }
 
 // ---- BOARD (F-021) ----
-
-const boardDetailWidth = 36
 
 // boardStatusColor maps a task lane to its status color (F-025 lane
 // dots: backlog quiet, active accent, in-review warning, done success).
@@ -276,7 +295,8 @@ func (m *Model) boardBody(w, h int) string {
 
 	var out []string
 	if m.taskStore == nil {
-		out = append(out, theme.TextDim().Render("(task store unavailable)"))
+		out = append(out, theme.DangerText().Render(theme.GlyphCross+" task store unavailable")+
+			theme.TextDim().Render(" — run dhi doctor for the cause"))
 		// The lanes still render (empty) so the board reads as a board.
 		g = [4][]tasks.Task{}
 	} else if warn := m.taskStore.Warnings(); len(warn) > 0 {
@@ -292,7 +312,7 @@ func (m *Model) boardBody(w, h int) string {
 	selTask, hasSel := m.boardSelected(g)
 	detailW := 0
 	if w >= kit.WWide && hasSel {
-		detailW = clampInt(w/3, boardDetailWidth, 56)
+		detailW = clampInt(w/4, 32, 48)
 	}
 	wrapW := w - 4
 	if detailW > 0 {
@@ -335,6 +355,22 @@ func (m *Model) boardBody(w, h int) string {
 		}
 	}
 	lanes := board.View()
+	// Click zones (F-055): a lane header focuses the lane, a card row
+	// selects that card; clicking the selected card again opens it.
+	headY := len(out)
+	for i := range cols {
+		lane, laneW := i, board.LaneWidth(i)
+		start, end := board.Window(i)
+		m.hits.Add(i*laneW, headY, laneW, 1, func(int, int) { m.boardActive = lane })
+		m.hits.Add(i*laneW, headY+1, laneW, end-start, func(_, dy int) {
+			row := start + dy
+			if m.boardActive == lane && m.boardCur[lane] == row {
+				m.boardKey("o") // open the card on its floor (thread)
+				return
+			}
+			m.boardActive, m.boardCur[lane] = lane, row
+		})
+	}
 	if total := len(g[0]) + len(g[1]) + len(g[2]) + len(g[3]); total == 0 && m.taskStore != nil && m.boardFilter == "" {
 		// An empty board teaches instead of showing four bare dashes.
 		head := strings.SplitN(lanes, "\n", 2)[0]
@@ -392,38 +428,36 @@ func (m *Model) boardFilterLine() string {
 // (F-026 P3): a mark/priority prefix, slug, ellipsized title, assignee
 // chip — no fixed pads.
 func boardCard(tk tasks.Task, laneW int, marked, working bool) string {
+	// The title is what a person scans a lane for, so it always gets the
+	// room (F-055); the assignee and slug join only when the lane is wide
+	// enough to show them whole-ish. "unassigned" is not printed — the
+	// detail pane says it — so narrow lanes stay readable.
 	title := tk.Title
 	if title == "" {
-		title = "-"
+		title = tk.Slug
 	}
-	who := tk.Assignee
-	if who == "" {
-		who = "unassigned"
-	}
-	whoPart := ""
-	whoW := 0
-	if laneW >= 16 {
-		whoW = minInt(minInt(ansi.Width(who), 12), laneW/3)
-	}
-	prefix := ""
-	prefixW := 0
+	prefix, prefixW := "", 0
 	if laneW >= 14 {
-		prefix = boardMarkPrefix(tk.Priority, marked, working)
-		prefixW = 3
+		prefix, prefixW = boardMarkPrefix(tk.Priority, marked, working), 3
 	}
-	slugW := clampInt(laneW-whoW-prefixW-6, 4, 14)
-	titleW := clampInt(laneW-slugW-whoW-prefixW-1, 4, 40)
+	avail := laneW - prefixW - 1 // one cell of air before the next lane
+	whoW, slugW := 0, 0
+	if tk.Assignee != "" && avail >= 30 {
+		whoW = minInt(ansi.Width(tk.Assignee), 10) + 1
+	}
+	if avail >= 48 {
+		slugW = minInt(ansi.Width(tk.Slug), 16) + 2
+	}
+	titleW := maxInt(avail-whoW-slugW, 4)
+	row := prefix
+	if slugW > 0 {
+		row += padTo(theme.TextDim().Render(kit.ClipEllipsis(tk.Slug, slugW-2)), slugW)
+	}
+	row += padTo(kit.ClipEllipsis(title, titleW), titleW)
 	if whoW > 0 {
-		gap := maxInt(laneW-slugW-titleW-whoW-prefixW, 0)
-		whoPart = padTo(theme.Hint().Render(kit.ClipEllipsis(who, whoW)), whoW+gap)
+		row += padTo(theme.Hint().Render(kit.ClipEllipsis(tk.Assignee, whoW-1)), whoW)
 	}
-	row := prefix +
-		padTo(kit.ClipEllipsis(tk.Slug, slugW-1), slugW) +
-		padTo(kit.ClipEllipsis(title, titleW-1), titleW)
-	if whoW == 0 {
-		row = padTo(row, laneW)
-	}
-	return row + whoPart
+	return padTo(row, laneW)
 }
 
 // boardMarkPrefix is the 3-cell mark+priority indicator.
@@ -563,9 +597,18 @@ func activityText(a tasks.Activity) string {
 	case tasks.ActStatus:
 		return who + " moved " + a.From + " → " + a.To
 	case tasks.ActAssignee:
-		return who + " assigned " + orDash(a.From) + " → " + orDash(a.To)
+		switch {
+		case a.From == "":
+			return who + " assigned it to " + a.To
+		case a.To == "":
+			return who + " unassigned " + a.From
+		}
+		return who + " reassigned " + a.From + " → " + a.To
 	case tasks.ActPriority:
-		return who + " priority " + orDash(a.From) + " → " + orDash(a.To)
+		if a.From == "" || a.From == "-" {
+			return who + " set priority " + orDash(a.To)
+		}
+		return who + " changed priority " + a.From + " → " + orDash(a.To)
 	case tasks.ActLabels:
 		return who + " labels " + orDash(a.To)
 	case tasks.ActRun:
@@ -662,6 +705,11 @@ func (m *Model) inboxBody(w, h int) string {
 		return strings.Join(out, "\n")
 	}
 
+	// Wide panes dock the selected item's preview on the right (F-055).
+	previewW := inboxPreviewWidth(w)
+	if previewW > 0 {
+		w -= previewW + 1
+	}
 	groups := m.inboxGroups(w)
 	start := clampInt(m.offsets[secInbox], 0, len(items)-1)
 	if *c < start {
@@ -688,7 +736,51 @@ func (m *Model) inboxBody(w, h int) string {
 		rows, _ = render(start)
 	}
 	m.offsets[secInbox] = start
-	return strings.Join(append(out, rows...), "\n")
+	// Click zones (F-055): select an item; click it again to jump.
+	y := len(out)
+	for i := start; i < len(items) && y-len(out) < len(rows); i++ {
+		item := i
+		m.hits.Add(0, y, w, len(groups[i]), func(int, int) {
+			if *c == item {
+				m.inboxKey("enter")
+				return
+			}
+			*c = item
+		})
+		y += len(groups[i])
+	}
+	out = append(out, rows...)
+	if previewW > 0 {
+		out = sideBySide(out, inboxPreview(items[*c], previewW-2), w, previewW, h)
+	}
+	return strings.Join(out, "\n")
+}
+
+// inboxPreviewWidth is the docked preview's width for an inbox pane w
+// wide (0 = too narrow, list only).
+func inboxPreviewWidth(w int) int {
+	if w < inboxPreviewMinWidth {
+		return 0
+	}
+	return clampInt(w*2/5, 40, 64)
+}
+
+// sideBySide joins a left block (padded to leftW) with a right detail
+// block on the elevated shade (rightW wide, one cell of padding), for h rows.
+func sideBySide(left, right []string, leftW, rightW, h int) []string {
+	bg := theme.ElevatedBg()
+	out := make([]string, 0, h)
+	for y := 0; y < h; y++ {
+		l, r := "", ""
+		if y < len(left) {
+			l = left[y]
+		}
+		if y < len(right) {
+			r = ansi.Clip(right[y], rightW-2)
+		}
+		out = append(out, padToANSI(l, leftW)+" "+bg.Render(" "+padToANSI(r, rightW-1)))
+	}
+	return out
 }
 
 // inboxGroups renders each inbox item to its wrapped visual rows, so the
@@ -763,6 +855,9 @@ func (m *Model) inboxScroll(w int) (total, offset int) {
 	items := m.inboxItems()
 	if m.unreadErr != "" || len(items) == 0 {
 		return 1, 0
+	}
+	if pw := inboxPreviewWidth(w); pw > 0 {
+		w -= pw + 1 // the list beside the preview (same split as inboxBody)
 	}
 	groups := m.inboxGroups(w)
 	start := clampInt(m.offsets[secInbox], 0, len(items)-1)
