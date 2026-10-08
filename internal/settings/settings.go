@@ -15,6 +15,7 @@ import (
 
 	"github.com/drjzlyan/dhi/internal/agentkit/scopes"
 	"github.com/drjzlyan/dhi/internal/conventions"
+	"github.com/drjzlyan/dhi/internal/langserver"
 	"github.com/drjzlyan/dhi/internal/tui/theme"
 )
 
@@ -37,6 +38,43 @@ func DefaultUserPath() (string, error) {
 type Editor struct {
 	TabWidth    int  `toml:"tab_width"`
 	LineNumbers bool `toml:"line_numbers"`
+	// Languages overrides (or adds to) the editor's built-in language
+	// servers, keyed by language id (F-050).
+	Languages map[string]LanguageConfig `toml:"languages,omitempty"`
+}
+
+// LanguageConfig is one [editor.languages.<id>] table. Every field is
+// optional for a built-in language; a custom language needs Exts and
+// Command. Command is an absolute path or a binary in DHI's toolchain —
+// never resolved from the host PATH.
+type LanguageConfig struct {
+	Enabled    *bool    `toml:"enabled,omitempty"`
+	Name       string   `toml:"name,omitempty"`
+	Command    string   `toml:"command,omitempty"`
+	Args       []string `toml:"args,omitempty"`
+	Exts       []string `toml:"exts,omitempty"`
+	LanguageID string   `toml:"language_id,omitempty"`
+	Formatter  []string `toml:"formatter,omitempty"`
+}
+
+// LanguageOverrides converts the [editor.languages] tables for the editor's
+// language table (F-050).
+func (e Editor) LanguageOverrides() map[string]langserver.Override {
+	if len(e.Languages) == 0 {
+		return nil
+	}
+	out := make(map[string]langserver.Override, len(e.Languages))
+	for id, c := range e.Languages {
+		out[id] = langserver.Override{Enabled: c.Enabled, Name: c.Name, Command: c.Command,
+			Args: c.Args, Exts: c.Exts, LanguageID: c.LanguageID, Formatter: c.Formatter}
+	}
+	return out
+}
+
+// languageKeys are the keys a [editor.languages.<id>] table accepts.
+var languageKeys = map[string]bool{
+	"enabled": true, "name": true, "command": true, "args": true,
+	"exts": true, "language_id": true, "formatter": true,
 }
 
 type Terminal struct {
@@ -229,8 +267,9 @@ type fileLayer struct {
 	Engine        string            `toml:"engine"`
 	Scopes        map[string]string `toml:"scopes"`
 	Editor        struct {
-		TabWidth    int   `toml:"tab_width"`
-		LineNumbers *bool `toml:"line_numbers"`
+		TabWidth    int                       `toml:"tab_width"`
+		LineNumbers *bool                     `toml:"line_numbers"`
+		Languages   map[string]LanguageConfig `toml:"languages"`
 	} `toml:"editor"`
 	Terminal struct {
 		Scrollback int `toml:"scrollback"`
@@ -292,6 +331,12 @@ func (f fileLayer) mergeInto(dst *Config) {
 	}
 	if f.Editor.LineNumbers != nil {
 		dst.Editor.LineNumbers = *f.Editor.LineNumbers
+	}
+	for id, lc := range f.Editor.Languages { // a later layer replaces a language wholesale
+		if dst.Editor.Languages == nil {
+			dst.Editor.Languages = map[string]LanguageConfig{}
+		}
+		dst.Editor.Languages[strings.ToLower(strings.TrimSpace(id))] = lc
 	}
 	if f.Terminal.Scrollback != 0 {
 		dst.Terminal.Scrollback = f.Terminal.Scrollback
@@ -374,7 +419,7 @@ func UnknownKeys(data []byte) ([]string, error) {
 				walk(dotted, sub)
 				continue
 			}
-			if !known[dotted] {
+			if !known[dotted] && !knownLanguageKey(dotted) {
 				out = append(out, dotted)
 			}
 		}
@@ -382,6 +427,16 @@ func UnknownKeys(data []byte) ([]string, error) {
 	walk("", raw)
 	sortStrings(out)
 	return out, nil
+}
+
+// knownLanguageKey accepts editor.languages.<id>.<key> for the documented keys.
+func knownLanguageKey(dotted string) bool {
+	rest, ok := strings.CutPrefix(dotted, "editor.languages.")
+	if !ok {
+		return false
+	}
+	i := strings.LastIndex(rest, ".")
+	return i > 0 && languageKeys[rest[i+1:]]
 }
 
 func sortStrings(s []string) {

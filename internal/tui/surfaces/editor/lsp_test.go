@@ -33,12 +33,23 @@ type goplusFake struct {
 	// the text of the latest didChange (what the "server" believes).
 	events     []string
 	lastChange string
+	// lastLang is the languageId of the latest didOpen (F-050); noFormat
+	// makes the server omit documentFormattingProvider like pyright does.
+	lastLang string
+	noFormat bool
 }
 
 func startFakeServer(t *testing.T) (*goplusFake, *lsp.Manager) {
 	t.Helper()
+	return startFakeServerFor(t, "go", false)
+}
+
+// startFakeServerFor injects the scripted server as the client of lang; with
+// noFormat it reports capabilities that lack documentFormattingProvider.
+func startFakeServerFor(t *testing.T, lang string, noFormat bool) (*goplusFake, *lsp.Manager) {
+	t.Helper()
 	clientConn, serverConn := net.Pipe()
-	f := &goplusFake{conn: serverConn, rd: bufio.NewReader(serverConn)}
+	f := &goplusFake{conn: serverConn, rd: bufio.NewReader(serverConn), noFormat: noFormat}
 	go f.serve()
 
 	mgr := lsp.NewManager("", nil)
@@ -46,7 +57,7 @@ func startFakeServer(t *testing.T) (*goplusFake, *lsp.Manager) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	mgr.Inject("go", c)
+	mgr.Inject(lang, c)
 	t.Cleanup(func() { mgr.ShutdownAll() })
 	return f, mgr
 }
@@ -67,17 +78,23 @@ func (f *goplusFake) serve() {
 		}
 		switch msg.Method {
 		case "initialize":
-			f.reply(*msg.ID, map[string]any{"serverInfo": map[string]any{"name": "fake-gopls"}})
+			res := map[string]any{"serverInfo": map[string]any{"name": "fake-gopls"}}
+			if f.noFormat {
+				res["capabilities"] = map[string]any{"hoverProvider": true}
+			}
+			f.reply(*msg.ID, res)
 
 		case "textDocument/didOpen":
 			var p struct {
 				TextDocument struct {
-					URI string `json:"uri"`
+					URI        string `json:"uri"`
+					LanguageID string `json:"languageId"`
 				} `json:"textDocument"`
 			}
 			json.Unmarshal(msg.Params, &p)
 			f.mu.Lock()
 			f.lastOpen = p.TextDocument.URI
+			f.lastLang = p.TextDocument.LanguageID
 			f.mu.Unlock()
 			f.notify("textDocument/publishDiagnostics", map[string]any{
 				"uri": p.TextDocument.URI,

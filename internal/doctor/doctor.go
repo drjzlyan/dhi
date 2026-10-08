@@ -35,6 +35,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/registry"
 	"github.com/drjzlyan/dhi/internal/agentkit/scopes"
 	"github.com/drjzlyan/dhi/internal/gitcore"
+	"github.com/drjzlyan/dhi/internal/langserver"
 	"github.com/drjzlyan/dhi/internal/settings"
 	"github.com/drjzlyan/dhi/internal/toolchain"
 	"github.com/drjzlyan/dhi/internal/unread"
@@ -379,11 +380,19 @@ func Config(wsRoot string) []Check {
 		return []Check{{Name: "settings/config", Status: Warn,
 			Detail: path + ": " + uerr.Error()}}
 	}
-	if len(unknown) == 0 {
+	var problems []string
+	if len(unknown) > 0 {
+		problems = append(problems, "unknown keys in "+path+": "+strings.Join(unknown, ", "))
+	}
+	// [editor.languages] overrides that cannot take effect (F-050).
+	if cfg, lerr := settings.Load("", path); lerr == nil {
+		_, warns := langserver.Resolve(cfg.Editor.LanguageOverrides())
+		problems = append(problems, warns...)
+	}
+	if len(problems) == 0 {
 		return []Check{{Name: "settings/config", Status: OK}}
 	}
-	return []Check{{Name: "settings/config", Status: Warn,
-		Detail: "unknown keys in " + path + ": " + strings.Join(unknown, ", ")}}
+	return []Check{{Name: "settings/config", Status: Warn, Detail: strings.Join(problems, "; ")}}
 }
 
 // Agents validates the roster under .dhi/agents: every manifest must

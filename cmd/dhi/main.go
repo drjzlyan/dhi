@@ -43,6 +43,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/doctor"
 	"github.com/drjzlyan/dhi/internal/gitcore"
 	"github.com/drjzlyan/dhi/internal/ideation"
+	"github.com/drjzlyan/dhi/internal/langserver"
 	"github.com/drjzlyan/dhi/internal/lsp"
 	"github.com/drjzlyan/dhi/internal/review"
 	"github.com/drjzlyan/dhi/internal/sandbox"
@@ -145,6 +146,10 @@ func runTUI() (relaunch bool) {
 	}
 
 	var edOpts []editor.Option
+	// The editor's language table: built-ins plus [editor.languages]
+	// overrides. Problems are surfaced by `dhi doctor`, never fatal here.
+	langs, _ := langserver.Resolve(cfg.Editor.LanguageOverrides())
+	edOpts = append(edOpts, editor.WithLanguages(langs))
 	var rgSearcher search.Searcher
 	var termEnv []string
 	var identityFn gitcore.IdentityFunc
@@ -175,8 +180,14 @@ func runTUI() (relaunch bool) {
 		// Shut down on every return — the relaunch loop re-enters runTUI,
 		// so a leak here would stack one gopls per setup relaunch.
 		lspMgr := lsp.NewManager(mgr.ShimDir(), termEnv)
+		lspMgr.SetManagedRoot(filepath.Join(toolRoot, "lsp"))
 		defer lspMgr.ShutdownAll()
-		edOpts = append(edOpts, editor.WithLSP(lspMgr))
+		edOpts = append(edOpts, editor.WithLSP(lspMgr),
+			// Only ever called after the user confirmed `:lsp install` (F-050).
+			editor.WithLSPInstaller(func(ctx context.Context, prefix string, pkgs []string) error {
+				_, err := mgr.NPMInstall(ctx, prefix, pkgs[0], pkgs[1:]...)
+				return err
+			}))
 		// F-029: one identity resolver, read from the user's git config
 		// (host path) through the hermetic git binary. It is nil when the
 		// toolchain is absent, which makes every commit path refuse by

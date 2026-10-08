@@ -461,3 +461,54 @@ func TestConventionsFileRejectsOtherKeys(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+func TestEditorLanguagesLayerAndAreAcceptedKeys(t *testing.T) {
+	dir := t.TempDir()
+	user := filepath.Join(dir, "user.toml")
+	ws := filepath.Join(dir, "ws.toml")
+	userDoc := "[editor.languages.python]\ncommand = \"/opt/pyls\"\nargs = [\"--stdio\"]\n\n[editor.languages.yaml]\nenabled = false\n"
+	wsDoc := "[editor.languages.python]\nformatter = [\"ruff\", \"format\", \"-\"]\n\n[editor.languages.rust]\ncommand = \"/x/rust-analyzer\"\nexts = [\".rs\"]\n"
+	if err := os.WriteFile(user, []byte(userDoc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(ws, []byte(wsDoc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, doc := range []string{userDoc, wsDoc} {
+		if u, err := UnknownKeys([]byte(doc)); err != nil || len(u) != 0 {
+			t.Fatalf("documented language keys flagged: %v %v", u, err)
+		}
+	}
+	if u, _ := UnknownKeys([]byte("[editor.languages.python]\ncomand = \"x\"\n")); len(u) != 1 {
+		t.Fatalf("a typo in a language table must be flagged, got %v", u)
+	}
+
+	cfg, err := Load(user, ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+	py := cfg.Editor.Languages["python"]
+	// The workspace table replaces the user's wholesale: no command left over.
+	if py.Command != "" || len(py.Formatter) != 3 {
+		t.Fatalf("python = %+v", py)
+	}
+	if y := cfg.Editor.Languages["yaml"]; y.Enabled == nil || *y.Enabled {
+		t.Fatalf("yaml = %+v", y)
+	}
+	ov := cfg.Editor.LanguageOverrides()
+	if ov["rust"].Command != "/x/rust-analyzer" || len(ov["rust"].Exts) != 1 {
+		t.Fatalf("rust override = %+v", ov["rust"])
+	}
+
+	out := filepath.Join(dir, "saved.toml")
+	if err := cfg.Save(out); err != nil {
+		t.Fatal(err)
+	}
+	back, err := Load(out, "")
+	if err != nil {
+		t.Fatalf("saved config does not reload: %v", err)
+	}
+	if len(back.Editor.Languages) != 3 {
+		t.Fatalf("languages after round trip = %+v", back.Editor.Languages)
+	}
+}

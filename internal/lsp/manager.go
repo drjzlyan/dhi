@@ -15,6 +15,7 @@ import (
 // simply has no LSP support — never a host-tool fallback (ADR-0005).
 type Manager struct {
 	shimDir string
+	managed string // DHI-installed servers: <managed>/<lang>/node_modules/.bin
 	env     []string
 
 	mu      sync.Mutex
@@ -26,6 +27,39 @@ type Manager struct {
 func NewManager(shimDir string, env []string) *Manager {
 	return &Manager{shimDir: shimDir, env: env, clients: map[string]*Client{}}
 }
+
+// SetManagedRoot names the folder holding servers DHI installed itself, one
+// sub-folder per language (F-050).
+func (m *Manager) SetManagedRoot(dir string) { m.managed = dir }
+
+// ManagedPrefix is the npm prefix a language's server installs into.
+func (m *Manager) ManagedPrefix(lang string) string {
+	if m.managed == "" {
+		return ""
+	}
+	return filepath.Join(m.managed, lang)
+}
+
+// Locate finds a server binary without ever consulting the host PATH: an
+// absolute `server` is the user's explicit choice; a bare name is looked up
+// in the toolchain shim dir, then in the language's managed install.
+func (m *Manager) Locate(lang, server string) (string, bool) {
+	if filepath.IsAbs(server) {
+		_, err := os.Stat(server)
+		return server, err == nil
+	}
+	if p := m.ShimPath(server); fileExists(p) {
+		return p, true
+	}
+	if m.managed != "" {
+		if p := filepath.Join(m.managed, lang, "node_modules", ".bin", server); fileExists(p) {
+			return p, true
+		}
+	}
+	return "", false
+}
+
+func fileExists(p string) bool { _, err := os.Stat(p); return err == nil }
 
 // ShimPath is where the named server binary must live.
 func (m *Manager) ShimPath(server string) string {
@@ -41,6 +75,12 @@ func (m *Manager) Available(server string) bool {
 // Ensure returns a live client for lang, starting `server` on first use.
 // rootDir seeds workspace roots in initialize.
 func (m *Manager) Ensure(ctx context.Context, lang, server, rootDir string) (*Client, error) {
+	return m.EnsureServer(ctx, lang, server, nil, rootDir)
+}
+
+// EnsureServer is Ensure with the server's arguments (most npm servers need
+// --stdio) and the managed-install lookup of Locate.
+func (m *Manager) EnsureServer(ctx context.Context, lang, server string, args []string, rootDir string) (*Client, error) {
 	m.mu.Lock()
 	if c, ok := m.clients[lang]; ok {
 		select {
@@ -53,11 +93,11 @@ func (m *Manager) Ensure(ctx context.Context, lang, server, rootDir string) (*Cl
 	}
 	m.mu.Unlock()
 
-	bin := m.ShimPath(server)
-	if _, err := os.Stat(bin); err != nil {
-		return nil, fmt.Errorf("lsp: %s not installed (%s)", server, bin)
+	bin, ok := m.Locate(lang, server)
+	if !ok {
+		return nil, fmt.Errorf("lsp: %s not installed (%s)", server, m.ShimPath(server))
 	}
-	c, err := StartProcess(ctx, bin, []string{}, m.env, rootDir)
+	c, err := StartProcess(ctx, bin, append([]string{}, args...), m.env, rootDir)
 	if err != nil {
 		return nil, err
 	}

@@ -63,6 +63,7 @@ type Client struct {
 	cancel     context.CancelFunc
 	initDone   bool
 	serverName string
+	caps       map[string]json.RawMessage // server capabilities; nil = not reported
 }
 
 // New wraps an established connection and runs the handshake.
@@ -95,6 +96,7 @@ func (c *Client) initialize(rootDir string) error {
 				"hover":      map[string]any{"contentFormat": []string{"plaintext", "markdown"}},
 				"rename":     map[string]any{},
 				"codeAction": map[string]any{},
+				"formatting": map[string]any{},
 			},
 			"workspace": map[string]any{
 				"applyEdit": true,
@@ -105,6 +107,7 @@ func (c *Client) initialize(rootDir string) error {
 		ServerInfo *struct {
 			Name string `json:"name"`
 		} `json:"serverInfo"`
+		Capabilities map[string]json.RawMessage `json:"capabilities"`
 	}
 	if err := c.call("initialize", params, &result); err != nil {
 		return fmt.Errorf("lsp: initialize: %w", err)
@@ -112,11 +115,29 @@ func (c *Client) initialize(rootDir string) error {
 	if result.ServerInfo != nil {
 		c.serverName = result.ServerInfo.Name
 	}
+	c.caps = result.Capabilities
 	if err := c.notify("initialized", map[string]any{}); err != nil {
 		return err
 	}
 	c.initDone = true
 	return nil
+}
+
+// CanFormat reports whether the server advertises whole-document
+// formatting. A server that reports no capabilities at all is given the
+// benefit of the doubt (test doubles); one that reports some and omits
+// documentFormattingProvider (pyright) is not asked, because it answers
+// "Unhandled method".
+func (c *Client) CanFormat() bool {
+	if c.caps == nil {
+		return true
+	}
+	v, ok := c.caps["documentFormattingProvider"]
+	if !ok {
+		return false
+	}
+	s := strings.TrimSpace(string(v))
+	return s != "false" && s != "null" && s != ""
 }
 
 // ServerName reports the server's declared name ("" before init).

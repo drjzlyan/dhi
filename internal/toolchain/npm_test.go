@@ -90,3 +90,18 @@ func TestNPMInstallValidatesArguments(t *testing.T) {
 		t.Fatal("empty package accepted")
 	}
 }
+
+func TestNPMInstallPassesEveryPackageToOneRun(t *testing.T) {
+	m, log := fakeNPM(t, `prefix=""
+while [ $# -gt 0 ]; do [ "$1" = "--prefix" ] && prefix="$2"; shift; done
+mkdir -p "$prefix/node_modules/.bin"
+`)
+	if _, err := m.NPMInstall(context.Background(), filepath.Join(m.Root(), "lsp", "typescript"),
+		"typescript-language-server@6.0.1", "typescript@5.9.3"); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := os.ReadFile(log)
+	if !strings.Contains(string(got), " typescript-language-server@6.0.1 typescript@5.9.3\n") {
+		t.Fatalf("both packages must reach one npm run:\n%s", got)
+	}
+}

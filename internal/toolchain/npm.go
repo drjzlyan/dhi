@@ -18,7 +18,10 @@ const npmTimeout = 5 * time.Minute
 // directory and no sudo is involved. It returns the directory that holds the
 // package's executables. A missing hermetic npm is a named refusal pointing at
 // the bootstrap, never a fallback to a host npm (ADR-0011).
-func (m *Manager) NPMInstall(ctx context.Context, prefix, pkg string) (binDir string, err error) {
+//
+// More packages install together with pkg in one npm run (a language server
+// and the compiler it needs, F-050).
+func (m *Manager) NPMInstall(ctx context.Context, prefix, pkg string, more ...string) (binDir string, err error) {
 	npm := filepath.Join(m.ShimDir(), "npm")
 	if _, serr := os.Stat(npm); serr != nil {
 		return "", fmt.Errorf("toolchain: npm is not installed in the DHI toolchain (finish the first-run install, then retry)")
@@ -36,10 +39,11 @@ func (m *Manager) NPMInstall(ctx context.Context, prefix, pkg string) (binDir st
 
 	ctx, cancel := context.WithTimeout(ctx, npmTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, npm,
+	args := append([]string{
 		"install", "--prefix", prefix,
 		"--no-audit", "--no-fund", "--no-update-notifier", "--loglevel=error",
-		pkg)
+		pkg}, more...)
+	cmd := exec.CommandContext(ctx, npm, args...)
 	cmd.Dir = prefix
 	cmd.Env = append(m.Env(nil),
 		"npm_config_cache="+cache,

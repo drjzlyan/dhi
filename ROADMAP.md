@@ -962,7 +962,7 @@ Seven phases, one commit each; push deferred to the end.
 - [x] F-049 Review screen: employees *suggest*, you decide; ONE GitHub review
       goes out as the human (no employee names); syntax + word-level diff
       highlights; expandable context; FILES | DIFF | CONVERSATION at ≥120 cols
-- [ ] Multi-language editor (LSP + formatters, confirm-gated provisioning)
+- [x] Multi-language editor (F-050, ADR-0029): language table, TS/Python/Bash/YAML/JSON servers via confirm-gated `:lsp install`, capability-gated + external formatters; also fixed LSP never starting in the app and a blank-line crash
 - [ ] Tutorial steps that watch real actions
 - [ ] Persona authoring in Settings + live reload of conventions/personas
 - [ ] Configurable worktree root + darwin/amd64, linux/arm64 pins

@@ -19,6 +19,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/runtime"
 	"github.com/drjzlyan/dhi/internal/fuzzy"
 	"github.com/drjzlyan/dhi/internal/gitcore"
+	"github.com/drjzlyan/dhi/internal/langserver"
 	"github.com/drjzlyan/dhi/internal/lsp"
 	"github.com/drjzlyan/dhi/internal/preview"
 	"github.com/drjzlyan/dhi/internal/search"
@@ -70,6 +71,21 @@ func WithTermEnv(env []string) Option {
 // WithLSP enables language-server integration (nil disables).
 func WithLSP(mgr *lsp.Manager) Option {
 	return func(m *Model) { m.lspMgr = mgr }
+}
+
+// WithLanguages sets the language table (built-ins plus the user's
+// [editor.languages] overrides). Without it the built-ins apply.
+func WithLanguages(r langserver.Registry) Option {
+	return func(m *Model) { m.langs = r }
+}
+
+// LSPInstaller installs npm packages into prefix with DHI's own npm. The
+// editor calls it only after the user confirmed the exact packages.
+type LSPInstaller func(ctx context.Context, prefix string, packages []string) error
+
+// WithLSPInstaller enables `:lsp install` (nil leaves it explaining why not).
+func WithLSPInstaller(fn LSPInstaller) Option {
+	return func(m *Model) { m.lspInstaller = fn }
 }
 
 // WithChat attaches the agent runtime powering the crew sidebar (F-007).
@@ -172,22 +188,25 @@ type Model struct {
 	searchErr     string
 	lastQueryText string
 
-	lspMgr      *lsp.Manager
-	lspNoted    bool              // one-time visible LSP-unavailable notice (F-011)
-	lspSent     map[string]string // vpath → last pushed text
-	lspDiags    map[string][]lsp.Diagnostic
-	compOpen    bool
-	compItems   []lsp.CompletionItem
-	compCur     int
-	lspPendingG bool // `g` prefix armed (F-009 sequences)
-	hoverOpen   bool
-	hoverLines  []string
-	renameMode  bool
-	renameOld   string
-	renameInput []rune
-	actionOpen  bool
-	actionItems []lsp.CodeAction
-	actionCur   int
+	lspMgr        *lsp.Manager
+	lspNoted      map[string]bool // languages already told about a missing server (F-011, F-050)
+	langs         langserver.Registry
+	lspInstaller  LSPInstaller
+	lspInstalling map[string]bool   // language id → install in flight
+	lspSent       map[string]string // vpath → last pushed text
+	lspDiags      map[string][]lsp.Diagnostic
+	compOpen      bool
+	compItems     []lsp.CompletionItem
+	compCur       int
+	lspPendingG   bool // `g` prefix armed (F-009 sequences)
+	hoverOpen     bool
+	hoverLines    []string
+	renameMode    bool
+	renameOld     string
+	renameInput   []rune
+	actionOpen    bool
+	actionItems   []lsp.CodeAction
+	actionCur     int
 
 	chat *chatModel
 }
@@ -203,15 +222,18 @@ var _ surfaces.Surface = (*Model)(nil)
 // New builds the editor for a workspace; nil ws renders the empty state.
 func New(version string, ws *workspace.Workspace, opts ...Option) *Model {
 	m := &Model{
-		version:   version,
-		ws:        ws,
-		termMsgs:  make(chan teaMsg, 128),
-		memEvents: make(chan struct{}, 8),
-		lspSent:   map[string]string{},
-		lspDiags:  map[string][]lsp.Diagnostic{},
+		version:       version,
+		ws:            ws,
+		termMsgs:      make(chan teaMsg, 128),
+		memEvents:     make(chan struct{}, 8),
+		lspSent:       map[string]string{},
+		lspNoted:      map[string]bool{},
+		lspInstalling: map[string]bool{},
+		lspDiags:      map[string][]lsp.Diagnostic{},
 
 		formatOnSave: true,
 	}
+	m.langs, _ = langserver.Resolve(nil) // built-ins until WithLanguages says otherwise
 	if ws != nil {
 		for _, mem := range ws.Members() {
 			m.members = append(m.members, memberRef{name: mem.Name, path: mem.Path})
@@ -489,6 +511,8 @@ type teaMsg struct {
 	edit      *lsp.WorkspaceEdit
 	actions   []lsp.CodeAction
 	note      string
+	lang      string // lspMsgInstalled: the language id
+	installOK bool   // lspMsgInstalled: the install succeeded
 	testRep   *testrun.Report
 	dbgStart  *dbgStarted
 }
@@ -502,6 +526,7 @@ const (
 	lspMsgEdit
 	lspMsgAction
 	lspMsgNote
+	lspMsgInstalled // a confirmed `:lsp install` finished (note carries the outcome)
 	testMsgDone
 	dbgMsgStarted
 	dbgMsgUpdate
@@ -548,7 +573,7 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 			m.ingestTermChunk(msg.tab, msg.chunk)
 		case termMsgClosed:
 			m.termExited(msg.tab)
-		case lspMsgDiag, lspMsgComp, lspMsgHover, lspMsgEdit, lspMsgAction, lspMsgNote:
+		case lspMsgDiag, lspMsgComp, lspMsgHover, lspMsgEdit, lspMsgAction, lspMsgNote, lspMsgInstalled:
 			m.applyLSPUpdate(msg)
 		case testMsgDone:
 			m.applyTestDone(msg.testRep)
@@ -1087,6 +1112,10 @@ func (m *Model) navView() string {
 // ExecEx implements textbuf.CommandDelegate: buffer-list ex commands.
 func (m *Model) ExecEx(requester *textbuf.Editor, cmd string) bool {
 	if msg, ok := m.pairCommand(cmd); ok {
+		requester.SetMessage(msg)
+		return true
+	}
+	if msg, ok := m.lspCommand(cmd); ok {
 		requester.SetMessage(msg)
 		return true
 	}

@@ -6,32 +6,51 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/drjzlyan/dhi/internal/langserver"
 	"github.com/drjzlyan/dhi/internal/lsp"
 	"github.com/drjzlyan/dhi/internal/textbuf"
 	"github.com/drjzlyan/dhi/internal/tui/theme"
 )
 
-// lspOpenDoc announces a document when a Go server is available.
-// Failure is surfaced once (ADR-0011): the command line names the fix
-// instead of LSP being silently off.
+// lspOpenDoc announces a document to its language's server. A missing
+// server is surfaced once per language (ADR-0011): the command line names
+// the fix instead of LSP being silently off. Nothing is ever installed here —
+// provisioning is the confirm-gated `:lsp install`.
 func (m *Model) lspOpenDoc(path, text string) {
-	if m.lspMgr == nil || !strings.HasSuffix(path, ".go") {
+	if m.lspMgr == nil {
 		return
 	}
-	c, err := m.lspMgr.Ensure(context.Background(), "go", "gopls", m.currentGitRootOrFirst())
+	l, langID, ok := m.langs.For(path)
+	if !ok {
+		return
+	}
+	c, err := m.lspMgr.EnsureServer(context.Background(), l.ID, l.Server, l.Args, m.currentGitRootOrFirst())
 	if err != nil {
-		if !m.lspNoted {
-			m.lspNoted = true
-			m.active().SetMessage(fmt.Sprintf(
-				"no language server available — hover/rename/code actions off (%s) — run bootstrap", err.Error()))
+		if !m.lspNoted[l.ID] {
+			m.lspNoted[l.ID] = true
+			if e := m.active(); e != nil {
+				e.SetMessage(missingServerNote(l, err))
+			}
 		}
 		return
 	}
 	if len(c.Events) == 0 && m.termMsgs != nil {
 		go m.pumpLSPEvents(c)
 	}
-	_ = c.DidOpen(path, text, "go")
+	_ = c.DidOpen(path, text, langID)
 	m.lspSent[m.openVPath] = text
+}
+
+// missingServerNote tells the user exactly how to get the server.
+func missingServerNote(l langserver.Language, err error) string {
+	head := "no " + l.Name + " language server"
+	switch l.Install.Method {
+	case langserver.MethodNPM:
+		return head + " — :lsp install " + l.ID + " adds it (asks first)"
+	case langserver.MethodToolchain:
+		return head + " — " + l.Install.Note
+	}
+	return head + " (" + err.Error() + ") — check editor.languages." + l.ID + ".command"
 }
 
 // pumpLSPEvents forwards diagnostics and server edits into the message channel.
@@ -49,14 +68,18 @@ func (m *Model) pumpLSPEvents(c *lsp.Client) {
 // lspSync pushes full-text changes after buffer keystrokes.
 func (m *Model) lspSync() {
 	e := m.active()
-	if e == nil || m.lspMgr == nil || !strings.HasSuffix(e.Path(), ".go") {
+	if e == nil || m.lspMgr == nil {
+		return
+	}
+	l, _, ok := m.langs.For(e.Path())
+	if !ok {
 		return
 	}
 	text := e.Buffer().Text()
 	if prev, ok := m.lspSent[m.openVPath]; ok && prev == text {
 		return
 	}
-	if c := m.lspMgr.ClientFor("go"); c != nil {
+	if c := m.lspMgr.ClientFor(l.ID); c != nil {
 		_ = c.DidChange(e.Path(), text)
 		m.lspSent[m.openVPath] = text
 	}
@@ -65,10 +88,10 @@ func (m *Model) lspSync() {
 // requestCompletion fires an async completion request at the cursor.
 func (m *Model) requestCompletion() {
 	e := m.active()
-	if e == nil || m.lspMgr == nil || !strings.HasSuffix(e.Path(), ".go") {
+	if e == nil {
 		return
 	}
-	c := m.lspMgr.ClientFor("go")
+	c := m.lspClient()
 	if c == nil {
 		return
 	}
@@ -119,17 +142,26 @@ func (m *Model) applyLSPUpdate(msg teaMsg) {
 		if e := m.active(); e != nil {
 			e.SetMessage(msg.note)
 		}
+	case lspMsgInstalled:
+		delete(m.lspInstalling, msg.lang)
+		if e := m.active(); e != nil {
+			e.SetMessage(msg.note)
+			if msg.installOK {
+				// A freshly installed server starts for the file already open.
+				m.lspOpenDoc(e.Path(), e.Buffer().Text())
+			}
+		}
 	}
 }
 
-// lspClient returns the Go server client, or nil when LSP is off for
-// the active buffer (no manager, non-Go file, server not installed).
+// lspClient returns the active buffer's language-server client, or nil when
+// LSP is off for it (no manager, no language, server not running).
 func (m *Model) lspClient() *lsp.Client {
 	e := m.active()
-	if e == nil || m.lspMgr == nil || !strings.HasSuffix(e.Path(), ".go") {
+	if e == nil {
 		return nil
 	}
-	return m.lspMgr.ClientFor("go")
+	return m.clientFor(e.Path())
 }
 
 // wordAt extracts the identifier around col on line, returning the

@@ -18,7 +18,14 @@ real delve v1.27.2 — see F-039; `dlv` provisioning still open.)
   of `review.GH` (3 of them) must implement `SubmitReview`/`Login`.
 - NOT verified: a real review POST (needs a scratch PR and the user's OK;
   `DHI_SMOKE_GH` live test is read-only); no tmux walk of the 3-column screen.
-- Next: the four deferred items in ROADMAP M26, in order. Push NOT done.
+- F-050 DONE (ADR-0029): `internal/langserver` table; `lsp.Manager.EnsureServer/Locate/
+  SetManagedRoot`; `Client.CanFormat`; editor `:lsp [status|install <lang> [yes]]`;
+  `[editor.languages.<id>]` settings; doctor reports bad overrides. FOUND+FIXED: the LSP
+  manager was never started in the real app; `withCursor` panicked on blank lines.
+  Verified in tmux with real gopls and a real confirm-gated TypeScript install.
+- Gotcha: pins in `langserver.Builtin()` are verified by `DHI_SMOKE_LSP=1 go test ./internal/langserver`.
+- Next: tutorial steps that watch real actions → persona authoring/live reload →
+  worktree root + platforms (ROADMAP M26). Push NOT done.
 
 ### Session 49 (M25 P1: layered conventions, F-042)
 
