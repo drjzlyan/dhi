@@ -621,7 +621,7 @@ func activityText(a tasks.Activity) string {
 		}
 		return who + "commented"
 	}
-	return strings.TrimSpace(who + string(a.Kind))
+	return strings.TrimSpace(who + a.Kind)
 }
 
 func firstLineOf(s string) string {
