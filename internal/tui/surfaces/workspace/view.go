@@ -64,6 +64,21 @@ func (m *Model) dockedView() string {
 	return lipgloss.JoinHorizontal(lipgloss.Top, rail, pane)
 }
 
+// Click implements the clickHandler seam (F-041): a click on a rail row
+// jumps to that section. Only the docked layout has a rail.
+func (m *Model) Click(x, y int) bool {
+	if m.width < kit.WDock || x >= railWidth {
+		return false
+	}
+	rail := &kit.Rail{Rows: make([]kit.RailRow, secCount), Active: int(m.sec), Width: railWidth, Height: m.height, Foot: "x"}
+	if i, ok := rail.RowAt(y); ok {
+		m.replay = nil
+		m.sec = sectionID(i)
+		return true
+	}
+	return false
+}
+
 // railView renders the always-visible section switcher with live item
 // counts, padded to the full body height — the kit.Rail primitive with
 // the inset background shade (F-025). Status messages live on the
@@ -190,7 +205,7 @@ func (m *Model) sectionHints() []string {
 			return []string{"esc close", "j/k scroll", "g/G top/bottom"}
 		}
 		return []string{"h/l lane", "n new", "s/S status", "m move",
-			"/ filter", "L/P/E/D meta", "space mark", "M bulk"}
+			"/ filter", "L/P/E/D meta", "N comment", "space mark", "M bulk"}
 	case secChannels:
 		return m.pane.hints()
 	case secRepos:
@@ -306,6 +321,7 @@ func (m *Model) boardBody(w, h int) string {
 			root = m.ws.Root
 		}
 		detailLines = boardDetailLines(tk, wrapW, root)
+		detailLines = append(detailLines, boardNotesLines(tk, wrapW, detailW > 0, m.now)...)
 		if m.working != nil && tk.ThreadChannel != "" && m.working(tk.ThreadChannel, tk.ThreadID) {
 			detailLines = append(detailLines, theme.SuccessText().Render("● agent working — live in the thread"))
 		}
@@ -498,6 +514,81 @@ func boardDetailLines(tk tasks.Task, wrapW int, wsRoot string) []string {
 	return lines
 }
 
+// boardNotesLines renders the card's comments and activity trail
+// (F-037). The wide side pane has the height for the newest comments and
+// activity; below it a single summary line keeps the lanes tall.
+func boardNotesLines(tk tasks.Task, wrapW int, wide bool, now func() time.Time) []string {
+	if now == nil {
+		now = time.Now
+	}
+	if len(tk.Comments) == 0 && len(tk.Activity) == 0 {
+		return nil
+	}
+	if !wide {
+		if n := len(tk.Comments); n > 0 {
+			c := tk.Comments[n-1]
+			return []string{theme.TextDim().Render(fmt.Sprintf("%d comments · %s: %s", n, c.Author, firstLineOf(c.Text)))}
+		}
+		return nil
+	}
+	w := clampInt(wrapW, 20, 72)
+	var out []string
+	if n := len(tk.Comments); n > 0 {
+		out = append(out, "", theme.TextDim().Render(fmt.Sprintf("COMMENTS (%d)", n)))
+		from := n - 3
+		if from < 0 {
+			from = 0
+		}
+		for _, c := range tk.Comments[from:] {
+			out = append(out, theme.AccentText().Render(c.Author)+" "+theme.Hint().Render(timeAgo(c.At, now())))
+			for _, l := range kit.WrapWords(c.Text, w-2) {
+				out = append(out, "  "+l)
+			}
+		}
+	}
+	if n := len(tk.Activity); n > 0 {
+		out = append(out, "", theme.TextDim().Render("ACTIVITY"))
+		from := n - 5
+		if from < 0 {
+			from = 0
+		}
+		for _, a := range tk.Activity[from:] {
+			out = append(out, theme.Hint().Render(activityText(a)+" · "+timeAgo(a.At, now())))
+		}
+	}
+	return out
+}
+
+// activityText is one human line for an activity entry.
+func activityText(a tasks.Activity) string {
+	who := a.Actor
+	if who == "" {
+		who = "someone"
+	}
+	switch a.Kind {
+	case tasks.ActStatus:
+		return who + " moved " + a.From + " → " + a.To
+	case tasks.ActAssignee:
+		return who + " assigned " + orDash(a.From) + " → " + orDash(a.To)
+	case tasks.ActPriority:
+		return who + " priority " + orDash(a.From) + " → " + orDash(a.To)
+	case tasks.ActLabels:
+		return who + " labels " + orDash(a.To)
+	case tasks.ActRun:
+		return who + " run " + a.To
+	case tasks.ActComment:
+		return who + " commented"
+	}
+	return who + " " + a.Kind
+}
+
+func firstLineOf(s string) string {
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		s = s[:i]
+	}
+	return s
+}
+
 // boardWorkflowLine shows a task's active feature workflow and where it
 // stands (F-031): the next enforced step, or "complete".
 func boardWorkflowLine(tk tasks.Task, wsRoot string) (string, bool) {
@@ -570,7 +661,10 @@ func (m *Model) inboxBody(w, h int) string {
 		out = append(out, theme.DangerText().Render("unread unavailable: "+m.unreadErr))
 	}
 	if len(items) == 0 {
-		out = append(out, theme.TextDim().Render("(nothing needs attention)"))
+		out = append(out, kit.EmptyState{
+			Glyph: theme.GlyphCheck, Title: "You're all caught up",
+			Why: "Approvals, mentions, failed runs and tasks waiting for review land here, newest-urgent first.",
+		}.Lines(w, h-len(out))...)
 		return strings.Join(out, "\n")
 	}
 
@@ -626,24 +720,38 @@ func (m *Model) inboxGroups(w int) [][]string {
 			glyph = theme.GlyphBullet
 		}
 		row := it.Row
-		// Relative stamps ride rows whose At is a real instant;
-		// approvals sort on a synthetic epoch and stay unstamped
-		// (ADR-0011: never guess).
-		if it.Kind != inbox.Approval && !it.At.IsZero() {
-			row += "  " + theme.Hint().Render("· "+timeAgo(it.At, m.now()))
-		}
 		if snoozed {
 			row += "  — snoozed until " + snoozeUntilText(it.Snoozed, m.now())
 		}
+		// Relative stamps ride rows whose At is a real instant;
+		// approvals sort on a synthetic epoch and stay unstamped
+		// (ADR-0011: never guess). The stamp sits right-aligned on the
+		// row's FIRST line (F-041) — wrapping it in with the text parked
+		// "now" alone on its own line at narrow widths.
+		stamp, stampW := "", 0
+		if it.Kind != inbox.Approval && !it.At.IsZero() {
+			plain := timeAgo(it.At, m.now())
+			stamp, stampW = theme.Hint().Render(plain), len([]rune(plain))
+		}
+		wrapW := lines
+		if stampW > 0 {
+			wrapW = maxInt(lines-stampW-2, 16)
+		}
 		var g []string
 		first := true
-		for _, ln := range kit.WrapWords(row, lines) {
+		for _, ln := range kit.WrapWords(row, wrapW) {
 			if first {
 				prefix := strings.Repeat(" ", gl)
 				if i == c {
 					prefix = theme.GlyphCursor + " "
 				}
-				g = append(g, prefix+style.Render(glyph+" "+ln))
+				text := glyph + " " + ln
+				line := prefix + style.Render(text)
+				if stampW > 0 {
+					pad := (lines + 2) - len([]rune(text)) - stampW
+					line += strings.Repeat(" ", maxInt(pad, 2)) + stamp
+				}
+				g = append(g, line)
 				first = false
 			} else {
 				g = append(g, strings.Repeat(" ", gl+1)+style.Render(ln))
@@ -981,6 +1089,8 @@ func modalTitle(k modalKind) string {
 		return "commit changes"
 	case fTaskPush:
 		return "push branch"
+	case fTaskComment:
+		return "comment on task"
 	case fTaskMove:
 		return "move task"
 	}

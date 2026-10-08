@@ -144,6 +144,26 @@ func (m *Model) StatusContext() (string, string) {
 	return zone, ""
 }
 
+// Commands implements surfaces.CommandProvider (F-041): a jump to every
+// section.
+func (m *Model) Commands() []surfaces.Command {
+	var out []surfaces.Command
+	for s := sectionID(0); s < secCount; s++ {
+		s := s
+		out = append(out, surfaces.Command{Group: "Ideator", Title: "Go to " + s.label(), Hint: "[ ]", Run: func() tea.Cmd {
+			m.sec = s
+			return nil
+		}})
+	}
+	return out
+}
+
+// CapturesInput implements surfaces.InputCapturer: forms and the
+// transcript composer take plain keys as text.
+func (m *Model) CapturesInput() bool {
+	return m.form.kind != fNone || (m.sec == secTranscript && m.chatFocus)
+}
+
 // Init starts the store change pump.
 func (m *Model) Init() tea.Cmd {
 	if m.ws == nil || m.store == nil {

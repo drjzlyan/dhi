@@ -258,6 +258,37 @@ func (m *Model) StatusContext() (string, string) {
 	return zone, ""
 }
 
+// Commands implements surfaces.CommandProvider (F-041): a jump to every
+// section, plus the board's most-used actions while it is showing.
+func (m *Model) Commands() []surfaces.Command {
+	var out []surfaces.Command
+	for s := sectionID(0); s < secCount; s++ {
+		s := s
+		out = append(out, surfaces.Command{Group: "Workspace", Title: "Go to " + s.label(), Hint: "[ ]", Run: func() tea.Cmd {
+			m.replay = nil
+			m.sec = s
+			return nil
+		}})
+	}
+	if m.sec == secBoard && m.taskStore != nil {
+		out = append(out,
+			surfaces.Command{Group: "Board", Title: "New task", Hint: "n", Run: func() tea.Cmd { m.HandleKey("n"); return nil }},
+			surfaces.Command{Group: "Board", Title: "Filter cards", Hint: "/", Run: func() tea.Cmd { m.HandleKey("/"); return nil }},
+		)
+	}
+	return out
+}
+
+// CapturesInput implements surfaces.InputCapturer: a modal form, the
+// board filter and the channel composer/search/reaction picker all take
+// plain keys (digits, "?", tab) as text.
+func (m *Model) CapturesInput() bool {
+	if m.form.kind != fNone || m.boardFilterEdit {
+		return true
+	}
+	return m.sec == secChannels && m.pane != nil && m.pane.capturing()
+}
+
 // Init starts the change pumps for re-render triggers and arms the
 // autopilot chain — launch catch-up rides the due-now tick (F-015),
 // execution stays on this surface (ADR-0014 §5).
@@ -478,6 +509,7 @@ const (
 	fTaskDue
 	fTaskBulkMove
 	fSnooze
+	fTaskComment
 )
 
 // field is the canonical kit field: in-value cursor (left/right),
@@ -805,7 +837,8 @@ func (m *Model) boardKey(key string) bool {
 		// works and the board swallows navigation keys above.
 		if key == "n" && m.taskStore != nil {
 			m.form = openForm(fTaskNew, "",
-				textField("slug  ", ""), textField("title ", ""))
+				textField("slug  ", ""), textField("title ", ""),
+				textField("assign ", ""), textField("team  ", ""))
 			return true
 		}
 		return false
@@ -817,7 +850,8 @@ func (m *Model) boardKey(key string) bool {
 			return false
 		}
 		m.form = openForm(fTaskNew, "",
-			textField("slug  ", ""), textField("title ", ""))
+			textField("slug  ", ""), textField("title ", ""),
+			textField("assign ", ""), textField("team  ", ""))
 	case "s":
 		if m.taskStore != nil {
 			slug := tk.Slug
@@ -887,6 +921,11 @@ func (m *Model) boardKey(key string) bool {
 		m.flashErr("card has no recorded runs")
 	case "o":
 		return m.boardOpenOnFloor(tk)
+	case "N":
+		if m.taskStore == nil {
+			return false
+		}
+		m.form = openForm(fTaskComment, tk.Slug, textField("comment ", ""))
 	case "L":
 		m.form = openForm(fTaskLabels, tk.Slug, textField("labels ", strings.Join(tk.Labels, ",")))
 	case "P":
@@ -1169,11 +1208,16 @@ func (m *Model) submitForm() {
 			f.err = "task store unavailable"
 			return
 		}
-		if err := m.taskStore.Create(slug, title, "", ""); err != nil {
+		assignee := strings.TrimSpace(f.values()[2])
+		team := strings.TrimSpace(f.values()[3])
+		if err := m.taskStore.Create(slug, title, assignee, team); err != nil {
 			f.err = err.Error()
 			return
 		}
 		m.closeForm()
+		if tk, ok := m.taskStore.Get(slug); ok {
+			m.handoff(tk)
+		}
 	case fTaskAssign:
 		if m.taskStore == nil {
 			f.err = "task store unavailable"
@@ -1184,6 +1228,9 @@ func (m *Model) submitForm() {
 			return
 		}
 		m.closeForm()
+		if tk, ok := m.taskStore.Get(f.orig); ok {
+			m.handoff(tk)
+		}
 	case fTaskAttach:
 		if m.taskStore == nil {
 			f.err = "task store unavailable"
@@ -1339,6 +1386,16 @@ func (m *Model) submitForm() {
 			return
 		}
 		m.closeForm()
+	case fTaskComment:
+		if m.taskStore == nil {
+			f.err = "task store unavailable"
+			return
+		}
+		if err := m.taskStore.AddComment(f.orig, bus.Human, f.values()[0]); err != nil {
+			f.err = err.Error()
+			return
+		}
+		m.closeForm()
 	case fTaskDue:
 		if m.taskStore == nil {
 			f.err = "task store unavailable"
@@ -1430,4 +1487,34 @@ func isCloneSource(loc string) bool {
 		}
 	}
 	return false
+}
+
+// handoff posts a task's brief as the human and dispatches it (F-036),
+// so creating or assigning a card actually starts the work: the bound
+// thread when the card has one, else the team channel (a bare post
+// reaches the team lead), else the assignee's DM. A card with neither
+// an assignee nor a team has no one to hand to and posts nothing.
+func (m *Model) handoff(tk tasks.Task) {
+	if m.bus == nil || tk.Assignee == bus.Human || (tk.Assignee == "" && tk.Team == "") {
+		return
+	}
+	ch, thread := "dm:"+tk.Assignee, int64(0)
+	switch {
+	case tk.ThreadChannel != "":
+		ch, thread = tk.ThreadChannel, tk.ThreadID
+	case tk.Team != "":
+		ch = "#" + tk.Team
+	}
+	text := fmt.Sprintf("task %s: %s", tk.Slug, tk.Title)
+	if tk.Assignee != "" && !strings.HasPrefix(ch, "dm:") {
+		text = "@" + tk.Assignee + " " + text
+	}
+	posted, err := m.bus.Post(bus.Message{Channel: ch, Thread: thread, Author: bus.Human, Text: text})
+	if err != nil {
+		m.flashErr("hand-off failed: " + err.Error())
+		return
+	}
+	if m.rt != nil {
+		m.rt.Handle(context.Background(), posted)
+	}
 }

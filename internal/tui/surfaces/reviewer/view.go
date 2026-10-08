@@ -55,6 +55,20 @@ func (m *Model) dockedView() string {
 	return lipgloss.JoinHorizontal(lipgloss.Top, rail, pane)
 }
 
+// Click implements the clickHandler seam (F-041): a click on a rail row
+// jumps to that section. Only the docked layout has a rail.
+func (m *Model) Click(x, y int) bool {
+	if m.width < kit.WDock || x >= railWidth {
+		return false
+	}
+	rail := &kit.Rail{Rows: make([]kit.RailRow, secCount), Active: int(m.sec), Width: railWidth, Height: m.height, Foot: "x"}
+	if i, ok := rail.RowAt(y); ok {
+		m.sec = sectionID(i)
+		return true
+	}
+	return false
+}
+
 func (m *Model) railView(h int) string {
 	counts := m.sectionCounts()
 	rows := make([]kit.RailRow, 0, secCount)
@@ -241,7 +255,11 @@ func (m *Model) reviewsBody(w, h int) string {
 			fmt.Sprintf("%d malformed card(s) skipped", len(warns))))
 	}
 	if len(rows) == 0 {
-		out = append(out, theme.TextDim().Render("(none — press n to start one)"))
+		out = append(out, kit.EmptyState{
+			Title:  "No reviews yet",
+			Why:    "A review is a diff of a branch, worktree or pull request with threaded comments you and your agents can resolve.",
+			Action: "press n to start one",
+		}.Lines(w, h-len(out))...)
 		return strings.Join(out, "\n")
 	}
 

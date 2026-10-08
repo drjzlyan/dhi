@@ -1,8 +1,8 @@
 ▌ INBOX                  3╭─ › inbox ────────────────────────────────────────────────────────────────────────╮
   BOARD                  2│  ◆ approve scout: write .dhi/tasks/x/y.md                                        │
-  CHANNELS               1│  ✗ run failed fix-login (alice) — timeout after 10.0m · now                      │
-  REPOS                  2│  ✓ in review ship-docs — scout, 1 runs · cost partial · now                      │
-                          │ ▌ • #general scout: "@you needs a decision on the plan" · now — snoozed until    │
+  CHANNELS               1│  ✗ run failed fix-login (alice) — timeout after 10.0m                       now  │
+  REPOS                  2│  ✓ in review ship-docs — scout, 1 runs · cost partial                       now  │
+                          │ ▌ • #general scout: "@you needs a decision on the plan" — snoozed until      now │
                           │   09:15                                                                          │
                           │                                                                                  │
                           │                                                                                  │

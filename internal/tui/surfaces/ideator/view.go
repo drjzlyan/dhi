@@ -53,6 +53,20 @@ func (m *Model) dockedView() string {
 	return lipgloss.JoinHorizontal(lipgloss.Top, rail, pane)
 }
 
+// Click implements the clickHandler seam (F-041): a click on a rail row
+// jumps to that section. Only the docked layout has a rail.
+func (m *Model) Click(x, y int) bool {
+	if m.width < kit.WDock || x >= railWidth {
+		return false
+	}
+	rail := &kit.Rail{Rows: make([]kit.RailRow, secCount), Active: int(m.sec), Width: railWidth, Height: m.height, Foot: "x"}
+	if i, ok := rail.RowAt(y); ok {
+		m.sec = sectionID(i)
+		return true
+	}
+	return false
+}
+
 func (m *Model) railView(h int) string {
 	counts := m.sectionCounts()
 	rows := make([]kit.RailRow, 0, secCount)
@@ -200,7 +214,11 @@ func (m *Model) sessionsBody(w int) string {
 	c := m.cursors[secSessions]
 	clampCursor(&c, len(rows))
 	if len(rows) == 0 {
-		out = append(out, theme.TextDim().Render("(none — press n to start one)"))
+		out = append(out, kit.EmptyState{
+			Title:  "No sessions yet",
+			Why:    "A session is a round-table: invite agents, pass the floor, and shape ideas on a shared canvas.",
+			Action: "press n to start one",
+		}.Lines(w, 0)...)
 	}
 	for i, row := range rows {
 		active := i == c
@@ -303,10 +321,7 @@ func (m *Model) participantsBody(w int) string {
 		}
 		out = append(out, line)
 	}
-	out = append(out, "")
-	out = append(out, theme.Hint().Render(
-		"f grant the floor · m set moderator · a invite · x remove"))
-	return strings.Join(out, "\n")
+	return strings.Join(out, "\n") // the key hints live on the bottom bar only (F-025)
 }
 
 func moderatorName(sess ideation.Session) string {

@@ -139,6 +139,12 @@ func (p *chatPane) channelName() string {
 // the one place channel navigation hints render. Keys track state: the
 // composer owns focus while typing, an open thread narrows to reply
 // navigation, otherwise the full channel keymap applies.
+// capturing reports whether plain keys are text for the pane: the
+// composer, the message search, or the reaction picker ("?" is a token).
+func (p *chatPane) capturing() bool {
+	return p.focus || p.searching || p.reactPick
+}
+
 func (p *chatPane) hints() []string {
 	if p.focus {
 		return []string{"enter send", "esc blur"}

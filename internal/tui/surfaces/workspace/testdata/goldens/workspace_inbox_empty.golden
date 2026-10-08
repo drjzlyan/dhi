@@ -1,5 +1,5 @@
 ▌ INBOX                   ╭─ › inbox ────────────────────────────────────────────────────────────────────────╮
-  BOARD                   │ (nothing needs attention)                                                        │
+  BOARD                   │                                                                                  │
   CHANNELS                │                                                                                  │
   REPOS                  2│                                                                                  │
                           │                                                                                  │
@@ -7,11 +7,11 @@
                           │                                                                                  │
                           │                                                                                  │
                           │                                                                                  │
+                          │                                        ✓                                         │
+                          │                               You're all caught up                               │
                           │                                                                                  │
-                          │                                                                                  │
-                          │                                                                                  │
-                          │                                                                                  │
-                          │                                                                                  │
+                          │              Approvals, mentions, failed runs and tasks waiting for              │
+                          │                      review land here, newest-urgent first.                      │
                           │                                                                                  │
                           │                                                                                  │
                           │                                                                                  │

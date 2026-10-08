@@ -328,6 +328,18 @@ func runTUI() {
 		settingsview.New(cfg, savePath, settingsDeps),
 	)
 	appRef = a
+	if agentRT != nil {
+		a.SetActivity(agentRT.ActiveCount)
+	}
+
+	// First run in this workspace: show the welcome card once (F-041).
+	// The marker is per-workspace runtime state, gitignored like unread.json.
+	if ws != nil {
+		marker := filepath.Join(ws.Root, ".dhi", "welcome.seen")
+		if _, statErr := os.Stat(marker); os.IsNotExist(statErr) {
+			a.SetWelcome(func() { _ = os.WriteFile(marker, []byte("seen\n"), 0o644) })
+		}
+	}
 
 	// Gates, in strict order: a block never releases; missing pieces
 	// offer the confirmation-gated install; first-run (no lockfile)
@@ -571,6 +583,30 @@ func (b *editorBridge) Apply(ctx context.Context, path, old, new string, all boo
 	}
 	_, err = b.request(ctx, app.EditorRequest{Op: "apply", Path: abs[0], Old: old, New: new, All: all})
 	return err
+}
+
+// Context and Propose make the bridge a dhitools.PairAPI (F-038).
+func (b *editorBridge) Context(ctx context.Context) (string, error) {
+	r, err := b.request(ctx, app.EditorRequest{Op: "context"})
+	return r.Text, err
+}
+
+func (b *editorBridge) Propose(ctx context.Context, path, old, new, note, from string) error {
+	abs, err := b.resolve([]string{path})
+	if err != nil {
+		return err
+	}
+	if len(abs) == 0 {
+		return fmt.Errorf("path is required")
+	}
+	_, err = b.request(ctx, app.EditorRequest{Op: "propose", Path: abs[0], Old: old, New: new, Note: note, From: from})
+	return err
+}
+
+// DebugState makes the bridge a dhitools.DebugAPI (F-039).
+func (b *editorBridge) DebugState(ctx context.Context) (string, error) {
+	r, err := b.request(ctx, app.EditorRequest{Op: "debug"})
+	return r.Text, err
 }
 
 func (b *editorBridge) LSP(ctx context.Context, op, path string, line, col int, arg string) (string, error) {

@@ -98,7 +98,7 @@ func TestInboxEmptyGolden(t *testing.T) {
 		t.Fatalf("empty attention = %d", n)
 	}
 	out := ansi.Strip(m.View())
-	if !strings.Contains(out, "nothing needs attention") {
+	if !strings.Contains(out, "all caught up") {
 		t.Fatalf("empty state missing:\n%s", out)
 	}
 	golden.Snapshot(t, "workspace_inbox_empty", m.View())

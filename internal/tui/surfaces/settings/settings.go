@@ -181,6 +181,24 @@ func (m *Model) StatusContext() (string, string) {
 	return zone, ""
 }
 
+// Commands implements surfaces.CommandProvider (F-041): a jump to every
+// section.
+func (m *Model) Commands() []surfaces.Command {
+	var out []surfaces.Command
+	for s := sectionID(0); s < secCount; s++ {
+		s := s
+		out = append(out, surfaces.Command{Group: "Settings", Title: "Go to " + s.label(), Hint: "[ ]", Run: func() tea.Cmd {
+			m.sec = s
+			return nil
+		}})
+	}
+	return out
+}
+
+// CapturesInput implements surfaces.InputCapturer: forms and dialogs
+// take plain keys as text.
+func (m *Model) CapturesInput() bool { return m.form.open || m.dlg != nil }
+
 // Init starts the async-outcome listener (imports/clones can take
 // seconds; the form stays busy until the event lands).
 func (m *Model) Init() tea.Cmd { return m.listen() }
@@ -330,7 +348,7 @@ var scopeEffects = []string{"auto", "ask", "deny"}
 func (m *Model) cycle(dir int) {
 	switch m.cursor {
 	case rowTheme:
-		names := []string{theme.Dark().Name, theme.Light().Name}
+		names := settings.ThemeNames()
 		for i, n := range names {
 			if n == m.cfg.Theme {
 				m.cfg.Theme = names[(i+dir+len(names))%len(names)]
@@ -894,6 +912,21 @@ func isURL(s string) bool {
 		if strings.HasPrefix(s, p) {
 			return true
 		}
+	}
+	return false
+}
+
+// Click implements the clickHandler seam (F-041): a click on a rail row
+// jumps to that section (dialogs and forms swallow clicks).
+func (m *Model) Click(x, y int) bool {
+	const railW = 16
+	if m.dlg != nil || m.form.open || x >= railW {
+		return false
+	}
+	rail := &kit.Rail{Rows: m.railRows(), Active: int(m.sec), Width: railW, Height: maxInt(m.height, 10)}
+	if i, ok := rail.RowAt(y); ok {
+		m.sec = sectionID(i)
+		return true
 	}
 	return false
 }
