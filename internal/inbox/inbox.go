@@ -190,15 +190,21 @@ func reviewItem(tk tasks.Task) Item {
 	if who == "" {
 		who = "unassigned"
 	}
-	rl := tasks.RollupRuns(tk.Runs)
+	row := fmt.Sprintf("in review  %s — %s", tk.Slug, who)
+	if rl := tasks.RollupRuns(tk.Runs); rl.Runs > 0 { // no "0 runs · n/a" noise
+		noun := "runs"
+		if rl.Runs == 1 {
+			noun = "run"
+		}
+		row += fmt.Sprintf(", %d %s · %s", rl.Runs, noun, rl.CostText())
+	}
 	return Item{
 		Kind:      InReview,
 		TaskSlug:  tk.Slug,
 		TaskTitle: tk.Title,
 		Assignee:  tk.Assignee,
 		At:        tk.UpdatedAt,
-		Row: fmt.Sprintf("in review  %s — %s, %d runs · %s",
-			tk.Slug, who, rl.Runs, rl.CostText()),
+		Row:       row,
 	}
 }
 

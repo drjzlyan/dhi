@@ -36,6 +36,11 @@ Goal: **no manual QA**. The UI is a test target like any other layer.
 - No raw `lipgloss.Color(` outside the theme package (`theme_test.go`).
 - Statusline/list/panel rows pad to exact widths.
 - Global keys always win over surface keys; unknown keys forward to surface.
+- **Layout contract** (`internal/tui/layoutcontract`, F-054): every surface,
+  every rail section, the editor's states (buffer, git panel, split) and the
+  composed shell with each overlay render exactly the rows they were given
+  and never a cell wider, from 40x10 to 200x50, with no raw tabs. They also
+  survive the first frame before any resize and 1x1 panes.
 
 ## Commands
 
@@ -47,3 +52,11 @@ make verify                        # fmt + vet + build + race tests
 
 CI runs the non-regenerating set on every push/PR (see
 `.github/workflows/ci.yml`).
+
+## Screenshots
+
+`scripts/screenshots.sh` regenerates `docs/assets/*.png` for the README. It
+seeds a demo workspace (`go run ./scripts/demo <dir>`), drives the real TUI
+in a private tmux server at fixed sizes, and renders the captures with
+freeze. Needs tmux, python3 and an installed DHI toolchain.
+

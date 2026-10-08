@@ -987,7 +987,8 @@ GitHub setup, a real release, and every deferral either done or specced.
 - [x] P4 Editor deferrals: regex project replace with preview (F-056), split panes (F-057); found +
       fixed: workspace search never streamed results in the real app (surfaces.CmdSource), search
       results hidden while a file was open, a query starting with `-` parsed as an rg flag
-- [ ] P5 README with screenshots, community files, GitHub settings
+- [x] P5 README with screenshots (`scripts/screenshots.sh` + `scripts/demo`), CONTRIBUTING / CODE_OF_CONDUCT /
+      SECURITY, issue + PR templates, Dependabot, CODEOWNERS, release workflows never steal Latest
 - [ ] P6 Releases (v0.1.0-rc1 → v0.1.0), new platform pins, live verifications
 - [ ] P7 Big deferrals, spec first
 

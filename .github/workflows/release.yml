@@ -72,8 +72,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          flags=""
-          case "$GITHUB_REF_NAME" in *-*) flags="--prerelease" ;; esac
+          # A tag with a suffix (v0.1.0-rc1) is a prerelease; a plain version
+          # becomes Latest, which the README's install one-liner follows.
+          flags="--latest"
+          case "$GITHUB_REF_NAME" in *-*) flags="--prerelease --latest=false" ;; esac
           gh release create "$GITHUB_REF_NAME" dist/* --title "$GITHUB_REF_NAME" --generate-notes $flags
 
       - name: Publish to the Homebrew tap

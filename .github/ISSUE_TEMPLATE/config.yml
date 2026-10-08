@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and ideas
+    url: https://github.com/drjzlyan/dhi/discussions
+    about: Ask a question or share an idea in Discussions.
+  - name: Report a security issue
+    url: https://github.com/drjzlyan/dhi/security/advisories/new
+    about: Please report vulnerabilities privately, not as an issue.

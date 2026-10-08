@@ -1,0 +1,42 @@
+name: Bug report
+description: Something does not work as it should.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for reporting! Please check the open issues first in case it is already known.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what you saw instead.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. cd into a workspace and run dhi
+        2. press …
+        3. …
+    validations:
+      required: true
+  - type: textarea
+    id: version
+    attributes:
+      label: dhi version and dhi doctor
+      description: Paste the output of `dhi version` and `dhi doctor`.
+      render: text
+    validations:
+      required: true
+  - type: input
+    id: terminal
+    attributes:
+      label: Terminal, size and OS
+      placeholder: e.g. iTerm2 3.5, 120x35, macOS 15 (arm64)
+  - type: textarea
+    id: screen
+    attributes:
+      label: Screenshot or extra context
+      description: A screenshot helps a lot with layout problems.

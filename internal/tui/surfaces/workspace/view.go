@@ -589,34 +589,39 @@ func boardNotesLines(tk tasks.Task, wrapW int, wide bool, now func() time.Time) 
 
 // activityText is one human line for an activity entry.
 func activityText(a tasks.Activity) string {
-	who := a.Actor
-	if who == "" {
-		who = "someone"
+	// An unknown actor reads as a plain event ("set priority high"), not
+	// as "someone ...".
+	who := ""
+	if a.Actor != "" {
+		who = a.Actor + " "
 	}
 	switch a.Kind {
 	case tasks.ActStatus:
-		return who + " moved " + a.From + " → " + a.To
+		return who + "moved " + a.From + " → " + a.To
 	case tasks.ActAssignee:
 		switch {
 		case a.From == "":
-			return who + " assigned it to " + a.To
+			return who + "assigned it to " + a.To
 		case a.To == "":
-			return who + " unassigned " + a.From
+			return who + "unassigned " + a.From
 		}
-		return who + " reassigned " + a.From + " → " + a.To
+		return who + "reassigned " + a.From + " → " + a.To
 	case tasks.ActPriority:
 		if a.From == "" || a.From == "-" {
-			return who + " set priority " + orDash(a.To)
+			return who + "set priority " + orDash(a.To)
 		}
-		return who + " changed priority " + a.From + " → " + orDash(a.To)
+		return who + "changed priority " + a.From + " → " + orDash(a.To)
 	case tasks.ActLabels:
-		return who + " labels " + orDash(a.To)
+		return who + "labels " + orDash(a.To)
 	case tasks.ActRun:
-		return who + " run " + a.To
+		return who + "run " + a.To
 	case tasks.ActComment:
-		return who + " commented"
+		if who == "" {
+			return "comment added"
+		}
+		return who + "commented"
 	}
-	return who + " " + a.Kind
+	return strings.TrimSpace(who + string(a.Kind))
 }
 
 func firstLineOf(s string) string {

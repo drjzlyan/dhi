@@ -86,7 +86,7 @@ func TestBuildRunFailedAndInReviewRows(t *testing.T) {
 	if items[1].Kind != InReview {
 		t.Fatalf("second kind = %v", items[1].Kind)
 	}
-	if items[1].Row != "in review  ship-docs — scout, 1 runs · cost partial" {
+	if items[1].Row != "in review  ship-docs — scout, 1 run · cost partial" {
 		t.Fatalf("in_review row = %q", items[1].Row)
 	}
 }

@@ -82,6 +82,9 @@ jobs:
         with:
           tag_name: hermetic-git-v${{ needs.resolve.outputs.version }}
           name: hermetic git v${{ needs.resolve.outputs.version }}
+          # Never "Latest": releases/latest must stay the DHI release the
+          # installer one-liner downloads from.
+          make_latest: false
           body: |
             Transport-free git built from the upstream kernel.org source
             tarball (GPG-verified in CI against the pinned release key).
