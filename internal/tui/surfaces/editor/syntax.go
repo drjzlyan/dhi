@@ -1,28 +1,14 @@
 package editor
 
-// syntax.go colorizes editor buffers (F-026 P4, ADR-0015). Chroma
-// tokenizes the whole buffer so multi-line lexer state survives; token
-// kinds map to theme tokens — never chroma style hexes — so dark/light
-// re-theming keeps its single source of truth. No chroma import exists
-// outside this file. The whole-buffer lex caches on the buffer's
-// mutation sequence (textbuf.Buffer.Seq); cursor/selection lines render
-// plain so the rune-level inversion stays exact.
+// syntax.go colorizes editor buffers (F-026 P4, ADR-0015) through the
+// shared tokenizer in internal/tui/syntax. The whole-buffer lex caches
+// on the buffer's mutation sequence (textbuf.Buffer.Seq); cursor/selection
+// lines render plain so the rune-level inversion stays exact.
 
 import (
-	"strings"
-
-	"charm.land/lipgloss/v2"
-
-	"github.com/alecthomas/chroma/v2"
-	"github.com/alecthomas/chroma/v2/lexers"
-
 	"github.com/drjzlyan/dhi/internal/textbuf"
-	"github.com/drjzlyan/dhi/internal/tui/theme"
+	"github.com/drjzlyan/dhi/internal/tui/syntax"
 )
-
-// syntaxMaxSize gates colorization for pathological files (the lex is
-// whole-buffer, per edit — a few hundred KB stays responsive).
-const syntaxMaxSize = 256 << 10
 
 // highlighter caches one buffer's styled lines between edits.
 type highlighter struct {
@@ -52,69 +38,11 @@ func (h *highlighter) refresh(b *textbuf.Buffer) {
 	}
 	h.done = true
 	h.seq = b.Seq()
-	text := b.Text()
 	h.lines = make([]string, b.LineCount())
-	lexer := lexers.Match(h.path)
-	if lexer == nil || len(text) == 0 || len(text) > syntaxMaxSize {
-		return
-	}
-	iter, err := lexer.Tokenise(nil, text)
-	if err != nil {
-		return
-	}
-	cur := 0
-	var sb strings.Builder
-	flush := func() {
-		if cur < len(h.lines) {
-			h.lines[cur] = sb.String()
-		}
-		cur++
-		sb.Reset()
-	}
-	for tok := iter(); tok != chroma.EOF; tok = iter() {
-		val := tok.Value
-		st, styled := tokenStyle(tok.Type)
-		for {
-			if i := strings.IndexByte(val, '\n'); i >= 0 {
-				sb.WriteString(styledPart(st, styled, val[:i]))
-				flush()
-				val = val[i+1:]
-				continue
-			}
-			sb.WriteString(styledPart(st, styled, val))
+	for i, l := range syntax.Lex(h.path, b.Text()) {
+		if i >= len(h.lines) {
 			break
 		}
+		h.lines[i] = syntax.Render(l)
 	}
-	flush()
-}
-
-// styledPart renders one token fragment in its mapped color or plain.
-func styledPart(st lipgloss.Style, styled bool, text string) string {
-	if !styled {
-		return text
-	}
-	return st.Render(text)
-}
-
-// tokenStyle maps chroma token kinds onto the DHI token set (ADR-0015:
-// kinds, never chroma style hexes — the theme owns every color). ok
-// false renders the fragment plain.
-func tokenStyle(t chroma.TokenType) (lipgloss.Style, bool) {
-	switch {
-	case t.InCategory(chroma.Comment):
-		return theme.TextMuted(), true
-	case t.InCategory(chroma.Keyword):
-		return theme.Accent2Bold(), true
-	case t.InCategory(chroma.String):
-		return theme.SuccessText(), true
-	case t.InCategory(chroma.LiteralNumber):
-		return theme.InfoText(), true
-	case t.InCategory(chroma.NameFunction), t.InCategory(chroma.NameClass):
-		return theme.AccentText(), true
-	case t.InCategory(chroma.NameTag), t.InCategory(chroma.NameAttribute):
-		return theme.Accent2Bold(), true
-	case t.InCategory(chroma.Operator), t.InCategory(chroma.Punctuation):
-		return theme.AccentDimText(), true
-	}
-	return lipgloss.Style{}, false
 }

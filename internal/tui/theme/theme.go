@@ -21,15 +21,19 @@ type Tokens struct {
 	Name string
 
 	// Palette.
-	Bg            color.Color // application background
-	BgPanel       color.Color // panel/card background
-	BgElevated    color.Color // overlays, modals, popups
-	BgInset       color.Color // sub-columns inside a panel: board columns, chat rail, thread pane
-	BgChrome      color.Color // bottom chrome: hint bars, keymap rows (F-025)
-	BgSelection   color.Color // selected rows, highlighted ranges
-	BgOverlay     color.Color // modal backdrop dim layer
-	BgAdd         color.Color // diff added-line wash (F-026 P6)
-	BgDel         color.Color // diff deleted-line wash (F-026 P6)
+	Bg          color.Color // application background
+	BgPanel     color.Color // panel/card background
+	BgElevated  color.Color // overlays, modals, popups
+	BgInset     color.Color // sub-columns inside a panel: board columns, chat rail, thread pane
+	BgChrome    color.Color // bottom chrome: hint bars, keymap rows (F-025)
+	BgSelection color.Color // selected rows, highlighted ranges
+	BgOverlay   color.Color // modal backdrop dim layer
+	BgAdd       color.Color // diff added-line wash (F-026 P6)
+	BgDel       color.Color // diff deleted-line wash (F-026 P6)
+	// BgAddStrong / BgDelStrong mark the words that changed inside a
+	// changed line (F-049): a deeper step of the same hue as the wash.
+	BgAddStrong   color.Color
+	BgDelStrong   color.Color
 	Border        color.Color // unfocused borders, dividers
 	BorderFocused color.Color // focused element borders
 	Text          color.Color // primary text
@@ -65,6 +69,8 @@ func Dark() Tokens {
 		BgOverlay:   c("#05070B"),
 		BgAdd:       c("#0D2B22"),
 		BgDel:       c("#2B1215"),
+		BgAddStrong: c("#124131"),
+		BgDelStrong: c("#4E2225"),
 		Border:      c("#232C3B"),
 		// BorderFocused is a brighter cyan than Accent so a focused
 		// edge reads as attention, not brand emphasis (F-026 P1).
@@ -101,7 +107,9 @@ func Light() Tokens {
 		BgSelection:   c("#DCEFEF"),
 		BgOverlay:     c("#E3DED0"),
 		BgAdd:         c("#D9EBDD"),
-		BgDel:         c("#F3D9D9"),
+		BgDel:         c("#F6DFDF"),
+		BgAddStrong:   c("#AED3C1"),
+		BgDelStrong:   c("#ECBEBE"),
 		Border:        c("#D8D2C4"),
 		BorderFocused: c("#0891B2"),
 		Text:          c("#1F2937"),
@@ -138,6 +146,8 @@ func HighContrast() Tokens {
 		BgOverlay:     c("#000000"),
 		BgAdd:         c("#003D1F"),
 		BgDel:         c("#4A0F0F"),
+		BgAddStrong:   c("#09502B"),
+		BgDelStrong:   c("#652121"),
 		Border:        c("#7C8AA0"),
 		BorderFocused: c("#00E5FF"),
 		Text:          c("#FFFFFF"),
@@ -236,6 +246,10 @@ func OverlayDim() lipgloss.Style {
 func AddWash() lipgloss.Style {
 	return lipgloss.NewStyle().Background(Current.BgAdd).Foreground(Current.Success)
 }
+
+// AddWashStrong / DelWashStrong paint the changed words inside a wash.
+func AddWashStrong() lipgloss.Style { return lipgloss.NewStyle().Background(Current.BgAddStrong) }
+func DelWashStrong() lipgloss.Style { return lipgloss.NewStyle().Background(Current.BgDelStrong) }
 
 func DelWash() lipgloss.Style {
 	return lipgloss.NewStyle().Background(Current.BgDel).Foreground(Current.Danger)

@@ -77,3 +77,42 @@ func TestHighContrastBordersAreVisible(t *testing.T) {
 		t.Errorf("focused border %.2f:1 on Bg, want >= 7", got)
 	}
 }
+
+// Code is read ON the diff washes: every colour the syntax highlighter uses
+// must stay legible there (F-049). The stronger changed-word wash carries
+// plain Text only (the renderer drops syntax colour inside it).
+func TestCodeIsLegibleOnTheDiffWashes(t *testing.T) {
+	for _, tk := range []Tokens{Dark(), Light(), HighContrast()} {
+		light := map[string]color.Color{"BgAdd": tk.BgAdd, "BgDel": tk.BgDel}
+		texts := map[string]struct {
+			c   color.Color
+			min float64
+		}{
+			"Text": {tk.Text, 4.5}, "TextMuted(comment)": {tk.TextMuted, 4.4},
+			"Accent": {tk.Accent, 4.5}, "Accent2(keyword)": {tk.Accent2, 4.5},
+			"Info(number)": {tk.Info, 4.5}, "Success(string)": {tk.Success, 4.5},
+			"AccentDim(operator)": {tk.AccentDim, 3.0},
+		}
+		for wn, bg := range light {
+			for tn, tx := range texts {
+				if got := ratio(tx.c, bg); got < tx.min {
+					t.Errorf("%s: %s on %s = %.2f:1, want >= %.1f", tk.Name, tn, wn, got, tx.min)
+				}
+			}
+		}
+		for wn, bg := range map[string]color.Color{"BgAddStrong": tk.BgAddStrong, "BgDelStrong": tk.BgDelStrong} {
+			if got := ratio(tk.Text, bg); got < 7 {
+				t.Errorf("%s: Text on %s = %.2f:1, want >= 7", tk.Name, wn, got)
+			}
+		}
+	}
+}
+
+// The strong wash must read as a deeper step of its wash, not a new hue.
+func TestStrongWashIsDeeperThanItsWash(t *testing.T) {
+	for _, tk := range []Tokens{Dark(), Light(), HighContrast()} {
+		if ratio(tk.BgAddStrong, tk.BgAdd) < 1.25 || ratio(tk.BgDelStrong, tk.BgDel) < 1.25 {
+			t.Errorf("%s: the changed-word wash is not distinguishable from the line wash", tk.Name)
+		}
+	}
+}

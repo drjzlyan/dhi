@@ -68,6 +68,7 @@ func (m *Model) diffRows() []viewRow {
 	}
 	m.rowsFP = fp
 	m.rowsCache = rows
+	m.styleCache = nil // styles follow the same content fingerprint
 	return rows
 }
 
@@ -141,9 +142,9 @@ func (m *Model) diffSegmentsView(w int, viewed map[string]bool) ([]diffSeg, []in
 		case vrBinary:
 			lines = []string{theme.TextDim().Render(crop(row.text, bodyW))}
 		case vrLineUnified:
-			lines = m.unifiedLine(row.left, bodyW)
+			lines = m.unifiedLine(row.left, row.file, bodyW)
 		case vrSideBySide:
-			lines = m.sideBySide(row.left, row.right, sideW)
+			lines = m.sideBySide(row.left, row.right, row.file, sideW)
 		}
 		heights[i] = len(lines)
 		for _, l := range lines {
@@ -237,22 +238,19 @@ func (m *Model) fileHeaderText(fi int, viewed map[string]bool) string {
 // unifiedLine renders one diff line as [old][new]│text segments;
 // added/removed rows carry a background wash and context stays plain
 // (readable, F-026 P6).
-func (m *Model) unifiedLine(l *gitdiff.Line, w int) []string {
+func (m *Model) unifiedLine(l *gitdiff.Line, fi, w int) []string {
 	oldNo, newNo := "", ""
 	sign := " "
 	var style func() lipgloss.Style
-	var wash lipgloss.Style
 	switch l.Kind {
 	case gitdiff.Add:
 		newNo = itoaW(l.NewNo)
 		sign = "+"
 		style = theme.SuccessText
-		wash = theme.AddWash()
 	case gitdiff.Del:
 		oldNo = itoaW(l.OldNo)
 		sign = "-"
 		style = theme.DangerText
-		wash = theme.DelWash()
 	default:
 		oldNo = itoaW(l.OldNo)
 		newNo = itoaW(l.NewNo)
@@ -261,20 +259,25 @@ func (m *Model) unifiedLine(l *gitdiff.Line, w int) []string {
 	gutter := theme.TextDim().Render(padLeft(oldNo, numCols)+" "+
 		padLeft(newNo, numCols)+" ") +
 		style().Render(sign+" ")
-	seg := wrapSegments(gutter, l.Text, style(), w-numCols*2-3)
-	if l.Kind != gitdiff.Ctx {
-		// Full-row wash (the GitHub look): pad inside the style so the
-		// background fills the row; per-line render keeps widths exact.
-		for i := range seg {
-			seg[i] = wash.Render(padTo(seg[i], w))
+	// Syntax colour on the line's wash, with the words that changed picked
+	// out on a stronger one (F-049); rows come back padded to the width.
+	gw := lipgloss.Width(gutter)
+	body := codeRows(l.Text, m.styleOf(fi, l), l.Kind, w-gw)
+	seg := make([]string, len(body))
+	blank := strings.Repeat(" ", gw)
+	for i, b := range body {
+		g := blank
+		if i == 0 {
+			g = gutter
 		}
+		seg[i] = g + b
 	}
 	return seg
 }
 
 // sideBySide renders old|new halves; missing sides become blank cells.
 // Every cell is padded to exactly `half` columns so the divider aligns.
-func (m *Model) sideBySide(left, right *gitdiff.Line, half int) []string {
+func (m *Model) sideBySide(left, right *gitdiff.Line, fi, half int) []string {
 	textW := half - numCols - 1 // room for number+sign before text
 	if textW < 4 {
 		textW = 4
@@ -298,20 +301,19 @@ func (m *Model) sideBySide(left, right *gitdiff.Line, half int) []string {
 			no = l.OldNo
 		}
 		gut := padLeft(itoaW(no), numCols) + sign
-		body := wrapPlain(l.Text, textW)
+		gutCell := style().Render(gut)
+		blankCell := style().Render(strings.Repeat(" ", numCols+1))
+		if l.Kind != gitdiff.Ctx {
+			gutCell, blankCell = wash.Render(gut), wash.Render(strings.Repeat(" ", numCols+1))
+		}
+		body := codeRows(l.Text, m.styleOf(fi, l), l.Kind, textW)
 		out := make([]string, 0, len(body))
 		for i, b := range body {
-			row := ""
 			if i == 0 {
-				row = style().Render(gut) + style().Render(padTo(b, textW))
+				out = append(out, gutCell+b)
 			} else {
-				row = style().Render(strings.Repeat(" ", numCols+1)) +
-					style().Render(padTo(b, textW))
+				out = append(out, blankCell+b)
 			}
-			if l.Kind != gitdiff.Ctx {
-				row = wash.Render(padTo(row, half-1))
-			}
-			out = append(out, row)
 		}
 		return out
 	}

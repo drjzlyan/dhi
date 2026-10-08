@@ -91,6 +91,9 @@ type Model struct {
 
 	composer *composer    // active comment input (nil = none)
 	draft    *submitDraft // the review being composed in the submit dialog
+	// styleCache holds per-file syntax and changed-word styles (F-049);
+	// it is dropped whenever the diff rows are rebuilt.
+	styleCache map[int]map[gitdiff.MarkKey]lineStyle
 
 	rowsCache  []viewRow // diffRows flatten cache (F-026 P6)
 	rowsFP     string
