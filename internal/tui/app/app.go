@@ -96,6 +96,11 @@ func New(version string, regs ...surfaces.Surface) *App {
 		pairs[i] = [2]string{s.Meta().ID, s.Meta().Title}
 	}
 	a.tabs = kit.NewTabs(pairs...)
+	for _, s := range regs {
+		if em, ok := s.(surfaces.Emitter); ok {
+			em.SetEmitter(func(event string) { a.observe("do:" + event) })
+		}
+	}
 	return a
 }
 

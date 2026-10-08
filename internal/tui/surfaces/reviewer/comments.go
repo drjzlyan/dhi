@@ -1,6 +1,7 @@
 package reviewer
 
 import (
+	"github.com/drjzlyan/dhi/internal/tutorial"
 	"strconv"
 	"strings"
 
@@ -127,6 +128,9 @@ func (m *Model) composerKey(key string) bool {
 			m.opErr = err.Error()
 		}
 		m.composer = nil
+		if err == nil {
+			m.act(tutorial.EvReviewComment)
+		}
 		// @mentions dispatch the comment to the agent crew in-thread.
 		if err == nil && m.mentionedAgent(txt) != "" {
 			m.invite(threadID, txt)

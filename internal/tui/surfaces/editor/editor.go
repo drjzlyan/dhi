@@ -28,6 +28,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/tui/kit"
 	"github.com/drjzlyan/dhi/internal/tui/surfaces"
 	"github.com/drjzlyan/dhi/internal/tui/theme"
+	"github.com/drjzlyan/dhi/internal/tutorial"
 	"github.com/drjzlyan/dhi/internal/unread"
 	"github.com/drjzlyan/dhi/internal/workspace"
 )
@@ -71,6 +72,17 @@ func WithTermEnv(env []string) Option {
 // WithLSP enables language-server integration (nil disables).
 func WithLSP(mgr *lsp.Manager) Option {
 	return func(m *Model) { m.lspMgr = mgr }
+}
+
+// SetEmitter implements surfaces.Emitter: the shell learns what the user
+// just did so a running tutorial can advance on the real action.
+func (m *Model) SetEmitter(fn func(event string)) { m.emit = fn }
+
+// act reports one user action (UI goroutine only).
+func (m *Model) act(event string) {
+	if m.emit != nil {
+		m.emit(event)
+	}
 }
 
 // WithLanguages sets the language table (built-ins plus the user's
@@ -189,7 +201,8 @@ type Model struct {
 	lastQueryText string
 
 	lspMgr        *lsp.Manager
-	lspNoted      map[string]bool // languages already told about a missing server (F-011, F-050)
+	emit          func(event string) // tutorial action events (F-051); nil = not wired
+	lspNoted      map[string]bool    // languages already told about a missing server (F-011, F-050)
 	langs         langserver.Registry
 	lspInstaller  LSPInstaller
 	lspInstalling map[string]bool   // language id → install in flight
@@ -760,7 +773,11 @@ func (m *Model) HandleKey(key string) bool {
 			return true
 		}
 
+		was := e.Mode()
 		e.Key(key)
+		if e.Mode() == textbuf.ModeInsert && was != textbuf.ModeInsert {
+			m.act(tutorial.EvEditorInsert)
+		}
 		if e.CloseRequested() && e.TakeClose() {
 			m.closeBuffer()
 		}
@@ -931,6 +948,7 @@ func (m *Model) open(n *node) {
 		if t.path == n.path {
 			m.activeTab = i // reuse existing buffer
 			m.bufFocus = true
+			m.act(tutorial.EvEditorOpen)
 			return
 		}
 	}
@@ -942,11 +960,13 @@ func (m *Model) open(n *node) {
 	}
 	be.SetCommandDelegate(m)
 	be.SetBeforeSave(m.beforeSave)
+	be.SetAfterSave(func(*textbuf.Editor) { m.act(tutorial.EvEditorSave) })
 	tab := &bufTab{ed: be, vp: m.openVPath, path: n.path, syntax: &highlighter{path: n.path}}
 	m.bufs = append(m.bufs, tab)
 	m.activeTab = len(m.bufs) - 1
 	m.bufFocus = true
 	m.lspOpenDoc(n.path, be.Buffer().Text())
+	m.act(tutorial.EvEditorOpen)
 }
 
 // closeBuffer drops the active tab; focus lands on the neighbor or the
@@ -1113,6 +1133,9 @@ func (m *Model) navView() string {
 func (m *Model) ExecEx(requester *textbuf.Editor, cmd string) bool {
 	if msg, ok := m.pairCommand(cmd); ok {
 		requester.SetMessage(msg)
+		if strings.HasPrefix(cmd, "pair") && m.pairAgent != "" {
+			m.act(tutorial.EvEditorPair)
+		}
 		return true
 	}
 	if msg, ok := m.lspCommand(cmd); ok {
@@ -1121,6 +1144,9 @@ func (m *Model) ExecEx(requester *textbuf.Editor, cmd string) bool {
 	}
 	if msg, ok := m.fmtCommand(cmd); ok {
 		requester.SetMessage(msg)
+		if strings.TrimSpace(cmd) == "fmt" && msg == "formatted" {
+			m.act(tutorial.EvEditorFormat)
+		}
 		return true
 	}
 	if msg, ok := m.symCommand(cmd); ok {
@@ -1129,10 +1155,16 @@ func (m *Model) ExecEx(requester *textbuf.Editor, cmd string) bool {
 	}
 	if msg, ok := m.testCommand(cmd); ok {
 		requester.SetMessage(msg)
+		if msg == "running tests…" {
+			m.act(tutorial.EvEditorTest)
+		}
 		return true
 	}
 	if msg, ok := m.debugCommand(cmd); ok {
 		requester.SetMessage(msg)
+		if strings.HasPrefix(cmd, "break") && strings.HasPrefix(msg, "breakpoint set") {
+			m.act(tutorial.EvEditorBreak)
+		}
 		return true
 	}
 	switch {

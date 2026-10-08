@@ -1,0 +1,27 @@
+schema = 1
+name = "Review a change like a pull request"
+description = "Open a diff, comment on a line, and send one review as yourself."
+
+[[step]]
+title = "Open the Reviewer"
+body = "Press 4. Reviews list the branches, worktrees and pull requests you are looking at."
+await = "view:reviewer"
+
+[[step]]
+title = "Start a review"
+body = "Press n and pick a member and what to compare (a branch, a worktree or a pull request number). The diff opens with files, changes and the conversation."
+await = "do:review.opened"
+
+[[step]]
+title = "Comment on a line"
+body = "Move to a changed line and press c. Type your comment and press enter: it stays a private draft until you send the review."
+await = "do:review.comment"
+
+[[step]]
+title = "Employees suggest, you decide"
+body = "A on the files list asks an employee to review. Their findings arrive as suggestions: t opens the threads, y accepts one as your comment, e edits it first, x drops it."
+
+[[step]]
+title = "Send one review"
+body = "Press S, choose comment, approve or request changes, add a summary, and confirm. GitHub gets a single review from you; no employee names go out."
+await = "do:review.submitted"

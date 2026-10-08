@@ -12,6 +12,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/textbuf"
 	"github.com/drjzlyan/dhi/internal/tui/kit"
 	"github.com/drjzlyan/dhi/internal/tui/theme"
+	"github.com/drjzlyan/dhi/internal/tutorial"
 )
 
 // Debugging (F-039). Breakpoints are toggled per line (`:break`); `:debug`
@@ -207,6 +208,7 @@ func (m *Model) applyDebugStarted(s *dbgStarted) {
 	if e := m.active(); e != nil {
 		e.SetMessage("debugger started — running to the first breakpoint")
 	}
+	m.act(tutorial.EvEditorDebug)
 }
 
 // applyDebugUpdate reacts to a state change from the session.

@@ -7,6 +7,7 @@ package reviewer
 
 import (
 	"context"
+	"github.com/drjzlyan/dhi/internal/tutorial"
 	"strconv"
 	"strings"
 	"time"
@@ -65,6 +66,7 @@ const (
 
 // Model is the Reviewer surface.
 type Model struct {
+	emit    func(event string) // tutorial action events (F-051); nil = not wired
 	version string
 	ws      *workspace.Workspace
 	svc     *review.Service // nil = whole surface degrades visibly
@@ -312,6 +314,7 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 					msg += " — " + ev.url
 				}
 				m.closeFormWithFlash(msg)
+				m.act(tutorial.EvReviewSubmitted)
 			}
 		case evPRCreated:
 			m.busy = false
@@ -348,6 +351,17 @@ func (m *Model) reviews() []review.Review {
 	return m.svc.Store().List()
 }
 
+// SetEmitter implements surfaces.Emitter: the shell learns what the user
+// just did so a running tutorial can advance on the real action (F-051).
+func (m *Model) SetEmitter(fn func(event string)) { m.emit = fn }
+
+// act reports one user action (UI goroutine only).
+func (m *Model) act(event string) {
+	if m.emit != nil {
+		m.emit(event)
+	}
+}
+
 func (m *Model) openReview() (review.Review, bool) {
 	if m.openID == "" {
 		return review.Review{}, false
@@ -373,6 +387,7 @@ func (m *Model) SelectReview(id string) bool {
 // subscribes to its review channel so agent replies mirror live. PR-backed
 // reviews also pull remote GitHub comments in the background.
 func (m *Model) open(id string) {
+	m.act(tutorial.EvReviewOpened)
 	m.openID = id
 	m.fileCur = 0
 	m.cursor, m.scroll = 0, 0

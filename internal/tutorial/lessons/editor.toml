@@ -10,15 +10,24 @@ await = "view:editor"
 [[step]]
 title = "Open a file"
 body = "Move to a file in the list and press enter. Use / to find a file by name, s to search the whole workspace."
+await = "do:editor.open"
 
 [[step]]
-title = "Insert and save"
-body = "The editor is modal. i starts typing, esc returns to normal mode, :w saves, :q quits the buffer."
+title = "Start typing"
+body = "The editor is modal. Press i to start typing; esc returns to normal mode."
+await = "do:editor.insert"
+
+[[step]]
+title = "Save"
+body = "Press esc, then type :w and enter. :q quits the buffer."
+await = "do:editor.save"
 
 [[step]]
 title = "Pair with an employee"
-body = "Type :pair <name> to invite an employee to pair on this file. They propose edits; press ctrl+y to review and accept or reject each one."
+body = "Type :pair <name> to invite an employee to pair on this file. They propose edits; press ctrl+y to review and accept or reject each one. (No crew yet? Skip this step.)"
+await = "do:editor.pair"
 
 [[step]]
-title = "Test and format"
-body = ":test runs the Go tests (failures list jumps to the line). :fmt formats; saving formats automatically unless you :set nofmt."
+title = "Run the tests"
+body = "In a Go file, type :test. Failures list and jump to the line. :fmt formats; saving formats automatically unless you :set nofmt. (Not Go? Skip.)"
+await = "do:editor.test"

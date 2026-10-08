@@ -63,6 +63,15 @@ type InputCapturer interface {
 	CapturesInput() bool
 }
 
+// Emitter (F-051) is the action-report seam: the shell hands a surface a
+// function and the surface calls it, on the UI goroutine only, when the user
+// does something a tutorial can wait for ("editor.save", "task.created", …;
+// the names live in internal/tutorial). A surface without it simply reports
+// nothing. The function is never nil once SetEmitter ran.
+type Emitter interface {
+	SetEmitter(emit func(event string))
+}
+
 // Mouse seams (F-026 P2): narrow interface assertions satisfied by
 // individual surfaces — the Surface contract is untouched, and surfaces
 // without them degrade (no mouse behavior, never a crash). The shell

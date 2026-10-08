@@ -9,7 +9,8 @@ await = "view:workspace"
 
 [[step]]
 title = "The task board"
-body = "Press ] until you reach BOARD. Tasks move across backlog · active · in-review · done. Press n to create one and assign it to an employee."
+body = "Press ] until you reach BOARD. Tasks move across backlog · active · in-review · done. Press n, give it a name and assign it to an employee."
+await = "do:task.created"
 
 [[step]]
 title = "Channels"

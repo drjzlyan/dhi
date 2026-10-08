@@ -42,6 +42,7 @@ type Editor struct {
 	cntDigits   []rune
 	visualStart Pos
 	beforeSave  func(*Editor) string
+	afterSave   func(*Editor)
 	saveNote    string
 	lastSel     *Selected // selection captured when ":" left visual mode
 

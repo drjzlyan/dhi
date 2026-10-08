@@ -10,10 +10,12 @@ await = "view:editor"
 [[step]]
 title = "Set a breakpoint"
 body = "Put the cursor on a line of code and type :break."
+await = "do:editor.break"
 
 [[step]]
 title = "Start debugging"
 body = ":debug builds and runs the program under the debugger. It stops at your breakpoint and shows the frames and local variables."
+await = "do:editor.debug"
 
 [[step]]
 title = "Move through the code"

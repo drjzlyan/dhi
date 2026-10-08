@@ -24,8 +24,11 @@ real delve v1.27.2 — see F-039; `dlv` provisioning still open.)
   manager was never started in the real app; `withCursor` panicked on blank lines.
   Verified in tmux with real gopls and a real confirm-gated TypeScript install.
 - Gotcha: pins in `langserver.Builtin()` are verified by `DHI_SMOKE_LSP=1 go test ./internal/langserver`.
-- Next: tutorial steps that watch real actions → persona authoring/live reload →
-  worktree root + platforms (ROADMAP M26). Push NOT done.
+- F-051 DONE: `tutorial.Events` + `do:<event>` awaits; `surfaces.Emitter` wired in `app.New`;
+  editor/workspace/reviewer emit on success only; new `review` lesson. Add a surface event by
+  adding the constant + description in `internal/tutorial/events.go`, emitting it, and a lesson
+  that waits for it (a test fails on dead events).
+- Next: persona authoring/live reload → worktree root + platforms (ROADMAP M26). Push NOT done.
 
 ### Session 49 (M25 P1: layered conventions, F-042)
 

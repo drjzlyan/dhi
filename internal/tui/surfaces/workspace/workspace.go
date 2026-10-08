@@ -9,6 +9,7 @@ package workspace
 import (
 	"context"
 	"fmt"
+	"github.com/drjzlyan/dhi/internal/tutorial"
 	"os"
 	"path/filepath"
 	"sort"
@@ -68,6 +69,7 @@ func (s sectionID) label() string {
 
 // Model is the Workspace landing surface.
 type Model struct {
+	emit    func(event string) // tutorial action events (F-051); nil = not wired
 	version string
 	ws      *workspace.Workspace
 	width   int
@@ -185,6 +187,17 @@ type Deps struct {
 
 // New returns the workspace model. A nil ws renders the not-a-workspace
 // empty state (all keys inert).
+// SetEmitter implements surfaces.Emitter: the shell learns what the user
+// just did so a running tutorial can advance on the real action (F-051).
+func (m *Model) SetEmitter(fn func(event string)) { m.emit = fn }
+
+// act reports one user action (UI goroutine only).
+func (m *Model) act(event string) {
+	if m.emit != nil {
+		m.emit(event)
+	}
+}
+
 func New(version string, ws *workspace.Workspace, d Deps) *Model {
 	m := &Model{
 		version: version,
@@ -1215,6 +1228,7 @@ func (m *Model) submitForm() {
 			return
 		}
 		m.closeForm()
+		m.act(tutorial.EvTaskCreated)
 		if tk, ok := m.taskStore.Get(slug); ok {
 			m.handoff(tk)
 		}

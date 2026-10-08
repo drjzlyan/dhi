@@ -221,3 +221,47 @@ func TestLessonDoesNotAdvanceBehindAGate(t *testing.T) {
 		t.Fatalf("lesson advanced under a gate: step %d", step(a))
 	}
 }
+
+// emitterStub is a surface that reports actions, like the editor does.
+type emitterStub struct {
+	stubSurface
+	emit func(string)
+}
+
+func (e *emitterStub) SetEmitter(fn func(string)) { e.emit = fn }
+
+func TestLessonAdvancesOnARealActionASurfaceReports(t *testing.T) {
+	theme.MotionForTest(t, false)
+	theme.SwapForTest(t, theme.Dark())
+	em := &emitterStub{stubSurface: stubSurface{id: "editor", title: "Editor"}}
+	a := New("test", em)
+	a.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	if em.emit == nil {
+		t.Fatal("the shell did not hand the surface an emitter")
+	}
+	a.StartTutorial(tutorial.Tutorial{Slug: "x", Name: "X", Description: "d", Steps: []tutorial.Step{
+		{Title: "Save", Body: "Type :w.", Await: "do:editor.save"},
+		{Title: "Read", Body: "Done."},
+	}})
+	em.emit("editor.open") // a different action: no progress
+	if step(a) != 0 {
+		t.Fatalf("an unrelated action advanced the lesson to %d", step(a))
+	}
+	em.emit("editor.save")
+	if step(a) != 1 {
+		t.Fatalf("the awaited action left the lesson on step %d", step(a))
+	}
+	em.emit("editor.save") // already past it: must not skip the reading step
+	if step(a) != 1 {
+		t.Fatalf("a repeated action skipped ahead to %d", step(a))
+	}
+}
+
+func TestActionsWithoutALessonAreIgnored(t *testing.T) {
+	em := &emitterStub{stubSurface: stubSurface{id: "editor", title: "Editor"}}
+	a := New("test", em)
+	em.emit("editor.save") // no coach running: must not panic
+	if a.coach != nil {
+		t.Fatal("an action started a lesson")
+	}
+}

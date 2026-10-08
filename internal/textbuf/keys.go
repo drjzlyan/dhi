@@ -528,8 +528,17 @@ func (e *Editor) Save() error {
 	if e.beforeSave != nil {
 		e.saveNote = e.beforeSave(e)
 	}
-	return e.buf.Save(e.path)
+	if err := e.buf.Save(e.path); err != nil {
+		return err
+	}
+	if e.afterSave != nil {
+		e.afterSave(e)
+	}
+	return nil
 }
+
+// SetAfterSave registers a hook that runs after :w / :wq wrote the file.
+func (e *Editor) SetAfterSave(fn func(*Editor)) { e.afterSave = fn }
 
 // SetBeforeSave registers a hook that runs just before :w / :wq write the
 // file (format-on-save). The hook may edit the buffer; a non-empty return

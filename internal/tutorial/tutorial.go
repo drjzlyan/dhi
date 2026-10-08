@@ -22,7 +22,8 @@ type Step struct {
 	Title string
 	Body  string
 	// Await is the observable event that completes the step: "" (the user
-	// continues manually), "palette", "help" or "view:<surface id>".
+	// continues manually), "palette", "help", "view:<surface id>" or
+	// "do:<action event>" — a real action a surface reports (events.go).
 	Await string
 }
 
@@ -55,6 +56,9 @@ func ValidAwait(a string) bool {
 		return true
 	case strings.HasPrefix(a, "view:"):
 		return viewIDs[strings.TrimPrefix(a, "view:")]
+	case strings.HasPrefix(a, "do:"):
+		_, ok := Events[strings.TrimPrefix(a, "do:")]
+		return ok
 	}
 	return false
 }
@@ -97,7 +101,7 @@ func parse(slug string, data []byte) (Tutorial, error) {
 }
 
 // order is the teaching order; unlisted lessons follow alphabetically.
-var order = []string{"tour", "team", "editor", "debug"}
+var order = []string{"tour", "team", "editor", "review", "debug"}
 
 // All lists every lesson in teaching order.
 func All() []Tutorial {

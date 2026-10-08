@@ -22,7 +22,7 @@ func TestEveryLessonFileParses(t *testing.T) {
 			}
 		}
 	}
-	if strings.Join(slugs, ",") != "tour,team,editor,debug" {
+	if strings.Join(slugs, ",") != "tour,team,editor,review,debug" {
 		t.Fatalf("teaching order = %v", slugs)
 	}
 }
@@ -50,6 +50,7 @@ func TestAwaitGrammar(t *testing.T) {
 	for in, want := range map[string]bool{
 		"": true, "palette": true, "help": true, "view:editor": true, "view:settings": true,
 		"view:nope": false, "view:": false, "key:x": false, "Palette": false,
+		"do:editor.save": true, "do:task.created": true, "do:nope": false, "do:": false, "do": false,
 	} {
 		if ValidAwait(in) != want {
 			t.Errorf("ValidAwait(%q) = %v, want %v", in, !want, want)
@@ -72,6 +73,28 @@ func TestParseRejectsBrokenLessons(t *testing.T) {
 	} {
 		if _, err := parse("x", []byte(doc)); err == nil {
 			t.Errorf("%s accepted", name)
+		}
+	}
+}
+
+func TestEveryActionEventHasADescriptionAndLessonsOnlyWaitForRealOnes(t *testing.T) {
+	for _, name := range EventNames() {
+		if strings.TrimSpace(Events[name]) == "" {
+			t.Errorf("event %q has no description", name)
+		}
+	}
+	used := map[string]bool{}
+	for _, tu := range All() {
+		for _, s := range tu.Steps {
+			if ev, ok := strings.CutPrefix(s.Await, "do:"); ok {
+				used[ev] = true
+			}
+		}
+	}
+	for _, ev := range []string{EvEditorOpen, EvEditorInsert, EvEditorSave, EvEditorPair, EvEditorTest,
+		EvEditorBreak, EvEditorDebug, EvTaskCreated, EvReviewOpened, EvReviewComment, EvReviewSubmitted} {
+		if !used[ev] {
+			t.Errorf("no lesson waits for %q — a dead event", ev)
 		}
 	}
 }
