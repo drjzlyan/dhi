@@ -65,18 +65,23 @@ func (l Line) Classes() []Class {
 }
 
 func classOf(t chroma.TokenType) Class {
+	// Sub-category checks matter: chroma's InCategory matches the WHOLE
+	// category, so InCategory(String) is true for every literal (numbers
+	// included) and InCategory(NameFunction) for every identifier.
 	switch {
 	case t.InCategory(chroma.Comment):
 		return Comment
 	case t.InCategory(chroma.Keyword):
 		return Keyword
-	case t.InCategory(chroma.String):
+	case t.InSubCategory(chroma.LiteralString):
 		return String
-	case t.InCategory(chroma.LiteralNumber):
+	case t.InSubCategory(chroma.LiteralNumber):
 		return Number
-	case t.InCategory(chroma.NameFunction), t.InCategory(chroma.NameClass):
+	// Name tokens are flat constants (NameOther and NameAttribute share a
+	// sub-category), so these are exact matches.
+	case t == chroma.NameFunction || t == chroma.NameFunctionMagic || t == chroma.NameClass:
 		return Func
-	case t.InCategory(chroma.NameTag), t.InCategory(chroma.NameAttribute):
+	case t == chroma.NameTag || t == chroma.NameAttribute:
 		return Tag
 	case t.InCategory(chroma.Operator), t.InCategory(chroma.Punctuation):
 		return Operator

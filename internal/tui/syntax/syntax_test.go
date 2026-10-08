@@ -92,3 +92,28 @@ func TestPlainHasNoStyleAndStylesFollowTheTheme(t *testing.T) {
 		t.Fatal("class colours do not come from the theme")
 	}
 }
+
+// chroma's InCategory matches a whole category: numbers were classed as
+// strings and every identifier as a function name until the sub-category fix.
+func TestNumbersAreNotStringsAndVariablesAreNotFunctions(t *testing.T) {
+	lines := Lex("main.go", goSrc)
+	classOf := func(line int, word string) Class {
+		col := strings.Index(strings.Split(goSrc, "\n")[line], word)
+		return lines[line].Classes()[col]
+	}
+	if got := classOf(4, "42"); got != Number {
+		t.Errorf("42 = %v, want Number", got)
+	}
+	if got := classOf(4, "x"); got != Plain {
+		t.Errorf("variable x = %v, want Plain", got)
+	}
+	if got := classOf(5, "\"hi\""); got != String {
+		t.Errorf("\"hi\" = %v, want String", got)
+	}
+	if got := classOf(3, "main"); got != Func {
+		t.Errorf("func name = %v, want Func", got)
+	}
+	if got := classOf(4, ":="); got != Operator {
+		t.Errorf(":= = %v, want Operator", got)
+	}
+}
