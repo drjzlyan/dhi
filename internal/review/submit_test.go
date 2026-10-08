@@ -339,3 +339,30 @@ func TestAcceptEditAndDismissSuggestions(t *testing.T) {
 		t.Fatal("dismissing a human comment succeeded")
 	}
 }
+
+// Get returns a snapshot that the UI reads while a submit goroutine records
+// what was sent. A mutation must never reach into a snapshot already handed
+// out (it raced under -race when it did).
+func TestMutationsNeverChangeASnapshotAlreadyHandedOut(t *testing.T) {
+	_, st, _, r := submitFixture(t)
+	addHuman(t, st, r.ID, "main.go", 4, SideNew, "mine")
+	before, _ := st.Get(r.ID)
+	if !before.Threads[0].Comments[0].Pending {
+		t.Fatal("fixture comment should start pending")
+	}
+	if err := st.RecordSubmission(r.ID, "comment", "s", "", []SentRef{{Thread: before.Threads[0].ID, Index: 0}}); err != nil {
+		t.Fatal(err)
+	}
+	if c := before.Threads[0].Comments[0]; c.Posted || !c.Pending {
+		t.Fatalf("the earlier snapshot changed under its reader: %+v", c)
+	}
+	if after, _ := st.Get(r.ID); !after.Threads[0].Comments[0].Posted {
+		t.Fatal("the store did not record the submission")
+	}
+	if err := st.ToggleViewed(r.ID, "main.go"); err != nil {
+		t.Fatal(err)
+	}
+	if before.Viewed["main.go"] {
+		t.Fatal("toggling viewed leaked into an old snapshot")
+	}
+}

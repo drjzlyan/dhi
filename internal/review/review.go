@@ -628,6 +628,7 @@ func (s *Store) mutate(id string, apply func(*Review)) error {
 	if !ok {
 		return fmt.Errorf("review: unknown review %q", id)
 	}
+	r = r.cloned() // readers hold snapshots that share slices with the stored value
 	apply(&r)
 	r.UpdatedAt = s.now()
 	if err := writeCard(s.cardPath(id), r); err != nil {
@@ -635,6 +636,28 @@ func (s *Store) mutate(id string, apply func(*Review)) error {
 	}
 	s.commit(func() { s.items[id] = r }, Change{Kind: ReviewUpdated, ID: id})
 	return nil
+}
+
+// cloned deep-copies the parts a mutation edits in place (threads, their
+// comments, the viewed map), so a snapshot returned by Get never changes
+// underneath a reader.
+func (r Review) cloned() Review {
+	if r.Threads != nil {
+		ts := make([]Thread, len(r.Threads))
+		for i, t := range r.Threads {
+			t.Comments = append([]Comment(nil), t.Comments...)
+			ts[i] = t
+		}
+		r.Threads = ts
+	}
+	if r.Viewed != nil {
+		v := make(map[string]bool, len(r.Viewed))
+		for k, b := range r.Viewed {
+			v[k] = b
+		}
+		r.Viewed = v
+	}
+	return r
 }
 
 func writeCard(path string, r Review) error {
