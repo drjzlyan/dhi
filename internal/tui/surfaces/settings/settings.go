@@ -336,13 +336,19 @@ const (
 	rowLineNumbers
 	rowScrollback
 	rowScopesBase // then 7 capability-scope rows (F-030 P2)
-	// Conventions rows (F-042) follow the scopes so existing positions hold.
-	rowBranchTask     = rowScopesBase + 7
+	// The personal worktree location (F-053) follows the scopes; the
+	// conventions rows (F-042), which save to their own tracked file, follow it.
+	rowWorktrees      = rowScopesBase + 7
+	rowBranchTask     = rowWorktrees + 1
 	rowCommitFormat   = rowBranchTask + 1
 	rowCommitCoAuthor = rowBranchTask + 2
 	rowCopyright      = rowBranchTask + 3
 	rowCount          = rowBranchTask + 4
 )
+
+// worktreePresets is the cycle for worktrees.root; any other path is
+// hand-edited in config.toml and shows as-is. "" keeps worktrees inside .dhi/.
+var worktreePresets = []string{"", "../.dhi-worktrees", "~/dhi-worktrees"}
 
 // branchPresets is the cycle for conventions.branch.task; any other
 // pattern is hand-edited in config.toml and shows as-is.
@@ -391,6 +397,8 @@ func (m *Model) cycle(dir int) {
 		if m.cfg.Terminal.Scrollback+step >= 100 {
 			m.cfg.Terminal.Scrollback += step
 		}
+	case rowWorktrees:
+		m.cfg.Worktrees.Root = cycleString(m.cfg.Worktrees.Root, worktreePresets, dir)
 	case rowBranchTask:
 		m.cfg.Conventions.Branch.Task = cycleString(m.cfg.Conventions.Branch.Task, branchPresets, dir)
 	case rowCommitFormat:
@@ -447,6 +455,10 @@ func (m *Model) applyAndPersist() {
 			return
 		}
 		m.flash = "saved to " + settings.ConventionsFile + " (live — agents use it from their next action)"
+		return
+	}
+	if m.cursor == rowWorktrees {
+		m.flash = "saved — new worktrees use it after a restart; existing ones stay where they are"
 		return
 	}
 	m.flash = "saved"
@@ -1151,11 +1163,16 @@ func (m *Model) configView() []string {
 		}
 		rows = append(rows, settingRow(m.cursor == rowScopesBase+i, "scopes."+name, valueText(val)))
 	}
+	wt := m.cfg.Worktrees.Root
+	if wt == "" {
+		wt = "inside .dhi/"
+	}
 	co := "off"
 	if m.cfg.Conventions.Commit.CoAuthorEnabled {
 		co = m.cfg.Conventions.Commit.CoAuthor
 	}
 	return append(rows,
+		settingRow(m.cursor == rowWorktrees, "worktrees.root", valueText(wt)),
 		settingRow(m.cursor == rowBranchTask, "conventions.branch.task",
 			valueText(m.cfg.Conventions.Branch.Task)),
 		settingRow(m.cursor == rowCommitFormat, "conventions.commit.format",

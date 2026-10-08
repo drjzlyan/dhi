@@ -77,6 +77,14 @@ var languageKeys = map[string]bool{
 	"exts": true, "language_id": true, "formatter": true,
 }
 
+// Worktrees says where linked git worktrees live (F-053). Root "" keeps them
+// inside the workspace (.dhi/tasks, .dhi/reviews); a path moves them — "~/x"
+// expands against home, a relative path is taken from the workspace root. It is
+// personal (machine-specific), so it is never part of the tracked conventions.
+type Worktrees struct {
+	Root string `toml:"root,omitempty"`
+}
+
 type Terminal struct {
 	Scrollback int `toml:"scrollback"`
 }
@@ -107,10 +115,11 @@ type Config struct {
 	Engine string `toml:"engine,omitempty"`
 	// Scopes is the workspace capability layer (F-030 P2): scope→effect
 	// overrides applied under team and agent scopes.
-	Scopes   map[string]string `toml:"scopes,omitempty"`
-	Editor   Editor            `toml:"editor"`
-	Terminal Terminal          `toml:"terminal"`
-	Security Security          `toml:"security"`
+	Scopes    map[string]string `toml:"scopes,omitempty"`
+	Editor    Editor            `toml:"editor"`
+	Worktrees Worktrees         `toml:"worktrees"`
+	Terminal  Terminal          `toml:"terminal"`
+	Security  Security          `toml:"security"`
 	// Conventions is the team-style layer (F-042): branch names, commit
 	// format, copyright header, PR text. It lives in its own tracked file
 	// (ConventionsPath), so the personal config never serialises it.
@@ -133,6 +142,7 @@ func Defaults() Config {
 func Known() []string {
 	return []string{"schema", "theme", "reduced_motion", "engine", "editor",
 		"terminal", "security", "editor.tab_width", "editor.line_numbers",
+		"worktrees", "worktrees.root",
 		"terminal.scrollback", "security.sandbox",
 		"scopes.read", "scopes.write", "scopes.exec", "scopes.network",
 		"scopes.git", "scopes.push", "scopes.admin",
@@ -296,6 +306,9 @@ type fileLayer struct {
 		LineNumbers *bool                     `toml:"line_numbers"`
 		Languages   map[string]LanguageConfig `toml:"languages"`
 	} `toml:"editor"`
+	Worktrees struct {
+		Root string `toml:"root"`
+	} `toml:"worktrees"`
 	Terminal struct {
 		Scrollback int `toml:"scrollback"`
 	} `toml:"terminal"`
@@ -362,6 +375,9 @@ func (f fileLayer) mergeInto(dst *Config) {
 			dst.Editor.Languages = map[string]LanguageConfig{}
 		}
 		dst.Editor.Languages[strings.ToLower(strings.TrimSpace(id))] = lc
+	}
+	if f.Worktrees.Root != "" {
+		dst.Worktrees.Root = strings.TrimSpace(f.Worktrees.Root)
 	}
 	if f.Terminal.Scrollback != 0 {
 		dst.Terminal.Scrollback = f.Terminal.Scrollback

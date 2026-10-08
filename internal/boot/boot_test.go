@@ -209,3 +209,68 @@ func TestSandboxModeHelper(t *testing.T) {
 		t.Fatalf("broken config mode = %q", got)
 	}
 }
+
+func TestDefaultWorktreeLayoutStaysInsideTheWorkspace(t *testing.T) {
+	root := mkWorkspace(t, wsCfg)
+	d := Audit(Input{CWD: root, GOOS: "darwin", LookPath: lookHit})
+	if d.Block != "" {
+		t.Fatal(d.Block)
+	}
+	if d.Worktrees.External() {
+		t.Fatalf("no setting must keep the defaults: %q", d.Worktrees.Base())
+	}
+}
+
+// A worktree root outside the workspace is created at boot and made
+// writable for the OS sandbox - otherwise agents could not work in it.
+func TestExternalWorktreeRootIsCreatedAndWritableInTheSandbox(t *testing.T) {
+	root := mkWorkspace(t, wsCfg)
+	wt := filepath.Join(t.TempDir(), "fast-disk")
+	cfg := filepath.Join(t.TempDir(), "config.toml")
+	writeFile(t, cfg, "[worktrees]\nroot = \""+wt+"\"\n")
+	d := Audit(Input{CWD: root, UserCfg: cfg, GOOS: "darwin", LookPath: lookHit})
+	if d.Block != "" {
+		t.Fatalf("block = %q", d.Block)
+	}
+	if !d.Worktrees.External() || !strings.HasPrefix(d.Worktrees.Base(), wt) {
+		t.Fatalf("layout = %q, want it under %q", d.Worktrees.Base(), wt)
+	}
+	if st, err := os.Stat(d.Worktrees.Base()); err != nil || !st.IsDir() {
+		t.Fatalf("base was not created: %v", err)
+	}
+	argv, err := d.Sandbox.Wrap([]string{"/bin/true"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	canonical, _ := filepath.EvalSymlinks(d.Worktrees.Base())
+	if profile := strings.Join(argv, " "); !strings.Contains(profile, canonical) {
+		t.Fatalf("the sandbox profile does not allow writes under %s:\n%s", canonical, profile)
+	}
+}
+
+func TestUnusableWorktreeRootBlocksBootWithTheFix(t *testing.T) {
+	root := mkWorkspace(t, wsCfg)
+	blocker := filepath.Join(t.TempDir(), "a-file")
+	writeFile(t, blocker, "not a directory")
+	cfg := filepath.Join(t.TempDir(), "config.toml")
+	writeFile(t, cfg, "[worktrees]\nroot = \""+filepath.Join(blocker, "wt")+"\"\n")
+	d := Audit(Input{CWD: root, UserCfg: cfg, GOOS: "darwin", LookPath: lookHit})
+	if d.Block == "" || !strings.Contains(d.Block, "worktrees") {
+		t.Fatalf("block = %q", d.Block)
+	}
+	if len(d.Fixes) != 1 || !strings.Contains(d.Fixes[0], "worktrees.root") {
+		t.Fatalf("fixes = %v", d.Fixes)
+	}
+	if d.Sandbox != nil {
+		t.Fatal("a blocked decision must not carry an adapter")
+	}
+
+	// "~" with no known home is refused by name, not guessed.
+	writeFile(t, cfg, "[worktrees]\nroot = \"~/wt\"\n")
+	t.Setenv("HOME", "")
+	t.Setenv("USERPROFILE", "")
+	d = Audit(Input{CWD: root, UserCfg: cfg, GOOS: "darwin", LookPath: lookHit})
+	if d.Block == "" || !strings.Contains(d.Block, "home") {
+		t.Fatalf("block = %q", d.Block)
+	}
+}

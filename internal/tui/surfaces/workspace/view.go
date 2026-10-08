@@ -974,7 +974,11 @@ func (m *Model) modalLines() []string {
 			"the card is deleted; recorded worktrees",
 			"stay on disk — detach them first to clean up.", f)
 	case fTaskAttach:
-		hint := "creates .dhi/tasks/<slug>/<member> via hermetic git"
+		where := m.worktreeHint
+		if where == "" {
+			where = ".dhi/tasks/<slug>/<member>"
+		}
+		hint := "creates " + where + " via hermetic git"
 		lines := []string{}
 		for i, fl := range f.fields() {
 			lines = append(lines, m.fieldLine(fl, i == f.curField() && !f.busy))

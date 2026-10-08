@@ -66,6 +66,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/unread"
 	"github.com/drjzlyan/dhi/internal/version"
 	"github.com/drjzlyan/dhi/internal/workspace"
+	"github.com/drjzlyan/dhi/internal/worktrees"
 )
 
 func main() {
@@ -229,9 +230,9 @@ func runTUI() (relaunch bool) {
 		if ts, err := tasks.Open(ws); err == nil {
 			taskStore = ts
 			taskStore.SetIdentity(identityFn)
-			wireTaskSeam(ws, ts, func() string { return convLive.Get().Branch.Task })
+			wireTaskSeam(ws, ts, func() string { return convLive.Get().Branch.Task }, decision.Worktrees)
 		}
-		reviewSvc = openReviewService(ws, func() conventions.Config { return convLive.Get() })
+		reviewSvc = openReviewService(ws, func() conventions.Config { return convLive.Get() }, decision.Worktrees)
 		mcpStore = mcpserver.Open(ws.Root)
 		if ss, err := ideation.Open(ws); err == nil {
 			sessionStore = ss
@@ -252,7 +253,7 @@ func runTUI() (relaunch bool) {
 		// under .dhi/agents/. Guards carry the audited OS-sandbox
 		// adapter (nil here is impossible: the audit blocked first).
 		if messageBus != nil {
-			agentRT = newAgentRuntime(ws, messageBus, decision.Sandbox, termEnv, cfg.Engine, gitRunner, identityFn, sessionStore, runRunner, editorBridge, wsScopes, taskStore, reviewSvc, rgSearcher, mcpStore, convLive.Source(), cliLook, toolBin, mcpHome)
+			agentRT = newAgentRuntime(ws, messageBus, decision.Sandbox, termEnv, cfg.Engine, gitRunner, identityFn, sessionStore, runRunner, editorBridge, wsScopes, taskStore, reviewSvc, rgSearcher, mcpStore, convLive.Source(), cliLook, toolBin, mcpHome, decision.Worktrees)
 			if agentRT != nil {
 				edOpts = append(edOpts, editor.WithChat(agentRT))
 			}
@@ -318,14 +319,15 @@ func runTUI() (relaunch bool) {
 	}
 	a := app.New(version.Version,
 		wsview.New(version.Version, ws, wsview.Deps{
-			Bus:        messageBus,
-			Runtime:    agentRT,
-			Tasks:      taskStore,
-			Roster:     agentRT,
-			ReviewSvc:  reviewSvc,
-			Approvals:  approvals,
-			Unread:     unreadStore,
-			Autopilots: wsAuto,
+			WorktreeHint: worktreeHint(decision.Worktrees),
+			Bus:          messageBus,
+			Runtime:      agentRT,
+			Tasks:        taskStore,
+			Roster:       agentRT,
+			ReviewSvc:    reviewSvc,
+			Approvals:    approvals,
+			Unread:       unreadStore,
+			Autopilots:   wsAuto,
 			OpenChat: func() bool {
 				if appRef == nil {
 					return false
@@ -763,7 +765,7 @@ func needsBootstrap(root string) bool {
 // openReviewService builds the review orchestration layer: TOML store
 // always; worktree seam + diff runner light up with the hermetic git
 // shim; PR inputs additionally need the host gh CLI.
-func openReviewService(ws *workspace.Workspace, conv func() conventions.Config) *review.Service {
+func openReviewService(ws *workspace.Workspace, conv func() conventions.Config, wt worktrees.Layout) *review.Service {
 	prBody := func() string { return conv().PR.Body }
 	st, err := review.Open(ws)
 	if err != nil {
@@ -803,8 +805,7 @@ func openReviewService(ws *workspace.Workspace, conv func() conventions.Config) 
 			if !ok {
 				return "", fmt.Errorf("unknown member %q", member)
 			}
-			rel := filepath.Join(review.Dir, id, member)
-			dst := filepath.Join(ws.Root, rel)
+			rel, dst := wt.Review(id, member)
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 			defer cancel()
 			branch, err := conventions.ExpandBranch(conv().Branch.Review, branchVars(id))
@@ -835,7 +836,7 @@ func openReviewService(ws *workspace.Workspace, conv func() conventions.Config) 
 
 // wireTaskSeam connects task ChangeSets to hermetic-git worktrees when
 // the shim exists; without it, attaching reports a visible error.
-func wireTaskSeam(ws *workspace.Workspace, ts *tasks.Store, branchPattern func() string) {
+func wireTaskSeam(ws *workspace.Workspace, ts *tasks.Store, branchPattern func() string, wt worktrees.Layout) {
 	root, err := toolchain.DefaultRoot()
 	if err != nil {
 		return
@@ -856,8 +857,7 @@ func wireTaskSeam(ws *workspace.Workspace, ts *tasks.Store, branchPattern func()
 					return "", err
 				}
 			}
-			rel := filepath.Join(tasks.Dir, slug, member)
-			dst := filepath.Join(ws.Root, rel)
+			rel, dst := wt.Task(slug, member)
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 			defer cancel()
 			if err := runner.WorktreeAdd(ctx, mem.Path, dst, branch, startpoint); err != nil {
@@ -1048,7 +1048,7 @@ func (r execRunner) Run(ctx context.Context, dir string, argv []string, allowNet
 	return out, err
 }
 
-func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cliEnv []string, defaultEngine string, gitRunner *gitcore.Runner, identityFn gitcore.IdentityFunc, sessionStore *ideation.Store, runRunner dhitools.CommandRunner, editor dhitools.EditorAPI, workspaceScopes scopes.Set, taskStore *tasks.Store, reviewSvc *review.Service, kbSearcher search.Searcher, mcpStore *mcpserver.Store, conv conventions.Source, cliLook func(string) (string, error), toolBin []string, mcpHome string) *agentkitRuntime.Runtime {
+func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cliEnv []string, defaultEngine string, gitRunner *gitcore.Runner, identityFn gitcore.IdentityFunc, sessionStore *ideation.Store, runRunner dhitools.CommandRunner, editor dhitools.EditorAPI, workspaceScopes scopes.Set, taskStore *tasks.Store, reviewSvc *review.Service, kbSearcher search.Searcher, mcpStore *mcpserver.Store, conv conventions.Source, cliLook func(string) (string, error), toolBin []string, mcpHome string, wt worktrees.Layout) *agentkitRuntime.Runtime {
 	roster, err := manifest.LoadDir(filepath.Join(ws.Root, workspace.DirAgents))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "dhi: agent roster:", err)
@@ -1088,6 +1088,7 @@ func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cl
 		Org:           company,
 		Standards:     true,
 		Conventions:   conv,
+		ExtraRoots:    worktreeRoots(wt),
 		ToolBin:       toolBin,
 		MCPHome:       mcpHome,
 		Workflows:     true,
@@ -1190,4 +1191,21 @@ func runDoctor(args []string) int {
 		return 1
 	}
 	return 0
+}
+
+// worktreeRoots lists the extra path-jail roots for an external worktree base.
+func worktreeRoots(wt worktrees.Layout) []string {
+	if !wt.External() {
+		return nil
+	}
+	return []string{wt.Base()}
+}
+
+// worktreeHint names where task worktrees land for the attach form; "" keeps
+// the in-workspace default text.
+func worktreeHint(wt worktrees.Layout) string {
+	if !wt.External() {
+		return ""
+	}
+	return filepath.Join(wt.Base(), "tasks", "<slug>", "<member>")
 }

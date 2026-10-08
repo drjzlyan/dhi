@@ -189,3 +189,36 @@ func TestCopyrightRowNeedsHolder(t *testing.T) {
 			m.cfg.Conventions.Copyright.Enabled, m.flash)
 	}
 }
+
+func TestWorktreeRootRowCyclesPersistsAndSaysItNeedsARestart(t *testing.T) {
+	m, path := newSurface(t)
+	m.cursor = rowWorktrees
+	if got := m.cfg.Worktrees.Root; got != "" {
+		t.Fatalf("default root = %q", got)
+	}
+	if !strings.Contains(ansi.Strip(m.View()), "worktrees.root") {
+		t.Error("worktrees row not rendered")
+	}
+	feed(m, "l") // inside .dhi → next to the workspace
+	if m.cfg.Worktrees.Root != "../.dhi-worktrees" {
+		t.Fatalf("root = %q", m.cfg.Worktrees.Root)
+	}
+	if !strings.Contains(m.flash, "restart") || !strings.Contains(m.flash, "existing ones stay") {
+		t.Fatalf("flash = %q", m.flash)
+	}
+	back, err := settings.Load(path, "")
+	if err != nil {
+		t.Fatalf("saved config does not reload: %v", err)
+	}
+	if back.Worktrees.Root != "../.dhi-worktrees" {
+		t.Fatalf("persisted root = %q", back.Worktrees.Root)
+	}
+	// It is personal: the tracked conventions file is not touched by it.
+	if data, _ := os.ReadFile(settings.ConventionsPath(path)); strings.Contains(string(data), "worktrees") {
+		t.Fatalf("worktrees leaked into the tracked conventions: %s", data)
+	}
+	feed(m, "l", "l") // → ~/dhi-worktrees → wraps to default
+	if m.cfg.Worktrees.Root != "" {
+		t.Fatalf("cycle did not wrap to the default: %q", m.cfg.Worktrees.Root)
+	}
+}

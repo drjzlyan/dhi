@@ -112,6 +112,7 @@ type Model struct {
 
 	approvals    *tools.Approvals                        // pending-approval queue (F-016 source)
 	unreadStore  *unread.Store                           // read-mark store (F-017); nil = no bus
+	worktreeHint string                                  // where an attached worktree lands ("" = default text)
 	unreadErr    string                                  // store unavailable: named, never silent
 	chatMetaErr  string                                  // reactions/edits/pins store unavailable
 	unreadCounts map[string]int                          // per-frame rail counts (syncUnread)
@@ -163,17 +164,20 @@ func errString(err error) string {
 // Deps carries the services this surface operates. Zero fields degrade
 // their sections to visible "unavailable" rows rather than errors.
 type Deps struct {
-	Bus        *bus.Bus
-	Runtime    turnHandler
-	Tasks      *tasks.Store
-	Roster     profiface.Roster
-	ReviewSvc  *review.Service           // nil = task PR creation unavailable
-	Approvals  *tools.Approvals          // nil = no pending-approval inbox source
-	Unread     *unread.Store             // shared read-mark store (F-017); opened here if nil
-	Autopilots *autopilot.Store          // shared with Settings (F-023); opened here if nil
-	OpenChat   func() bool               // focus editor chat (approval jump)
-	OpenReview func(id string) bool      // reviewer select (in_review jump)
-	OpenEditor func(paths []string) bool // editor open-in-editor (repos `e`)
+	// WorktreeHint says where an attached worktree lands, shown in the attach
+	// form ("" = the in-workspace default). F-053.
+	WorktreeHint string
+	Bus          *bus.Bus
+	Runtime      turnHandler
+	Tasks        *tasks.Store
+	Roster       profiface.Roster
+	ReviewSvc    *review.Service           // nil = task PR creation unavailable
+	Approvals    *tools.Approvals          // nil = no pending-approval inbox source
+	Unread       *unread.Store             // shared read-mark store (F-017); opened here if nil
+	Autopilots   *autopilot.Store          // shared with Settings (F-023); opened here if nil
+	OpenChat     func() bool               // focus editor chat (approval jump)
+	OpenReview   func(id string) bool      // reviewer select (in_review jump)
+	OpenEditor   func(paths []string) bool // editor open-in-editor (repos `e`)
 	// Working reports an in-flight agent turn for a thread (F-035
 	// Part D); nil renders no live indicator.
 	Working func(channel string, thread int64) bool
@@ -200,10 +204,11 @@ func (m *Model) act(event string) {
 
 func New(version string, ws *workspace.Workspace, d Deps) *Model {
 	m := &Model{
-		version: version,
-		ws:      ws,
-		events:  make(chan wsEvent, 16),
-		sec:     secBoard, // the dashboard is the landing view (F-021)
+		version:      version,
+		ws:           ws,
+		events:       make(chan wsEvent, 16),
+		worktreeHint: d.WorktreeHint,
+		sec:          secBoard, // the dashboard is the landing view (F-021)
 	}
 	if ws != nil {
 		if o, err := org.Load(ws.Root); err == nil {

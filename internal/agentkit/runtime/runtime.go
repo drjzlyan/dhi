@@ -70,6 +70,10 @@ type Config struct {
 	// Standards injects layered coding instructions into every turn's
 	// system prompt (built-ins apply even without a document).
 	Standards bool
+	// ExtraRoots are additional path-jail roots the crew may work in: the
+	// external worktree base when worktrees.root is set (F-053). They must
+	// exist and be absolute.
+	ExtraRoots []string
 	// Conventions are the team style rules (F-042): injected into the
 	// system prompt and enforced at git_commit. nil = none.
 	Conventions conventions.Source
@@ -240,6 +244,7 @@ func New(cfg Config, roster []*manifest.Agent) (*Runtime, error) {
 	// ideation artifacts under .dhi/sessions/ (F-004) while policies
 	// stay deny-by-default (ADR-0006/0010).
 	jailRoots = append(jailRoots, filepath.Join(cfg.WS.Root, workspace.DHIDir))
+	jailRoots = append(jailRoots, cfg.ExtraRoots...)
 	for _, m := range roster {
 		e, err := r.buildEntry(m, jailRoots)
 		if err != nil {
@@ -429,6 +434,7 @@ func (r *Runtime) Reload(roster []*manifest.Agent) error {
 		jailRoots = append(jailRoots, m.Path)
 	}
 	jailRoots = append(jailRoots, filepath.Join(r.cfg.WS.Root, workspace.DHIDir))
+	jailRoots = append(jailRoots, r.cfg.ExtraRoots...)
 	next := make(map[string]*entry, len(roster))
 	for _, m := range roster {
 		e, err := r.buildEntry(m, jailRoots)

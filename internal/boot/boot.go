@@ -15,6 +15,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/settings"
 	"github.com/drjzlyan/dhi/internal/toolchain"
 	"github.com/drjzlyan/dhi/internal/workspace"
+	"github.com/drjzlyan/dhi/internal/worktrees"
 )
 
 // Input carries everything the audit needs; injectable fields make the
@@ -23,6 +24,7 @@ type Input struct {
 	CWD      string // launch directory (workspace probe)
 	ToolRoot string // hermetic prefix ("" disables toolchain checks)
 	UserCfg  string // settings user layer ("" ok)
+	Home     string // home directory for `~` in worktrees.root ("" = the process's)
 	GOOS     string
 	LookPath func(string) (string, error)
 }
@@ -50,6 +52,11 @@ type Decision struct {
 	// Sandbox is the adapter for runtime.Config (nil when no workspace
 	// is loaded — the runtime is never built then — or boot blocked).
 	Sandbox sandbox.Sandbox
+
+	// Worktrees says where linked worktrees live (F-053). The zero value is
+	// the in-workspace default; an external base has been created and is
+	// inside the OS sandbox's writable roots.
+	Worktrees worktrees.Layout
 
 	// Warnings label explicit opt-outs that survive boot (e.g. the user
 	// set security.sandbox = "off"). Never silent, never implied.
@@ -90,10 +97,34 @@ func Audit(in Input) Decision {
 
 	// 3. Sandbox: hard requirement in auto mode; explicit off is the
 	// user's choice and is labeled, never implied.
-	rw := make([]string, 0, len(members)+2)
+	rw := make([]string, 0, len(members)+3)
 	rw = append(rw, members...)
 	if ws != nil {
 		rw = append(rw, filepath.Join(ws.Root, workspace.DHIDir))
+		// A user-chosen worktree location must be writable by the sandbox,
+		// so it is resolved and created here, before the profile is built.
+		home := in.Home
+		if home == "" {
+			home, _ = os.UserHomeDir()
+		}
+		lay, err := worktrees.Resolve(ws.Root, cfg.Worktrees.Root, home)
+		if err == nil {
+			err = lay.Ensure()
+		}
+		if err != nil {
+			d.Block = err.Error()
+			d.Fixes = []string{"fix worktrees.root in " + filepath.Join(ws.Root, workspace.DHIDir, "config.toml") +
+				" or your user settings, or remove it to keep worktrees inside .dhi/"}
+			return d
+		}
+		d.Worktrees = lay
+		if lay.External() {
+			base := lay.Base()
+			if resolved, err := filepath.EvalSymlinks(base); err == nil {
+				base = resolved // seatbelt matches canonical paths (/var → /private/var)
+			}
+			rw = append(rw, base)
+		}
 	}
 	if in.ToolRoot != "" {
 		rw = append(rw, in.ToolRoot)
