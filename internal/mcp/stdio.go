@@ -94,10 +94,31 @@ func DialStdio(ctx context.Context, env []string, argv ...string) (*Stdio, error
 	}()
 	go s.readLoop(stdout)
 	if err := s.conn.handshake(ctx); err != nil {
+		err = s.explainDeath(err)
 		_ = s.Close()
 		return nil, err
 	}
 	return s, nil
+}
+
+// explainDeath turns a handshake failure into "server exited: <its
+// stderr>" when the child is gone: a server that dies before reading its
+// first request fails the write with a bare "broken pipe" otherwise. A
+// live server (stderr still open) keeps the original error.
+func (s *Stdio) explainDeath(err error) error {
+	if strings.Contains(err.Error(), "server exited") {
+		return err // readLoop already said so, with stderr
+	}
+	select {
+	case <-s.stderrDone:
+	case <-time.After(500 * time.Millisecond):
+		return err
+	}
+	why := "server exited"
+	if e := s.stderr.String(); e != "" {
+		why += ": " + lastLines(e, 6)
+	}
+	return fmt.Errorf("mcp: initialize: mcp: %s", why)
 }
 
 func (s *Stdio) readLoop(r io.Reader) {

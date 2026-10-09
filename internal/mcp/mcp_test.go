@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -288,4 +289,22 @@ func TestStdioCallsAfterTheChildDiesFailImmediately(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	t.Fatal("calls to a dead server did not fail promptly")
+}
+
+// TestHandshakeFailureNamesTheDeadServer: a write that hits a server
+// that already died ("broken pipe") reports its stderr; a live server's
+// failure keeps the original error.
+func TestHandshakeFailureNamesTheDeadServer(t *testing.T) {
+	dead := &Stdio{stderr: &tailBuffer{max: 64}, stderrDone: make(chan struct{})}
+	_, _ = dead.stderr.Write([]byte("error: cache is read-only\n"))
+	close(dead.stderrDone)
+	err := dead.explainDeath(errors.New("mcp: send initialize: write |1: broken pipe"))
+	if !strings.Contains(err.Error(), "server exited: error: cache is read-only") {
+		t.Fatalf("err = %v", err)
+	}
+	live := &Stdio{stderr: &tailBuffer{max: 64}, stderrDone: make(chan struct{})}
+	orig := errors.New("mcp: initialize: context deadline exceeded")
+	if got := live.explainDeath(orig); got != orig {
+		t.Fatalf("a live server's error must stay as is: %v", got)
+	}
 }
