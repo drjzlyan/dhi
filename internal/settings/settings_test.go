@@ -596,3 +596,33 @@ func TestThemeSetTracksLayers(t *testing.T) {
 		t.Fatal("theme key in a layer must set ThemeSet")
 	}
 }
+
+func TestKeysRemapsMergeAndValidate(t *testing.T) {
+	dir := t.TempDir()
+	user, ws := filepath.Join(dir, "user.toml"), filepath.Join(dir, "ws.toml")
+	if err := os.WriteFile(user, []byte("schema = 1\n[keys]\n\"ctrl+k\" = \"ctrl+p\"\nx = \"n\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(ws, []byte("schema = 1\n[keys]\nx = \"N\"\nm = \"space\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load(user, ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{"ctrl+k": "ctrl+p", "x": "N", "m": "space"} // per key, workspace wins
+	if !reflect.DeepEqual(c.Keys, want) {
+		t.Fatalf("keys = %v, want %v", c.Keys, want)
+	}
+	if unk, _ := UnknownKeys([]byte("[keys]\n\"ctrl+k\" = \"ctrl+p\"\n")); len(unk) != 0 {
+		t.Fatalf("remaps are not unknown keys: %v", unk)
+	}
+	for _, bad := range []string{"\"ctrl+c\" = \"q\"", "x = \"\"", "\"a b\" = \"n\""} {
+		if err := os.WriteFile(user, []byte("schema = 1\n[keys]\n"+bad+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Load(user, ""); err == nil {
+			t.Errorf("%s must be refused", bad)
+		}
+	}
+}

@@ -78,7 +78,10 @@ func (s *StatusLine) View() string {
 		return right
 	}
 
-	hints := s.Hints
+	hints := make([]string, len(s.Hints))
+	for i, h := range s.Hints {
+		hints[i] = DisplayHint(h) // name the key to press (F-058 remaps)
+	}
 	right := rightFor(hints)
 	center := s.Center
 	over := func() bool {

@@ -129,7 +129,7 @@ func (a *App) helpView() string {
 			if len(desc) == 0 {
 				desc = []string{""}
 			}
-			sec = append(sec, "  "+keycap(kit.ClipEllipsis(r[0], keyW), keyW)+"  "+theme.TextDim().Render(desc[0]))
+			sec = append(sec, "  "+keycap(kit.ClipEllipsis(kit.DisplayKeys(r[0]), keyW), keyW)+"  "+theme.TextDim().Render(desc[0]))
 			for _, more := range desc[1:] {
 				sec = append(sec, strings.Repeat(" ", keyW+4)+theme.TextDim().Render(more))
 			}

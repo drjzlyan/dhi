@@ -991,4 +991,5 @@ GitHub setup, a real release, and every deferral either done or specced.
       SECURITY, issue + PR templates, Dependabot, CODEOWNERS, release workflows never steal Latest
 - [ ] P6 Releases (v0.1.0-rc1 → v0.1.0), new platform pins, live verifications
 - [ ] P7 Big deferrals, spec first
+  - [x] Key remaps (F-058): `[keys]` in config, shell translates, chrome shows the pressed key
 

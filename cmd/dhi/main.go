@@ -18,7 +18,7 @@ import (
 	"strings"
 	"time"
 
-	"charm.land/bubbletea/v2"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/agentkit/catalog"
@@ -53,6 +53,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/tasks"
 	"github.com/drjzlyan/dhi/internal/toolchain"
 	"github.com/drjzlyan/dhi/internal/tui/app"
+	"github.com/drjzlyan/dhi/internal/tui/kit"
 	"github.com/drjzlyan/dhi/internal/tui/surfaces/bootgate"
 	"github.com/drjzlyan/dhi/internal/tui/surfaces/bootstrap"
 	"github.com/drjzlyan/dhi/internal/tui/surfaces/editor"
@@ -141,6 +142,7 @@ func runTUI() (relaunch bool) {
 		os.Exit(1)
 	}
 	cfg.Apply()
+	kit.SetKeyMap(cfg.Keys) // [keys] remaps (F-058): the shell translates, the chrome shows them
 	// Conventions are re-read when their files change, so Settings edits and
 	// hand edits of .dhi/conventions.toml govern branch names, commits, PRs and
 	// the agents' prompts without a restart (F-052).

@@ -349,6 +349,12 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyPressMsg:
 		key := keyString(msg)
+		// F-058 remaps: chords always; plain keys only while nothing is
+		// taking text (a remapped "x" must still type an x); never inside
+		// a setup gate, which has its own fields.
+		if !a.gateActive() && (strings.Contains(key, "+") || !a.activeCapturesInput()) {
+			key = kit.LogicalKey(key)
+		}
 		if a.gateActive() {
 			switch key {
 			case "ctrl+c", "ctrl+q":

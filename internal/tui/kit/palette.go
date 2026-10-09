@@ -127,7 +127,7 @@ func (p *Palette) View(width int) string {
 		if it.Group != "" {
 			left = theme.TextDim().Render(it.Group+" ") + it.Title
 		}
-		row := padBetween(left, theme.TextDim().Render(it.Hint), inner-2)
+		row := padBetween(left, theme.TextDim().Render(DisplayKeys(it.Hint)), inner-2)
 		if i == p.cur {
 			// Same cursor glyph as every list; text stays in the same column.
 			row = theme.AccentText().Render(theme.GlyphCursor) + theme.Chip().Render(" "+stripToWidth(row, inner-2))

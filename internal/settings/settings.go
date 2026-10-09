@@ -119,7 +119,10 @@ type Config struct {
 	Engine string `toml:"engine,omitempty"`
 	// Scopes is the workspace capability layer (F-030 P2): scope→effect
 	// overrides applied under team and agent scopes.
-	Scopes    map[string]string `toml:"scopes,omitempty"`
+	Scopes map[string]string `toml:"scopes,omitempty"`
+	// Keys remaps keys (F-058): the key pressed → the key DHI acts on,
+	// e.g. "ctrl+k" = "ctrl+p". Merged key by key across layers.
+	Keys      map[string]string `toml:"keys,omitempty"`
 	Editor    Editor            `toml:"editor"`
 	Worktrees Worktrees         `toml:"worktrees"`
 	Terminal  Terminal          `toml:"terminal"`
@@ -270,6 +273,16 @@ func validate(c Config) error {
 			return fmt.Errorf("settings: scopes.%s: %w", name, err)
 		}
 	}
+	for k, v := range c.Keys {
+		switch {
+		case k == "" || v == "":
+			return fmt.Errorf("settings: keys: %q = %q: both keys must be named", k, v)
+		case strings.ContainsAny(k+v, " \t") && k != "space" && v != "space":
+			return fmt.Errorf("settings: keys.%s: write keys like \"ctrl+k\" or \"space\", without spaces", k)
+		case k == "ctrl+c" || v == "ctrl+c":
+			return fmt.Errorf("settings: keys.%s: ctrl+c always quits and cannot be remapped", k)
+		}
+	}
 	if err := c.Conventions.Validate(); err != nil {
 		return fmt.Errorf("settings: conventions.%w", err)
 	}
@@ -305,6 +318,7 @@ type fileLayer struct {
 	ReducedMotion *bool             `toml:"reduced_motion"`
 	Engine        string            `toml:"engine"`
 	Scopes        map[string]string `toml:"scopes"`
+	Keys          map[string]string `toml:"keys"`
 	Editor        struct {
 		TabWidth    int                       `toml:"tab_width"`
 		LineNumbers *bool                     `toml:"line_numbers"`
@@ -368,6 +382,12 @@ func (f fileLayer) mergeInto(dst *Config) {
 	}
 	if f.Scopes != nil {
 		dst.Scopes = f.Scopes
+	}
+	for k, v := range f.Keys { // per key: a workspace remap adds to the user's
+		if dst.Keys == nil {
+			dst.Keys = map[string]string{}
+		}
+		dst.Keys[strings.TrimSpace(k)] = strings.TrimSpace(v)
 	}
 	if f.Editor.TabWidth != 0 {
 		dst.Editor.TabWidth = f.Editor.TabWidth
@@ -479,7 +499,7 @@ func UnknownKeys(data []byte) ([]string, error) {
 				walk(dotted, sub)
 				continue
 			}
-			if !known[dotted] && !knownLanguageKey(dotted) {
+			if !known[dotted] && !knownLanguageKey(dotted) && !strings.HasPrefix(dotted, "keys.") {
 				out = append(out, dotted)
 			}
 		}

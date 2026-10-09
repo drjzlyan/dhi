@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -994,7 +995,7 @@ func (m *Model) Click(x, y int) bool {
 		// CONFIG rows (F-055): content line i is setting i (no scroll
 		// window); click selects, a second click changes it like enter.
 		row := y - 1 // panel top border
-		if m.sec != secConfig || row < 0 || row >= len(m.configView()) || row >= m.height-4 {
+		if m.sec != secConfig || row < 0 || row > rowCopyright || row >= m.height-4 {
 			return false
 		}
 		if m.cursor == row {
@@ -1181,7 +1182,23 @@ func (m *Model) configView() []string {
 			valueText(co)),
 		settingRow(m.cursor == rowCopyright, "conventions.copyright.enabled",
 			valueText(boolStr(m.cfg.Conventions.Copyright.Enabled))),
+		"",
+		"  "+theme.TextDim().Render(padTo("keys", settingNameW))+m.keysValue(),
 	)
+}
+
+// keysValue lists the [keys] remaps (F-058); they are edited in
+// config.toml, so the row is read-only.
+func (m *Model) keysValue() string {
+	if len(m.cfg.Keys) == 0 {
+		return theme.Hint().Render(`none · add [keys] "ctrl+k" = "ctrl+p" to config.toml`)
+	}
+	pairs := make([]string, 0, len(m.cfg.Keys))
+	for k, v := range m.cfg.Keys {
+		pairs = append(pairs, k+" → "+v)
+	}
+	sort.Strings(pairs)
+	return strings.Join(pairs, " · ")
 }
 
 func (m *Model) agentsView() []string {

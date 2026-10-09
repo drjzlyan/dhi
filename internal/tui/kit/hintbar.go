@@ -36,7 +36,11 @@ func HintBar(width int, status string, hints ...string) string {
 	if status != "" {
 		gap = 2
 	}
-	full := strings.Join(hints, sep)
+	shown := make([]string, len(hints))
+	for i, h := range hints {
+		shown[i] = DisplayHint(h) // the key the user presses (F-058 remaps)
+	}
+	full := strings.Join(shown, sep)
 	hintText := ClipEllipsis(full, width-statusW-gap)
 	if hintText == "" && status == "" {
 		hintText = ClipEllipsis(full, width)
@@ -69,7 +73,7 @@ func HintKeyAt(width int, status string, x int, hints ...string) (string, bool) 
 		if i > 0 {
 			col += 3 // " • "
 		}
-		w := runeWidth(h)
+		w := runeWidth(DisplayHint(h)) // measured as shown, acted on as logical
 		if x >= col && x < col+w && x < limit {
 			rows := HintRows(h)
 			if len(rows) == 0 {
