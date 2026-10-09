@@ -1,10 +1,50 @@
 # STATE — current position
 
-Updated: 2026-10-08 (session 48: audit-driven M21–M24 landed — agent
-hand-offs + team-lead routing, task comments/activity, editor pairing/
-debugging/test runner/format/symbols/git gutter, UX polish incl. a
-typing-hijack bug fix. `make verify` green. Debugging verified against
-real delve v1.27.2 — see F-039; `dlv` provisioning still open.)
+Updated: 2026-10-09 (session 51: M27 public readiness — CI green and
+branch-protected, layout contract, interaction polish, editor replace +
+split, README/screenshots/community files, live verifications. Plan:
+`~/.claude/plans/mighty-wandering-rainbow.md`.)
+
+### Session 51 (M27: public readiness)
+
+- DONE + pushed: P1 CI green (lint, GNU base64, antigravity `~/.gemini`
+  bug, replay golden) + branch protection (4 checks, admins not enforced);
+  P2 F-054 layout contract; P3 F-055 clicks/notices/accents/theme-follow;
+  P4 F-056 regex project replace + F-057 split panes; P5 README,
+  `scripts/screenshots.sh` + `scripts/demo`, CONTRIBUTING/CoC/SECURITY,
+  issue+PR templates, Dependabot, CODEOWNERS, repo settings (topics,
+  discussions, wiki off, private vuln reporting, Dependabot alerts+fixes).
+- Real bugs found by walking the app with real data: workspace search
+  never streamed results (`surfaces.CmdSource` now lets a surface queue a
+  cmd from a key); results hidden while a file was open; raw tabs pushed
+  Go code past the panel edge; CHANNELS crashed without a bus at narrow
+  width; first frame before resize crashed the Workspace view; the
+  reviewer's new-review dialog locked forever after a failed start.
+- VERIFIED LIVE: GitHub review POST (scratch PR #6, closed + branch
+  deleted); three-column review screen; worktrees.root (real worktree under
+  an external root); release-git on macos-15-intel + ubuntu-24.04-arm
+  (macos-13 is retired); all four git assets match the pin PR; macOS
+  artifacts now `minos 12.0` (MACOSX_DEPLOYMENT_TARGET).
+- BLOCKED ON THE USER (merges need their approval):
+  - PR #7 pin hermetic git v2.55.0. URGENT: the re-run replaced the
+    darwin/arm64 + linux/amd64 assets, so `main`'s old pins no longer
+    match the release until #7 merges. Verified locally (checksums,
+    toolchain tests in a worktree).
+  - Then add darwin/amd64 + linux/arm64 to `scripts/release-platforms.txt`
+    and the README platform line; tag v0.1.0-rc1 → verify install.sh →
+    v0.1.0; then `gh release edit hermetic-git-v2.55.0 --latest=false`.
+  - Dependabot #5 (actions; green; softprops v3 keeps make_latest) and #4
+    (go deps; rebase requested after the flake fix).
+- Gotchas:
+  - Check that `golangci-lint` says `0 issues.` before committing (one
+    slip this session).
+  - Screenshots need `stty oxtabs` in the tmux pane, TERM=xterm-256color +
+    COLORTERM=truecolor, and SGR 39 rewritten for freeze; the script does
+    all of it.
+  - A key that starts async work must queue its cmd (`TakeCmd`).
+- P7 next: big deferrals (VT emulation, pack signatures, embedding
+  retrieval, keybinding overrides, artifact export, ro-root policy),
+  spec first.
 
 ### Session 50 (M26: review screen F-049, then deferred M25 items)
 
