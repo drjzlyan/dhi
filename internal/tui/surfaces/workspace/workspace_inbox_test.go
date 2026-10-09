@@ -26,6 +26,16 @@ func seedInbox(t *testing.T, m *Model) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	go apq.Ask(ctx, "scout", sandbox.OpWrite, ".dhi/tasks/x/y.md", "policy")
+	// Ask registers on its own goroutine: wait until it is pending, or a
+	// loaded CI runner sees the inbox before the approval exists.
+	deadline := time.After(5 * time.Second)
+	for len(apq.List()) == 0 {
+		select {
+		case <-apq.Changes():
+		case <-deadline:
+			t.Fatal("approval never became pending")
+		}
+	}
 	m.approvals = apq
 
 	ts, err := tasks.Open(m.ws)

@@ -3,6 +3,7 @@ package workspace
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -137,14 +138,12 @@ func TestCatchUpRunsDueInSlugOrderAndOnce(t *testing.T) {
 			t.Fatalf("expected 2 posts, got %d: %v", len(got), got)
 		}
 	}
-	if want := []string{"a", "b"}; len(got) != len(want) {
-		t.Fatalf("posts = %v", got)
-	} else {
-		for i := range want {
-			if got[i] != want[i] {
-				t.Fatalf("slug order = %v, want %v", got, want)
-			}
-		}
+	// Each due card is dispatched once, in slug order, but every turn runs
+	// on its own goroutine (go rt.Handle), so arrival order here is not
+	// the dispatch order: compare as a set.
+	sort.Strings(got)
+	if want := []string{"a", "b"}; strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("dispatched = %v, want %v", got, want)
 	}
 	// a, b ran once; c paused never; dangling never (refused).
 	if c, _ := as.Get("a"); c.LastRun.IsZero() {
