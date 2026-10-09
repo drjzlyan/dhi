@@ -572,10 +572,7 @@ func (m *Model) Resize(w, h int) {
 	m.hitList.Width = maxInt(w-m.railW()-7, 10)
 	m.hitList.Height = h - 5
 
-	if t := m.activeTermTab(); t != nil && t.sess != nil && !t.exited {
-		rows := min(drawerHeight, maxInt(h/3, 4)) - 2
-		_ = t.sess.Resize(maxInt(w-m.railW()-4, 20), rows)
-	}
+	m.syncTermSize()
 }
 
 // Messages.
@@ -881,38 +878,45 @@ func altDigitIndex(key string, count int) int {
 
 // termKeyBytes converts keystroke strings into pty input bytes.
 func termKeyBytes(key string) ([]byte, bool) {
-	switch key {
-	case "enter":
-		return []byte{'\r'}, true
-	case "backspace":
-		return []byte{0x7f}, true
-	case "tab":
-		return []byte{'\t'}, true
-	case "esc":
-		return []byte{0x1b}, true
-	case "up":
-		return []byte("\x1b[A"), true
-	case "down":
-		return []byte("\x1b[B"), true
-	case "right":
-		return []byte("\x1b[C"), true
-	case "left":
-		return []byte("\x1b[D"), true
-	case "ctrl+c":
-		return []byte{0x03}, true
-	case "ctrl+d":
-		return []byte{0x04}, true
-	case "ctrl+l":
-		return []byte{0x0c}, true
-	case "ctrl+u":
-		return []byte{0x15}, true
-	case "space", " ":
-		return []byte{' '}, true
+	// Full key encoding for programs in the terminal (F-061): vim, htop
+	// and shells need every ctrl-letter, alt combos, navigation and
+	// function keys, in the xterm encoding.
+	if b, ok := termSpecialKeys[key]; ok {
+		return []byte(b), true
+	}
+	if rest, ok := strings.CutPrefix(key, "ctrl+"); ok && len(rest) == 1 {
+		c := rest[0]
+		switch {
+		case c >= 'a' && c <= 'z':
+			return []byte{c - 'a' + 1}, true
+		case c == '@' || c == ' ':
+			return []byte{0}, true
+		case c >= '[' && c <= '_': // ctrl+[ \ ] ^ _
+			return []byte{c - '@'}, true
+		}
+	}
+	if rest, ok := strings.CutPrefix(key, "alt+"); ok {
+		if b, ok := termKeyBytes(rest); ok {
+			return append([]byte{0x1b}, b...), true // meta = ESC prefix
+		}
 	}
 	if r := []rune(key); len(r) == 1 && r[0] >= 32 {
 		return []byte(key), true
 	}
 	return nil, false
+}
+
+// termSpecialKeys are the named keys' xterm sequences.
+var termSpecialKeys = map[string]string{
+	"enter": "\r", "backspace": "\x7f", "tab": "\t", "shift+tab": "\x1b[Z",
+	"esc": "\x1b", "space": " ", " ": " ",
+	"up": "\x1b[A", "down": "\x1b[B", "right": "\x1b[C", "left": "\x1b[D",
+	"home": "\x1b[H", "end": "\x1b[F", "pgup": "\x1b[5~", "pgdown": "\x1b[6~",
+	"insert": "\x1b[2~", "delete": "\x1b[3~",
+	"ctrl+up": "\x1b[1;5A", "ctrl+down": "\x1b[1;5B", "ctrl+right": "\x1b[1;5C", "ctrl+left": "\x1b[1;5D",
+	"f1": "\x1bOP", "f2": "\x1bOQ", "f3": "\x1bOR", "f4": "\x1bOS",
+	"f5": "\x1b[15~", "f6": "\x1b[17~", "f7": "\x1b[18~", "f8": "\x1b[19~",
+	"f9": "\x1b[20~", "f10": "\x1b[21~", "f11": "\x1b[23~", "f12": "\x1b[24~",
 }
 
 func (m *Model) handleNavKey(key string) bool {
@@ -1064,6 +1068,9 @@ func (m *Model) refreshRows() {
 func (m *Model) View() string {
 	if m.ws == nil {
 		return branding.NoWorkspace(m.width, m.height, m.version)
+	}
+	if m.fullScreenTerm() { // vim/htop/less in the terminal take the body
+		return m.fullTermView()
 	}
 	if m.reviewOpen && len(m.proposals) > 0 {
 		return m.reviewView()

@@ -38,3 +38,34 @@ func TestKeyRemapsTranslateOnceAndNeverWhileTyping(t *testing.T) {
 		t.Fatal("ctrl+k (remapped to ctrl+p) did not open the palette")
 	}
 }
+
+// ctrlSurface hosts a focused terminal.
+type ctrlSurface struct {
+	stubSurface
+	terminal bool
+}
+
+func (s *ctrlSurface) TakesCtrlC() bool { return s.terminal }
+
+// TestCtrlCGoesToAFocusedTerminal: ctrl+c interrupts the program in a
+// focused terminal instead of quitting DHI; ctrl+q always quits.
+func TestCtrlCGoesToAFocusedTerminal(t *testing.T) {
+	s := &ctrlSurface{stubSurface: stubSurface{id: "ed", title: "Editor", consumeKeys: true}, terminal: true}
+	a := New("test", s)
+	a.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	if _, cmd := a.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl}); cmd != nil || a.quitting {
+		t.Fatal("ctrl+c quit DHI while a terminal had focus")
+	}
+	if got := s.keys[len(s.keys)-1]; got != "ctrl+c" {
+		t.Fatalf("the terminal did not get ctrl+c (got %q)", got)
+	}
+	a.Update(tea.KeyPressMsg{Code: 'q', Mod: tea.ModCtrl})
+	if !a.quitting {
+		t.Fatal("ctrl+q must always quit")
+	}
+	s.terminal, a.quitting = false, false
+	a.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+	if !a.quitting {
+		t.Fatal("without a focused terminal ctrl+c quits")
+	}
+}

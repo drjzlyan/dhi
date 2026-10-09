@@ -63,6 +63,13 @@ type InputCapturer interface {
 	CapturesInput() bool
 }
 
+// CtrlCTaker is implemented by a surface that hosts a terminal: while it
+// reports true, ctrl+c goes to the running program instead of quitting
+// DHI (ctrl+q still quits).
+type CtrlCTaker interface {
+	TakesCtrlC() bool
+}
+
 // CmdSource lets a surface start async work from a key: HandleKey cannot
 // return a tea.Cmd, so the surface queues one and the shell drains it
 // right after the key (nil = nothing queued). Without it, work started

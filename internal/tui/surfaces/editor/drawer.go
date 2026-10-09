@@ -2,11 +2,15 @@ package editor
 
 import (
 	"context"
+	"io"
+	"path/filepath"
+
+	xansi "github.com/charmbracelet/x/ansi"
+
 	"github.com/drjzlyan/dhi/internal/term"
 	"github.com/drjzlyan/dhi/internal/tui/kit"
 	"github.com/drjzlyan/dhi/internal/tui/theme"
 	"github.com/drjzlyan/dhi/internal/vt"
-	"path/filepath"
 )
 
 const (
@@ -19,7 +23,7 @@ const (
 type termTab struct {
 	sess   *term.Session
 	dir    string
-	screen *vt.Screen // ANSI-aware scrollback (F-026 P5)
+	screen *vt.Screen // emulated terminal sized to the pane (F-061)
 	exited bool
 }
 
@@ -31,6 +35,7 @@ func (m *Model) ToggleDrawer() {
 		m.drawerOpen = true
 		m.ensureTermTabs()
 		m.termFocus = true
+		m.syncTermSize()
 	case m.termFocus:
 		m.termFocus = false
 	default:
@@ -61,7 +66,61 @@ func (m *Model) newTermTab(dir, label string) {
 		t.screen.Feed([]byte("\x1b[31m" + err.Error() + "\x1b[0m\n"))
 		return
 	}
+	// The emulator answers the program's terminal queries (cursor
+	// position, attributes); those replies are the program's input.
+	go func() { _, _ = io.Copy(writerFunc(sess.Write), t.screen.Replies()) }()
+	m.syncTermSize()
 	go m.pumpTerm(len(m.terms)-1, sess, m.termMsgs)
+}
+
+// writerFunc adapts a write method to io.Writer.
+type writerFunc func([]byte) error
+
+func (f writerFunc) Write(p []byte) (int, error) {
+	if err := f(p); err != nil {
+		return 0, err
+	}
+	return len(p), nil
+}
+
+// termGeom is the terminal's cell size: the drawer pane, or the whole
+// body while a full-screen program holds the alternate screen.
+func (m *Model) termGeom(full bool) (cols, rows int) {
+	if full {
+		return maxInt(m.width-4, 10), maxInt(m.height-3, 3)
+	}
+	h := min(drawerHeight, maxInt(m.height/3, 4))
+	return maxInt(m.width-m.railW()-5, 20), maxInt(h-2, 1)
+}
+
+// syncTermSize keeps every live session's PTY and emulator at the size
+// it is shown at (they must agree, or programs draw for the wrong box).
+func (m *Model) syncTermSize() {
+	for i, t := range m.terms {
+		if t.exited || t.sess == nil {
+			continue
+		}
+		cols, rows := m.termGeom(i == m.activeTerm && t.screen.AltScreen())
+		if w, h := t.screen.Size(); w == cols && h == rows {
+			continue
+		}
+		t.screen.Resize(cols, rows)
+		_ = t.sess.Resize(cols, rows)
+	}
+}
+
+// TakesCtrlC implements surfaces.CtrlCTaker: a focused live terminal
+// gets ctrl+c (interrupt), not the shell's quit.
+func (m *Model) TakesCtrlC() bool {
+	t := m.activeTermTab()
+	return m.drawerOpen && m.termFocus && t != nil && !t.exited
+}
+
+// fullScreenTerm reports a focused drawer whose program is full-screen:
+// the terminal then takes the whole body (vim needs more than 10 rows).
+func (m *Model) fullScreenTerm() bool {
+	t := m.activeTermTab()
+	return m.drawerOpen && t != nil && !t.exited && t.screen.AltScreen()
 }
 
 // pumpTerm bridges session output into Update messages.
@@ -76,13 +135,22 @@ func (m *Model) ingestTermChunk(idx int, chunk []byte) {
 	if idx < 0 || idx >= len(m.terms) {
 		return
 	}
-	m.terms[idx].screen.Feed(chunk)
+	t := m.terms[idx]
+	wasAlt := t.screen.AltScreen()
+	t.screen.Feed(chunk)
+	if t.screen.AltScreen() != wasAlt {
+		m.syncTermSize() // a full-screen program started or ended
+		if t.screen.AltScreen() {
+			m.termFocus = true // it needs the keyboard
+		}
+	}
 }
 
 func (m *Model) termExited(idx int) {
 	if idx >= 0 && idx < len(m.terms) && !m.terms[idx].exited {
 		m.terms[idx].exited = true
-		m.terms[idx].screen.Feed([]byte("\x1b[2m[process exited]\x1b[0m\n"))
+		m.terms[idx].screen.Feed([]byte("\r\n\x1b[2m[process exited]\x1b[0m"))
+		m.terms[idx].screen.Close()
 	}
 }
 
@@ -91,24 +159,8 @@ func (m *Model) termExited(idx int) {
 // pane width with styles intact.
 func (m *Model) drawerView() string {
 	h := min(drawerHeight, maxInt(m.height/3, 4))
-	var body []string
-	if m.activeTerm < len(m.terms) {
-		t := m.terms[m.activeTerm]
-		inner := maxInt(m.width-m.railW()-5, 20)
-		body = t.screen.Lines(inner, h-2)
-		if !t.exited {
-			// Live-cell prompt marker: fresh rows get their own "_",
-			// the running line carries it at the cursor.
-			if t.screen.Pending() {
-				body = append(body, "_")
-			} else if len(body) > 0 {
-				body[len(body)-1] += "_"
-			}
-		}
-	}
-	for len(body) < h-2 {
-		body = append(body, "")
-	}
+	cols, rows := m.termGeom(false)
+	body := m.termBody(cols, rows)
 	focusMark := ""
 	if m.termFocus {
 		focusMark = " " + theme.Brand().Render(theme.GlyphDot)
@@ -117,8 +169,43 @@ func (m *Model) drawerView() string {
 	panel.SetContent(body...)
 	panel.Width = maxInt(m.width-m.railW()-1, 20)
 	panel.Height = h
-	hint := "ctrl+t blur/close · alt+1..9 switch · alt+n new tab"
-	return panel.View() + "\n" + theme.Hint().Render(hint)
+	hint := "ctrl+t blur/close · alt+1..9 switch · alt+n new tab · ctrl+q quits DHI"
+	return panel.View() + "\n" + theme.Hint().Render(kit.ClipEllipsis(hint, m.width))
+}
+
+// fullTermView is the terminal over the whole body while a full-screen
+// program runs; it returns to the drawer when the program exits.
+func (m *Model) fullTermView() string {
+	cols, rows := m.termGeom(true)
+	panel := kit.NewPanel("terminal · full screen"+termStrip(m), m.termFocus)
+	panel.SetContent(m.termBody(cols, rows)...)
+	panel.Width, panel.Height = m.width, m.height-1
+	hint := "ctrl+t blur · keys go to the program · ctrl+q quits DHI"
+	return panel.View() + "\n" + theme.Hint().Render(kit.ClipEllipsis(hint, m.width))
+}
+
+// termBody renders the active screen with the cursor cell shown while
+// the terminal has focus.
+func (m *Model) termBody(cols, rows int) []string {
+	t := m.activeTermTab()
+	if t == nil {
+		return make([]string, rows)
+	}
+	body := t.screen.Lines(cols, rows)
+	if t.exited || !m.termFocus {
+		return body
+	}
+	x, y := t.screen.Cursor()
+	if y < 0 || y >= len(body) || x < 0 || x >= cols {
+		return body
+	}
+	line := body[y]
+	cell := xansi.Strip(xansi.Cut(line, x, x+1))
+	if cell == "" {
+		cell = " "
+	}
+	body[y] = xansi.Truncate(line, x, "") + "\x1b[0m" + cursorStyle.Render(cell) + xansi.TruncateLeft(line, x+1, "")
+	return body
 }
 
 func termStrip(m *Model) string {

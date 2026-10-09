@@ -2,10 +2,12 @@ package editor
 
 import (
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/drjzlyan/dhi/internal/ansi"
 	"github.com/drjzlyan/dhi/internal/tui/theme"
 )
 
@@ -84,10 +86,14 @@ func TestTerminalStreamingRender(t *testing.T) {
 	m.Update(teaMsg{kind: termMsgOut, tab: 0, chunk: []byte("more")})
 
 	v := plainView(m)
-	for _, want := range []string{"build ok", "$ ", "more_"} {
+	for _, want := range []string{"build ok", "$ more"} {
 		if !strings.Contains(v, want) {
-			t.Errorf("scrollback missing %q:\n%s", want, v)
+			t.Errorf("screen missing %q:\n%s", want, v)
 		}
+	}
+	// The real cursor cell (F-061) sits right after the typed text.
+	if !regexp.MustCompile(`more(\x1b\[0?m)*` + regexp.QuoteMeta(cursorStyle.Render(" "))).MatchString(m.View()) {
+		t.Error("cursor cell not drawn after the prompt text")
 	}
 
 	m.Update(teaMsg{kind: termMsgClosed, tab: 0})
@@ -128,5 +134,50 @@ func TestDrawerRefusesWithoutHermeticEnv(t *testing.T) {
 	}
 	if len(m.terms) == 0 || m.terms[0].sess != nil {
 		t.Fatal("no session may start without an explicit env")
+	}
+}
+
+// TestFullScreenProgramTakesTheBody pins F-061: a program on the
+// alternate screen gets the whole body, every row fits, and leaving it
+// returns to the drawer.
+func TestFullScreenProgramTakesTheBody(t *testing.T) {
+	m := liveEditor(t)
+	m.Resize(100, 30)
+	feed(m, "ctrl+t")
+	m.Update(teaMsg{kind: termMsgOut, tab: 0, chunk: []byte("\x1b[?1049h\x1b[2J\x1b[H~ vim buffer\x1b[30;1H-- INSERT --")})
+	if !m.fullScreenTerm() {
+		t.Fatal("alt screen did not go full screen")
+	}
+	if cols, rows := m.terms[0].screen.Size(); cols != 96 || rows != 27 {
+		t.Fatalf("emulator not resized to the body: %dx%d", cols, rows)
+	}
+	lines := strings.Split(m.View(), "\n")
+	if len(lines) != 30 {
+		t.Fatalf("rows = %d, want 30", len(lines))
+	}
+	for i, l := range lines {
+		if w := ansi.Width(l); w > 100 {
+			t.Fatalf("row %d is %d cells", i, w)
+		}
+	}
+	if v := plainView(m); !strings.Contains(v, "~ vim buffer") || !strings.Contains(v, "full screen") {
+		t.Fatalf("full-screen view:\n%s", v)
+	}
+	m.Update(teaMsg{kind: termMsgOut, tab: 0, chunk: []byte("\x1b[?1049l")})
+	if m.fullScreenTerm() || !strings.Contains(plainView(m), "terminal") {
+		t.Fatal("leaving the alt screen must return to the drawer")
+	}
+}
+
+func TestTermKeyEncoding(t *testing.T) {
+	cases := map[string]string{
+		"ctrl+a": "\x01", "ctrl+z": "\x1a", "ctrl+[": "\x1b", "alt+b": "\x1bb",
+		"pgdown": "\x1b[6~", "delete": "\x1b[3~", "f5": "\x1b[15~", "home": "\x1b[H",
+		"shift+tab": "\x1b[Z", "x": "x", "alt+left": "\x1b\x1b[D",
+	}
+	for k, want := range cases {
+		if got, ok := termKeyBytes(k); !ok || string(got) != want {
+			t.Errorf("%s → %q, want %q", k, got, want)
+		}
 	}
 }

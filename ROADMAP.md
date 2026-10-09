@@ -994,4 +994,5 @@ GitHub setup, a real release, and every deferral either done or specced.
   - [x] Key remaps (F-058): `[keys]` in config, shell translates, chrome shows the pressed key
   - [x] Artifact export (F-059): Ideator `X` → repo file, task card, or an agent files it in the tracker
   - [x] Read-only toolchain for agents (F-060): ro-root differentiation, verified under the real sandbox
+  - [x] Full-screen programs in the terminal (F-061, ADR-0030): vim/htop/less, ctrl+c to the program
 

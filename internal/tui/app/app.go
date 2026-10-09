@@ -497,6 +497,13 @@ func (a *App) activeCapturesInput() bool {
 }
 
 func (a *App) handleGlobal(key string, capturing bool) (tea.Cmd, bool) {
+	// A focused terminal owns ctrl+c (it interrupts the running program,
+	// F-061); ctrl+q always quits DHI.
+	if key == "ctrl+c" {
+		if ct, ok := a.Active().(surfaces.CtrlCTaker); ok && ct.TakesCtrlC() {
+			return nil, false
+		}
+	}
 	switch key {
 	case "ctrl+c", "ctrl+q":
 		a.quitting = true
@@ -869,10 +876,14 @@ func (a *App) buildStatus() *kit.StatusLine {
 	// Hints are derived from the live state: the view count follows the
 	// registry, and while a surface is taking text the digit/tab/? keys
 	// are not offered (they would be typed, not obeyed).
+	quit := "^c quit"
+	if ct, ok := a.Active().(surfaces.CtrlCTaker); ok && ct.TakesCtrlC() {
+		quit = "^q quit" // ctrl+c belongs to the focused terminal
+	}
 	if a.activeCapturesInput() {
-		sl.Hints = []string{"^p palette", "^c quit"}
+		sl.Hints = []string{"^p palette", quit}
 	} else {
-		sl.Hints = []string{fmt.Sprintf("1-%d views", len(a.surfaces)), "tab next", "^p palette", "? help", "^c quit"}
+		sl.Hints = []string{fmt.Sprintf("1-%d views", len(a.surfaces)), "tab next", "^p palette", "? help", quit}
 	}
 	if sc, ok := a.Active().(statusContext); ok {
 		zone, mode := sc.StatusContext()
