@@ -47,12 +47,12 @@ jobs:
           - os: ubuntu-24.04-arm # linux/arm64
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Build verified artifact (GPG check inside script)
         run: scripts/build-hermetic-git.sh "${{ needs.resolve.outputs.version }}"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: hermetic-git-${{ matrix.os }}
           path: |
@@ -66,7 +66,7 @@ jobs:
     permissions:
       contents: write # create the release and upload assets
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           pattern: hermetic-git-*
           merge-multiple: true
@@ -78,7 +78,7 @@ jobs:
           sha256sum *.tar.gz
           cat *.sha256
 
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           tag_name: hermetic-git-v${{ needs.resolve.outputs.version }}
           name: hermetic git v${{ needs.resolve.outputs.version }}
@@ -104,13 +104,13 @@ jobs:
       contents: write # push the pin branch
       pull-requests: write # open the PR
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           pattern: hermetic-git-*
           merge-multiple: true

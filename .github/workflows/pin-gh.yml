@@ -27,7 +27,7 @@ jobs:
     env:
       GH_VERSION: ${{ github.event.inputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Update registry manifest (downloads + digests upstream)
         run: python3 scripts/pin-gh-manifest.py --version "$GH_VERSION"
