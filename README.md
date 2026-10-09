@@ -8,7 +8,7 @@ A keyboard-first IDE where you and a crew of AI agents share one workspace:
 a board, channels, an editor, a review screen, all in one terminal window.
 
 [![CI](https://github.com/drjzlyan/dhi/actions/workflows/ci.yml/badge.svg)](https://github.com/drjzlyan/dhi/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/drjzlyan/dhi?sort=semver&display_name=tag)](https://github.com/drjzlyan/dhi/releases)
+[![Release](https://img.shields.io/github/v/release/drjzlyan/dhi?display_name=tag)](https://github.com/drjzlyan/dhi/releases)
 [![Go](https://img.shields.io/github/go-mod/go-version/drjzlyan/dhi)](go.mod)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 

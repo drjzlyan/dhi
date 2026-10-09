@@ -7,6 +7,12 @@ split, README/screenshots/community files, live verifications. Plan:
 
 ### Session 51 (M27: public readiness)
 
+- RELEASED: v0.1.0 (Latest; darwin arm64/amd64, linux amd64/arm64). Verified from the real
+  release: the README one-liner installs; install.sh with DHI_REQUIRE_SIGNATURE=1 + cosign
+  passes; `cosign verify-blob` on checksums.txt is OK. v0.1.0-rc1 has a tag but no release
+  (its verify job caught an MCP early-exit race, fixed); rc2 is the prerelease. #4/#5/#7
+  merged. cosign's first run can take minutes (its trust-root setup), not a DHI issue.
+
 - DONE + pushed: P1 CI green (lint, GNU base64, antigravity `~/.gemini`
   bug, replay golden) + branch protection (4 checks, admins not enforced);
   P2 F-054 layout contract; P3 F-055 clicks/notices/accents/theme-follow;

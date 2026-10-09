@@ -990,10 +990,11 @@ GitHub setup, a real release, and every deferral either done or specced.
       results hidden while a file was open, a query starting with `-` parsed as an rg flag
 - [x] P5 README with screenshots (`scripts/screenshots.sh` + `scripts/demo`), CONTRIBUTING / CODE_OF_CONDUCT /
       SECURITY, issue + PR templates, Dependabot, CODEOWNERS, release workflows never steal Latest
-- [~] P6 Live verifications + release: DONE live — GitHub review POST (scratch PR #6), 3-column
-      review screen, worktrees.root, release-git on macos-15-intel + ubuntu-24.04-arm (assets
-      verified, macOS `minos 12.0`), installer/formula follow the release's platforms. WAITING ON
-      THE USER: merge pin PR #7, then platforms list, v0.1.0-rc1 → v0.1.0
+- [x] P6 Live verifications + release: GitHub review POST (scratch PR #6), 3-column review screen,
+      worktrees.root, release-git on macos-15-intel + ubuntu-24.04-arm (macOS `minos 12.0`); pins #7
+      merged; four platforms; v0.1.0-rc2 (rc1's verify caught an MCP race) → **v0.1.0** released
+      2026-10-09 as Latest; the README one-liner, SHA-256 and cosign keyless verification checked
+      against the real release
 - [x] P7 Big deferrals, spec first:
   - [x] Key remaps (F-058): `[keys]` in config, shell translates, chrome shows the pressed key
   - [x] Artifact export (F-059): Ideator `X` → repo file, task card, or an agent files it in the tracker
