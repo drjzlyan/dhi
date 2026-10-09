@@ -53,6 +53,13 @@ split, README/screenshots/community files, live verifications. Plan:
   (hashed TF-IDF, works without rg; not semantic).
 - Also fixed: two CI-only flakes (inbox approval goroutine, autopilot dispatch
   order), installer/formula derive platforms from the release.
+- Late fixes: MCP stdio lost the dead server's stderr (exec's hidden copy
+  goroutine raced stdout EOF; DHI now owns the pipe); reviewer agent-review
+  test pumped one event (flake); CoC contact now the private report form.
+- Final main CI: green (4/4). Never run here: release.yml + cosign path of
+  install.sh (installer tested from file:// only), Linux bwrap live test
+  (may skip on hosted runners), tracker export against a real tracker,
+  theme-follow in a real light terminal.
 
 ### Session 50 (M26: review screen F-049, then deferred M25 items)
 
