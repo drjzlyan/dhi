@@ -263,6 +263,7 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 		switch ev.kind {
 		case evStartDone:
 			m.busy = false
+			m.form.busy = false // a failed start leaves the form editable to retry
 			if ev.err != "" {
 				m.opErr = ev.err
 				m.form.err = ev.err

@@ -80,7 +80,12 @@ func (m *Model) closeForm() {
 func (m *Model) formKey(key string) bool {
 	f := &m.form
 	if f.busy {
-		return true // swallow while async work runs
+		// Async work is running: edits wait, but esc always closes the
+		// dialog (the work finishes in the background).
+		if key == "esc" {
+			m.closeForm()
+		}
+		return true
 	}
 	switch f.kind {
 	case fSubmitConfirm:
