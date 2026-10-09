@@ -145,6 +145,14 @@ func TestCatchUpRunsDueInSlugOrderAndOnce(t *testing.T) {
 	if want := []string{"a", "b"}; strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("dispatched = %v, want %v", got, want)
 	}
+	// The slug order is in the synchronous DM posts: a's post gets the
+	// lower bus ID.
+	if m.bus != nil {
+		ha, hb := m.bus.History("dm:alice", 0), m.bus.History("dm:bob", 0)
+		if len(ha) == 0 || len(hb) == 0 || ha[len(ha)-1].ID > hb[len(hb)-1].ID {
+			t.Fatalf("catch-up must post in slug order (a before b): alice=%v bob=%v", ha, hb)
+		}
+	}
 	// a, b ran once; c paused never; dangling never (refused).
 	if c, _ := as.Get("a"); c.LastRun.IsZero() {
 		t.Fatal("a not marked ran")

@@ -19,6 +19,29 @@ sum() { # sum <artifact>
 	printf '%s' "$s"
 }
 
+has() { grep -q "  $1\$" "$sums"; }
+
+# platform_block OS: on_arm / on_intel for whichever builds the release has;
+# a single-arch OS pins that arch so the other gets a clear Homebrew error.
+platform_block() {
+	os=$1
+	arm="dhi_${os}_arm64.tar.gz" intel="dhi_${os}_amd64.tar.gz"
+	has "$arm" || has "$intel" || return 0
+	case $os in darwin) echo "  on_macos do" ;; linux) echo "  on_linux do" ;; esac
+	if has "$arm" && has "$intel"; then
+		printf '    on_arm do\n      url "%s"\n      sha256 "%s"\n    end\n' "$base/$arm" "$(sum "$arm")"
+		printf '    on_intel do\n      url "%s"\n      sha256 "%s"\n    end\n' "$base/$intel" "$(sum "$intel")"
+	elif has "$arm"; then
+		printf '    depends_on arch: :arm64\n    url "%s"\n    sha256 "%s"\n' "$base/$arm" "$(sum "$arm")"
+	else
+		printf '    depends_on arch: :x86_64\n    url "%s"\n    sha256 "%s"\n' "$base/$intel" "$(sum "$intel")"
+	fi
+	echo "  end"
+	echo
+}
+
+base="https://github.com/${repo}/releases/download/v${version}"
+
 cat <<RUBY
 class Dhi < Formula
   desc "The agentic workspace IDE"
@@ -26,18 +49,8 @@ class Dhi < Formula
   version "${version}"
   license "${license}"
 
-  on_macos do
-    depends_on arch: :arm64
-    url "https://github.com/${repo}/releases/download/v${version}/dhi_darwin_arm64.tar.gz"
-    sha256 "$(sum dhi_darwin_arm64.tar.gz)"
-  end
-
-  on_linux do
-    depends_on arch: :x86_64
-    url "https://github.com/${repo}/releases/download/v${version}/dhi_linux_amd64.tar.gz"
-    sha256 "$(sum dhi_linux_amd64.tar.gz)"
-  end
-
+$(platform_block darwin)
+$(platform_block linux)
   def install
     bin.install "dhi"
   end

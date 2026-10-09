@@ -401,12 +401,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, cmd
 		}
 		a.Active().HandleKey(key)
-		// A key may start async work (a search streaming hits): surfaces
-		// cannot return commands from HandleKey, so they queue one.
-		if cs, ok := a.Active().(surfaces.CmdSource); ok {
-			return a, cs.TakeCmd()
-		}
-		return a, nil
+		return a, a.drainSurfaceCmd()
 
 	case tea.MouseWheelMsg:
 		if a.gateActive() {
@@ -428,7 +423,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m := msg.Mouse()
 		a.handleClick(m.X, m.Y)
-		return a, nil
+		return a, a.drainSurfaceCmd() // a click can act like a key (hint bar)
 
 	case transitionMsg:
 		if a.transLeft > 0 {
@@ -774,6 +769,16 @@ func (a *App) View() tea.View {
 	// surface via narrow seams.
 	v.MouseMode = tea.MouseModeCellMotion
 	return v
+}
+
+// drainSurfaceCmd returns the work the active surface queued while
+// handling input (surfaces.CmdSource): a key or a click may start async
+// work, but HandleKey and Click cannot return commands.
+func (a *App) drainSurfaceCmd() tea.Cmd {
+	if cs, ok := a.Active().(surfaces.CmdSource); ok {
+		return cs.TakeCmd()
+	}
+	return nil
 }
 
 // handleClick routes body-local clicks: the help overlay closes on any

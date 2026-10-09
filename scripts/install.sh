@@ -73,10 +73,16 @@ detect_platform() {
 		x86_64|amd64) arch=amd64 ;;
 		arm64|aarch64) arch=arm64 ;;
 	esac
-	case "$os/$arch" in
-		darwin/arm64|linux/amd64) ;;
-		*) die "DHI does not ship a build for ${os}/${arch} yet. Supported: macOS on Apple silicon (darwin/arm64) and Linux x86_64 (linux/amd64)." ;;
+	case "$os" in
+		darwin|linux) ;;
+		*) die "DHI does not ship a build for ${os} (macOS and Linux only)." ;;
 	esac
+}
+
+# supported lists the platforms a release's checksums.txt carries
+# ("darwin/arm64, linux/amd64"): the release itself is the source of truth.
+supported() {
+	sed -n 's/.*  dhi_\([a-z]*\)_\([a-z0-9]*\)\.tar\.gz$/\1\/\2/p' "$1" | paste -sd, - | sed 's/,/, /g'
 }
 
 # ---- main -------------------------------------------------------------
@@ -98,12 +104,14 @@ main() {
 	tmp="$(mktemp -d)"
 	trap 'rm -rf "$tmp"' EXIT INT TERM
 
+	# The checksums come first: they say which platforms this release has,
+	# so an unsupported machine is refused by name before any download.
+	fetch "${base}/checksums.txt" "${tmp}/checksums.txt" quiet
+	want="$(grep "  ${art}\$" "${tmp}/checksums.txt" | cut -d' ' -f1 || true)"
+	[ -n "$want" ] || die "this release has no build for ${os}/${arch}. It ships: $(supported "${tmp}/checksums.txt")."
+
 	step "downloading ${art}"
 	fetch "${base}/${art}" "${tmp}/${art}"
-	fetch "${base}/checksums.txt" "${tmp}/checksums.txt" quiet
-
-	want="$(grep "  ${art}\$" "${tmp}/checksums.txt" | cut -d' ' -f1 || true)"
-	[ -n "$want" ] || die "checksums.txt has no entry for ${art}"
 	got="$(sha256_of "${tmp}/${art}")"
 	[ "$want" = "$got" ] || die "checksum mismatch for ${art} (expected ${want}, got ${got}) — refusing to install"
 	ok "sha256 verified"
