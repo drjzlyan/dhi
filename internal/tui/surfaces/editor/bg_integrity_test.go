@@ -19,4 +19,12 @@ func TestBackgroundIntegrity(t *testing.T) {
 	feed(m, "ctrl+t")
 	m.Resize(140, 36)
 	golden.AssertBgIntegrity(t, "wide", m.View())
+	m = newEditor(t)
+	m.Resize(160, 30)
+	m.OpenPaths(vpathAbs(t, m.ws, "alpha/app.go"), vpathAbs(t, m.ws, "beta/README.md"))
+	feed(m, "ctrl+w", "v")
+	if !m.splitActive() {
+		t.Fatal("split did not open")
+	}
+	golden.AssertBgIntegrity(t, "split", m.View())
 }

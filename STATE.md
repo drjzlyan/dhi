@@ -1,9 +1,27 @@
 # STATE — current position
 
-Updated: 2026-10-09 (session 51: M27 public readiness — CI green and
-branch-protected, layout contract, interaction polish, editor replace +
-split, README/screenshots/community files, live verifications. Plan:
-`~/.claude/plans/mighty-wandering-rainbow.md`.)
+Updated: 2026-10-09 (session 52: M28 UI cohesion, F-064, on branch
+`f064-ui-cohesion`, not merged. Plan:
+`~/.claude/plans/cryptic-meandering-volcano.md`.)
+
+### Session 52 (M28: UI cohesion, F-064)
+
+- DONE on branch `f064-ui-cohesion` (4 phases, committed per phase): background
+  integrity, theme tokens, component upgrades, README screenshots. See
+  `docs/features/F-064-ui-cohesion.md`.
+- Root cause of the "bands" bug: a background style wrapping already-styled text
+  (`bg.Render(styled)`) loses its background at every inner reset. Use
+  `kit.PaintRow(row, w, bgStyle)` or `kit.Restyle(style, s)`, never `st.Render` on
+  composite strings. `golden.Snapshot` now fails on such holes when its input
+  carries ANSI; tests that pre-strip their output skip the check, so add a sweep
+  case to `bg_integrity_test.go` for any new screen.
+- Dialogs: `kit.Overlay` no longer dims; it splices and clears a phrase-wide side
+  margin. A `kit.Modal` is now Height = body + 2 (no shadow row).
+- Gotchas: `⎇` is missing from many fonts (branches show as pills); freeze ignores
+  SGR 39 and 49, so `scripts/screenshots.sh` rewrites both; the drawer's shell needs
+  a neutral prompt in the sandbox home (the script writes one).
+- Next: open a PR for the branch; consider zebra rows (`BgRowAlt` is defined but
+  not used yet) and cursor-line shading in the editor.
 
 ### Session 51 (M27: public readiness)
 

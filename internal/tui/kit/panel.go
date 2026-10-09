@@ -150,7 +150,7 @@ func topEdge(width int, title string, edge, titleSt lipgloss.Style) string {
 		fill = 1
 	}
 	return edge.Render(rb.TopLeft+rb.Top) +
-		titleSt.Render(head) +
+		Restyle(titleSt, head) + // titles may carry pills (F-064)
 		edge.Render(strings.Repeat(rb.Top, fill)+rb.TopRight)
 }
 

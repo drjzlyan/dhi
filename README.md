@@ -42,11 +42,17 @@ already work in:
 
 | Board and agents | Channels |
 |---|---|
-| <img src="docs/assets/board.png" alt="Kanban board with a selected task's details"> | <img src="docs/assets/channels.png" alt="The #general channel with messages from agents"> |
-| **Editor: split panes** | **Project-wide regex replace, previewed** |
-| <img src="docs/assets/editor.png" alt="Two files side by side in split panes"> | <img src="docs/assets/replace.png" alt="Preview of a regex replace across files"> |
-| **Help that follows you** | **Narrow terminals get the full UI** |
-| <img src="docs/assets/help.png" alt="Searchable keyboard help over the board"> | <img src="docs/assets/narrow.png" alt="The workspace at 72 columns"> |
+| <img src="docs/assets/board.png" alt="Kanban board with two-line cards per lane and the selected task's details"> | <img src="docs/assets/channels.png" alt="The #general channel with each agent in its own color"> |
+| **Inbox: what needs you** | **Dialogs stay in their box** |
+| <img src="docs/assets/inbox.png" alt="The inbox with a task ready for review and its preview"> | <img src="docs/assets/dialog.png" alt="The new-task dialog over the board"> |
+| **Editor: file tree and split panes** | **A real terminal, one tab per repo** |
+| <img src="docs/assets/editor.png" alt="A file tree with guides and branch chips beside two files in split panes"> | <img src="docs/assets/terminal.png" alt="The terminal drawer running git log under the editor"> |
+| **Project-wide regex replace, previewed** | **Ideator: round-table sessions** |
+| <img src="docs/assets/replace.png" alt="Preview of a regex replace across files"> | <img src="docs/assets/ideator.png" alt="An ideation session card with its mode, moderator and crew"> |
+| **Settings, grouped** | **Help that follows you** |
+| <img src="docs/assets/settings.png" alt="Settings grouped into appearance, editor, scopes and conventions"> | <img src="docs/assets/help.png" alt="Searchable keyboard help over the board"> |
+| **Narrow terminals get the full UI** | |
+| <img src="docs/assets/narrow.png" alt="The workspace at 72 columns"> | |
 
 ## Install
 
