@@ -135,10 +135,17 @@ func TestChannelsTranscriptStamps(t *testing.T) {
 func TestBoardCardWidthProportional(t *testing.T) {
 	theme.SwapForTest(t, theme.Dark())
 	tk := tasks.Task{Slug: "x", Title: "a fairly long card title", Assignee: "scout"}
+	// F-064: two lines per card, each inside the lane's body (one cell
+	// of air before the next lane); kit.Columns pads them.
 	for _, laneW := range []int{8, 20, 40} {
-		row := ansi.Strip(boardCard(tk, laneW, false, false))
-		if ansi.Width(row) != laneW {
-			t.Fatalf("card row width = %d, want %d: %q", ansi.Width(row), laneW, row)
+		lines := strings.Split(ansi.Strip(boardCard(tk, laneW, false, false)), "\n")
+		if len(lines) != 2 {
+			t.Fatalf("card lines = %d, want 2", len(lines))
+		}
+		for _, l := range lines {
+			if ansi.Width(l) > laneW-1 {
+				t.Fatalf("card line width = %d, want <= %d: %q", ansi.Width(l), laneW-1, l)
+			}
 		}
 	}
 }

@@ -40,15 +40,16 @@ type Model struct {
 	d        Deps
 
 	sec      sectionID
-	cursor   int // CONFIG rows
-	agentCur int // AGENTS roster rows
-	libCur   int // LIBRARY listing rows
-	teamCur  int // TEAMS rows
-	packCur  int // PACKS rows
-	stdCur   int // STANDARDS rows
-	wfCur    int // WORKFLOWS rows
-	autoCur  int // AUTOPILOTS rows
-	mktCur   int // MARKETPLACE rows
+	cursor   int   // CONFIG rows
+	cfgRowAt []int // CONFIG: visible line → setting row (-1 = header), for clicks
+	agentCur int   // AGENTS roster rows
+	libCur   int   // LIBRARY listing rows
+	teamCur  int   // TEAMS rows
+	packCur  int   // PACKS rows
+	stdCur   int   // STANDARDS rows
+	wfCur    int   // WORKFLOWS rows
+	autoCur  int   // AUTOPILOTS rows
+	mktCur   int   // MARKETPLACE rows
 	mktQuery string
 	mktEdit  bool // search input focused
 	mktBusy  bool
@@ -994,10 +995,11 @@ func (m *Model) Click(x, y int) bool {
 	if x >= railW {
 		// CONFIG rows (F-055): content line i is setting i (no scroll
 		// window); click selects, a second click changes it like enter.
-		row := y - 1 // panel top border
-		if m.sec != secConfig || row < 0 || row > rowCopyright || row >= m.height-4 {
+		line := y - 1 // panel top border
+		if m.sec != secConfig || line < 0 || line >= len(m.cfgRowAt) || m.cfgRowAt[line] < 0 {
 			return false
 		}
+		row := m.cfgRowAt[line]
 		if m.cursor == row {
 			m.HandleKey("enter")
 		} else {
@@ -1081,7 +1083,7 @@ func (m *Model) sectionPane(w, h int) string {
 	case secMarketplace:
 		content = m.marketplaceView(w)
 	default:
-		content = m.configView()
+		content = m.configView(w-4, h-3)
 	}
 	inner := w - 4 // panel edges + horizontal padding
 	for len(content) < h-3 {
@@ -1145,46 +1147,96 @@ func (m *Model) formTitle() string {
 	}
 }
 
-func (m *Model) configView() []string {
-	rows := []string{
-		settingRow(m.cursor == rowTheme, "theme", m.themeValue()),
-		settingRow(m.cursor == rowReducedMotion, "reduced_motion",
-			valueText(boolStr(m.cfg.ReducedMotion))),
-		settingRow(m.cursor == rowTabWidth, "editor.tab_width",
-			valueText(itoa(m.cfg.Editor.TabWidth))),
-		settingRow(m.cursor == rowLineNumbers, "editor.line_numbers",
-			valueText(boolStr(m.cfg.Editor.LineNumbers))),
-		settingRow(m.cursor == rowScrollback, "terminal.scrollback",
-			valueText(itoa(m.cfg.Terminal.Scrollback))),
+// configView renders CONFIG grouped under section headers (F-064):
+// dotted leaders tie each key to its value, booleans read as colored
+// ✓/✗, defaults are muted. budget is the visible row count; a taller
+// list windows around the cursor. m.cfgRowAt maps each visible line to
+// its setting (-1 for headers) so clicks land on the right row.
+func (m *Model) configView(w, budget int) []string {
+	type line struct {
+		text string
+		row  int
 	}
+	var lines []line
+	head := func(title string) {
+		if len(lines) > 0 {
+			lines = append(lines, line{"", -1})
+		}
+		t := strings.ToUpper(title)
+		rule := theme.Rule(max(w-len(t)-3, 0))
+		lines = append(lines, line{" " + theme.SectionHeader().Render(t) + " " + rule, -1})
+	}
+	add := func(row int, name, value string) {
+		lines = append(lines, line{settingRow(m.cursor == row, name, value), row})
+	}
+	head("appearance")
+	add(rowTheme, "theme", m.themeValue())
+	add(rowReducedMotion, "reduced_motion", boolValue(m.cfg.ReducedMotion))
+	head("editor & terminal")
+	add(rowTabWidth, "editor.tab_width", itoa(m.cfg.Editor.TabWidth))
+	add(rowLineNumbers, "editor.line_numbers", boolValue(m.cfg.Editor.LineNumbers))
+	add(rowScrollback, "terminal.scrollback", itoa(m.cfg.Terminal.Scrollback))
+	head("agent scopes")
 	for i, name := range scopeRowNames {
 		val := m.cfg.Scopes[name]
 		if val == "" {
-			val = "default"
+			val = theme.TextMuted().Render("default")
 		}
-		rows = append(rows, settingRow(m.cursor == rowScopesBase+i, "scopes."+name, valueText(val)))
+		add(rowScopesBase+i, "scopes."+name, val)
 	}
 	wt := m.cfg.Worktrees.Root
 	if wt == "" {
-		wt = "inside .dhi/"
+		wt = theme.TextMuted().Render("inside .dhi/")
 	}
-	co := "off"
+	co := theme.TextMuted().Render("off")
 	if m.cfg.Conventions.Commit.CoAuthorEnabled {
 		co = m.cfg.Conventions.Commit.CoAuthor
 	}
-	return append(rows,
-		settingRow(m.cursor == rowWorktrees, "worktrees.root", valueText(wt)),
-		settingRow(m.cursor == rowBranchTask, "conventions.branch.task",
-			valueText(m.cfg.Conventions.Branch.Task)),
-		settingRow(m.cursor == rowCommitFormat, "conventions.commit.format",
-			valueText(m.cfg.Conventions.Commit.Format)),
-		settingRow(m.cursor == rowCommitCoAuthor, "conventions.commit.co_author",
-			valueText(co)),
-		settingRow(m.cursor == rowCopyright, "conventions.copyright.enabled",
-			valueText(boolStr(m.cfg.Conventions.Copyright.Enabled))),
-		"",
-		"  "+theme.TextDim().Render(padTo("keys", settingNameW))+m.keysValue(),
-	)
+	head("worktrees & conventions")
+	add(rowWorktrees, "worktrees.root", wt)
+	add(rowBranchTask, "conventions.branch.task", m.cfg.Conventions.Branch.Task)
+	add(rowCommitFormat, "conventions.commit.format", m.cfg.Conventions.Commit.Format)
+	add(rowCommitCoAuthor, "conventions.commit.co_author", co)
+	add(rowCopyright, "conventions.copyright.enabled", boolValue(m.cfg.Conventions.Copyright.Enabled))
+	head("keys")
+	lines = append(lines, line{"  " + theme.TextDim().Render(leader("[keys]", settingNameW)) + m.keysValue(), -1})
+
+	top := 0
+	if budget > 0 && len(lines) > budget {
+		cur := 0
+		for i, l := range lines {
+			if l.row == m.cursor {
+				cur = i
+			}
+		}
+		top = min(max(cur-budget/2, 0), len(lines)-budget)
+		lines = lines[top : top+budget]
+	}
+	out := make([]string, len(lines))
+	m.cfgRowAt = make([]int, len(lines))
+	for i, l := range lines {
+		out[i] = l.text
+		m.cfgRowAt[i] = l.row
+	}
+	return out
+}
+
+// boolValue renders a boolean setting as a colored mark plus the word
+// config.toml uses, so the screen and the file agree.
+func boolValue(b bool) string {
+	if b {
+		return theme.SuccessText().Render(theme.GlyphCheck + " true")
+	}
+	return theme.TextMuted().Render(theme.GlyphCross + " false")
+}
+
+// leader pads name to w cells with a dotted leader ("name ·······").
+func leader(name string, w int) string {
+	n := w - len(name) - 2
+	if n < 1 {
+		return padTo(name, w)
+	}
+	return name + " " + theme.RuleText().Render(strings.Repeat("·", n)) + " "
 }
 
 // keysValue lists the [keys] remaps (F-058); they are edited in
@@ -1245,18 +1297,17 @@ func (m *Model) formView() []string {
 }
 
 // settingNameW fits the longest key ("conventions.copyright.enabled")
+// plus its dotted leader
 // plus a two-cell gutter, so a value never runs into its name.
-const settingNameW = 31
+const settingNameW = 33
 
 func settingRow(selected bool, name, value string) string {
-	namePart := padTo(name, settingNameW)
 	if selected {
-		return theme.GlyphCursor + " " + theme.TabActive().Render(namePart) + value
+		return theme.GlyphCursor + " " + theme.TabActive().Render(name) +
+			strings.TrimPrefix(leader(name, settingNameW), name) + value
 	}
-	return "  " + theme.TextDim().Render(namePart) + value
+	return "  " + theme.TextDim().Render(name) + strings.TrimPrefix(leader(name, settingNameW), name) + value
 }
-
-func valueText(v string) string { return v }
 
 // themeValue shows "auto" while no theme was chosen: the live theme then
 // follows the terminal's background (F-055).
@@ -1265,13 +1316,6 @@ func (m *Model) themeValue() string {
 		return "auto · " + theme.Current.Name + theme.Hint().Render("  (follows the terminal)")
 	}
 	return m.cfg.Theme
-}
-
-func boolStr(b bool) string {
-	if b {
-		return "true"
-	}
-	return "false"
 }
 
 func itoa(n int) string {

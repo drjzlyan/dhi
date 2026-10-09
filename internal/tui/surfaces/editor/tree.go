@@ -109,26 +109,40 @@ func sortNodes(ns []*node) {
 	})
 }
 
-// treeRow is one visible row with its nesting depth.
+// treeRow is one visible row with its nesting depth. guide is the
+// ancestor rail ("│ " per open ancestor, "  " under a last child) and
+// last marks the final child of its parent, so the renderer can draw
+// "├ " or "└ " (F-064 tree guides).
 type treeRow struct {
 	node  *node
 	depth int
+	guide string
+	last  bool
 }
 
 // flatten renders expanded structure as visible rows with depths.
 func flatten(roots []*node) []treeRow {
 	var out []treeRow
-	var walk func(n *node, depth int)
-	walk = func(n *node, depth int) {
-		out = append(out, treeRow{node: n, depth: depth})
-		if n.expanded {
-			for _, c := range n.children {
-				walk(c, depth+1)
+	var walk func(n *node, depth int, guide string, last bool)
+	walk = func(n *node, depth int, guide string, last bool) {
+		out = append(out, treeRow{node: n, depth: depth, guide: guide, last: last})
+		if !n.expanded {
+			return
+		}
+		childGuide := guide
+		if depth > 0 {
+			if last {
+				childGuide += "  "
+			} else {
+				childGuide += "│ "
 			}
 		}
+		for i, c := range n.children {
+			walk(c, depth+1, childGuide, i == len(n.children)-1)
+		}
 	}
-	for _, r := range roots {
-		walk(r, 0)
+	for i, r := range roots {
+		walk(r, 0, "", i == len(roots)-1)
 	}
 	return out
 }

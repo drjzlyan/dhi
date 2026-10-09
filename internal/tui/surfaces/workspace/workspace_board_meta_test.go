@@ -161,12 +161,12 @@ func TestBoardCardPriorityPrefix(t *testing.T) {
 	if !strings.Contains(out, "◆") || !strings.Contains(out, "▲") {
 		t.Fatalf("card prefix = %q", out)
 	}
-	// F-055: the title always shows; the slug joins on wide lanes only.
-	plain := tasks.Task{Slug: "the-slug", Title: "The title"}
-	if got := ansi.Strip(boardCard(plain, 40, false, false)); !strings.Contains(got, "The title") || strings.Contains(got, "the-slug") {
-		t.Fatalf("40-cell card = %q, want the title without the slug", got)
-	}
-	if got := ansi.Strip(boardCard(plain, 60, false, false)); !strings.Contains(got, "the-slug") || !strings.Contains(got, "The title") {
-		t.Fatalf("60-cell card = %q, want slug and title", got)
+	// F-064: the title owns the first line; slug and assignee sit on
+	// the meta line under it.
+	plain := tasks.Task{Slug: "the-slug", Title: "The title", Assignee: "scout"}
+	lines := strings.Split(ansi.Strip(boardCard(plain, 40, false, false)), "\n")
+	if len(lines) != 2 || !strings.Contains(lines[0], "The title") ||
+		!strings.Contains(lines[1], "the-slug") || !strings.Contains(lines[1], "@scout") {
+		t.Fatalf("card = %q, want title then slug · @assignee", lines)
 	}
 }

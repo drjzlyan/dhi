@@ -171,10 +171,10 @@ func (m *Model) diffSegmentsView(w int, viewed map[string]bool) ([]diffSeg, []in
 	for i, row := range rows {
 		var lines []string
 		switch row.kind {
-		case vrFileHeader:
-			lines = []string{m.fileHeaderText(row.file, viewed)}
+		case vrFileHeader: // header strips (F-064): files and hunks scan as bands
+			lines = []string{kit.PaintRow(m.fileHeaderText(row.file, viewed), bodyW, theme.HeaderBg())}
 		case vrHunkHeader:
-			lines = []string{m.hunkHeader(row.text, bodyW)}
+			lines = []string{kit.PaintRow(m.hunkHeader(row.text, bodyW), bodyW, theme.HeaderBg())}
 		case vrBinary:
 			lines = []string{theme.TextDim().Render(crop(row.text, bodyW))}
 		case vrGap:
@@ -266,7 +266,6 @@ func (m *Model) hunkHeader(text string, w int) string {
 func (m *Model) fileHeaderText(fi int, viewed map[string]bool) string {
 	f := m.files[fi]
 	adds, dels := f.Stat()
-	badge := fmt.Sprintf("+%d -%d", adds, dels)
 	extra := ""
 	if f.IsRename {
 		extra = "renamed "
@@ -275,9 +274,12 @@ func (m *Model) fileHeaderText(fi int, viewed map[string]bool) string {
 	if viewed[f.DisplayPath()] {
 		mark = " ✓"
 	}
-	header := theme.TabActive().Render(fmt.Sprintf("%s%s", extra, f.DisplayPath())) +
-		theme.TextDim().Render(mark+"  "+badge)
-	return header
+	glyph, kc := theme.FileKind(f.DisplayPath())
+	return lipgloss.NewStyle().Foreground(kc).Render(glyph) + " " +
+		theme.TextStyle().Bold(true).Render(extra+f.DisplayPath()) +
+		theme.SuccessText().Render(mark) + "  " +
+		theme.SuccessText().Render(fmt.Sprintf("+%d", adds)) + " " +
+		theme.DangerText().Render(fmt.Sprintf("-%d", dels))
 }
 
 // unifiedLine renders one diff line as [old][new]│text segments;

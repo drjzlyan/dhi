@@ -62,12 +62,12 @@ func TestGitPanelStageAndCommit(t *testing.T) {
 		t.Fatal("panel did not open focused")
 	}
 	v := plainView(m)
-	if !strings.Contains(v, "unstaged") || !strings.Contains(v, "app.go") {
+	if !strings.Contains(v, "UNSTAGED") || !strings.Contains(v, "app.go") {
 		t.Fatalf("status missing modified file:\n%s", v)
 	}
 
 	feed(m, "s") // stage cursor file
-	if !strings.Contains(plainView(m), "staged") || !strings.Contains(plainView(m), "app.go") {
+	if !strings.Contains(plainView(m), "STAGED") || !strings.Contains(plainView(m), "app.go") {
 		t.Fatalf("staged section missing after s:\n%s", plainView(m))
 	}
 	if st := m.gitEntries; len(stagedPaths(st)) != 1 {
@@ -132,11 +132,11 @@ func TestGitPanelLogTab(t *testing.T) {
 	feed(m, "ctrl+j")
 	feed(m, "tab")
 	v := plainView(m)
-	if !strings.Contains(v, "initial") || !strings.Contains(v, "[log]") {
+	if !strings.Contains(v, "initial") || m.gitTab != 1 {
 		t.Fatalf("log view wrong:\n%s", v)
 	}
 	feed(m, "tab") // back to status
-	if !strings.Contains(plainView(m), "[status]") {
+	if m.gitTab != 0 || !strings.Contains(plainView(m), "STAGED") {
 		t.Error("tab did not return to status")
 	}
 }

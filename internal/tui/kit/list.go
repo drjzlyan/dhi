@@ -13,6 +13,7 @@ type Item struct {
 	Title string
 	Desc  string // dimmed inline detail; shares the row style on inset rows
 	Badge string // right-aligned status chip
+	Tag   string // right-aligned pre-styled marker (git status letter), no brackets
 	Group bool   // header row: not selectable, cursor skips it
 }
 
@@ -163,6 +164,11 @@ func (l *List) View() string {
 			gap := l.Width - runeWidth(line) - runeWidth(badge)
 			line += strings.Repeat(" ", clamp(gap, 1, l.Width)) + theme.Hint().Render(badge)
 		}
+		if it.Tag != "" {
+			line = ClipEllipsis(line, l.Width-runeWidth(it.Tag)-1)
+			gap := l.Width - runeWidth(line) - runeWidth(it.Tag)
+			line += strings.Repeat(" ", clamp(gap, 1, l.Width)) + it.Tag
+		}
 		out = append(out, Restyle(st, padTo(line, l.Width)))
 	}
 	return strings.Join(out, "\n")
@@ -193,6 +199,9 @@ func (l *List) insetRow(idx int, it Item) string {
 	if it.Badge != "" {
 		badgeW = runeWidth("["+it.Badge+"]") + 1
 	}
+	if it.Tag != "" {
+		badgeW = runeWidth(it.Tag) + 1
+	}
 	title := ClipEllipsis(it.Title, clamp(l.Width-badgeW-2, 1, l.Width))
 	line := marker + title
 	if it.Desc != "" {
@@ -202,6 +211,9 @@ func (l *List) insetRow(idx int, it Item) string {
 	}
 	// Restyle, not Render: a styled title (an accent dir name, a glyph)
 	// ends in a reset that would drop the inset shade mid-row (F-064).
+	if it.Tag != "" {
+		return Restyle(base, padTo(line, l.Width-runeWidth(it.Tag)-1)+" "+it.Tag)
+	}
 	if it.Badge == "" {
 		return Restyle(base, padTo(line, l.Width))
 	}

@@ -34,8 +34,20 @@ type Columns struct {
 	Active int // focused lane
 	Width  int // total width
 	Height int // visible rows below the headers; 0 = all
+	// CardH is the rows per card (F-064): each Rows entry then holds
+	// CardH lines joined by "\n", and a thin rule separates cards. 0 or
+	// 1 keeps the one-line rows with no rules.
+	CardH int
 
 	offsets map[int]int
+}
+
+// UnitH is the screen rows one card takes, its separator rule included.
+func (c *Columns) UnitH() int {
+	if c.CardH <= 1 {
+		return 1
+	}
+	return c.CardH + 1
 }
 
 // Left / Right / Up / Down move the active lane or its cursor, clamped.
@@ -85,6 +97,7 @@ func (c *Columns) laneWindow(i, rows int) (start, end int) {
 	if vis <= 0 {
 		return 0, len(col.Rows)
 	}
+	vis = max(vis/c.UnitH(), 1)
 	if len(col.Rows) <= vis {
 		return 0, len(col.Rows)
 	}
@@ -102,8 +115,9 @@ func (c *Columns) laneWindow(i, rows int) (start, end int) {
 	return off, off + vis
 }
 
-// Window returns lane i's visible [start, end) rows as last rendered by
-// View (click zones map a screen row back to a card with it).
+// Window returns lane i's visible [start, end) cards as last rendered by
+// View (click zones map a screen row back to a card with it: screen row
+// dy is card start + dy/UnitH()).
 func (c *Columns) Window(i int) (start, end int) {
 	if i < 0 || i >= len(c.Cols) {
 		return 0, 0
@@ -136,20 +150,20 @@ func (c *Columns) HandleKey(key string) bool {
 	return true
 }
 
-// View renders the lanes: header row per lane, then Height body rows.
+// View renders the lanes: a header strip per lane, then Height body rows.
+// F-064: headers sit on the header shade (the active lane's on the
+// selection shade, its title in the accent) with the count as a quiet
+// number; cards of CardH rows are separated by thin rules and the
+// selected card is highlighted across all its rows.
 func (c *Columns) View() string {
 	if len(c.Cols) == 0 {
 		return ""
 	}
-	laneW := c.Width / len(c.Cols)
-	if laneW < 8 {
-		laneW = 8
-	}
+	laneW := c.LaneWidth(0)
 
-	header := theme.TextDim().Render
-	active := theme.TabActive()
 	sel := theme.TabActive()
 	inset := theme.InsetBg()
+	headBg := theme.HeaderBg()
 
 	lines := make([]string, 0, c.Height+1)
 	var heads []string
@@ -158,42 +172,63 @@ func (c *Columns) View() string {
 		if col.Accent != nil {
 			dot = lipgloss.NewStyle().Foreground(col.Accent).Render(theme.GlyphDot) + " "
 		}
-		t := " " + dot + col.Title + " (" + strconv.Itoa(len(col.Rows)) + ") "
+		title := theme.TextDim().Render(col.Title)
+		bg := headBg
 		if i == c.Active {
-			heads = append(heads, padTo(active.Render(t), laneW))
-		} else {
-			heads = append(heads, padTo(header(t), laneW))
+			title = theme.TabActive().Render(col.Title)
+			bg = lipgloss.NewStyle().Background(theme.Current.BgSelection)
 		}
+		t := " " + dot + title + "  " + theme.TextMuted().Render(strconv.Itoa(len(col.Rows)))
+		heads = append(heads, PaintRow(t, laneW-1, bg)+" ")
 	}
 	lines = append(lines, strings.Join(heads, ""))
 
+	unit := c.UnitH()
+	cardH := max(c.CardH, 1)
 	rows := c.Height
 	if rows <= 0 {
 		for _, col := range c.Cols {
-			if len(col.Rows) > rows {
-				rows = len(col.Rows)
+			if n := len(col.Rows) * unit; n > rows {
+				rows = n
 			}
 		}
 	}
+	lanes := make([][]string, len(c.Cols))
+	for i := range c.Cols {
+		col := &c.Cols[i]
+		start, end := c.laneWindow(i, c.Height)
+		var body []string
+		if len(col.Rows) == 0 {
+			body = append(body, PaintRow(" "+EmptyRow(), laneW-1, inset))
+		}
+		for k := start; k < end && k < len(col.Rows); k++ {
+			st := inset
+			if i == c.Active && k == col.Cursor {
+				st = sel
+			}
+			card := strings.Split(col.Rows[k], "\n")
+			for y := 0; y < cardH; y++ {
+				ln := ""
+				if y < len(card) {
+					ln = card[y]
+				}
+				body = append(body, Restyle(st, padTo(clip(ln, laneW-1), laneW-1)))
+			}
+			if unit > cardH {
+				body = append(body, PaintRow(theme.Rule(laneW-1), laneW-1, inset))
+			}
+		}
+		lanes[i] = body
+	}
+	blank := inset.Render(strings.Repeat(" ", laneW-1))
 	for y := 0; y < rows; y++ {
 		var cells []string
 		for i := range c.Cols {
-			col := &c.Cols[i]
-			var row string
-			start, end := c.laneWindow(i, c.Height)
-			if len(col.Rows) == 0 && y == 0 {
-				row = inset.Render(clip(EmptyRow(), laneW-1))
-			} else if start+y < end && start+y < len(col.Rows) {
-				row = clip(col.Rows[start+y], laneW-1)
-				if i == c.Active && start+y == col.Cursor {
-					row = Restyle(sel, padTo(row, laneW-1))
-				} else {
-					row = Restyle(inset, padTo(row, laneW-1))
-				}
-			} else {
-				row = inset.Render(strings.Repeat(" ", laneW-1))
+			row := blank
+			if y < len(lanes[i]) {
+				row = lanes[i][y]
 			}
-			cells = append(cells, padTo(row, laneW))
+			cells = append(cells, row+" ")
 		}
 		lines = append(lines, strings.Join(cells, ""))
 	}

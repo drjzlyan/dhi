@@ -22,3 +22,27 @@ func TestRailClickJumpsToSectionButNotThroughDialogs(t *testing.T) {
 		t.Fatal("an open form must swallow rail clicks")
 	}
 }
+
+// F-064: CONFIG is grouped under headers, so a click maps through the
+// rendered lines — a header hits nothing, a setting row selects itself.
+func TestConfigClickMapsThroughGroupHeaders(t *testing.T) {
+	m, _ := newSurface(t)
+	m.Resize(110, 40)
+	m.sec = secConfig
+	_ = m.View()
+	if m.Click(40, 1) { // line 0: the APPEARANCE header
+		t.Fatal("a click on a group header must not select a setting")
+	}
+	line := -1
+	for i, r := range m.cfgRowAt {
+		if r == rowTabWidth {
+			line = i
+		}
+	}
+	if line < 0 {
+		t.Fatal("editor.tab_width not rendered")
+	}
+	if !m.Click(40, line+1) || m.cursor != rowTabWidth {
+		t.Fatalf("cursor = %d, want editor.tab_width (%d)", m.cursor, rowTabWidth)
+	}
+}

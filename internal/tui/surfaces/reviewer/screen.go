@@ -57,15 +57,21 @@ func (m *Model) screenFiles(w, h int) string {
 		if i == m.fileCur {
 			style = theme.TabActive()
 		}
-		nameW := maxInt(inner-4-1-len(fmt.Sprintf("+%d -%d", adds, dels)), 6)
+		glyph, kc := theme.FileKind(f.DisplayPath())
+		nameW := maxInt(inner-6-1-len(fmt.Sprintf("+%d -%d", adds, dels)), 6)
 		name := padTo(crop(baseDir(f.DisplayPath()), nameW), nameW)
-		rows = append(rows, cursorGlyph(i == m.fileCur)+theme.SuccessText().Render(mark)+" "+
-			style.Render(name)+" "+
-			theme.SuccessText().Render(fmt.Sprintf("+%d", adds))+" "+theme.DangerText().Render(fmt.Sprintf("-%d", dels)))
+		row := cursorGlyph(i == m.fileCur) + theme.SuccessText().Render(mark) + " " +
+			lipgloss.NewStyle().Foreground(kc).Render(glyph) + " " +
+			style.Render(name) + " " +
+			theme.SuccessText().Render(fmt.Sprintf("+%d", adds)) + " " + theme.DangerText().Render(fmt.Sprintf("-%d", dels))
+		if i == m.fileCur { // the file in view reads as a band (F-064)
+			row = kit.PaintRow(row, inner, lipgloss.NewStyle().Background(theme.Current.BgSelection))
+		}
+		rows = append(rows, row)
 	}
-	head := []string{theme.TextDim().Render(crop(r.ID, inner))}
+	head := []string{theme.TextStyle().Bold(true).Render(crop(r.ID, inner))}
 	if r.Target.PRNumber > 0 {
-		head = append(head, theme.TextDim().Render("PR #"+strconv.Itoa(r.Target.PRNumber)))
+		head = append(head, kit.Pill("PR #"+strconv.Itoa(r.Target.PRNumber), theme.Current.Info))
 	}
 	viewed := 0
 	for i := range m.files {
@@ -73,7 +79,8 @@ func (m *Model) screenFiles(w, h int) string {
 			viewed++
 		}
 	}
-	head = append(head, theme.Hint().Render(fmt.Sprintf("%d/%d viewed", viewed, len(m.files))), "")
+	head = append(head, viewedMeter(viewed, len(m.files), minInt(inner-12, 12))+
+		theme.TextMuted().Render(fmt.Sprintf(" %d/%d viewed", viewed, len(m.files))), "")
 	avail := maxInt(body-len(head), 1)
 	start := 0
 	if m.fileCur >= avail {
@@ -88,8 +95,18 @@ func (m *Model) screenFiles(w, h int) string {
 	if len(rows) > avail {
 		p.SetScroll(kit.NewScroller(len(rows), avail, start))
 	}
-	p.SetFooter(theme.Hint().Render(crop("n/p file · v viewed", inner)))
+	p.SetFooter(kit.HintBar(inner, "", "n/p file", "v viewed"))
 	return p.View()
+}
+
+// viewedMeter is a w-cell progress bar of reviewed files (F-064).
+func viewedMeter(done, total, w int) string {
+	if w < 3 || total == 0 {
+		return ""
+	}
+	fill := done * w / total
+	return theme.SuccessText().Render(strings.Repeat("━", fill)) +
+		theme.RuleText().Render(strings.Repeat("━", w-fill))
 }
 
 // baseDir shows a path as "dir/file" so long trees stay recognisable.
@@ -116,7 +133,11 @@ func (m *Model) screenConversation(w, h int) string {
 			state += " · " + r.Verdict
 		}
 	}
-	out = append(out, theme.TextDim().Render(crop("review · "+state, inner)))
+	stateC := theme.Current.Warning
+	if r.Posted {
+		stateC = theme.Current.Success
+	}
+	out = append(out, theme.SectionHeader().Render("REVIEW")+" "+kit.Pill(crop(state, inner-9), stateC))
 	if p := r.PendingCount(); p > 0 {
 		out = append(out, theme.WarningText().Render(fmt.Sprintf("● %d draft(s) · S sends one review", p)))
 	}
@@ -128,7 +149,7 @@ func (m *Model) screenConversation(w, h int) string {
 	if m.fileCur < len(m.files) {
 		path = m.files[m.fileCur].DisplayPath()
 	}
-	out = append(out, theme.Hint().Render(crop(path, inner)))
+	out = append(out, theme.SectionHeader().Render("ON THIS FILE"), theme.TextDim().Render(crop(path, inner)))
 	rows, order := flatThreads(r, path)
 	if len(rows) == 0 {
 		out = append(out, theme.TextDim().Render("no discussion on this file"), theme.Hint().Render("c comments on the line"))
@@ -155,7 +176,8 @@ func (m *Model) screenConversation(w, h int) string {
 		case c.Pending:
 			mark = "●"
 		}
-		out = append(out, theme.TextDim().Render(mark+" "+crop(who, inner-2)))
+		out = append(out, theme.TextMuted().Render(mark+" ")+
+			lipgloss.NewStyle().Foreground(theme.AuthorColor(c.Author)).Bold(true).Render(crop(who, inner-2)))
 		for _, seg := range kit.WrapWords(c.Text, maxInt(inner-2, 8)) {
 			out = append(out, "  "+theme.TextStyle().Render(seg))
 		}
@@ -163,7 +185,7 @@ func (m *Model) screenConversation(w, h int) string {
 	p := kit.NewPanel("conversation", false)
 	p.Width, p.Height = w, h
 	p.SetContent(padLines(clipLines(out, body), body)...)
-	p.SetFooter(theme.Hint().Render(crop("t threads · S submit", inner)))
+	p.SetFooter(kit.HintBar(inner, "", "t threads", "S submit"))
 	return p.View()
 }
 

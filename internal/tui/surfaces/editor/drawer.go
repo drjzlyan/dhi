@@ -87,10 +87,10 @@ func (f writerFunc) Write(p []byte) (int, error) {
 // body while a full-screen program holds the alternate screen.
 func (m *Model) termGeom(full bool) (cols, rows int) {
 	if full {
-		return maxInt(m.width-4, 10), maxInt(m.height-3, 3)
+		return maxInt(m.width-4, 10), maxInt(m.height-3, 3) // edges + hint footer
 	}
 	h := min(drawerHeight, maxInt(m.height/3, 4))
-	return maxInt(m.width-m.railW()-5, 20), maxInt(h-2, 1)
+	return maxInt(m.width-4, 16), maxInt(h-2, 1)
 }
 
 // syncTermSize keeps every live session's PTY and emulator at the size
@@ -154,23 +154,25 @@ func (m *Model) termExited(idx int) {
 	}
 }
 
-// drawerView renders the bottom terminal panel. The scrollback keeps
-// SGR colors and honors cursor moves (F-026 P5); rows clip to the
-// pane width with styles intact.
+// drawerView renders the bottom terminal panel (F-064): it spans the
+// full width, the edge lights up in the surface accent while focused,
+// tabs are pills in the title, and the keys sit in the panel's own hint
+// footer. The scrollback keeps SGR colors and honors cursor moves
+// (F-026 P5); rows clip to the pane width with styles intact.
 func (m *Model) drawerView() string {
 	h := min(drawerHeight, maxInt(m.height/3, 4))
 	cols, rows := m.termGeom(false)
 	body := m.termBody(cols, rows)
-	focusMark := ""
-	if m.termFocus {
-		focusMark = " " + theme.Brand().Render(theme.GlyphDot)
-	}
-	panel := kit.NewPanel("terminal"+focusMark+termStrip(m), false)
+	panel := kit.NewPanel("terminal"+termStrip(m), m.termFocus)
 	panel.SetContent(body...)
-	panel.Width = maxInt(m.width-m.railW()-1, 20)
-	panel.Height = h
-	hint := "ctrl+t blur/close · alt+1..9 switch · alt+n new tab · ctrl+q quits DHI"
-	return panel.View() + "\n" + theme.Hint().Render(kit.ClipEllipsis(hint, m.width))
+	panel.Width = maxInt(m.width, 20)
+	panel.Height = h + 1 // the hint footer replaces the old line below
+	hints := []string{"ctrl+t blur/close", "alt+1..9 switch", "alt+n new tab", "ctrl+q quits DHI"}
+	if !m.termFocus {
+		hints = []string{"ctrl+t focus", "ctrl+t ctrl+t close"}
+	}
+	panel.SetFooter(kit.HintBar(panel.Width-4, "", hints...))
+	return panel.View()
 }
 
 // fullTermView is the terminal over the whole body while a full-screen
@@ -179,9 +181,9 @@ func (m *Model) fullTermView() string {
 	cols, rows := m.termGeom(true)
 	panel := kit.NewPanel("terminal · full screen"+termStrip(m), m.termFocus)
 	panel.SetContent(m.termBody(cols, rows)...)
-	panel.Width, panel.Height = m.width, m.height-1
-	hint := "ctrl+t blur · keys go to the program · ctrl+q quits DHI"
-	return panel.View() + "\n" + theme.Hint().Render(kit.ClipEllipsis(hint, m.width))
+	panel.Width, panel.Height = m.width, m.height
+	panel.SetFooter(kit.HintBar(m.width-4, "", "ctrl+t blur", "keys go to the program", "ctrl+q quits DHI"))
+	return panel.View()
 }
 
 // termBody renders the active screen with the cursor cell shown while
@@ -208,25 +210,29 @@ func (m *Model) termBody(cols, rows int) []string {
 	return body
 }
 
+// termStrip renders the drawer's tabs as pills (F-064): the active tab
+// in the surface accent with a live dot, the rest quiet, exited tabs
+// marked ✗. A single tab still shows its name so the drawer says where
+// the shell is.
 func termStrip(m *Model) string {
-	if len(m.terms) <= 1 {
+	if len(m.terms) == 0 {
 		return ""
 	}
-	out := "  "
+	out := " "
 	for i, t := range m.terms {
-		label := ""
+		label := filepath.Base(t.dir) // refused start; error shows in-body
 		if t.sess != nil {
 			label = t.sess.Label()
-		} else {
-			label = filepath.Base(t.dir) // refused start; error shows in-body
 		}
 		switch {
+		case i == m.activeTerm && t.exited:
+			out += kit.Pill(theme.GlyphCross+" "+label, theme.Current.TextDim)
 		case i == m.activeTerm:
-			out += theme.TabActive().Render("[" + label + "] ")
+			out += kit.Pill(theme.GlyphDot+" "+label, theme.SurfaceAccent())
 		case t.exited:
-			// skip exited tabs in the strip
+			out += theme.TextMuted().Render(" " + theme.GlyphCross + " " + label + " ")
 		default:
-			out += theme.Hint().Render(label + " ")
+			out += theme.Hint().Render(" " + label + " ")
 		}
 	}
 	return out

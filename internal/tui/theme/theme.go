@@ -343,10 +343,7 @@ func SurfaceAccent() color.Color {
 
 // TabCurrent styles the active view's tab in its identity accent.
 func TabCurrent() lipgloss.Style {
-	return lipgloss.NewStyle().
-		Background(Current.BgSelection).
-		Foreground(SurfaceAccent()).
-		Bold(true)
+	return Pill(SurfaceAccent()).Bold(true) // tinted in the view's own hue (F-064)
 }
 
 // PanelTitle styles panel titles rendered onto top borders.
@@ -574,7 +571,7 @@ var (
 	GlyphAt        = "@" // mention
 	GlyphBullet    = "•"
 	GlyphBusy      = "◐" // static activity indicator (reduced motion)
-	GlyphBranch    = "⎇" // git branch marker (F-026 P4 git panel)
+	GlyphBranch    = "⎇" // git branch marker; missing from many fonts, so branches show as a TextDim pill instead (F-064)
 	GlyphGutterBar = "▎" // git gutter: added/modified line (F-040)
 	GlyphGutterDel = "▁" // git gutter: lines deleted below
 	GlyphFile      = "◦" // tree: a source file (colored by FileKind)

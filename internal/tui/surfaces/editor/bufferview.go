@@ -35,7 +35,22 @@ func bufferTitle(e *textbuf.Editor) string {
 	if e.Buffer().Dirty() {
 		dot = " " + theme.WarningText().Render("●")
 	}
-	return name + dot + "  " + theme.Brand().Render(e.Mode().String())
+	return name + dot + "  " + modePill(e.Mode())
+}
+
+// modePill colors the editing mode (F-064): normal in the editor's
+// violet, insert green, visual amber, command blue.
+func modePill(md textbuf.Mode) string {
+	c := theme.Current.Accent2
+	switch md {
+	case textbuf.ModeInsert:
+		c = theme.Current.Success
+	case textbuf.ModeVisual:
+		c = theme.Current.Warning
+	case textbuf.ModeCommand:
+		c = theme.Current.Info
+	}
+	return kit.Pill(md.String(), c)
 }
 
 // diagChip renders the error/warning count for the active buffer.
@@ -91,6 +106,9 @@ func (m *Model) bufferView() string {
 		num := strconv.Itoa(l + 1)
 		plain := padLeft(num, gutW-len(num))
 		gutter := m.gutterFor(path, l, plain)
+		if l == curLine && gutter == theme.Hint().Render(plain) {
+			gutter = lipgloss.NewStyle().Foreground(theme.SurfaceAccent()).Bold(true).Render(plain)
+		}
 		// Tabs render as spaces to the next tab stop (a raw tab would let
 		// the terminal jump past the panel edge); columns that index the
 		// raw line go through visCol.
@@ -303,7 +321,7 @@ func tabStrip(bufs []*bufTab, active, avail int) string {
 			label += " " + theme.WarningText().Render("●")
 		}
 		if i == active {
-			return theme.TabActive().Render("[" + label + "]")
+			return kit.Pill(label, theme.SurfaceAccent())
 		}
 		return theme.Hint().Render(" " + label + " ")
 	}

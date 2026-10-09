@@ -3,6 +3,7 @@ package editor
 import (
 	"context"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/drjzlyan/dhi/internal/gitcore"
@@ -259,10 +260,11 @@ func (m *Model) gitSelectedPath() string {
 func (m *Model) gitPanelView() string {
 	h := min(gitPanelHeight, maxInt(m.height/3, 5))
 	body := m.gitBody(h)
-	panel := kit.NewPanel("git"+gitFocusMark(m.gitFocus)+m.gitRepoLabel(), false)
+	panel := kit.NewPanel("git"+m.gitRepoLabel(), m.gitFocus)
 	panel.SetContent(body...)
-	panel.Width = maxInt(m.width-m.railW()-1, 20)
+	panel.Width = maxInt(m.width, 20)
 	panel.Height = h
+	panel.SetFooter(kit.HintBar(panel.Width-4, "", "s stage", "S all", "u unstage", "c commit", "tab status/log", "esc blur"))
 	return panel.View()
 }
 
@@ -281,23 +283,12 @@ func (m *Model) gitRepoLabel() string {
 	if i := strings.LastIndex(short, "/"); i >= 0 {
 		short = short[i+1:]
 	}
-	return "  " + theme.Hint().Render(short+" · "+br+"  ")
-}
-
-func gitFocusMark(focus bool) string {
-	if focus {
-		return " " + theme.Brand().Render(theme.GlyphDot)
-	}
-	return ""
+	return "  " + theme.TextStyle().Render(short) + " " + kit.Pill(br, theme.Current.TextDim) + " "
 }
 
 func (m *Model) gitBody(h int) []string {
 	var rows []string
-	tabs := theme.Hint().Render("[status]")
-	if m.gitTab == 1 {
-		tabs = "[log]"
-	}
-	rows = append(rows, tabs)
+	rows = append(rows, kit.TabPills([]string{"status", "log"}, m.gitTab))
 
 	switch {
 	case m.gitErr != "":
@@ -307,7 +298,8 @@ func (m *Model) gitBody(h int) []string {
 		unstaged := m.gitUnstagedFiles()
 		idx := 0
 		addSection := func(header string, files []FileEntry, isStaged bool) {
-			rows = append(rows, theme.TabActive().Render(header))
+			rows = append(rows, theme.SectionHeader().Render(strings.ToUpper(header))+
+				" "+theme.TextMuted().Render(strconv.Itoa(len(files))))
 			for _, f := range files {
 				marker := " "
 				if idx == m.gitCursor {
@@ -350,13 +342,11 @@ func (m *Model) gitBody(h int) []string {
 	if msg := m.gitMessage; msg != "" {
 		rows = append(rows, theme.SuccessText().Render(msg))
 	}
-	hint := theme.Hint().Render("s stage · S all · u unstage · c commit · tab status/log · esc blur")
-	rows = append(rows, hint)
-	for len(rows) < h-2 {
+	for len(rows) < h-3 {
 		rows = append(rows, "")
 	}
-	if len(rows) > h-2 {
-		rows = rows[:h-2]
+	if len(rows) > h-3 {
+		rows = rows[:h-3]
 	}
 	return rows
 }

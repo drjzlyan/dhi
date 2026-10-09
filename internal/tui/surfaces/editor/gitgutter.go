@@ -81,6 +81,7 @@ func (m *Model) invalidateGutters() {
 	for _, t := range m.bufs {
 		t.gutter = gutterState{}
 	}
+	m.invalidateTreeGit()
 }
 
 // gitMarkGlyph renders the marker column for line l (a space when the

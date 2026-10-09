@@ -261,28 +261,35 @@ func (m *Model) sessionsBody(w, h int) string {
 			zone()
 			continue
 		}
+		// Two-line card (F-064): name, mode pill and topic; then the
+		// channel, moderator, floor and crew size, always shown so the
+		// list reads at a glance; a rule separates cards.
 		s := row.sess
 		line := indent + cursorGlyph(active) +
 			style.Render(padTo(crop(s.ID, 24), 26)) +
 			modeChip(s) + " " +
-			theme.Hint().Render(crop(s.Topic+"  ["+itoa(len(s.Agents))+"]", maxInt(w-44, 8)))
-		out = append(out, line)
-		if active {
-			detail := s.Channel
-			if s.Moderator != "" {
-				detail += " · moderator " + s.Moderator
-			}
-			if h := s.CurrentSpeaker(); h != "" {
-				detail += " · floor " + h
-			} else {
-				detail += " · floor you"
-			}
-			if n := len(m.store.Breakouts(s.ID)); n > 0 {
-				detail += fmt.Sprintf(" · %d breakout(s)", n)
-			}
-			out = append(out, indent+"      "+theme.TextDim().Render(crop(detail, maxInt(w-8, 12))))
+			theme.TextStyle().Render(crop(s.Topic, maxInt(w-44, 8)))
+		detail := s.Channel
+		if s.Moderator != "" {
+			detail += " · moderator " + s.Moderator
 		}
+		if h := s.CurrentSpeaker(); h != "" {
+			detail += " · floor " + h
+		} else {
+			detail += " · floor you"
+		}
+		detail += fmt.Sprintf(" · %d agent(s)", len(s.Agents))
+		if n := len(m.store.Breakouts(s.ID)); n > 0 {
+			detail += fmt.Sprintf(" · %d breakout(s)", n)
+		}
+		meta := indent + "  " + theme.TextMuted().Render(crop(detail, maxInt(w-8, 12)))
+		if active {
+			sel := lipgloss.NewStyle().Background(theme.Current.BgSelection)
+			line, meta = kit.PaintRow(line, w, sel), kit.PaintRow(meta, w, sel)
+		}
+		out = append(out, line, meta)
 		zone()
+		out = append(out, indent+theme.Rule(maxInt(w-len(indent), 1)))
 	}
 	return strings.Join(out, "\n")
 }
@@ -291,11 +298,11 @@ func (m *Model) sessionsBody(w, h int) string {
 func modeChip(s *ideation.Session) string {
 	switch s.Mode {
 	case ideation.ModeOneOnOne:
-		return theme.InfoText().Render("[1:1]")
+		return kit.Pill("1:1", theme.Current.Info)
 	case ideation.ModeBreakout:
-		return theme.AccentText().Render("[breakout]")
+		return kit.Pill("breakout", theme.Current.Accent)
 	default:
-		return theme.TextDim().Render("[group]")
+		return kit.Pill("group", theme.Current.Accent3)
 	}
 }
 
