@@ -62,9 +62,10 @@ its cosign signature when `cosign` is installed), and puts `dhi` in
 - Choose the folder with `DHI_INSTALL_DIR`.
 - Homebrew: a `dhi.rb` formula is attached to every release.
 
-**Platforms:** macOS on Apple silicon and Linux x86_64, which are the
-platforms DHI can pin a complete toolchain for. Other platforms are refused
-at install time with the reason, rather than failing on first run.
+**Platforms:** macOS (Apple silicon and Intel, macOS 12+) and Linux
+(x86_64 and arm64). These are the platforms DHI pins a complete toolchain
+for; others are refused at install time with the reason, rather than
+failing on first run.
 
 <details>
 <summary>Build from source</summary>
