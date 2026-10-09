@@ -1,12 +1,12 @@
 # STATE — current position
 
-Updated: 2026-10-09 (session 52: M28 UI cohesion, F-064, on branch
-`f064-ui-cohesion`, not merged. Plan:
+Updated: 2026-10-09 (session 52: M28 UI cohesion, F-064, merged via PR #8
+and released as **v0.2.0** (Latest). Plan:
 `~/.claude/plans/cryptic-meandering-volcano.md`.)
 
 ### Session 52 (M28: UI cohesion, F-064)
 
-- DONE on branch `f064-ui-cohesion` (4 phases, committed per phase): background
+- DONE + RELEASED v0.2.0 (PR #8 rebase-merged; 4 phase commits): background
   integrity, theme tokens, component upgrades, README screenshots. See
   `docs/features/F-064-ui-cohesion.md`.
 - Root cause of the "bands" bug: a background style wrapping already-styled text
@@ -20,7 +20,7 @@ Updated: 2026-10-09 (session 52: M28 UI cohesion, F-064, on branch
 - Gotchas: `⎇` is missing from many fonts (branches show as pills); freeze ignores
   SGR 39 and 49, so `scripts/screenshots.sh` rewrites both; the drawer's shell needs
   a neutral prompt in the sandbox home (the script writes one).
-- Next: open a PR for the branch; consider zebra rows (`BgRowAlt` is defined but
+- Next: consider zebra rows (`BgRowAlt` is defined but
   not used yet) and cursor-line shading in the editor.
 
 ### Session 51 (M27: public readiness)
