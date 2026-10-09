@@ -112,8 +112,10 @@ agent inside the workspace's tools, scopes and approvals.
 | `n` | new task / session / review, depending on the view |
 | `s`, `ctrl+r` | search the workspace; toggle regex |
 | `ctrl+w v` | split the editor |
+| `ctrl+t` | terminal drawer — vim, htop and friends run full screen |
 | `ctrl+c` | quit |
 
+Remap any key in `config.toml` (`[keys] "ctrl+k" = "ctrl+p"`); hints and help follow your keys.
 `dhi version` prints the build; `dhi doctor` diagnoses an install.
 
 ## Docs

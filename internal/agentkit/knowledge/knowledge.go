@@ -1,8 +1,9 @@
 // Package knowledge implements the shared workspace KB (ADR-0007):
 // markdown entries plus an index.json carrying provenance for every
-// record. Retrieval is managed-ripgrep over the corpus scored by
-// recency/importance behind the KnowledgeStore interface, so an
-// embedding-backed store can replace it later. Contributions follow a
+// record. Retrieval ranks entries by lexical vector similarity (hashed
+// TF-IDF, F-063) plus exact ripgrep matches, recency and importance,
+// behind the KnowledgeStore interface, so a model-backed embedding store
+// can replace it later. Contributions follow a
 // per-workspace policy: auto publishes immediately, review (the default)
 // parks them in a pending queue until a human approves.
 package knowledge
@@ -138,47 +139,68 @@ func (s *Store) indexPath() string  { return filepath.Join(s.root, "index.json")
 func (s *Store) entriesDir() string { return filepath.Join(s.root, "entries") }
 func (s *Store) pendingDir() string { return filepath.Join(s.root, "pending") }
 
-// Search retrieves up to limit hits scored by term matches, recency,
-// and importance. A nil searcher yields no results (KB still works for
-// writes).
+// Search retrieves up to limit hits. Every published entry is ranked by
+// lexical vector similarity to the query (F-063: the words it shares,
+// not the whole query verbatim); exact ripgrep matches, when a searcher
+// is available, add evidence; importance and freshness break ties.
+// Works without ripgrep — the KB never depends on a missing binary.
 func (s *Store) Search(ctx context.Context, query string, limit int) ([]Hit, error) {
 	query = strings.TrimSpace(query)
-	if query == "" || s.searcher == nil {
+	if query == "" {
 		return nil, nil
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	ch, err := s.searcher.Search(ctx, query, []string{s.entriesDir()})
-	if err != nil {
-		return nil, fmt.Errorf("knowledge: search: %w", err)
-	}
+	// Exact phrase evidence (optional).
 	type agg struct {
 		hits    int
 		snippet string
 	}
 	byFile := map[string]*agg{}
-	for h := range ch {
-		a := byFile[h.Path]
-		if a == nil {
-			a = &agg{snippet: h.Text}
-			byFile[h.Path] = a
+	if s.searcher != nil {
+		ch, err := s.searcher.Search(ctx, query, []string{s.entriesDir()})
+		if err != nil {
+			return nil, fmt.Errorf("knowledge: search: %w", err)
 		}
-		a.hits++
+		for h := range ch {
+			a := byFile[h.Path]
+			if a == nil {
+				a = &agg{snippet: h.Text}
+				byFile[h.Path] = a
+			}
+			a.hits++
+		}
 	}
+
+	// Lexical vectors over title + tags + body of every entry.
+	bodies := make([]string, len(s.index.Entries))
+	docs := make([]string, len(s.index.Entries))
+	for i, e := range s.index.Entries {
+		data, _ := os.ReadFile(filepath.Join(s.root, filepath.FromSlash(e.File)))
+		bodies[i] = string(data)
+		docs[i] = e.Title + " " + e.Title + " " + strings.Join(e.Tags, " ") + "\n" + bodies[i]
+	}
+	sims := newVectorIndex(docs).similarity(query)
 
 	now := time.Now()
 	var out []Hit
-	for _, e := range s.index.Entries {
+	for i, e := range s.index.Entries {
 		path := filepath.Join(s.root, filepath.FromSlash(e.File))
 		a := byFile[path]
-		if a == nil {
+		if a == nil && sims[i] < minSimilarity {
 			continue
+		}
+		hits, snippet := 0, ""
+		if a != nil {
+			hits, snippet = a.hits, a.snippet
+		} else {
+			snippet = bestLine(bodies[i], query)
 		}
 		out = append(out, Hit{
 			Entry:   e,
-			Score:   score(e, a.hits, now),
-			Snippet: strings.TrimSpace(a.snippet),
+			Score:   score(e, hits, sims[i], now),
+			Snippet: strings.TrimSpace(snippet),
 		})
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -193,23 +215,26 @@ func (s *Store) Search(ctx context.Context, query string, limit int) ([]Hit, err
 	return out, nil
 }
 
-// score blends importance, freshness (full credit < 7d, decayed to zero
-// at 30d), and match density.
-func score(e Entry, hits int, now time.Time) float64 {
+// minSimilarity is the cosine below which a vector match is noise.
+const minSimilarity = 0.08
+
+// score blends relevance (vector similarity dominates; exact matches
+// add density) with importance and freshness (full credit < 7d, decayed
+// to zero at 30d).
+func score(e Entry, hits int, sim float64, now time.Time) float64 {
 	fresh := 0.0
 	days := now.Sub(e.Created).Hours() / 24
 	switch {
 	case days < 7:
-		fresh = 2.0
+		fresh = 1.0
 	case days < 30:
-		fresh = 2.0 * (1 - (days-7)/23)
+		fresh = 1.0 * (1 - (days-7)/23)
 	}
 	importance := float64(e.Importance)
 	if importance <= 0 {
 		importance = 3
 	}
-	matchDensity := 0.5 * math.Log1p(float64(hits))
-	return importance + fresh + matchDensity
+	return 8*sim + 0.5*math.Log1p(float64(hits)) + 0.3*importance + fresh
 }
 
 // Contribute files c according to policy and returns its reference id.

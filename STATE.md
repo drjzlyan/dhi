@@ -42,9 +42,17 @@ split, README/screenshots/community files, live verifications. Plan:
     COLORTERM=truecolor, and SGR 39 rewritten for freeze; the script does
     all of it.
   - A key that starts async work must queue its cmd (`TakeCmd`).
-- P7 next: big deferrals (VT emulation, pack signatures, embedding
-  retrieval, keybinding overrides, artifact export, ro-root policy),
-  spec first.
+- P7 DONE + pushed: F-058 key remaps ([keys], shell translates, chrome shows
+  pressed keys); F-059 Ideator artifact export (file / task / tracker via an
+  agent); F-060 toolchain read-only to sandboxed agents (verified live under
+  seatbelt; bwrap binds ro before rw); F-061 full VT emulator in the drawer
+  (ADR-0030, charmbracelet/x/vt pseudo-version; vim verified live; ctrl+c goes
+  to a focused terminal, ctrl+q quits; Emulator.Close races Read, so close the
+  reply pipe writer instead); F-062 publisher tool `scripts/registry-sign` (the
+  verification side had already shipped); F-063 KB lexical-vector retrieval
+  (hashed TF-IDF, works without rg; not semantic).
+- Also fixed: two CI-only flakes (inbox approval goroutine, autopilot dispatch
+  order), installer/formula derive platforms from the release.
 
 ### Session 50 (M26: review screen F-049, then deferred M25 items)
 
