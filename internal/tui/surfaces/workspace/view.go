@@ -341,7 +341,7 @@ func (m *Model) boardBody(w, h int) string {
 	}
 
 	cols := make([]kit.Column, 4)
-	board := &kit.Columns{Cols: cols, Active: m.boardActive, Width: w - detailW, Height: lanesH}
+	board := &kit.Columns{Cols: cols, Active: m.boardActive, Width: w - detailW, Height: lanesH, CardH: 2}
 	for i, st := range tasks.Statuses {
 		laneW := board.LaneWidth(i)
 		rows := make([]string, 0, len(g[i]))
@@ -362,8 +362,9 @@ func (m *Model) boardBody(w, h int) string {
 		lane, laneW := i, board.LaneWidth(i)
 		start, end := board.Window(i)
 		m.hits.Add(i*laneW, headY, laneW, 1, func(int, int) { m.boardActive = lane })
-		m.hits.Add(i*laneW, headY+1, laneW, end-start, func(_, dy int) {
-			row := start + dy
+		unit := board.UnitH()
+		m.hits.Add(i*laneW, headY+1, laneW, (end-start)*unit, func(_, dy int) {
+			row := start + dy/unit
 			if m.boardActive == lane && m.boardCur[lane] == row {
 				m.boardKey("o") // open the card on its floor (thread)
 				return
@@ -427,10 +428,10 @@ func (m *Model) boardFilterLine() string {
 // (F-026 P3): a mark/priority prefix, slug, ellipsized title, assignee
 // chip — no fixed pads.
 func boardCard(tk tasks.Task, laneW int, marked, working bool) string {
-	// The title is what a person scans a lane for, so it always gets the
-	// room (F-055); the assignee and slug join only when the lane is wide
-	// enough to show them whole-ish. "unassigned" is not printed — the
-	// detail pane says it — so narrow lanes stay readable.
+	// Two lines per card (F-064): the title is what a person scans a lane
+	// for, so it gets the first line whole; the slug and assignee sit on
+	// a quiet meta line under it. "unassigned" is not printed — the
+	// detail pane says it.
 	title := tk.Title
 	if title == "" {
 		title = tk.Slug
@@ -440,23 +441,15 @@ func boardCard(tk tasks.Task, laneW int, marked, working bool) string {
 		prefix, prefixW = boardMarkPrefix(tk.Priority, marked, working), 3
 	}
 	avail := laneW - prefixW - 1 // one cell of air before the next lane
-	whoW, slugW := 0, 0
-	if tk.Assignee != "" && avail >= 30 {
-		whoW = minInt(ansi.Width(tk.Assignee), 10) + 1
+	top := prefix + kit.ClipEllipsis(title, maxInt(avail, 4))
+
+	meta := theme.TextMuted().Render(tk.Slug)
+	if tk.Assignee != "" {
+		who := lipgloss.NewStyle().Foreground(theme.AuthorColor(tk.Assignee)).Render("@" + tk.Assignee)
+		meta += theme.TextMuted().Render(" · ") + who
 	}
-	if avail >= 48 {
-		slugW = minInt(ansi.Width(tk.Slug), 16) + 2
-	}
-	titleW := maxInt(avail-whoW-slugW, 4)
-	row := prefix
-	if slugW > 0 {
-		row += padTo(theme.TextDim().Render(kit.ClipEllipsis(tk.Slug, slugW-2)), slugW)
-	}
-	row += padTo(kit.ClipEllipsis(title, titleW), titleW)
-	if whoW > 0 {
-		row += padTo(theme.Hint().Render(kit.ClipEllipsis(tk.Assignee, whoW-1)), whoW)
-	}
-	return padTo(row, laneW)
+	bottom := strings.Repeat(" ", prefixW) + kit.ClipEllipsis(meta, maxInt(avail, 4))
+	return top + "\n" + bottom
 }
 
 // boardMarkPrefix is the 3-cell mark+priority indicator.

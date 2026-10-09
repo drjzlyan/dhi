@@ -94,14 +94,12 @@ func (t *Transcript) View() []string {
 		if !r.At.IsZero() {
 			day := r.At.Format("Mon Jan 2")
 			if day != prevDay {
-				out = append(out, theme.RailMuted().Render(
-					padTo("── "+day+" ──", t.Width)))
+				out = append(out, dividerLine(day, t.Width, theme.TextMuted()))
 				prevDay = day
 			}
 		}
 		if r.Sep != "" {
-			out = append(out, theme.RailMuted().Render(
-				padTo("── "+r.Sep+" ──", t.Width)))
+			out = append(out, dividerLine(r.Sep, t.Width, theme.WarningText()))
 		}
 		author := r.Author
 		if r.Thread {
@@ -120,7 +118,7 @@ func (t *Transcript) View() []string {
 			labelW = col - 8
 		}
 		label := ClipEllipsis(author, clamp(labelW, 1, col-6))
-		prefix := marker + authorStyle(r.Kind).Render(padTo(label, labelW)) +
+		prefix := marker + authorStyle(r).Render(padTo(label, labelW)) +
 			theme.TextMuted().Render(" "+stamp)
 		indent := strings.Repeat(" ", col+2)
 		firstLineOf[ri] = len(out)
@@ -239,13 +237,27 @@ func WrapWords(text string, width int) []string {
 }
 
 // authorStyle colors a transcript author label by who spoke: you in the
-// brand accent, agents in the secondary accent, system lines muted.
-func authorStyle(k TrnAuthor) lipgloss.Style {
-	switch k {
+// brand accent, each agent in its own stable color (F-064 — a floor of
+// four agents reads as four voices, not one violet wall), system lines
+// muted.
+func authorStyle(r TrnRow) lipgloss.Style {
+	switch r.Kind {
 	case TrnHuman:
 		return theme.AccentText()
 	case TrnAgent:
-		return lipgloss.NewStyle().Foreground(theme.Current.Accent2)
+		return lipgloss.NewStyle().Foreground(theme.AuthorColor(r.Author)).Bold(true)
 	}
 	return theme.TextMuted()
+}
+
+// dividerLine is a full-width rule with a label ("── Fri Oct 9 ─────"):
+// a quiet separator on the transcript's own background, not a band.
+func dividerLine(label string, w int, labelSt lipgloss.Style) string {
+	lead := "── "
+	rest := w - runeWidth(lead) - runeWidth(label) - 1
+	if rest < 0 {
+		return labelSt.Render(ClipEllipsis(label, w))
+	}
+	return theme.RuleText().Render(lead) + labelSt.Render(label) + " " +
+		theme.RuleText().Render(strings.Repeat("─", rest))
 }

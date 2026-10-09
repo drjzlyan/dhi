@@ -357,8 +357,8 @@ func TestMultiBuffersAndExSwitching(t *testing.T) {
 	if m.bufs[m.activeTab].vp != "alpha/src/main.go" {
 		t.Fatalf("after :bn active = %q", m.bufs[m.activeTab].vp)
 	}
-	if !strings.Contains(plainView(m), "[main.go]") {
-		t.Errorf("tab strip missing active marker:\n%s", plainView(m))
+	if !strings.Contains(plainView(m), " main.go ") {
+		t.Errorf("tab strip missing the active tab:\n%s", plainView(m))
 	}
 
 	// :bp back

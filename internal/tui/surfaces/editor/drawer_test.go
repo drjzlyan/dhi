@@ -69,7 +69,7 @@ func TestAltDigitSwitchesTabs(t *testing.T) {
 		t.Fatalf("initial active = %d", m.activeTerm)
 	}
 	feed(m, "alt+2")
-	if m.activeTerm != 1 || !strings.Contains(plainView(m), "[beta]") {
+	if m.activeTerm != 1 || !strings.Contains(plainView(m), " beta ") {
 		t.Errorf("alt+2 did not switch (active=%d)", m.activeTerm)
 	}
 	feed(m, "alt+9") // out of range

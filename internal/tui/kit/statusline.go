@@ -35,14 +35,12 @@ func DefaultStatusLine(surfaceName string) *StatusLine {
 	}
 }
 
-// ModeChip renders a statusline mode segment: accent on the selection
-// background (INSERT / FIND / CHAT …).
+// ModeChip renders a statusline mode segment as a pill in the active
+// view's accent (INSERT / FIND / CHAT …).
 func ModeChip(text string) StatusSegment {
 	return StatusSegment{
-		Text: " " + strings.ToUpper(text) + " ",
-		Style: lipgloss.NewStyle().
-			Background(theme.Current.BgSelection).
-			Foreground(theme.Current.Accent).Bold(true),
+		Text:  " " + strings.ToUpper(text) + " ",
+		Style: theme.Pill(theme.SurfaceAccent()).Bold(true), // the view's hue (F-064)
 	}
 }
 
@@ -119,6 +117,8 @@ func (s *StatusLine) View() string {
 	mid := strings.Repeat(" ", lg) + center
 
 	out := left + mid + strings.Repeat(" ", gap-lg) + right
-	out = padTo(out, s.Width)
-	return bar.Render(out)
+	if s.Width <= 0 {
+		return bar.Render(out)
+	}
+	return PaintRow(out, s.Width, bar) // one background end to end (F-064)
 }

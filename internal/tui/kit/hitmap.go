@@ -66,10 +66,9 @@ func SectionStrip(labels []string, active int) (string, [][2]int) {
 			b.WriteString(sep)
 			col += 3
 		}
-		text := l
+		text := " " + l + " " // same width either way: active is a pill (F-064)
 		if i == active {
-			text = "[" + l + "]"
-			b.WriteString(theme.TabActive().Render(text))
+			b.WriteString(Pill(l, theme.SurfaceAccent()))
 		} else {
 			b.WriteString(theme.TextDim().Render(text))
 		}

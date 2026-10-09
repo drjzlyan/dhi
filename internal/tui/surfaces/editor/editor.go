@@ -130,8 +130,11 @@ type Model struct {
 	roots   []*node
 	rows    []treeRow
 	list    kit.List
-	width   int
-	height  int
+	// treeGits caches each member's branch + changed paths for the
+	// file tree (F-064); nil means reload on the next render.
+	treeGits map[string]*treeGit
+	width    int
+	height   int
 
 	mode      mode
 	query     []rune
@@ -1002,7 +1005,11 @@ func (m *Model) open(n *node) {
 	}
 	be.SetCommandDelegate(m)
 	be.SetBeforeSave(m.beforeSave)
-	be.SetAfterSave(func(*textbuf.Editor) { m.act(tutorial.EvEditorSave) })
+	be.SetAfterSave(func(*textbuf.Editor) {
+		m.act(tutorial.EvEditorSave)
+		m.invalidateTreeGit() // the saved file's status letter may change
+		m.refreshRows()
+	})
 	tab := &bufTab{ed: be, vp: m.openVPath, path: n.path, syntax: &highlighter{path: n.path}}
 	m.bufs = append(m.bufs, tab)
 	m.activeTab = len(m.bufs) - 1
@@ -1043,20 +1050,7 @@ func (m *Model) refreshRows() {
 	m.rows = flatten(m.roots)
 	items := make([]kit.Item, len(m.rows))
 	for i, r := range m.rows {
-		it := kit.Item{}
-		indent := strings.Repeat("  ", r.depth)
-		switch r.node.kind {
-		case nodeRepo:
-			it.Title = theme.TabActive().Render(r.node.name + "/")
-			if !r.node.expanded {
-				it.Title += theme.Hint().Render(" ▸")
-			}
-		case nodeDir:
-			it.Title = indent + theme.TextDim().Render(r.node.name+"/")
-		case nodeFile:
-			it.Title = indent + r.node.name
-		}
-		items[i] = it
+		items[i] = m.treeItem(r)
 	}
 	cur := m.list.Cursor
 	m.list.SetItems(items)
@@ -1121,7 +1115,7 @@ func (m *Model) Click(x, y int) bool {
 func (m *Model) navView() string {
 	bodyH := m.height
 	if m.drawerOpen {
-		bodyH = m.height - drawerHeight - 1 // hint line below drawer
+		bodyH = m.height - min(drawerHeight, maxInt(m.height/3, 4)) - 1 // drawer + its hint footer
 		if bodyH < 4 {
 			bodyH = 4
 		}
@@ -1142,8 +1136,11 @@ func (m *Model) navView() string {
 	m.list.Height = bodyH - 4 // hint row, spacer, panel padding
 	content := splitLines(m.list.View())
 	sb := m.list.Scroller() // capture with the live window height (F-025)
+	// The inset well runs the rail's full height (F-064): a shade that
+	// stopped at the last row made the empty rail read as another surface.
+	well := theme.InsetBg().Render(strings.Repeat(" ", m.list.Width))
 	for len(content) < bodyH-4 {
-		content = append(content, "") // push hints to the rail's foot
+		content = append(content, well) // push hints to the rail's foot
 	}
 	rail.SetContent(append(content, "", hint)...)
 	rail.Width = maxInt(m.railW(), 1)
@@ -1182,7 +1179,7 @@ func (m *Model) navView() string {
 	if railW >= m.width { // narrow, nothing open: the tree is the view
 		return m.withBottomPanels(rail.View())
 	}
-	mainW := m.width - railW - 1
+	mainW := m.width - railW // flush with the full-width bottom panels (F-064)
 	if railW == 0 {
 		mainW = m.width
 	}

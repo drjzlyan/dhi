@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"charm.land/lipgloss/v2"
 	"context"
 	"sort"
 	"strconv"
@@ -709,7 +710,7 @@ func (p *chatPane) renderNarrow(width, height int) []string {
 	lines = append(lines, p.transcriptRender(history, wrap, body)...)
 
 	lines = append(lines, "")
-	lines = append(lines, p.composerRow())
+	lines = append(lines, p.composerBar(width))
 	return lines
 }
 
@@ -738,7 +739,7 @@ func (p *chatPane) transcriptLines(width, height int, wide bool) []string {
 	}
 	lines = append(lines, p.transcriptRender(history, width, height-3-extra)...)
 	lines = append(lines, "")
-	lines = append(lines, p.composerRow())
+	lines = append(lines, p.composerBar(width))
 	return lines
 }
 
@@ -757,6 +758,17 @@ func (p *chatPane) composerRow() string {
 		return theme.TabActive().Render("> "+string(p.input)) + "▌"
 	}
 	return theme.TextMuted().Render("> " + string(p.input) + "  (i to type)")
+}
+
+// composerBar paints the composer as an input bar across width (F-064):
+// the header shade while idle, the selection shade with an accent edge
+// while typing.
+func (p *chatPane) composerBar(width int) string {
+	if p.focus {
+		return kit.PaintRow(theme.AccentText().Render(theme.GlyphCursor)+p.composerRow(), width,
+			lipgloss.NewStyle().Background(theme.Current.BgSelection))
+	}
+	return kit.PaintRow(" "+p.composerRow(), width, theme.HeaderBg())
 }
 
 // transcriptRender renders the navigable message list through the
@@ -841,11 +853,11 @@ func (p *chatPane) railLines(width, height int) []string {
 	bg := theme.InsetBg()
 	inset := func(s string) string { return kit.PaintRow(s, width, bg) }
 	var lines []string
-	lines = append(lines, inset(" "+theme.TextMuted().Render("CHANNELS")))
+	lines = append(lines, inset(" "+theme.SectionHeader().Render("CHANNELS")))
 	for _, ch := range p.channels {
 		if strings.HasPrefix(ch, "dm:") {
 			// DM group header goes right before the first DM.
-			lines = append(lines, inset(" "+theme.TextMuted().Render("DIRECT MESSAGES")))
+			lines = append(lines, inset(" "+theme.SectionHeader().Render("DIRECT MESSAGES")))
 			break
 		}
 	}
