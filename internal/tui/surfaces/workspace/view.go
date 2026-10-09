@@ -392,8 +392,7 @@ func (m *Model) boardBody(w, h int) string {
 		for y, ln := range laneLines {
 			d := ""
 			if y < len(detailLines) {
-				d = ansi.Clip(detailLines[y], detailW-1)
-				d = bg.Render(padToANSI(d, detailW))
+				d = kit.PaintRow(ansi.Clip(detailLines[y], detailW-1), detailW, bg)
 			} else {
 				d = bg.Render(strings.Repeat(" ", detailW))
 			}
@@ -783,7 +782,7 @@ func sideBySide(left, right []string, leftW, rightW, h int) []string {
 		if y < len(right) {
 			r = ansi.Clip(right[y], rightW-2)
 		}
-		out = append(out, padToANSI(l, leftW)+" "+bg.Render(" "+padToANSI(r, rightW-1)))
+		out = append(out, padToANSI(l, leftW)+" "+kit.PaintRow(" "+r, rightW, bg))
 	}
 	return out
 }

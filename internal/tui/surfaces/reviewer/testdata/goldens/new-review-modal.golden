@@ -8,16 +8,16 @@
                     │                                      ◇                                       │
                     │                                No reviews yet                                │
                     │                                                                              │
-                          ╭─ › new review ───────────────────────────────────────────────────╮      
-                          │ ▌ member  api▏                                                   │      
-                          │   kind    < branch >                                             │      
-                          │       ←/→ switches kind                                          │      
-                          │   base    main                                                   │      
-                          │   head/#                                                         │      
-                          │                                                                  │      
-                          │ member repo · kind ←/→ · base ref · head branch/sha or PR number │      
-                          ╰──────────────────────────────────────────────────────────────────╯      
-                                                                                                    
+                    │     ╭─ › new review ───────────────────────────────────────────────────╮     │
+                    │     │ ▌ member  api▏                                                   │     │
+                    │     │   kind    < branch >                                             │     │
+                    │     │       ←/→ switches kind                                          │     │
+                    │     │   base    main                                                   │     │
+                    │     │   head/#                                                         │     │
+                    │     │                                                                  │     │
+                    │     │ member repo · kind ←/→ · base ref · head branch/sha or PR number │     │
+                    │     ╰──────────────────────────────────────────────────────────────────╯     │
+                    │                                                                              │
                     │                                                                              │
                     │                                                                              │
                     │                                                                              │

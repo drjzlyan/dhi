@@ -111,10 +111,7 @@ func (p *Panel) View() string {
 		if y < len(body) {
 			row = clip(body[y], inner)
 		}
-		if w := runeWidth(ansi.Strip(row)); w < inner {
-			row += strings.Repeat(" ", inner-w)
-		}
-		line := strings.Repeat(" ", pad) + bg.Render(row) + strings.Repeat(" ", pad)
+		line := PaintRow(strings.Repeat(" ", pad)+row, inner+pad*2, bg)
 		right := edge.Render(lipgloss.RoundedBorder().Right)
 		if sbOn {
 			if y >= sbPos && y < sbPos+sbTh {
@@ -126,11 +123,7 @@ func (p *Panel) View() string {
 		out = append(out, edge.Render(lipgloss.RoundedBorder().Left)+line+right)
 	}
 	for y := 0; y < footerRows; y++ {
-		row := clip(p.footer[y], inner)
-		if w := runeWidth(ansi.Strip(row)); w < inner {
-			row += strings.Repeat(" ", inner-w)
-		}
-		line := strings.Repeat(" ", pad) + bg.Render(row) + strings.Repeat(" ", pad)
+		line := PaintRow(strings.Repeat(" ", pad)+clip(p.footer[y], inner), inner+pad*2, bg)
 		out = append(out, edge.Render(lipgloss.RoundedBorder().Left)+line+
 			edge.Render(lipgloss.RoundedBorder().Right))
 	}

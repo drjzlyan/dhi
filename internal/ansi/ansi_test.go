@@ -63,3 +63,63 @@ func TestClipNeverOverflowsWideRunes(t *testing.T) {
 		t.Fatalf("Clip wide exact = %q", got)
 	}
 }
+
+func bgOf(cells []Cell) string {
+	var b strings.Builder
+	for _, c := range cells {
+		if c.Bg {
+			b.WriteByte('#')
+		} else {
+			b.WriteByte('.')
+		}
+	}
+	return b.String()
+}
+
+func TestFillReappliesBackgroundAfterResets(t *testing.T) {
+	bg := "\x1b[48;2;1;2;3m"
+	in := "a\x1b[31mb\x1b[0mc\x1b[mD\x1b[49mE"
+	got := Fill(in, bg)
+	if g := bgOf(Cells(got)); g != "#####" {
+		t.Fatalf("Fill cells = %s, want #####\n%q", g, got)
+	}
+	if !strings.HasSuffix(got, "\x1b[0m") {
+		t.Fatal("Fill must end with a reset")
+	}
+	if Strip(got) != "abcDE" {
+		t.Fatalf("Fill changed text: %q", Strip(got))
+	}
+}
+
+func TestFillKeepsInnerBackgroundAndExtendedFg(t *testing.T) {
+	bg := "\x1b[48;2;1;2;3m"
+	// an fg of black (38;2;0;0;0) must not read as a reset
+	in := "\x1b[38;2;0;0;0mx\x1b[48;2;9;9;9my"
+	got := Fill(in, bg)
+	if strings.Count(got, bg) != 1 {
+		t.Fatalf("Fill re-emitted bg needlessly: %q", got)
+	}
+}
+
+func TestSlice(t *testing.T) {
+	red := "\x1b[31m"
+	in := red + "abcdef\x1b[0m"
+	got := Slice(in, 2, 4)
+	if Strip(got) != "cd" || !strings.HasPrefix(got, red) {
+		t.Fatalf("Slice = %q", got)
+	}
+	if Slice("ab", 5, 9) != "" {
+		t.Fatal("Slice past the end must be empty")
+	}
+	// wide rune straddling the start becomes a space
+	if s := Strip(Slice("a漢b", 2, 4)); s != " b" {
+		t.Fatalf("Slice wide = %q", s)
+	}
+}
+
+func TestCellsTracksBackgroundAndReverse(t *testing.T) {
+	in := "a\x1b[44mb\x1b[0mc\x1b[7md\x1b[27me漢"
+	if g := bgOf(Cells(in)); g != ".#.#..." {
+		t.Fatalf("Cells = %s", g)
+	}
+}

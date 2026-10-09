@@ -839,7 +839,7 @@ func (p *chatPane) reactBar() string {
 // markers, rail cursor, active channel highlight.
 func (p *chatPane) railLines(width, height int) []string {
 	bg := theme.InsetBg()
-	inset := func(s string) string { return bg.Render(padToANSI(s, width)) }
+	inset := func(s string) string { return kit.PaintRow(s, width, bg) }
 	var lines []string
 	lines = append(lines, inset(" "+theme.TextMuted().Render("CHANNELS")))
 	for _, ch := range p.channels {
@@ -878,7 +878,7 @@ func (p *chatPane) railLines(width, height int) []string {
 // transcript, or an agent profile; blank when closed.
 func (p *chatPane) contextLines(width, height int) []string {
 	bg := theme.ElevatedBg()
-	inset := func(s string) string { return bg.Render(padToANSI(s, width)) }
+	inset := func(s string) string { return kit.PaintRow(s, width, bg) }
 	blank := func() string { return bg.Render(strings.Repeat(" ", width)) }
 
 	var body []string

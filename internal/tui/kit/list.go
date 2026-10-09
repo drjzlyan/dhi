@@ -133,7 +133,7 @@ func (l *List) View() string {
 		if it.Group {
 			head := theme.TextMuted().Render(padTo(" "+strings.ToUpper(it.Title), l.Width))
 			if l.Inset {
-				head = theme.RailMuted().Render(padTo(" "+strings.ToUpper(it.Title), l.Width))
+				head = Restyle(theme.RailMuted(), padTo(" "+strings.ToUpper(it.Title), l.Width))
 			}
 			out = append(out, head)
 			continue
@@ -200,12 +200,14 @@ func (l *List) insetRow(idx int, it Item) string {
 			line += " " + ClipEllipsis(it.Desc, rem)
 		}
 	}
+	// Restyle, not Render: a styled title (an accent dir name, a glyph)
+	// ends in a reset that would drop the inset shade mid-row (F-064).
 	if it.Badge == "" {
-		return base.Render(padTo(line, l.Width))
+		return Restyle(base, padTo(line, l.Width))
 	}
 	badge := "[" + it.Badge + "]"
-	return base.Render(padTo(line, l.Width-runeWidth(badge)-1)) +
-		" " + badgeSt.Render(badge)
+	return Restyle(base, padTo(line, l.Width-runeWidth(badge)-1)+" ") +
+		badgeSt.Render(badge)
 }
 
 // Cues report whether rows sit above/below the window (F-026 P1).

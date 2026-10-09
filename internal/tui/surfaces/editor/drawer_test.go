@@ -92,7 +92,7 @@ func TestTerminalStreamingRender(t *testing.T) {
 		}
 	}
 	// The real cursor cell (F-061) sits right after the typed text.
-	if !regexp.MustCompile(`more(\x1b\[0?m)*` + regexp.QuoteMeta(cursorStyle.Render(" "))).MatchString(m.View()) {
+	if !regexp.MustCompile(`more(\x1b\[[0-9;]*m)*` + regexp.QuoteMeta(cursorStyle.Render(" "))).MatchString(m.View()) {
 		t.Error("cursor cell not drawn after the prompt text")
 	}
 
