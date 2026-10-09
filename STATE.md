@@ -20,6 +20,11 @@ and released as **v0.2.0** (Latest). Plan:
 - Gotchas: `⎇` is missing from many fonts (branches show as pills); freeze ignores
   SGR 39 and 49, so `scripts/screenshots.sh` rewrites both; the drawer's shell needs
   a neutral prompt in the sandbox home (the script writes one).
+- Homebrew: tap `drjzlyan/homebrew-tap` created with the v0.2.0 formula (tested:
+  install, audit clean). The release workflow will update it once the repo has the
+  `HOMEBREW_TAP_TOKEN` secret AND the `HOMEBREW_TAP_REPO=drjzlyan/homebrew-tap`
+  variable (set both together; the variable alone fails the release). Until then,
+  update `Formula/dhi.rb` by hand per release (`scripts/gen-formula.sh`).
 - Next: consider zebra rows (`BgRowAlt` is defined but
   not used yet) and cursor-line shading in the editor.
 

@@ -46,7 +46,6 @@ cat <<RUBY
 class Dhi < Formula
   desc "The agentic workspace IDE"
   homepage "https://github.com/${repo}"
-  version "${version}"
   license "${license}"
 
 $(platform_block darwin)

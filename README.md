@@ -56,6 +56,8 @@ already work in:
 
 ## Install
 
+**Script** (macOS and Linux):
+
 ```sh
 curl -fsSL https://github.com/drjzlyan/dhi/releases/latest/download/install.sh | sh
 ```
@@ -64,9 +66,18 @@ The installer picks the build for your machine, **verifies its SHA-256** (and
 its cosign signature when `cosign` is installed), and puts `dhi` in
 `~/.local/bin` without sudo.
 
-- Pin a version with `DHI_VERSION=0.1.0`.
-- Choose the folder with `DHI_INSTALL_DIR`.
-- Homebrew: a `dhi.rb` formula is attached to every release.
+- Pin a version: `curl -fsSL …/install.sh | DHI_VERSION=0.2.0 sh`.
+- Choose the folder: `… | DHI_INSTALL_DIR=/your/bin sh`.
+
+**Homebrew** (macOS and Linux):
+
+```sh
+brew install drjzlyan/tap/dhi
+```
+
+The formula installs the same checksummed binary from the GitHub release.
+Use one method, not both: a copy in `~/.local/bin` earlier on your `PATH`
+hides the Homebrew one (`rm ~/.local/bin/dhi` if you switch to Homebrew).
 
 **Platforms:** macOS (Apple silicon and Intel, macOS 12+) and Linux
 (x86_64 and arm64). These are the platforms DHI pins a complete toolchain
@@ -82,6 +93,23 @@ go run ./cmd/dhi      # Go 1.26+
 make verify           # fmt + vet + race tests
 ```
 </details>
+
+### Updating
+
+```sh
+# installed with the script: re-run it (it replaces the binary in place)
+curl -fsSL https://github.com/drjzlyan/dhi/releases/latest/download/install.sh | sh
+
+# installed with Homebrew
+brew update && brew upgrade dhi
+
+dhi version   # check what you have
+```
+
+Updating never touches your toolchain (`~/.local/share/dhi`), settings
+(`~/.config/dhi`) or workspaces. Restart any running `dhi` to pick up the new
+version. To go back to an older release, re-run the script with
+`DHI_VERSION=<version>`.
 
 ## First run
 
