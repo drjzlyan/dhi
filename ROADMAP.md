@@ -876,7 +876,8 @@ sandbox/scope/keychain/approvals.
       recomputes the canonical digest (path+content, `.git` ignored) and
       refuses by name on mismatch; Settings MARKETPLACE browses/searches/
       inspects/installs; doctor `registry` + `packs/provenance` rows.
-      Signature verification deferred (digest pinning ships)
+      Signature verification deferred (digest pinning ships) — closed: Ed25519 index
+      signatures shipped as the F-034 follow-on; publisher tool in F-062 (M27)
 - [x] Outbound MCP client revived + policy-gated: per-agent allowlist,
       sandbox, declared origins, keychain creds, approval-gated calls;
       doctor registry/provenance/posture rows
@@ -995,4 +996,5 @@ GitHub setup, a real release, and every deferral either done or specced.
   - [x] Artifact export (F-059): Ideator `X` → repo file, task card, or an agent files it in the tracker
   - [x] Read-only toolchain for agents (F-060): ro-root differentiation, verified under the real sandbox
   - [x] Full-screen programs in the terminal (F-061, ADR-0030): vim/htop/less, ctrl+c to the program
+  - [x] Pack signatures: verification already shipped (F-034 follow-on); publisher tool `scripts/registry-sign` (F-062)
 
