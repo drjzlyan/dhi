@@ -141,11 +141,17 @@ func TestCompleteAgentReviewMode(t *testing.T) {
 	}
 	m.submitForm()
 
-	// completion event arrives after the synchronous fake dispatch
-	msg2 := pumpCmd(t, m.listen())
-	_ = m.Update(msg2)
+	// The completion event follows the fake dispatch, but other events
+	// (store pings) may be queued first on a busy machine: pump until the
+	// dispatch shows up, bounded.
+	for i := 0; i < 8 && len(fc.calls()) == 0; i++ {
+		_ = m.Update(pumpCmd(t, m.listen()))
+	}
 	if len(fc.calls()) != 1 {
 		t.Fatal("complete-review request never dispatched")
+	}
+	for i := 0; i < 8 && m.busy; i++ { // and its completion event
+		_ = m.Update(pumpCmd(t, m.listen()))
 	}
 	msg := fc.calls()[0]
 	if !strings.Contains(msg.Text, "@rev") || !strings.Contains(msg.Text, "```diff") {
