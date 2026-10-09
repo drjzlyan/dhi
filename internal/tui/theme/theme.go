@@ -27,13 +27,20 @@ type Tokens struct {
 	BgInset     color.Color // sub-columns inside a panel: board columns, chat rail, thread pane
 	BgChrome    color.Color // bottom chrome: hint bars, keymap rows (F-025)
 	BgSelection color.Color // selected rows, highlighted ranges
-	BgAdd       color.Color // diff added-line wash (F-026 P6)
-	BgDel       color.Color // diff deleted-line wash (F-026 P6)
+	// F-064 shade ladder: header strips (lane/section heads, tab strips)
+	// sit one step above the panel; zebra rows and the editor/terminal
+	// cursor line are quiet steps that never compete with selection.
+	BgHeader     color.Color
+	BgRowAlt     color.Color
+	BgCursorLine color.Color
+	BgAdd        color.Color // diff added-line wash (F-026 P6)
+	BgDel        color.Color // diff deleted-line wash (F-026 P6)
 	// BgAddStrong / BgDelStrong mark the words that changed inside a
 	// changed line (F-049): a deeper step of the same hue as the wash.
 	BgAddStrong   color.Color
 	BgDelStrong   color.Color
 	Border        color.Color // unfocused borders, dividers
+	Rule          color.Color // thin in-panel separators, quieter than Border (F-064)
 	BorderFocused color.Color // focused element borders
 	Text          color.Color // primary text
 	TextDim       color.Color // secondary text
@@ -41,6 +48,8 @@ type Tokens struct {
 	Accent        color.Color // primary brand accent (cyan)
 	AccentDim     color.Color // quieter accent for secondary emphasis
 	Accent2       color.Color // secondary brand accent (violet)
+	Accent3       color.Color // teal: file kinds, author colors, chips (F-064)
+	Accent4       color.Color // rose: file kinds, author colors, chips (F-064)
 	Info          color.Color // neutral-blue semantic (informational rows)
 	Success       color.Color
 	Warning       color.Color
@@ -59,17 +68,21 @@ func Dark() Tokens {
 	return Tokens{
 		Name: "dark-futuristic",
 
-		Bg:          c("#0B0E14"),
-		BgPanel:     c("#10141B"),
-		BgElevated:  c("#151B26"),
-		BgInset:     c("#07090D"),
-		BgChrome:    c("#1C2430"),
-		BgSelection: c("#1B2739"),
-		BgAdd:       c("#0D2B22"),
-		BgDel:       c("#2B1215"),
-		BgAddStrong: c("#124131"),
-		BgDelStrong: c("#4E2225"),
-		Border:      c("#232C3B"),
+		Bg:           c("#0B0E14"),
+		BgPanel:      c("#10141B"),
+		BgElevated:   c("#151B26"),
+		BgInset:      c("#07090D"),
+		BgChrome:     c("#1C2430"),
+		BgSelection:  c("#1B2739"),
+		BgHeader:     c("#161D29"),
+		BgRowAlt:     c("#131821"),
+		BgCursorLine: c("#171E2A"),
+		BgAdd:        c("#0D2B22"),
+		BgDel:        c("#2B1215"),
+		BgAddStrong:  c("#124131"),
+		BgDelStrong:  c("#4E2225"),
+		Border:       c("#232C3B"),
+		Rule:         c("#1E2633"),
 		// BorderFocused is a brighter cyan than Accent so a focused
 		// edge reads as attention, not brand emphasis (F-026 P1).
 		BorderFocused: c("#67E8F9"),
@@ -79,6 +92,8 @@ func Dark() Tokens {
 		Accent:        c("#22D3EE"),
 		AccentDim:     c("#1083A3"),
 		Accent2:       c("#A78BFA"),
+		Accent3:       c("#2DD4BF"),
+		Accent4:       c("#F472B6"),
 		Info:          c("#60A5FA"),
 		Success:       c("#34D399"),
 		Warning:       c("#FBBF24"),
@@ -103,11 +118,15 @@ func Light() Tokens {
 		BgInset:       c("#EDE9DE"),
 		BgChrome:      c("#E6E0D0"),
 		BgSelection:   c("#DCEFEF"),
+		BgHeader:      c("#F0ECE1"),
+		BgRowAlt:      c("#F6F3EB"),
+		BgCursorLine:  c("#F2EEE4"),
 		BgAdd:         c("#D9EBDD"),
 		BgDel:         c("#F6DFDF"),
 		BgAddStrong:   c("#AED3C1"),
 		BgDelStrong:   c("#ECBEBE"),
 		Border:        c("#D8D2C4"),
+		Rule:          c("#E4DED1"),
 		BorderFocused: c("#0891B2"),
 		Text:          c("#1F2937"),
 		TextDim:       c("#4B5563"),
@@ -115,6 +134,8 @@ func Light() Tokens {
 		Accent:        c("#0D6B84"),
 		AccentDim:     c("#4A879A"),
 		Accent2:       c("#6D28D9"),
+		Accent3:       c("#0B6B63"),
+		Accent4:       c("#A3154F"),
 		Info:          c("#1D4ED8"),
 		Success:       c("#047152"),
 		Warning:       c("#A14A08"),
@@ -140,11 +161,15 @@ func HighContrast() Tokens {
 		BgInset:       c("#000000"),
 		BgChrome:      c("#1A1A1A"),
 		BgSelection:   c("#1F3A5F"),
+		BgHeader:      c("#121212"),
+		BgRowAlt:      c("#0A0A0A"),
+		BgCursorLine:  c("#161616"),
 		BgAdd:         c("#003D1F"),
 		BgDel:         c("#4A0F0F"),
 		BgAddStrong:   c("#09502B"),
 		BgDelStrong:   c("#652121"),
 		Border:        c("#7C8AA0"),
+		Rule:          c("#4B5563"),
 		BorderFocused: c("#00E5FF"),
 		Text:          c("#FFFFFF"),
 		TextDim:       c("#E0E6ED"),
@@ -152,6 +177,8 @@ func HighContrast() Tokens {
 		Accent:        c("#00E5FF"),
 		AccentDim:     c("#4DD0E1"),
 		Accent2:       c("#C4B5FD"),
+		Accent3:       c("#5EEAD4"),
+		Accent4:       c("#F9A8D4"),
 		Info:          c("#7DB7FF"),
 		Success:       c("#4ADE80"),
 		Warning:       c("#FFD54A"),
@@ -415,6 +442,86 @@ func DialogTitle() lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(Current.Text).Bold(true)
 }
 
+// HeaderBg paints header strips: lane and section heads, tab strips,
+// dialog title rows (F-064) — one shade above the panel.
+func HeaderBg() lipgloss.Style { return lipgloss.NewStyle().Background(Current.BgHeader) }
+
+// RowAltBg paints every other row of a long list (quiet zebra).
+func RowAltBg() lipgloss.Style { return lipgloss.NewStyle().Background(Current.BgRowAlt) }
+
+// CursorLineBg paints the editor/terminal line under the cursor.
+func CursorLineBg() lipgloss.Style { return lipgloss.NewStyle().Background(Current.BgCursorLine) }
+
+// RuleText styles thin in-panel separators.
+func RuleText() lipgloss.Style { return lipgloss.NewStyle().Foreground(Current.Rule) }
+
+// Rule renders a w-cell horizontal separator.
+func Rule(w int) string {
+	if w <= 0 {
+		return ""
+	}
+	return RuleText().Render(strings.Repeat("─", w))
+}
+
+// SectionHeader styles an uppercase group label (CHANNELS, Appearance):
+// muted and bold so it organises without shouting.
+func SectionHeader() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(Current.TextMuted).Bold(true)
+}
+
+// pillTint is how far a pill's background leans from the panel toward
+// its foreground hue.
+const pillTint = 0.16
+
+// Pill styles a small status chip in fg on a tint of fg (F-064): the
+// chip reads as the same family as its text without a hard block.
+func Pill(fg color.Color) lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(fg).Background(PillBg(fg))
+}
+
+// PillBg is the tinted background Pill uses for fg.
+func PillBg(fg color.Color) color.Color { return Blend(Current.BgPanel, fg, pillTint) }
+
+// AuthorColor gives a stable, distinct color per author name (chat
+// authors, assignees), drawn from the accent ramp.
+func AuthorColor(name string) color.Color {
+	ramp := []color.Color{Current.Accent, Current.Accent2, Current.Accent3,
+		Current.Accent4, Current.Info, Current.Success, Current.Warning}
+	h := uint32(2166136261)
+	for i := 0; i < len(name); i++ {
+		h = (h ^ uint32(name[i])) * 16777619
+	}
+	return ramp[h%uint32(len(ramp))]
+}
+
+// FileKind is the glyph and color a file tree shows for a file name.
+// Plain Unicode only (no Nerd Font): the glyph shape is shared and the
+// color tells kinds apart.
+func FileKind(name string) (glyph string, c color.Color) {
+	lower := strings.ToLower(name)
+	ext := ""
+	if i := strings.LastIndexByte(lower, '.'); i > 0 {
+		ext = lower[i+1:]
+	}
+	switch {
+	case lower == "dockerfile" || lower == "makefile" || ext == "sh" || ext == "bash" || ext == "zsh":
+		return GlyphFileExec, Current.Success
+	case ext == "go" || ext == "mod" || ext == "sum":
+		return GlyphFile, Current.Accent
+	case ext == "md" || ext == "txt" || ext == "rst":
+		return GlyphFileDoc, Current.Info
+	case ext == "json" || ext == "yaml" || ext == "yml" || ext == "toml" || ext == "ini" || ext == "env":
+		return GlyphFileConf, Current.Warning
+	case ext == "ts" || ext == "tsx" || ext == "js" || ext == "jsx" || ext == "mjs":
+		return GlyphFile, Current.Accent4
+	case ext == "py" || ext == "rb" || ext == "rs" || ext == "java" || ext == "kt" || ext == "c" || ext == "h" || ext == "cpp" || ext == "zig" || ext == "swift":
+		return GlyphFile, Current.Accent2
+	case ext == "css" || ext == "scss" || ext == "html" || ext == "svg":
+		return GlyphFile, Current.Accent3
+	}
+	return GlyphFile, Current.TextMuted
+}
+
 // Faint dims a pre-rendered block of text (view-transition fade-in,
 // F-012). Content is byte-identical: lines are styled one at a time so
 // lipgloss never re-pads them to a common width, and the terminal
@@ -470,5 +577,11 @@ var (
 	GlyphBranch    = "⎇" // git branch marker (F-026 P4 git panel)
 	GlyphGutterBar = "▎" // git gutter: added/modified line (F-040)
 	GlyphGutterDel = "▁" // git gutter: lines deleted below
+	GlyphFile      = "◦" // tree: a source file (colored by FileKind)
+	GlyphFileDoc   = "≡" // tree: prose (markdown, text)
+	GlyphFileConf  = "∷" // tree: config (json/yaml/toml)
+	GlyphFileExec  = "$" // tree: scripts and build files
+	GlyphDirOpen   = "▾" // tree: expanded folder
+	GlyphDirClosed = "▸" // tree: collapsed folder
 	GlyphSpark     = "◇" // agent activity / transcript agent author (F-026 P1e); Geometric Shapes, not Dingbats, so common terminal fonts have it
 )
