@@ -7,7 +7,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/drjzlyan/dhi/internal/sandbox"
 	"github.com/drjzlyan/dhi/internal/settings"
+	"github.com/drjzlyan/dhi/internal/toolchain"
 )
 
 func lookHit(string) (string, error) { return "/bin/helper", nil }
@@ -272,5 +274,34 @@ func TestUnusableWorktreeRootBlocksBootWithTheFix(t *testing.T) {
 	d = Audit(Input{CWD: root, UserCfg: cfg, GOOS: "darwin", LookPath: lookHit})
 	if d.Block == "" || !strings.Contains(d.Block, "home") {
 		t.Fatalf("block = %q", d.Block)
+	}
+}
+
+// TestToolchainIsReadOnlyToAgents pins the ro-root differentiation: the
+// pinned toolchain is readable/executable but not writable inside the
+// sandbox; only its runtime caches are.
+func TestToolchainIsReadOnlyToAgents(t *testing.T) {
+	toolRoot := t.TempDir()
+	d := Audit(Input{CWD: t.TempDir(), ToolRoot: toolRoot, GOOS: "darwin", LookPath: lookHit})
+	sb, ok := d.Sandbox.(*sandbox.Seatbelt)
+	if !ok {
+		t.Fatalf("sandbox = %T (block %q)", d.Sandbox, d.Block)
+	}
+	var write string
+	for _, line := range strings.Split(sb.Profile(), "\n") {
+		if strings.HasPrefix(line, "(allow file-write*") {
+			write = line
+		}
+	}
+	if strings.Contains(write, `"`+toolRoot+`"`) {
+		t.Fatalf("the toolchain root is writable:\n%s", write)
+	}
+	for _, sub := range toolchain.WritableSubdirs {
+		if !strings.Contains(write, filepath.Join(toolRoot, sub)) {
+			t.Errorf("%s must stay writable:\n%s", sub, write)
+		}
+	}
+	if !strings.Contains(sb.Profile(), `(subpath "`+toolRoot+`")`) {
+		t.Fatal("the toolchain must stay readable/executable")
 	}
 }

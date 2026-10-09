@@ -52,3 +52,8 @@ func firstPathEntry(pathList string) string {
 	first, _, _ := strings.Cut(pathList, string(os.PathListSeparator))
 	return first
 }
+
+// WritableSubdirs are the toolchain folders sandboxed agent processes may
+// write: npm's cache (npx-run MCP servers) and the MCP servers' private
+// HOME. Everything else under the prefix is read-only to them.
+var WritableSubdirs = []string{"npm-cache", "mcp-home"}

@@ -126,8 +126,18 @@ func Audit(in Input) Decision {
 			rw = append(rw, base)
 		}
 	}
+	// The pinned toolchain is read-only to sandboxed agent processes (an
+	// agent must never swap DHI's compilers); only its runtime caches are
+	// writable. DHI itself installs outside the sandbox.
+	var ro []string
 	if in.ToolRoot != "" {
-		rw = append(rw, in.ToolRoot)
+		ro = append(ro, in.ToolRoot)
+		for _, sub := range toolchain.WritableSubdirs {
+			dir := filepath.Join(in.ToolRoot, sub)
+			if err := os.MkdirAll(dir, 0o755); err == nil {
+				rw = append(rw, dir)
+			}
+		}
 	}
 	switch cfg.Security.Sandbox {
 	case settings.SandboxOff:
@@ -148,7 +158,7 @@ func Audit(in Input) Decision {
 			}
 			break
 		}
-		sb, err := sandbox.Select(in.GOOS, in.LookPath, cfg.Security.Sandbox, rw, nil)
+		sb, err := sandbox.Select(in.GOOS, in.LookPath, cfg.Security.Sandbox, rw, ro)
 		if err != nil {
 			d.Block = err.Error()
 			d.Fixes = []string{

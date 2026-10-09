@@ -993,4 +993,5 @@ GitHub setup, a real release, and every deferral either done or specced.
 - [ ] P7 Big deferrals, spec first
   - [x] Key remaps (F-058): `[keys]` in config, shell translates, chrome shows the pressed key
   - [x] Artifact export (F-059): Ideator `X` → repo file, task card, or an agent files it in the tracker
+  - [x] Read-only toolchain for agents (F-060): ro-root differentiation, verified under the real sandbox
 

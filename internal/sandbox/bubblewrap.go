@@ -86,11 +86,14 @@ func (b *Bubblewrap) Wrap(argv []string) ([]string, error) {
 	for _, d := range bwrapSystemDirs {
 		out = append(out, "--ro-bind", d, d)
 	}
-	for _, r := range b.rw {
-		out = append(out, "--bind", r, r)
-	}
+	// ro first, rw on top: a writable child of a read-only root (the
+	// toolchain's caches inside the read-only toolchain) must stay
+	// writable, and a later bind shadows an earlier one at the same place.
 	for _, r := range b.ro {
 		out = append(out, "--ro-bind", r, r)
+	}
+	for _, r := range b.rw {
+		out = append(out, "--bind", r, r)
 	}
 	return append(out, argv...), nil
 }
@@ -108,11 +111,14 @@ func (b *Bubblewrap) WrapNetwork(argv []string, allow bool) ([]string, error) {
 	for _, d := range bwrapSystemDirs {
 		out = append(out, "--ro-bind", d, d)
 	}
-	for _, r := range b.rw {
-		out = append(out, "--bind", r, r)
-	}
+	// ro first, rw on top: a writable child of a read-only root (the
+	// toolchain's caches inside the read-only toolchain) must stay
+	// writable, and a later bind shadows an earlier one at the same place.
 	for _, r := range b.ro {
 		out = append(out, "--ro-bind", r, r)
+	}
+	for _, r := range b.rw {
+		out = append(out, "--bind", r, r)
 	}
 	return append(out, argv...), nil
 }

@@ -25,6 +25,10 @@ jobs:
       - name: Format
         run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
 
+      - name: Bubblewrap for the live sandbox tests (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get install -y --no-install-recommends bubblewrap
+
       - name: Vet
         run: go vet ./...
 
