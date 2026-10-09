@@ -175,7 +175,7 @@ func (m *Model) sectionHints() []string {
 	case secParticipants:
 		return []string{"f floor", "m moderator", "a invite", "x remove"}
 	case secCanvas:
-		return []string{"j/k select", "J/K scroll", "s scan", "v/a/r review", "e edit"}
+		return []string{"j/k select", "J/K scroll", "s scan", "v/a/r review", "e edit", "X export"}
 	case secTranscript:
 		return []string{"i compose", "enter send"}
 	}
@@ -505,6 +505,18 @@ func (m *Model) modalLines() []string {
 	case fRemoveParticipant:
 		return confirmLines("remove participant "+f.target()+"?",
 			[]string{"they can be invited again at any time."}, f)
+	case fExport:
+		lines := []string{
+			theme.TextDim().Render(f.orig),
+			fieldLine(f.fields[0], f.cur == 0),
+			theme.Hint().Render("        ←/→ repo file · task card · tracker (via an agent's MCP tools)"),
+			fieldLine(f.fields[1], f.cur == 1),
+			"",
+		}
+		if f.err != "" {
+			lines = append(lines, theme.DangerText().Render(f.err), "")
+		}
+		return append(lines, theme.Hint().Render("tab field · enter export · esc cancel"))
 	case fReject:
 		lines := []string{
 			theme.TextDim().Render("routes back to the authoring agent"),
@@ -587,6 +599,8 @@ func modalTitle(k modalKind) string {
 		return "remove participant"
 	case fReject:
 		return "reject artifact"
+	case fExport:
+		return "export artifact"
 	case fAddParticipant:
 		return "invite participants"
 	}

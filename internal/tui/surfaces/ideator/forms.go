@@ -17,6 +17,7 @@ const (
 	fReject
 	fAddParticipant
 	fRemoveParticipant
+	fExport
 )
 
 // field is one modal input: free text or a cycling toggle.
@@ -51,6 +52,7 @@ type formState struct {
 	fields []field
 	cur    int
 	busy   bool
+	armed  bool // export: the next enter overwrites an existing file
 	err    string
 	flash  string
 }
@@ -107,11 +109,17 @@ func (m *Model) formKey(key string) bool {
 	case "left":
 		if f.fields[f.cur].toggle != nil {
 			f.fields[f.cur].cycle(-1)
+			if f.kind == fExport {
+				m.exportCycled()
+			}
 			return true
 		}
 	case "right":
 		if f.fields[f.cur].toggle != nil {
 			f.fields[f.cur].cycle(1)
+			if f.kind == fExport {
+				m.exportCycled()
+			}
 			return true
 		}
 	case "backspace":
@@ -173,6 +181,8 @@ func (m *Model) submitForm() {
 		}
 		m.closeFormWithFlash("rejected " + rel)
 		m.dispatchRevision(rel, notes)
+	case fExport:
+		m.submitExport()
 	case fAddParticipant:
 		added := csvList(f.fields[0].text())
 		if len(added) == 0 {

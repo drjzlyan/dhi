@@ -18,6 +18,7 @@ import (
 
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/ideation"
+	"github.com/drjzlyan/dhi/internal/tasks"
 	"github.com/drjzlyan/dhi/internal/tui/kit"
 	"github.com/drjzlyan/dhi/internal/tui/surfaces"
 	"github.com/drjzlyan/dhi/internal/workspace"
@@ -91,6 +92,7 @@ type Model struct {
 	bus          *bus.Bus
 	crew         crew
 	openInEditor func(paths []string) bool
+	tasks        *tasks.Store
 
 	events chan ideEvent
 }
@@ -119,6 +121,7 @@ type Deps struct {
 	Bus          *bus.Bus
 	Crew         crew
 	OpenInEditor func(paths []string) bool
+	Tasks        *tasks.Store // export to a task card (F-059); nil hides that route's success
 }
 
 // New returns the ideator model. A nil ws renders the empty state with
@@ -131,6 +134,7 @@ func New(version string, ws *workspace.Workspace, d Deps) *Model {
 		bus:          d.Bus,
 		crew:         d.Crew,
 		openInEditor: d.OpenInEditor,
+		tasks:        d.Tasks,
 		events:       make(chan ideEvent, 16),
 	}
 }
@@ -661,6 +665,11 @@ func (m *Model) canvasKey(key string) bool {
 			} else {
 				m.closeFormWithFlash("scanned " + m.openID)
 			}
+		}
+		return true
+	case "X":
+		if rel, ok := m.artifactRelAt(*c); ok {
+			m.openExport(rel)
 		}
 		return true
 	case "e":

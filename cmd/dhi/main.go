@@ -362,6 +362,7 @@ func runTUI() (relaunch bool) {
 			Store: sessionStore,
 			Bus:   messageBus,
 			Crew:  agentRT,
+			Tasks: taskStore,
 			OpenInEditor: func(paths []string) bool {
 				if appRef == nil {
 					return false
