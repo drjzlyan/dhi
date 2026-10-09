@@ -31,7 +31,7 @@ primitives, surfaces consume them — no exceptions.
   rune-count helpers in ansi + kit.
 - kit: `Scroller`/`Scrollbar` (offset + position indicator); `List`
   renders `Desc`, wraps titles, fixes badge overflow, gains headers;
-  `Rail` glyph slot + scroll + counts; `Modal` shadow + scroll for tall
+  `Rail` glyph slot + scroll + counts; `Modal` shadow (replaced by F-064: no veil, no shadow, splice-only overlay) + scroll for tall
   bodies + ellipsis clip; `Form` canonical (in-value cursor, shift+tab,
   paste) absorbing workspace/settings duplicates; `HintBar` ellipsis
   char; `StatusLine` Center + overflow truncation; `Panel` footer slot.

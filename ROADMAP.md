@@ -1002,3 +1002,15 @@ GitHub setup, a real release, and every deferral either done or specced.
   - [x] Full-screen programs in the terminal (F-061, ADR-0030): vim/htop/less, ctrl+c to the program
   - [x] Pack signatures: verification already shipped (F-034 follow-on); publisher tool `scripts/registry-sign` (F-062)
   - [x] KB retrieval by shared words (F-063): hashed TF-IDF vectors, honest about not being semantic
+
+## M28 — UI cohesion (session 52, F-064)
+
+- [x] P1 Background integrity: `ansi.Fill` + `kit.PaintRow` everywhere a row is painted;
+      dialogs splice into the backdrop (no veil/shadow, borders survive); `golden.BgHoles`
+      runs on every raw-ANSI snapshot plus per-surface sweeps (all three themes for workspace)
+- [x] P2 Theme: BgHeader/BgRowAlt/BgCursorLine/Rule/Accent3/Accent4, pills, author colors,
+      file kinds; contrast tests cover them
+- [x] P3 Components: tree, terminal drawer, git panel, editor tabs/mode, board cards, channels,
+      ideator cards, reviewer columns, grouped settings, chrome pills
+- [x] P4 README: 12 screenshots regenerated (`scripts/screenshots.sh` now hides the real prompt
+      and maps SGR 39/49 for freeze)

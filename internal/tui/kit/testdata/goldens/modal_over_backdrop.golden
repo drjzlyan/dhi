@@ -3,7 +3,7 @@
   CHANNELS          ●                                       
   REPOS             2                                       
          ╭─ › remove team ───────────────────────╮          
-  main   │ delete team platform and its channel? │          
+         │ delete team platform and its channel? │          
          │ agents keep their manifests.          │          
          ╰───────────────────────────────────────╯          
                                                             

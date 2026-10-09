@@ -178,8 +178,8 @@ func Overlay(backdrop []string, box string, width, height int) string {
 	// A one-cell margin beside the box is cleared of backdrop text (its
 	// background and any border glyphs stay) so words never butt
 	// against the box edge.
-	// The margin widens to whole words, so no fragment of a word is left
-	// peeking out beside the box.
+	// The margin widens to whole phrases, so no fragment of a word or a
+	// card title is left peeking out beside the box.
 	span := func(back string) (lo, hi int) {
 		cells := ansi.Cells(back)
 		word := func(x int) bool {
@@ -189,11 +189,13 @@ func Overlay(backdrop []string, box string, width, height int) string {
 			r := cells[x].R
 			return r != ' ' && (r < 0x2500 || r > 0x259F)
 		}
+		// A phrase continues across single spaces ("▽ CSV export"), so
+		// the clear stops only at a gap of two or more cells or a border.
 		lo, hi = max(col-1, 0), min(col+bw+1, width)
-		for word(lo - 1) {
+		for word(lo-1) || (lo-1 >= 0 && cells[lo-1].R == ' ' && word(lo-2)) {
 			lo--
 		}
-		for word(hi) {
+		for word(hi) || (hi < len(cells) && cells[hi].R == ' ' && word(hi+1)) {
 			hi++
 		}
 		return lo, hi

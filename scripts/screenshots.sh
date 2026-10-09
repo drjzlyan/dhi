@@ -33,6 +33,11 @@ set -as terminal-features ",*:RGB"
 set -g status off
 EOF
 
+# The drawer's shell starts in the sandbox home: give it a neutral prompt
+# so no real user or host name lands in a screenshot.
+printf "PROMPT='%%F{cyan}%%1~%%f $ '\n" >"$WORK/home/.zshrc"
+printf "PS1='\\W $ '\n" >"$WORK/home/.bashrc"
+
 # shot NAME COLSxROWS KEY... — launch dhi, send keys, capture, render.
 shot() {
 	name=$1 size=$2
@@ -49,9 +54,10 @@ shot() {
 		sleep 0.5
 	done
 	sleep 1
-	# freeze ignores SGR 39 (default fg): spell it as DHI's text color.
+	# freeze ignores SGR 39/49 (default fg/bg): spell them as DHI's text
+	# and canvas colors.
 	tmux -L "$SOCK" capture-pane -e -p -t s |
-		python3 -c 'import sys; sys.stdout.write(sys.stdin.read().replace("\x1b[39m", "\x1b[38;2;230;237;243m"))' \
+		python3 -c 'import sys; sys.stdout.write(sys.stdin.read().replace("\x1b[39m", "\x1b[38;2;230;237;243m").replace("\x1b[49m", "\x1b[48;2;11;14;20m"))' \
 			>"$WORK/$name.ansi"
 	"$WORK/freeze" --language ansi --window --border.radius 10 --background "#0B0E14" \
 		--padding 24 --margin 0 -o "$OUT/$name.png" "$WORK/$name.ansi" </dev/null >/dev/null
@@ -69,6 +75,11 @@ echo "capturing…"
 { [ -z "$WANT" ] || [ "$WANT" = review ]; } && shot review 150x40 4 Enter Enter
 { [ -z "$WANT" ] || [ "$WANT" = editor ]; } && shot editor 150x40 2 Enter j j j Enter Escape j Enter C-w v
 { [ -z "$WANT" ] || [ "$WANT" = replace ]; } && shot replace 150x40 2 s C-r f u n c ' ' '(' '\' w + ')' Enter r f u n c ' ' '$' '{' 1 '}' V 2
+{ [ -z "$WANT" ] || [ "$WANT" = terminal ]; } && shot terminal 150x40 2 Enter j j j Enter C-t g i t ' ' l o g ' ' - - o n e l i n e ' ' - 5 Enter
+{ [ -z "$WANT" ] || [ "$WANT" = ideator ]; } && shot ideator 150x40 3
+{ [ -z "$WANT" ] || [ "$WANT" = settings ]; } && shot settings 150x40 5
+{ [ -z "$WANT" ] || [ "$WANT" = dialog ]; } && shot dialog 150x40 n c s v - e x p o r t Tab E x p o r t ' ' r e p o r t s ' ' a s ' ' C S V
+{ [ -z "$WANT" ] || [ "$WANT" = inbox ]; } && shot inbox 150x40 '['
 { [ -z "$WANT" ] || [ "$WANT" = help ]; } && shot help 150x40 '?'
 { [ -z "$WANT" ] || [ "$WANT" = narrow ]; } && shot narrow 72x30
 echo "done"
