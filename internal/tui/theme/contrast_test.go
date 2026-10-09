@@ -35,6 +35,7 @@ func TestTextTokensMeetWCAGAA(t *testing.T) {
 		surfaces := map[string]color.Color{
 			"Bg": tk.Bg, "BgPanel": tk.BgPanel, "BgElevated": tk.BgElevated,
 			"BgInset": tk.BgInset, "BgChrome": tk.BgChrome, "BgSelection": tk.BgSelection,
+			"BgHeader": tk.BgHeader, "BgRowAlt": tk.BgRowAlt, "BgCursorLine": tk.BgCursorLine,
 		}
 		texts := map[string]struct {
 			c   color.Color
@@ -42,6 +43,7 @@ func TestTextTokensMeetWCAGAA(t *testing.T) {
 		}{
 			"Text": {tk.Text, 4.5}, "TextDim": {tk.TextDim, 4.5}, "TextMuted": {tk.TextMuted, 4.5},
 			"Accent": {tk.Accent, 4.5}, "Accent2": {tk.Accent2, 4.5}, "Info": {tk.Info, 4.5},
+			"Accent3": {tk.Accent3, 4.5}, "Accent4": {tk.Accent4, 4.5},
 			"Success": {tk.Success, 4.5}, "Warning": {tk.Warning, 4.5}, "Danger": {tk.Danger, 4.5},
 			"AccentDim": {tk.AccentDim, 3.0},
 		}
@@ -114,5 +116,24 @@ func TestStrongWashIsDeeperThanItsWash(t *testing.T) {
 		if ratio(tk.BgAddStrong, tk.BgAdd) < 1.25 || ratio(tk.BgDelStrong, tk.BgDel) < 1.25 {
 			t.Errorf("%s: the changed-word wash is not distinguishable from the line wash", tk.Name)
 		}
+	}
+}
+
+// F-064 pills: every semantic and accent color stays legible on its own
+// tint in all three themes.
+func TestPillsAreLegible(t *testing.T) {
+	for _, tk := range []Tokens{Dark(), Light(), HighContrast()} {
+		old := Current
+		Current = tk
+		for name, c := range map[string]color.Color{
+			"Accent": tk.Accent, "Accent2": tk.Accent2, "Accent3": tk.Accent3, "Accent4": tk.Accent4,
+			"Info": tk.Info, "Success": tk.Success, "Warning": tk.Warning, "Danger": tk.Danger,
+			"TextDim": tk.TextDim,
+		} {
+			if got := ratio(c, PillBg(c)); got < 4.5 {
+				t.Errorf("%s: %s pill = %.2f:1, want >= 4.5", tk.Name, name, got)
+			}
+		}
+		Current = old
 	}
 }

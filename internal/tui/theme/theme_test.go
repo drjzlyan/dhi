@@ -20,8 +20,10 @@ func TestTokensAreComplete(t *testing.T) {
 	for name, c := range map[string]any{
 		"Bg": tk.Bg, "BgPanel": tk.BgPanel, "BgElevated": tk.BgElevated,
 		"BgInset": tk.BgInset, "BgChrome": tk.BgChrome,
-		"BgSelection": tk.BgSelection,
-		"Border":      tk.Border, "BorderFocused": tk.BorderFocused,
+		"BgSelection": tk.BgSelection, "BgHeader": tk.BgHeader, "BgRowAlt": tk.BgRowAlt,
+		"BgCursorLine": tk.BgCursorLine, "Rule": tk.Rule,
+		"Accent3": tk.Accent3, "Accent4": tk.Accent4,
+		"Border": tk.Border, "BorderFocused": tk.BorderFocused,
 		"Text": tk.Text, "TextDim": tk.TextDim, "TextMuted": tk.TextMuted,
 		"Accent": tk.Accent, "Accent2": tk.Accent2,
 		"Success": tk.Success, "Warning": tk.Warning, "Danger": tk.Danger,
