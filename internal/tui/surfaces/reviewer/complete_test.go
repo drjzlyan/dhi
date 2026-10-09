@@ -113,7 +113,7 @@ func prFixture(t *testing.T) (*Model, *review.Store, *ghFake) {
 // pumpSubmit drains the async submit started by the confirm screen.
 func pumpSubmit(t *testing.T, m *Model) {
 	t.Helper()
-	_ = m.Update(pumpCmd(t, m.listen()))
+	settle(t, m)
 }
 
 func TestSubmitDialogSendsOneReviewAsTheHuman(t *testing.T) {
@@ -316,8 +316,7 @@ func TestCreatePRFromReviewFlow(t *testing.T) {
 	// happy path
 	m.form.fields[0].runes = []rune("Ship it")
 	m.submitForm()
-	msg := pumpCmd(t, m.listen())
-	_ = m.Update(msg)
+	settle(t, m)
 	if m.opErr != "" || m.busy {
 		t.Fatalf("err=%q busy=%v", m.opErr, m.busy)
 	}
@@ -386,12 +385,11 @@ func TestRemoteSyncFlow(t *testing.T) {
 
 	// opening a PR-backed review auto-imports in the background
 	m.open(r.ID)
-	msg := pumpCmd(t, m.listen())
-	ev, ok := msg.(revEvent)
-	if !ok || ev.kind != evImported || ev.err != "" || ev.n != 1 {
-		t.Fatalf("event = %+v", msg)
+	ev := awaitEvent(t, m, evImported)
+	if ev.err != "" || ev.n != 1 {
+		t.Fatalf("event = %+v", ev)
 	}
-	_ = m.Update(msg)
+	_ = m.Update(ev)
 
 	got, _ := st.Get(r.ID)
 	if len(got.Threads) != 1 || got.Threads[0].Comments[0].Text != "upstream note" ||
@@ -413,8 +411,7 @@ func TestRemoteSyncFlow(t *testing.T) {
 	if !m.HandleKey("R") {
 		t.Fatal("R not consumed")
 	}
-	msg2 := pumpCmd(t, m.listen())
-	_ = m.Update(msg2)
+	settle(t, m)
 	if m.opErr != "" {
 		t.Fatalf("opErr = %q", m.opErr)
 	}

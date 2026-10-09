@@ -136,6 +136,35 @@ func pumpCmd(t *testing.T, cmd tea.Cmd) tea.Msg {
 	return nil
 }
 
+// settle applies queued surface events until the async operation in
+// flight finishes (busy clears). Other events — a bus echo of the
+// request, a store ping — can arrive before the completion on a loaded
+// machine, so tests never assume "the next event is mine".
+func settle(t *testing.T, m *Model) {
+	t.Helper()
+	for i := 0; i < 12; i++ {
+		_ = m.Update(pumpCmd(t, m.listen()))
+		if !m.busy {
+			return
+		}
+	}
+	t.Fatal("operation never settled")
+}
+
+// awaitEvent applies events until one of kind arrives, and returns it.
+func awaitEvent(t *testing.T, m *Model, kind uint8) revEvent {
+	t.Helper()
+	for i := 0; i < 12; i++ {
+		msg := pumpCmd(t, m.listen())
+		if ev, ok := msg.(revEvent); ok && ev.kind == kind {
+			return ev
+		}
+		_ = m.Update(msg)
+	}
+	t.Fatalf("event %v never arrived", kind)
+	return revEvent{}
+}
+
 func startBranchReview(t *testing.T, m *Model, st *review.Store) review.Review {
 	t.Helper()
 	m.HandleKey("n") // modal
@@ -147,13 +176,8 @@ func startBranchReview(t *testing.T, m *Model, st *review.Store) review.Review {
 	m.form.fields[2].runes = []rune("master")
 	m.form.fields[3].runes = []rune("master")
 	m.submitForm() // busy=true, goroutine running
-	msg := pumpCmd(t, m.listen())
-	_ = m.Update(msg) // returned listener is dropped: tests pump manually
-	// start auto-opens the review, which chains a diff load — drain it too.
-	if m.busy {
-		msg2 := pumpCmd(t, m.listen())
-		_ = m.Update(msg2)
-	}
+	// start auto-opens the review, which chains a diff load — settle both.
+	settle(t, m)
 	if m.busy || m.opErr != "" {
 		t.Fatalf("start failed: busy=%v err=%q", m.busy, m.opErr)
 	}
@@ -360,8 +384,7 @@ func TestDiscardAndRemoveFlows(t *testing.T) {
 
 	m.HandleKey("x")
 	m.HandleKey("enter")
-	msg := pumpCmd(t, m.listen())
-	_ = m.Update(msg)
+	settle(t, m)
 	got, ok := st.Get(r.ID)
 	if !ok || !got.Done {
 		t.Fatalf("card after discard: %+v found=%v", got, ok)

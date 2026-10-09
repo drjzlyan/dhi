@@ -194,7 +194,7 @@ func TestReviewRequestAsksForStructuredFindings(t *testing.T) {
 	startBranchReview(t, m, st)
 	m.HandleKey("A")
 	m.submitForm()
-	_ = m.Update(pumpCmd(t, m.listen()))
+	settle(t, m)
 	calls := fc.calls()
 	if len(calls) != 1 {
 		t.Fatal("not dispatched")
