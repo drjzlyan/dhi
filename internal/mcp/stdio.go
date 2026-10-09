@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"time"
 )
 
 // lineWriter adapts an io.Writer to the conn.writer seam, appending the
@@ -32,6 +33,9 @@ type Stdio struct {
 	stdin  io.WriteCloser
 	closed sync.Once
 	stderr *tailBuffer
+	// stderrDone closes once the child's stderr is fully copied: a dead
+	// server's last words must be in hand before its exit is reported.
+	stderrDone chan struct{}
 }
 
 // tailBuffer keeps the last max bytes written to it: the child's stderr,
@@ -75,12 +79,19 @@ func DialStdio(ctx context.Context, env []string, argv ...string) (*Stdio, error
 	if err != nil {
 		return nil, fmt.Errorf("mcp: stdout: %w", err)
 	}
+	stderrR, err := cmd.StderrPipe()
+	if err != nil {
+		return nil, fmt.Errorf("mcp: stderr: %w", err)
+	}
 	tail := &tailBuffer{max: 2048}
-	cmd.Stderr = tail
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("mcp: start %s: %w", argv[0], err)
 	}
-	s := &Stdio{cmd: cmd, conn: newConn(lineWriter{stdin}), stdin: stdin, stderr: tail}
+	s := &Stdio{cmd: cmd, conn: newConn(lineWriter{stdin}), stdin: stdin, stderr: tail, stderrDone: make(chan struct{})}
+	go func() {
+		_, _ = io.Copy(tail, stderrR)
+		close(s.stderrDone)
+	}()
 	go s.readLoop(stdout)
 	if err := s.conn.handshake(ctx); err != nil {
 		_ = s.Close()
@@ -95,7 +106,12 @@ func (s *Stdio) readLoop(r io.Reader) {
 	for sc.Scan() {
 		s.conn.handleLine(sc.Bytes())
 	}
-	// stdout closed: the server is gone. Say so — with its own words.
+	// stdout closed: the server is gone. Say so — with its own words,
+	// once they are copied (stderr can lag stdout's EOF).
+	select {
+	case <-s.stderrDone:
+	case <-time.After(500 * time.Millisecond):
+	}
 	why := "server exited"
 	if e := s.stderr.String(); e != "" {
 		why += ": " + lastLines(e, 6)

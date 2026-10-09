@@ -27,7 +27,7 @@ jobs:
 
       - name: Bubblewrap for the live sandbox tests (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get install -y --no-install-recommends bubblewrap
+        run: sudo apt-get update -q && sudo apt-get install -y --no-install-recommends bubblewrap
 
       - name: Vet
         run: go vet ./...
