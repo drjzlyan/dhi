@@ -17,7 +17,9 @@ import (
 //
 // F-026 P1: tall bodies scroll (Scrollable + Scroll) with a pinned
 // error/busy row and a one-column thumb track; body rows ellipsis-clip
-// so truncation is visible; a one-row dim shadow sits under the box.
+// so truncation is visible. F-064: the box is one solid elevated block
+// (edges included) and Overlay touches no cell outside it — no veil, no
+// shadow.
 type Modal struct {
 	Title      string
 	Lines      []string // body rows (pre-styled)
@@ -54,20 +56,20 @@ func (m *Modal) ScrollTo(i int) {
 	}
 }
 
-// bodyRows is the scrollable row budget: Height minus top/bottom edges
-// and the shadow row.
+// bodyRows is the scrollable row budget: Height minus top/bottom edges.
 func (m *Modal) bodyRows() int {
-	if m.Height < 4 {
+	if m.Height < 3 {
 		return 0
 	}
-	return m.Height - 3
+	return m.Height - 2
 }
 
 // View renders the box alone (no backdrop). Result is exactly
 // Width×Height rows when both are set.
 func (m *Modal) View() string {
-	edge := theme.DialogEdge()
-	titleSt := theme.DialogTitle()
+	bg := theme.ElevatedBg()
+	edge := theme.DialogEdge().Background(theme.Current.BgElevated)
+	titleSt := theme.DialogTitle().Background(theme.Current.BgElevated)
 	pad := theme.Current.PadX
 
 	body := m.Lines
@@ -91,11 +93,10 @@ func (m *Modal) View() string {
 	}
 	height := m.Height
 	if height == 0 {
-		height = len(body) + 3
+		height = len(body) + 2
 	}
 
 	inner := width - pad*2 - 2
-	bg := theme.ElevatedBg()
 	rb := lipgloss.RoundedBorder()
 
 	out := []string{topEdge(width, m.Title, edge, titleSt)}
@@ -107,7 +108,7 @@ func (m *Modal) View() string {
 		pinned = 1
 	}
 	lines := body[:len(body)-pinned]
-	rows := height - 3
+	rows := height - 2
 	winRows := rows - pinned
 	visible := lines
 	var track []string
@@ -125,37 +126,27 @@ func (m *Modal) View() string {
 			if y < len(visible) {
 				row = ClipEllipsis(visible[y], innerRows)
 			}
-			if w := runeWidth(ansi.Strip(row)); w < innerRows {
-				row += strings.Repeat(" ", innerRows-w)
-			}
 			if track != nil {
-				row += track[y]
+				row = PaintRow(row, innerRows, bg) + track[y]
 			}
 		} else {
 			// Pinned busy/error state rows.
 			row = ClipEllipsis(body[len(body)-pinned+(y-winRows)], inner)
-			if w := runeWidth(ansi.Strip(row)); w < inner {
-				row += strings.Repeat(" ", inner-w)
-			}
 		}
-		line := strings.Repeat(" ", pad) + bg.Render(row) + strings.Repeat(" ", pad)
+		line := PaintRow(strings.Repeat(" ", pad)+row, inner+pad*2, bg)
 		out = append(out, edge.Render(rb.Left)+line+edge.Render(rb.Right))
 	}
 	out = append(out, edge.Render(rb.BottomLeft+
 		strings.Repeat(rb.Bottom, width-2)+rb.BottomRight))
-
-	// Shadow row: the first two cells stay on the backdrop (plain
-	// spaces), the rest paint the dim shade so the box reads as raised.
-	shadow := theme.OverlayDim().Render(strings.Repeat(" ", width-2))
-	out = append(out, "  "+shadow)
 	return strings.Join(out[:height], "\n")
 }
 
-// Overlay dims backdrop lines and stacks box centered over them. The
-// result is exactly width×height rows of width cells.
+// Overlay stacks box centered over the backdrop and changes nothing
+// else (F-064): backdrop rows keep their own colors, and each box row is
+// spliced in with the backdrop's cells on either side intact, so pane
+// borders and neighbouring content survive. The result is exactly
+// width×height rows of width cells.
 func Overlay(backdrop []string, box string, width, height int) string {
-	// Normalize the backdrop to full-width, veil-painted rows.
-	dim := theme.OverlayDim()
 	lines := make([]string, 0, height)
 	for y := 0; y < height; y++ {
 		row := ""
@@ -163,37 +154,64 @@ func Overlay(backdrop []string, box string, width, height int) string {
 			row = backdrop[y]
 		}
 		row = clip(row, width)
-		if w := runeWidth(ansi.Strip(row)); w < width {
+		if w := runeWidth(row); w < width {
 			row += strings.Repeat(" ", width-w)
 		}
-		lines = append(lines, dim.Render(row))
+		lines = append(lines, row)
 	}
 
 	boxLines := strings.Split(box, "\n")
 	bw := 0
 	for _, l := range boxLines {
-		if w := runeWidth(ansi.Strip(l)); w > bw {
+		if w := runeWidth(l); w > bw {
 			bw = w
 		}
 	}
-	col := (width - bw) / 2
-	if col < 0 {
-		col = 0
+	if bw > width {
+		bw = width
 	}
+	col := (width - bw) / 2
 	row0 := (height - len(boxLines)) / 2
 	if row0 < 0 {
 		row0 = 0
+	}
+	// A one-cell margin beside the box is cleared of backdrop text (its
+	// background and any border glyphs stay) so words never butt
+	// against the box edge.
+	// The margin widens to whole words, so no fragment of a word is left
+	// peeking out beside the box.
+	span := func(back string) (lo, hi int) {
+		cells := ansi.Cells(back)
+		word := func(x int) bool {
+			if x < 0 || x >= len(cells) {
+				return false
+			}
+			r := cells[x].R
+			return r != ' ' && (r < 0x2500 || r > 0x259F)
+		}
+		lo, hi = max(col-1, 0), min(col+bw+1, width)
+		for word(lo - 1) {
+			lo--
+		}
+		for word(hi) {
+			hi++
+		}
+		return lo, hi
 	}
 	for i, bl := range boxLines {
 		y := row0 + i
 		if y >= height {
 			break
 		}
-		line := strings.Repeat(" ", col) + bl
-		if w := runeWidth(ansi.Strip(line)); w < width {
-			line += dim.Render(strings.Repeat(" ", width-w))
+		bl = clip(bl, bw)
+		if w := runeWidth(bl); w < bw {
+			bl += strings.Repeat(" ", bw-w)
 		}
-		lines[y] = line
+		back := lines[y]
+		lo, hi := span(back)
+		lines[y] = ansi.Clip(back, lo) + "\x1b[0m" +
+			ansi.Blank(ansi.Slice(back, lo, col)) + bl + "\x1b[0m" +
+			ansi.Blank(ansi.Slice(back, col+bw, hi)) + ansi.Slice(back, hi, width)
 	}
 	return strings.Join(lines, "\n")
 }

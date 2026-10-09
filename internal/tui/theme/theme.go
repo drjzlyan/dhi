@@ -27,7 +27,6 @@ type Tokens struct {
 	BgInset     color.Color // sub-columns inside a panel: board columns, chat rail, thread pane
 	BgChrome    color.Color // bottom chrome: hint bars, keymap rows (F-025)
 	BgSelection color.Color // selected rows, highlighted ranges
-	BgOverlay   color.Color // modal backdrop dim layer
 	BgAdd       color.Color // diff added-line wash (F-026 P6)
 	BgDel       color.Color // diff deleted-line wash (F-026 P6)
 	// BgAddStrong / BgDelStrong mark the words that changed inside a
@@ -66,7 +65,6 @@ func Dark() Tokens {
 		BgInset:     c("#07090D"),
 		BgChrome:    c("#1C2430"),
 		BgSelection: c("#1B2739"),
-		BgOverlay:   c("#05070B"),
 		BgAdd:       c("#0D2B22"),
 		BgDel:       c("#2B1215"),
 		BgAddStrong: c("#124131"),
@@ -105,7 +103,6 @@ func Light() Tokens {
 		BgInset:       c("#EDE9DE"),
 		BgChrome:      c("#E6E0D0"),
 		BgSelection:   c("#DCEFEF"),
-		BgOverlay:     c("#E3DED0"),
 		BgAdd:         c("#D9EBDD"),
 		BgDel:         c("#F6DFDF"),
 		BgAddStrong:   c("#AED3C1"),
@@ -143,7 +140,6 @@ func HighContrast() Tokens {
 		BgInset:       c("#000000"),
 		BgChrome:      c("#1A1A1A"),
 		BgSelection:   c("#1F3A5F"),
-		BgOverlay:     c("#000000"),
 		BgAdd:         c("#003D1F"),
 		BgDel:         c("#4A0F0F"),
 		BgAddStrong:   c("#09502B"),
@@ -233,12 +229,6 @@ func PanelBg() lipgloss.Style {
 // reads as depth, not clutter (F-024).
 func InsetBg() lipgloss.Style {
 	return lipgloss.NewStyle().Background(Current.BgInset)
-}
-
-// OverlayDim paints the modal backdrop: content dimmed under a solid
-// near-black veil.
-func OverlayDim() lipgloss.Style {
-	return lipgloss.NewStyle().Background(Current.BgOverlay)
 }
 
 // AddWash / DelWash paint diff line backgrounds (F-026 P6): kind-first

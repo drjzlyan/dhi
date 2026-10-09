@@ -1,11 +1,11 @@
 ▌ INBOX            !2                                       
   BOARD             3                                       
   CHANNELS          ●                                       
+  REPOS             2                                       
          ╭─ › remove team ───────────────────────╮          
-         │ delete team platform and its channel? │          
+  main   │ delete team platform and its channel? │          
          │ agents keep their manifests.          │          
          ╰───────────────────────────────────────╯          
-                                                            
                                                             
                                                             
                                                             

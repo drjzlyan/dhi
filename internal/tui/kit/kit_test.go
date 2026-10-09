@@ -345,3 +345,36 @@ func TestSecretFieldNeverRendersTheValue(t *testing.T) {
 		}
 	}
 }
+
+// F-064: a dialog paints only its own box — backdrop cells beside it keep
+// their characters and backgrounds, and every cell of the box is filled.
+func TestOverlayTouchesOnlyTheBox(t *testing.T) {
+	theme.SwapForTest(t, theme.Dark())
+	p := NewPanel("pane", true)
+	p.SetContent("x x x x x x x x x x x x x x x x x x x x x x x x x x x x", "y y y y y y y y y y y y y y y y y y y y y y y y y y y y", "z z z z z z z z z z z z z z z z z z z z z z z z z z z z")
+	p.Width, p.Height = 60, 9
+	back := strings.Split(p.View(), "\n")
+	m := &Modal{Title: "t", Lines: []string{"hello"}}
+	box := m.View()
+	out := strings.Split(Overlay(back, box, 60, 9), "\n")
+	bw := runeWidth(strings.Split(box, "\n")[0])
+	col := (60 - bw) / 2
+	row0 := (9 - len(strings.Split(box, "\n"))) / 2
+	for y := range out {
+		got, want := ansi.Cells(out[y]), ansi.Cells(back[y])
+		inBoxRow := y >= row0 && y < row0+len(strings.Split(box, "\n"))
+		for x := range want {
+			if inBoxRow && x >= col && x < col+bw {
+				if !got[x].Bg {
+					t.Fatalf("box cell (%d,%d) unpainted", x, y)
+				}
+				continue
+			}
+			// Outside the box a cell may only be blanked (the cleared
+			// margin); its background never changes.
+			if got[x].Bg != want[x].Bg || (got[x].R != want[x].R && got[x].R != ' ') {
+				t.Fatalf("backdrop cell (%d,%d) changed: %+v → %+v", x, y, want[x], got[x])
+			}
+		}
+	}
+}

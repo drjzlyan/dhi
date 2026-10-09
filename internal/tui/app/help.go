@@ -162,11 +162,14 @@ func (a *App) helpView() string {
 	default:
 		foot = theme.Hint().Render("/ search · esc close")
 	}
+	// Each row is painted on the box background itself: lipgloss only
+	// fills padding, so styled keycaps would otherwise end in holes.
+	bg := theme.ElevatedBg()
 	lines := make([]string, 0, len(view)+2)
 	for _, l := range view {
-		lines = append(lines, kit.ClipEllipsis(l, innerW))
+		lines = append(lines, kit.PaintRow(kit.ClipEllipsis(l, innerW), innerW, bg))
 	}
-	lines = append(lines, "", kit.ClipEllipsis(foot, innerW))
+	lines = append(lines, kit.PaintRow("", innerW, bg), kit.PaintRow(kit.ClipEllipsis(foot, innerW), innerW, bg))
 	return theme.HelpOverlay().Width(boxW).Render(strings.Join(lines, "\n"))
 }
 

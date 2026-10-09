@@ -40,6 +40,7 @@ func Compare(name, want, got string) error {
 // DHI_UPDATE_GOLDENS set, it (re)writes the golden instead of comparing.
 func Snapshot(t *testing.T, name, actual string) {
 	t.Helper()
+	AssertBgIntegrity(t, name, actual)
 	path := filepath.Join("testdata", "goldens", name+".golden")
 	plain := strings.TrimRight(Strip(actual), "\n") + "\n"
 

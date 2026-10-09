@@ -8,16 +8,16 @@
                     │                                      ◇                                       │
                     │                               No sessions yet                                │
                     │                                                                              │
-                                       ╭─ › new session ────────────────────────╮                   
-                                       │ opens a channel and an artifact folder │                   
-                                       │ ▌ name    ▏                            │                   
-                                       │   topic                                │                   
-                                       │   agents  scout (comma-separated)      │                   
-                                       │   mode    < group >                    │                   
-                                       │                                        │                   
-                                       │ tab field · ←/→ mode · enter create    │                   
-                                       ╰────────────────────────────────────────╯                   
-                                                                                                    
+                    │             A    ╭─ › new session ────────────────────────╮                  │
+                    │                  │ opens a channel and an artifact folder │                  │
+                    │                  │ ▌ name    ▏                            │                  │
+                    │                  │   topic                                │                  │
+                    │                  │   agents  scout (comma-separated)      │                  │
+                    │                  │   mode    < group >                    │                  │
+                    │                  │                                        │                  │
+                    │                  │ tab field · ←/→ mode · enter create    │                  │
+                    │                  ╰────────────────────────────────────────╯                  │
+                    │                                                                              │
                     │                                                                              │
                     │                                                                              │
                     │                                                                              │

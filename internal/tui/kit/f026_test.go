@@ -171,13 +171,14 @@ func TestModalScrollableBody(t *testing.T) {
 		t.Fatalf("modal rows = %d, want 8", len(rows))
 	}
 	joined := strings.Join(rows, "\n")
-	// Height 8 → 5 body rows: the head window shows lines a–e, not f.
-	for _, want := range []string{"line a", "line b", "line c", "line d", "line e"} {
+	// Height 8 → 6 body rows (edges only, no shadow since F-064): the
+	// head window shows lines a–f, not g.
+	for _, want := range []string{"line a", "line b", "line c", "line d", "line e", "line f"} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("head window missing %q", want)
 		}
 	}
-	if strings.Contains(joined, "line f") {
+	if strings.Contains(joined, "line g") {
 		t.Fatalf("head window leaked rows: %q", joined)
 	}
 	m.Scroll(1)

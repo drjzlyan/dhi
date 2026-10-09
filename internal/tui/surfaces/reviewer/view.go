@@ -146,7 +146,7 @@ func (m *Model) mainPane(w, h int) string {
 			p.SetScroll(kit.NewScroller(n, h-3, m.transcriptScroll))
 		}
 	} else if m.sec == secDiff && !m.threadOpen && len(m.diffRows()) > 0 {
-		segs, _ := m.diffSegmentsView(inner-4, m.viewedSet())
+		segs, _ := m.diffSegmentsView(inner, m.viewedSet())
 		if len(segs) > 0 {
 			p.SetScroll(kit.NewScroller(len(segs), h-3, m.scroll))
 		}
@@ -231,7 +231,7 @@ func (m *Model) activeSectionFor(w, h int) string {
 		if m.threadOpen {
 			return m.renderThreads(w-4, maxInt(h-4, 6))
 		}
-		return m.renderDiff(w-4, maxInt(h-4, 6), m.viewedSet())
+		return m.renderDiff(w, maxInt(h-4, 6), m.viewedSet())
 	case secFiles:
 		return m.filesBody(w, h)
 	default:
