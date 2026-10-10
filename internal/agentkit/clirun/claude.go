@@ -213,12 +213,20 @@ func claudeFinalize(final string) (string, Usage, error) {
 		Usage     struct {
 			InputTokens  int `json:"input_tokens"`
 			OutputTokens int `json:"output_tokens"`
+			CacheRead    int `json:"cache_read_input_tokens"`
+			CacheWrite   int `json:"cache_creation_input_tokens"`
 		} `json:"usage"`
 	}
 	if err := json.Unmarshal([]byte(final), &res); err != nil {
 		return "", Usage{}, fmt.Errorf("clirun/claude: final: %w", err)
 	}
 	if res.IsError || strings.HasPrefix(res.Subtype, "error") {
+		// The result text carries the reason ("Prompt is too long",
+		// "Invalid API key · Please run /login"); keep it so the
+		// runtime can classify the failure (F-065).
+		if why := strings.TrimSpace(res.Result); why != "" {
+			return "", Usage{}, fmt.Errorf("clirun/claude: run ended with %q: %s", res.Subtype, truncate(why, 300))
+		}
 		return "", Usage{}, fmt.Errorf("clirun/claude: run ended with %q", res.Subtype)
 	}
 	u := Usage{
@@ -226,6 +234,9 @@ func claudeFinalize(final string) (string, Usage, error) {
 		TokensOut: res.Usage.OutputTokens,
 		CostUSD:   res.TotalCost,
 		HasCost:   res.TotalCost > 0 || res.Usage.InputTokens > 0,
+
+		CacheRead:  res.Usage.CacheRead,
+		CacheWrite: res.Usage.CacheWrite,
 	}
 	return strings.TrimSpace(res.Result), u, nil
 }

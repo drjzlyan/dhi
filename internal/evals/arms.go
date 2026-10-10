@@ -1,0 +1,256 @@
+package evals
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"os/exec"
+	"strconv"
+	"strings"
+	"sync/atomic"
+	"time"
+
+	"github.com/drjzlyan/dhi/internal/agentkit/bus"
+	"github.com/drjzlyan/dhi/internal/agentkit/clirun"
+	"github.com/drjzlyan/dhi/internal/agentkit/knowledge"
+	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
+	"github.com/drjzlyan/dhi/internal/agentkit/memory"
+	agentruntime "github.com/drjzlyan/dhi/internal/agentkit/runtime"
+	"github.com/drjzlyan/dhi/internal/agentkit/tools"
+	"github.com/drjzlyan/dhi/internal/sandbox"
+	"github.com/drjzlyan/dhi/internal/tasks"
+	"github.com/drjzlyan/dhi/internal/workspace"
+)
+
+// Config is what both arms share, so the comparison is like for like:
+// the same CLI, model, environment and (lack of) OS sandbox.
+type Config struct {
+	CLI     string                       // registry name, e.g. "claude"
+	Model   string                       // "" = the CLI's default
+	Look    func(string) (string, error) // CLI binary lookup (exec.LookPath live)
+	Env     []string                     // base env; each CLI's pass-through is added
+	Timeout time.Duration                // per run; 0 = none
+	Retries int                          // DHI arm retries (the raw CLI has none)
+	Now     func() time.Time             // result stamp; nil = time.Now
+}
+
+func (c Config) now() time.Time {
+	if c.Now != nil {
+		return c.Now()
+	}
+	return time.Now()
+}
+
+func (c Config) cli() (*clirun.CLI, string, error) {
+	reg := clirun.NewRegistry(c.Look)
+	cli, ok := reg.Get(c.CLI)
+	if !ok {
+		return nil, "", fmt.Errorf("evals: unknown CLI %q (valid: %s)", c.CLI, reg.ValidRuntimeNames())
+	}
+	path, err := reg.Path(c.CLI)
+	if err != nil {
+		return nil, "", fmt.Errorf("evals: %s: %w", c.CLI, err)
+	}
+	return cli, path, nil
+}
+
+// env is the base env plus the CLI's declared pass-through — the same
+// set the runtime hands an agent spawn (ADR-0012 §4).
+func (c Config) env(cli *clirun.CLI) []string {
+	env := append([]string(nil), c.Env...)
+	for _, k := range cli.EnvPass {
+		if v, ok := os.LookupEnv(k); ok {
+			env = append(env, k+"="+v)
+		}
+	}
+	return env
+}
+
+func (c Config) ctx() (context.Context, context.CancelFunc) {
+	if c.Timeout > 0 {
+		return context.WithTimeout(context.Background(), c.Timeout)
+	}
+	return context.WithCancel(context.Background())
+}
+
+// RunRaw runs the task through the bare CLI headless in a fresh copy:
+// the prompt alone, no DHI system block, tools, memory or retry.
+func RunRaw(c Config, t Task, root string) Result {
+	r := Result{At: c.now(), Task: t.Name, Arm: "raw", CLI: c.CLI, Model: c.Model, Attempts: 1, TokensIn: -1, TokensOut: -1}
+	cli, path, err := c.cli()
+	if err != nil {
+		r.Err = err.Error()
+		return r
+	}
+	if err := t.Stage(root); err != nil {
+		r.Err = "stage: " + err.Error()
+		return r
+	}
+	ctx, cancel := c.ctx()
+	defer cancel()
+	start := time.Now()
+	cmd := exec.CommandContext(ctx, path, cli.BuildArgs(clirun.RunInput{Prompt: t.Prompt, Model: c.Model, Workdir: root})...)
+	cmd.Dir = root
+	cmd.Env = c.env(cli)
+	cmd.WaitDelay = 2 * time.Second // see runtime.cliSpawnOnce
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		r.Err = err.Error()
+		return r
+	}
+	if err := cmd.Start(); err != nil {
+		r.Err = err.Error()
+		return r
+	}
+	var final string
+	for ev := range cli.ParseStream(stdout) {
+		if ev.Kind == clirun.EventFinal {
+			final = ev.Detail
+		}
+	}
+	waitErr := cmd.Wait()
+	r.WallMs = time.Since(start).Milliseconds()
+	switch {
+	case final != "":
+		_, u, ferr := cli.Finalize(final)
+		if ferr != nil {
+			r.Err = ferr.Error()
+			break
+		}
+		r.TokensIn, r.TokensOut, r.CacheRead, r.CacheWrite = u.TokensIn, u.TokensOut, u.CacheRead, u.CacheWrite
+		r.CostUSD, r.HasCost = u.CostUSD, u.HasCost
+	case waitErr != nil:
+		r.Err = waitErr.Error()
+	default:
+		r.Err = "CLI stream ended without a final event"
+	}
+	return score(t, root, r)
+}
+
+// evalAgent is the DHI arm's roster agent: a generalist with the IDE's
+// file and memory tools.
+const evalAgent = "evaluator"
+
+func evalManifest(cli, model string) string {
+	if model == "" {
+		model = manifest.ModelDefault
+	}
+	return `schema = 1
+name = "Evaluator"
+model = ` + strconv.Quote(model) + `
+runtime = ` + strconv.Quote(cli) + `
+system = "You are a careful senior engineer. Complete the task fully, then reply with a one-paragraph summary."
+tools = ["read", "list", "glob", "write", "patch", "workspace_search", "memory_append", "kb_search"]
+policy_json = """{"rules":[{"op":"read","path":"**","effect":"allow"},{"op":"write","path":"**","effect":"allow"}]}"""
+`
+}
+
+// RunDHI runs the task through DHI's runtime with the full harness:
+// composed system block, standards, workflow, memory, KB, a bound task
+// card, served IDE tools and failure-aware retry. Approvals are allowed
+// automatically and counted (Asks) — the autonomy an unattended task
+// needs, measured.
+func RunDHI(c Config, t Task, root string) Result {
+	r := Result{At: c.now(), Task: t.Name, Arm: "dhi", CLI: c.CLI, Model: c.Model, TokensIn: -1, TokensOut: -1}
+	fail := func(stage string, err error) Result {
+		r.Err = stage + ": " + err.Error()
+		return r
+	}
+	if err := t.Stage(root); err != nil {
+		return fail("stage", err)
+	}
+	if err := workspace.Create(root, Member); err != nil {
+		return fail("workspace", err)
+	}
+	ws, err := workspace.Load(root)
+	if err != nil {
+		return fail("workspace", err)
+	}
+	b, err := bus.Open(ws)
+	if err != nil {
+		return fail("bus", err)
+	}
+	st, err := tasks.Open(ws)
+	if err != nil {
+		return fail("tasks", err)
+	}
+	kb, err := knowledge.Open(ws, knowledge.Review, nil)
+	if err != nil {
+		return fail("knowledge", err)
+	}
+	m, err := manifest.Parse(evalAgent, []byte(evalManifest(c.CLI, c.Model)))
+	if err != nil {
+		return fail("manifest", err)
+	}
+	m.Retries = c.Retries
+
+	var asks atomic.Int32
+	ap := tools.NewApprovals()
+	ap.OnRequest = func(a *tools.Approval) {
+		asks.Add(1)
+		go ap.Resolve(a.ID, true)
+	}
+	rt, err := agentruntime.New(agentruntime.Config{
+		WS: ws, Bus: b, Approvals: ap,
+		CLIs:      clirun.NewRegistry(c.Look),
+		CLIEnv:    c.Env,
+		Sandbox:   sandbox.Noop{},
+		Tasks:     st,
+		Standards: true,
+		Workflows: true,
+		Memory:    memory.Open(ws),
+		Knowledge: kb,
+	}, []*manifest.Agent{m})
+	if err != nil {
+		return fail("runtime", err)
+	}
+
+	trig, err := b.Post(bus.Message{Channel: "#general", Author: bus.Human, Text: "@" + evalAgent + " " + t.Prompt})
+	if err != nil {
+		return fail("post", err)
+	}
+	if err := st.Create("eval-"+t.Name, firstLine(t.Prompt), evalAgent, ""); err != nil {
+		return fail("task", err)
+	}
+	if err := st.BindThread("eval-"+t.Name, trig.Channel, trig.ID); err != nil {
+		return fail("task", err)
+	}
+
+	ctx, cancel := c.ctx()
+	defer cancel()
+	start := time.Now()
+	turnErr := rt.Turn(ctx, evalAgent, trig)
+	r.WallMs = time.Since(start).Milliseconds()
+	if turnErr != nil {
+		r.Err = turnErr.Error()
+	}
+	r.Asks = int(asks.Load())
+	if card, ok := st.Get("eval-" + t.Name); ok {
+		r.Attempts = len(card.Runs)
+		rl := tasks.RollupRuns(card.Runs)
+		if rl.TokRuns > 0 {
+			r.TokensIn, r.TokensOut = rl.TokensIn, rl.TokensOut
+		}
+		r.CacheRead, r.CacheWrite = rl.CacheRead, rl.CacheWrite
+		r.CostUSD, r.HasCost = rl.CostSum, rl.Costed > 0
+	}
+	return score(t, root, r)
+}
+
+func firstLine(s string) string {
+	s, _, _ = strings.Cut(strings.TrimSpace(s), "\n")
+	if len(s) > 60 {
+		s = s[:59] + "…"
+	}
+	return s
+}
+
+// ArmOrder alternates which arm runs first on successive runs, so the
+// CLI's own warm prompt cache (left by whichever arm ran just before)
+// does not consistently favour one side.
+func ArmOrder(turn int) []func(Config, Task, string) Result {
+	if turn%2 == 0 {
+		return []func(Config, Task, string) Result{RunDHI, RunRaw}
+	}
+	return []func(Config, Task, string) Result{RunRaw, RunDHI}
+}

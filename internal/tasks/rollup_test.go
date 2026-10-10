@@ -189,3 +189,22 @@ func TestRollupByModel(t *testing.T) {
 		t.Fatal("nil runs produced groups")
 	}
 }
+
+func TestRollupCacheShare(t *testing.T) {
+	rl := RollupRuns([]Run{
+		{Status: RunOK, TokensIn: 100, TokensOut: 10, CacheRead: 900, CacheWrite: 50},
+		{Status: RunOK, TokensIn: 0, TokensOut: 5, CacheRead: 0},
+	})
+	if rl.CacheRead != 900 || rl.CacheWrite != 50 {
+		t.Fatalf("cache sums = %d/%d", rl.CacheRead, rl.CacheWrite)
+	}
+	if pct, ok := rl.CacheShare(); !ok || pct != 85 { // 900 / (100+900+50)
+		t.Fatalf("CacheShare = %d %v, want 85 true", pct, ok)
+	}
+	if _, ok := RollupRuns([]Run{{Status: RunOK, TokensIn: 5, TokensOut: 1}}).CacheShare(); ok {
+		t.Fatal("no cache reported must not claim a share")
+	}
+	if got := rl.TokensText(); got != "100 in / 15 out · 85% cached" {
+		t.Fatalf("TokensText = %q", got)
+	}
+}

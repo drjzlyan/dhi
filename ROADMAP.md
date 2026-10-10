@@ -1014,3 +1014,19 @@ GitHub setup, a real release, and every deferral either done or specced.
       ideator cards, reviewer columns, grouped settings, chrome pills
 - [x] P4 README: 12 screenshots regenerated (`scripts/screenshots.sh` now hides the real prompt
       and maps SGR 39/49 for freeze)
+
+## M29 — Virtual Employee: a harness that beats raw Claude Code / Codex
+
+Plan: `~/.claude/plans/make-sure-the-agent-jazzy-otter.md`. North star: task → PR unattended,
+better every week, a self-running team, lowest cost per outcome. Measured by evals (F-065).
+
+- [x] P1 Context hygiene + failure-aware retry + cache accounting + evals (F-065): thread-scoped
+      history with own replies, task card in prompt, stable→volatile system order, compaction on
+      overflow, `clirun.Classify` (auth/rate/overflow/timeout/no-final/crash), retry briefs, cache
+      tokens (claude/codex) in runs + replay, `internal/evals` + `make eval`; live baseline: both arms 6/6, DHI −4% cost, +86% wall time
+- [ ] P2 Episodes (DHI-owned working state), verified CLI resume, budgets (F-066, ADR-0031)
+- [ ] P3 Goal loop task → PR, autonomy envelope in the task worktree, persisted grants, watchdog (F-067, ADR-0032)
+- [ ] P4 Self-learning lessons + reflection on signal + consolidation; Brain UI (F-068, ADR-0033)
+- [ ] P5 Tool forge: approved recipe/script custom tools + repetition detector (F-069, ADR-0034)
+- [ ] P6 Settings proposals through the Inbox (F-070)
+- [ ] P7 Self-running team: lead decomposition, structured handoffs, rituals, reviewer loop (F-071)

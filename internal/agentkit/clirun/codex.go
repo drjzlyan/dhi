@@ -125,11 +125,16 @@ type codexItem struct {
 		Output   string `json:"aggregated_output"`
 		Path     string `json:"path"`
 	} `json:"item"`
-	Path  string `json:"path"`
-	Usage struct {
-		InputTokens  int `json:"input_tokens"`
-		OutputTokens int `json:"output_tokens"`
-	} `json:"usage"`
+	Path  string     `json:"path"`
+	Usage codexUsage `json:"usage"`
+}
+
+// codexUsage is turn.completed's usage block (the cache fields were
+// live-verified with the rest of the vocabulary, see the package doc).
+type codexUsage struct {
+	InputTokens  int `json:"input_tokens"`
+	OutputTokens int `json:"output_tokens"`
+	CachedInput  int `json:"cached_input_tokens"`
 }
 
 // codexStop is the normalized terminal payload the parser hands Finalize:
@@ -137,12 +142,9 @@ type codexItem struct {
 // line, so the parser stitches them together (raw turn.completed fields
 // preserved; last_message added).
 type codexStop struct {
-	Type        string `json:"type"` // "codex.turn.completed"
-	LastMessage string `json:"last_message"`
-	Usage       struct {
-		InputTokens  int `json:"input_tokens"`
-		OutputTokens int `json:"output_tokens"`
-	} `json:"usage"`
+	Type        string     `json:"type"` // "codex.turn.completed"
+	LastMessage string     `json:"last_message"`
+	Usage       codexUsage `json:"usage"`
 }
 
 func codexParseStream(r io.Reader) <-chan StreamEvent {
@@ -158,8 +160,7 @@ func codexParseStream(r io.Reader) <-chan StreamEvent {
 			}
 			if it.Type == "turn.completed" {
 				stop := codexStop{Type: "codex.turn.completed", LastMessage: lastText}
-				stop.Usage.InputTokens = it.Usage.InputTokens
-				stop.Usage.OutputTokens = it.Usage.OutputTokens
+				stop.Usage = it.Usage
 				b, err := json.Marshal(stop)
 				if err != nil {
 					ch <- StreamEvent{Kind: EventError, Detail: "codex: marshal final"}
@@ -224,8 +225,16 @@ func codexFinalize(final string) (string, Usage, error) {
 	if err := json.Unmarshal([]byte(final), &stop); err != nil {
 		return "", Usage{}, fmt.Errorf("clirun/codex: final: %w", err)
 	}
-	u := Usage{TokensIn: stop.Usage.InputTokens, TokensOut: stop.Usage.OutputTokens}
-	if u.TokensIn == 0 {
+	// codex's input_tokens INCLUDES cached input (codex-rs TokenUsage:
+	// non_cached_input = input_tokens - cached_input_tokens). Normalize to
+	// the Usage invariant — TokensIn is fresh input only — so runs from
+	// every adapter sum the same way. CacheWrite stays 0: whatever codex
+	// writes is already inside input_tokens.
+	u := Usage{
+		TokensIn: stop.Usage.InputTokens - stop.Usage.CachedInput, TokensOut: stop.Usage.OutputTokens,
+		CacheRead: stop.Usage.CachedInput,
+	}
+	if stop.Usage.InputTokens == 0 {
 		u.TokensIn = -1
 	}
 	if u.TokensOut == 0 {

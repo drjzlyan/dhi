@@ -51,7 +51,8 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message) er
 			}
 		}
 	}
-	prompt, system := r.cliPrompt(ctx, e, trigger, wfText)
+	level := 0
+	prompt, system := r.cliPromptAt(ctx, e, trigger, wfText, level)
 	workdir := r.cliWorkdir(trigger)
 	mcpConfig, mcpEndpoint, mcpGeminiDir := "", "", ""
 	if serve != nil {
@@ -65,9 +66,9 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message) er
 		defer cancel()
 	}
 
-	var lastErr error
+	brief := ""
 	for attempt := 0; ; attempt++ {
-		run := r.cliSpawnOnce(ctx, e, trigger, prompt, system, workdir, attempt, mcpConfig, mcpEndpoint, mcpGeminiDir)
+		run, events := r.cliSpawnOnce(ctx, e, trigger, prompt+brief, system, workdir, attempt, mcpConfig, mcpEndpoint, mcpGeminiDir)
 		r.recordRun(trigger, run)
 
 		if run.Status == tasks.RunOK {
@@ -76,28 +77,49 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message) er
 				// @mention hands the work to the addressee.
 				if posted, err := r.cfg.Bus.Post(bus.Message{
 					Channel: trigger.Channel, Thread: trigger.Thread,
-					Author: e.m.ID, Text: run.Summary,
+					Author: e.m.ID, Text: run.Summary, Kind: bus.KindReply,
 				}); err == nil {
 					r.Handle(context.WithoutCancel(ctx), posted)
 				}
 			}
 			return nil
 		}
-		lastErr = fmt.Errorf("runtime: %s: run %s: %s", e.m.ID, run.ID, run.Error)
-		if attempt >= e.m.Retries {
+		// F-065: react to the cause. Auth and a spent deadline cannot be
+		// fixed by another spawn; an overflow retries compacted (once
+		// there is nothing left to compact, it is final); everything
+		// else retries with a brief of what failed and where it stopped.
+		lastErr := fmt.Errorf("runtime: %s: run %s: %s", e.m.ID, run.ID, run.Error)
+		fail := clirun.Classify(run.Status == tasks.RunTimeout, run.Error)
+		if fail == clirun.FailAuth {
+			r.notice(trigger, e.m.ID, authHint(e.cli))
+		}
+		if !fail.Retryable() || attempt >= e.m.Retries ||
+			fail == clirun.FailOverflow && level == maxCompaction {
 			return lastErr
 		}
-		_, _ = r.cfg.Bus.Post(bus.Message{
-			Channel: trigger.Channel, Thread: trigger.Thread,
-			Author: e.m.ID,
-			Text:   fmt.Sprintf("retrying (attempt %d/%d) in %s…", attempt+1, e.m.Retries, cliRetryBackoff),
-		})
+		if fail == clirun.FailOverflow {
+			level++
+			prompt, system = r.cliPromptAt(ctx, e, trigger, wfText, level)
+		}
+		brief = failureBrief(fail, run, events)
+		wait := retryWait(fail, attempt)
+		r.notice(trigger, e.m.ID, fmt.Sprintf("retrying (attempt %d/%d) in %s… (%s)",
+			attempt+1, e.m.Retries, wait.Round(time.Second), fail))
 		select {
-		case <-time.After(cliRetryBackoff):
+		case <-time.After(wait):
 		case <-ctx.Done():
 			return fmt.Errorf("runtime: %s: %w", e.m.ID, ctx.Err())
 		}
 	}
+}
+
+// notice posts a status line into the trigger's thread under author. It
+// is marked as stream so prompts never replay it as conversation.
+func (r *Runtime) notice(trigger bus.Message, author, text string) {
+	_, _ = r.cfg.Bus.Post(bus.Message{
+		Channel: trigger.Channel, Thread: trigger.Thread,
+		Author: author, Text: text, Kind: bus.KindStream,
+	})
 }
 
 // cliRetryBackoff is the wait between retry spawns (F-013 step 7 says
@@ -107,7 +129,7 @@ var cliRetryBackoff = 30 * time.Second
 // cliSpawnOnce runs a single attempt: spawn the wrapped CLI, stream the
 // transcript into the trigger thread, persist the event JSONL, finalize,
 // and return the run record.
-func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Message, prompt, system, workdir string, attempt int, mcpConfig, mcpEndpoint, mcpGeminiDir string) tasks.Run {
+func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Message, prompt, system, workdir string, attempt int, mcpConfig, mcpEndpoint, mcpGeminiDir string) (tasks.Run, []clirun.StreamEvent) {
 	started := time.Now().UTC()
 	run := tasks.Run{
 		ID: runID(started), Agent: e.m.ID,
@@ -128,7 +150,7 @@ func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Messag
 			run.Error = fmt.Sprintf(
 				"assembled prompt exceeds the argv budget (%d KiB) and %s has no verified stdin delivery — shorten the thread history or the system block",
 				clirun.MaxPromptArg()>>10, e.cli.Name)
-			return run
+			return run, nil
 		}
 		stdin = clirun.PromptWithSystem(system, prompt)
 		prompt, system = "", ""
@@ -150,7 +172,7 @@ func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Messag
 	if err != nil {
 		run.Status = tasks.RunError
 		run.Error = fmt.Sprintf("wrap: %v", err)
-		return run
+		return run, nil
 	}
 
 	cmd := exec.CommandContext(ctx, wrapped[0], wrapped[1:]...)
@@ -163,12 +185,20 @@ func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Messag
 	if err != nil {
 		run.Status = tasks.RunError
 		run.Error = fmt.Sprintf("stdout: %v", err)
-		return run
+		return run, nil
 	}
+	// A bounded stderr tail names why a CLI died without a final line
+	// ("not logged in", "rate limited") so the failure can be classified
+	// (F-065); read only after Wait, which joins exec's copy goroutine.
+	stderr := &tailBuffer{max: 2048}
+	cmd.Stderr = stderr
+	// A grandchild that outlives the CLI (an MCP child, something the
+	// agent backgrounded) can hold stderr open; never let that wedge Wait.
+	cmd.WaitDelay = 2 * time.Second
 	if err := cmd.Start(); err != nil {
 		run.Status = tasks.RunError
 		run.Error = fmt.Sprintf("spawn %s: %v", e.cli.Bin, err)
-		return run
+		return run, nil
 	}
 
 	// Stream the transcript into the trigger's thread as it happens, so
@@ -210,16 +240,20 @@ func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Messag
 		run.TokensIn, run.TokensOut = u.TokensIn, u.TokensOut
 		run.CostUSD = u.CostUSD
 		run.HasCost = u.HasCost
+		run.CacheRead, run.CacheWrite = u.CacheRead, u.CacheWrite
 	case waitErr != nil:
 		run.Status = tasks.RunError
 		run.Error = cliErrText(waitErr)
+		if last := stderr.lastLine(); last != "" {
+			run.Error += ": " + truncateRunes(last, 300)
+		}
 	default:
 		run.Status = tasks.RunError
 		run.Error = "CLI stream ended without a final event"
 	}
 
 	run.Transcript = r.saveTranscript(events, run)
-	return run
+	return run, events
 }
 
 // saveTranscript persists one attempt's events as JSONL under
@@ -350,11 +384,7 @@ func (r *Runtime) serveTools(e *entry, trigger bus.Message) *serveSession {
 		// Named degrade, never silent: the turn proceeds without served
 		// tools and the thread sees why (F-011).
 		closeBridge()
-		_, _ = r.cfg.Bus.Post(bus.Message{
-			Channel: trigger.Channel, Thread: trigger.Thread,
-			Author: e.m.ID,
-			Text:   "IDE tools unavailable this turn: " + err.Error(),
-		})
+		r.notice(trigger, e.m.ID, "IDE tools unavailable this turn: "+err.Error())
 		return nil
 	}
 	stopAll := func() {
@@ -370,11 +400,7 @@ func (r *Runtime) serveTools(e *entry, trigger bus.Message) *serveSession {
 		dir, cleanup, derr := e.cli.MCPGeminiDir(base, e.cli.MCPConfigFile(endpoint))
 		if derr != nil {
 			stopAll()
-			_, _ = r.cfg.Bus.Post(bus.Message{
-				Channel: trigger.Channel, Thread: trigger.Thread,
-				Author: e.m.ID,
-				Text:   "IDE tools unavailable this turn: " + derr.Error(),
-			})
+			r.notice(trigger, e.m.ID, "IDE tools unavailable this turn: "+derr.Error())
 			return nil
 		}
 		sess.configPath = dir
@@ -404,11 +430,7 @@ func (r *Runtime) serveTools(e *entry, trigger bus.Message) *serveSession {
 			}
 		}
 		stopAll()
-		_, _ = r.cfg.Bus.Post(bus.Message{
-			Channel: trigger.Channel, Thread: trigger.Thread,
-			Author: e.m.ID,
-			Text:   "IDE tools unavailable this turn: cannot write " + e.cli.MCPProjectFile,
-		})
+		r.notice(trigger, e.m.ID, "IDE tools unavailable this turn: cannot write "+e.cli.MCPProjectFile)
 		return nil
 	}
 	// File-delivered adapters get a temp config; inline adapters
@@ -417,11 +439,7 @@ func (r *Runtime) serveTools(e *entry, trigger bus.Message) *serveSession {
 		tmp, err := os.CreateTemp("", "dhi-mcp-*.json")
 		if err != nil {
 			stopAll()
-			_, _ = r.cfg.Bus.Post(bus.Message{
-				Channel: trigger.Channel, Thread: trigger.Thread,
-				Author: e.m.ID,
-				Text:   "IDE tools unavailable this turn: " + err.Error(),
-			})
+			r.notice(trigger, e.m.ID, "IDE tools unavailable this turn: "+err.Error())
 			return nil
 		}
 		if _, err := tmp.WriteString(e.cli.MCPConfigFile(endpoint)); err != nil {
@@ -473,16 +491,24 @@ func (c compositeHandler) CallTool(ctx context.Context, name string, args json.R
 	return "unknown tool " + name, true, nil
 }
 
-// cliPrompt flattens the trigger + recent history into a headless CLI
-// prompt and assembles the system block (grounding + memory + KB hits +
-// standards), mirroring the in-house prompt() but as text a CLI accepts.
-// ctx drives the KB search (bounded retrieval, not part of the turn
-// timeout).
+// cliPrompt is the level-0 prompt (see cliPromptAt).
 func (r *Runtime) cliPrompt(ctx context.Context, e *entry, trigger bus.Message, wfText string) (prompt, system string) {
+	return r.cliPromptAt(ctx, e, trigger, wfText, 0)
+}
+
+// cliPromptAt flattens the trigger, its task card and its conversation
+// into a headless CLI prompt and assembles the system block. Order is
+// stable → volatile (F-065): persona, grounding, standards, conventions
+// and workflow change rarely and lead, so the CLI's prompt cache keeps
+// its prefix; memory and KB hits change per turn and trail. level picks
+// the compaction limits (0 normal, 1 after a context overflow). ctx
+// drives the KB search (bounded retrieval, not part of the turn timeout).
+func (r *Runtime) cliPromptAt(ctx context.Context, e *entry, trigger bus.Message, wfText string, level int) (prompt, system string) {
+	lim := limitsAt(level)
 	// F-027: the effective persona comes from the behaviour composer —
 	// manifest system + role template + attached skills — with the
-	// runtime-owned layers (grounding, actions, memory, KB, standards)
-	// appended after it, exactly as the Settings preview renders.
+	// runtime-owned layers appended after it, exactly as the Settings
+	// preview renders (system, then standards, then conventions).
 	role, skills := behavior.Resolve(e.m, r.lib())
 	persona := behavior.ResolvePersona(e.m, r.lib())
 	wsName := filepath.Base(r.cfg.WS.Root)
@@ -501,8 +527,6 @@ func (r *Runtime) cliPrompt(ctx context.Context, e *entry, trigger bus.Message, 
 	grounding := "\n\nFiles are addressed as <member>/<rel-path>. Members: " + strings.Join(members, ", ")
 	grounding += "\nThe reserved workspace dotdir is addressed as .dhi/<rel-path>; ideation artifacts belong under .dhi/sessions/<session>/<file>."
 	system += grounding
-	system += r.memoryBlock(e.m.ID)
-	system += r.knowledgeBlock(ctx, trigger.Text)
 	if r.cfg.Standards {
 		system += "\n\n" + standards.Resolve(r.cfg.WS.Root, e.m.ID, r.teamLookup())
 	}
@@ -514,6 +538,11 @@ func (r *Runtime) cliPrompt(ctx context.Context, e *entry, trigger bus.Message, 
 	if wfText != "" {
 		system += "\n\n" + wfText
 	}
+	system += r.memoryBlock(e.m.ID, lim)
+	system += r.knowledgeBlock(ctx, trigger.Text, lim)
+	if level > 0 {
+		system += "\n\n(Context was compacted after the previous attempt overflowed: older history, journal and knowledge were trimmed.)"
+	}
 
 	var b strings.Builder
 	text := strings.TrimSpace(stripMention(trigger.Text, e.m.ID))
@@ -521,45 +550,28 @@ func (r *Runtime) cliPrompt(ctx context.Context, e *entry, trigger bus.Message, 
 		text = trigger.Text
 	}
 	b.WriteString(text)
-
-	history := r.cfg.Bus.History(trigger.Channel, 0)
-	if n := len(history); n > historyWindow {
-		history = history[n-historyWindow:]
-	}
-	var earlier []string
-	for _, m := range history {
-		if m.ID == trigger.ID || m.Author == e.m.ID {
-			continue // the trigger itself, and our own drafts, add no context
-		}
-		prefix := m.Author
-		if m.Author == "you" {
-			prefix = "you (the human)"
-		}
-		earlier = append(earlier, prefix+": "+truncateRunes(m.Text, 500))
-	}
-	if len(earlier) > 0 {
-		b.WriteString("\n\nEarlier in this thread:\n- " + strings.Join(earlier, "\n- "))
-	}
+	b.WriteString(r.taskBlock(trigger, lim))
+	b.WriteString(r.historyBlock(e.m.ID, trigger, lim))
 	return b.String(), system
 }
 
 // memoryBlock renders the agent's persistent context (M14 P1): the
-// journal tail and the notes file. Unavailable memory degrades with a
-// named line inside the block — the agent knows its memory is dark,
-// never silent.
-func (r *Runtime) memoryBlock(agentID string) string {
+// journal tail and the notes file, within lim. Unavailable memory
+// degrades with a named line inside the block — the agent knows its
+// memory is dark, never silent.
+func (r *Runtime) memoryBlock(agentID string, lim promptLimits) string {
 	if r.cfg.Memory == nil {
 		return ""
 	}
 	var b strings.Builder
 	b.WriteString("\n\nYour memory (persistent across turns):")
-	journal, err := r.cfg.Memory.Journal(agentID, 8)
+	journal, err := r.cfg.Memory.Journal(agentID, lim.journal)
 	if err != nil {
 		b.WriteString("\n- journal unavailable: " + err.Error())
 	} else if len(journal) > 0 {
 		b.WriteString("\nRecent journal:")
 		for _, en := range journal {
-			b.WriteString("\n- [" + en.Kind + "] " + truncateRunes(en.Text, 200))
+			b.WriteString("\n- [" + en.Kind + "] " + truncateRunes(en.Text, lim.journalRunes))
 		}
 	} else {
 		b.WriteString("\n- (journal empty — record durable lessons as you learn them)")
@@ -568,18 +580,18 @@ func (r *Runtime) memoryBlock(agentID string) string {
 	if err != nil {
 		b.WriteString("\n- notes unavailable: " + err.Error())
 	} else if strings.TrimSpace(notes) != "" {
-		b.WriteString("\nNotes:\n" + truncateRunes(strings.TrimSpace(notes), 1500))
+		b.WriteString("\nNotes:\n" + truncateRunes(strings.TrimSpace(notes), lim.notes))
 	}
 	return b.String()
 }
 
 // knowledgeBlock retrieves KB entries relevant to the trigger (M14 P1).
 // Search failure degrades with a named line; no hits render nothing.
-func (r *Runtime) knowledgeBlock(ctx context.Context, query string) string {
+func (r *Runtime) knowledgeBlock(ctx context.Context, query string, lim promptLimits) string {
 	if r.cfg.Knowledge == nil || strings.TrimSpace(query) == "" {
 		return ""
 	}
-	hits, err := r.cfg.Knowledge.Search(ctx, query, 3)
+	hits, err := r.cfg.Knowledge.Search(ctx, query, lim.kbHits)
 	if err != nil {
 		return "\n\nKnowledge base unavailable: " + err.Error()
 	}
@@ -589,7 +601,7 @@ func (r *Runtime) knowledgeBlock(ctx context.Context, query string) string {
 	var b strings.Builder
 	b.WriteString("\n\nRelevant knowledge base entries:")
 	for _, h := range hits {
-		b.WriteString("\n- " + truncateRunes(h.Snippet, 300))
+		b.WriteString("\n- " + truncateRunes(h.Snippet, lim.kbRunes))
 	}
 	return b.String()
 }
@@ -637,7 +649,7 @@ func (r *Runtime) cliEvent(agentID string, trigger bus.Message, ev clirun.Stream
 	case clirun.EventProgress, clirun.EventCommand, clirun.EventError:
 		_, _ = r.cfg.Bus.Post(bus.Message{
 			Channel: trigger.Channel, Thread: trigger.Thread,
-			Author: agentID, Text: ev.Detail,
+			Author: agentID, Text: ev.Detail, Kind: bus.KindStream,
 		})
 	}
 }

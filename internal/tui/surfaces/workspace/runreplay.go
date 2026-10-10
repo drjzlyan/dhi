@@ -204,7 +204,16 @@ func (m *Model) replayHeader() string {
 	}
 	return theme.Hint().Render(
 		"replay " + r.ID + " · " + runtime + "/" + model + " · " + status +
-			" · " + tasks.DurationText(runMs(r)) + " · " + cost)
+			" · " + tasks.DurationText(runMs(r)) + " · " + cost + cacheText(r))
+}
+
+// cacheText is the replay header's prompt-cache figure (F-065), empty
+// when the CLI reported none.
+func cacheText(r tasks.Run) string {
+	if pct, ok := tasks.RollupRuns([]tasks.Run{r}).CacheShare(); ok {
+		return fmt.Sprintf(" · %d%% cached", pct)
+	}
+	return ""
 }
 
 func runMs(r tasks.Run) int64 {

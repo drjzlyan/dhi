@@ -1,5 +1,44 @@
 # STATE — current position
 
+### Session 53 (M29: Virtual Employee, P1 = F-065)
+
+- Plan: `~/.claude/plans/make-sure-the-agent-jazzy-otter.md`. There are seven phases.
+- P1 status:
+  - Code is done and passes `make verify` and lint.
+  - It is uncommitted, on `main`'s working tree. Proposed branch: `m29-p1-f065`, then a PR.
+  - Live eval baseline (claude, 3 repeats x 2 fixtures):
+    - Both arms succeed 6/6, so the fixtures are too easy.
+    - DHI costs 4% less ($1.35 vs $1.41) with an 86% cache share.
+    - DHI is 1.9x slower and emits 2x the output tokens.
+    - The figures are in F-065 "Live baseline".
+- Next is P2 (episodes, resume, budgets; ADR-0031). Start it with harder eval fixtures and a look at
+  why DHI's output and wall time are about 2x.
+- Gotcha: eval/agent envs must keep USER. Claude on macOS reads its Keychain login by user, and
+  without it the run fails as "Not logged in".
+- User decisions:
+  - Autonomy envelope: auto inside the task worktree; push, PR, network, settings and new tools ask.
+  - Lessons are applied automatically and reviewable; shared lessons go through review.
+  - Custom tools are recipes plus sandboxed scripts, approved first.
+  - DHI-owned episodes plus verified CLI resume.
+  - Evals are first-class.
+- `bus.Message.Kind`:
+  - `stream` marks relayed CLI lines and runtime notices (`Runtime.notice`).
+  - `reply` marks an agent's final reply.
+  - Prompts replay an agent's own messages only when they are `reply`.
+  - Any new agent status post must use `notice`.
+  - An agent's `channel_post` into its own thread is not replayed to it, which is a known gap.
+- Token invariant: `Usage.TokensIn` is FRESH input (codex subtracts cached). Every eval figure and
+  cache share counts `CacheWrite`.
+- `Bus.History(ch, 0)` is the channel's TOP LEVEL only. For a thread, use `Runtime.conversation`.
+- Failure handling:
+  - Classification lives in `clirun.Classify`. Claude's `Finalize` now keeps the error reason, and
+    the runtime keeps a stderr tail.
+  - The retry notice still starts with `retrying (attempt n/N)`, which the reviewer matches.
+- Evals:
+  - `internal/evals` with fixtures in `internal/evals/testdata/tasks`.
+  - `make eval` spends real tokens and writes `.dhi/evals/scorecard.jsonl` (gitignored).
+  - NOT RUN LIVE yet.
+
 Updated: 2026-10-09 (session 52: M28 UI cohesion, F-064, merged via PR #8
 and released as **v0.2.0** (Latest). Plan:
 `~/.claude/plans/cryptic-meandering-volcano.md`.)

@@ -1,0 +1,12 @@
+name = "rune-reverse"
+prompt = """Reverse in app/strutil.go corrupts multi-byte strings such as "héllo". Fix it so it reverses \
+by rune, and add a test TestReverseUnicode in app/strutil_test.go that checks "héllo" reverses to "olléh"."""
+budget_tokens = 400000
+
+[[expect]]
+file = "app/strutil.go"
+contains = "rune"
+
+[[expect]]
+file = "app/strutil_test.go"
+contains = "olléh"

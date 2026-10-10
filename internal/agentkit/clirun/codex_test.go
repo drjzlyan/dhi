@@ -104,7 +104,7 @@ func TestCodexParseStreamAndFinalize(t *testing.T) {
 	if sum != "Done: created report.md with the summary." {
 		t.Fatalf("summary = %q", sum)
 	}
-	if u.TokensIn != 2317 || u.TokensOut != 512 {
+	if u.TokensIn != 2207 || u.TokensOut != 512 || u.CacheRead != 110 || u.CacheWrite != 0 {
 		t.Fatalf("usage = %+v", u)
 	}
 	if u.HasCost || u.CostUSD != 0 {

@@ -30,7 +30,23 @@ type Message struct {
 	Author  string    `json:"author"`
 	Text    string    `json:"text"`
 	At      time.Time `json:"at"`
+	// Kind is "" for an ordinary message, KindReply for an agent's final
+	// reply, and KindStream for a progress / command / error line relayed
+	// live from an agent's CLI run (F-065): shown in the thread, but not
+	// part of the conversation a prompt replays.
+	Kind string `json:"kind,omitempty"`
 }
+
+// Message kinds (F-065).
+const (
+	// KindStream marks a relayed CLI stream line or a runtime notice.
+	KindStream = "stream"
+	// KindReply marks an agent's final reply to a turn: the only
+	// agent-authored text a later prompt replays as "you (earlier)".
+	// Older replies carry no kind and are not replayed — positive
+	// marking, so legacy unmarked progress lines never leak back in.
+	KindReply = "reply"
+)
 
 var nameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]*$`)
 

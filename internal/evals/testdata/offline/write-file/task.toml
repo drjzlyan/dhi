@@ -1,0 +1,7 @@
+name = "write-file"
+prompt = "Create app/out.txt containing the word done."
+budget_tokens = 1000
+
+[[expect]]
+file = "app/out.txt"
+contains = "done"

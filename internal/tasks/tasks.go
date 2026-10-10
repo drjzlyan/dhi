@@ -237,6 +237,10 @@ type Run struct {
 	TokensOut int     `toml:"tokens_out"`
 	CostUSD   float64 `toml:"cost_usd"`
 	HasCost   bool    `toml:"cost"`
+
+	// Prompt-cache accounting (F-065); 0 = not reported.
+	CacheRead  int `toml:"cache_read,omitempty"`
+	CacheWrite int `toml:"cache_write,omitempty"`
 }
 
 // file is the on-disk TOML shape.

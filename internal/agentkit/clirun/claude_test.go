@@ -104,6 +104,16 @@ func TestClaudeParseStreamMalformedLineTolerated(t *testing.T) {
 	}
 }
 
+func TestClaudeFinalizeCacheTokens(t *testing.T) {
+	_, u, err := Claude.Finalize(`{"type":"result","subtype":"success","is_error":false,"result":"ok","total_cost_usd":0.01,"usage":{"input_tokens":12,"cache_creation_input_tokens":3400,"cache_read_input_tokens":21000,"output_tokens":90}}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if u.CacheRead != 21000 || u.CacheWrite != 3400 {
+		t.Fatalf("cache usage = %+v", u)
+	}
+}
+
 func TestClaudeFinalize(t *testing.T) {
 	sum, u, err := Claude.Finalize(`{"type":"result","subtype":"success","is_error":false,"result":"Done.","total_cost_usd":0.0123,"usage":{"input_tokens":100,"output_tokens":50}}`)
 	if err != nil {
@@ -176,4 +186,12 @@ func firstOrEmpty(ss []string) string {
 		return ""
 	}
 	return ss[0]
+}
+
+// F-065: an error result keeps its reason so the runtime can classify it.
+func TestClaudeFinalizeErrorKeepsReason(t *testing.T) {
+	_, _, err := Claude.Finalize(`{"type":"result","subtype":"success","is_error":true,"result":"Prompt is too long"}`)
+	if err == nil || Classify(false, err.Error()) != FailOverflow {
+		t.Fatalf("err = %v, want an overflow-classifiable error", err)
+	}
 }

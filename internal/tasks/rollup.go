@@ -22,6 +22,19 @@ type Rollup struct {
 	CostSum     float64 // over costed runs only
 	Costed      int     // runs with HasCost
 	CostPartial bool    // any run in the set was cost-less (cost:false)
+
+	CacheRead  int // prompt-cache input reads (F-065); 0 = none reported
+	CacheWrite int
+}
+
+// CacheShare is the percentage of the whole prompt served from the cache
+// (read / (fresh + read + write)); ok is false when no run reported a
+// cache read, so a missing figure never reads as 0%.
+func (rl Rollup) CacheShare() (pct int, ok bool) {
+	if rl.CacheRead <= 0 {
+		return 0, false
+	}
+	return rl.CacheRead * 100 / (rl.TokensIn + rl.CacheRead + rl.CacheWrite), true
 }
 
 // RollupRuns folds a run slice into a Rollup. A run with cost=false is
@@ -53,6 +66,8 @@ func RollupRuns(runs []Run) Rollup {
 		default:
 			rl.TokPartial = true
 		}
+		rl.CacheRead += r.CacheRead
+		rl.CacheWrite += r.CacheWrite
 		if r.HasCost {
 			rl.CostSum += r.CostUSD
 			rl.Costed++
@@ -180,6 +195,9 @@ func (r Rollup) TokensText() string {
 		s := fmt.Sprintf("%s in / %s out", humanTokens(r.TokensIn), humanTokens(r.TokensOut))
 		if r.TokPartial {
 			s += " partial"
+		}
+		if pct, ok := r.CacheShare(); ok {
+			s += fmt.Sprintf(" · %d%% cached", pct)
 		}
 		return s
 	}

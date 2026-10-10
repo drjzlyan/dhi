@@ -1,0 +1,13 @@
+name = "sum-func"
+prompt = """In the Go module under app/, add an exported function Sum(xs ...int) int to app/calc.go \
+that returns the sum of its arguments, and a table-driven test TestSum in app/calc_test.go covering \
+no arguments, one argument and negatives."""
+budget_tokens = 400000
+
+[[expect]]
+file = "app/calc.go"
+contains = "func Sum("
+
+[[expect]]
+file = "app/calc_test.go"
+contains = "func TestSum"

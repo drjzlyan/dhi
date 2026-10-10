@@ -45,6 +45,13 @@ type Usage struct {
 	TokensOut int     // -1 = unknown
 	CostUSD   float64 // 0 when HasCost is false
 	HasCost   bool
+	// Prompt-cache accounting (F-065); 0 = not reported. Every adapter
+	// normalizes to one invariant: TokensIn is FRESH input only, so
+	// TokensIn + CacheRead + CacheWrite is the whole prompt. CacheRead is
+	// input served from the CLI's prompt cache, CacheWrite input written
+	// to it (billed, often at a premium).
+	CacheRead  int
+	CacheWrite int
 }
 
 // RunInput is everything an adapter needs to build one headless run.
