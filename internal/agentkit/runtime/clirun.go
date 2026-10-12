@@ -17,6 +17,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/clirun"
 	"github.com/drjzlyan/dhi/internal/agentkit/dhitools"
 	"github.com/drjzlyan/dhi/internal/agentkit/episode"
+	"github.com/drjzlyan/dhi/internal/agentkit/lessons"
 	"github.com/drjzlyan/dhi/internal/agentkit/mcpbridge"
 	"github.com/drjzlyan/dhi/internal/agentkit/standards"
 	"github.com/drjzlyan/dhi/internal/agentkit/workflow"
@@ -32,7 +33,7 @@ import (
 // the manifest's retries budget (step 7), backing off between spawns.
 // The manifest's `runtime` key is the exec authorization; the OS sandbox
 // — from the same Guard seam every exec uses — is the boundary.
-func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message) error {
+func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message, tl *turnLog) error {
 	// The KB retrieval rides the turn context but must not inherit a
 	// timeout that would cut the run short: bounded by the caller's
 	// context here, before the manifest timeout arms (the timeout
@@ -73,6 +74,7 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message) er
 		task:        task.Slug,
 		plan:        r.planSeam(e.m.ID, ep.Key),
 		memberRoots: r.memberRoots(task),
+		lesson:      r.lessonRecorder(e.m.ID),
 	})
 	resume := ""
 	if tune.Resume && e.cli.ResumeOK && ep.Resumable(e.cli.Name, workdir) {
@@ -119,6 +121,11 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message) er
 		})
 		r.recordRun(trigger, run)
 		r.recordSpend(run, task.Slug)
+		tl.runs = append(tl.runs, run.ID)
+		tl.outcome = run.Summary
+		if run.Status != tasks.RunOK {
+			tl.outcome = run.Error
+		}
 		session := ""
 		if e.cli.ResumeOK {
 			session = run.Session
@@ -150,12 +157,16 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message) er
 					ep.Verify, ep.VerifyCmd, ep.VerifyTail = "pass", targets[0].String(), ""
 					r.notice(trigger, e.m.ID, fmt.Sprintf("verified: %s passed (round %d)", targets[0], iter))
 				case failureSig(tail) == lastSig:
+					tl.signal(lessons.SignalStuck)
+					tl.fail("`" + cmd + "` failed the same way twice:\n" + tail)
 					ep.Verify = "stuck"
 					r.saveEpisode(ep)
 					r.humanNote(trigger, e.m.ID, fmt.Sprintf(
 						"I'm stuck: `%s` fails the same way after my fix. I need your call.\n```\n%s\n```", cmd, tail))
 					return nil
 				case iter >= maxIter:
+					tl.signal(lessons.SignalStuck)
+					tl.fail("`" + cmd + "` still failed after the last round:\n" + tail)
 					ep.Verify = "fail"
 					r.saveEpisode(ep)
 					r.humanNote(trigger, e.m.ID, fmt.Sprintf(
@@ -163,6 +174,8 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message) er
 					return nil
 				default:
 					// Another round: continue the session with the failure.
+					tl.signal(lessons.SignalVerify)
+					tl.fail("`" + cmd + "` failed after your change:\n" + tail)
 					ep.Verify = "fail"
 					lastSig = failureSig(tail)
 					r.saveEpisode(ep)
@@ -233,6 +246,8 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message) er
 			prompt, system = r.cliPromptAt(ctx, e, trigger, wfText, level, &ep, true)
 		}
 		brief = failureBrief(fail, run, events)
+		tl.signal(lessons.SignalRetry)
+		tl.fail(brief)
 		wait := retryWait(fail, attempt)
 		r.notice(trigger, e.m.ID, fmt.Sprintf("retrying (attempt %d/%d) in %s… (%s)",
 			attempt+1, e.m.Retries, wait.Round(time.Second), fail))
@@ -267,11 +282,17 @@ type spawnInput struct {
 	resume                               string // CLI session to continue ("" = fresh)
 	maxTurns                             int
 	stall                                time.Duration // watchdog; 0 = off
+	model                                string        // "" = the agent's model
+	quiet                                bool          // don't relay the stream (reflection)
 	mcpConfig, mcpEndpoint, mcpGeminiDir string
 }
 
 func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Message, in spawnInput) (tasks.Run, []clirun.StreamEvent) {
 	prompt, system, workdir := in.prompt, in.system, in.workdir
+	model := e.m.CLIModel()
+	if in.model != "" {
+		model = in.model
+	}
 	started := time.Now().UTC()
 	run := tasks.Run{
 		ID: runID(started), Agent: e.m.ID,
@@ -307,7 +328,7 @@ func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Messag
 	// and the reply came back as plain text (no stream-json at all).
 	argv := append([]string{e.cliPath}, e.cli.BuildArgs(clirun.RunInput{
 		Prompt: prompt, System: system,
-		Model: e.m.CLIModel(), Workdir: workdir, Stdin: stdin,
+		Model: model, Workdir: workdir, Stdin: stdin,
 		Resume: in.resume, MaxTurns: in.maxTurns,
 		MCPConfig: in.mcpConfig, MCPURL: in.mcpEndpoint, MCPGeminiDir: in.mcpGeminiDir,
 	})...)
@@ -365,7 +386,9 @@ func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Messag
 			dog.Reset(in.stall)
 		}
 		events = append(events, ev)
-		r.cliEvent(e.m.ID, trigger, ev)
+		if !in.quiet {
+			r.cliEvent(e.m.ID, trigger, ev)
+		}
 		if ev.Kind == clirun.EventFinal {
 			final = ev.Detail
 		}
@@ -477,7 +500,7 @@ func (r *Runtime) serveToolsFor(e *entry, trigger bus.Message, tt turnTools) *se
 	if r.cfg.WS == nil || e.cli == nil || !e.cli.MCPWired() {
 		return nil
 	}
-	wantDHI, wantBridge := tt.plan != nil, false
+	wantDHI, wantBridge := tt.plan != nil || tt.lesson != nil, false
 	for _, t := range e.m.Tools {
 		if dhitools.Serves(t) {
 			wantDHI = true
@@ -520,6 +543,7 @@ func (r *Runtime) serveToolsFor(e *entry, trigger bus.Message, tt turnTools) *se
 			EnvelopeTask: tt.task,
 			PlanUpdate:   tt.plan,
 			MemberRoots:  tt.memberRoots,
+			LessonRecord: tt.lesson,
 		}.Handler()
 	}
 	// Third-party MCP servers (F-034 part C): dialed under the sandbox,
@@ -718,6 +742,11 @@ func (r *Runtime) cliPromptAt(ctx context.Context, e *entry, trigger bus.Message
 	if wfText != "" {
 		system += "\n\n" + wfText
 	}
+	query := trigger.Text
+	if t, ok := r.boundTask(trigger); ok {
+		query += " " + t.Title
+	}
+	system += r.lessonsBlock(e.m.ID, query, lim)
 	system += r.memoryBlock(e.m.ID, lim)
 	system += r.knowledgeBlock(ctx, trigger.Text, lim)
 	if level > 0 {

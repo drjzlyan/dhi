@@ -1,13 +1,13 @@
   CONFIG        ╭─ › standards ──────────────────────────────────────────────────────────╮
   AGENTS        │ ▌ workspace       1 rules                                              │
-  LIBRARY       │   scout           0 rules -                                            │
+  BRAIN         │   scout           0 rules -                                            │
+  LIBRARY       │                                                                        │
   TEAMS         │                                                                        │
   PACKS         │                                                                        │
 ▌ STANDARDS     │                                                                        │
   WORKFLOWS     │                                                                        │
   AUTOPILOTS    │                                                                        │
   MARKETPLACE   │                                                                        │
-                │                                                                        │
                 │                                                                        │
                 │                                                                        │
                 │                                                                        │

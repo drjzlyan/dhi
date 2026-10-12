@@ -1,13 +1,13 @@
   CONFIG        ╭─ › autopilots ─────────────────────────────────────────────────────────╮
   AGENTS        │   name                agent       schedule                    next-due │
-  LIBRARY       │ ▌ Sweep               scout       daily 09:00                 09:00    │
+  BRAIN         │ ▌ Sweep               scout       daily 09:00                 09:00    │
+  LIBRARY       │                                                                        │
   TEAMS         │                                                                        │
   PACKS         │                                                                        │
   STANDARDS     │                                                                        │
   WORKFLOWS     │                                                                        │
 ▌ AUTOPILOTS    │                                                                        │
   MARKETPLACE   │                                                                        │
-                │                                                                        │
                 │                                                                        │
                 │                                                                        │
                 │                                                                        │

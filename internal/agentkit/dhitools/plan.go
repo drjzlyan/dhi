@@ -19,7 +19,7 @@ var planStatuses = map[string]bool{"todo": true, "doing": true, "done": true, "b
 // harnessSlugs are served to every agent whose turn serves tools, with
 // no allowlist entry: they report the agent's own work to DHI (no
 // effect outside the episode), so withholding them only hides progress.
-var harnessSlugs = []string{"plan_update"}
+var harnessSlugs = []string{"plan_update", "lesson_record"}
 
 // planTools publishes the agent's plan onto its episode, where the board
 // shows it live. Absent when the runtime wires no seam.
@@ -66,6 +66,54 @@ func (d Deps) planTools() []tool {
 				}
 			}
 			return fmt.Sprintf("plan updated (%d/%d done)", done, len(steps)), nil
+		},
+	}}
+}
+
+// lessonTools lets an agent record a durable lesson while it works
+// (F-068): private by default, "user" for the human's stated preference.
+func (d Deps) lessonTools() []tool {
+	if d.LessonRecord == nil {
+		return nil
+	}
+	return []tool{{
+		info: mcp.ToolInfo{
+			Name: "lesson_record",
+			Description: "Remember a durable lesson for future work: ONE short imperative rule specific to this codebase, " +
+				"its tools or the human (not generic advice). {\"text\":\"Run go test with -race in this repo\",\"tags\":[\"go\",\"tests\"]}. " +
+				"Use \"scope\":\"user\" only when the human states a personal preference; it then applies to every agent.",
+			InputSchema: json.RawMessage(`{"type":"object","required":["text"],"properties":{"text":{"type":"string"},"tags":{"type":"array","items":{"type":"string"}},"scope":{"type":"string","enum":["private","user"]}},"additionalProperties":false}`),
+		},
+		parse: func(raw json.RawMessage) (any, error) {
+			var a struct {
+				Text  string   `json:"text"`
+				Tags  []string `json:"tags"`
+				Scope string   `json:"scope"`
+			}
+			if err := args(raw, &a); err != nil {
+				return nil, err
+			}
+			a.Text = strings.TrimSpace(a.Text)
+			if a.Text == "" || len([]rune(a.Text)) > 300 {
+				return nil, fmt.Errorf("text must be 1..300 characters")
+			}
+			if a.Scope == "" {
+				a.Scope = "private"
+			}
+			if a.Scope != "private" && a.Scope != "user" {
+				return nil, fmt.Errorf("scope must be private or user")
+			}
+			return a, nil
+		},
+		exec: func(_ context.Context, dec any) (string, error) {
+			b, _ := json.Marshal(dec)
+			var a struct {
+				Text  string   `json:"text"`
+				Tags  []string `json:"tags"`
+				Scope string   `json:"scope"`
+			}
+			_ = json.Unmarshal(b, &a)
+			return d.LessonRecord(a.Text, a.Scope, a.Tags)
 		},
 	}}
 }

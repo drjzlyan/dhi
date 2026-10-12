@@ -114,6 +114,11 @@ type Agents struct {
 	// StallSeconds kills a spawn that emits nothing for this long
 	// (0 = no watchdog).
 	StallSeconds int `toml:"stall_seconds"`
+	// Reflect lets an agent learn from a turn that failed, needed fixing
+	// or was corrected (F-068): one short, tool-less, budgeted spawn.
+	Reflect bool `toml:"reflect"`
+	// ReflectModel runs reflection on a cheaper model ("" = the agent's).
+	ReflectModel string `toml:"reflect_model"`
 }
 
 // Autonomy modes.
@@ -177,7 +182,7 @@ func Defaults() Config {
 		Editor:      Editor{TabWidth: 4, LineNumbers: true},
 		Terminal:    Terminal{Scrollback: 1000},
 		Security:    Security{Sandbox: SandboxAuto},
-		Agents:      Agents{Resume: true, Autonomy: AutonomyEnvelope, MaxIterations: 3, StallSeconds: 900},
+		Agents:      Agents{Resume: true, Autonomy: AutonomyEnvelope, MaxIterations: 3, StallSeconds: 900, Reflect: true},
 		Conventions: conventions.Defaults(),
 	}
 }
@@ -189,7 +194,7 @@ func Known() []string {
 		"worktrees", "worktrees.root",
 		"terminal.scrollback", "security.sandbox",
 		"agents", "agents.max_turns", "agents.resume", "agents.autonomy",
-		"agents.max_iterations", "agents.stall_seconds",
+		"agents.max_iterations", "agents.stall_seconds", "agents.reflect", "agents.reflect_model",
 		"budgets", "budgets.task_usd", "budgets.task_tokens",
 		"budgets.agent_day_usd", "budgets.workspace_day_usd",
 		"scopes.read", "scopes.write", "scopes.exec", "scopes.network",
@@ -402,6 +407,8 @@ type fileLayer struct {
 		Autonomy      *string `toml:"autonomy"`
 		MaxIterations *int    `toml:"max_iterations"`
 		StallSeconds  *int    `toml:"stall_seconds"`
+		Reflect       *bool   `toml:"reflect"`
+		ReflectModel  *string `toml:"reflect_model"`
 	} `toml:"agents"`
 	Budgets struct {
 		TaskUSD         *float64 `toml:"task_usd"`
@@ -492,6 +499,8 @@ func (f fileLayer) mergeInto(dst *Config) {
 	setPtr(&dst.Agents.Autonomy, f.Agents.Autonomy)
 	setPtr(&dst.Agents.MaxIterations, f.Agents.MaxIterations)
 	setPtr(&dst.Agents.StallSeconds, f.Agents.StallSeconds)
+	setPtr(&dst.Agents.Reflect, f.Agents.Reflect)
+	setPtr(&dst.Agents.ReflectModel, f.Agents.ReflectModel)
 	setPtr(&dst.Budgets.TaskUSD, f.Budgets.TaskUSD)
 	setPtr(&dst.Budgets.TaskTokens, f.Budgets.TaskTokens)
 	setPtr(&dst.Budgets.AgentDayUSD, f.Budgets.AgentDayUSD)

@@ -1,13 +1,13 @@
   CONFIG        ╭─ › agents ─────────────────────────────────────────────────────────────╮
 ▌ AGENTS        │ ▌ scout       m-1           claude    2 tools                          │
-  LIBRARY       │   muse        archived                                                 │
+  BRAIN         │   muse        archived                                                 │
+  LIBRARY       │                                                                        │
   TEAMS         │                                                                        │
   PACKS         │                                                                        │
   STANDARDS     │                                                                        │
   WORKFLOWS     │                                                                        │
   AUTOPILOTS    │                                                                        │
   MARKETPLACE   │                                                                        │
-                │                                                                        │
                 │                                                                        │
                 │                                                                        │
                 │                                                                        │

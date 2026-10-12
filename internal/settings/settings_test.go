@@ -667,7 +667,7 @@ func TestBudgetsRejectNegative(t *testing.T) {
 // F-067: autonomy, iterations and the stall watchdog validate by name.
 func TestAgentsLoopKeys(t *testing.T) {
 	d := Defaults().Agents
-	if d.Autonomy != AutonomyEnvelope || d.MaxIterations != 3 || d.StallSeconds != 900 {
+	if d.Autonomy != AutonomyEnvelope || d.MaxIterations != 3 || d.StallSeconds != 900 || !d.Reflect || d.ReflectModel != "" {
 		t.Fatalf("defaults = %+v", d)
 	}
 	for doc, key := range map[string]string{

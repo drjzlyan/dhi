@@ -27,6 +27,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/dhitools"
 	"github.com/drjzlyan/dhi/internal/agentkit/episode"
 	"github.com/drjzlyan/dhi/internal/agentkit/knowledge"
+	"github.com/drjzlyan/dhi/internal/agentkit/lessons"
 	"github.com/drjzlyan/dhi/internal/agentkit/library"
 	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
 	"github.com/drjzlyan/dhi/internal/agentkit/mcpbridge"
@@ -312,6 +313,22 @@ func runTUI() (relaunch bool) {
 			}
 			if agentRT != nil {
 				settingsDeps.Grants = agentRT.Approvals() // F-067 remembered grants
+			}
+			// F-068 BRAIN: what the crew learned; s shares a lesson to the KB
+			// under its review policy.
+			settingsDeps.Lessons = lessons.Open(ws.Root)
+			if kb, kerr := knowledge.Open(ws, knowledge.Review, rgSearcher); kerr == nil {
+				settingsDeps.ShareLesson = func(l lessons.Lesson) (string, error) {
+					author := l.Agent
+					if author == "" {
+						author = bus.Human
+					}
+					st, _, err := kb.Contribute(knowledge.Contribution{
+						Title: truncateTitle(l.Text), Body: l.Text, Tags: append([]string{"lesson"}, l.Tags...),
+						Author: author, Importance: 3,
+					})
+					return string(st), err
+				}
 			}
 		}
 	}
@@ -1063,6 +1080,14 @@ func (r execRunner) Run(ctx context.Context, dir string, argv []string, allowNet
 	return out, err
 }
 
+// truncateTitle makes a KB title from a lesson (first 60 runes).
+func truncateTitle(s string) string {
+	if r := []rune(s); len(r) > 60 {
+		return string(r[:59]) + "…"
+	}
+	return s
+}
+
 // openEpisodes is the read side of the agents' episodes for the board
 // (nil outside a workspace).
 func openEpisodes(ws *workspace.Workspace) *episode.Store {
@@ -1087,6 +1112,8 @@ func liveTuning(userCfg, wsCfg string, boot settings.Config) func() agentkitRunt
 			Autonomy:      c.Agents.Autonomy,
 			MaxIterations: c.Agents.MaxIterations,
 			Stall:         time.Duration(c.Agents.StallSeconds) * time.Second,
+			Reflect:       c.Agents.Reflect,
+			ReflectModel:  c.Agents.ReflectModel,
 			Budgets: budget.Limits{
 				TaskUSD: c.Budgets.TaskUSD, TaskTokens: c.Budgets.TaskTokens,
 				AgentDayUSD: c.Budgets.AgentDayUSD, WorkspaceDayUSD: c.Budgets.WorkspaceDayUSD,
@@ -1165,6 +1192,7 @@ func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cl
 		Episodes: episode.Open(ws.Root),
 		Spend:    budget.Open(ws.Root),
 		Tuning:   tune,
+		Lessons:  lessons.Open(ws.Root), // F-068: learned rules, retrieval + reflection
 		// F-067: a task turn without a worktree gets one on the convention
 		// branch before the agent starts, so the work lands where DHI can
 		// verify it and open the PR.

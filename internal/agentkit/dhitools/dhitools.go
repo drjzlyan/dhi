@@ -110,6 +110,9 @@ type Deps struct {
 	// PlanUpdate stores the agent's published plan on its episode
 	// (F-067); nil omits plan_update.
 	PlanUpdate func([]PlanStep) error
+	// LessonRecord stores a lesson the agent is sure of (F-068); scope is
+	// "private" or "user". nil omits lesson_record.
+	LessonRecord func(text, scope string, tags []string) (string, error)
 	// MemberRoots overrides where a member's vpaths resolve (F-067): on a
 	// task turn, member → the task worktree, so DHI's file tools act on
 	// the task branch exactly like the CLI's native tools in the same
@@ -239,6 +242,7 @@ func (d Deps) Handler() mcp.Handler {
 	all = append(all, d.channelTools()...)
 	all = append(all, d.searchTools()...)
 	all = append(all, d.planTools()...)
+	all = append(all, d.lessonTools()...)
 	for _, s := range harnessSlugs {
 		allow[s] = true
 	}

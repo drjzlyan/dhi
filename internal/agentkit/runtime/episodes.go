@@ -21,13 +21,17 @@ type Tuning struct {
 	Autonomy      string        // "envelope" | "ask" (settings.Agents.Autonomy)
 	MaxIterations int           // verify → fix rounds per task turn (min 1)
 	Stall         time.Duration // watchdog; 0 = off
+
+	// F-068 learning.
+	Reflect      bool   // reflect on turns that carried a signal
+	ReflectModel string // "" = the agent's model
 }
 
 // tuning reads the configured Tuning; without a source, resume is on
 // and nothing is capped (the settings defaults).
 func (r *Runtime) tuning() Tuning {
 	if r.cfg.Tuning == nil {
-		return Tuning{Resume: true, Autonomy: "envelope", MaxIterations: 3}
+		return Tuning{Resume: true, Autonomy: "envelope", MaxIterations: 3, Reflect: true}
 	}
 	return r.cfg.Tuning()
 }

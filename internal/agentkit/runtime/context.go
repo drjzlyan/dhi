@@ -18,11 +18,12 @@ type promptLimits struct {
 	journal, journalRunes, notes int // journal entries, runes each, notes runes
 	kbHits, kbRunes              int // KB hits, runes per snippet
 	comments, runs               int // task card comments and runs shown
+	lessons                      int // learned lessons retrieved (F-068), beyond pinned
 }
 
 var promptLevels = [...]promptLimits{
-	{history: historyWindow, msgRunes: 500, journal: 8, journalRunes: 200, notes: 1500, kbHits: 3, kbRunes: 300, comments: 5, runs: 3},
-	{history: 12, msgRunes: 240, journal: 4, journalRunes: 160, notes: 600, kbHits: 1, kbRunes: 200, comments: 2, runs: 1},
+	{history: historyWindow, msgRunes: 500, journal: 4, journalRunes: 200, notes: 1500, kbHits: 3, kbRunes: 300, comments: 5, runs: 3, lessons: 5},
+	{history: 12, msgRunes: 240, journal: 2, journalRunes: 160, notes: 600, kbHits: 1, kbRunes: 200, comments: 2, runs: 1, lessons: 2},
 }
 
 // maxCompaction is the most compact level; an overflow there is final.

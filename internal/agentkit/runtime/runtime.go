@@ -21,6 +21,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/dhitools"
 	"github.com/drjzlyan/dhi/internal/agentkit/episode"
 	"github.com/drjzlyan/dhi/internal/agentkit/knowledge"
+	"github.com/drjzlyan/dhi/internal/agentkit/lessons"
 	"github.com/drjzlyan/dhi/internal/agentkit/library"
 	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
 	"github.com/drjzlyan/dhi/internal/agentkit/mcpserver"
@@ -133,6 +134,9 @@ type Config struct {
 	// Tuning supplies max-turns, resume and budgets per turn; nil = the
 	// defaults (resume on, no caps).
 	Tuning func() Tuning
+	// Lessons is what agents have learned (F-068): retrieved into prompts,
+	// grown by reflection and lesson_record. nil = no learning.
+	Lessons *lessons.Store
 	// Provision creates the task's worktree for member on the convention
 	// branch and records it on the card (F-067; tasks.Store.Attach in the
 	// app). nil = DHI never provisions; the agent works where it is.
@@ -148,6 +152,8 @@ type Runtime struct {
 
 	libMu  sync.Mutex
 	libRef *library.Store
+
+	cons consolidator // daily lesson consolidation (F-068)
 
 	// work tracks in-flight turns per thread so the board can show a
 	// live "working" indicator (F-035 Part D). Key: channel + "#" + root.
@@ -647,7 +653,13 @@ func (r *Runtime) Turn(ctx context.Context, agentID string, trigger bus.Message)
 	r.workStart(key)
 	defer r.workDone(key)
 
-	return r.cliTurn(ctx, e, trigger)
+	// F-068: learn from the turn when it was learned the hard way.
+	r.consolidate(agentID)
+	tl := &turnLog{}
+	r.noteCorrection(agentID, trigger, tl)
+	err := r.cliTurn(ctx, e, trigger, tl)
+	r.reflect(context.WithoutCancel(ctx), e, trigger, tl)
+	return err
 }
 
 // activeWorkflow resolves the agent's active feature workflow (F-031),

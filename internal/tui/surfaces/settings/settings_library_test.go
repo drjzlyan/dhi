@@ -22,8 +22,10 @@ func libSurface(t *testing.T) (*Model, *workspace.Workspace) {
 	t.Helper()
 	m, ws, _, _ := agentSurface(t)
 	m.d.Library = library.Open(ws)
-	// Navigate AGENTS → LIBRARY.
-	feed(m, "]")
+	// Navigate AGENTS → LIBRARY (past BRAIN).
+	for i := 0; i < int(secCount) && m.sec != secLibrary; i++ {
+		feed(m, "]")
+	}
 	if m.sec != secLibrary {
 		t.Fatalf("sec = %v, want library", m.sec)
 	}

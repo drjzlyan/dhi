@@ -259,3 +259,17 @@ func TestAgentsAndBudgetRowsPersist(t *testing.T) {
 		t.Fatal("an agents row must not write the conventions file")
 	}
 }
+
+// F-068: agents.reflect toggles and persists.
+func TestReflectRowPersists(t *testing.T) {
+	m, path := newSurface(t)
+	m.cursor = rowReflect
+	if !strings.Contains(ansi.Strip(m.View()), "agents.reflect") {
+		t.Fatal("reflect row not rendered")
+	}
+	feed(m, "enter")
+	back, err := settings.Load(path, "")
+	if err != nil || back.Agents.Reflect {
+		t.Fatalf("reflect not persisted off: %+v %v", back.Agents, err)
+	}
+}

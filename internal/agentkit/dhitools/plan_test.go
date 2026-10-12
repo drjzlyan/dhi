@@ -38,3 +38,20 @@ func TestPlanUpdate(t *testing.T) {
 		}
 	}
 }
+
+// F-068: lesson_record is a harness tool with strict args.
+func TestLessonRecord(t *testing.T) {
+	var got []string
+	d := Deps{Agent: &manifest.Agent{ID: "dev"}, LessonRecord: func(text, scope string, tags []string) (string, error) {
+		got = append(got, scope+":"+text+":"+strings.Join(tags, ","))
+		return "remembered", nil
+	}}
+	h := d.Handler()
+	out, isErr, err := h.CallTool(context.Background(), "lesson_record", json.RawMessage(`{"text":"Run go test with -race","tags":["go"]}`))
+	if err != nil || isErr || out != "remembered" || len(got) != 1 || got[0] != "private:Run go test with -race:go" {
+		t.Fatalf("call = %q %v %v %v", out, isErr, err, got)
+	}
+	if out, isErr, _ := h.CallTool(context.Background(), "lesson_record", json.RawMessage(`{"text":"x","scope":"team"}`)); !isErr || !strings.Contains(out, "scope") {
+		t.Fatalf("bad scope must refuse: %q", out)
+	}
+}

@@ -55,3 +55,13 @@ func TestTermsFoldsPluralsAndDropsStopwords(t *testing.T) {
 		}
 	}
 }
+
+func TestSimilarityExported(t *testing.T) {
+	got := Similarity([]string{"run go test with -race before committing", "prefer small pull requests"}, "which go test flags")
+	if len(got) != 2 || got[0] <= got[1] {
+		t.Fatalf("Similarity = %v, want the test lesson first", got)
+	}
+	if Similarity(nil, "x") != nil {
+		t.Fatal("no docs, no scores")
+	}
+}

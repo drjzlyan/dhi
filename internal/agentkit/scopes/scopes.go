@@ -131,6 +131,8 @@ var toolScopes = map[string]Scope{
 	"memory_append": Read, "memory_read_notes": Read, "memory_write_notes": Read,
 	// plan_update only reports the agent's own progress (F-067).
 	"plan_update": Read,
+	// lesson_record writes the agent's own memory, like memory_append (F-068).
+	"lesson_record": Read,
 
 	"write": Write, "patch": Write, "editor_apply_edit": Write,
 	"artifact_create": Write, "artifact_edit": Write,

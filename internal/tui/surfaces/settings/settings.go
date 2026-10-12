@@ -17,6 +17,7 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
+	"github.com/drjzlyan/dhi/internal/agentkit/lessons"
 	"github.com/drjzlyan/dhi/internal/agentkit/library"
 	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
 	"github.com/drjzlyan/dhi/internal/agentkit/org"
@@ -44,16 +45,20 @@ type Model struct {
 	cursor   int   // CONFIG rows
 	cfgRowAt []int // CONFIG: visible line → setting row (-1 = header), for clicks
 	agentCur int   // AGENTS roster rows
-	libCur   int   // LIBRARY listing rows
-	teamCur  int   // TEAMS rows
-	packCur  int   // PACKS rows
-	stdCur   int   // STANDARDS rows
-	wfCur    int   // WORKFLOWS rows
-	autoCur  int   // AUTOPILOTS rows
-	mktCur   int   // MARKETPLACE rows
-	mktQuery string
-	mktEdit  bool // search input focused
-	mktBusy  bool
+	// BRAIN (F-068): lesson cursor, filter text, and whether / is typing.
+	brainCur    int
+	brainFilter string
+	brainTyping bool
+	libCur      int // LIBRARY listing rows
+	teamCur     int // TEAMS rows
+	packCur     int // PACKS rows
+	stdCur      int // STANDARDS rows
+	wfCur       int // WORKFLOWS rows
+	autoCur     int // AUTOPILOTS rows
+	mktCur      int // MARKETPLACE rows
+	mktQuery    string
+	mktEdit     bool // search input focused
+	mktBusy     bool
 
 	detected map[string]string // runtime name → version ("" = not installed)
 	lib      *library.Store    // lazy snapshot of the behaviour library
@@ -86,6 +91,7 @@ type sectionID uint8
 const (
 	secConfig sectionID = iota
 	secAgents
+	secBrain
 	secLibrary
 	secTeams
 	secPacks
@@ -102,6 +108,8 @@ func (s sectionID) label() string {
 		return "CONFIG"
 	case secAgents:
 		return "AGENTS"
+	case secBrain:
+		return "BRAIN"
 	case secLibrary:
 		return "LIBRARY"
 	case secTeams:
@@ -163,6 +171,12 @@ type Deps struct {
 	// RunScript executes a local skill's declared script (sandboxed,
 	// network denied). Nil disables the LIBRARY run action.
 	RunScript runner
+	// Lessons are what the crew has learned (F-068): the BRAIN section.
+	// Nil renders a named unavailable section.
+	Lessons *lessons.Store
+	// ShareLesson contributes a lesson to the workspace KB (review
+	// policy); it returns the KB status. Nil disables s in BRAIN.
+	ShareLesson func(lessons.Lesson) (string, error)
 	// Grants are the remembered "allow always" decisions (F-067); the
 	// AGENTS section lists them and r revokes the selected agent's. Nil
 	// hides the list.
@@ -279,6 +293,8 @@ func (m *Model) HandleKey(key string) bool {
 	switch m.sec {
 	case secAgents:
 		return m.agentsKey(key)
+	case secBrain:
+		return m.brainKey(key)
 	case secLibrary:
 		return m.libraryKey(key)
 	case secTeams:
@@ -362,11 +378,12 @@ const (
 	rowMaxTurns    = rowResume + 2
 	rowMaxIter     = rowResume + 3
 	rowStall       = rowResume + 4
-	rowTaskUSD     = rowResume + 5
-	rowTaskTokens  = rowResume + 6
-	rowAgentDayUSD = rowResume + 7
-	rowWorkDayUSD  = rowResume + 8
-	rowCount       = rowResume + 9
+	rowReflect     = rowResume + 5
+	rowTaskUSD     = rowResume + 6
+	rowTaskTokens  = rowResume + 7
+	rowAgentDayUSD = rowResume + 8
+	rowWorkDayUSD  = rowResume + 9
+	rowCount       = rowResume + 10
 )
 
 // Preset cycles for the agents & budgets rows (0 = the CLI default / no
@@ -473,6 +490,8 @@ func (m *Model) cycle(dir int) {
 		m.cfg.Agents.MaxIterations = cycleNum(m.cfg.Agents.MaxIterations, maxIterPresets, dir)
 	case rowStall:
 		m.cfg.Agents.StallSeconds = cycleNum(m.cfg.Agents.StallSeconds, stallPresets, dir)
+	case rowReflect:
+		m.cfg.Agents.Reflect = !m.cfg.Agents.Reflect
 	case rowTaskUSD:
 		m.cfg.Budgets.TaskUSD = cycleNum(m.cfg.Budgets.TaskUSD, taskUSDPresets, dir)
 	case rowTaskTokens:
@@ -1138,6 +1157,8 @@ func (m *Model) sectionPane(w, h int) string {
 	switch m.sec {
 	case secAgents:
 		content = m.agentsView()
+	case secBrain:
+		content = m.brainView(w - 4)
 	case secLibrary:
 		content = strings.Split(m.libraryBody(w), "\n")
 	case secTeams:
@@ -1190,6 +1211,8 @@ func (m *Model) sectionHints() []string {
 		if m.selectedHasGrants() {
 			sec = append(sec, "r revoke grants") // only when there is something to revoke
 		}
+	case secBrain:
+		sec = []string{"p pin", "x retire", "s share", "/ filter"}
 	case secTeams:
 		sec = []string{"n new", "e edit", "x delete"}
 	case secPacks:
@@ -1275,8 +1298,9 @@ func (m *Model) configView(w, budget int) []string {
 	add(rowResume, "agents.resume", boolValue(m.cfg.Agents.Resume))
 	add(rowAutonomy, "agents.autonomy", autonomyValue(m.cfg.Agents.Autonomy))
 	add(rowMaxTurns, "agents.max_turns", orMuted(m.cfg.Agents.MaxTurns == 0, "CLI default", itoa(m.cfg.Agents.MaxTurns)))
-	add(rowMaxIter, "agents.max_iterations", itoa(m.cfg.Agents.MaxIterations)+theme.Hint().Render("  verify → fix rounds"))
+	add(rowMaxIter, "agents.max_iterations", itoa(m.cfg.Agents.MaxIterations))
 	add(rowStall, "agents.stall_seconds", orMuted(m.cfg.Agents.StallSeconds == 0, "off", stallText(m.cfg.Agents.StallSeconds)))
+	add(rowReflect, "agents.reflect", boolValue(m.cfg.Agents.Reflect))
 	add(rowTaskUSD, "budgets.task_usd", orMuted(m.cfg.Budgets.TaskUSD == 0, "no limit", usd(m.cfg.Budgets.TaskUSD)))
 	add(rowTaskTokens, "budgets.task_tokens", orMuted(m.cfg.Budgets.TaskTokens == 0, "no limit", tokensText(m.cfg.Budgets.TaskTokens)))
 	add(rowAgentDayUSD, "budgets.agent_day_usd", orMuted(m.cfg.Budgets.AgentDayUSD == 0, "no limit", usd(m.cfg.Budgets.AgentDayUSD)+" / day"))
@@ -1307,9 +1331,9 @@ func (m *Model) configView(w, budget int) []string {
 // autonomyValue explains the envelope in place (F-067).
 func autonomyValue(mode string) string {
 	if mode == settings.AutonomyAsk {
-		return "ask" + theme.Hint().Render("  every mutation asks")
+		return "ask"
 	}
-	return theme.SuccessText().Render("envelope") + theme.Hint().Render("  task worktree runs free · push/PR ask")
+	return theme.SuccessText().Render("envelope")
 }
 
 // stallText renders the watchdog window ("15m", "90s").

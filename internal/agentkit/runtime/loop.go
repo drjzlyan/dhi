@@ -135,9 +135,10 @@ func verifyBrief(cmd, tail string, iter, max int) string {
 // turnTools is the per-turn context the served IDE tools need beyond the
 // agent itself (F-067).
 type turnTools struct {
-	envelope, task string                          // autonomy envelope (worktree) and bound card
-	plan           func([]dhitools.PlanStep) error // plan_update seam; nil = none
-	memberRoots    map[string]string               // member → task worktree for the file tools
+	envelope, task string                                                  // autonomy envelope (worktree) and bound card
+	plan           func([]dhitools.PlanStep) error                         // plan_update seam; nil = none
+	memberRoots    map[string]string                                       // member → task worktree for the file tools
+	lesson         func(text, scope string, tags []string) (string, error) // lesson_record seam; nil = none
 }
 
 // envelopeFor decides the autonomy envelope (F-067, ADR-0032): only a

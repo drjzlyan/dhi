@@ -152,3 +152,13 @@ func bestLine(body, query string) string {
 	}
 	return best
 }
+
+// Similarity scores each doc against query with the same hashed TF-IDF
+// cosine the KB search uses (F-068: agent lessons reuse it rather than
+// growing a second retrieval scheme). Scores are in [0,1].
+func Similarity(docs []string, query string) []float64 {
+	if len(docs) == 0 {
+		return nil
+	}
+	return newVectorIndex(docs).similarity(query)
+}
