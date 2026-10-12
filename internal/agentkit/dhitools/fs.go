@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -289,6 +290,16 @@ func (d Deps) resolveVPath(p string) (string, error) {
 	v, err := workspace.ParseVPath(p)
 	if err != nil {
 		return "", err
+	}
+	if root, ok := d.MemberRoots[v.Member]; ok {
+		clean := path.Clean(v.Rel)
+		switch {
+		case clean == ".":
+			return root, nil
+		case strings.HasPrefix(clean, "../"):
+			return "", fmt.Errorf("workspace: vpath %q escapes its member", v.String())
+		}
+		return filepath.Join(root, filepath.FromSlash(clean)), nil
 	}
 	return d.WS.Resolve(v)
 }

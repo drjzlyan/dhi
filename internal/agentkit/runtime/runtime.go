@@ -133,6 +133,10 @@ type Config struct {
 	// Tuning supplies max-turns, resume and budgets per turn; nil = the
 	// defaults (resume on, no caps).
 	Tuning func() Tuning
+	// Provision creates the task's worktree for member on the convention
+	// branch and records it on the card (F-067; tasks.Store.Attach in the
+	// app). nil = DHI never provisions; the agent works where it is.
+	Provision func(slug, member string) error
 }
 
 // Runtime manages rostered agents and executes their turns.
@@ -731,13 +735,9 @@ func verdictReasons(vs []workflow.Verdict) []string {
 	return out
 }
 
-// taskFor returns the task bound to the trigger's thread.
-func (r *Runtime) taskFor(trigger bus.Message) (tasks.Task, bool) {
-	if r.cfg.Tasks == nil {
-		return tasks.Task{}, false
-	}
-	return r.cfg.Tasks.FindByThread(trigger.Channel, trigger.Thread)
-}
+// taskFor returns the task bound to the trigger's thread (thread root,
+// like every other card lookup — see boundTask).
+func (r *Runtime) taskFor(trigger bus.Message) (tasks.Task, bool) { return r.boundTask(trigger) }
 
 // teamLookup adapts the org registry for standards resolution; nil org
 // yields a lookup that matches nothing.

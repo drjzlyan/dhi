@@ -22,6 +22,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/org"
 	"github.com/drjzlyan/dhi/internal/agentkit/pack"
 	"github.com/drjzlyan/dhi/internal/agentkit/registry"
+	"github.com/drjzlyan/dhi/internal/agentkit/tools"
 	"github.com/drjzlyan/dhi/internal/autopilot"
 	"github.com/drjzlyan/dhi/internal/conventions"
 	"github.com/drjzlyan/dhi/internal/gitcore"
@@ -162,6 +163,16 @@ type Deps struct {
 	// RunScript executes a local skill's declared script (sandboxed,
 	// network denied). Nil disables the LIBRARY run action.
 	RunScript runner
+	// Grants are the remembered "allow always" decisions (F-067); the
+	// AGENTS section lists them and r revokes the selected agent's. Nil
+	// hides the list.
+	Grants GrantStore
+}
+
+// GrantStore is the approvals queue's remembered-grant surface.
+type GrantStore interface {
+	Grants() []tools.Grant
+	Revoke(agent, scope string) error
 }
 
 // New wires the surface to a loaded config, its persistence target,
@@ -345,20 +356,25 @@ const (
 	rowCommitFormat   = rowBranchTask + 1
 	rowCommitCoAuthor = rowBranchTask + 2
 	rowCopyright      = rowBranchTask + 3
-	// Agents & budgets (F-066) follow the conventions rows.
+	// Agents & budgets (F-066, F-067) follow the conventions rows.
 	rowResume      = rowBranchTask + 4
-	rowMaxTurns    = rowResume + 1
-	rowTaskUSD     = rowResume + 2
-	rowTaskTokens  = rowResume + 3
-	rowAgentDayUSD = rowResume + 4
-	rowWorkDayUSD  = rowResume + 5
-	rowCount       = rowResume + 6
+	rowAutonomy    = rowResume + 1
+	rowMaxTurns    = rowResume + 2
+	rowMaxIter     = rowResume + 3
+	rowStall       = rowResume + 4
+	rowTaskUSD     = rowResume + 5
+	rowTaskTokens  = rowResume + 6
+	rowAgentDayUSD = rowResume + 7
+	rowWorkDayUSD  = rowResume + 8
+	rowCount       = rowResume + 9
 )
 
 // Preset cycles for the agents & budgets rows (0 = the CLI default / no
 // limit); any other value is hand-edited in config.toml and shows as-is.
 var (
 	maxTurnPresets  = []int{0, 10, 20, 30, 50, 100}
+	maxIterPresets  = []int{1, 2, 3, 5, 8}
+	stallPresets    = []int{0, 300, 600, 900, 1800, 3600}
 	taskUSDPresets  = []float64{0, 0.5, 1, 2, 5, 10}
 	taskTokPresets  = []int{0, 250_000, 500_000, 1_000_000, 2_000_000}
 	agentDayPresets = []float64{0, 2, 5, 10, 20, 50}
@@ -448,8 +464,15 @@ func (m *Model) cycle(dir int) {
 		m.cfg.Conventions.Copyright.Enabled = !m.cfg.Conventions.Copyright.Enabled
 	case rowResume:
 		m.cfg.Agents.Resume = !m.cfg.Agents.Resume
+	case rowAutonomy:
+		m.cfg.Agents.Autonomy = cycleString(m.cfg.Agents.Autonomy,
+			[]string{settings.AutonomyEnvelope, settings.AutonomyAsk}, dir)
 	case rowMaxTurns:
 		m.cfg.Agents.MaxTurns = cycleNum(m.cfg.Agents.MaxTurns, maxTurnPresets, dir)
+	case rowMaxIter:
+		m.cfg.Agents.MaxIterations = cycleNum(m.cfg.Agents.MaxIterations, maxIterPresets, dir)
+	case rowStall:
+		m.cfg.Agents.StallSeconds = cycleNum(m.cfg.Agents.StallSeconds, stallPresets, dir)
 	case rowTaskUSD:
 		m.cfg.Budgets.TaskUSD = cycleNum(m.cfg.Budgets.TaskUSD, taskUSDPresets, dir)
 	case rowTaskTokens:
@@ -600,6 +623,11 @@ func (m *Model) agentsKey(key string) bool {
 				err = m.d.Org.ArchiveAgent(m.d.WS, r.id)
 			}
 			m.afterCrewWrite(err, r.id+" archived", r.id+" restored")
+			return true
+		}
+	case "r":
+		if m.agentCur < len(rows) {
+			m.revokeGrants(rows[m.agentCur].id)
 			return true
 		}
 	case "x":
@@ -1159,6 +1187,9 @@ func (m *Model) sectionHints() []string {
 		sec = []string{"enter/l change", "h/l back"}
 	case secAgents:
 		sec = []string{"n new", "e edit", "a archive", "x delete", "v profile"}
+		if m.selectedHasGrants() {
+			sec = append(sec, "r revoke grants") // only when there is something to revoke
+		}
 	case secTeams:
 		sec = []string{"n new", "e edit", "x delete"}
 	case secPacks:
@@ -1242,7 +1273,10 @@ func (m *Model) configView(w, budget int) []string {
 	add(rowCopyright, "conventions.copyright.enabled", boolValue(m.cfg.Conventions.Copyright.Enabled))
 	head("agents & budgets")
 	add(rowResume, "agents.resume", boolValue(m.cfg.Agents.Resume))
+	add(rowAutonomy, "agents.autonomy", autonomyValue(m.cfg.Agents.Autonomy))
 	add(rowMaxTurns, "agents.max_turns", orMuted(m.cfg.Agents.MaxTurns == 0, "CLI default", itoa(m.cfg.Agents.MaxTurns)))
+	add(rowMaxIter, "agents.max_iterations", itoa(m.cfg.Agents.MaxIterations)+theme.Hint().Render("  verify → fix rounds"))
+	add(rowStall, "agents.stall_seconds", orMuted(m.cfg.Agents.StallSeconds == 0, "off", stallText(m.cfg.Agents.StallSeconds)))
 	add(rowTaskUSD, "budgets.task_usd", orMuted(m.cfg.Budgets.TaskUSD == 0, "no limit", usd(m.cfg.Budgets.TaskUSD)))
 	add(rowTaskTokens, "budgets.task_tokens", orMuted(m.cfg.Budgets.TaskTokens == 0, "no limit", tokensText(m.cfg.Budgets.TaskTokens)))
 	add(rowAgentDayUSD, "budgets.agent_day_usd", orMuted(m.cfg.Budgets.AgentDayUSD == 0, "no limit", usd(m.cfg.Budgets.AgentDayUSD)+" / day"))
@@ -1268,6 +1302,22 @@ func (m *Model) configView(w, budget int) []string {
 		m.cfgRowAt[i] = l.row
 	}
 	return out
+}
+
+// autonomyValue explains the envelope in place (F-067).
+func autonomyValue(mode string) string {
+	if mode == settings.AutonomyAsk {
+		return "ask" + theme.Hint().Render("  every mutation asks")
+	}
+	return theme.SuccessText().Render("envelope") + theme.Hint().Render("  task worktree runs free · push/PR ask")
+}
+
+// stallText renders the watchdog window ("15m", "90s").
+func stallText(sec int) string {
+	if sec%60 == 0 {
+		return itoa(sec/60) + "m"
+	}
+	return itoa(sec) + "s"
 }
 
 // orMuted renders muted when unset is true (a default), else value.
@@ -1351,7 +1401,67 @@ func (m *Model) agentsView() []string {
 			out = append(out, "  "+theme.TextDim().Render(line))
 		}
 	}
+	return append(out, m.grantsView()...)
+}
+
+// grantsView lists the remembered "allow always" grants (F-067) under
+// the roster; r revokes the selected agent's.
+func (m *Model) grantsView() []string {
+	if m.d.Grants == nil {
+		return nil
+	}
+	gs := m.d.Grants.Grants()
+	out := []string{"", " " + theme.SectionHeader().Render("ALWAYS ALLOWED") + " " + theme.Rule(20)}
+	if len(gs) == 0 {
+		return append(out, "  "+theme.Hint().Render("none — answering an approval with \"always\" remembers it here"))
+	}
+	for _, g := range gs {
+		line := padTo(g.Agent, 12) + padTo(g.Scope, 10)
+		out = append(out, "  "+theme.TextDim().Render(line)+theme.Hint().Render("since "+g.At.Local().Format("Jan 2")))
+	}
 	return out
+}
+
+// selectedHasGrants reports whether the AGENTS cursor's agent has any
+// remembered grant.
+func (m *Model) selectedHasGrants() bool {
+	if m.d.Grants == nil {
+		return false
+	}
+	rows, _ := m.agentRows()
+	if m.agentCur >= len(rows) {
+		return false
+	}
+	for _, g := range m.d.Grants.Grants() {
+		if g.Agent == rows[m.agentCur].id {
+			return true
+		}
+	}
+	return false
+}
+
+// revokeGrants forgets every grant of the selected agent.
+func (m *Model) revokeGrants(agent string) {
+	if m.d.Grants == nil {
+		m.flash = "grants unavailable (no agent runtime)"
+		return
+	}
+	n := 0
+	for _, g := range m.d.Grants.Grants() {
+		if g.Agent != agent {
+			continue
+		}
+		if err := m.d.Grants.Revoke(g.Agent, g.Scope); err != nil {
+			m.flash = "failed: " + err.Error()
+			return
+		}
+		n++
+	}
+	if n == 0 {
+		m.flash = agent + " has no remembered grants"
+		return
+	}
+	m.flash = fmt.Sprintf("revoked %d grant(s) — %s asks again from its next action", n, agent)
 }
 
 // formView renders the agent modal body: label/value rows with the

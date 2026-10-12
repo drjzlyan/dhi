@@ -11,7 +11,7 @@ import (
 // doneStub is a claude fixture that does the offline task's work in its
 // cwd and reports usage with a prompt-cache read.
 const doneStub = `#!/bin/sh
-mkdir -p app && printf 'done\n' > app/out.txt
+if [ -d app ]; then f=app/out.txt; else f=out.txt; fi; printf 'done\n' > "$f"
 printf '%s\n' '{"type":"system","subtype":"init"}'
 printf '%s\n' '{"type":"result","subtype":"success","is_error":false,"result":"wrote it","total_cost_usd":0.002,"usage":{"input_tokens":40,"cache_read_input_tokens":360,"output_tokens":10}}'
 `
@@ -160,7 +160,7 @@ if [ -f "$DUMPDIR/n" ]; then N=$(cat "$DUMPDIR/n"); fi
 N=$((N+1))
 printf '%s\n' "$N" > "$DUMPDIR/n"
 for a in "$@"; do printf '%s\n' "$a"; done > "$DUMPDIR/spawn-$N"
-mkdir -p app && printf 'done\n' > app/out.txt
+if [ -d app ]; then f=app/out.txt; else f=out.txt; fi; printf 'done\n' > "$f"
 echo '{"type":"result","subtype":"success","is_error":false,"result":"ok","session_id":"S1","total_cost_usd":0.001,"usage":{"input_tokens":4,"output_tokens":2}}'
 `
 

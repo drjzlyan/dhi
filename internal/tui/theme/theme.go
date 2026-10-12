@@ -571,6 +571,7 @@ var (
 	GlyphAt        = "@" // mention
 	GlyphBullet    = "•"
 	GlyphBusy      = "◐" // static activity indicator (reduced motion)
+	GlyphTodo      = "○" // a plan step not started (F-067)
 	GlyphBranch    = "⎇" // git branch marker; missing from many fonts, so branches show as a TextDim pill instead (F-064)
 	GlyphGutterBar = "▎" // git gutter: added/modified line (F-040)
 	GlyphGutterDel = "▁" // git gutter: lines deleted below

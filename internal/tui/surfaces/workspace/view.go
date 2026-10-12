@@ -327,6 +327,7 @@ func (m *Model) boardBody(w, h int) string {
 			root = m.ws.Root
 		}
 		detailLines = boardDetailLines(tk, wrapW, root)
+		detailLines = append(detailLines, m.episodeLines(tk, wrapW)...)
 		detailLines = append(detailLines, boardNotesLines(tk, wrapW, detailW > 0, m.now)...)
 		if m.working != nil && tk.ThreadChannel != "" && m.working(tk.ThreadChannel, tk.ThreadID) {
 			detailLines = append(detailLines, theme.SuccessText().Render("● agent working — live in the thread"))

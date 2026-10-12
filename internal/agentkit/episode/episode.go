@@ -48,8 +48,26 @@ type Episode struct {
 	LastStatus  string  `json:"last_status,omitempty"`
 	LastSummary string  `json:"last_summary,omitempty"`
 
+	// Plan is the agent's published plan (F-067 plan_update). The agent
+	// owns it: only Store.Update from the tool seam writes it.
+	Plan []PlanStep `json:"plan,omitempty"`
+	// Verify is DHI's own check of the work (F-067 goal loop): "pass",
+	// "fail", "stuck", or "" when nothing was verified. VerifyCmd and
+	// VerifyTail say what ran and how it failed; Iterations counts
+	// verify rounds in the latest turn.
+	Verify     string `json:"verify,omitempty"`
+	VerifyCmd  string `json:"verify_cmd,omitempty"`
+	VerifyTail string `json:"verify_tail,omitempty"`
+	Iterations int    `json:"iterations,omitempty"`
+
 	Started time.Time `json:"started"`
 	Updated time.Time `json:"updated"`
+}
+
+// PlanStep is one step of an agent's published plan.
+type PlanStep struct {
+	Title  string `json:"title"`
+	Status string `json:"status"` // todo | doing | done | blocked
 }
 
 // Key names the episode for a turn: the bound task card, else the
@@ -166,7 +184,11 @@ func (s *Store) Put(e Episode) error {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	p := s.path(e.Agent, e.Key)
+	return s.write(s.path(e.Agent, e.Key), e)
+}
+
+// write persists e at p atomically; the caller holds s.mu.
+func (s *Store) write(p string, e Episode) error {
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 		return fmt.Errorf("episode: %w", err)
 	}
@@ -179,6 +201,25 @@ func (s *Store) Put(e Episode) error {
 		return fmt.Errorf("episode: %w", err)
 	}
 	return os.Rename(tmp, p)
+}
+
+// Update applies fn to the stored episode (or a fresh one carrying agent
+// and key) and writes the result, atomically with respect to other
+// Update and Put calls on this store.
+func (s *Store) Update(agent, key string, fn func(*Episode)) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p := s.path(agent, key)
+	e := Episode{Agent: agent, Key: key}
+	if b, err := os.ReadFile(p); err == nil {
+		if err := json.Unmarshal(b, &e); err != nil {
+			return fmt.Errorf("episode: %s: %w", p, err)
+		}
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("episode: %w", err)
+	}
+	fn(&e)
+	return s.write(p, e)
 }
 
 // List returns an agent's episodes, most recently updated first.

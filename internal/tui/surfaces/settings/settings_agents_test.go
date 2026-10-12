@@ -10,6 +10,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
 	"github.com/drjzlyan/dhi/internal/agentkit/org"
 	"github.com/drjzlyan/dhi/internal/agentkit/scopes"
+	"github.com/drjzlyan/dhi/internal/agentkit/tools"
 	"github.com/drjzlyan/dhi/internal/ansi"
 	dhisettings "github.com/drjzlyan/dhi/internal/settings"
 	"github.com/drjzlyan/dhi/internal/testutil/golden"
@@ -296,5 +297,48 @@ func TestPersonaFieldRoundTripsThroughTheForm(t *testing.T) {
 	roster, _ := org.LoadRoster(ws)
 	if len(roster) != 1 || roster[0].Persona != "terse" {
 		t.Fatalf("persona not saved: %+v", roster)
+	}
+}
+
+// fakeGrants is an in-memory GrantStore.
+type fakeGrants struct{ gs []tools.Grant }
+
+func (f *fakeGrants) Grants() []tools.Grant { return f.gs }
+func (f *fakeGrants) Revoke(agent, scope string) error {
+	kept := f.gs[:0]
+	for _, g := range f.gs {
+		if g.Agent != agent || g.Scope != scope {
+			kept = append(kept, g)
+		}
+	}
+	f.gs = kept
+	return nil
+}
+
+// F-067: AGENTS lists remembered grants; r revokes the selected agent's
+// and the hint appears only when there is something to revoke.
+func TestAgentsGrantsListAndRevoke(t *testing.T) {
+	m, ws, company, _ := agentSurface(t)
+	if err := company.CreateAgent(ws, &manifest.Agent{ID: "scout", Name: "Scout", Model: "m", Runtime: "claude", Tools: []string{"read"}}); err != nil {
+		t.Fatal(err)
+	}
+	fg := &fakeGrants{gs: []tools.Grant{
+		{Agent: "scout", Scope: "git", At: time.Date(2026, 10, 13, 9, 0, 0, 0, time.UTC)},
+		{Agent: "scout", Scope: "write", At: time.Date(2026, 10, 13, 9, 0, 0, 0, time.UTC)},
+	}}
+	m.d.Grants = fg
+	view := ansi.Strip(m.View())
+	for _, want := range []string{"ALWAYS ALLOWED", "scout       git", "since Oct 13", "r revoke grants"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("view missing %q:\n%s", want, view)
+		}
+	}
+	feed(m, "r")
+	if len(fg.gs) != 0 || !strings.Contains(m.flash, "revoked 2 grant(s)") {
+		t.Fatalf("grants = %+v flash = %q", fg.gs, m.flash)
+	}
+	view = ansi.Strip(m.View())
+	if strings.Contains(view, "r revoke grants") || !strings.Contains(view, "none — answering an approval") {
+		t.Fatalf("after revoke:\n%s", view)
 	}
 }

@@ -105,7 +105,22 @@ type Agents struct {
 	// Resume continues the CLI's own session across turns of one
 	// episode where the adapter has a verified resume path (ADR-0031).
 	Resume bool `toml:"resume"`
+	// Autonomy is the envelope for task work (F-067, ADR-0032):
+	// "envelope" lets DHI tools act without asking inside the task's own
+	// worktree; "ask" keeps every mutation behind an approval.
+	Autonomy string `toml:"autonomy"`
+	// MaxIterations caps the verify → fix rounds of one task turn.
+	MaxIterations int `toml:"max_iterations"`
+	// StallSeconds kills a spawn that emits nothing for this long
+	// (0 = no watchdog).
+	StallSeconds int `toml:"stall_seconds"`
 }
+
+// Autonomy modes.
+const (
+	AutonomyEnvelope = "envelope"
+	AutonomyAsk      = "ask"
+)
 
 // Budgets caps agent spend (F-066); 0 = no limit. Enforced between
 // spawns: a turn that would start over a limit refuses with a notice.
@@ -162,7 +177,7 @@ func Defaults() Config {
 		Editor:      Editor{TabWidth: 4, LineNumbers: true},
 		Terminal:    Terminal{Scrollback: 1000},
 		Security:    Security{Sandbox: SandboxAuto},
-		Agents:      Agents{Resume: true},
+		Agents:      Agents{Resume: true, Autonomy: AutonomyEnvelope, MaxIterations: 3, StallSeconds: 900},
 		Conventions: conventions.Defaults(),
 	}
 }
@@ -173,7 +188,8 @@ func Known() []string {
 		"terminal", "security", "editor.tab_width", "editor.line_numbers",
 		"worktrees", "worktrees.root",
 		"terminal.scrollback", "security.sandbox",
-		"agents", "agents.max_turns", "agents.resume",
+		"agents", "agents.max_turns", "agents.resume", "agents.autonomy",
+		"agents.max_iterations", "agents.stall_seconds",
 		"budgets", "budgets.task_usd", "budgets.task_tokens",
 		"budgets.agent_day_usd", "budgets.workspace_day_usd",
 		"scopes.read", "scopes.write", "scopes.exec", "scopes.network",
@@ -311,6 +327,17 @@ func validate(c Config) error {
 	if c.Agents.MaxTurns < 0 || c.Agents.MaxTurns > 500 {
 		return fmt.Errorf("settings: agents.max_turns %d out of range 0..500 (0 = the CLI default)", c.Agents.MaxTurns)
 	}
+	switch c.Agents.Autonomy {
+	case AutonomyEnvelope, AutonomyAsk:
+	default:
+		return fmt.Errorf("settings: agents.autonomy %q (want %q or %q)", c.Agents.Autonomy, AutonomyEnvelope, AutonomyAsk)
+	}
+	if c.Agents.MaxIterations < 1 || c.Agents.MaxIterations > 10 {
+		return fmt.Errorf("settings: agents.max_iterations %d out of range 1..10", c.Agents.MaxIterations)
+	}
+	if c.Agents.StallSeconds != 0 && (c.Agents.StallSeconds < 60 || c.Agents.StallSeconds > 7200) {
+		return fmt.Errorf("settings: agents.stall_seconds %d: 0 (off) or 60..7200", c.Agents.StallSeconds)
+	}
 	for key, v := range map[string]float64{
 		"budgets.task_usd": c.Budgets.TaskUSD, "budgets.task_tokens": float64(c.Budgets.TaskTokens),
 		"budgets.agent_day_usd": c.Budgets.AgentDayUSD, "budgets.workspace_day_usd": c.Budgets.WorkspaceDayUSD,
@@ -370,8 +397,11 @@ type fileLayer struct {
 		Sandbox string `toml:"sandbox"`
 	} `toml:"security"`
 	Agents struct {
-		MaxTurns *int  `toml:"max_turns"`
-		Resume   *bool `toml:"resume"`
+		MaxTurns      *int    `toml:"max_turns"`
+		Resume        *bool   `toml:"resume"`
+		Autonomy      *string `toml:"autonomy"`
+		MaxIterations *int    `toml:"max_iterations"`
+		StallSeconds  *int    `toml:"stall_seconds"`
 	} `toml:"agents"`
 	Budgets struct {
 		TaskUSD         *float64 `toml:"task_usd"`
@@ -459,6 +489,9 @@ func (f fileLayer) mergeInto(dst *Config) {
 	// Pointers: a later layer may set a limit back to 0 (no limit).
 	setPtr(&dst.Agents.MaxTurns, f.Agents.MaxTurns)
 	setPtr(&dst.Agents.Resume, f.Agents.Resume)
+	setPtr(&dst.Agents.Autonomy, f.Agents.Autonomy)
+	setPtr(&dst.Agents.MaxIterations, f.Agents.MaxIterations)
+	setPtr(&dst.Agents.StallSeconds, f.Agents.StallSeconds)
 	setPtr(&dst.Budgets.TaskUSD, f.Budgets.TaskUSD)
 	setPtr(&dst.Budgets.TaskTokens, f.Budgets.TaskTokens)
 	setPtr(&dst.Budgets.AgentDayUSD, f.Budgets.AgentDayUSD)

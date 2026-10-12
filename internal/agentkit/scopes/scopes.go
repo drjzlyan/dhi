@@ -129,6 +129,8 @@ var toolScopes = map[string]Scope{
 	"ask_human": Read,
 	"task_list": Read, "kb_search": Read, "channel_read": Read,
 	"memory_append": Read, "memory_read_notes": Read, "memory_write_notes": Read,
+	// plan_update only reports the agent's own progress (F-067).
+	"plan_update": Read,
 
 	"write": Write, "patch": Write, "editor_apply_edit": Write,
 	"artifact_create": Write, "artifact_edit": Write,

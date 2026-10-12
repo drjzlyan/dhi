@@ -16,13 +16,18 @@ type Tuning struct {
 	MaxTurns int           // per-spawn CLI turn cap; 0 = adapter default
 	Resume   bool          // continue verified CLI sessions across turns
 	Budgets  budget.Limits // spend caps; zero = none
+
+	// F-067 goal loop.
+	Autonomy      string        // "envelope" | "ask" (settings.Agents.Autonomy)
+	MaxIterations int           // verify → fix rounds per task turn (min 1)
+	Stall         time.Duration // watchdog; 0 = off
 }
 
 // tuning reads the configured Tuning; without a source, resume is on
 // and nothing is capped (the settings defaults).
 func (r *Runtime) tuning() Tuning {
 	if r.cfg.Tuning == nil {
-		return Tuning{Resume: true}
+		return Tuning{Resume: true, Autonomy: "envelope", MaxIterations: 3}
 	}
 	return r.cfg.Tuning()
 }
@@ -46,10 +51,17 @@ func (r *Runtime) openEpisode(agentID, taskSlug string, trigger bus.Message) epi
 	return ep
 }
 
+// saveEpisode writes the turn's episode, keeping the plan the agent
+// published mid-turn through plan_update (the tool owns that field).
 func (r *Runtime) saveEpisode(ep episode.Episode) {
-	if r.cfg.Episodes != nil {
-		_ = r.cfg.Episodes.Put(ep)
+	if r.cfg.Episodes == nil {
+		return
 	}
+	_ = r.cfg.Episodes.Update(ep.Agent, ep.Key, func(cur *episode.Episode) {
+		plan := cur.Plan
+		*cur = ep
+		cur.Plan = plan
+	})
 }
 
 // budgetCheck tallies the spend ledger against the limits before a

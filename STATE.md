@@ -18,8 +18,16 @@
   - The runtime re-reads `[agents]` and `[budgets]` every turn (`liveTuning` in main).
   - The feature workflow is injected ONLY on task-bound turns. Card lookups go through
     `Runtime.boundTask` (thread root).
-- Next is P3 (F-067): goal loop with verify, autonomy envelope, persisted grants, watchdog,
-  plan_update.
+- P2's live eval FAILED 0/8: agents made private sibling worktrees DHI never saw. Fixed in P3.
+- P3 is DONE (F-067, ADR-0032). Live: DHI 8/8, $2.27 vs raw $2.56, 1.16x wall time.
+  - A task turn with no worktree is provisioned via `Config.Provision` (one member only; `auto-…`
+    autopilot cards are skipped).
+  - DHI's file tools resolve the card's members into the worktree (`Deps.MemberRoots`).
+  - Verify runs only in a task worktree that changed (hermetic git fingerprint).
+  - Board hand-off binds the card to its brief.
+  - Grants persist in `.dhi/grants.json`.
+- Next is P4 (F-068). The lessons package and reflection prompt/parser are already written
+  (`internal/agentkit/lessons`, `knowledge.Similarity`). Runtime wiring and the Brain UI remain.
 - Gotcha: eval/agent envs must keep USER. Claude on macOS reads its Keychain login by user, and
   without it the run fails as "Not logged in".
 - User decisions:

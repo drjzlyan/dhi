@@ -153,18 +153,23 @@ func (t Task) copySeed(dst string) error {
 
 // Check evaluates the expectations against root; it returns the unmet
 // ones as readable lines (empty = success).
-func (t Task) Check(root string) []string {
+func (t Task) Check(root string) []string { return t.CheckIn(root, filepath.Join(root, Member)) }
+
+// CheckIn is Check with the member's files read from memberDir — a task
+// worktree, where DHI's arm does its work (F-067) — instead of
+// <root>/app.
+func (t Task) CheckIn(root, memberDir string) []string {
 	var unmet []string
 	for _, x := range t.Expect {
 		if len(x.Run) > 0 {
 			cmd := exec.Command(x.Run[0], x.Run[1:]...)
-			cmd.Dir = filepath.Join(root, Member)
+			cmd.Dir = memberDir
 			if out, err := cmd.CombinedOutput(); err != nil {
 				unmet = append(unmet, fmt.Sprintf("%s failed: %s", strings.Join(x.Run, " "), lastLine(string(out))))
 			}
 			continue
 		}
-		b, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(x.File)))
+		b, err := os.ReadFile(memberPath(root, memberDir, x.File))
 		switch {
 		case x.Absent && err == nil:
 			unmet = append(unmet, x.File+" must not exist")
@@ -176,6 +181,14 @@ func (t Task) Check(root string) []string {
 		}
 	}
 	return unmet
+}
+
+// memberPath maps an expectation path ("app/x.go") into memberDir.
+func memberPath(root, memberDir, file string) string {
+	if rel, ok := strings.CutPrefix(filepath.ToSlash(file), Member+"/"); ok {
+		return filepath.Join(memberDir, filepath.FromSlash(rel))
+	}
+	return filepath.Join(root, filepath.FromSlash(file))
 }
 
 func lastLine(s string) string {
@@ -214,7 +227,12 @@ func (r Result) promptTokens() int { return r.TokensIn + r.CacheRead + r.CacheWr
 
 // score finishes a result: success, budget, unmet expectations.
 func score(t Task, root string, r Result) Result {
-	r.Unmet = t.Check(root)
+	return scoreIn(t, root, filepath.Join(root, Member), r)
+}
+
+// scoreIn scores against the member files in memberDir.
+func scoreIn(t Task, root, memberDir string, r Result) Result {
+	r.Unmet = t.CheckIn(root, memberDir)
 	r.OK = r.Err == "" && len(r.Unmet) == 0
 	if t.BudgetTokens > 0 && r.TokensIn >= 0 {
 		r.OverBudget = r.promptTokens()+r.TokensOut > t.BudgetTokens

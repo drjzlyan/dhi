@@ -1,6 +1,6 @@
 # F-066 — Episodes, CLI session resume, budgets
 
-Status: in progress (M29 P2)
+Status: done (M29 P2) — live result recovered in F-067
 
 ## Problem
 Each turn of the same task re-sent the conversation to a cold CLI and
@@ -61,5 +61,28 @@ eval also had no multi-turn tasks and no "tests must pass" checks.
 - [x] Doctor has the resume row.
 - [x] Offline eval: follow-ups resume in both arms, seeds are repos, run
       expectations are checked.
-- [ ] Live eval across the four fixtures, recorded below.
+- [x] Live eval across the four fixtures: it failed 0/8 (below) and was
+      fixed in F-067. The rerun is 8/8, see F-067 "Live eval".
 - [x] `make verify` and lint are green.
+
+## Live eval (2026-10-13) — a regression, fixed in F-067
+Run: claude, `DHI_EVAL_REPEAT=2`, four fixtures. **raw 8/8, DHI 0/8.**
+
+Cause, from a kept transcript: the seeds became real git repos, and
+task turns now carried the feature workflow ("create a worktree…"). The
+DHI agent did the right *process*:
+- it created a worktree on a branch;
+- it wrote a failing test first;
+- it committed with a "why" message.
+
+But it created that worktree itself, as a sibling directory DHI never
+learned about. So the checks, which read the shared checkout, found
+nothing.
+
+This is a product bug, not an eval artifact: in the app the same work
+would have been invisible to the card, the verify step and the PR.
+F-067 fixes it:
+- DHI provisions the worktree itself.
+- DHI tells the agent the worktree is member X's checkout.
+- DHI's file tools resolve into it.
+- When DHI cannot provision, the workflow forbids private worktrees.

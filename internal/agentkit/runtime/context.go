@@ -116,6 +116,15 @@ func (r *Runtime) taskBlock(trigger bus.Message, lim promptLimits) string {
 	if t.Workflow != "" {
 		fmt.Fprintf(&b, "\n- workflow: %s · tests passing: %v", t.Workflow, t.TestsPass)
 	}
+	if len(t.ChangeSets) > 0 {
+		cs := t.ChangeSets[0]
+		fmt.Fprintf(&b, "\n- worktree: %s on branch %s — DHI created it and it is your working directory; work and commit only there."+
+			" It is member %q's checkout, so a path written %s/<file> means <file> inside this worktree",
+			cs.Path, cs.Branch, cs.Member, cs.Member)
+	}
+	if vt := r.verifyTargets(t, r.cliWorkdir(trigger)); len(vt) > 0 && r.cfg.Run != nil {
+		fmt.Fprintf(&b, "\n- when you finish, DHI verifies with `%s`; a failure comes back to you", vt[0])
+	}
 	if t.PRURL != "" {
 		b.WriteString("\n- pull request: " + t.PRURL)
 	}

@@ -13,6 +13,7 @@ const (
 	FailOverflow  Failure = "overflow"   // prompt or context too long: retry compacted
 	FailTimeout   Failure = "timeout"    // the turn's deadline is spent
 	FailNoFinal   Failure = "no_final"   // the stream ended without a terminal line
+	FailStall     Failure = "stall"      // the watchdog killed a silent spawn (F-067)
 	FailCrash     Failure = "crash"      // anything else
 )
 
@@ -27,6 +28,7 @@ var failurePatterns = []struct {
 	class Failure
 	subs  []string
 }{
+	{FailStall, []string{"stalled: no output for"}},
 	{FailOverflow, []string{
 		"prompt is too long", "context window", "context length", "maximum context",
 		"too many tokens", "argv budget",

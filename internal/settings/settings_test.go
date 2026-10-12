@@ -663,3 +663,32 @@ func TestBudgetsRejectNegative(t *testing.T) {
 		t.Fatalf("negative budget must refuse by name, got %v", err)
 	}
 }
+
+// F-067: autonomy, iterations and the stall watchdog validate by name.
+func TestAgentsLoopKeys(t *testing.T) {
+	d := Defaults().Agents
+	if d.Autonomy != AutonomyEnvelope || d.MaxIterations != 3 || d.StallSeconds != 900 {
+		t.Fatalf("defaults = %+v", d)
+	}
+	for doc, key := range map[string]string{
+		"[agents]\nautonomy = \"yolo\"\n": "agents.autonomy",
+		"[agents]\nmax_iterations = 0\n":  "agents.max_iterations",
+		"[agents]\nstall_seconds = 5\n":   "agents.stall_seconds",
+	} {
+		p := filepath.Join(t.TempDir(), "c.toml")
+		if err := os.WriteFile(p, []byte("schema = 1\n"+doc), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Load(p, ""); err == nil || !strings.Contains(err.Error(), key) {
+			t.Errorf("%q: err = %v, want it to name %s", doc, err, key)
+		}
+	}
+	p := filepath.Join(t.TempDir(), "c.toml")
+	if err := os.WriteFile(p, []byte("schema = 1\n[agents]\nautonomy = \"ask\"\nstall_seconds = 0\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load(p, "")
+	if err != nil || c.Agents.Autonomy != AutonomyAsk || c.Agents.StallSeconds != 0 {
+		t.Fatalf("agents = %+v %v", c.Agents, err)
+	}
+}

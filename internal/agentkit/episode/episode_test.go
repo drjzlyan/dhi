@@ -77,3 +77,17 @@ func TestStoreRoundTrip(t *testing.T) {
 		t.Fatal("an episode without an agent must refuse")
 	}
 }
+
+func TestUpdateKeepsOtherFields(t *testing.T) {
+	s := Open(t.TempDir())
+	if err := s.Update("dev", "task:x", func(e *Episode) { e.Plan = []PlanStep{{Title: "a", Status: "doing"}} }); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Update("dev", "task:x", func(e *Episode) { e.Turns = 3 }); err != nil {
+		t.Fatal(err)
+	}
+	e, ok, err := s.Get("dev", "task:x")
+	if !ok || err != nil || e.Turns != 3 || len(e.Plan) != 1 || e.Agent != "dev" || e.Key != "task:x" {
+		t.Fatalf("episode = %+v %v %v", e, ok, err)
+	}
+}

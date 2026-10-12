@@ -21,6 +21,7 @@ import (
 
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/agentkit/channelmeta"
+	"github.com/drjzlyan/dhi/internal/agentkit/episode"
 	"github.com/drjzlyan/dhi/internal/agentkit/org"
 	profiface "github.com/drjzlyan/dhi/internal/agentkit/profile"
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
@@ -122,6 +123,7 @@ type Model struct {
 	openReview   func(id string) bool                    // reviewer select (F-016 jump)
 	openEditor   func(paths []string) bool               // editor open-in-editor (repos `e`, F-026 P3)
 	working      func(channel string, thread int64) bool // live turn indicator (F-035 Part D)
+	episodes     *episode.Store                          // assignee plan / verify / spend (F-067)
 	sessions     *ideation.Store                         // pending proposals → inbox (F-033)
 	openIdeator  func(proposalID int) bool               // ideator jump (F-033 inbox)
 	inboxHint    string                                  // last jump degrade hint (visible, never silent)
@@ -188,6 +190,10 @@ type Deps struct {
 	// OpenIdeator jumps the Ideator surface to a proposal (F-033 inbox
 	// jump). Returns false when unknown/unavailable.
 	OpenIdeator func(proposalID int) bool
+	// Episodes is the agents' working state (F-066/F-067): the board's
+	// card pane shows the assignee's plan, DHI's verify verdict and the
+	// episode's spend. nil = no episode block.
+	Episodes *episode.Store
 }
 
 // New returns the workspace model. A nil ws renders the not-a-workspace
@@ -228,6 +234,7 @@ func New(version string, ws *workspace.Workspace, d Deps) *Model {
 		m.openReview = d.OpenReview
 		m.openEditor = d.OpenEditor
 		m.working = d.Working
+		m.episodes = d.Episodes
 		m.sessions = d.Sessions
 		m.openIdeator = d.OpenIdeator
 		switch {
@@ -1515,6 +1522,15 @@ func (m *Model) handoff(tk tasks.Task) {
 	if err != nil {
 		m.flashErr("hand-off failed: " + err.Error())
 		return
+	}
+	// F-067: the brief becomes the card's thread, so the agent's turn is
+	// card-bound — the card context, run records, worktree and verify
+	// loop all hang off that binding. Unbound, an assigned card ran as a
+	// plain chat turn.
+	if tk.ThreadChannel == "" && m.taskStore != nil {
+		if err := m.taskStore.BindThread(tk.Slug, posted.Channel, posted.ID); err != nil {
+			m.flashErr("hand-off: could not bind the card to its thread: " + err.Error())
+		}
 	}
 	if m.rt != nil {
 		m.rt.Handle(context.Background(), posted)

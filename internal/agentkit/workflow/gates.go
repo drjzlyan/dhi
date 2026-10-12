@@ -103,6 +103,24 @@ func NextStep(d *Definition, p Progress) (Step, bool) {
 // Render formats a workflow's guidance as the prompt block appended to an
 // agent's system prompt for a feature turn. Only guidance and titles ride
 // here; the gates are enforced at their seams, not promised to the model.
+// RenderDone renders d like Render, marking the steps p already
+// satisfies as done (F-067: DHI provisions the worktree, so the agent is
+// told it exists rather than asked to make one).
+func RenderDone(d *Definition, p Progress) string {
+	out := Render(d)
+	for _, s := range d.Steps {
+		if !Satisfied(s, p) {
+			continue
+		}
+		title := s.Title
+		if title == "" {
+			title = s.ID
+		}
+		out = strings.Replace(out, "\n- "+title, "\n- [done] "+title, 1)
+	}
+	return out
+}
+
 func Render(d *Definition) string {
 	var b strings.Builder
 	b.WriteString("Feature workflow (")

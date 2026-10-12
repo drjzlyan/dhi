@@ -50,3 +50,26 @@ func TestHandoffRoutes(t *testing.T) {
 		})
 	}
 }
+
+// F-067: handing off an unbound card binds it to the brief, so the
+// agent's turn is card-bound (context, run records, worktree, verify).
+func TestHandoffBindsCardToBrief(t *testing.T) {
+	m, ws, _ := newSurfaceWithBus(t)
+	st, err := tasks.Open(ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.taskStore = st
+	if err := st.Create("fix-split", "Fix Split", "bo", ""); err != nil {
+		t.Fatal(err)
+	}
+	capT := &capturingTurns{posts: make(chan bus.Message, 2)}
+	m.rt = capT
+	tk, _ := st.Get("fix-split")
+	m.handoff(tk)
+	msg := <-capT.posts
+	got, ok := st.FindByThread("dm:bo", bus.ThreadOf(msg))
+	if !ok || got.Slug != "fix-split" {
+		t.Fatalf("card not bound to its brief %+v", msg)
+	}
+}

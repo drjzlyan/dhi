@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/drjzlyan/dhi/internal/agentkit/behavior"
@@ -37,7 +38,6 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message) er
 	// context here, before the manifest timeout arms (the timeout
 	// governs the CLI run, not context assembly).
 	task, hasTask := r.boundTask(trigger)
-	serve := r.serveTools(e, trigger)
 	wfText := ""
 	if r.cfg.Workflows {
 		slug, wd, err := r.activeWorkflow(e.m)
@@ -53,9 +53,27 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message) er
 			_ = r.cfg.Tasks.SetWorkflow(task.Slug, slug)
 		}
 	}
+	if hasTask {
+		task = r.provisionWorktree(e.m.ID, trigger, task)
+	}
 	workdir := r.cliWorkdir(trigger)
 	tune := r.tuning()
 	ep := r.openEpisode(e.m.ID, task.Slug, trigger)
+	if wfText != "" && len(task.ChangeSets) > 0 {
+		// The worktree step is done (DHI did it): say so, so the agent
+		// works in it instead of making another.
+		if _, wd, err := r.activeWorkflow(e.m); err == nil && wd != nil {
+			wfText = workflow.RenderDone(wd, workflow.Progress{Worktree: true, TestsPass: task.TestsPass})
+		}
+	} else if wfText != "" {
+		wfText += noWorktreeNote
+	}
+	serve := r.serveToolsFor(e, trigger, turnTools{
+		envelope:    r.envelopeFor(task, hasTask, workdir, tune),
+		task:        task.Slug,
+		plan:        r.planSeam(e.m.ID, ep.Key),
+		memberRoots: r.memberRoots(task),
+	})
 	resume := ""
 	if tune.Resume && e.cli.ResumeOK && ep.Resumable(e.cli.Name, workdir) {
 		resume = ep.Session
@@ -74,17 +92,29 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message) er
 		defer cancel()
 	}
 
+	// F-067 goal loop: on task work DHI checks the result itself and
+	// sends failures back, rather than trusting "done".
+	var targets []verifyTarget
+	if hasTask && r.cfg.Run != nil {
+		targets = r.verifyTargets(task, workdir)
+	}
+	startState, stateOK := r.worktreeState(ctx, workdir)
+	maxIter := max(tune.MaxIterations, 1)
+	iter, lastSig := 0, ""
+	ep.Verify, ep.VerifyCmd, ep.VerifyTail, ep.Iterations = "", "", "", 0
+
 	brief := ""
 	freshFallback := false
 	for attempt := 0; ; attempt++ {
 		// F-066: budgets bind between spawns (a CLI runs to completion).
 		if msg, ok := r.budgetCheck(e.m.ID, task.Slug, tune.Budgets); !ok {
+			r.saveEpisode(ep)
 			r.notice(trigger, e.m.ID, "budget reached — "+msg+". Raise it in Settings → CONFIG, then ask again.")
 			return fmt.Errorf("runtime: %s: budget: %s", e.m.ID, msg)
 		}
 		run, events := r.cliSpawnOnce(ctx, e, trigger, spawnInput{
 			prompt: prompt + brief, system: system, workdir: workdir, attempt: attempt,
-			resume: resume, maxTurns: tune.MaxTurns,
+			resume: resume, maxTurns: tune.MaxTurns, stall: tune.Stall,
 			mcpConfig: mcpConfig, mcpEndpoint: mcpEndpoint, mcpGeminiDir: mcpGeminiDir,
 		})
 		r.recordRun(trigger, run)
@@ -96,12 +126,66 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message) er
 		ep = episode.Fold(ep, run, e.cli.Name, workdir, session, trigger.ID)
 
 		if run.Status == tasks.RunOK {
-			if run.Summary != "" {
+			summary := run.Summary
+			changed := true
+			if stateOK {
+				now, ok := r.worktreeState(ctx, workdir)
+				changed = !ok || now != startState
+			}
+			if len(targets) > 0 && changed {
+				iter++
+				ep.Iterations = iter
+				cmd, tail, ok := r.verify(ctx, targets)
+				if hasTask {
+					_ = r.cfg.Tasks.SetTestsPass(task.Slug, ok)
+				}
+				ep.VerifyCmd, ep.VerifyTail = cmd, tail
+				switch {
+				case !ok && envFailure(tail):
+					// Not the agent's bug: the check could not run here.
+					ep.Verify = "env"
+					r.notice(trigger, e.m.ID, fmt.Sprintf("could not verify: `%s` needs something this environment lacks (network, a module, a permission); the result is unverified:\n%s",
+						cmd, strings.Join(lastN(strings.Split(tail, "\n"), 3), "\n")))
+				case ok:
+					ep.Verify, ep.VerifyCmd, ep.VerifyTail = "pass", targets[0].String(), ""
+					r.notice(trigger, e.m.ID, fmt.Sprintf("verified: %s passed (round %d)", targets[0], iter))
+				case failureSig(tail) == lastSig:
+					ep.Verify = "stuck"
+					r.saveEpisode(ep)
+					r.humanNote(trigger, e.m.ID, fmt.Sprintf(
+						"I'm stuck: `%s` fails the same way after my fix. I need your call.\n```\n%s\n```", cmd, tail))
+					return nil
+				case iter >= maxIter:
+					ep.Verify = "fail"
+					r.saveEpisode(ep)
+					r.humanNote(trigger, e.m.ID, fmt.Sprintf(
+						"`%s` still fails after %d rounds (agents.max_iterations). Last output:\n```\n%s\n```", cmd, iter, tail))
+					return nil
+				default:
+					// Another round: continue the session with the failure.
+					ep.Verify = "fail"
+					lastSig = failureSig(tail)
+					r.saveEpisode(ep)
+					r.notice(trigger, e.m.ID, fmt.Sprintf("verify failed: %s (round %d of %d) — sending it back", cmd, iter, maxIter))
+					if session != "" && tune.Resume {
+						resume, prompt = session, ""
+					} else {
+						resume = ""
+						prompt, system = r.cliPromptAt(ctx, e, trigger, wfText, level, &ep, false)
+					}
+					brief = verifyBrief(cmd, tail, iter, maxIter)
+					attempt-- // a verify round is not a failed attempt
+					continue
+				}
+			} else if len(targets) == 0 && r.taskWorktree(task) != "" && r.cfg.Run != nil && iter == 0 {
+				r.notice(trigger, e.m.ID, "no verify command for this project (Go modules are checked with go test); the result is unverified")
+			}
+			if summary != "" {
 				// F-036: the final reply re-enters dispatch so an
 				// @mention hands the work to the addressee.
 				if posted, err := r.cfg.Bus.Post(bus.Message{
 					Channel: trigger.Channel, Thread: trigger.Thread,
-					Author: e.m.ID, Text: run.Summary, Kind: bus.KindReply,
+					Author: e.m.ID, Text: summary, Kind: bus.KindReply,
 				}); err == nil {
 					ep.SeenID = max(ep.SeenID, posted.ID) // the session wrote it
 					r.saveEpisode(ep)
@@ -125,7 +209,7 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message) er
 		// F-066: a resumed spawn that fails may be a dead session (expired,
 		// pruned, another machine). Fall back to one fresh spawn — named,
 		// never silent — without spending the retry budget.
-		if resume != "" && fail.Retryable() && !freshFallback {
+		if resume != "" && fail.Retryable() && fail != clirun.FailStall && !freshFallback {
 			freshFallback = true
 			resume, ep.Session = "", ""
 			prompt, system = r.cliPromptAt(ctx, e, trigger, wfText, level, &ep, false)
@@ -144,7 +228,7 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message) er
 			prompt, system = r.cliPromptAt(ctx, e, trigger, wfText, level, &ep, false)
 		} else if session != "" && tune.Resume {
 			// The failed attempt's session holds its progress (e.g. it
-			// ran out of turns): continue it rather than start over.
+			// ran out of turns or stalled): continue it, don't start over.
 			resume = session
 			prompt, system = r.cliPromptAt(ctx, e, trigger, wfText, level, &ep, true)
 		}
@@ -182,6 +266,7 @@ type spawnInput struct {
 	attempt                              int
 	resume                               string // CLI session to continue ("" = fresh)
 	maxTurns                             int
+	stall                                time.Duration // watchdog; 0 = off
 	mcpConfig, mcpEndpoint, mcpGeminiDir string
 }
 
@@ -233,7 +318,13 @@ func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Messag
 		return run, nil
 	}
 
-	cmd := exec.CommandContext(ctx, wrapped[0], wrapped[1:]...)
+	// F-067 watchdog: a spawn that emits nothing for in.stall is killed
+	// and classified "stall" (retryable; its session continues) instead
+	// of holding the turn until a manifest timeout that may not exist.
+	spawnCtx, stopSpawn := context.WithCancel(ctx)
+	defer stopSpawn()
+	var stalled atomic.Bool
+	cmd := exec.CommandContext(spawnCtx, wrapped[0], wrapped[1:]...)
 	cmd.Dir = workdir
 	cmd.Env = r.cliEnv(e.cli, in.mcpConfig)
 	if stdin != "" {
@@ -265,18 +356,31 @@ func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Messag
 	// run-replay surface.
 	var final string
 	var events []clirun.StreamEvent
+	var dog *time.Timer
+	if in.stall > 0 {
+		dog = time.AfterFunc(in.stall, func() { stalled.Store(true); stopSpawn() })
+	}
 	for ev := range e.cli.ParseStream(stdout) {
+		if dog != nil {
+			dog.Reset(in.stall)
+		}
 		events = append(events, ev)
 		r.cliEvent(e.m.ID, trigger, ev)
 		if ev.Kind == clirun.EventFinal {
 			final = ev.Detail
 		}
 	}
+	if dog != nil {
+		dog.Stop()
+	}
 	waitErr := cmd.Wait()
 	run.Finished = time.Now().UTC()
 	run.Exit = exitCode(waitErr)
 
 	switch {
+	case stalled.Load():
+		run.Status = tasks.RunError
+		run.Error = fmt.Sprintf("stalled: no output for %s", in.stall)
 	case ctx.Err() != nil:
 		// The turn's context fired (manifest timeout or caller cancel);
 		// the SIGKILLed CLI may still have flushed a partial stream.
@@ -363,10 +467,17 @@ type serveSession struct {
 // endpoint lives exactly as long as the turn (ADR-0017: no daemon);
 // the temp config dies with it.
 func (r *Runtime) serveTools(e *entry, trigger bus.Message) *serveSession {
+	return r.serveToolsFor(e, trigger, turnTools{})
+}
+
+// serveToolsFor is serveTools with the turn's envelope, bound card and
+// plan seam (F-067). The harness tools (plan_update) are served to every
+// MCP-capable agent when their seam is wired, allowlist or not.
+func (r *Runtime) serveToolsFor(e *entry, trigger bus.Message, tt turnTools) *serveSession {
 	if r.cfg.WS == nil || e.cli == nil || !e.cli.MCPWired() {
 		return nil
 	}
-	wantDHI, wantBridge := false, false
+	wantDHI, wantBridge := tt.plan != nil, false
 	for _, t := range e.m.Tools {
 		if dhitools.Serves(t) {
 			wantDHI = true
@@ -404,6 +515,11 @@ func (r *Runtime) serveTools(e *entry, trigger bus.Message) *serveSession {
 			Thread:      trigger.Thread,
 			Workdir:     r.cliWorkdir(trigger),
 			Relay:       func(m bus.Message) { r.Handle(context.Background(), m) },
+
+			Envelope:     tt.envelope,
+			EnvelopeTask: tt.task,
+			PlanUpdate:   tt.plan,
+			MemberRoots:  tt.memberRoots,
 		}.Handler()
 	}
 	// Third-party MCP servers (F-034 part C): dialed under the sandbox,

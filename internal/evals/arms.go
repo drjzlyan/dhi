@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -203,6 +204,7 @@ func RunDHI(c Config, t Task, root string) Result {
 	if err != nil {
 		return fail("tasks", err)
 	}
+	st.SetAttach(gitWorktreeAttach(ws), nil)
 	kb, err := knowledge.Open(ws, knowledge.Review, nil)
 	if err != nil {
 		return fail("knowledge", err)
@@ -231,6 +233,10 @@ func RunDHI(c Config, t Task, root string) Result {
 		Knowledge: kb,
 		Episodes:  episode.Open(ws.Root),
 		Spend:     budget.Open(ws.Root),
+		// The app's goal-loop seams (F-067): DHI provisions the task
+		// worktree and verifies the work itself.
+		Run:       execRunner{env: c.Env},
+		Provision: func(slug, member string) error { return st.Attach(slug, member, "task/"+slug, "") },
 	}, []*manifest.Agent{m})
 	if err != nil {
 		return fail("runtime", err)
@@ -266,7 +272,11 @@ func RunDHI(c Config, t Task, root string) Result {
 		r.Err = turnErr.Error()
 	}
 	r.Asks = int(asks.Load())
+	memberDir := filepath.Join(root, Member)
 	if card, ok := st.Get("eval-" + t.Name); ok {
+		if len(card.ChangeSets) > 0 {
+			memberDir = filepath.Join(root, card.ChangeSets[0].Path) // the work is on the task branch
+		}
 		r.Attempts = len(card.Runs)
 		rl := tasks.RollupRuns(card.Runs)
 		if rl.TokRuns > 0 {
@@ -275,7 +285,40 @@ func RunDHI(c Config, t Task, root string) Result {
 		r.CacheRead, r.CacheWrite = rl.CacheRead, rl.CacheWrite
 		r.CostUSD, r.HasCost = rl.CostSum, rl.Costed > 0
 	}
-	return score(t, root, r)
+	return scoreIn(t, root, memberDir, r)
+}
+
+// execRunner is the eval's stand-in for the app's sandboxed `run` seam:
+// the command in dir, with the arm's env. Dev-only harness code.
+type execRunner struct{ env []string }
+
+func (e execRunner) Run(ctx context.Context, dir string, argv []string, _ bool) (string, error) {
+	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	cmd.Dir = dir
+	cmd.Env = e.env
+	cmd.WaitDelay = 2 * time.Second
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}
+
+// gitWorktreeAttach mirrors the app's task worktree seam with the host
+// git (the app uses DHI's hermetic git; evals are a dev harness).
+func gitWorktreeAttach(ws *workspace.Workspace) tasks.AttachFn {
+	return func(slug, member, branch, startpoint string) (string, error) {
+		mem, ok := ws.Member(member)
+		if !ok {
+			return "", fmt.Errorf("unknown member %q", member)
+		}
+		rel := filepath.Join(".dhi", "worktrees", slug, member)
+		args := []string{"-C", mem.Path, "worktree", "add", "-b", branch, filepath.Join(ws.Root, rel)}
+		if startpoint != "" {
+			args = append(args, startpoint)
+		}
+		if out, err := exec.Command("git", args...).CombinedOutput(); err != nil {
+			return "", fmt.Errorf("git worktree add: %v: %s", err, strings.TrimSpace(string(out)))
+		}
+		return rel, nil
+	}
 }
 
 func firstLine(s string) string {

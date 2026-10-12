@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/drjzlyan/dhi/internal/sandbox"
 )
@@ -38,7 +39,9 @@ type Approvals struct {
 	pending   []*Approval
 	OnRequest func(*Approval)
 	changes   chan struct{}
-	grants    map[string]bool // agent|scope → always-allow (F-030 P2)
+	grants    map[string]time.Time // agent|scope → always-allow, when granted (F-030 P2)
+	// grantsPath persists grants across restarts (F-067); "" = in memory.
+	grantsPath string
 }
 
 // NewApprovals returns an empty queue. The change-signal channel is
@@ -118,16 +121,18 @@ func grantKey(agent, scope string) string { return agent + "|" + scope }
 func (a *Approvals) granted(agent, scope string) bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	return a.grants[grantKey(agent, scope)]
+	_, ok := a.grants[grantKey(agent, scope)]
+	return ok
 }
 
 func (a *Approvals) grant(agent, scope string) {
 	a.mu.Lock()
 	if a.grants == nil {
-		a.grants = map[string]bool{}
+		a.grants = map[string]time.Time{}
 	}
-	a.grants[grantKey(agent, scope)] = true
+	a.grants[grantKey(agent, scope)] = time.Now().UTC()
 	a.mu.Unlock()
+	_ = a.saveGrants() // best-effort: the grant holds for this session regardless
 }
 
 // List snapshots pending approvals oldest-first.

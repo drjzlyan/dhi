@@ -310,6 +310,9 @@ func runTUI() (relaunch bool) {
 				Registry:   registry.New(ws),
 				RunScript:  runRunner,
 			}
+			if agentRT != nil {
+				settingsDeps.Grants = agentRT.Approvals() // F-067 remembered grants
+			}
 		}
 	}
 	var appRef *app.App
@@ -324,6 +327,7 @@ func runTUI() (relaunch bool) {
 	}
 	a := app.New(version.Version,
 		wsview.New(version.Version, ws, wsview.Deps{
+			Episodes:     openEpisodes(ws), // F-067 card pane: plan, verify, spend
 			WorktreeHint: worktreeHint(decision.Worktrees),
 			Bus:          messageBus,
 			Runtime:      agentRT,
@@ -1059,6 +1063,15 @@ func (r execRunner) Run(ctx context.Context, dir string, argv []string, allowNet
 	return out, err
 }
 
+// openEpisodes is the read side of the agents' episodes for the board
+// (nil outside a workspace).
+func openEpisodes(ws *workspace.Workspace) *episode.Store {
+	if ws == nil {
+		return nil
+	}
+	return episode.Open(ws.Root)
+}
+
 // liveTuning re-reads [agents] and [budgets] for every turn (F-066), so a
 // Settings edit governs the next spawn without a restart. A broken edit
 // keeps the boot values; doctor and the Settings view name the problem.
@@ -1069,8 +1082,11 @@ func liveTuning(userCfg, wsCfg string, boot settings.Config) func() agentkitRunt
 			c = boot
 		}
 		return agentkitRuntime.Tuning{
-			MaxTurns: c.Agents.MaxTurns,
-			Resume:   c.Agents.Resume,
+			MaxTurns:      c.Agents.MaxTurns,
+			Resume:        c.Agents.Resume,
+			Autonomy:      c.Agents.Autonomy,
+			MaxIterations: c.Agents.MaxIterations,
+			Stall:         time.Duration(c.Agents.StallSeconds) * time.Second,
 			Budgets: budget.Limits{
 				TaskUSD: c.Budgets.TaskUSD, TaskTokens: c.Budgets.TaskTokens,
 				AgentDayUSD: c.Budgets.AgentDayUSD, WorkspaceDayUSD: c.Budgets.WorkspaceDayUSD,
@@ -1100,10 +1116,16 @@ func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cl
 		fmt.Fprintln(os.Stderr, "dhi: knowledge base:", kbErr)
 	}
 	memStore = memory.Open(ws)
+	// F-067: "allow always" survives a restart. A malformed grants file is
+	// named and ignored (every scope asks again) rather than trusted.
+	approvals := tools.NewApprovals()
+	if err := approvals.Persist(filepath.Join(ws.Root, workspace.DHIDir, "grants.json")); err != nil {
+		fmt.Fprintln(os.Stderr, "dhi:", err)
+	}
 	rt, err := agentkitRuntime.New(agentkitRuntime.Config{
 		WS:        ws,
 		Bus:       b,
-		Approvals: tools.NewApprovals(),
+		Approvals: approvals,
 		// Host agent CLIs (F-013/ADR-0012/0013): DHI ships no model
 		// engine of its own; every rostered agent thinks through one of
 		// these, resolved on the host PATH. Absent CLIs refuse roster
@@ -1143,6 +1165,25 @@ func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cl
 		Episodes: episode.Open(ws.Root),
 		Spend:    budget.Open(ws.Root),
 		Tuning:   tune,
+		// F-067: a task turn without a worktree gets one on the convention
+		// branch before the agent starts, so the work lands where DHI can
+		// verify it and open the PR.
+		Provision: func(slug, member string) error {
+			if taskStore == nil {
+				return fmt.Errorf("task store unavailable")
+			}
+			pattern := conventions.Defaults().Branch.Task
+			if conv != nil {
+				if c := conv(); c != nil {
+					pattern = c.Branch.Task
+				}
+			}
+			branch, err := conventions.ExpandBranch(pattern, branchVars(slug))
+			if err != nil {
+				return err
+			}
+			return taskStore.Attach(slug, member, branch, "")
+		},
 		// F-020 pr_open: the review service opens task PRs; gh missing
 		// refuses by name at dispatch.
 		PR: func(ctx context.Context, member, branch, title, base string) (string, error) {

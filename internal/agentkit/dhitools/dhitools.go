@@ -96,6 +96,66 @@ type Deps struct {
 	// trigger is bound to one, else the workspace root). The git tools
 	// operate here.
 	Workdir string
+
+	// Envelope is the autonomy envelope (F-067, ADR-0032): the absolute
+	// task worktree this turn works in, inside which an Ask effect for
+	// run / git_commit / write / patch becomes Auto — the human approved
+	// the task, not each keystroke of it. EnvelopeTask is the bound card,
+	// whose own comments and status updates are covered too. "" = off
+	// (chat turns, autonomy = "ask"). Deny is never lifted, and push,
+	// PR, network and admin are never covered.
+	Envelope     string
+	EnvelopeTask string
+
+	// PlanUpdate stores the agent's published plan on its episode
+	// (F-067); nil omits plan_update.
+	PlanUpdate func([]PlanStep) error
+	// MemberRoots overrides where a member's vpaths resolve (F-067): on a
+	// task turn, member → the task worktree, so DHI's file tools act on
+	// the task branch exactly like the CLI's native tools in the same
+	// cwd — never split between the branch and the shared checkout.
+	MemberRoots map[string]string
+}
+
+// envelopeCovers reports whether the autonomy envelope lets this call
+// skip an Ask.
+func (d Deps) envelopeCovers(name string, decoded any) bool {
+	if d.Envelope == "" {
+		return false
+	}
+	switch name {
+	case "run", "git_commit":
+		// Both act in Workdir; the runtime sets it to the envelope.
+		return filepath.Clean(d.Workdir) == filepath.Clean(d.Envelope)
+	case "write":
+		p, ok := decoded.(writePlan)
+		return ok && within(d.Envelope, p.abs)
+	case "patch":
+		p, ok := decoded.(patchPlan)
+		return ok && within(d.Envelope, p.abs)
+	case "task_comment", "task_status":
+		return d.EnvelopeTask != "" && slugOf(decoded) == d.EnvelopeTask
+	}
+	return false
+}
+
+// within reports whether path lies inside dir (or is dir).
+func within(dir, path string) bool {
+	rel, err := filepath.Rel(filepath.Clean(dir), filepath.Clean(path))
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel)
+}
+
+// slugOf reads the "slug" argument of a decoded task tool call.
+func slugOf(decoded any) string {
+	b, err := json.Marshal(decoded)
+	if err != nil {
+		return ""
+	}
+	var a struct {
+		Slug string `json:"slug"`
+	}
+	_ = json.Unmarshal(b, &a)
+	return strings.TrimSpace(a.Slug)
 }
 
 // checkGate returns the active workflow's refusal reasons for acting on
@@ -178,6 +238,10 @@ func (d Deps) Handler() mcp.Handler {
 	all = append(all, d.memoryTools()...)
 	all = append(all, d.channelTools()...)
 	all = append(all, d.searchTools()...)
+	all = append(all, d.planTools()...)
+	for _, s := range harnessSlugs {
+		allow[s] = true
+	}
 
 	var served []tool
 	for _, t := range all {
@@ -225,7 +289,11 @@ func (h *handler) CallTool(ctx context.Context, name string, raw json.RawMessage
 			set = scopes.Default()
 		}
 		sc := scopes.ToolScope(name)
-		switch set.EffectFor(sc) {
+		eff := set.EffectFor(sc)
+		if eff == scopes.Ask && h.deps.envelopeCovers(name, decoded) {
+			eff = scopes.Auto
+		}
+		switch eff {
 		case scopes.Deny:
 			return "tool " + name + " denied by capability scope (" + string(sc) + ")", true, nil
 		case scopes.Ask:

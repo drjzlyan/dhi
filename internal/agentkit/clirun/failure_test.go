@@ -21,6 +21,7 @@ func TestClassify(t *testing.T) {
 		{"argv budget", false, "assembled prompt exceeds the argv budget (96 KiB) and x has no verified stdin delivery", FailOverflow},
 		{"no final", false, "CLI stream ended without a final event", FailNoFinal},
 		{"plain crash", false, "exit 2", FailCrash},
+		{"watchdog stall", false, "stalled: no output for 15m0s", FailStall},
 		{"max turns is a crash", false, "clirun/claude: run ended with \"error_max_turns\"", FailCrash},
 	}
 	for _, c := range cases {
@@ -35,7 +36,7 @@ func TestClassify(t *testing.T) {
 func TestFailureRetryable(t *testing.T) {
 	for f, want := range map[Failure]bool{
 		FailAuth: false, FailTimeout: false,
-		FailRateLimit: true, FailOverflow: true, FailNoFinal: true, FailCrash: true,
+		FailRateLimit: true, FailOverflow: true, FailNoFinal: true, FailCrash: true, FailStall: true,
 	} {
 		if got := f.Retryable(); got != want {
 			t.Fatalf("%s.Retryable() = %v, want %v", f, got, want)

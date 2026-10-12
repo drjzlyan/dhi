@@ -1027,7 +1027,9 @@ better every week, a self-running team, lowest cost per outcome. Measured by eva
 - [x] P2 Episodes, verified CLI resume (claude/codex), budgets + spend ledger, max_turns, workflow on
       task turns only, Settings "agents & budgets", doctor resume rows, multi-turn + run-check evals
       (F-066, ADR-0031)
-- [ ] P3 Goal loop task → PR, autonomy envelope in the task worktree, persisted grants, watchdog (F-067, ADR-0032)
+- [x] P3 Goal loop: DHI-provisioned task worktrees, verify → fix rounds with stuck detection, autonomy
+      envelope, persisted grants (Settings revoke), stall watchdog, plan_update + board plan/verify/spend,
+      hand-off binds cards (F-067, ADR-0032). Live: DHI 8/8 (P2 was 0/8), 11.6% cheaper than raw
 - [ ] P4 Self-learning lessons + reflection on signal + consolidation; Brain UI (F-068, ADR-0033)
 - [ ] P5 Tool forge: approved recipe/script custom tools + repetition detector (F-069, ADR-0034)
 - [ ] P6 Settings proposals through the Inbox (F-070)
