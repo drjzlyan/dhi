@@ -12,12 +12,16 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/BurntSushi/toml"
+	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/object"
 
 	"github.com/drjzlyan/dhi/internal/jsonl"
 )
@@ -28,8 +32,13 @@ const Member = "app"
 
 // Task is one fixture: a prompt, a seed tree and what must hold after.
 type Task struct {
-	Name         string   `toml:"name"`
-	Prompt       string   `toml:"prompt"`
+	Name   string `toml:"name"`
+	Prompt string `toml:"prompt"`
+	// Followups are later turns of the same conversation (F-066): each
+	// arm sends them after the opening prompt, continuing its session —
+	// the raw CLI by resuming its own session id, DHI by replying in the
+	// task's thread.
+	Followups    []string `toml:"followups"`
 	BudgetTokens int      `toml:"budget_tokens"` // 0 = no budget
 	Expect       []Expect `toml:"expect"`
 
@@ -41,6 +50,10 @@ type Expect struct {
 	File     string `toml:"file"`
 	Contains string `toml:"contains"` // "" = the file only has to exist
 	Absent   bool   `toml:"absent"`   // the file must NOT exist
+	// Run is a command that must exit 0 in the member dir (e.g.
+	// ["go", "test", "./..."]); resolved on PATH. This is a dev-only
+	// eval check, not product code — DHI itself never shells out here.
+	Run []string `toml:"run"`
 }
 
 // LoadTasks reads every <dir>/<name>/task.toml, sorted by name.
@@ -63,6 +76,11 @@ func LoadTasks(dir string) ([]Task, error) {
 		if und := md.Undecoded(); len(und) > 0 {
 			return nil, fmt.Errorf("evals: %s: unknown key %q", p, und[0].String())
 		}
+		for _, x := range t.Expect {
+			if (x.File == "") == (len(x.Run) == 0) {
+				return nil, fmt.Errorf("evals: %s: each expect names exactly one of file or run", p)
+			}
+		}
 		if t.Name == "" || strings.TrimSpace(t.Prompt) == "" || len(t.Expect) == 0 {
 			return nil, fmt.Errorf("evals: %s: name, prompt and at least one expect are required", p)
 		}
@@ -74,12 +92,44 @@ func LoadTasks(dir string) ([]Task, error) {
 }
 
 // Stage builds a fresh run directory: <root>/app holds a copy of the
-// task's seed tree.
+// task's seed tree as a git repository with one commit — a realistic
+// member, so a workflow's branch / commit steps have something to act on.
 func (t Task) Stage(root string) error {
 	dst := filepath.Join(root, Member)
 	if err := os.MkdirAll(dst, 0o755); err != nil {
 		return err
 	}
+	if err := t.copySeed(dst); err != nil {
+		return err
+	}
+	return initRepo(dst)
+}
+
+// initRepo commits dst's tree on main through go-git (hermetic: no host
+// git binary).
+func initRepo(dir string) error {
+	repo, err := git.PlainInitWithOptions(dir, &git.PlainInitOptions{
+		InitOptions: git.InitOptions{DefaultBranch: plumbing.NewBranchReferenceName("main")},
+	})
+	if err != nil {
+		return fmt.Errorf("evals: git init: %w", err)
+	}
+	wt, err := repo.Worktree()
+	if err != nil {
+		return err
+	}
+	if err := wt.AddWithOptions(&git.AddOptions{All: true}); err != nil {
+		return fmt.Errorf("evals: git add: %w", err)
+	}
+	sig := &object.Signature{Name: "DHI Evals", Email: "evals@dhi.invalid", When: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}
+	_, err = wt.Commit("seed", &git.CommitOptions{Author: sig, Committer: sig, AllowEmptyCommits: true})
+	if err != nil {
+		return fmt.Errorf("evals: git commit: %w", err)
+	}
+	return nil
+}
+
+func (t Task) copySeed(dst string) error {
 	seed := filepath.Join(t.dir, "seed")
 	if _, err := os.Stat(seed); errors.Is(err, fs.ErrNotExist) {
 		return nil
@@ -106,6 +156,14 @@ func (t Task) Stage(root string) error {
 func (t Task) Check(root string) []string {
 	var unmet []string
 	for _, x := range t.Expect {
+		if len(x.Run) > 0 {
+			cmd := exec.Command(x.Run[0], x.Run[1:]...)
+			cmd.Dir = filepath.Join(root, Member)
+			if out, err := cmd.CombinedOutput(); err != nil {
+				unmet = append(unmet, fmt.Sprintf("%s failed: %s", strings.Join(x.Run, " "), lastLine(string(out))))
+			}
+			continue
+		}
 		b, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(x.File)))
 		switch {
 		case x.Absent && err == nil:
@@ -118,6 +176,11 @@ func (t Task) Check(root string) []string {
 		}
 	}
 	return unmet
+}
+
+func lastLine(s string) string {
+	lines := strings.Split(strings.TrimSpace(s), "\n")
+	return lines[len(lines)-1]
 }
 
 // Result is one scored run of one task through one arm.

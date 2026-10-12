@@ -63,9 +63,19 @@ func (r *Runtime) conversation(agentID string, trigger bus.Message) []bus.Messag
 }
 
 // historyBlock renders the conversation for agentID within lim, naming
-// how much was left out.
-func (r *Runtime) historyBlock(agentID string, trigger bus.Message, lim promptLimits) string {
+// how much was left out. after > 0 keeps only messages newer than it (a
+// resumed session already holds the rest).
+func (r *Runtime) historyBlock(agentID string, trigger bus.Message, lim promptLimits, after int64) string {
 	msgs := r.conversation(agentID, trigger)
+	if after > 0 {
+		kept := msgs[:0]
+		for _, m := range msgs {
+			if m.ID > after {
+				kept = append(kept, m)
+			}
+		}
+		msgs = kept
+	}
 	if len(msgs) == 0 {
 		return ""
 	}
@@ -91,10 +101,7 @@ func (r *Runtime) historyBlock(agentID string, trigger bus.Message, lim promptLi
 // taskBlock renders the card bound to the trigger's thread, if any, so
 // the agent works from the task's state rather than rediscovering it.
 func (r *Runtime) taskBlock(trigger bus.Message, lim promptLimits) string {
-	if r.cfg.Tasks == nil {
-		return ""
-	}
-	t, ok := r.cfg.Tasks.FindByThread(trigger.Channel, bus.ThreadOf(trigger))
+	t, ok := r.boundTask(trigger)
 	if !ok {
 		return ""
 	}

@@ -52,6 +52,9 @@ type Usage struct {
 	// to it (billed, often at a premium).
 	CacheRead  int
 	CacheWrite int
+	// SessionID is the CLI's conversation id for this run ("" = none
+	// reported), the handle a later turn resumes (F-066, ADR-0031).
+	SessionID string
 }
 
 // RunInput is everything an adapter needs to build one headless run.
@@ -70,6 +73,13 @@ type RunInput struct {
 	// MCPGeminiDir is the per-turn config directory for adapters that
 	// take it on argv (antigravity: --gemini_dir); "" = none.
 	MCPGeminiDir string
+	// Resume continues the CLI's own session with this id (F-066,
+	// ADR-0031); "" = a fresh session. Only adapters with ResumeOK honor
+	// it — the runner never sets it for the rest.
+	Resume string
+	// MaxTurns caps the CLI's inner tool loop for one spawn (0 = the
+	// adapter default), so DHI regains control between spawns.
+	MaxTurns int
 	// Stdin overrides argv delivery (F-014 M14 P1): when non-empty the
 	// adapter emits a stdin-reading argv and the runner feeds this as
 	// the process stdin. The runner sets it only when the assembled
@@ -125,6 +135,10 @@ type CLI struct {
 	// without one refuse by name at spawn (ADR-0011) — the E2BIG death
 	// is never the fallback.
 	StdinOK bool
+	// ResumeOK reports a live-verified session-resume path (F-066): the
+	// adapter honors RunInput.Resume and Finalize reports SessionID.
+	// Unverified adapters always start fresh, and doctor says so.
+	ResumeOK bool
 	// MCPOK reports whether the adapter has a verified MCP-server
 	// wiring (F-028): the runtime serves DHI's IDE tools to these
 	// adapters over a per-turn loopback endpoint. Adapters without it

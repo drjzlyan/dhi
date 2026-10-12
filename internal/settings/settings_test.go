@@ -626,3 +626,40 @@ func TestKeysRemapsMergeAndValidate(t *testing.T) {
 		}
 	}
 }
+
+// F-066: [agents] and [budgets] layer, and a later layer may clear a limit.
+func TestAgentsAndBudgetsLayer(t *testing.T) {
+	dir := t.TempDir()
+	user := filepath.Join(dir, "user.toml")
+	ws := filepath.Join(dir, "ws.toml")
+	if err := os.WriteFile(user, []byte("schema = 1\n[agents]\nmax_turns = 20\nresume = false\n[budgets]\ntask_usd = 2.5\nagent_day_usd = 10\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(ws, []byte("schema = 1\n[budgets]\nagent_day_usd = 0\ntask_tokens = 500000\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load(user, ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Agents.MaxTurns != 20 || c.Agents.Resume {
+		t.Fatalf("agents = %+v", c.Agents)
+	}
+	want := Budgets{TaskUSD: 2.5, TaskTokens: 500000}
+	if c.Budgets != want {
+		t.Fatalf("budgets = %+v, want %+v", c.Budgets, want)
+	}
+	if !Defaults().Agents.Resume {
+		t.Fatal("resume must default on")
+	}
+}
+
+func TestBudgetsRejectNegative(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "c.toml")
+	if err := os.WriteFile(p, []byte("schema = 1\n[budgets]\ntask_usd = -1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(p, ""); err == nil || !strings.Contains(err.Error(), "budgets.task_usd") {
+		t.Fatalf("negative budget must refuse by name, got %v", err)
+	}
+}

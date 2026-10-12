@@ -52,7 +52,7 @@ func TestPromptHistoryNamesOmissions(t *testing.T) {
 		mustPost(t, h, bus.Message{Channel: "#general", Author: bus.Human, Text: "note"})
 	}
 	trig := mustPost(t, h, bus.Message{Channel: "#general", Author: bus.Human, Text: "@scout go"})
-	prompt, _ := h.rt.cliPromptAt(context.Background(), h.rt.agents["scout"], trig, "", maxCompaction)
+	prompt, _ := h.rt.cliPromptAt(context.Background(), h.rt.agents["scout"], trig, "", maxCompaction, nil, false)
 	if !strings.Contains(prompt, "(8 earlier messages omitted)") {
 		t.Fatalf("compacted history must name what it dropped:\n%s", prompt)
 	}

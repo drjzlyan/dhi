@@ -15,6 +15,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/agentkit/clirun"
 	"github.com/drjzlyan/dhi/internal/agentkit/dhitools"
+	"github.com/drjzlyan/dhi/internal/agentkit/episode"
 	"github.com/drjzlyan/dhi/internal/agentkit/mcpbridge"
 	"github.com/drjzlyan/dhi/internal/agentkit/standards"
 	"github.com/drjzlyan/dhi/internal/agentkit/workflow"
@@ -35,6 +36,7 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message) er
 	// timeout that would cut the run short: bounded by the caller's
 	// context here, before the manifest timeout arms (the timeout
 	// governs the CLI run, not context assembly).
+	task, hasTask := r.boundTask(trigger)
 	serve := r.serveTools(e, trigger)
 	wfText := ""
 	if r.cfg.Workflows {
@@ -42,18 +44,24 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message) er
 		if err != nil {
 			return err
 		}
-		if wd != nil {
+		// F-066: the feature workflow (worktree → test → commit → PR)
+		// governs task work; a chat turn with no card is not a feature
+		// and carrying the steps only sends the agent hunting for a
+		// branch to push.
+		if wd != nil && hasTask {
 			wfText = workflow.Render(wd)
-		}
-		if r.cfg.Tasks != nil {
-			if t, ok := r.cfg.Tasks.FindByThread(trigger.Channel, trigger.Thread); ok {
-				_ = r.cfg.Tasks.SetWorkflow(t.Slug, slug)
-			}
+			_ = r.cfg.Tasks.SetWorkflow(task.Slug, slug)
 		}
 	}
-	level := 0
-	prompt, system := r.cliPromptAt(ctx, e, trigger, wfText, level)
 	workdir := r.cliWorkdir(trigger)
+	tune := r.tuning()
+	ep := r.openEpisode(e.m.ID, task.Slug, trigger)
+	resume := ""
+	if tune.Resume && e.cli.ResumeOK && ep.Resumable(e.cli.Name, workdir) {
+		resume = ep.Session
+	}
+	level := 0
+	prompt, system := r.cliPromptAt(ctx, e, trigger, wfText, level, &ep, resume != "")
 	mcpConfig, mcpEndpoint, mcpGeminiDir := "", "", ""
 	if serve != nil {
 		defer serve.stop()
@@ -67,9 +75,25 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message) er
 	}
 
 	brief := ""
+	freshFallback := false
 	for attempt := 0; ; attempt++ {
-		run, events := r.cliSpawnOnce(ctx, e, trigger, prompt+brief, system, workdir, attempt, mcpConfig, mcpEndpoint, mcpGeminiDir)
+		// F-066: budgets bind between spawns (a CLI runs to completion).
+		if msg, ok := r.budgetCheck(e.m.ID, task.Slug, tune.Budgets); !ok {
+			r.notice(trigger, e.m.ID, "budget reached — "+msg+". Raise it in Settings → CONFIG, then ask again.")
+			return fmt.Errorf("runtime: %s: budget: %s", e.m.ID, msg)
+		}
+		run, events := r.cliSpawnOnce(ctx, e, trigger, spawnInput{
+			prompt: prompt + brief, system: system, workdir: workdir, attempt: attempt,
+			resume: resume, maxTurns: tune.MaxTurns,
+			mcpConfig: mcpConfig, mcpEndpoint: mcpEndpoint, mcpGeminiDir: mcpGeminiDir,
+		})
 		r.recordRun(trigger, run)
+		r.recordSpend(run, task.Slug)
+		session := ""
+		if e.cli.ResumeOK {
+			session = run.Session
+		}
+		ep = episode.Fold(ep, run, e.cli.Name, workdir, session, trigger.ID)
 
 		if run.Status == tasks.RunOK {
 			if run.Summary != "" {
@@ -79,11 +103,16 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message) er
 					Channel: trigger.Channel, Thread: trigger.Thread,
 					Author: e.m.ID, Text: run.Summary, Kind: bus.KindReply,
 				}); err == nil {
+					ep.SeenID = max(ep.SeenID, posted.ID) // the session wrote it
+					r.saveEpisode(ep)
 					r.Handle(context.WithoutCancel(ctx), posted)
+					return nil
 				}
 			}
+			r.saveEpisode(ep)
 			return nil
 		}
+		r.saveEpisode(ep)
 		// F-065: react to the cause. Auth and a spent deadline cannot be
 		// fixed by another spawn; an overflow retries compacted (once
 		// there is nothing left to compact, it is final); everything
@@ -93,13 +122,31 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message) er
 		if fail == clirun.FailAuth {
 			r.notice(trigger, e.m.ID, authHint(e.cli))
 		}
+		// F-066: a resumed spawn that fails may be a dead session (expired,
+		// pruned, another machine). Fall back to one fresh spawn — named,
+		// never silent — without spending the retry budget.
+		if resume != "" && fail.Retryable() && !freshFallback {
+			freshFallback = true
+			resume, ep.Session = "", ""
+			prompt, system = r.cliPromptAt(ctx, e, trigger, wfText, level, &ep, false)
+			brief = failureBrief(fail, run, events)
+			r.notice(trigger, e.m.ID, "could not continue the earlier CLI session ("+string(fail)+"); starting a fresh one")
+			attempt--
+			continue
+		}
 		if !fail.Retryable() || attempt >= e.m.Retries ||
 			fail == clirun.FailOverflow && level == maxCompaction {
 			return lastErr
 		}
 		if fail == clirun.FailOverflow {
 			level++
-			prompt, system = r.cliPromptAt(ctx, e, trigger, wfText, level)
+			resume, ep.Session = "", "" // a compacted prompt starts a fresh session
+			prompt, system = r.cliPromptAt(ctx, e, trigger, wfText, level, &ep, false)
+		} else if session != "" && tune.Resume {
+			// The failed attempt's session holds its progress (e.g. it
+			// ran out of turns): continue it rather than start over.
+			resume = session
+			prompt, system = r.cliPromptAt(ctx, e, trigger, wfText, level, &ep, true)
 		}
 		brief = failureBrief(fail, run, events)
 		wait := retryWait(fail, attempt)
@@ -129,11 +176,21 @@ var cliRetryBackoff = 30 * time.Second
 // cliSpawnOnce runs a single attempt: spawn the wrapped CLI, stream the
 // transcript into the trigger thread, persist the event JSONL, finalize,
 // and return the run record.
-func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Message, prompt, system, workdir string, attempt int, mcpConfig, mcpEndpoint, mcpGeminiDir string) (tasks.Run, []clirun.StreamEvent) {
+// spawnInput is one attempt's spawn parameters.
+type spawnInput struct {
+	prompt, system, workdir              string
+	attempt                              int
+	resume                               string // CLI session to continue ("" = fresh)
+	maxTurns                             int
+	mcpConfig, mcpEndpoint, mcpGeminiDir string
+}
+
+func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Message, in spawnInput) (tasks.Run, []clirun.StreamEvent) {
+	prompt, system, workdir := in.prompt, in.system, in.workdir
 	started := time.Now().UTC()
 	run := tasks.Run{
 		ID: runID(started), Agent: e.m.ID,
-		Runtime: "cli:" + e.m.Runtime, Model: e.m.CLIModel(), Attempt: attempt,
+		Runtime: "cli:" + e.m.Runtime, Model: e.m.CLIModel(), Attempt: in.attempt,
 		Started: started, Finished: time.Now().UTC(),
 		TokensIn: -1, TokensOut: -1,
 	}
@@ -166,7 +223,8 @@ func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Messag
 	argv := append([]string{e.cliPath}, e.cli.BuildArgs(clirun.RunInput{
 		Prompt: prompt, System: system,
 		Model: e.m.CLIModel(), Workdir: workdir, Stdin: stdin,
-		MCPConfig: mcpConfig, MCPURL: mcpEndpoint, MCPGeminiDir: mcpGeminiDir,
+		Resume: in.resume, MaxTurns: in.maxTurns,
+		MCPConfig: in.mcpConfig, MCPURL: in.mcpEndpoint, MCPGeminiDir: in.mcpGeminiDir,
 	})...)
 	wrapped, err := e.guard.Sandbox.Wrap(argv)
 	if err != nil {
@@ -177,7 +235,7 @@ func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Messag
 
 	cmd := exec.CommandContext(ctx, wrapped[0], wrapped[1:]...)
 	cmd.Dir = workdir
-	cmd.Env = r.cliEnv(e.cli, mcpConfig)
+	cmd.Env = r.cliEnv(e.cli, in.mcpConfig)
 	if stdin != "" {
 		cmd.Stdin = strings.NewReader(stdin)
 	}
@@ -241,6 +299,7 @@ func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Messag
 		run.CostUSD = u.CostUSD
 		run.HasCost = u.HasCost
 		run.CacheRead, run.CacheWrite = u.CacheRead, u.CacheWrite
+		run.Session = u.SessionID
 	case waitErr != nil:
 		run.Status = tasks.RunError
 		run.Error = cliErrText(waitErr)
@@ -493,7 +552,7 @@ func (c compositeHandler) CallTool(ctx context.Context, name string, args json.R
 
 // cliPrompt is the level-0 prompt (see cliPromptAt).
 func (r *Runtime) cliPrompt(ctx context.Context, e *entry, trigger bus.Message, wfText string) (prompt, system string) {
-	return r.cliPromptAt(ctx, e, trigger, wfText, 0)
+	return r.cliPromptAt(ctx, e, trigger, wfText, 0, nil, false)
 }
 
 // cliPromptAt flattens the trigger, its task card and its conversation
@@ -503,7 +562,12 @@ func (r *Runtime) cliPrompt(ctx context.Context, e *entry, trigger bus.Message, 
 // its prefix; memory and KB hits change per turn and trail. level picks
 // the compaction limits (0 normal, 1 after a context overflow). ctx
 // drives the KB search (bounded retrieval, not part of the turn timeout).
-func (r *Runtime) cliPromptAt(ctx context.Context, e *entry, trigger bus.Message, wfText string, level int) (prompt, system string) {
+//
+// ep is the turn's episode (nil = none). resumed means the CLI continues
+// its own session, which already holds the earlier conversation: only
+// messages after ep.SeenID are replayed. A fresh spawn of an ongoing
+// episode carries the episode summary instead.
+func (r *Runtime) cliPromptAt(ctx context.Context, e *entry, trigger bus.Message, wfText string, level int, ep *episode.Episode, resumed bool) (prompt, system string) {
 	lim := limitsAt(level)
 	// F-027: the effective persona comes from the behaviour composer —
 	// manifest system + role template + attached skills — with the
@@ -551,7 +615,13 @@ func (r *Runtime) cliPromptAt(ctx context.Context, e *entry, trigger bus.Message
 	}
 	b.WriteString(text)
 	b.WriteString(r.taskBlock(trigger, lim))
-	b.WriteString(r.historyBlock(e.m.ID, trigger, lim))
+	var seen int64
+	if ep != nil && resumed {
+		seen = ep.SeenID
+	} else if ep != nil {
+		b.WriteString(ep.Render())
+	}
+	b.WriteString(r.historyBlock(e.m.ID, trigger, lim, seen))
 	return b.String(), system
 }
 
@@ -610,12 +680,20 @@ func (r *Runtime) knowledgeBlock(ctx context.Context, query string, lim promptLi
 // when the trigger is bound to one, else the workspace root. CLI runs
 // happen in-repo like every other DHI turn (ADR-0012 contract shared).
 func (r *Runtime) cliWorkdir(trigger bus.Message) string {
-	if r.cfg.Tasks != nil {
-		if t, ok := r.cfg.Tasks.FindByThread(trigger.Channel, trigger.Thread); ok && len(t.ChangeSets) > 0 {
-			return filepath.Join(r.cfg.WS.Root, t.ChangeSets[0].Path)
-		}
+	if t, ok := r.boundTask(trigger); ok && len(t.ChangeSets) > 0 {
+		return filepath.Join(r.cfg.WS.Root, t.ChangeSets[0].Path)
 	}
 	return r.cfg.WS.Root
+}
+
+// boundTask is the card bound to the trigger's thread — matched on the
+// thread root, so a top-level trigger bound to a card (an autopilot DM)
+// finds it exactly as recordRun does.
+func (r *Runtime) boundTask(trigger bus.Message) (tasks.Task, bool) {
+	if r.cfg.Tasks == nil {
+		return tasks.Task{}, false
+	}
+	return r.cfg.Tasks.FindByThread(trigger.Channel, bus.ThreadOf(trigger))
 }
 
 // cliEnv assembles the spawn environment: the hermetic base (toolchain
@@ -663,7 +741,7 @@ func (r *Runtime) recordRun(trigger bus.Message, run tasks.Run) {
 	if r.cfg.Tasks == nil {
 		return
 	}
-	t, ok := r.cfg.Tasks.FindByThread(trigger.Channel, bus.ThreadOf(trigger))
+	t, ok := r.boundTask(trigger)
 	if !ok {
 		return
 	}

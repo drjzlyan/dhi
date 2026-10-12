@@ -58,6 +58,10 @@ func TestRuntimes(t *testing.T) {
 	if c, _ := statusOf(checks, "runtime/claude/anthropic_api_key"); c.Status != Warn {
 		t.Errorf("unset ANTHROPIC_API_KEY must warn (%+v)", checks)
 	}
+	// F-066: the resume row says whether turns continue the session.
+	if c, ok := statusOf(checks, "runtime/claude/resume"); !ok || c.Status != OK || !strings.Contains(c.Detail, "verified") {
+		t.Errorf("claude resume row = %+v", c)
+	}
 
 	// untested version present: strict fail
 	bad := t.TempDir()

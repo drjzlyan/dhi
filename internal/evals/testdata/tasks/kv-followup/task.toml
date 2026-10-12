@@ -1,0 +1,19 @@
+name = "kv-followup"
+prompt = """In the Go module under app/, create app/kv.go with an exported type Store: a string-to-string \
+map guarded by a sync.Mutex, with methods Set(k, v string) and Get(k string) (string, bool)."""
+followups = [
+  """Now add a Delete(k string) method to the Store you just wrote, and table-driven tests covering \
+Set, Get and Delete in app/kv_test.go.""",
+]
+budget_tokens = 600000
+
+[[expect]]
+file = "app/kv.go"
+contains = "Delete("
+
+[[expect]]
+file = "app/kv_test.go"
+contains = "Delete"
+
+[[expect]]
+run = ["go", "test", "./..."]

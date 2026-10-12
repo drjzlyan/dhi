@@ -11,8 +11,15 @@
     - DHI costs 4% less ($1.35 vs $1.41) with an 86% cache share.
     - DHI is 1.9x slower and emits 2x the output tokens.
     - The figures are in F-065 "Live baseline".
-- Next is P2 (episodes, resume, budgets; ADR-0031). Start it with harder eval fixtures and a look at
-  why DHI's output and wall time are about 2x.
+- P2 is DONE (F-066, ADR-0031).
+  - Episodes live in `.dhi/episodes/<agent>/<key>.json`; the spend ledger in `.dhi/spend.jsonl`.
+  - Resume is live-verified for claude 2.1.285 (`--resume`) and codex 0.147 (`exec resume <id>`).
+    Codex's resume form takes no `-C`/`--sandbox`.
+  - The runtime re-reads `[agents]` and `[budgets]` every turn (`liveTuning` in main).
+  - The feature workflow is injected ONLY on task-bound turns. Card lookups go through
+    `Runtime.boundTask` (thread root).
+- Next is P3 (F-067): goal loop with verify, autonomy envelope, persisted grants, watchdog,
+  plan_update.
 - Gotcha: eval/agent envs must keep USER. Claude on macOS reads its Keychain login by user, and
   without it the run fails as "Not logged in".
 - User decisions:

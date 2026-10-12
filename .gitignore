@@ -21,6 +21,8 @@ dhi-git-*.sha256
 .dhi/config.toml
 .dhi/agents/.archived/
 .dhi/evals/
+.dhi/episodes/
+.dhi/spend.jsonl
 
 # Python bytecode from scripts/, and per-agent run logs (runtime state).
 __pycache__/

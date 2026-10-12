@@ -97,6 +97,25 @@ type Security struct {
 	Sandbox string `toml:"sandbox"`
 }
 
+// Agents tunes how DHI drives agent CLIs (F-066).
+type Agents struct {
+	// MaxTurns caps one CLI spawn's inner tool loop (0 = the adapter's
+	// default), so DHI regains control between spawns.
+	MaxTurns int `toml:"max_turns"`
+	// Resume continues the CLI's own session across turns of one
+	// episode where the adapter has a verified resume path (ADR-0031).
+	Resume bool `toml:"resume"`
+}
+
+// Budgets caps agent spend (F-066); 0 = no limit. Enforced between
+// spawns: a turn that would start over a limit refuses with a notice.
+type Budgets struct {
+	TaskUSD         float64 `toml:"task_usd"`
+	TaskTokens      int     `toml:"task_tokens"`
+	AgentDayUSD     float64 `toml:"agent_day_usd"`
+	WorkspaceDayUSD float64 `toml:"workspace_day_usd"`
+}
+
 // Sandbox mode values.
 const (
 	SandboxAuto = "auto"
@@ -127,6 +146,8 @@ type Config struct {
 	Worktrees Worktrees         `toml:"worktrees"`
 	Terminal  Terminal          `toml:"terminal"`
 	Security  Security          `toml:"security"`
+	Agents    Agents            `toml:"agents"`
+	Budgets   Budgets           `toml:"budgets"`
 	// Conventions is the team-style layer (F-042): branch names, commit
 	// format, copyright header, PR text. It lives in its own tracked file
 	// (ConventionsPath), so the personal config never serialises it.
@@ -141,6 +162,7 @@ func Defaults() Config {
 		Editor:      Editor{TabWidth: 4, LineNumbers: true},
 		Terminal:    Terminal{Scrollback: 1000},
 		Security:    Security{Sandbox: SandboxAuto},
+		Agents:      Agents{Resume: true},
 		Conventions: conventions.Defaults(),
 	}
 }
@@ -151,6 +173,9 @@ func Known() []string {
 		"terminal", "security", "editor.tab_width", "editor.line_numbers",
 		"worktrees", "worktrees.root",
 		"terminal.scrollback", "security.sandbox",
+		"agents", "agents.max_turns", "agents.resume",
+		"budgets", "budgets.task_usd", "budgets.task_tokens",
+		"budgets.agent_day_usd", "budgets.workspace_day_usd",
 		"scopes.read", "scopes.write", "scopes.exec", "scopes.network",
 		"scopes.git", "scopes.push", "scopes.admin",
 		"conventions.branch.task", "conventions.branch.review",
@@ -283,6 +308,17 @@ func validate(c Config) error {
 			return fmt.Errorf("settings: keys.%s: ctrl+c always quits and cannot be remapped", k)
 		}
 	}
+	if c.Agents.MaxTurns < 0 || c.Agents.MaxTurns > 500 {
+		return fmt.Errorf("settings: agents.max_turns %d out of range 0..500 (0 = the CLI default)", c.Agents.MaxTurns)
+	}
+	for key, v := range map[string]float64{
+		"budgets.task_usd": c.Budgets.TaskUSD, "budgets.task_tokens": float64(c.Budgets.TaskTokens),
+		"budgets.agent_day_usd": c.Budgets.AgentDayUSD, "budgets.workspace_day_usd": c.Budgets.WorkspaceDayUSD,
+	} {
+		if v < 0 {
+			return fmt.Errorf("settings: %s %v is negative (0 = no limit)", key, v)
+		}
+	}
 	if err := c.Conventions.Validate(); err != nil {
 		return fmt.Errorf("settings: conventions.%w", err)
 	}
@@ -333,6 +369,16 @@ type fileLayer struct {
 	Security struct {
 		Sandbox string `toml:"sandbox"`
 	} `toml:"security"`
+	Agents struct {
+		MaxTurns *int  `toml:"max_turns"`
+		Resume   *bool `toml:"resume"`
+	} `toml:"agents"`
+	Budgets struct {
+		TaskUSD         *float64 `toml:"task_usd"`
+		TaskTokens      *int     `toml:"task_tokens"`
+		AgentDayUSD     *float64 `toml:"agent_day_usd"`
+		WorkspaceDayUSD *float64 `toml:"workspace_day_usd"`
+	} `toml:"budgets"`
 	Conventions struct {
 		Branch struct {
 			Task   string `toml:"task"`
@@ -410,6 +456,13 @@ func (f fileLayer) mergeInto(dst *Config) {
 	if f.Security.Sandbox != "" {
 		dst.Security.Sandbox = strings.TrimSpace(f.Security.Sandbox)
 	}
+	// Pointers: a later layer may set a limit back to 0 (no limit).
+	setPtr(&dst.Agents.MaxTurns, f.Agents.MaxTurns)
+	setPtr(&dst.Agents.Resume, f.Agents.Resume)
+	setPtr(&dst.Budgets.TaskUSD, f.Budgets.TaskUSD)
+	setPtr(&dst.Budgets.TaskTokens, f.Budgets.TaskTokens)
+	setPtr(&dst.Budgets.AgentDayUSD, f.Budgets.AgentDayUSD)
+	setPtr(&dst.Budgets.WorkspaceDayUSD, f.Budgets.WorkspaceDayUSD)
 	cv, d := f.Conventions, &dst.Conventions
 	setStr(&d.Branch.Task, cv.Branch.Task)
 	setStr(&d.Branch.Review, cv.Branch.Review)
@@ -576,4 +629,11 @@ func SaveConventions(path string, c conventions.Config) error {
 		return fmt.Errorf("settings: encode conventions: %w", err)
 	}
 	return os.WriteFile(path, []byte(sb.String()), 0o644)
+}
+
+// setPtr copies *src into *dst when a layer set it.
+func setPtr[T any](dst *T, src *T) {
+	if src != nil {
+		*dst = *src
+	}
 }

@@ -10,3 +10,6 @@ contains = "rune"
 [[expect]]
 file = "app/strutil_test.go"
 contains = "olléh"
+
+[[expect]]
+run = ["go", "test", "./..."]

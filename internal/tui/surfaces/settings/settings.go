@@ -345,8 +345,34 @@ const (
 	rowCommitFormat   = rowBranchTask + 1
 	rowCommitCoAuthor = rowBranchTask + 2
 	rowCopyright      = rowBranchTask + 3
-	rowCount          = rowBranchTask + 4
+	// Agents & budgets (F-066) follow the conventions rows.
+	rowResume      = rowBranchTask + 4
+	rowMaxTurns    = rowResume + 1
+	rowTaskUSD     = rowResume + 2
+	rowTaskTokens  = rowResume + 3
+	rowAgentDayUSD = rowResume + 4
+	rowWorkDayUSD  = rowResume + 5
+	rowCount       = rowResume + 6
 )
+
+// Preset cycles for the agents & budgets rows (0 = the CLI default / no
+// limit); any other value is hand-edited in config.toml and shows as-is.
+var (
+	maxTurnPresets  = []int{0, 10, 20, 30, 50, 100}
+	taskUSDPresets  = []float64{0, 0.5, 1, 2, 5, 10}
+	taskTokPresets  = []int{0, 250_000, 500_000, 1_000_000, 2_000_000}
+	agentDayPresets = []float64{0, 2, 5, 10, 20, 50}
+	workDayPresets  = []float64{0, 5, 10, 25, 50, 100}
+)
+
+func cycleNum[T int | float64](cur T, opts []T, dir int) T {
+	for i, o := range opts {
+		if o == cur {
+			return opts[(i+dir+len(opts))%len(opts)]
+		}
+	}
+	return opts[0]
+}
 
 // worktreePresets is the cycle for worktrees.root; any other path is
 // hand-edited in config.toml and shows as-is. "" keeps worktrees inside .dhi/.
@@ -420,6 +446,18 @@ func (m *Model) cycle(dir int) {
 			return
 		}
 		m.cfg.Conventions.Copyright.Enabled = !m.cfg.Conventions.Copyright.Enabled
+	case rowResume:
+		m.cfg.Agents.Resume = !m.cfg.Agents.Resume
+	case rowMaxTurns:
+		m.cfg.Agents.MaxTurns = cycleNum(m.cfg.Agents.MaxTurns, maxTurnPresets, dir)
+	case rowTaskUSD:
+		m.cfg.Budgets.TaskUSD = cycleNum(m.cfg.Budgets.TaskUSD, taskUSDPresets, dir)
+	case rowTaskTokens:
+		m.cfg.Budgets.TaskTokens = cycleNum(m.cfg.Budgets.TaskTokens, taskTokPresets, dir)
+	case rowAgentDayUSD:
+		m.cfg.Budgets.AgentDayUSD = cycleNum(m.cfg.Budgets.AgentDayUSD, agentDayPresets, dir)
+	case rowWorkDayUSD:
+		m.cfg.Budgets.WorkspaceDayUSD = cycleNum(m.cfg.Budgets.WorkspaceDayUSD, workDayPresets, dir)
 	default:
 		if m.cursor >= rowScopesBase && m.cursor < rowScopesBase+7 {
 			name := scopeRowNames[m.cursor-rowScopesBase]
@@ -452,6 +490,10 @@ func (m *Model) applyAndPersist() {
 	}
 	// Conventions are a separate, tracked file shared with the team and
 	// are re-read while DHI runs (F-052), so say so.
+	if m.cursor >= rowResume {
+		m.flash = "saved (live — agents use it from their next spawn)"
+		return
+	}
 	if m.cursor >= rowBranchTask {
 		if err := settings.SaveConventions(settings.ConventionsPath(m.savePath), m.cfg.Conventions); err != nil {
 			m.flash = "save failed: " + err.Error()
@@ -1198,6 +1240,13 @@ func (m *Model) configView(w, budget int) []string {
 	add(rowCommitFormat, "conventions.commit.format", m.cfg.Conventions.Commit.Format)
 	add(rowCommitCoAuthor, "conventions.commit.co_author", co)
 	add(rowCopyright, "conventions.copyright.enabled", boolValue(m.cfg.Conventions.Copyright.Enabled))
+	head("agents & budgets")
+	add(rowResume, "agents.resume", boolValue(m.cfg.Agents.Resume))
+	add(rowMaxTurns, "agents.max_turns", orMuted(m.cfg.Agents.MaxTurns == 0, "CLI default", itoa(m.cfg.Agents.MaxTurns)))
+	add(rowTaskUSD, "budgets.task_usd", orMuted(m.cfg.Budgets.TaskUSD == 0, "no limit", usd(m.cfg.Budgets.TaskUSD)))
+	add(rowTaskTokens, "budgets.task_tokens", orMuted(m.cfg.Budgets.TaskTokens == 0, "no limit", tokensText(m.cfg.Budgets.TaskTokens)))
+	add(rowAgentDayUSD, "budgets.agent_day_usd", orMuted(m.cfg.Budgets.AgentDayUSD == 0, "no limit", usd(m.cfg.Budgets.AgentDayUSD)+" / day"))
+	add(rowWorkDayUSD, "budgets.workspace_day_usd", orMuted(m.cfg.Budgets.WorkspaceDayUSD == 0, "no limit", usd(m.cfg.Budgets.WorkspaceDayUSD)+" / day"))
 	head("keys")
 	lines = append(lines, line{"  " + theme.TextDim().Render(leader("[keys]", settingNameW)) + m.keysValue(), -1})
 
@@ -1219,6 +1268,30 @@ func (m *Model) configView(w, budget int) []string {
 		m.cfgRowAt[i] = l.row
 	}
 	return out
+}
+
+// orMuted renders muted when unset is true (a default), else value.
+func orMuted(unset bool, muted, value string) string {
+	if unset {
+		return theme.TextMuted().Render(muted)
+	}
+	return value
+}
+
+func usd(v float64) string {
+	s := strings.TrimRight(strings.TrimRight(fmt.Sprintf("%.2f", v), "0"), ".")
+	return "$" + s
+}
+
+// tokensText renders 500000 → "500k", 1000000 → "1M".
+func tokensText(n int) string {
+	switch {
+	case n >= 1_000_000 && n%1_000_000 == 0:
+		return fmt.Sprintf("%dM", n/1_000_000)
+	case n >= 1000 && n%1000 == 0:
+		return fmt.Sprintf("%dk", n/1000)
+	}
+	return itoa(n)
 }
 
 // boolValue renders a boolean setting as a colored mark plus the word

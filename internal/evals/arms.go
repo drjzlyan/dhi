@@ -10,8 +10,10 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/drjzlyan/dhi/internal/agentkit/budget"
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/agentkit/clirun"
+	"github.com/drjzlyan/dhi/internal/agentkit/episode"
 	"github.com/drjzlyan/dhi/internal/agentkit/knowledge"
 	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
 	"github.com/drjzlyan/dhi/internal/agentkit/memory"
@@ -74,9 +76,11 @@ func (c Config) ctx() (context.Context, context.CancelFunc) {
 }
 
 // RunRaw runs the task through the bare CLI headless in a fresh copy:
-// the prompt alone, no DHI system block, tools, memory or retry.
+// the prompt alone, no DHI system block, tools, memory or retry. Each
+// follow-up resumes the CLI's own session where the adapter supports it
+// — what a person driving the CLI by hand would do.
 func RunRaw(c Config, t Task, root string) Result {
-	r := Result{At: c.now(), Task: t.Name, Arm: "raw", CLI: c.CLI, Model: c.Model, Attempts: 1, TokensIn: -1, TokensOut: -1}
+	r := Result{At: c.now(), Task: t.Name, Arm: "raw", CLI: c.CLI, Model: c.Model, TokensIn: -1, TokensOut: -1}
 	cli, path, err := c.cli()
 	if err != nil {
 		r.Err = err.Error()
@@ -89,18 +93,37 @@ func RunRaw(c Config, t Task, root string) Result {
 	ctx, cancel := c.ctx()
 	defer cancel()
 	start := time.Now()
-	cmd := exec.CommandContext(ctx, path, cli.BuildArgs(clirun.RunInput{Prompt: t.Prompt, Model: c.Model, Workdir: root})...)
-	cmd.Dir = root
-	cmd.Env = c.env(cli)
+	session := ""
+	for _, prompt := range append([]string{t.Prompt}, t.Followups...) {
+		in := clirun.RunInput{Prompt: prompt, Model: c.Model, Workdir: root}
+		if cli.ResumeOK {
+			in.Resume = session
+		}
+		u, err := rawSpawn(ctx, cli, path, c.env(cli), root, in)
+		r.Attempts++
+		if err != nil {
+			r.Err = err.Error()
+			break
+		}
+		r.add(u)
+		session = u.SessionID
+	}
+	r.WallMs = time.Since(start).Milliseconds()
+	return score(t, root, r)
+}
+
+// rawSpawn runs one headless CLI invocation and returns its usage.
+func rawSpawn(ctx context.Context, cli *clirun.CLI, path string, env []string, dir string, in clirun.RunInput) (clirun.Usage, error) {
+	cmd := exec.CommandContext(ctx, path, cli.BuildArgs(in)...)
+	cmd.Dir = dir
+	cmd.Env = env
 	cmd.WaitDelay = 2 * time.Second // see runtime.cliSpawnOnce
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		r.Err = err.Error()
-		return r
+		return clirun.Usage{}, err
 	}
 	if err := cmd.Start(); err != nil {
-		r.Err = err.Error()
-		return r
+		return clirun.Usage{}, err
 	}
 	var final string
 	for ev := range cli.ParseStream(stdout) {
@@ -109,22 +132,28 @@ func RunRaw(c Config, t Task, root string) Result {
 		}
 	}
 	waitErr := cmd.Wait()
-	r.WallMs = time.Since(start).Milliseconds()
 	switch {
 	case final != "":
 		_, u, ferr := cli.Finalize(final)
-		if ferr != nil {
-			r.Err = ferr.Error()
-			break
-		}
-		r.TokensIn, r.TokensOut, r.CacheRead, r.CacheWrite = u.TokensIn, u.TokensOut, u.CacheRead, u.CacheWrite
-		r.CostUSD, r.HasCost = u.CostUSD, u.HasCost
+		return u, ferr
 	case waitErr != nil:
-		r.Err = waitErr.Error()
-	default:
-		r.Err = "CLI stream ended without a final event"
+		return clirun.Usage{}, waitErr
 	}
-	return score(t, root, r)
+	return clirun.Usage{}, fmt.Errorf("CLI stream ended without a final event")
+}
+
+// add folds one spawn's usage into the result.
+func (r *Result) add(u clirun.Usage) {
+	if u.TokensIn >= 0 {
+		r.TokensIn = max(r.TokensIn, 0) + u.TokensIn
+	}
+	if u.TokensOut >= 0 {
+		r.TokensOut = max(r.TokensOut, 0) + u.TokensOut
+	}
+	r.CacheRead += u.CacheRead
+	r.CacheWrite += u.CacheWrite
+	r.CostUSD += u.CostUSD
+	r.HasCost = r.HasCost || u.HasCost
 }
 
 // evalAgent is the DHI arm's roster agent: a generalist with the IDE's
@@ -200,6 +229,8 @@ func RunDHI(c Config, t Task, root string) Result {
 		Workflows: true,
 		Memory:    memory.Open(ws),
 		Knowledge: kb,
+		Episodes:  episode.Open(ws.Root),
+		Spend:     budget.Open(ws.Root),
 	}, []*manifest.Agent{m})
 	if err != nil {
 		return fail("runtime", err)
@@ -220,6 +251,16 @@ func RunDHI(c Config, t Task, root string) Result {
 	defer cancel()
 	start := time.Now()
 	turnErr := rt.Turn(ctx, evalAgent, trig)
+	for _, f := range t.Followups {
+		if turnErr != nil {
+			break
+		}
+		next, err := b.Post(bus.Message{Channel: trig.Channel, Thread: trig.ID, Author: bus.Human, Text: "@" + evalAgent + " " + f})
+		if err != nil {
+			return fail("post", err)
+		}
+		turnErr = rt.Turn(ctx, evalAgent, next)
+	}
 	r.WallMs = time.Since(start).Milliseconds()
 	if turnErr != nil {
 		r.Err = turnErr.Error()

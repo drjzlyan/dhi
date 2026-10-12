@@ -18,6 +18,7 @@ import (
 //   - DHI_EVAL_TASK: run one fixture only
 //   - DHI_EVAL_REPEAT: runs per arm (default 1 — an anecdote; use 3+ for a claim)
 //   - DHI_EVAL_OUT: scorecard path (default <repo>/.dhi/evals/scorecard.jsonl)
+//   - DHI_EVAL_KEEP=1: keep each run's directory (transcripts, bus) and log it
 //
 // Arm order alternates per run so neither arm always inherits the CLI's
 // warm prompt cache.
@@ -60,7 +61,16 @@ func TestLive(t *testing.T) {
 		for i := 0; i < repeat; i++ {
 			turn++
 			for _, run := range ArmOrder(turn) {
-				r := run(c, task, t.TempDir())
+				dir := t.TempDir()
+				if os.Getenv("DHI_EVAL_KEEP") == "1" {
+					if dir, err = os.MkdirTemp("", "dhi-eval-"+task.Name+"-"); err != nil {
+						t.Fatal(err)
+					}
+				}
+				r := run(c, task, dir)
+				if os.Getenv("DHI_EVAL_KEEP") == "1" {
+					t.Logf("kept %s run: %s", r.Arm, dir)
+				}
 				t.Logf("%-14s %-3s ok=%-5v tokens=%d+%d cached=%d written=%d cost=$%.4f attempts=%d asks=%d %s %v",
 					r.Task, r.Arm, r.OK, r.TokensIn, r.TokensOut, r.CacheRead, r.CacheWrite, r.CostUSD, r.Attempts, r.Asks, r.Err, r.Unmet)
 				results = append(results, r)

@@ -1,0 +1,10 @@
+name = "fix-failing"
+prompt = """The tests in app/ fail. Find the bug in the code and fix it. Do not change the tests."""
+budget_tokens = 400000
+
+[[expect]]
+file = "app/money_test.go"
+contains = "{1000, 3, []int64{334, 333, 333}}"
+
+[[expect]]
+run = ["go", "test", "./..."]

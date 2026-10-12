@@ -498,6 +498,15 @@ func RuntimesAt(toolRoot string) []Check {
 			checks = append(checks, Check{Name: "runtime/" + c.Name, Status: OK,
 				Detail: fmt.Sprintf("%s %s (adapter pinned)", c.Bin, v)})
 		}
+		// F-066 (ADR-0031): say plainly whether turns continue the CLI's
+		// own session — never imply a resume that is not verified.
+		if c.ResumeOK {
+			checks = append(checks, Check{Name: "runtime/" + c.Name + "/resume", Status: OK,
+				Detail: "turns of one task or thread continue the CLI session (verified)"})
+		} else {
+			checks = append(checks, Check{Name: "runtime/" + c.Name + "/resume", Status: OK,
+				Detail: "no verified session resume; each turn starts fresh with DHI's episode summary"})
+		}
 		for _, k := range c.EnvPass {
 			if k == "HOME" {
 				continue // always set; not worth a row

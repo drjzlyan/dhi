@@ -11,3 +11,6 @@ contains = "func Sum("
 [[expect]]
 file = "app/calc_test.go"
 contains = "func TestSum"
+
+[[expect]]
+run = ["go", "test", "./..."]

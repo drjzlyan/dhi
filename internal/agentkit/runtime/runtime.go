@@ -15,9 +15,11 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/drjzlyan/dhi/internal/agentkit/budget"
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/agentkit/clirun"
 	"github.com/drjzlyan/dhi/internal/agentkit/dhitools"
+	"github.com/drjzlyan/dhi/internal/agentkit/episode"
 	"github.com/drjzlyan/dhi/internal/agentkit/knowledge"
 	"github.com/drjzlyan/dhi/internal/agentkit/library"
 	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
@@ -122,6 +124,15 @@ type Config struct {
 	// WorkspaceScopes is the workspace capability layer (F-030 P2):
 	// resolved under team and agent scopes.
 	WorkspaceScopes scopes.Set
+	// Episodes keeps per-task / per-thread working state and the CLI
+	// session to resume (F-066); nil = every turn starts fresh.
+	Episodes *episode.Store
+	// Spend is the workspace spend ledger budgets are checked against
+	// (F-066); nil = no ledger, no budget enforcement.
+	Spend *budget.Ledger
+	// Tuning supplies max-turns, resume and budgets per turn; nil = the
+	// defaults (resume on, no caps).
+	Tuning func() Tuning
 }
 
 // Runtime manages rostered agents and executes their turns.

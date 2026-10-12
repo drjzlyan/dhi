@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -37,16 +38,17 @@ var Claude = &CLI{
 				"--output-format", "stream-json",
 				"--verbose",
 				"--permission-mode", "bypassPermissions", // OS sandbox is the boundary (ADR-0012 §3)
-				"--max-turns", "50",
+				"--max-turns", claudeMaxTurns(in.MaxTurns),
 			)
-			return args
+			return append(args, claudeResumeArgs(in.Resume)...)
 		}
 		args = append(args, in.Prompt,
 			"--output-format", "stream-json",
 			"--verbose",
 			"--permission-mode", "bypassPermissions", // OS sandbox is the boundary (ADR-0012 §3)
-			"--max-turns", "50",
+			"--max-turns", claudeMaxTurns(in.MaxTurns),
 		)
+		args = append(args, claudeResumeArgs(in.Resume)...)
 		if in.System != "" {
 			args = append(args, "--append-system-prompt", in.System)
 		}
@@ -68,11 +70,30 @@ var Claude = &CLI{
 	// StdinOK: `claude -p` with no prompt argument consumes stdin —
 	// live-verified on 2.1.177.
 	StdinOK: true,
+	// ResumeOK: `-p … --resume <session_id>` continues the session the
+	// result line's session_id names — live-verified on 2.1.285 (recall
+	// across spawns, cache reads on the resumed turn).
+	ResumeOK: true,
 	// MCPOK: --mcp-config with an http-type server is a documented
 	// Claude Code feature; live-verify checklist in the F-028 smoke.
 	MCPOK:         true,
 	MCPConfigFile: claudeMCPConfigFile,
 	MCPConfigArgs: claudeMCPArgs,
+}
+
+// claudeMaxTurns renders --max-turns (0 = the adapter default, 50).
+func claudeMaxTurns(n int) string {
+	if n <= 0 {
+		n = 50
+	}
+	return strconv.Itoa(n)
+}
+
+func claudeResumeArgs(id string) []string {
+	if id == "" {
+		return nil
+	}
+	return []string{"--resume", id}
 }
 
 func claudeMCPConfigFile(endpoint string) string {
@@ -210,6 +231,7 @@ func claudeFinalize(final string) (string, Usage, error) {
 		IsError   bool    `json:"is_error"`
 		Result    string  `json:"result"`
 		TotalCost float64 `json:"total_cost_usd"`
+		SessionID string  `json:"session_id"`
 		Usage     struct {
 			InputTokens  int `json:"input_tokens"`
 			OutputTokens int `json:"output_tokens"`
@@ -237,6 +259,7 @@ func claudeFinalize(final string) (string, Usage, error) {
 
 		CacheRead:  res.Usage.CacheRead,
 		CacheWrite: res.Usage.CacheWrite,
+		SessionID:  res.SessionID,
 	}
 	return strings.TrimSpace(res.Result), u, nil
 }

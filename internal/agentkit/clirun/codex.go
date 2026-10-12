@@ -62,22 +62,27 @@ var Codex = &CLI{
 		return []string{filepath.Join(home, ".codex")}
 	},
 	BuildArgs: func(in RunInput) []string {
-		args := []string{
-			"exec", "--json", "--skip-git-repo-check",
-			"-C", in.Workdir,
+		// `exec resume` takes no -C/--sandbox (0.147): the runner's cwd
+		// is the workdir, and the bypass flag covers the sandbox.
+		args := []string{"exec", "--json", "--skip-git-repo-check", "-C", in.Workdir}
+		if in.Resume != "" {
+			args = []string{"exec", "resume", "--json", "--skip-git-repo-check"}
 		}
 		if in.Model != "" {
 			args = append(args, "-m", in.Model)
 		}
-		args = append(args,
+		if in.Resume == "" {
 			// OS sandbox is the boundary; codex's own sandbox must not
 			// double-wrap or pause on interactive approval prompts.
-			"--sandbox", "danger-full-access",
-			"--dangerously-bypass-approvals-and-sandbox",
-		)
+			args = append(args, "--sandbox", "danger-full-access")
+		}
+		args = append(args, "--dangerously-bypass-approvals-and-sandbox")
 		// IDE tools (F-028): register DHI's loopback endpoint inline via
 		// `-c mcp_servers.dhi.url=...` (no config file needed).
 		args = append(args, CodexMCPArgs(in.MCPConfig, in.MCPURL)...)
+		if in.Resume != "" {
+			args = append(args, in.Resume)
+		}
 		if in.Stdin != "" {
 			// Oversized delivery: `codex exec -` reads the prompt from
 			// stdin (0.147 contract; live-verify checklist item).
@@ -97,6 +102,10 @@ var Codex = &CLI{
 	// StdinOK: `codex exec -` consumes stdin (documented contract;
 	// live-verify on the next real run).
 	StdinOK: true,
+	// ResumeOK: `exec resume <thread_id> <prompt>` continues the thread
+	// thread.started names — live-verified on 0.147.0 (recall across
+	// spawns, cached input on the resumed turn).
+	ResumeOK: true,
 	// MCPOK: `-c mcp_servers.dhi.url=...` registers the loopback
 	// endpoint inline; live-verified 2026-09-26 on 0.147.0 (a real
 	// tool call through the loopback server).
@@ -125,8 +134,9 @@ type codexItem struct {
 		Output   string `json:"aggregated_output"`
 		Path     string `json:"path"`
 	} `json:"item"`
-	Path  string     `json:"path"`
-	Usage codexUsage `json:"usage"`
+	Path     string     `json:"path"`
+	ThreadID string     `json:"thread_id"`
+	Usage    codexUsage `json:"usage"`
 }
 
 // codexUsage is turn.completed's usage block (the cache fields were
@@ -144,6 +154,7 @@ type codexUsage struct {
 type codexStop struct {
 	Type        string     `json:"type"` // "codex.turn.completed"
 	LastMessage string     `json:"last_message"`
+	ThreadID    string     `json:"thread_id,omitempty"`
 	Usage       codexUsage `json:"usage"`
 }
 
@@ -151,15 +162,18 @@ func codexParseStream(r io.Reader) <-chan StreamEvent {
 	ch := make(chan StreamEvent)
 	go func() {
 		defer close(ch)
-		var lastText string
+		var lastText, threadID string
 		for line := range lineStream(r) {
 			var it codexItem
 			if err := json.Unmarshal([]byte(line), &it); err != nil {
 				ch <- StreamEvent{Kind: EventError, Detail: truncate(err.Error(), 120)}
 				continue
 			}
+			if it.Type == "thread.started" {
+				threadID = it.ThreadID
+			}
 			if it.Type == "turn.completed" {
-				stop := codexStop{Type: "codex.turn.completed", LastMessage: lastText}
+				stop := codexStop{Type: "codex.turn.completed", LastMessage: lastText, ThreadID: threadID}
 				stop.Usage = it.Usage
 				b, err := json.Marshal(stop)
 				if err != nil {
@@ -233,6 +247,7 @@ func codexFinalize(final string) (string, Usage, error) {
 	u := Usage{
 		TokensIn: stop.Usage.InputTokens - stop.Usage.CachedInput, TokensOut: stop.Usage.OutputTokens,
 		CacheRead: stop.Usage.CachedInput,
+		SessionID: stop.ThreadID,
 	}
 	if stop.Usage.InputTokens == 0 {
 		u.TokensIn = -1

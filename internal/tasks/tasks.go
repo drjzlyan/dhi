@@ -241,6 +241,9 @@ type Run struct {
 	// Prompt-cache accounting (F-065); 0 = not reported.
 	CacheRead  int `toml:"cache_read,omitempty"`
 	CacheWrite int `toml:"cache_write,omitempty"`
+	// Session is the CLI session id this run reported (F-066); a later
+	// turn of the same episode resumes it.
+	Session string `toml:"session,omitempty"`
 }
 
 // file is the on-disk TOML shape.

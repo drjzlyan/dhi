@@ -151,3 +151,63 @@ func TestArmOrderAlternates(t *testing.T) {
 		t.Fatalf("order = %s then %s, want raw then dhi", first(1), first(2))
 	}
 }
+
+// sessionDoneStub does the offline task's work, records each spawn's
+// argv as spawn-<n>, and reports a session id.
+const sessionDoneStub = `#!/bin/sh
+N=0
+if [ -f "$DUMPDIR/n" ]; then N=$(cat "$DUMPDIR/n"); fi
+N=$((N+1))
+printf '%s\n' "$N" > "$DUMPDIR/n"
+for a in "$@"; do printf '%s\n' "$a"; done > "$DUMPDIR/spawn-$N"
+mkdir -p app && printf 'done\n' > app/out.txt
+echo '{"type":"result","subtype":"success","is_error":false,"result":"ok","session_id":"S1","total_cost_usd":0.001,"usage":{"input_tokens":4,"output_tokens":2}}'
+`
+
+// F-066: follow-ups continue the session in both arms.
+func TestFollowupsResumeInBothArms(t *testing.T) {
+	task := offlineTask(t)
+	task.Followups = []string{"now add a second line"}
+	for _, run := range []func(Config, Task, string) Result{RunRaw, RunDHI} {
+		dump := t.TempDir()
+		c := stubConfig(t, sessionDoneStub)
+		c.Env = append(c.Env, "DUMPDIR="+dump)
+		r := run(c, task, t.TempDir())
+		if !r.OK || r.Attempts != 2 || r.TokensIn != 8 {
+			t.Fatalf("%s arm: %+v", r.Arm, r)
+		}
+		second, err := os.ReadFile(filepath.Join(dump, "spawn-2"))
+		if err != nil {
+			t.Fatalf("%s arm: %v", r.Arm, err)
+		}
+		if !strings.Contains(string(second), "--resume\nS1\n") || !strings.Contains(string(second), "second line") {
+			t.Fatalf("%s arm follow-up did not resume:\n%s", r.Arm, second)
+		}
+	}
+}
+
+func TestStageMakesAGitRepo(t *testing.T) {
+	ts, err := LoadTasks("testdata/tasks")
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	if err := ts[0].Stage(root); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(root, Member, ".git", "HEAD")); err != nil {
+		t.Fatalf("seed is not a git repo: %v", err)
+	}
+}
+
+func TestRunExpectation(t *testing.T) {
+	task := Task{Expect: []Expect{{Run: []string{"sh", "-c", "echo boom; exit 1"}}, {Run: []string{"true"}}}}
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, Member), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	unmet := task.Check(root)
+	if len(unmet) != 1 || !strings.Contains(unmet[0], "sh -c echo boom; exit 1 failed: boom") {
+		t.Fatalf("unmet = %v", unmet)
+	}
+}

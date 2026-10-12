@@ -222,3 +222,40 @@ func TestWorktreeRootRowCyclesPersistsAndSaysItNeedsARestart(t *testing.T) {
 		t.Fatalf("cycle did not wrap to the default: %q", m.cfg.Worktrees.Root)
 	}
 }
+
+// F-066: the agents & budgets rows cycle presets, persist, and say the
+// change is live from the next spawn.
+func TestAgentsAndBudgetRowsPersist(t *testing.T) {
+	m, path := newSurface(t)
+	m.cursor = rowTaskUSD
+	view := ansi.Strip(m.View())
+	for _, want := range []string{"AGENTS & BUDGETS", "budgets.task_usd", "no limit"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("view missing %q", want)
+		}
+	}
+	feed(m, "l") // no limit → $0.5
+	m.cursor = rowMaxTurns
+	feed(m, "l", "l") // CLI default → 10 → 20
+	m.cursor = rowResume
+	feed(m, "enter") // on → off
+	m.cursor = rowTaskTokens
+	feed(m, "h") // no limit → 2M (wraps)
+	if !strings.Contains(m.flash, "next spawn") {
+		t.Fatalf("flash = %q", m.flash)
+	}
+	if !strings.Contains(ansi.Strip(m.View()), "2M") {
+		t.Fatal("token budget not rendered compactly")
+	}
+	back, err := settings.Load(path, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if back.Budgets.TaskUSD != 0.5 || back.Agents.MaxTurns != 20 || back.Agents.Resume || back.Budgets.TaskTokens != 2_000_000 {
+		t.Fatalf("persisted agents=%+v budgets=%+v", back.Agents, back.Budgets)
+	}
+	// The conventions file is untouched by an agents row.
+	if _, err := os.Stat(settings.ConventionsPath(path)); err == nil {
+		t.Fatal("an agents row must not write the conventions file")
+	}
+}

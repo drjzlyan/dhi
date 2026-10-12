@@ -20,10 +20,12 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/drjzlyan/dhi/internal/agentkit/budget"
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/agentkit/catalog"
 	"github.com/drjzlyan/dhi/internal/agentkit/clirun"
 	"github.com/drjzlyan/dhi/internal/agentkit/dhitools"
+	"github.com/drjzlyan/dhi/internal/agentkit/episode"
 	"github.com/drjzlyan/dhi/internal/agentkit/knowledge"
 	"github.com/drjzlyan/dhi/internal/agentkit/library"
 	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
@@ -255,7 +257,8 @@ func runTUI() (relaunch bool) {
 		// under .dhi/agents/. Guards carry the audited OS-sandbox
 		// adapter (nil here is impossible: the audit blocked first).
 		if messageBus != nil {
-			agentRT = newAgentRuntime(ws, messageBus, decision.Sandbox, termEnv, cfg.Engine, gitRunner, identityFn, sessionStore, runRunner, editorBridge, wsScopes, taskStore, reviewSvc, rgSearcher, mcpStore, convLive.Source(), cliLook, toolBin, mcpHome, decision.Worktrees)
+			agentRT = newAgentRuntime(ws, messageBus, decision.Sandbox, termEnv, cfg.Engine, gitRunner, identityFn, sessionStore, runRunner, editorBridge, wsScopes, taskStore, reviewSvc, rgSearcher, mcpStore, convLive.Source(), cliLook, toolBin, mcpHome, decision.Worktrees,
+				liveTuning(userCfg, wsCfg, cfg))
 			if agentRT != nil {
 				edOpts = append(edOpts, editor.WithChat(agentRT))
 			}
@@ -1056,7 +1059,27 @@ func (r execRunner) Run(ctx context.Context, dir string, argv []string, allowNet
 	return out, err
 }
 
-func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cliEnv []string, defaultEngine string, gitRunner *gitcore.Runner, identityFn gitcore.IdentityFunc, sessionStore *ideation.Store, runRunner dhitools.CommandRunner, editor dhitools.EditorAPI, workspaceScopes scopes.Set, taskStore *tasks.Store, reviewSvc *review.Service, kbSearcher search.Searcher, mcpStore *mcpserver.Store, conv conventions.Source, cliLook func(string) (string, error), toolBin []string, mcpHome string, wt worktrees.Layout) *agentkitRuntime.Runtime {
+// liveTuning re-reads [agents] and [budgets] for every turn (F-066), so a
+// Settings edit governs the next spawn without a restart. A broken edit
+// keeps the boot values; doctor and the Settings view name the problem.
+func liveTuning(userCfg, wsCfg string, boot settings.Config) func() agentkitRuntime.Tuning {
+	return func() agentkitRuntime.Tuning {
+		c, err := settings.Load(userCfg, wsCfg)
+		if err != nil {
+			c = boot
+		}
+		return agentkitRuntime.Tuning{
+			MaxTurns: c.Agents.MaxTurns,
+			Resume:   c.Agents.Resume,
+			Budgets: budget.Limits{
+				TaskUSD: c.Budgets.TaskUSD, TaskTokens: c.Budgets.TaskTokens,
+				AgentDayUSD: c.Budgets.AgentDayUSD, WorkspaceDayUSD: c.Budgets.WorkspaceDayUSD,
+			},
+		}
+	}
+}
+
+func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cliEnv []string, defaultEngine string, gitRunner *gitcore.Runner, identityFn gitcore.IdentityFunc, sessionStore *ideation.Store, runRunner dhitools.CommandRunner, editor dhitools.EditorAPI, workspaceScopes scopes.Set, taskStore *tasks.Store, reviewSvc *review.Service, kbSearcher search.Searcher, mcpStore *mcpserver.Store, conv conventions.Source, cliLook func(string) (string, error), toolBin []string, mcpHome string, wt worktrees.Layout, tune func() agentkitRuntime.Tuning) *agentkitRuntime.Runtime {
 	roster, err := manifest.LoadDir(filepath.Join(ws.Root, workspace.DirAgents))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "dhi: agent roster:", err)
@@ -1115,6 +1138,11 @@ func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cl
 		Run:             runRunner,
 		Editor:          editor,
 		WorkspaceScopes: workspaceScopes,
+		// F-066: per-task / per-thread episodes (CLI session resume) and
+		// the spend ledger budgets are checked against.
+		Episodes: episode.Open(ws.Root),
+		Spend:    budget.Open(ws.Root),
+		Tuning:   tune,
 		// F-020 pr_open: the review service opens task PRs; gh missing
 		// refuses by name at dispatch.
 		PR: func(ctx context.Context, member, branch, title, base string) (string, error) {
