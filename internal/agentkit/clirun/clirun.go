@@ -118,6 +118,11 @@ type CLI struct {
 	Tested    string // the exact version this adapter was verified against
 	EnvPass   []string
 	StateRoot func() []string // per-CLI rw roots for the sandbox profile
+	// TempEnv names env vars the CLI reads for its own temp base beyond
+	// TMPDIR (claude: CLAUDE_CODE_TMPDIR — it ignores TMPDIR for its
+	// per-uid Bash dir and dies on a sandboxed /tmp). The runtime points
+	// TMPDIR and each of these at a private writable dir (F-086).
+	TempEnv []string
 
 	// BuildArgs renders the headless argv (without the binary).
 	BuildArgs func(in RunInput) []string

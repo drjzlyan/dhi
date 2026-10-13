@@ -195,7 +195,7 @@ var RuntimeEntries = []string{
 	"channels/", "knowledge/", "memory/", "reviews/", "sessions/", "tasks/",
 	"agents/.archived/", "agents/*/runs/",
 	"config.toml", "marketplace.json", "unread.json", "welcome.seen", "setup.json", "org.toml",
-	"evals/", "episodes/", "traces/", "proposals/", "spend.jsonl", "grants.json", "tools/usage.toml",
+	"evals/", "episodes/", "traces/", "proposals/", "spend.jsonl", "grants.json", "tools/usage.toml", "tmp/",
 }
 
 // GitignoreHeader opens .dhi/.gitignore.

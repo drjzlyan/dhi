@@ -198,8 +198,14 @@ func (d Deps) gitTools() []tool {
 					return nil, fmt.Errorf("workflow blocks commit: %s", strings.Join(reasons, "; "))
 				}
 				// Validate the target repo before spending an approval.
-				if _, err := open(); err != nil {
+				repo, err := open()
+				if err != nil {
 					return nil, err
+				}
+				// F-086: never on the shared default branch — the work
+				// belongs on its own branch DHI can verify and PR.
+				if br, _ := repo.CurrentBranch(); d.isDefaultBranch(context.Background(), br) {
+					return nil, fmt.Errorf("refusing to commit on %s, the default branch: call work_branch to move this work onto its own branch, then commit there", br)
 				}
 				return a, nil
 			},
@@ -235,4 +241,20 @@ func (d Deps) gitTools() []tool {
 			},
 		},
 	}
+}
+
+// isDefaultBranch reports whether branch is the repo's default: the
+// remote's HEAD when one is set, and main/master always.
+func (d Deps) isDefaultBranch(ctx context.Context, branch string) bool {
+	if branch == "" {
+		return false
+	}
+	if branch == "main" || branch == "master" {
+		return true
+	}
+	if d.Git == nil {
+		return false
+	}
+	out, _, err := d.Git.Run(ctx, d.Workdir, "symbolic-ref", "--short", "refs/remotes/origin/HEAD")
+	return err == nil && strings.TrimPrefix(strings.TrimSpace(out), "origin/") == branch
 }

@@ -38,7 +38,7 @@ func (r *Runtime) handoff(ctx context.Context, t tasks.Task, author, why string)
 		return
 	}
 	_ = r.cfg.Tasks.BindThread(t.Slug, posted.Channel, posted.ID)
-	go r.Handle(context.WithoutCancel(ctx), posted)
+	r.goHandle(context.WithoutCancel(ctx), posted)
 }
 
 // ReleaseReady hands off every held card whose dependencies are now done.
@@ -247,7 +247,7 @@ func (r *Runtime) prOpened(ctx context.Context, author string, trigger bus.Messa
 				"Reply to @%s with concrete findings (file:line), or tell @%s it is ready.", rev, slug, strings.Join(opened, "; "), author, author),
 		})
 		if err == nil {
-			go r.Handle(context.WithoutCancel(ctx), posted)
+			r.goHandle(context.WithoutCancel(ctx), posted)
 		}
 	}
 }

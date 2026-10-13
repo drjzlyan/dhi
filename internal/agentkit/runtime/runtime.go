@@ -180,6 +180,11 @@ type Runtime struct {
 
 	cons consolidator // daily lesson consolidation (F-068)
 
+	// bg tracks the turns Handle dispatches and the hand-offs the
+	// runtime posts itself, so a caller can wait for them to drain
+	// (WaitBackground).
+	bg sync.WaitGroup
+
 	// work tracks in-flight turns per thread so the board can show a
 	// live "working" indicator (F-035 Part D). Key: channel + "#" + root.
 	workMu  sync.Mutex
@@ -587,6 +592,19 @@ func (r *Runtime) AgentIDs() []string {
 // Bus exposes the message bus for UI subscribers.
 func (r *Runtime) Bus() *bus.Bus { return r.cfg.Bus }
 
+// goHandle routes msg on a tracked goroutine (a hand-off the runtime
+// posts itself must not block the turn that caused it).
+func (r *Runtime) goHandle(ctx context.Context, msg bus.Message) {
+	r.bg.Add(1)
+	go func() {
+		defer r.bg.Done()
+		r.Handle(ctx, msg)
+	}()
+}
+
+// WaitBackground blocks until every dispatched turn has returned.
+func (r *Runtime) WaitBackground() { r.bg.Wait() }
+
 // Approvals exposes the shared approval queue for UIs. The in-house
 // tool gate that filled it is gone (ADR-0013 §3); CLI permission prompts
 // will repopulate it as a forward adapter feature.
@@ -629,7 +647,9 @@ func (r *Runtime) Handle(ctx context.Context, msg bus.Message) {
 		return
 	}
 	for _, id := range targets {
+		r.bg.Add(1)
 		go func(id string) {
+			defer r.bg.Done()
 			_ = r.Turn(ctx, id, msg)
 		}(id)
 	}

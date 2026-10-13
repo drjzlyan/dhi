@@ -21,6 +21,10 @@ var Claude = &CLI{
 	Bin:     "claude",
 	Tested:  "2.1.177",
 	EnvPass: []string{"HOME", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL"},
+	// Live-verified on 2.1.285: with only TMPDIR set, Bash still mkdirs
+	// /private/tmp/claude-<uid>/<cwd> and fails EPERM under the sandbox;
+	// CLAUDE_CODE_TMPDIR moves that base (F-086).
+	TempEnv: []string{"CLAUDE_CODE_TMPDIR"},
 	StateRoot: func() []string {
 		home, err := os.UserHomeDir()
 		if err != nil {

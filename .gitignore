@@ -32,3 +32,4 @@ __pycache__/
 .dhi/agents/*/runs/
 .dhi/tools/usage.toml
 .dhi/proposals/
+.dhi/tmp/

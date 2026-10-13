@@ -127,6 +127,9 @@ type Deps struct {
 	// LessonRecord stores a lesson the agent is sure of (F-068); scope is
 	// "private" or "user". nil omits lesson_record.
 	LessonRecord func(text, scope string, tags []string) (string, error)
+	// WorkBranch moves a chat turn's work onto its own card, convention
+	// branch and worktree (F-086); nil = no work_branch tool.
+	WorkBranch func(ctx context.Context, slug, title, member string, carry bool) (string, error)
 	// MemberRoots overrides where a member's vpaths resolve (F-067): on a
 	// task turn, member → the task worktree, so DHI's file tools act on
 	// the task branch exactly like the CLI's native tools in the same
@@ -264,6 +267,7 @@ func (d Deps) Handler() mcp.Handler {
 	all = append(all, d.forgeTools()...)
 	all = append(all, d.settingTools()...)
 	all = append(all, d.projectTools()...)
+	all = append(all, d.workTools()...)
 	for _, s := range harnessSlugs {
 		allow[s] = true
 	}

@@ -223,10 +223,11 @@ func verifyBrief(cmd, tail string, iter, max int) string {
 // turnTools is the per-turn context the served IDE tools need beyond the
 // agent itself (F-067).
 type turnTools struct {
-	envelope, task string                                                  // autonomy envelope (worktree) and bound card
-	plan           func([]dhitools.PlanStep) error                         // plan_update seam; nil = none
-	memberRoots    map[string]string                                       // member → task worktree for the file tools
-	lesson         func(text, scope string, tags []string) (string, error) // lesson_record seam; nil = none
+	envelope, task string                                                                            // autonomy envelope (worktree) and bound card
+	plan           func([]dhitools.PlanStep) error                                                   // plan_update seam; nil = none
+	memberRoots    map[string]string                                                                 // member → task worktree for the file tools
+	lesson         func(text, scope string, tags []string) (string, error)                           // lesson_record seam; nil = none
+	workBranch     func(ctx context.Context, slug, title, member string, carry bool) (string, error) // work_branch seam (F-086); nil = none
 }
 
 // envelopeFor decides the autonomy envelope (F-067, ADR-0032): only a
@@ -295,4 +296,4 @@ func (r *Runtime) provisionWorktree(agentID string, trigger bus.Message, task ta
 // DHI never learns about, so the work would be invisible (the P2 eval
 // failure).
 const noWorktreeNote = "\n- DHI could not give this task its own worktree. Do NOT create one yourself (DHI would never see the work): " +
-	"ask the human (@you) to attach one on the board, or make the change in place."
+	"call work_branch (with member when there are several), or ask the human (@you) to attach one on the board."

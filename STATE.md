@@ -1,5 +1,22 @@
 # STATE — current position
 
+### Session 56 (M32: agents that can ask, branch `m32`)
+
+- Plan: `~/.claude/plans/for-tasks-that-needs-nested-kernighan.md` (7 phases, one commit each);
+  ADR-0039. `m32` is cut from the unpushed `m31`.
+- Decisions (user): secrets stay in the fenced 0600 `credentials.toml`; skills only from the DHI
+  registry; host env keeps being inherited; grant default "this workspace" (+ once / everywhere).
+- P1 DONE (F-086): `CLI.TempEnv` + private `.dhi/tmp/<agent>` (TMPDIR and, for claude,
+  `CLAUDE_CODE_TMPDIR` — live-verified that TMPDIR alone still fails EPERM on /private/tmp);
+  `.dhi/tmp` reopened under the guard + gitignored; run runner TMPDIR `.dhi/tmp/run`.
+  `work_branch` harness tool (card + bind thread + Provision + carry via stash) → `relaunch` →
+  `continueTurn` posts `@agent continue: …`; `git_commit` refuses main/master/origin HEAD.
+  `Runtime.WaitBackground` tracks Handle's turns (fixed a test failing on the m31 base).
+- Gotchas:
+  - A tool that changes cwd or sandbox must set the turn's `relaunch`; the running spawn can't
+    see the change. P2 grants reuse this.
+  - DM messages are top-level; `work_branch` with the same slug rebinds the card to the new thread.
+
 ### Session 55 (M31: onboarding that knows you, branch `m31`)
 
 - Plan: `~/.claude/plans/what-are-the-planned-partitioned-prism.md` (7 phases + polish, one commit

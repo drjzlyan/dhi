@@ -11,6 +11,7 @@ import (
 
 	"github.com/drjzlyan/dhi/internal/conventions"
 	"github.com/drjzlyan/dhi/internal/gitcore"
+	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 )
 
@@ -35,6 +36,39 @@ func initRepo(t *testing.T, dir string) {
 		Author: &object.Signature{Name: "t", Email: "t@t"},
 	}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// onBranch checks out a new branch: git_commit refuses the default one.
+func onBranch(t *testing.T, dir, name string) {
+	t.Helper()
+	r, err := git.PlainOpen(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wt, err := r.Worktree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := wt.Checkout(&git.CheckoutOptions{Branch: plumbing.NewBranchReferenceName(name), Create: true, Keep: true}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// F-086: a commit on the default branch is refused by name before any
+// approval is spent, pointing the agent at work_branch.
+func TestGitCommitRefusesTheDefaultBranch(t *testing.T) {
+	f, m := newFixture(t, "git_commit")
+	api := memberDir(t, f.ws, "api")
+	initRepo(t, api)
+	writeFile(t, api, "a.go", "package a // v2\n")
+	h := Deps{Agent: m, WS: f.ws, Workdir: api, Identity: testIdentity(), Approvals: f.approvals}.Handler()
+	out, isErr := call(h, t, "git_commit", `{"message":"v2"}`)
+	if !isErr || !strings.Contains(out, "default branch") || !strings.Contains(out, "work_branch") {
+		t.Fatalf("commit on master = %q isErr=%v", out, isErr)
+	}
+	if n := len(f.approvals.List()); n != 0 {
+		t.Fatalf("refusal spent an approval (%d pending)", n)
 	}
 }
 
@@ -177,6 +211,7 @@ func TestGitCommitCreatesCommit(t *testing.T) {
 	f, m := newFixture(t, "git_commit")
 	api := memberDir(t, f.ws, "api")
 	initRepo(t, api)
+	onBranch(t, api, "task/v2")
 	writeFile(t, api, "a.go", "package a // v2\n")
 	h := Deps{Agent: m, WS: f.ws, Workdir: api, Identity: testIdentity(), Approvals: f.approvals}.Handler()
 
@@ -205,6 +240,7 @@ func TestGitCommitDeniedLeavesNoCommit(t *testing.T) {
 	f, m := newFixture(t, "git_commit")
 	api := memberDir(t, f.ws, "api")
 	initRepo(t, api)
+	onBranch(t, api, "task/v2")
 	writeFile(t, api, "a.go", "package a // v2\n")
 	h := Deps{Agent: m, WS: f.ws, Workdir: api, Identity: testIdentity(), Approvals: f.approvals}.Handler()
 
@@ -223,6 +259,7 @@ func TestGitCommitRefusesWithoutIdentity(t *testing.T) {
 	f, m := newFixture(t, "git_commit")
 	api := memberDir(t, f.ws, "api")
 	initRepo(t, api)
+	onBranch(t, api, "task/v2")
 	writeFile(t, api, "a.go", "package a // v2\n")
 	h := Deps{Agent: m, WS: f.ws, Workdir: api, Approvals: f.approvals}.Handler()
 	resolve := callAsync(h, "git_commit", `{"message":"v2"}`, f)
@@ -235,6 +272,7 @@ func TestGitCommitRefusesNothingStaged(t *testing.T) {
 	f, m := newFixture(t, "git_commit")
 	api := memberDir(t, f.ws, "api")
 	initRepo(t, api)
+	onBranch(t, api, "task/v2")
 	h := Deps{Agent: m, WS: f.ws, Workdir: api, Identity: testIdentity(), Approvals: f.approvals}.Handler()
 	resolve := callAsync(h, "git_commit", `{"message":"empty"}`, f)
 	if out, isErr := resolve(t); !isErr || !strings.Contains(out, "staged") {
@@ -246,6 +284,7 @@ func TestGitCommitBlockedByWorkflow(t *testing.T) {
 	f, m := newFixture(t, "git_commit")
 	api := memberDir(t, f.ws, "api")
 	initRepo(t, api)
+	onBranch(t, api, "task/v2")
 	writeFile(t, api, "a.go", "package a // v2\n")
 	h := Deps{
 		Agent: m, WS: f.ws, Workdir: api, Identity: testIdentity(), Approvals: f.approvals,
@@ -265,6 +304,7 @@ func TestGitCommitEnforcesConventions(t *testing.T) {
 	f, m := newFixture(t, "git_commit")
 	api := memberDir(t, f.ws, "api")
 	initRepo(t, api)
+	onBranch(t, api, "task/v2")
 	writeFile(t, api, "a.go", "package a // v2\n")
 	conv := conventions.Defaults()
 	conv.Commit.Format = conventions.FormatConventional
@@ -296,6 +336,7 @@ func TestGitCommitFollowsAChangingConventionsSource(t *testing.T) {
 	f, m := newFixture(t, "git_commit")
 	api := memberDir(t, f.ws, "api")
 	initRepo(t, api)
+	onBranch(t, api, "task/v2")
 	writeFile(t, api, "a.go", "package a // v2\n")
 
 	strict := conventions.Defaults()

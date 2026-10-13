@@ -24,6 +24,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/workflow"
 	"github.com/drjzlyan/dhi/internal/mcp"
 	"github.com/drjzlyan/dhi/internal/tasks"
+	"github.com/drjzlyan/dhi/internal/workspace"
 )
 
 // cliTurn executes one full turn of a CLI-runtime agent (F-013,
@@ -70,7 +71,9 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message, tl
 	} else if wfText != "" {
 		wfText += noWorktreeNote
 	}
+	rl := &relaunch{}
 	serve := r.serveToolsFor(e, trigger, turnTools{
+		workBranch:  r.workBranchSeam(e.m.ID, trigger, rl),
 		envelope:    r.envelopeFor(task, hasTask, workdir, tune),
 		task:        task.Slug,
 		plan:        r.planSeam(e.m.ID, ep.Key),
@@ -139,6 +142,13 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message, tl
 		}
 		ep = episode.Fold(ep, run, e.cli.Name, workdir, session, trigger.ID)
 
+		if run.Status == tasks.RunOK && rl.get() != "" {
+			// F-086: the work moved (a new worktree) — this spawn's cwd
+			// and sandbox are stale; the agent continues in a fresh run.
+			r.saveEpisode(ep)
+			r.continueTurn(ctx, e.m.ID, trigger, rl.get())
+			return nil
+		}
 		if run.Status == tasks.RunOK {
 			summary := sanitizeReply(run.Summary)
 			changed := true
@@ -357,7 +367,7 @@ func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Messag
 	var stalled atomic.Bool
 	cmd := exec.CommandContext(spawnCtx, wrapped[0], wrapped[1:]...)
 	cmd.Dir = workdir
-	cmd.Env = r.cliEnv(e.cli, in.mcpConfig)
+	cmd.Env = r.cliEnv(e.cli, e.m.ID, in.mcpConfig)
 	if stdin != "" {
 		cmd.Stdin = strings.NewReader(stdin)
 	}
@@ -596,6 +606,7 @@ func (r *Runtime) serveToolsFor(e *entry, trigger bus.Message, tt turnTools) *se
 			PlanUpdate:   tt.plan,
 			MemberRoots:  tt.memberRoots,
 			LessonRecord: tt.lesson,
+			WorkBranch:   tt.workBranch,
 			Forge:        r.cfg.Forge,
 			SetProps:     r.cfg.SetProps,
 			SettingCheck: r.cfg.SettingCheck,
@@ -786,6 +797,7 @@ func (r *Runtime) cliPromptAt(ctx context.Context, e *entry, trigger bus.Message
 	}
 	grounding := "\n\nFiles are addressed as <member>/<rel-path>. Members: " + strings.Join(members, ", ")
 	grounding += "\nThe reserved workspace dotdir is addressed as .dhi/<rel-path>; ideation artifacts belong under .dhi/sessions/<session>/<file>."
+	grounding += "\nBefore changing code outside a task worktree, call work_branch: DHI makes the card, branch and worktree and continues you there. Never commit on the default branch."
 	// Stable sections first (they cache), volatile after (F-065); each
 	// carries its priority for the prompt budget (F-078).
 	sys := []section{
@@ -925,27 +937,56 @@ func (r *Runtime) boundTask(trigger bus.Message) (tasks.Task, bool) {
 
 // cliEnv assembles the spawn environment: the hermetic base (toolchain
 // PATH etc.) extended by the CLI's EXACT declared pass-through. Nothing
-// else crosses (ADR-0012 §4) — an auditable, fixed set.
-func (r *Runtime) cliEnv(c *clirun.CLI, mcpConfig string) []string {
+// else crosses (ADR-0012 §4) — an auditable, fixed set. TMPDIR and the
+// CLI's own temp vars point at the agent's private dir inside the
+// sandbox's writable roots (F-086): the host's /tmp and /var/folders
+// are not writable there.
+func (r *Runtime) cliEnv(c *clirun.CLI, agentID, mcpConfig string) []string {
 	env := append([]string(nil), r.cfg.CLIEnv...)
 	for _, k := range c.EnvPass {
 		if v, ok := os.LookupEnv(k); ok {
 			env = append(env, k+"="+v)
 		}
 	}
+	if dir := r.agentTmp(agentID); dir != "" {
+		env = setEnv(env, "TMPDIR="+dir)
+		for _, k := range c.TempEnv {
+			env = setEnv(env, k+"="+dir)
+		}
+	}
 	// A per-turn MCP config must override any pass-through value of the
 	// same key: the turn's loopback endpoint, never the user's.
 	for _, kv := range c.MCPEnv(mcpConfig) {
-		key := kv[:strings.IndexByte(kv, '=')]
-		kept := env[:0]
-		for _, e := range env {
-			if !strings.HasPrefix(e, key+"=") {
-				kept = append(kept, e)
-			}
-		}
-		env = append(kept, kv)
+		env = setEnv(env, kv)
 	}
 	return env
+}
+
+// agentTmp is the agent's private temp dir, <ws>/.dhi/tmp/<agent>
+// (0700: claude refuses a temp base other users can read). "" when it
+// cannot be made — the CLI then keeps the inherited TMPDIR and any
+// sandbox denial surfaces as the run's own error.
+func (r *Runtime) agentTmp(agentID string) string {
+	if r.cfg.WS == nil || agentID == "" {
+		return ""
+	}
+	dir := filepath.Join(r.cfg.WS.Root, workspace.DirTmp, agentID)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return ""
+	}
+	return dir
+}
+
+// setEnv replaces every KEY= entry with kv (last write wins, one entry).
+func setEnv(env []string, kv string) []string {
+	key := kv[:strings.IndexByte(kv, '=')+1]
+	kept := env[:0]
+	for _, e := range env {
+		if !strings.HasPrefix(e, key) {
+			kept = append(kept, e)
+		}
+	}
+	return append(kept, kv)
 }
 
 // cliEvent forwards non-final transcript events into the trigger thread.

@@ -221,7 +221,7 @@ func runTUI() (relaunch bool) {
 		// Agents and DHI's own verify build with caches redirected into
 		// the toolchain's writable folders (F-076); terminals keep home.
 		agentEnv = append(append(append([]string(nil), termEnv...), mgr.BuildEnv()...), mgr.ToolEnv()...)
-		runRunner = execRunner{env: agentEnv, timeout: 5 * time.Minute, sandbox: guardWorkspace(decision.Sandbox, ws)}
+		runRunner = execRunner{env: runTmpEnv(agentEnv, ws), timeout: 5 * time.Minute, sandbox: guardWorkspace(decision.Sandbox, ws)}
 		if _, err := os.Stat(filepath.Join(toolRoot, "bin", "rg")); err == nil {
 			rgSearcher = search.Ripgrep{Bin: filepath.Join(toolRoot, "bin", "rg")}
 		}
@@ -1200,6 +1200,26 @@ type execRunner struct {
 	sandbox sandbox.Sandbox
 }
 
+// runTmpEnv points the run/verify runner's TMPDIR at <ws>/.dhi/tmp/run:
+// the host's temp dir is outside the sandbox's writable roots, so
+// compilers and test runners would fail on their first temp file (F-086).
+func runTmpEnv(env []string, ws *workspace.Workspace) []string {
+	if ws == nil {
+		return env
+	}
+	dir := filepath.Join(ws.Root, workspace.DirTmp, "run")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return env
+	}
+	out := make([]string, 0, len(env)+1)
+	for _, kv := range env {
+		if !strings.HasPrefix(kv, "TMPDIR=") {
+			out = append(out, kv)
+		}
+	}
+	return append(out, "TMPDIR="+dir)
+}
+
 func (r execRunner) Run(ctx context.Context, dir string, argv []string, allowNetwork bool) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, r.timeout)
 	defer cancel()
@@ -1275,6 +1295,7 @@ func guardWorkspace(sb sandbox.Sandbox, ws *workspace.Workspace) sandbox.Sandbox
 		filepath.Join(ws.Root, worktrees.TasksDir) + "/*",
 		filepath.Join(ws.Root, worktrees.ReviewsDir) + "/*",
 		filepath.Join(dhi, "sessions"),
+		filepath.Join(ws.Root, workspace.DirTmp), // private TMPDIRs (F-086)
 	}
 	for _, d := range reopen {
 		_ = os.MkdirAll(strings.TrimSuffix(d, "/*"), 0o755) // bubblewrap binds only existing paths

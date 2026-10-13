@@ -44,6 +44,9 @@ func teamHarness(t *testing.T) (*harness, *tasks.Store) {
 		t.Fatal(err)
 	}
 	h.rt.cfg.Tasks = st
+	// Hand-offs start turns in the background; drain them before the
+	// temp workspace is removed (cleanups run last-registered first).
+	t.Cleanup(h.rt.WaitBackground)
 	return h, st
 }
 

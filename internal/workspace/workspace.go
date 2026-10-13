@@ -44,6 +44,7 @@ const (
 	DirPersonas   = ".dhi/personas" // behaviour library: persona cards (F-045)
 	DirMCP        = ".dhi/mcp"      // installed MCP server cards (F-034)
 	DirRegistry   = ".dhi/registry" // cached signed pack index (F-034)
+	DirTmp        = ".dhi/tmp"      // private temp dirs for sandboxed children (F-086)
 )
 
 // Member is one repo registered in the workspace.
