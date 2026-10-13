@@ -52,7 +52,13 @@ func (r *Runtime) openEpisode(agentID, taskSlug string, trigger bus.Message) epi
 		return fresh
 	}
 	ep, ok, err := r.cfg.Episodes.Get(agentID, key)
-	if err != nil || !ok {
+	if err != nil {
+		// Named, never silent (F-078): the turn starts fresh and the
+		// trace says why its earlier session was not continued.
+		r.notice(trigger, agentID, "could not read this conversation's episode, starting fresh: "+err.Error())
+		return fresh
+	}
+	if !ok {
 		return fresh
 	}
 	return ep

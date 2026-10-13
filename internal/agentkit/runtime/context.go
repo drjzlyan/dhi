@@ -33,24 +33,20 @@ func limitsAt(level int) promptLimits {
 	return promptLevels[min(max(level, 0), maxCompaction)]
 }
 
+// conversationWindow is how many of a channel's newest records a prompt
+// considers before filtering to the trigger's thread.
+const conversationWindow = 4000
+
 // conversation is what agentID's prompt replays for trigger (F-065): a
 // threaded trigger sees its own thread (root first, then the replies), a
 // top-level trigger the channel's top level. Relayed stream lines are
 // status, not conversation; of the agent's own messages only its marked
 // final replies replay (legacy unmarked lines may be progress noise).
 func (r *Runtime) conversation(agentID string, trigger bus.Message) []bus.Message {
-	var msgs []bus.Message
-	if trigger.Thread != 0 {
-		for _, m := range r.cfg.Bus.History(trigger.Channel, 0) {
-			if m.ID == trigger.Thread {
-				msgs = append(msgs, m)
-				break
-			}
-		}
-		msgs = append(msgs, r.cfg.Bus.History(trigger.Channel, trigger.Thread)...)
-	} else {
-		msgs = r.cfg.Bus.History(trigger.Channel, 0)
-	}
+	// A bounded window of the channel's newest records (F-078): a channel
+	// grows for months; the prompt replays recent conversation, and the
+	// episode's summary carries what came before.
+	msgs := r.cfg.Bus.Recent(trigger.Channel, trigger.Thread, conversationWindow)
 	out := msgs[:0]
 	for _, m := range msgs {
 		switch {

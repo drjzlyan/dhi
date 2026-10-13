@@ -108,6 +108,8 @@ type Bus struct {
 	subs   map[string]map[int]chan Message
 	subSeq int
 
+	repaired []string // corrupt lines quarantined at Open (F-078)
+
 	// Now stamps message timestamps; nil = wall clock. Tests pin it so
 	// transcript renders (HH:MM stamps, day dividers) stay deterministic.
 	Now func() time.Time
@@ -138,9 +140,17 @@ func Open(ws *workspace.Workspace) (*Bus, error) {
 			if e.IsDir() || !strings.HasSuffix(e.Name(), ".jsonl") {
 				continue
 			}
-			msgs, err := jsonl.ReadAll[Message](filepath.Join(dir, e.Name()))
+			p := filepath.Join(dir, e.Name())
+			msgs, skipped, err := jsonl.ReadTolerant[Message](p)
 			if err != nil {
 				return err
+			}
+			if skipped > 0 {
+				// A corrupt line is quarantined, never a lost channel
+				// (F-078): the rest of the history stays readable.
+				if n, rerr := jsonl.Repair[Message](p); rerr == nil && n > 0 {
+					b.repaired = append(b.repaired, fmt.Sprintf("%s: %d corrupt line(s) moved to %s.corrupt", p, n, filepath.Base(p)))
+				}
 			}
 			b.mu.Lock()
 			for _, m := range msgs {
@@ -165,13 +175,37 @@ func (b *Bus) History(channel string, thread int64) []Message {
 	if err != nil {
 		return nil
 	}
-	msgs, err := jsonl.ReadAll[Message](path)
+	msgs, _, err := jsonl.ReadTolerant[Message](path)
 	if err != nil {
 		return nil
 	}
 	out := msgs[:0]
 	for _, m := range msgs {
 		if thread == 0 && m.Thread == 0 || thread != 0 && m.Thread == thread {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// Repaired names the channel files whose corrupt lines Open quarantined.
+func (b *Bus) Repaired() []string { return append([]string(nil), b.repaired...) }
+
+// Recent is History over only the newest window records of the channel
+// file (F-078): prompts read a bounded slice instead of a channel's whole
+// life. A thread older than the window yields what remains of it.
+func (b *Bus) Recent(channel string, thread int64, window int) []Message {
+	path, err := fileFor(b.root, channel)
+	if err != nil {
+		return nil
+	}
+	msgs, err := jsonl.Tail[Message](path, window)
+	if err != nil {
+		return nil
+	}
+	out := msgs[:0]
+	for _, m := range msgs {
+		if thread == 0 && m.Thread == 0 || thread != 0 && (m.Thread == thread || m.ID == thread) {
 			out = append(out, m)
 		}
 	}

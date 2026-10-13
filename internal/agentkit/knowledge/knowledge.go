@@ -14,6 +14,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/drjzlyan/dhi/internal/fsx"
 	"math"
 	"os"
 	"path/filepath"
@@ -376,12 +377,8 @@ func sortEntries(es []Entry) {
 }
 
 func atomicWrite(path string, data []byte) error {
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
-		return fmt.Errorf("knowledge: write %s: %w", filepath.Base(path), err)
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		return fmt.Errorf("knowledge: commit %s: %w", filepath.Base(path), err)
+	if err := fsx.WriteAtomic(path, data, 0o644); err != nil {
+		return fmt.Errorf("knowledge: %w", err)
 	}
 	return nil
 }

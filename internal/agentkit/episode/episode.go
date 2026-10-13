@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/drjzlyan/dhi/internal/fsx"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -196,11 +197,10 @@ func (s *Store) write(p string, e Episode) error {
 	if err != nil {
 		return fmt.Errorf("episode: %w", err)
 	}
-	tmp := p + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o644); err != nil {
+	if err := fsx.WriteAtomic(p, b, 0o644); err != nil {
 		return fmt.Errorf("episode: %w", err)
 	}
-	return os.Rename(tmp, p)
+	return nil
 }
 
 // Update applies fn to the stored episode (or a fresh one carrying agent

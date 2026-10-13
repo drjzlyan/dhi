@@ -151,3 +151,38 @@ func TestOpenMissingTreeIsEmpty(t *testing.T) {
 		t.Error("expected empty bus")
 	}
 }
+
+// F-078: one corrupt line no longer wipes a channel — it is quarantined
+// at Open and the rest of the history stays readable.
+func TestCorruptLineIsQuarantinedNotFatal(t *testing.T) {
+	ws := fixtureWS(t)
+	b, _ := Open(ws)
+	root, _ := b.Post(Message{Channel: "#general", Author: Human, Text: "first"})
+	_, _ = b.Post(Message{Channel: "#general", Author: "scout", Thread: root.ID, Text: "reply"})
+	p, _ := fileFor(ws.Root, "#general")
+	f, _ := os.OpenFile(p, os.O_APPEND|os.O_WRONLY, 0o644)
+	_, _ = f.WriteString("{not json\n")
+	_ = f.Close()
+	_, _ = b.Post(Message{Channel: "#general", Author: Human, Text: "after"})
+
+	if got := b.History("#general", 0); len(got) != 2 {
+		t.Fatalf("history with a corrupt line = %d messages, want 2", len(got))
+	}
+	b2, err := Open(ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(b2.Repaired()) != 1 {
+		t.Fatalf("repaired = %v", b2.Repaired())
+	}
+	if q, _ := os.ReadFile(p + ".corrupt"); string(q) != "{not json\n" {
+		t.Fatalf("quarantine = %q", q)
+	}
+	// Recent: a bounded tail, thread view includes its root.
+	if got := b2.Recent("#general", root.ID, 100); len(got) != 2 || got[0].ID != root.ID {
+		t.Fatalf("recent thread = %+v", got)
+	}
+	if got := b2.Recent("#general", 0, 1); len(got) != 1 || got[0].Text != "after" {
+		t.Fatalf("recent window 1 = %+v", got)
+	}
+}

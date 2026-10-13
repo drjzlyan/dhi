@@ -90,6 +90,7 @@ func Run(toolRoot, wsRoot string) Report {
 	r.Checks = append(r.Checks, RunStore(wsRoot)...)
 	r.Checks = append(r.Checks, Autopilots(wsRoot)...)
 	r.Checks = append(r.Checks, UnreadStore(wsRoot)...)
+	r.Checks = append(r.Checks, Memory(wsRoot)...)
 	r.Checks = append(r.Checks, Sessions(wsRoot)...)
 	r.Checks = append(r.Checks, Marketplace(wsRoot)...)
 	r.Checks = append(r.Checks, Packs(wsRoot)...)

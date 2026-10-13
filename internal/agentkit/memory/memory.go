@@ -5,6 +5,7 @@ package memory
 
 import (
 	"fmt"
+	"github.com/drjzlyan/dhi/internal/fsx"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -59,14 +60,14 @@ func (s *Store) Journal(agentID string, limit int) ([]Entry, error) {
 	if err != nil {
 		return nil, err
 	}
-	all, err := jsonl.ReadAll[Entry](filepath.Join(dir, "journal.jsonl"))
-	if err != nil {
-		return nil, err
+	path := filepath.Join(dir, "journal.jsonl")
+	if limit > 0 {
+		// The newest entries only, read from the end (F-078): a journal
+		// grows for the life of the agent; a prompt needs a few lines.
+		return jsonl.Tail[Entry](path, limit)
 	}
-	if limit <= 0 || limit >= len(all) {
-		return all, nil
-	}
-	return all[len(all)-limit:], nil
+	all, _, err := jsonl.ReadTolerant[Entry](path)
+	return all, err
 }
 
 // ReadNotes returns the contents of notes.md ("" when absent).
@@ -85,21 +86,14 @@ func (s *Store) ReadNotes(agentID string) (string, error) {
 	return string(b), nil
 }
 
-// WriteNotes replaces notes.md atomically-ish (write + rename).
+// WriteNotes replaces notes.md atomically and durably (F-078).
 func (s *Store) WriteNotes(agentID, content string) error {
 	dir, err := s.dir(agentID)
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("memory: mkdir: %w", err)
-	}
-	tmp := filepath.Join(dir, ".notes.tmp")
-	if err := os.WriteFile(tmp, []byte(content), 0o644); err != nil {
-		return fmt.Errorf("memory: write notes: %w", err)
-	}
-	if err := os.Rename(tmp, filepath.Join(dir, "notes.md")); err != nil {
-		return fmt.Errorf("memory: rename notes: %w", err)
+	if err := fsx.WriteAtomic(filepath.Join(dir, "notes.md"), []byte(content), 0o644); err != nil {
+		return fmt.Errorf("memory: %w", err)
 	}
 	return nil
 }

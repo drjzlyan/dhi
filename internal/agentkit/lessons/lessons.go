@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/drjzlyan/dhi/internal/fsx"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -117,11 +118,7 @@ func (s *Store) save(p string, ls []Lesson) error {
 	if err != nil {
 		return err
 	}
-	tmp := p + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o644); err != nil {
-		return fmt.Errorf("lessons: %w", err)
-	}
-	return os.Rename(tmp, p)
+	return fsx.WriteAtomic(p, b, 0o644)
 }
 
 // mutate applies fn to one file's lessons under the lock.
@@ -132,15 +129,19 @@ func (s *Store) mutate(scope, agent string, fn func([]Lesson) ([]Lesson, error))
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	ls, err := s.load(p)
-	if err != nil {
-		return err
-	}
-	out, err := fn(ls)
-	if err != nil {
-		return err
-	}
-	return s.save(p, out)
+	// The file lock covers another DHI process on this workspace (F-078):
+	// its reflection must not overwrite this one's new lesson.
+	return fsx.Locked(p, func() error {
+		ls, err := s.load(p)
+		if err != nil {
+			return err
+		}
+		out, err := fn(ls)
+		if err != nil {
+			return err
+		}
+		return s.save(p, out)
+	})
 }
 
 // norm canonicalises lesson text for identity and dedupe.
