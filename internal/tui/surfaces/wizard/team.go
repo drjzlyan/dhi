@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 
 	"charm.land/bubbletea/v2"
@@ -145,9 +146,7 @@ func (s *teamStep) counts() starter.Counts {
 	v := s.form.Values()
 	for i, sl := range starter.Slots {
 		if fieldCounts+i < len(v) {
-			n := 0
-			fmt.Sscanf(v[fieldCounts+i], "%d", &n)
-			if n > 0 {
+			if n, err := strconv.Atoi(v[fieldCounts+i]); err == nil && n > 0 {
 				c[sl.Role] = n
 			}
 		}

@@ -35,8 +35,8 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 
 func TestLoadRefusesUnknownKeysAndBadSchema(t *testing.T) {
 	root := t.TempDir()
-	write(t, root, File, "schema = 1\n[project]\nnmae = \"x\"\n")
-	if _, _, err := Load(root); err == nil || !strings.Contains(err.Error(), "project.nmae") {
+	write(t, root, File, "schema = 1\n[project]\nbogus = \"x\"\n")
+	if _, _, err := Load(root); err == nil || !strings.Contains(err.Error(), "project.bogus") {
 		t.Fatalf("err = %v", err)
 	}
 	write(t, root, File, "schema = 2\n")

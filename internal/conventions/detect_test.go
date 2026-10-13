@@ -41,7 +41,7 @@ func TestInferFromExample(t *testing.T) {
 	if i.PRBody != "## Summary\n\n## Checklist\n\n- [ ] tests\n- [ ] docs (later)" {
 		t.Fatalf("pr skeleton %q", i.PRBody)
 	}
-	var c Config = Defaults()
+	c := Defaults()
 	c.Learn(i)
 	if err := c.Validate(); err != nil {
 		t.Fatalf("learned config invalid: %v", err)
