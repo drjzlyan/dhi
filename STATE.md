@@ -28,7 +28,18 @@
 - P6 DONE in code (F-077): `Result.VerifyRounds/Verify`, fixture `verify`/`max_iterations`/
   `expect_verify_rounds`, fixtures fix-retry-hidden, multi-bug, py-fix-failing, ts-fix-failing.
   NOT RUN LIVE (tokens): `DHI_EVAL=1 DHI_EVAL_TASK=fix-retry-hidden make eval`.
+- P7 DONE (F-078, ADR-0037): `internal/fsx`, tolerant `jsonl` (ReadTolerant/Tail/Repair/
+  Compact), bus quarantine + `Bus.Recent`, journal rotation + digest, lesson Policy, episode GC,
+  session compaction (`Episode.LastContext`), prompt budget (`budgetfit.go` sections), history
+  brief, `[memory]` settings + CONFIG rows, BRAIN `m`, notes paging, doctor memory checks.
+- M30 is COMPLETE in code on branch `m30` (not pushed, no PR). Open items: live eval
+  (`fix-retry-hidden`), optional toolchains live-checked on darwin/arm64 only, wizard still offers
+  branch presets rather than templates.
 - Gotchas:
+  - The prompt builder is a list of `section`s (`cliPromptAt`); a new block must be a section
+    with a priority/floor, or it escapes the budget.
+  - Settings and the runtime open separate `lessons.Store`s: caps for BRAIN come from
+    `m.cfg.Memory`, not the store.
   - Go verify has no prepare on purpose (the module cache is shared); don't add `go mod download`
     or every Go task asks for network.
   - `conventions.Config` holds a map: compare with `reflect.DeepEqual`, never `==`.

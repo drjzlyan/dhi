@@ -7,6 +7,7 @@ package settings
 import (
 	"context"
 	"fmt"
+	"github.com/drjzlyan/dhi/internal/agentkit/memory"
 	"os"
 	"path/filepath"
 	"sort"
@@ -194,6 +195,8 @@ type Deps struct {
 	// Lessons are what the crew has learned (F-068): the BRAIN section.
 	// Nil renders a named unavailable section.
 	Lessons *lessons.Store
+	// Memory backs BRAIN's memory view (F-078); nil = unavailable.
+	Memory *memory.Store
 	// ShareLesson contributes a lesson to the workspace KB (review
 	// policy); it returns the KB status. Nil disables s in BRAIN.
 	ShareLesson func(lessons.Lesson) (string, error)
@@ -408,7 +411,14 @@ const (
 	rowTaskTokens   = rowResume + 8
 	rowAgentDayUSD  = rowResume + 9
 	rowWorkDayUSD   = rowResume + 10
-	rowCount        = rowResume + 11
+	// Memory (F-078) follows the budgets.
+	rowMemPrompt  = rowResume + 11
+	rowMemSession = rowResume + 12
+	rowMemJournal = rowResume + 13
+	rowMemLessons = rowResume + 14
+	rowMemPinned  = rowResume + 15
+	rowMemDecay   = rowResume + 16
+	rowCount      = rowResume + 17
 )
 
 // Preset cycles for the agents & budgets rows (0 = the CLI default / no
@@ -421,6 +431,13 @@ var (
 	taskTokPresets  = []int{0, 250_000, 500_000, 1_000_000, 2_000_000}
 	agentDayPresets = []float64{0, 2, 5, 10, 20, 50}
 	workDayPresets  = []float64{0, 5, 10, 25, 50, 100}
+	// F-078 memory presets.
+	memPromptPresets  = []int{12_000, 24_000, 48_000, 96_000}
+	memSessionPresets = []int{80_000, 160_000, 300_000, 600_000}
+	memJournalPresets = []int{200, 400, 1000, 2500}
+	memLessonPresets  = []int{100, 200, 500, 1000}
+	memPinnedPresets  = []int{0, 5, 10, 20}
+	memDecayPresets   = []int{14, 30, 60, 90}
 )
 
 func cycleNum[T int | float64](cur T, opts []T, dir int) T {
@@ -527,6 +544,18 @@ func (m *Model) cycle(dir int) {
 		m.cfg.Budgets.AgentDayUSD = cycleNum(m.cfg.Budgets.AgentDayUSD, agentDayPresets, dir)
 	case rowWorkDayUSD:
 		m.cfg.Budgets.WorkspaceDayUSD = cycleNum(m.cfg.Budgets.WorkspaceDayUSD, workDayPresets, dir)
+	case rowMemPrompt:
+		m.cfg.Memory.PromptTokens = cycleNum(m.cfg.Memory.PromptTokens, memPromptPresets, dir)
+	case rowMemSession:
+		m.cfg.Memory.SessionTokens = cycleNum(m.cfg.Memory.SessionTokens, memSessionPresets, dir)
+	case rowMemJournal:
+		m.cfg.Memory.JournalMax = cycleNum(m.cfg.Memory.JournalMax, memJournalPresets, dir)
+	case rowMemLessons:
+		m.cfg.Memory.LessonsMax = cycleNum(m.cfg.Memory.LessonsMax, memLessonPresets, dir)
+	case rowMemPinned:
+		m.cfg.Memory.PinnedMax = cycleNum(m.cfg.Memory.PinnedMax, memPinnedPresets, dir)
+	case rowMemDecay:
+		m.cfg.Memory.DecayDays = cycleNum(m.cfg.Memory.DecayDays, memDecayPresets, dir)
 	default:
 		if m.cursor >= rowScopesBase && m.cursor < rowScopesBase+7 {
 			name := scopeRowNames[m.cursor-rowScopesBase]
@@ -1250,7 +1279,7 @@ func (m *Model) sectionHints() []string {
 			sec = append(sec, "r revoke grants") // only when there is something to revoke
 		}
 	case secBrain:
-		sec = []string{"p pin", "x retire", "s share", "/ filter"}
+		sec = []string{"p pin", "x retire", "s share", "m memory", "/ filter"}
 	case secProposals:
 		sec = []string{"v view", "y approve", "n reject", "x archive"}
 	case secTeams:
@@ -1348,6 +1377,13 @@ func (m *Model) configView(w, budget int) []string {
 	add(rowTaskTokens, "budgets.task_tokens", orMuted(m.cfg.Budgets.TaskTokens == 0, "no limit", tokensText(m.cfg.Budgets.TaskTokens)))
 	add(rowAgentDayUSD, "budgets.agent_day_usd", orMuted(m.cfg.Budgets.AgentDayUSD == 0, "no limit", usd(m.cfg.Budgets.AgentDayUSD)+" / day"))
 	add(rowWorkDayUSD, "budgets.workspace_day_usd", orMuted(m.cfg.Budgets.WorkspaceDayUSD == 0, "no limit", usd(m.cfg.Budgets.WorkspaceDayUSD)+" / day"))
+	head("memory")
+	add(rowMemPrompt, "memory.prompt_tokens", tokensText(m.cfg.Memory.PromptTokens)+" per prompt")
+	add(rowMemSession, "memory.session_tokens", tokensText(m.cfg.Memory.SessionTokens)+" before a fresh session")
+	add(rowMemJournal, "memory.journal_max", itoa(m.cfg.Memory.JournalMax)+" entries")
+	add(rowMemLessons, "memory.lessons_max", itoa(m.cfg.Memory.LessonsMax)+" active lessons")
+	add(rowMemPinned, "memory.pinned_max", orMuted(m.cfg.Memory.PinnedMax == 0, "no cap", itoa(m.cfg.Memory.PinnedMax)+" pinned"))
+	add(rowMemDecay, "memory.decay_days", itoa(m.cfg.Memory.DecayDays)+" days unused")
 	head("keys")
 	lines = append(lines, line{"  " + theme.TextDim().Render(leader("[keys]", settingNameW)) + m.keysValue(), -1})
 

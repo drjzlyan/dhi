@@ -339,6 +339,7 @@ func runTUI() (relaunch bool) {
 			// F-068 BRAIN: what the crew learned; s shares a lesson to the KB
 			// under its review policy.
 			settingsDeps.Lessons = lessons.Open(ws.Root)
+			settingsDeps.Memory = memory.Open(ws)
 			settingsDeps.Forge = forge.Open(ws.Root)      // F-069 PROPOSALS
 			settingsDeps.SetProps = setprop.Open(ws.Root) // F-070 settings proposals
 			settingsDeps.UserConfig, settingsDeps.WorkspaceConfig = userCfg, wsCfg

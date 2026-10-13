@@ -1045,4 +1045,4 @@ Plan: `~/.claude/plans/transient-baking-sun.md`. One spec + commit per phase on 
 - [x] P4 Naming templates: branch / worktree / commit / PR, user templates in Settings (F-075)
 - [x] P5 Verify every top language + managed Rust/JDK/.NET toolchains (F-076, ADR-0036)
 - [x] P6 Harder evals exercising fix-and-retry (F-077) — live run pending
-- [ ] P7 Top-class agent memory: durable stores, bounded growth, token budget, summaries (F-078, ADR-0037)
+- [x] P7 Top-class agent memory: durable stores, bounded growth, token budget, summaries (F-078, ADR-0037)

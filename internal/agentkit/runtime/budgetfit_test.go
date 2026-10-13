@@ -1,0 +1,67 @@
+package runtime
+
+import (
+	"context"
+	"strings"
+	"testing"
+
+	"github.com/drjzlyan/dhi/internal/agentkit/bus"
+)
+
+func TestFitSectionsShrinksLowestPriorityFirst(t *testing.T) {
+	secs := []section{
+		{name: "trigger", text: strings.Repeat("t", 500), prio: 0, floor: 500},
+		{name: "task", text: strings.Repeat("k", 400), prio: 1, floor: 200},
+		{name: "history", text: "OLD" + strings.Repeat("h", 2000) + "NEW", prio: 3, floor: 100, tail: true},
+		{name: "knowledge", text: strings.Repeat("x", 1000), prio: 6},
+	}
+	out := fitSections(secs, 1500)
+	total := 0
+	for _, s := range out {
+		total += runeLen(s.text)
+	}
+	if total > 1500 {
+		t.Fatalf("over budget: %d", total)
+	}
+	if runeLen(out[0].text) != 500 || runeLen(out[1].text) != 400 {
+		t.Fatalf("trigger/task shrank before lower priorities: %d %d", runeLen(out[0].text), runeLen(out[1].text))
+	}
+	if out[3].text != "" && runeLen(out[3].text) > 50 {
+		t.Fatalf("knowledge should give way first: %d", runeLen(out[3].text))
+	}
+	if !strings.HasSuffix(out[2].text, "NEW") || strings.Contains(out[2].text, "OLD") {
+		t.Fatalf("history must keep its newest end: %q…", out[2].text[:40])
+	}
+	// Floors hold even when the budget cannot be met.
+	tight := fitSections([]section{{text: strings.Repeat("t", 300), floor: 300}, {text: strings.Repeat("x", 300), prio: 2, floor: 100}}, 10)
+	if runeLen(tight[0].text) != 300 || runeLen(tight[1].text) < 100 {
+		t.Fatalf("floors broken: %d %d", runeLen(tight[0].text), runeLen(tight[1].text))
+	}
+}
+
+func TestShrinkRunesHeadAndTail(t *testing.T) {
+	s := "HEAD" + strings.Repeat("m", 500) + "TAIL"
+	got := shrinkRunes(s, 120, false)
+	if !strings.HasPrefix(got, "HEAD") || !strings.HasSuffix(got, "TAIL") || !strings.Contains(got, "trimmed for the prompt budget") || runeLen(got) > 120 {
+		t.Fatalf("shrunk = %q (%d)", got, runeLen(got))
+	}
+}
+
+func TestPromptStaysInBudgetAndBriefsDroppedHistory(t *testing.T) {
+	h := newHarness(t, baseDoc())
+	for i := 0; i < 80; i++ {
+		mustPost(t, h, bus.Message{Channel: "#general", Author: bus.Human, Text: "decision " + strings.Repeat("detail ", 60) + ". more"})
+	}
+	trig := mustPost(t, h, bus.Message{Channel: "#general", Author: bus.Human, Text: "@scout go"})
+	h.rt.cfg.Tuning = func() Tuning { return Tuning{Resume: true, MaxIterations: 3, Memory: MemoryTuning{PromptTokens: 4000}} }
+	prompt, system := h.rt.cliPromptAt(context.Background(), h.rt.agents["scout"], trig, "", 0, nil, false)
+	if n := runeLen(prompt) + runeLen(system); n > 4000*runesPerToken {
+		t.Fatalf("prompt %d runes over the %d budget", n, 4000*runesPerToken)
+	}
+	if !strings.Contains(prompt, "earlier messages omitted) In brief:") || !strings.Contains(prompt, "· human: decision") {
+		t.Fatalf("dropped history not briefed:\n%s", prompt[:min(len(prompt), 1500)])
+	}
+	if !strings.HasPrefix(prompt, "go") {
+		t.Fatalf("the trigger must lead, untrimmed: %q", prompt[:40])
+	}
+}

@@ -772,7 +772,7 @@ func (r *Runtime) cliPromptAt(ctx context.Context, e *entry, trigger bus.Message
 	role, skills := behavior.Resolve(e.m, r.lib())
 	persona := behavior.ResolvePersona(e.m, r.lib())
 	wsName := filepath.Base(r.cfg.WS.Root)
-	system = behavior.Compose(behavior.Input{
+	identity := behavior.Compose(behavior.Input{
 		AgentID:        e.m.ID,
 		Workspace:      wsName,
 		ManifestSystem: e.m.System,
@@ -786,43 +786,62 @@ func (r *Runtime) cliPromptAt(ctx context.Context, e *entry, trigger bus.Message
 	}
 	grounding := "\n\nFiles are addressed as <member>/<rel-path>. Members: " + strings.Join(members, ", ")
 	grounding += "\nThe reserved workspace dotdir is addressed as .dhi/<rel-path>; ideation artifacts belong under .dhi/sessions/<session>/<file>."
-	system += grounding
-	system += "\n\n" + teammateVoice
+	// Stable sections first (they cache), volatile after (F-065); each
+	// carries its priority for the prompt budget (F-078).
+	sys := []section{
+		{name: "identity", text: identity, prio: 1, floor: 1500},
+		{name: "grounding", text: grounding + "\n\n" + teammateVoice, prio: 0},
+	}
 	if r.cfg.Standards {
-		system += "\n\n" + standards.Resolve(r.cfg.WS.Root, e.m.ID, r.teamLookup())
+		sys = append(sys, section{name: "standards", text: "\n\n" + standards.Resolve(r.cfg.WS.Root, e.m.ID, r.teamLookup()), prio: 2, floor: 600})
 	}
 	if r.cfg.Conventions != nil {
 		if cv := r.cfg.Conventions(); cv != nil {
-			system += "\n\n" + cv.Guidance()
+			sys = append(sys, section{name: "conventions", text: "\n\n" + cv.Guidance(), prio: 2, floor: 400})
 		}
 	}
 	if wfText != "" {
-		system += "\n\n" + wfText
+		sys = append(sys, section{name: "workflow", text: "\n\n" + wfText, prio: 2, floor: 600})
 	}
-	system += r.lessonsBlock(e.m.ID, r.lessonQuery(trigger), lim)
-	system += r.memoryBlock(e.m.ID, lim)
-	system += r.forgeHint(e.m.ID)
-	system += r.knowledgeBlock(ctx, trigger.Text, lim)
+	sys = append(sys,
+		section{name: "lessons", text: r.lessonsBlock(e.m.ID, r.lessonQuery(trigger), lim), prio: 4, floor: 300},
+		section{name: "memory", text: r.memoryBlock(e.m.ID, lim), prio: 5, floor: 200},
+		section{name: "forge", text: r.forgeHint(e.m.ID), prio: 6},
+		section{name: "knowledge", text: r.knowledgeBlock(ctx, trigger.Text, lim), prio: 6},
+	)
 	if level > 0 {
-		system += "\n\n(Context was compacted after the previous attempt overflowed: older history, journal and knowledge were trimmed.)"
+		sys = append(sys, section{name: "compacted", prio: 0,
+			text: "\n\n(Context was compacted after the previous attempt overflowed: older history, journal and knowledge were trimmed.)"})
 	}
 
-	var b strings.Builder
 	text := strings.TrimSpace(stripMention(trigger.Text, e.m.ID))
 	if text == "" {
 		text = trigger.Text
 	}
-	b.WriteString(text)
-	b.WriteString(r.taskBlock(e.m.ID, trigger, lim))
-	b.WriteString(r.handoffBrief(e.m.ID, trigger))
+	pr := []section{
+		// The human's ask is never trimmed: everything else makes room.
+		{name: "trigger", text: text, prio: 0, floor: runeLen(text)},
+		{name: "task", text: r.taskBlock(e.m.ID, trigger, lim), prio: 1, floor: 1500},
+		{name: "handoff", text: r.handoffBrief(e.m.ID, trigger), prio: 2, floor: 600},
+	}
 	var seen int64
 	if ep != nil && resumed {
 		seen = ep.SeenID
 	} else if ep != nil {
-		b.WriteString(ep.Render())
+		pr = append(pr, section{name: "episode", text: ep.Render(), prio: 3, floor: 300})
 	}
-	b.WriteString(r.historyBlock(e.m.ID, trigger, lim, seen))
-	return b.String(), system
+	// The history's header and brief of dropped messages stay whole; its
+	// messages give way oldest first.
+	histHead, histBody := r.historyBlock(e.m.ID, trigger, lim, seen)
+	pr = append(pr,
+		section{name: "history-head", text: histHead, prio: 3, floor: min(runeLen(histHead), 1400)},
+		section{name: "history", text: histBody, prio: 3, floor: 800, tail: true})
+
+	// One budget for both halves: the system part is fitted in what the
+	// prompt part leaves, the prompt part in what the system part leaves.
+	budget := int(float64(r.tuning().memoryTuning().PromptTokens*runesPerToken) * compactionFactor[min(max(level, 0), len(compactionFactor)-1)])
+	all := fitSections(append(append([]section{}, sys...), pr...), budget)
+	return joinSections(all[len(sys):]), joinSections(all[:len(sys)])
 }
 
 // memoryBlock renders the agent's persistent context (M14 P1): the
@@ -850,7 +869,12 @@ func (r *Runtime) memoryBlock(agentID string, lim promptLimits) string {
 	if err != nil {
 		b.WriteString("\n- notes unavailable: " + err.Error())
 	} else if strings.TrimSpace(notes) != "" {
-		b.WriteString("\nNotes:\n" + truncateRunes(strings.TrimSpace(notes), lim.notes))
+		// Head and tail (F-078): what was added last is visible too.
+		b.WriteString("\nNotes:\n" + shrinkRunes(strings.TrimSpace(notes), lim.notes, false))
+	}
+	if digest, err := r.cfg.Memory.Digest(agentID); err == nil && strings.TrimSpace(digest) != "" && lim.journal > 0 {
+		// The rolled-up journal: older memory in brief, newest last.
+		b.WriteString("\nOlder journal (digest):\n" + shrinkRunes(strings.TrimSpace(digest), lim.notes/2, true))
 	}
 	return b.String()
 }

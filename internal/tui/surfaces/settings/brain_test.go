@@ -1,6 +1,7 @@
 package settings
 
 import (
+	"github.com/drjzlyan/dhi/internal/agentkit/memory"
 	"strings"
 	"testing"
 	"time"
@@ -104,5 +105,36 @@ func TestBrainEmptyExplainsLearning(t *testing.T) {
 	}
 	if view := ansi.Strip(m.View()); !strings.Contains(view, "agents learn when a check fails") {
 		t.Fatalf("empty brain must explain how learning happens:\n%s", view)
+	}
+}
+
+func TestBrainMemoryView(t *testing.T) {
+	m, _ := brainSurface(t)
+	mem := memory.Open(m.d.WS)
+	m.d.Memory = mem
+	_ = mem.Append("dev", "decision", "use int64 cents everywhere")
+	_ = mem.WriteNotes("dev", "# Dev notes\n- the ledger lives in app/ledger")
+	for m.brainSelected() == nil || m.brainSelected().Agent != "dev" {
+		feed(m, "j")
+	}
+	feed(m, "m")
+	if m.dlg == nil {
+		t.Fatal("m did not open the memory view")
+	}
+	view := ansi.Strip(m.View())
+	for _, want := range []string{"memory · dev", "JOURNAL", "use int64 cents everywhere", "NOTES", "the ledger lives in app/ledger"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("memory view missing %q:\n%s", want, view)
+		}
+	}
+	// The pinned cap comes from settings.
+	feed(m, "esc")
+	m.cfg.Memory.PinnedMax = 1
+	l := m.brainSelected()
+	if l.Status != lessons.StatusPinned {
+		feed(m, "p")
+		if !strings.Contains(m.flash, "memory.pinned_max") {
+			t.Fatalf("pin past the cap: flash %q", m.flash)
+		}
 	}
 }

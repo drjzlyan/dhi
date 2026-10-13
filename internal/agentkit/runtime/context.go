@@ -24,6 +24,9 @@ type promptLimits struct {
 var promptLevels = [...]promptLimits{
 	{history: historyWindow, msgRunes: 500, journal: 4, journalRunes: 200, notes: 1500, kbHits: 3, kbRunes: 300, comments: 5, runs: 3, lessons: 5},
 	{history: 12, msgRunes: 240, journal: 2, journalRunes: 160, notes: 600, kbHits: 1, kbRunes: 200, comments: 2, runs: 1, lessons: 2},
+	// F-078: a third, tightest level, so an overflow after the first
+	// compaction still has somewhere to go.
+	{history: 6, msgRunes: 160, journal: 1, journalRunes: 120, notes: 300, kbHits: 0, kbRunes: 0, comments: 1, runs: 1, lessons: 1},
 }
 
 // maxCompaction is the most compact level; an overflow there is final.
@@ -62,7 +65,7 @@ func (r *Runtime) conversation(agentID string, trigger bus.Message) []bus.Messag
 // historyBlock renders the conversation for agentID within lim, naming
 // how much was left out. after > 0 keeps only messages newer than it (a
 // resumed session already holds the rest).
-func (r *Runtime) historyBlock(agentID string, trigger bus.Message, lim promptLimits, after int64) string {
+func (r *Runtime) historyBlock(agentID string, trigger bus.Message, lim promptLimits, after int64) (head, body string) {
 	msgs := r.conversation(agentID, trigger)
 	if after > 0 {
 		kept := msgs[:0]
@@ -74,12 +77,15 @@ func (r *Runtime) historyBlock(agentID string, trigger bus.Message, lim promptLi
 		msgs = kept
 	}
 	if len(msgs) == 0 {
-		return ""
+		return "", ""
 	}
-	var b strings.Builder
-	b.WriteString("\n\nEarlier in this thread:")
+	var h, b strings.Builder
+	h.WriteString("\n\nEarlier in this thread:")
 	if n := len(msgs) - lim.history; n > 0 {
-		fmt.Fprintf(&b, "\n- (%d earlier messages omitted)", n)
+		fmt.Fprintf(&h, "\n- (%d earlier messages omitted)", n)
+		if brief := briefOf(msgs[:n], agentID); brief != "" {
+			h.WriteString(" In brief:" + brief)
+		}
 		msgs = msgs[n:]
 	}
 	for _, m := range msgs {
@@ -92,7 +98,7 @@ func (r *Runtime) historyBlock(agentID string, trigger bus.Message, lim promptLi
 		}
 		b.WriteString("\n- " + prefix + ": " + truncateRunes(m.Text, lim.msgRunes))
 	}
-	return b.String()
+	return h.String(), b.String()
 }
 
 // taskBlock renders the card bound to the trigger's thread, if any, so
@@ -207,4 +213,35 @@ func (t *tailBuffer) Write(p []byte) (int, error) {
 func (t *tailBuffer) lastLine() string {
 	lines := strings.Split(strings.TrimSpace(string(t.buf)), "\n")
 	return strings.TrimSpace(lines[len(lines)-1])
+}
+
+// briefOf is an extractive summary of messages dropped from the history
+// window (F-078): who said what, one short line each, the newest lines
+// kept — so a long conversation is condensed, not forgotten. No model
+// call: it costs nothing and cannot invent anything.
+func briefOf(msgs []bus.Message, agentID string) string {
+	const lines, perLine, total = 12, 110, 1200
+	var out []string
+	for _, m := range msgs {
+		who := m.Author
+		switch m.Author {
+		case bus.Human:
+			who = "human"
+		case agentID:
+			who = "you"
+		}
+		first := strings.Join(strings.Fields(m.Text), " ")
+		if i := strings.IndexAny(first, ".!?"); i > 20 {
+			first = first[:i+1]
+		}
+		out = append(out, "\n  · "+who+": "+truncateRunes(first, perLine))
+	}
+	if len(out) > lines {
+		out = out[len(out)-lines:]
+	}
+	s := strings.Join(out, "")
+	if r := []rune(s); len(r) > total {
+		s = string(r[len(r)-total:])
+	}
+	return s
 }

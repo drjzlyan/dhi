@@ -726,11 +726,25 @@ func (d Deps) memoryTools() []tool {
 	out = append(out, tool{
 		info: mcp.ToolInfo{
 			Name:        "memory_read_notes",
-			Description: "Read your persistent notes file.",
-			InputSchema: json.RawMessage(`{"type":"object","properties":{},"additionalProperties":false}`),
+			Description: "Read your persistent notes file, a page at a time (8000 characters by default). Args: {\"offset\": 0, \"limit\": 8000}.",
+			InputSchema: json.RawMessage(`{"type":"object","properties":{"offset":{"type":"integer","minimum":0},"limit":{"type":"integer","minimum":1,"maximum":32000}},"additionalProperties":false}`),
 		},
-		parse: func(raw json.RawMessage) (any, error) { return nil, nil },
-		exec: func(ctx context.Context, _ any) (string, error) {
+		parse: func(raw json.RawMessage) (any, error) {
+			var a struct {
+				Offset int `json:"offset"`
+				Limit  int `json:"limit"`
+			}
+			if len(raw) > 0 && string(raw) != "null" {
+				if err := args(raw, &a); err != nil {
+					return nil, err
+				}
+			}
+			if a.Limit <= 0 {
+				a.Limit = 8000
+			}
+			return [2]int{a.Offset, min(a.Limit, 32000)}, nil
+		},
+		exec: func(ctx context.Context, dec any) (string, error) {
 			notes, err := d.Memory.ReadNotes(d.Agent.ID)
 			if err != nil {
 				return "", err
@@ -738,7 +752,7 @@ func (d Deps) memoryTools() []tool {
 			if strings.TrimSpace(notes) == "" {
 				return "(notes empty)\n", nil
 			}
-			return notes, nil
+			return notesPage(notes, dec.([2]int)[0], dec.([2]int)[1]), nil
 		},
 	})
 	out = append(out, tool{
@@ -945,4 +959,19 @@ func (d Deps) conv() *conventions.Config {
 		return nil
 	}
 	return d.Conventions()
+}
+
+// notesPage returns one page of the notes (F-078): a large notes file
+// never floods the agent's context in one tool result.
+func notesPage(notes string, offset, limit int) string {
+	r := []rune(notes)
+	if offset >= len(r) {
+		return fmt.Sprintf("(end of notes: %d characters)\n", len(r))
+	}
+	end := min(offset+limit, len(r))
+	page := string(r[offset:end])
+	if end < len(r) {
+		page += fmt.Sprintf("\n\n(%d more characters; call memory_read_notes with offset=%d)\n", len(r)-end, end)
+	}
+	return page
 }

@@ -131,8 +131,58 @@ func (m *Model) brainKey(key string) bool {
 		}
 		m.brainAct(key, *l)
 		return true
+	case "m":
+		l := m.brainSelected()
+		if l == nil || l.Agent == "" {
+			m.flash = "select one of an agent's lessons to see that agent's memory"
+			return true
+		}
+		m.openDisplayDialog("memory · "+l.Agent, m.memoryLines(l.Agent))
+		return true
 	}
 	return false
+}
+
+// memoryLines is an agent's memory at a glance (F-078): the rolled-up
+// digest, the newest journal entries and the head of its notes.
+func (m *Model) memoryLines(agent string) []string {
+	if m.d.Memory == nil {
+		return []string{theme.TextDim().Render("memory unavailable")}
+	}
+	var out []string
+	sect := func(title string) { out = append(out, "", theme.SectionHeader().Render(title)) }
+	sect("DIGEST (older journal, newest last)")
+	if d, err := m.d.Memory.Digest(agent); err != nil {
+		out = append(out, theme.DangerText().Render(err.Error()))
+	} else if strings.TrimSpace(d) == "" {
+		out = append(out, theme.TextDim().Render("nothing rolled up yet"))
+	} else {
+		ls := strings.Split(strings.TrimSpace(d), "\n")
+		out = append(out, ls[max(len(ls)-20, 0):]...)
+	}
+	sect("JOURNAL (newest)")
+	if js, err := m.d.Memory.Journal(agent, 15); err != nil {
+		out = append(out, theme.DangerText().Render(err.Error()))
+	} else if len(js) == 0 {
+		out = append(out, theme.TextDim().Render("empty"))
+	} else {
+		for _, e := range js {
+			out = append(out, theme.TextDim().Render(e.At.Format("2006-01-02 15:04")+" "+e.Kind)+" "+e.Text)
+		}
+	}
+	sect("NOTES")
+	if n, err := m.d.Memory.ReadNotes(agent); err != nil {
+		out = append(out, theme.DangerText().Render(err.Error()))
+	} else if strings.TrimSpace(n) == "" {
+		out = append(out, theme.TextDim().Render("empty"))
+	} else {
+		ls := strings.Split(strings.TrimSpace(n), "\n")
+		out = append(out, ls[:min(len(ls), 30)]...)
+		if len(ls) > 30 {
+			out = append(out, theme.TextDim().Render(fmt.Sprintf("… %d more lines", len(ls)-30)))
+		}
+	}
+	return out[1:]
 }
 
 // brainAct pins/unpins (p), retires/restores (x) or shares (s) a lesson.
@@ -149,7 +199,7 @@ func (m *Model) brainAct(key string, l lessons.Lesson) {
 		if l.Status == lessons.StatusPinned {
 			set(lessons.StatusActive, "unpinned — it now competes on relevance")
 		} else {
-			if cap := m.d.Lessons.PinnedMax(); cap > 0 && m.d.Lessons.PinnedCount(l.Agent) >= cap {
+			if cap := m.cfg.Memory.PinnedMax; cap > 0 && m.d.Lessons.PinnedCount(l.Agent) >= cap {
 				m.flash = fmt.Sprintf("failed: %d lessons are pinned already (memory.pinned_max) — unpin one first", cap)
 				return
 			}
