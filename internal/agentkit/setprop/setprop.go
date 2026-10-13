@@ -21,6 +21,9 @@ import (
 const (
 	LayerWorkspace = "workspace" // .dhi/config.toml (the default)
 	LayerUser      = "user"      // ~/.config/dhi/config.toml — only if the human picks it
+	// LayerProject targets the project brief (F-080): Key is
+	// "project.<field>", applied to .dhi/project.toml.
+	LayerProject = "project"
 )
 
 // Statuses.
@@ -92,8 +95,8 @@ func (s *Store) Propose(p Proposal) (Proposal, error) {
 	if p.Layer == "" {
 		p.Layer = LayerWorkspace
 	}
-	if p.Layer != LayerWorkspace && p.Layer != LayerUser {
-		return Proposal{}, fmt.Errorf("setprop: layer %q (want %s or %s)", p.Layer, LayerWorkspace, LayerUser)
+	if p.Layer != LayerWorkspace && p.Layer != LayerUser && p.Layer != LayerProject {
+		return Proposal{}, fmt.Errorf("setprop: layer %q (want %s, %s or %s)", p.Layer, LayerWorkspace, LayerUser, LayerProject)
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()

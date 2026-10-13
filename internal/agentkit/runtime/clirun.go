@@ -790,8 +790,11 @@ func (r *Runtime) cliPromptAt(ctx context.Context, e *entry, trigger bus.Message
 	// carries its priority for the prompt budget (F-078).
 	sys := []section{
 		{name: "identity", text: identity, prio: 1, floor: 1500},
-		{name: "grounding", text: grounding + "\n\n" + teammateVoice, prio: 0},
 	}
+	if pb := r.projectBlock(); pb != "" {
+		sys = append(sys, section{name: "project", text: "\n\n" + pb, prio: 1, floor: 800})
+	}
+	sys = append(sys, section{name: "grounding", text: grounding + "\n\n" + teammateVoice, prio: 0})
 	if r.cfg.Standards {
 		sys = append(sys, section{name: "standards", text: "\n\n" + standards.Resolve(r.cfg.WS.Root, e.m.ID, r.teamLookup()), prio: 2, floor: 600})
 	}

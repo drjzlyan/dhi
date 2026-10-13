@@ -263,6 +263,7 @@ func (d Deps) Handler() mcp.Handler {
 	all = append(all, d.lessonTools()...)
 	all = append(all, d.forgeTools()...)
 	all = append(all, d.settingTools()...)
+	all = append(all, d.projectTools()...)
 	for _, s := range harnessSlugs {
 		allow[s] = true
 	}

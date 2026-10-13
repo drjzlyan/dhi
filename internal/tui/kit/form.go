@@ -312,3 +312,51 @@ func (f *Form) View() []string {
 	out = append(out, hint)
 	return out
 }
+
+// ViewWidth renders the form like View but fits every row in w cells:
+// inactive values end in "…", and the active text field scrolls so its
+// cursor stays visible. w <= 0 is View.
+func (f *Form) ViewWidth(w int) []string {
+	if w <= 0 || f.Busy {
+		return f.View()
+	}
+	const labelW = 10
+	avail := max(w-labelW-1, 8)
+	out := make([]string, 0, len(f.Fields)+2)
+	for i, fl := range f.Fields {
+		label := theme.TextDim().Render(padTo(fl.Label, labelW))
+		active := i == f.cur
+		mark := " "
+		if active {
+			mark = theme.GlyphCursor
+		}
+		var val string
+		switch {
+		case len(fl.Toggle) > 0:
+			val = ClipEllipsis(mark+"["+fl.Toggle[fl.sel]+"]", avail)
+		case !active:
+			val = ClipEllipsis(" "+fl.masked().Value, avail)
+		default:
+			rs, cur := []rune(fl.masked().Value), fl.Cur()
+			start := 0
+			if cur >= avail-2 {
+				start = cur - avail + 3
+			}
+			end := min(len(rs), start+avail-2)
+			val = string(rs[start:cur]) + theme.GlyphCursor + string(rs[cur:max(cur, end)])
+			if start > 0 {
+				val = "…" + val
+			}
+			val = ClipEllipsis(val, avail)
+		}
+		if active {
+			out = append(out, label+theme.TabActive().Render(val))
+		} else {
+			out = append(out, label+theme.TextDim().Render(val))
+		}
+	}
+	if f.Err != "" {
+		out = append(out, theme.DangerText().Render(ClipEllipsis(theme.GlyphCross+" "+f.Err, w)))
+	}
+	return append(out, theme.Hint().Render(ClipEllipsis("tab field · ←/→ cycle · enter save · esc cancel", w)))
+}

@@ -3,6 +3,7 @@ package wizard
 import (
 	"context"
 	"errors"
+	"github.com/drjzlyan/dhi/internal/agentkit/brief"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -1184,4 +1185,72 @@ func TestTeamStepStartsFromTheEngineTheCLIStepChose(t *testing.T) {
 	if !strings.Contains(plain(m), "[codex]") {
 		t.Fatalf("team step must preselect the engine already chosen:\n%s", plain(m))
 	}
+}
+
+// ---- project step (F-080) ----
+
+func projectFixture(t *testing.T) (*fixture, *[]brief.Brief) {
+	t.Helper()
+	f := newFixture(t, true)
+	var saved []brief.Brief
+	f.env.DetectBrief = func() brief.Brief {
+		return brief.Brief{Name: "widget", Summary: "Turns gears into sprockets.", Stack: "Go",
+			Process: brief.DefaultProcess, Testing: "Run before saying done: go test ./..."}
+	}
+	f.env.SaveBrief = func(b brief.Brief) error { saved = append(saved, b); return nil }
+	f.env.HasBrief = func() bool { return len(saved) > 0 }
+	return f, &saved
+}
+
+func TestProjectStepAcceptsTheDraftOnEnter(t *testing.T) {
+	f, saved := projectFixture(t)
+	m := f.wizard()
+	key(m, "enter") // welcome
+	if m.steps[m.idx].ID() != "project" {
+		t.Fatalf("on %s, want project", m.steps[m.idx].ID())
+	}
+	v := plain(m)
+	for _, want := range []string{"Tell your team about the project", "widget", "Turns gears", "never do"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("project step lacks %q:\n%s", want, v)
+		}
+	}
+	key(m, "enter")
+	if len(*saved) != 1 || (*saved)[0].Name != "widget" || (*saved)[0].Stack != "Go" {
+		t.Fatalf("saved %+v", *saved)
+	}
+	if !strings.Contains(strings.Join(f.env.Applied, "|"), "project brief saved") {
+		t.Fatalf("applied %v", f.env.Applied)
+	}
+}
+
+func TestProjectStepEditsAndKeepsNewlines(t *testing.T) {
+	f, saved := projectFixture(t)
+	m := f.wizard()
+	key(m, "enter")
+	for i := 0; i < 8; i++ { // → never do
+		key(m, "tab")
+	}
+	for _, r := range `prod\ndrop tables` {
+		key(m, string(r))
+	}
+	key(m, "enter")
+	if got := (*saved)[0].Dont; got != "prod\ndrop tables" {
+		t.Fatalf("dont = %q", got)
+	}
+}
+
+func TestProjectStepHiddenWhenABriefExists(t *testing.T) {
+	f, _ := projectFixture(t)
+	f.env.HasBrief = func() bool { return true }
+	if strings.Contains(strings.Join(titles(f.wizard()), ","), "project") {
+		t.Fatal("project step offered over an existing brief")
+	}
+}
+
+func TestGoldenProjectStep(t *testing.T) {
+	f, _ := projectFixture(t)
+	m := f.wizard()
+	key(m, "enter", "tab", "tab", "tab", "tab", "tab") // cursor on a long value
+	golden.Snapshot(t, "wizard_project", plain(m))
 }

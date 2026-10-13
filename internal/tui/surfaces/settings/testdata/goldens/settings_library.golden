@@ -1,16 +1,16 @@
   CONFIG        ╭─ › library ────────────────────────────────────────────────────────────╮
-  AGENTS        │  ROLES                                                                 │
-  BRAIN         │ ▌ backend            builtin Builds services, APIs and data layers wit │
-  PROPOSALS     │   designer           builtin Designs flows and interfaces: wireframes, │
-▌ LIBRARY       │   devops             builtin Keeps build, CI and release healthy: pipe │
-  TEAMS         │   fixer              builtin Fixes failing tasks end-to-end: reproduce │
-  PACKS         │   frontend           builtin Builds user interfaces: components, state │
-  STANDARDS     │   fullstack          builtin Builds features end to end: UI, API and d │
-  CONVENTIONS   │   lead               builtin Leads a team: plans the work, assigns it, │
-  WORKFLOWS     │   planner            builtin Breaks goals into task cards with accepta │
-  AUTOPILOTS    │   product-manager    builtin Owns the what and why: specs, acceptance  │
-  MARKETPLACE   │   reviewer           builtin Reviews diffs and PRs: correctness, tests │
-                │   scout              builtin Explores the codebase and reports finding │
+  PROJECT       │  ROLES                                                                 │
+  AGENTS        │ ▌ backend            builtin Builds services, APIs and data layers wit │
+  BRAIN         │   designer           builtin Designs flows and interfaces: wireframes, │
+  PROPOSALS     │   devops             builtin Keeps build, CI and release healthy: pipe │
+▌ LIBRARY       │   fixer              builtin Fixes failing tasks end-to-end: reproduce │
+  TEAMS         │   frontend           builtin Builds user interfaces: components, state │
+  PACKS         │   fullstack          builtin Builds features end to end: UI, API and d │
+  STANDARDS     │   lead               builtin Leads a team: plans the work, assigns it, │
+  CONVENTIONS   │   planner            builtin Breaks goals into task cards with accepta │
+  WORKFLOWS     │   product-manager    builtin Owns the what and why: specs, acceptance  │
+  AUTOPILOTS    │   reviewer           builtin Reviews diffs and PRs: correctness, tests │
+  MARKETPLACE   │   scout              builtin Explores the codebase and reports finding │
                 │   scribe             builtin Keeps channels and tasks documented: summ │
                 │   tester             builtin Tests the work: writes and runs tests, re │
                 │  SKILLS                                                                │

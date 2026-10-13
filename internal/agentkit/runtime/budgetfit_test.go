@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/drjzlyan/dhi/internal/agentkit/brief"
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 )
 
@@ -63,5 +64,22 @@ func TestPromptStaysInBudgetAndBriefsDroppedHistory(t *testing.T) {
 	}
 	if !strings.HasPrefix(prompt, "go") {
 		t.Fatalf("the trigger must lead, untrimmed: %q", prompt[:40])
+	}
+}
+
+func TestSystemPromptCarriesTheProjectBrief(t *testing.T) {
+	h := newHarness(t, baseDoc())
+	trig := mustPost(t, h, bus.Message{Channel: "#general", Author: bus.Human, Text: "@scout go"})
+	_, system := h.rt.cliPromptAt(context.Background(), h.rt.agents["scout"], trig, "", 0, nil, false)
+	if strings.Contains(system, "Project brief") {
+		t.Fatal("no brief on disk, yet the prompt has one")
+	}
+	if err := brief.Save(h.rt.cfg.WS.Root, brief.Brief{Name: "shop", Dont: "never touch prod"}); err != nil {
+		t.Fatal(err)
+	}
+	_, system = h.rt.cliPromptAt(context.Background(), h.rt.agents["scout"], trig, "", 0, nil, false)
+	i, j := strings.Index(system, "Project: shop"), strings.Index(system, "Files are addressed")
+	if i < 0 || !strings.Contains(system, "Never: never touch prod") || j < i {
+		t.Fatalf("brief missing or after grounding:\n%s", system)
 	}
 }

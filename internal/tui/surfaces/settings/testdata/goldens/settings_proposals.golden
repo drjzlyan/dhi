@@ -1,16 +1,16 @@
   CONFIG        ╭─ › proposals ────────────────────────────────────────────────────────────────────────────────────────╮
-  AGENTS        │ what agents asked you to approve · nothing they propose is active until you say y                    │
-  BRAIN         │                                                                                                      │
-▌ PROPOSALS     │  PENDING ─────────────────────────────────────────────────────────────────────────────────────────   │
-  LIBRARY       │ ▌ ◆ race_test         exec recipe · v1 · by dev · Run one package's tests with -race                 │
-  TEAMS         │                                                                                                      │
-  PACKS         │  FORGED TOOLS ────────────────────────────────────────────────────────────────────────────────────   │
-  STANDARDS     │   ✓ custom__check_all         exec v1 · 0 call(s) · Vet and race-test every package                  │
+  PROJECT       │ what agents asked you to approve · nothing they propose is active until you say y                    │
+  AGENTS        │                                                                                                      │
+  BRAIN         │  PENDING ─────────────────────────────────────────────────────────────────────────────────────────   │
+▌ PROPOSALS     │ ▌ ◆ race_test         exec recipe · v1 · by dev · Run one package's tests with -race                 │
+  LIBRARY       │                                                                                                      │
+  TEAMS         │  FORGED TOOLS ────────────────────────────────────────────────────────────────────────────────────   │
+  PACKS         │   ✓ custom__check_all         exec v1 · 0 call(s) · Vet and race-test every package                  │
+  STANDARDS     │                                                                                                      │
   CONVENTIONS   │                                                                                                      │
   WORKFLOWS     │                                                                                                      │
   AUTOPILOTS    │                                                                                                      │
   MARKETPLACE   │                                                                                                      │
-                │                                                                                                      │
                 │                                                                                                      │
                 │                                                                                                      │
                 │                                                                                                      │

@@ -1,16 +1,16 @@
   CONFIG        ╭─ › brain ────────────────────────────────────────────────────────────────────────────────────────────╮
-  AGENTS        │ what your crew has learned · 4 lesson(s)  / to filter                                                │
-▌ BRAIN         │                                                                                                      │
-  PROPOSALS     │  YOUR PREFERENCES ────────────────────────────────────────────────────────────────────────────────   │
-  LIBRARY       │ ▌ ● ▮▮▮▮▮ Keep pull requests small and focused                    ×0 · correction · 2d               │
-  TEAMS         │                                                                                                      │
-  PACKS         │  DEV ─────────────────────────────────────────────────────────────────────────────────────────────   │
-  STANDARDS     │   ◆ ▮▮▮▮▯ Run go test with -race in this repo                     ×6 · reflection · 2d  standard?    │
-  CONVENTIONS   │   ● ▮▮▮▯▯ Distribute the remainder one cent at a time             ×0 · reflection · 2d               │
-  WORKFLOWS     │   ✗ ▮▮▯▯▯ Use the legacy money package                            ×0 · agent · 2d                    │
+  PROJECT       │ what your crew has learned · 4 lesson(s)  / to filter                                                │
+  AGENTS        │                                                                                                      │
+▌ BRAIN         │  YOUR PREFERENCES ────────────────────────────────────────────────────────────────────────────────   │
+  PROPOSALS     │ ▌ ● ▮▮▮▮▮ Keep pull requests small and focused                    ×0 · correction · 2d               │
+  LIBRARY       │                                                                                                      │
+  TEAMS         │  DEV ─────────────────────────────────────────────────────────────────────────────────────────────   │
+  PACKS         │   ◆ ▮▮▮▮▯ Run go test with -race in this repo                     ×6 · reflection · 2d  standard?    │
+  STANDARDS     │   ● ▮▮▮▯▯ Distribute the remainder one cent at a time             ×0 · reflection · 2d               │
+  CONVENTIONS   │   ✗ ▮▮▯▯▯ Use the legacy money package                            ×0 · agent · 2d                    │
+  WORKFLOWS     │                                                                                                      │
   AUTOPILOTS    │                                                                                                      │
   MARKETPLACE   │                                                                                                      │
-                │                                                                                                      │
                 │                                                                                                      │
                 │                                                                                                      │
                 │                                                                                                      │

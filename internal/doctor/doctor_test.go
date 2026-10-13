@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/drjzlyan/dhi/internal/agentkit/brief"
 	"github.com/drjzlyan/dhi/internal/sandbox"
 	"github.com/drjzlyan/dhi/internal/settings"
 
@@ -487,5 +488,23 @@ func TestMarketplacePacksMCPChecks(t *testing.T) {
 	c, _ = statusOf(MCPServers(root), "mcp/servers")
 	if c.Status != Fail {
 		t.Fatalf("malformed mcp = %+v", c)
+	}
+}
+
+func TestProjectBriefCheck(t *testing.T) {
+	root := t.TempDir()
+	if c := Project(root); len(c) != 1 || c[0].Status != Warn {
+		t.Fatalf("missing brief: %+v", c)
+	}
+	_ = brief.Save(root, brief.Brief{Name: "x"})
+	if c := Project(root); c[0].Status != OK {
+		t.Fatalf("brief: %+v", c)
+	}
+	_ = os.WriteFile(brief.Path(root), []byte("schema = 3\n"), 0o644)
+	if c := Project(root); c[0].Status != Fail || !strings.Contains(c[0].Detail, "schema 3") {
+		t.Fatalf("malformed: %+v", c)
+	}
+	if Project("") != nil {
+		t.Fatal("no workspace must yield no check")
 	}
 }

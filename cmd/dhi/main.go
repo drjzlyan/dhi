@@ -21,6 +21,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/drjzlyan/dhi/internal/agentkit/brief"
 	"github.com/drjzlyan/dhi/internal/agentkit/budget"
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/agentkit/catalog"
@@ -735,6 +736,17 @@ func newSetupEnv(cwd string, ws *workspace.Workspace, userCfg, toolRoot string,
 		}
 		return starter.Apply(w, o, library.Open(w), tpl)
 	}
+	env.DetectBrief = func() brief.Brief {
+		var dirs []string
+		if w, err := workspace.Load(env.Root); err == nil {
+			for _, mb := range w.Members() {
+				dirs = append(dirs, mb.Path)
+			}
+		}
+		return brief.Detect(env.Root, dirs)
+	}
+	env.SaveBrief = func(b brief.Brief) error { return brief.Save(env.Root, b) }
+	env.HasBrief = func() bool { _, ok, err := brief.Load(env.Root); return ok || err != nil }
 	env.ComposeTeam = func(c starter.Counts) ([]starter.Result, error) {
 		w, err := workspace.Load(env.Root)
 		if err != nil {

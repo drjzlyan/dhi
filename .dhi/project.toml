@@ -1,0 +1,14 @@
+# Project brief: what this is and how we work. Every DHI employee reads it.
+# Edit it in Settings → PROJECT.
+schema = 1
+
+[project]
+  name = "dhi"
+  summary = "DHI is a terminal IDE where AI employees work alongside you: chat, a task board, an editor, and a crew of agents that take a task to a reviewed pull request."
+  goals = "Task to PR unattended, better every week, at the lowest cost per outcome. Onboarding that sets itself up and repairs itself."
+  users = "Developers who run coding CLIs (Claude Code, Codex, opencode) and want a team, not a single assistant."
+  stack = "Go, Bubble Tea v2, Lip Gloss; hermetic toolchain (no system dependencies)"
+  process = "One milestone per branch, one phase per commit. Each feature gets a docs/features/F-### spec with acceptance criteria before code. End every session by updating STATE.md and ROADMAP.md."
+  review = "Every change goes through a pull request the user reviews before it merges."
+  testing = "make verify (fmt, vet, build, race tests). Visual changes regenerate goldens deliberately: DHI_UPDATE_GOLDENS=1 make test."
+  dont = "Raw colors outside internal/tui/theme. Silent fallbacks (ADR-0011). Shelling out to unmanaged tools (ADR-0005). Force-pushing or rewriting shared history."

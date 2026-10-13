@@ -1,6 +1,7 @@
 package settings
 
 import (
+	"github.com/drjzlyan/dhi/internal/agentkit/brief"
 	"strings"
 
 	"github.com/drjzlyan/dhi/internal/agentkit/standards"
@@ -195,10 +196,14 @@ func (m *Model) previewStandards(id string) {
 }
 
 // effectiveBlock is what an agent's prompt carries after its system text:
-// the layered standards, then the team conventions — the same order
-// cliPrompt appends them in.
+// the project brief, the layered standards, then the team conventions —
+// the same order cliPrompt appends them in.
 func (m *Model) effectiveBlock(id string) string {
-	return standards.Resolve(m.d.WS.Root, id, m.teamLookup()) +
+	out := ""
+	if b, ok, err := brief.Load(m.d.WS.Root); err == nil && ok && !b.Empty() {
+		out = b.Render() + "\n\n"
+	}
+	return out + standards.Resolve(m.d.WS.Root, id, m.teamLookup()) +
 		"\n\n" + m.cfg.Conventions.Guidance()
 }
 

@@ -96,6 +96,7 @@ type sectionID uint8
 
 const (
 	secConfig sectionID = iota
+	secProject
 	secAgents
 	secBrain
 	secProposals
@@ -114,6 +115,8 @@ func (s sectionID) label() string {
 	switch s {
 	case secConfig:
 		return "CONFIG"
+	case secProject:
+		return "PROJECT"
 	case secAgents:
 		return "AGENTS"
 	case secBrain:
@@ -324,6 +327,8 @@ func (m *Model) HandleKey(key string) bool {
 		return m.libraryKey(key)
 	case secTeams:
 		return m.teamsKey(key)
+	case secProject:
+		return m.projectKey(key)
 	case secPacks:
 		return m.packsKey(key)
 	case secStandards:
@@ -1207,7 +1212,7 @@ func (m *Model) View() string {
 		// Dialogs overlay the panel over a dimmed backdrop (F-024),
 		// never replace its content. A form dialog's body is its form.
 		if m.dform != nil {
-			m.dlg.Lines = m.dform.View()
+			m.dlg.Lines = m.dform.ViewWidth(min(w-railW-8, 96))
 		}
 		view = kit.Overlay(strings.Split(view, "\n"), m.dlg.View(), w, h)
 	case m.form.open:
@@ -1233,6 +1238,8 @@ func (m *Model) sectionPane(w, h int) string {
 
 	var content []string
 	switch m.sec {
+	case secProject:
+		content = m.projectView(w - 4)
 	case secAgents:
 		content = m.agentsView()
 	case secBrain:
@@ -1297,6 +1304,8 @@ func (m *Model) sectionHints() []string {
 		sec = []string{"p pin", "x retire", "s share", "m memory", "/ filter"}
 	case secProposals:
 		sec = []string{"v view", "y approve", "n reject", "x archive"}
+	case secProject:
+		sec = []string{"e edit", "d draft from repo", "i interview me"}
 	case secTeams:
 		sec = []string{"a add by role", "n new", "e edit", "x delete"}
 	case secPacks:

@@ -1,0 +1,26 @@
+  CONFIG        ╭─ › project ────────────────────────────────────────────────────────────╮
+▌ PROJECT       │ What the project is and how you work. Every employee reads this on     │
+  AGENTS        │ every task.                                                            │
+  BRAIN         │                                                                        │
+  PROPOSALS     │ Project       shop                                                     │
+  LIBRARY       │ What it is    —                                                        │
+  TEAMS         │ Goals         —                                                        │
+  PACKS         │ Who it's for  —                                                        │
+  STANDARDS     │ Stack         Go                                                       │
+  CONVENTIONS   │ How we work   Work from task cards: one branch per card, small focused │
+  WORKFLOWS     │               commits, open a pull request, address review, merge when │
+  AUTOPILOTS    │               checks pass.                                             │
+  MARKETPLACE   │ Reviews       Every change goes through a pull request the user        │
+                │               reviews before it merges.                                │
+                │ Testing       Run before saying done: go test ./... (in repo)          │
+                │ Never         —                                                        │
+                │                                                                        │
+                │                                                                        │
+                │                                                                        │
+                │                                                                        │
+                │                                                                        │
+                │                                                                        │
+                │                                                                        │
+                │                                                                        │
+                │ project brief saved — employees read it from their next turn  e edit … │
+                ╰────────────────────────────────────────────────────────────────────────╯

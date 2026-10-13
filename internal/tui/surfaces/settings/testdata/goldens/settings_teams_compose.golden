@@ -1,16 +1,16 @@
   CONFIG        ╭─ › teams ──────────────────────────────────────────────────────────────╮
-  AGENTS        │ (no teams — "a" adds employees by role, "n" creates an empty team)     │
+  PROJECT       │ (no teams — "a" adds employees by role, "n" creates an empty team)     │
+  AGENTS        │                                                                        │
   BRAIN         │                                                                        │
   PROPOSALS     │                                                                        │
   LIBRARY       │                                                                        │
 ▌ TEAMS         │                                                                        │
-  PACKS         │                                                                        │
-  STANDARDS     │  ╭─ › add employees by role ───────────────────────╮                   │
-  CONVENTIONS   │  │ into       [new team(s)]                        │                   │
-  WORKFLOWS     │  │ leads      [2]                                  │                   │
-  AUTOPILOTS    │  │ fullstack ▌[3]                                  │                   │
-  MARKETPLACE   │  │ frontend   [0]                                  │                   │
-                │  │ backend    [0]                                  │                   │
+  PACKS         │  ╭─ › add employees by role ───────────────────────╮                   │
+  STANDARDS     │  │ into       [new team(s)]                        │                   │
+  CONVENTIONS   │  │ leads      [2]                                  │                   │
+  WORKFLOWS     │  │ fullstack ▌[3]                                  │                   │
+  AUTOPILOTS    │  │ frontend   [0]                                  │                   │
+  MARKETPLACE   │  │ backend    [0]                                  │                   │
                 │  │ testers    [0]                                  │                   │
                 │  │ PMs        [0]                                  │                   │
                 │  │ designers  [0]                                  │                   │

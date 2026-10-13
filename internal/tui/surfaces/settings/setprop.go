@@ -2,7 +2,9 @@ package settings
 
 import (
 	"fmt"
+	"strings"
 
+	"github.com/drjzlyan/dhi/internal/agentkit/brief"
 	"github.com/drjzlyan/dhi/internal/agentkit/setprop"
 	dhisettings "github.com/drjzlyan/dhi/internal/settings"
 )
@@ -17,6 +19,18 @@ func (sp SettingProposal) lines() []string {
 	old := sp.Old
 	if old == "" {
 		old = "(unset)"
+	}
+	if sp.Layer == setprop.LayerProject {
+		out := []string{"project brief · " + strings.TrimPrefix(sp.Key, "project."), "  now:"}
+		for _, l := range strings.Split(old, "\n") {
+			out = append(out, "    "+l)
+		}
+		out = append(out, "  proposed:")
+		for _, l := range strings.Split(sp.New, "\n") {
+			out = append(out, "    "+l)
+		}
+		return append(out, "  proposed by "+sp.Agent, "", "why: "+orDash(sp.Rationale), "",
+			"y replaces this one field of the brief; nothing else changes.")
 	}
 	return []string{
 		sp.Key,
@@ -47,6 +61,10 @@ func (m *Model) pendingSettings() []SettingProposal {
 // applySetting writes the one key into the proposal's layer, reloads the
 // live config, and records the approval.
 func (m *Model) applySetting(sp SettingProposal) {
+	if sp.Layer == setprop.LayerProject {
+		m.applyBriefProposal(sp)
+		return
+	}
 	path := m.d.WorkspaceConfig
 	if sp.Layer == setprop.LayerUser {
 		path = m.d.UserConfig
@@ -76,4 +94,27 @@ func (m *Model) rejectSetting(sp SettingProposal) {
 		return
 	}
 	m.flash = "rejected the " + sp.Key + " proposal"
+}
+
+// applyBriefProposal replaces one field of the project brief (F-080).
+func (m *Model) applyBriefProposal(sp SettingProposal) {
+	if m.d.WS == nil {
+		m.flash = "failed: not inside a workspace"
+		return
+	}
+	b, _, err := brief.Load(m.d.WS.Root)
+	if err == nil {
+		err = b.Set(strings.TrimPrefix(sp.Key, "project."), sp.New)
+	}
+	if err == nil {
+		err = brief.Save(m.d.WS.Root, b)
+	}
+	if err == nil {
+		err = m.d.SetProps.Resolve(sp.ID, setprop.StatusApproved)
+	}
+	if err != nil {
+		m.flash = "failed: " + err.Error()
+		return
+	}
+	m.flash = "project brief updated: " + strings.TrimPrefix(sp.Key, "project.") + " — employees read it from their next turn"
 }

@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/drjzlyan/dhi/internal/agentkit/brief"
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/agentkit/clirun"
 )
@@ -84,4 +85,15 @@ func sanitizeReply(s string) string {
 // turnRefused is the alert for a turn refused before it started.
 func turnRefused(err error) string {
 	return fmt.Sprintf("I couldn't start: %v", err)
+}
+
+// projectBlock is the project brief (F-080), read fresh each turn so a
+// Settings edit applies on the next one. A malformed brief is left out
+// here and named by doctor and Settings → PROJECT.
+func (r *Runtime) projectBlock() string {
+	b, ok, err := brief.Load(r.cfg.WS.Root)
+	if err != nil || !ok {
+		return ""
+	}
+	return b.Render()
 }

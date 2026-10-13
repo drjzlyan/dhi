@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/drjzlyan/dhi/internal/agentkit/brief"
 	"github.com/drjzlyan/dhi/internal/agentkit/forge"
 	"github.com/drjzlyan/dhi/internal/agentkit/setprop"
 	"github.com/drjzlyan/dhi/internal/ansi"
@@ -119,5 +120,29 @@ func TestSettingsProposalApplyAndReject(t *testing.T) {
 	feed(m, "n")
 	if p, _ := m.d.SetProps.Pending(); len(p) != 0 || !strings.Contains(m.flash, "rejected the agents.max_iterations proposal") {
 		t.Fatalf("reject: %+v %q", p, m.flash)
+	}
+}
+
+func TestProjectProposalUpdatesTheBrief(t *testing.T) {
+	m, _ := proposalsSurface(t)
+	ws := m.d.WS.Root
+	m.d.SetProps = setprop.Open(ws)
+	_ = brief.Save(ws, brief.Brief{Name: "shop", Process: "old way"})
+	if _, err := m.d.SetProps.Propose(setprop.Proposal{Key: "project.process", Value: "trunk-based\nsmall PRs", Old: "old way",
+		Layer: setprop.LayerProject, Agent: "atlas", Rationale: "you said so in the interview"}); err != nil {
+		t.Fatal(err)
+	}
+	m.propCur = 0
+	feed(m, "v")
+	v := ansi.Strip(m.View())
+	for _, want := range []string{"project brief · process", "old way", "trunk-based", "replaces this one field"} {
+		if !strings.Contains(v, want) {
+			t.Fatalf("dialog lacks %q:\n%s", want, v)
+		}
+	}
+	feed(m, "esc", "y")
+	b, _, _ := brief.Load(ws)
+	if b.Process != "trunk-based\nsmall PRs" || b.Name != "shop" || !strings.Contains(m.flash, "project brief updated: process") {
+		t.Fatalf("brief %+v flash %q", b, m.flash)
 	}
 }

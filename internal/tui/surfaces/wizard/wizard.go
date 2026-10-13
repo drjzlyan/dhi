@@ -11,6 +11,7 @@ import (
 
 	"charm.land/bubbletea/v2"
 
+	"github.com/drjzlyan/dhi/internal/agentkit/brief"
 	"github.com/drjzlyan/dhi/internal/agentkit/starter"
 	"github.com/drjzlyan/dhi/internal/conventions"
 	"github.com/drjzlyan/dhi/internal/gitcore"
@@ -87,6 +88,11 @@ type Env struct {
 	RosterCount      func() int
 	DetectCLIs       func() map[string]string
 	ApplyTeam        func(templateSlug string) (starter.Result, error)
+	// Project step (F-080): DetectBrief drafts the brief from the repo,
+	// SaveBrief writes it, HasBrief reports one exists (nil = unknown).
+	DetectBrief func() brief.Brief
+	SaveBrief   func(b brief.Brief) error
+	HasBrief    func() bool
 	// ComposeTeam creates teams from role counts (F-079); nil hides
 	// the custom choice.
 	ComposeTeam func(c starter.Counts) ([]starter.Result, error)
@@ -154,6 +160,7 @@ func DefaultSteps(env *Env, version string) []Step {
 	return []Step{
 		&welcomeStep{env: env, version: version},
 		&workspaceStep{env: env},
+		&projectStep{env: env},
 		&identityStep{env: env},
 		&conventionsStep{env: env},
 		&cliStep{env: env},

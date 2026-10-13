@@ -53,7 +53,9 @@ func agentSurface(t *testing.T) (*Model, *workspace.Workspace, *org.Org, *int) {
 	})
 	m.Resize(90, 26)
 	// Navigate to the AGENTS section.
-	feed(m, "]")
+	for m.sec != secAgents {
+		feed(m, "]")
+	}
 	return m, ws, o, &reloads
 }
 

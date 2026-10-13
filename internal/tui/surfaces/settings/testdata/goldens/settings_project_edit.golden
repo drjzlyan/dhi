@@ -1,0 +1,26 @@
+  CONFIG        ╭─ › project ────────────────────────────────────────────────────────────╮
+▌ PROJECT       │ What the project is and how you work. Every employee reads this on     │
+  AGENTS        │ every task.                                                            │
+  BRAIN         │                                                                        │
+  PROPOSALS     │ Project       shop                                                     │
+  LIBRARY       │ What it is    —                                                        │
+  TEAMS         │ Goals         —                                                        │
+  PACKS         │  ╭─ › edit project brief ──────────────────────────╮                   │
+  STANDARDS     │  │ name      shop▌                                 │                   │
+  CONVENTIONS   │  │ summary                                         │                   │
+  WORKFLOWS     │  │ goals                                           │                   │
+  AUTOPILOTS    │  │ users                                           │                   │
+  MARKETPLACE   │  │ stack                                           │                   │
+                │  │ process    a\nb                                 │                   │
+                │  │ review                                          │                   │
+                │  │ testing                                         │                   │
+                │  │ never do                                        │                   │
+                │  │ tab field · ←/→ cycle · enter save · esc cancel │                   │
+                │  ╰─────────────────────────────────────────────────╯                   │
+                │                                                                        │
+                │                                                                        │
+                │                                                                        │
+                │                                                                        │
+                │                                                                        │
+                │ e edit • d draft from repo • i interview me • [ ] sections • ctrl+s w… │
+                ╰────────────────────────────────────────────────────────────────────────╯

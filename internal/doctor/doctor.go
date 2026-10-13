@@ -24,6 +24,7 @@ import (
 	agentkitStandards "github.com/drjzlyan/dhi/internal/agentkit/standards"
 	agentkitWorkflow "github.com/drjzlyan/dhi/internal/agentkit/workflow"
 
+	"github.com/drjzlyan/dhi/internal/agentkit/brief"
 	"github.com/drjzlyan/dhi/internal/agentkit/clirun"
 	"github.com/drjzlyan/dhi/internal/agentkit/dhitools"
 	"github.com/drjzlyan/dhi/internal/agentkit/library"
@@ -83,6 +84,7 @@ func Run(toolRoot, wsRoot string) Report {
 	r.Checks = append(r.Checks, Library(wsRoot)...)
 	r.Checks = append(r.Checks, Authority(wsRoot)...)
 	r.Checks = append(r.Checks, Standards(wsRoot)...)
+	r.Checks = append(r.Checks, Project(wsRoot)...)
 	r.Checks = append(r.Checks, Workflows(wsRoot)...)
 	r.Checks = append(r.Checks, Dependencies(wsRoot)...)
 	r.Checks = append(r.Checks, RuntimesAt(toolRoot)...)
@@ -672,6 +674,23 @@ func Standards(wsRoot string) []Check {
 			Detail: detail + "; " + strings.Join(warnings, "; ")}}
 	}
 	return []Check{{Name: "standards/config", Status: OK, Detail: detail}}
+}
+
+// Project reports the project brief (F-080): missing warns (employees
+// work without knowing the project), malformed fails naming the file.
+func Project(wsRoot string) []Check {
+	if wsRoot == "" {
+		return nil
+	}
+	b, ok, err := brief.Load(wsRoot)
+	switch {
+	case err != nil:
+		return []Check{{Name: "project/brief", Status: Fail, Detail: err.Error() + " (left out of prompts until fixed)"}}
+	case !ok || b.Empty():
+		return []Check{{Name: "project/brief", Status: Warn,
+			Detail: "no project brief: employees don't know what the project is — Settings → PROJECT, d drafts one"}}
+	}
+	return []Check{{Name: "project/brief", Status: OK, Detail: brief.File}}
 }
 
 // RunStore probes the run schema recorded on cards (F-014 §Part C):

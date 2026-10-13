@@ -137,6 +137,8 @@ var toolScopes = map[string]Scope{
 	"tool_propose": Read,
 	// settings_propose only records a proposal; the human applies it (F-070).
 	"settings_propose": Read,
+	// project_update likewise only records a proposal (F-080).
+	"project_update": Read,
 
 	"write": Write, "patch": Write, "editor_apply_edit": Write,
 	"artifact_create": Write, "artifact_edit": Write,
