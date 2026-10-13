@@ -135,6 +135,8 @@ var toolScopes = map[string]Scope{
 	"lesson_record": Read,
 	// tool_propose only parks a proposal; the human's approval is the gate (F-069).
 	"tool_propose": Read,
+	// settings_propose only records a proposal; the human applies it (F-070).
+	"settings_propose": Read,
 
 	"write": Write, "patch": Write, "editor_apply_edit": Write,
 	"artifact_create": Write, "artifact_edit": Write,

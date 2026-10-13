@@ -29,3 +29,4 @@ dhi-git-*.sha256
 __pycache__/
 .dhi/agents/*/runs/
 .dhi/tools/usage.toml
+.dhi/proposals/

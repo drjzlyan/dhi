@@ -24,6 +24,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/org"
 	"github.com/drjzlyan/dhi/internal/agentkit/pack"
 	"github.com/drjzlyan/dhi/internal/agentkit/registry"
+	"github.com/drjzlyan/dhi/internal/agentkit/setprop"
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
 	"github.com/drjzlyan/dhi/internal/autopilot"
 	"github.com/drjzlyan/dhi/internal/conventions"
@@ -177,6 +178,12 @@ type Deps struct {
 	// RunScript executes a local skill's declared script (sandboxed,
 	// network denied). Nil disables the LIBRARY run action.
 	RunScript runner
+	// SetProps are the agents' settings proposals (F-070); applying one
+	// writes a single key into WorkspaceConfig or UserConfig. Nil hides
+	// them.
+	SetProps        *setprop.Store
+	UserConfig      string
+	WorkspaceConfig string
 	// Forge holds agent-made tools (F-069): PROPOSALS approves, rejects
 	// and archives them. Nil shows only settings proposals.
 	Forge *forge.Store

@@ -38,6 +38,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/registry"
 	agentkitRuntime "github.com/drjzlyan/dhi/internal/agentkit/runtime"
 	"github.com/drjzlyan/dhi/internal/agentkit/scopes"
+	"github.com/drjzlyan/dhi/internal/agentkit/setprop"
 	"github.com/drjzlyan/dhi/internal/agentkit/starter"
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
 	"github.com/drjzlyan/dhi/internal/autopilot"
@@ -318,7 +319,9 @@ func runTUI() (relaunch bool) {
 			// F-068 BRAIN: what the crew learned; s shares a lesson to the KB
 			// under its review policy.
 			settingsDeps.Lessons = lessons.Open(ws.Root)
-			settingsDeps.Forge = forge.Open(ws.Root) // F-069 PROPOSALS
+			settingsDeps.Forge = forge.Open(ws.Root)      // F-069 PROPOSALS
+			settingsDeps.SetProps = setprop.Open(ws.Root) // F-070 settings proposals
+			settingsDeps.UserConfig, settingsDeps.WorkspaceConfig = userCfg, wsCfg
 			if kb, kerr := knowledge.Open(ws, knowledge.Review, rgSearcher); kerr == nil {
 				settingsDeps.ShareLesson = func(l lessons.Lesson) (string, error) {
 					author := l.Agent
@@ -1082,6 +1085,23 @@ func (r execRunner) Run(ctx context.Context, dir string, argv []string, allowNet
 	return out, err
 }
 
+// settingCheck validates an agent's proposed settings change against the
+// full layer stack (F-070), on the workspace layer unless "user".
+func settingCheck(ws *workspace.Workspace) dhitools.SettingCheck {
+	userCfg, _ := settings.DefaultUserPath()
+	wsCfg := filepath.Join(ws.Root, workspace.DHIDir, "config.toml")
+	return func(key, value, layer string) (string, error) {
+		target := wsCfg
+		if layer == setprop.LayerUser {
+			if userCfg == "" {
+				return "", fmt.Errorf("no user config path on this system")
+			}
+			target = userCfg
+		}
+		return settings.CheckChange(userCfg, wsCfg, target, key, value)
+	}
+}
+
 // truncateTitle makes a KB title from a lesson (first 60 runes).
 func truncateTitle(s string) string {
 	if r := []rune(s); len(r) > 60 {
@@ -1196,6 +1216,9 @@ func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cl
 		Tuning:   tune,
 		Lessons:  lessons.Open(ws.Root), // F-068: learned rules, retrieval + reflection
 		Forge:    forge.Open(ws.Root),   // F-069: agent-made tools, active once approved
+		// F-070: agents propose settings changes; the human applies them.
+		SetProps:     setprop.Open(ws.Root),
+		SettingCheck: settingCheck(ws),
 		// F-067: a task turn without a worktree gets one on the convention
 		// branch before the agent starts, so the work lands where DHI can
 		// verify it and open the PR.

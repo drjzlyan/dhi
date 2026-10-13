@@ -1,11 +1,14 @@
 package settings
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/drjzlyan/dhi/internal/agentkit/forge"
+	"github.com/drjzlyan/dhi/internal/agentkit/setprop"
 	"github.com/drjzlyan/dhi/internal/ansi"
+	dhisettings "github.com/drjzlyan/dhi/internal/settings"
 	"github.com/drjzlyan/dhi/internal/testutil/golden"
 	"github.com/drjzlyan/dhi/internal/tui/theme"
 )
@@ -78,5 +81,43 @@ func TestProposalsReject(t *testing.T) {
 	feed(m, "n")
 	if pend, _ := st.Pending(); len(pend) != 0 || !strings.Contains(m.flash, "rejected race_test") {
 		t.Fatalf("pending = %d flash = %q", len(pend), m.flash)
+	}
+}
+
+// F-070: an agent's settings proposal is applied as one key to the
+// workspace layer by y, and rejected by n.
+func TestSettingsProposalApplyAndReject(t *testing.T) {
+	m, _ := proposalsSurface(t)
+	ws := m.d.WS.Root
+	m.d.SetProps = setprop.Open(ws)
+	m.d.WorkspaceConfig = filepath.Join(ws, ".dhi", "config.toml")
+	m.d.UserConfig = filepath.Join(t.TempDir(), "user.toml")
+	if _, err := m.d.SetProps.Propose(setprop.Proposal{Key: "budgets.task_usd", Value: "5", Old: "0", Agent: "dev", Rationale: "40-file migration"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.d.SetProps.Propose(setprop.Proposal{Key: "agents.max_iterations", Value: "5", Old: "3", Agent: "dev", Rationale: "flaky suite"}); err != nil {
+		t.Fatal(err)
+	}
+	m.propCur = 0
+	view := ansi.Strip(m.View())
+	if !strings.Contains(view, "budgets.task_usd") || !strings.Contains(view, "0 → 5") {
+		t.Fatalf("setting proposal not listed:\n%s", view)
+	}
+	feed(m, "v")
+	if v := ansi.Strip(m.View()); !strings.Contains(v, "why: 40-file migration") || !strings.Contains(v, "applies exactly this one key") {
+		t.Fatalf("proposal dialog:\n%s", v)
+	}
+	feed(m, "esc", "y")
+	if !strings.Contains(m.flash, "applied budgets.task_usd = 5 (workspace layer)") || m.cfg.Budgets.TaskUSD != 5 {
+		t.Fatalf("apply: flash %q, live %v", m.flash, m.cfg.Budgets.TaskUSD)
+	}
+	c, err := dhisettings.Load(m.d.UserConfig, m.d.WorkspaceConfig)
+	if err != nil || c.Budgets.TaskUSD != 5 {
+		t.Fatalf("not persisted: %+v %v", c.Budgets, err)
+	}
+	m.propCur = 0 // now the max_iterations proposal
+	feed(m, "n")
+	if p, _ := m.d.SetProps.Pending(); len(p) != 0 || !strings.Contains(m.flash, "rejected the agents.max_iterations proposal") {
+		t.Fatalf("reject: %+v %q", p, m.flash)
 	}
 }

@@ -500,7 +500,7 @@ func (r *Runtime) serveToolsFor(e *entry, trigger bus.Message, tt turnTools) *se
 	if r.cfg.WS == nil || e.cli == nil || !e.cli.MCPWired() {
 		return nil
 	}
-	wantDHI, wantBridge := tt.plan != nil || tt.lesson != nil || r.cfg.Forge != nil, false
+	wantDHI, wantBridge := tt.plan != nil || tt.lesson != nil || r.cfg.Forge != nil || r.cfg.SetProps != nil, false
 	for _, t := range e.m.Tools {
 		if dhitools.Serves(t) {
 			wantDHI = true
@@ -545,6 +545,8 @@ func (r *Runtime) serveToolsFor(e *entry, trigger bus.Message, tt turnTools) *se
 			MemberRoots:  tt.memberRoots,
 			LessonRecord: tt.lesson,
 			Forge:        r.cfg.Forge,
+			SetProps:     r.cfg.SetProps,
+			SettingCheck: r.cfg.SettingCheck,
 		}.Handler()
 	}
 	// Third-party MCP servers (F-034 part C): dialed under the sandbox,

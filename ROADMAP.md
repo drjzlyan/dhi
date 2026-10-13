@@ -1032,5 +1032,5 @@ better every week, a self-running team, lowest cost per outcome. Measured by eva
       hand-off binds cards (F-067, ADR-0032). Live: DHI 8/8 (P2 was 0/8), 11.6% cheaper than raw
 - [x] P4 Self-learning: lessons store, reflection on signal (retry/verify/stuck/correction), lesson_record, retrieval, daily consolidation, Settings BRAIN (F-068)
 - [x] P5 Tool forge: recipe/script tools via tool_propose, approved in Settings PROPOSALS, served as custom__<name>; repetition hint (F-069, ADR-0034)
-- [ ] P6 Settings proposals through the Inbox (F-070)
+- [x] P6 Settings proposals: settings_propose (checked against the layer stack), @you in the Inbox, applied as one key from Settings PROPOSALS (F-070)
 - [ ] P7 Self-running team: lead decomposition, structured handoffs, rituals, reviewer loop (F-071)

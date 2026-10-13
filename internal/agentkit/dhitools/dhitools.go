@@ -16,6 +16,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/drjzlyan/dhi/internal/agentkit/forge"
+	"github.com/drjzlyan/dhi/internal/agentkit/setprop"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -111,6 +112,9 @@ type Deps struct {
 	// PlanUpdate stores the agent's published plan on its episode
 	// (F-067); nil omits plan_update.
 	PlanUpdate func([]PlanStep) error
+	// SetProps + SettingCheck serve settings_propose (F-070); nil omits it.
+	SetProps     *setprop.Store
+	SettingCheck SettingCheck
 	// Forge holds agent-made tools (F-069): tool_propose plus every
 	// approved custom__<name>. nil = neither.
 	Forge *forge.Store
@@ -252,6 +256,7 @@ func (d Deps) Handler() mcp.Handler {
 	all = append(all, d.planTools()...)
 	all = append(all, d.lessonTools()...)
 	all = append(all, d.forgeTools()...)
+	all = append(all, d.settingTools()...)
 	for _, s := range harnessSlugs {
 		allow[s] = true
 	}

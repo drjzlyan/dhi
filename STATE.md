@@ -29,8 +29,9 @@
 - P4 is DONE (F-068): lessons in `.dhi/memory/**/lessons.json`, reflection in runtime/learn.go,
   Settings BRAIN (ADR-0033). NOT done: a live eval of learning.
 - P5 is DONE (F-069, ADR-0034): `internal/agentkit/forge`, `.dhi/tools/`, Settings PROPOSALS.
-  `setprop.go` in the settings surface is a P5 stub that P6 fills.
-- Next: P6 settings proposals (F-070), P7 self-running team (F-071).
+- P6 is DONE (F-070): `internal/agentkit/setprop`, `settings.CheckChange`/`SetLayerKey`
+  (one key, never the whole layer), PROPOSALS lists settings proposals.
+- Next: P7 self-running team (F-071).
 - Gotcha: eval/agent envs must keep USER. Claude on macOS reads its Keychain login by user, and
   without it the run fails as "Not logged in".
 - User decisions:

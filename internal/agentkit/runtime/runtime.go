@@ -29,6 +29,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/memory"
 	"github.com/drjzlyan/dhi/internal/agentkit/org"
 	"github.com/drjzlyan/dhi/internal/agentkit/scopes"
+	"github.com/drjzlyan/dhi/internal/agentkit/setprop"
 	"github.com/drjzlyan/dhi/internal/agentkit/standards"
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
 	"github.com/drjzlyan/dhi/internal/agentkit/workflow"
@@ -135,6 +136,10 @@ type Config struct {
 	// Tuning supplies max-turns, resume and budgets per turn; nil = the
 	// defaults (resume on, no caps).
 	Tuning func() Tuning
+	// SetProps + SettingCheck serve settings_propose (F-070): agents
+	// propose, the human applies in Settings. nil = no proposals.
+	SetProps     *setprop.Store
+	SettingCheck dhitools.SettingCheck
 	// Forge holds the tools agents built (F-069): tool_propose and every
 	// approved custom__<name> are served to all agents. nil = none.
 	Forge *forge.Store
