@@ -119,6 +119,10 @@ type Agents struct {
 	Reflect bool `toml:"reflect"`
 	// ReflectModel runs reflection on a cheaper model ("" = the agent's).
 	ReflectModel string `toml:"reflect_model"`
+	// TracePrompts saves each spawn's full prompt and system text into
+	// its run transcript for the trace view (F-074). Off by default:
+	// prompts are large and may carry secrets from the conversation.
+	TracePrompts bool `toml:"trace_prompts"`
 }
 
 // Autonomy modes.
@@ -194,7 +198,7 @@ func Known() []string {
 		"worktrees", "worktrees.root",
 		"terminal.scrollback", "security.sandbox",
 		"agents", "agents.max_turns", "agents.resume", "agents.autonomy",
-		"agents.max_iterations", "agents.stall_seconds", "agents.reflect", "agents.reflect_model",
+		"agents.max_iterations", "agents.stall_seconds", "agents.reflect", "agents.reflect_model", "agents.trace_prompts",
 		"budgets", "budgets.task_usd", "budgets.task_tokens",
 		"budgets.agent_day_usd", "budgets.workspace_day_usd",
 		"scopes.read", "scopes.write", "scopes.exec", "scopes.network",
@@ -409,6 +413,7 @@ type fileLayer struct {
 		StallSeconds  *int    `toml:"stall_seconds"`
 		Reflect       *bool   `toml:"reflect"`
 		ReflectModel  *string `toml:"reflect_model"`
+		TracePrompts  *bool   `toml:"trace_prompts"`
 	} `toml:"agents"`
 	Budgets struct {
 		TaskUSD         *float64 `toml:"task_usd"`
@@ -501,6 +506,7 @@ func (f fileLayer) mergeInto(dst *Config) {
 	setPtr(&dst.Agents.StallSeconds, f.Agents.StallSeconds)
 	setPtr(&dst.Agents.Reflect, f.Agents.Reflect)
 	setPtr(&dst.Agents.ReflectModel, f.Agents.ReflectModel)
+	setPtr(&dst.Agents.TracePrompts, f.Agents.TracePrompts)
 	setPtr(&dst.Budgets.TaskUSD, f.Budgets.TaskUSD)
 	setPtr(&dst.Budgets.TaskTokens, f.Budgets.TaskTokens)
 	setPtr(&dst.Budgets.AgentDayUSD, f.Budgets.AgentDayUSD)

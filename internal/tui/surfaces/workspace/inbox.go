@@ -177,8 +177,14 @@ func (m *Model) inboxJump(it inbox.Item) {
 			m.inboxHint = "run jump: no run recorded for " + it.TaskSlug
 			return
 		}
-		m.replay = openReplay(it.Run, m.wsRoot())
-		m.replay.refresh(m.replayWidth(), m.replayHeight())
+		// The failed run opens in the card's trace (F-074); a run whose
+		// card is gone still replays on its own.
+		if tk, ok := m.taskByslug(it.TaskSlug); ok {
+			m.openTrace(tk, it.Run.ID)
+		} else {
+			m.replay = openReplay(it.Run, m.wsRoot())
+			m.replay.refresh(m.replayWidth(), m.replayHeight())
+		}
 		m.sec = secBoard
 		// Lane cursors: select the failed card inside its status lane.
 		for li, col := range m.boardGroups() {

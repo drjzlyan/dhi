@@ -85,27 +85,23 @@ func TestTasksRunsSuffixAndReplayRouting(t *testing.T) {
 		t.Fatalf("runs suffix missing:\n%s", out)
 	}
 
-	// r opens the newest run's replay.
+	// r opens the card's trace (F-074): every run, transcripts merged.
 	m.HandleKey("r")
-	if m.replay == nil {
-		t.Fatal("r did not open the replay")
+	if m.trace == nil {
+		t.Fatal("r did not open the trace")
 	}
 	out = ansi.Strip(m.View())
-	for _, want := range []string{"replay run-replay-test", "cli:claude/opus", "1.2s", "$0.42",
+	for _, want := range []string{"TRACE", "all runs (3)", "run-replay-test started", "cli:claude", "opus", "$0.4200",
 		"❯ cd repos/alpha && go test ./...", "compile error: undefined: x",
 		"inspecting the login flow"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("replay missing %q:\n%s", want, out)
 		}
 	}
-	if strings.Contains(out, "transcript unavailable") {
-		t.Fatalf("replay refused a present transcript:\n%s", out[:400])
-	}
-
 	// esc returns to the deck; the list is intact underneath.
 	m.HandleKey("esc")
-	if m.replay != nil {
-		t.Fatal("esc did not close the replay")
+	if m.trace != nil {
+		t.Fatal("esc did not close the trace")
 	}
 	if out := ansi.Strip(m.View()); !strings.Contains(out, "fix-login") {
 		t.Fatalf("task list not restored after esc:\n%s", out)
@@ -117,7 +113,12 @@ func TestTaskReplayGolden(t *testing.T) {
 	m.taskStore = seededRunStore(t, ws)
 	m.sec = secBoard
 	m.HandleKey("r")
-	golden.Snapshot(t, "workspace_task_run_replay", m.View())
+	// Select the newest run: the card's activity is stamped with the
+	// wall clock, and run-scoped views leave it out.
+	for i := 0; i < 3; i++ {
+		m.HandleKey("n")
+	}
+	golden.Snapshot(t, "workspace_task_trace", m.View())
 }
 
 func TestReplayMissingTranscriptGolden(t *testing.T) {
@@ -141,7 +142,11 @@ func TestReplayMissingTranscriptGolden(t *testing.T) {
 	m.taskStore = store
 	m.sec = secBoard
 	m.HandleKey("r")
-	golden.Snapshot(t, "workspace_replay_missing_transcript", m.View())
+	m.HandleKey("n") // the run only: activity carries wall-clock stamps
+	if !strings.Contains(ansi.Strip(m.View()), "transcript missing: run-gone") {
+		t.Fatalf("missing transcript not named:\n%s", ansi.Strip(m.View()))
+	}
+	golden.Snapshot(t, "workspace_trace_missing_transcript", m.View())
 }
 
 // cardsWithRuns is the store the replay routing tests share.
@@ -197,33 +202,27 @@ func TestReplayScrolls(t *testing.T) {
 	m.sec = secBoard
 	m.HandleKey("r")
 
-	if m.replay.scroll != 0 {
-		t.Fatalf("scroll = %d, want top", m.replay.scroll)
-	}
 	out := ansi.Strip(m.View())
-	if !strings.Contains(out, "step 0") {
-		t.Fatalf("replay did not start at the top:\n%s", out)
+	if m.trace.scroll != 0 || !strings.Contains(out, "step 0") {
+		t.Fatalf("trace did not start at the top (scroll %d):\n%s", m.trace.scroll, out)
 	}
 	for i := 0; i < 40; i++ {
 		m.HandleKey("j")
 	}
-	if m.replay.scroll == 0 {
-		t.Fatal("j did not advance the window")
-	}
-	// the window moved: "step 0" scrolled out
-	if rolled := ansi.Strip(m.View()); strings.Contains(rolled, "step 0") {
+	if rolled := ansi.Strip(m.View()); strings.Contains(rolled, "step 0 ") || m.trace.scroll == 0 {
 		t.Fatalf("scroll did not move the window:\n%s", rolled)
 	}
 	m.HandleKey("G")
+	m.View()
+	max := m.trace.scroll
 	m.HandleKey("j") // clamped at the bottom
-	max := m.replay.scroll
-	m.HandleKey("G")
-	if m.replay.scroll != max || m.replay.scroll == 0 {
-		t.Fatalf("G = %d, want clamped bottom %d", m.replay.scroll, max)
+	m.View()
+	if m.trace.scroll != max || max == 0 {
+		t.Fatalf("G = %d, want clamped bottom %d", m.trace.scroll, max)
 	}
 	m.HandleKey("esc")
-	if m.replay != nil {
-		t.Fatal("esc did not close replay")
+	if m.trace != nil {
+		t.Fatal("esc did not close the trace")
 	}
 }
 
@@ -232,10 +231,10 @@ func TestReplayRWithoutRuns(t *testing.T) {
 	m.taskStore = cardsWithRuns(t, ws, nil)
 	m.sec = secBoard
 	m.HandleKey("r")
-	if m.replay != nil {
-		t.Fatal("r opened a replay for a card with no runs")
+	if m.trace != nil {
+		t.Fatal("r opened a trace for a card with no runs")
 	}
-	if m.form.err != "card has no recorded runs" {
+	if m.form.err != "card has no runs or thread to trace yet" {
 		t.Fatalf("flash err = %q, want refusal message", m.form.err)
 	}
 	if out := ansi.Strip(m.View()); !strings.Contains(out, "card") {

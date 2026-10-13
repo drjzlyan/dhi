@@ -10,7 +10,13 @@
   fuzzy assignee picker, `T` take-it (assign + worktree + active + editor root), reassign stops
   the old agent's turn (`Runtime.CancelThread`) and hands off with the worktree; agent
   `task_assign` hand-offs via `Runtime.agentReassigned`.
+- P3 DONE (F-074): transcript records carry `at`/`attempt` + a `prompt` record (+ full text with
+  `agents.trace_prompts`) + stderr tail; `internal/agentkit/trace` merges runs, thread, comments,
+  activity; board `r` / inbox failed run open the trace view (run chips, filters, search, `x`
+  export to `.dhi/traces/`). Old `runReplay` remains only for a failed run whose card is gone.
 - Gotchas:
+  - Card activity is stamped with the wall clock: goldens that render it must select a run
+    first (run-scoped views omit activity).
   - `formSubmit`: `f` points at `m.form`; read `f.orig` BEFORE `closeForm()`.
   - `bus.Conversational(m)` is the one filter for "what people see". Any new chat view must
     use it. `unread.AddressedToHuman` already does.

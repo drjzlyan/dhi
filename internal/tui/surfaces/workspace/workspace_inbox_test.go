@@ -144,7 +144,7 @@ func TestInboxJumpMention(t *testing.T) {
 	}
 }
 
-func TestInboxJumpRunFailedOpensReplay(t *testing.T) {
+func TestInboxJumpRunFailedOpensTrace(t *testing.T) {
 	m, _ := newSurface(t)
 	seedInbox(t, m)
 	gotoInbox(m)
@@ -152,8 +152,8 @@ func TestInboxJumpRunFailedOpensReplay(t *testing.T) {
 	if !m.HandleKey("enter") {
 		t.Fatal("enter not consumed")
 	}
-	if m.replay == nil {
-		t.Fatal("run jump did not open replay")
+	if m.trace == nil || m.trace.runID() == "" {
+		t.Fatal("run jump did not open the card's trace on the failed run (F-074)")
 	}
 	if m.sec != secBoard {
 		t.Fatalf("run jump left sec=%v, want board", m.sec)

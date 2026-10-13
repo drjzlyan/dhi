@@ -125,6 +125,7 @@ type Model struct {
 	working      func(channel string, thread int64) bool // live turn indicator (F-035 Part D)
 	agentWorking func(id string) bool                    // agent presence (F-072/F-073)
 	card         *cardPage                               // open card page (F-073)
+	trace        *tracePane                              // open task trace (F-074)
 	assign       *assignPicker                           // assignee picker (F-073)
 	branchForFn  func(slug string) string                // conventional task branch (F-073/F-075)
 	openWorktree func(label, dir string) bool            // editor: worktree as a tree root (F-073)
@@ -669,6 +670,14 @@ func (m *Model) sectionKey(key string) bool {
 	// Run-replay pane (F-014/F-026): modal until esc, or a section
 	// switch which CLOSES it first (a hidden replay must not keep
 	// owning keys while the board renders beneath it).
+	if m.trace != nil {
+		switch key {
+		case "[", "]":
+			m.trace = nil // a section switch closes the trace first
+		default:
+			return m.traceKey(key)
+		}
+	}
 	if m.replay != nil {
 		switch key {
 		case "esc":
@@ -953,11 +962,11 @@ func (m *Model) boardKey(key string) bool {
 		}
 		m.form = openForm(fTaskPush, tk.Slug)
 	case "r":
-		if run, ok := tk.NewestRun(); ok {
-			m.replay = openReplay(run, m.wsRoot())
+		if len(tk.Runs) == 0 && tk.ThreadChannel == "" {
+			m.flashErr("card has no runs or thread to trace yet")
 			return true
 		}
-		m.flashErr("card has no recorded runs")
+		m.openTrace(tk, "")
 	case "o":
 		return m.boardOpenOnFloor(tk)
 	case "N":

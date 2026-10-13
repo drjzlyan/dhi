@@ -391,17 +391,18 @@ const (
 	rowCommitCoAuthor = rowBranchTask + 2
 	rowCopyright      = rowBranchTask + 3
 	// Agents & budgets (F-066, F-067) follow the conventions rows.
-	rowResume      = rowBranchTask + 4
-	rowAutonomy    = rowResume + 1
-	rowMaxTurns    = rowResume + 2
-	rowMaxIter     = rowResume + 3
-	rowStall       = rowResume + 4
-	rowReflect     = rowResume + 5
-	rowTaskUSD     = rowResume + 6
-	rowTaskTokens  = rowResume + 7
-	rowAgentDayUSD = rowResume + 8
-	rowWorkDayUSD  = rowResume + 9
-	rowCount       = rowResume + 10
+	rowResume       = rowBranchTask + 4
+	rowAutonomy     = rowResume + 1
+	rowMaxTurns     = rowResume + 2
+	rowMaxIter      = rowResume + 3
+	rowStall        = rowResume + 4
+	rowReflect      = rowResume + 5
+	rowTracePrompts = rowResume + 6
+	rowTaskUSD      = rowResume + 7
+	rowTaskTokens   = rowResume + 8
+	rowAgentDayUSD  = rowResume + 9
+	rowWorkDayUSD   = rowResume + 10
+	rowCount        = rowResume + 11
 )
 
 // Preset cycles for the agents & budgets rows (0 = the CLI default / no
@@ -510,6 +511,8 @@ func (m *Model) cycle(dir int) {
 		m.cfg.Agents.StallSeconds = cycleNum(m.cfg.Agents.StallSeconds, stallPresets, dir)
 	case rowReflect:
 		m.cfg.Agents.Reflect = !m.cfg.Agents.Reflect
+	case rowTracePrompts:
+		m.cfg.Agents.TracePrompts = !m.cfg.Agents.TracePrompts
 	case rowTaskUSD:
 		m.cfg.Budgets.TaskUSD = cycleNum(m.cfg.Budgets.TaskUSD, taskUSDPresets, dir)
 	case rowTaskTokens:
@@ -1323,6 +1326,7 @@ func (m *Model) configView(w, budget int) []string {
 	add(rowMaxIter, "agents.max_iterations", itoa(m.cfg.Agents.MaxIterations))
 	add(rowStall, "agents.stall_seconds", orMuted(m.cfg.Agents.StallSeconds == 0, "off", stallText(m.cfg.Agents.StallSeconds)))
 	add(rowReflect, "agents.reflect", boolValue(m.cfg.Agents.Reflect))
+	add(rowTracePrompts, "agents.trace_prompts", boolValue(m.cfg.Agents.TracePrompts))
 	add(rowTaskUSD, "budgets.task_usd", orMuted(m.cfg.Budgets.TaskUSD == 0, "no limit", usd(m.cfg.Budgets.TaskUSD)))
 	add(rowTaskTokens, "budgets.task_tokens", orMuted(m.cfg.Budgets.TaskTokens == 0, "no limit", tokensText(m.cfg.Budgets.TaskTokens)))
 	add(rowAgentDayUSD, "budgets.agent_day_usd", orMuted(m.cfg.Budgets.AgentDayUSD == 0, "no limit", usd(m.cfg.Budgets.AgentDayUSD)+" / day"))

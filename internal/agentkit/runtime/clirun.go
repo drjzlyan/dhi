@@ -20,6 +20,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/lessons"
 	"github.com/drjzlyan/dhi/internal/agentkit/mcpbridge"
 	"github.com/drjzlyan/dhi/internal/agentkit/standards"
+	"github.com/drjzlyan/dhi/internal/agentkit/trace"
 	"github.com/drjzlyan/dhi/internal/agentkit/workflow"
 	"github.com/drjzlyan/dhi/internal/mcp"
 	"github.com/drjzlyan/dhi/internal/tasks"
@@ -379,6 +380,7 @@ func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Messag
 	// run-replay surface.
 	var final string
 	var events []clirun.StreamEvent
+	var stamps []time.Time // when each event arrived (F-074 trace)
 	var dog *time.Timer
 	if in.stall > 0 {
 		dog = time.AfterFunc(in.stall, func() { stalled.Store(true); stopSpawn() })
@@ -388,6 +390,7 @@ func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Messag
 			dog.Reset(in.stall)
 		}
 		events = append(events, ev)
+		stamps = append(stamps, time.Now().UTC())
 		if !in.quiet {
 			r.cliEvent(e.m.ID, trigger, ev)
 		}
@@ -440,18 +443,28 @@ func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Messag
 		run.Error = "CLI stream ended without a final event"
 	}
 
-	run.Transcript = r.saveTranscript(events, run)
+	tr := transcript{events: events, stamps: stamps, in: in, stderr: stderr.lastLine(),
+		full: r.tuning().TracePrompts}
+	run.Transcript = r.saveTranscript(tr, run)
 	return run, events
 }
 
-// saveTranscript persists one attempt's events as JSONL under
-// .dhi/agents/<id>/runs/<run-id>-<attempt>.jsonl (F-013 step 4). It is
-// best-effort: the thread already carries the live stream, so a failure
-// here only loses the durable replay file.
-func (r *Runtime) saveTranscript(events []clirun.StreamEvent, run tasks.Run) string {
-	if len(events) == 0 {
-		return ""
-	}
+// transcript is one attempt's record for the trace (F-074): the stream
+// events with arrival times, what was sent, and the stderr tail.
+type transcript struct {
+	events []clirun.StreamEvent
+	stamps []time.Time
+	in     spawnInput
+	stderr string
+	full   bool // agents.trace_prompts: keep the prompt text itself
+}
+
+// saveTranscript persists one attempt as JSONL under
+// .dhi/agents/<id>/runs/<run-id>-<attempt>.jsonl (F-013 step 4): first a
+// prompt record (sizes, resume; the text itself with trace_prompts),
+// then each event with its arrival time, then the stderr tail of a
+// failed run. It is best-effort: a failure only loses the trace file.
+func (r *Runtime) saveTranscript(tr transcript, run tasks.Run) string {
 	dir := filepath.Join(r.cfg.WS.Root, ".dhi", "agents", run.Agent, "runs")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return ""
@@ -463,16 +476,38 @@ func (r *Runtime) saveTranscript(events []clirun.StreamEvent, run tasks.Run) str
 	}
 	defer func() { _ = f.Close() }()
 	enc := json.NewEncoder(f)
-	for _, ev := range events {
+	put := func(rec trace.Record) bool {
+		rec.Attempt = run.Attempt
+		return enc.Encode(rec) == nil
+	}
+	sent := fmt.Sprintf("prompt %d chars · system %d chars", len([]rune(tr.in.prompt)), len([]rune(tr.in.system)))
+	if tr.in.resume != "" {
+		sent += " · resumed session " + tr.in.resume
+	}
+	if tr.in.model != "" {
+		sent += " · model " + tr.in.model
+	}
+	if !put(trace.Record{Kind: "prompt", Detail: sent, At: run.Started}) {
+		return ""
+	}
+	if tr.full {
+		put(trace.Record{Kind: "system_text", Detail: tr.in.system, At: run.Started})
+		put(trace.Record{Kind: "prompt_text", Detail: tr.in.prompt, At: run.Started})
+	}
+	for i, ev := range tr.events {
 		if ev.Detail == "" {
 			continue
 		}
-		if err := enc.Encode(struct {
-			Kind   string `json:"kind"`
-			Detail string `json:"detail"`
-		}{ev.Kind, ev.Detail}); err != nil {
+		rec := trace.Record{Kind: ev.Kind, Detail: ev.Detail}
+		if i < len(tr.stamps) {
+			rec.At = tr.stamps[i]
+		}
+		if !put(rec) {
 			return ""
 		}
+	}
+	if run.Status != tasks.RunOK && tr.stderr != "" {
+		put(trace.Record{Kind: "stderr", Detail: tr.stderr, At: run.Finished})
 	}
 	return p
 }

@@ -220,14 +220,17 @@ func (m *Model) sectionHints() []string {
 		if m.replay != nil {
 			return []string{"esc close", "j/k scroll", "g/G top/bottom"}
 		}
+		if m.trace != nil {
+			return []string{"esc close", "j/k scroll", "n/p run", "f filter", "/ search", "x export", "g/G top/bottom"}
+		}
 		if m.assign != nil {
 			return []string{"type to filter", "enter assign", "esc cancel"}
 		}
 		if m.card != nil {
 			return []string{"esc back", "j/k scroll", "N comment", "a assign", "T take it",
-				"o thread", "r runs", "s/S status", "c commit", "p PR"}
+				"o thread", "r trace", "s/S status", "c commit", "p PR"}
 		}
-		return []string{"enter open", "a assign", "T take it", "h/l lane", "n new", "s/S status", "m move",
+		return []string{"enter open", "a assign", "T take it", "r trace", "h/l lane", "n new", "s/S status", "m move",
 			"/ filter", "L/P/E/D meta", "N comment", "space mark", "M bulk"}
 	case secChannels:
 		if m.pane == nil {
@@ -245,6 +248,9 @@ func (m *Model) sectionHints() []string {
 // the m.width-based underfill). The run-replay pane is modal: it
 // replaces whatever section is active.
 func (m *Model) activeSectionFor(w, h int) string {
+	if m.trace != nil {
+		return m.traceBody(w, maxInt(h, 6))
+	}
 	if m.replay != nil {
 		return m.replayBody()
 	}

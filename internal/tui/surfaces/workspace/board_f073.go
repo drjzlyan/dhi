@@ -200,7 +200,7 @@ func (m *Model) cardPageLines(tk tasks.Task, w int) []string {
 	runs := ""
 	if len(tk.Runs) > 0 {
 		runs = theme.TextDim().Render(fmt.Sprintf(" · %d runs · %s", len(tk.Runs), tasks.RollupRuns(tk.Runs).CostText())) +
-			theme.Hint().Render("  r runs")
+			theme.Hint().Render("  r trace")
 	}
 	out = append(out, "  "+tests+runs)
 	if ep := m.episodeLines(tk, textW); len(ep) > 0 {

@@ -16,15 +16,15 @@
            ║    enter            open                                                   ║           
            ║    a                assign                                                 ║           
            ║    T                take it                                                ║           
+           ║    r                trace                                                  ║           
            ║    h/l              lane                                                   ║           
            ║    n                new                                                    ║           
            ║    s/S              status                                                 ║           
            ║    m                move                                                   ║           
            ║    /                filter                                                 ║           
            ║    L/P/E/D          meta                                                   ║           
-           ║    N                comment                                                ║           
            ║                                                                            ║           
-           ║  22/24 · j/k scroll · / search · esc close                                 ║           
+           ║  22/25 · j/k scroll · / search · esc close                                 ║           
            ║                                                                            ║           
            ╚════════════════════════════════════════════════════════════════════════════╝           
  Workspace › board                        1-3  views • tab  next • ^p  palette • ?  help • ^c  quit 

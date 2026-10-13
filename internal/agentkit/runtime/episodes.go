@@ -25,6 +25,9 @@ type Tuning struct {
 	// F-068 learning.
 	Reflect      bool   // reflect on turns that carried a signal
 	ReflectModel string // "" = the agent's model
+
+	// F-074: save full prompts into run transcripts.
+	TracePrompts bool
 }
 
 // tuning reads the configured Tuning; without a source, resume is on

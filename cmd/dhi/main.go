@@ -1184,6 +1184,7 @@ func liveTuning(userCfg, wsCfg string, boot settings.Config) func() agentkitRunt
 			Stall:         time.Duration(c.Agents.StallSeconds) * time.Second,
 			Reflect:       c.Agents.Reflect,
 			ReflectModel:  c.Agents.ReflectModel,
+			TracePrompts:  c.Agents.TracePrompts,
 			Budgets: budget.Limits{
 				TaskUSD: c.Budgets.TaskUSD, TaskTokens: c.Budgets.TaskTokens,
 				AgentDayUSD: c.Budgets.AgentDayUSD, WorkspaceDayUSD: c.Budgets.WorkspaceDayUSD,
