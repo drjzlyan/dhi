@@ -24,6 +24,13 @@ var nameRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 type document struct {
 	Schema      int               `toml:"schema"`
 	Credentials map[string]string `toml:"credentials"`
+	// Workspaces holds secrets saved for one workspace only (F-089),
+	// keyed by its absolute root. They live here, never under .dhi/.
+	Workspaces map[string]scoped `toml:"workspaces,omitempty"`
+}
+
+type scoped struct {
+	Credentials map[string]string `toml:"credentials"`
 }
 
 // DefaultPath is $XDG_CONFIG_HOME/dhi/credentials.toml (or ~/.config/...),
@@ -77,8 +84,113 @@ func (s *Store) load() (document, error) {
 	if back.Credentials != nil {
 		d.Credentials = back.Credentials
 	}
+	d.Workspaces = back.Workspaces
 	return d, nil
 }
+
+// Secret is one stored secret's name and where it applies; never the
+// value (F-089).
+type Secret struct {
+	Name      string
+	Workspace string // absolute root; "" = every workspace
+}
+
+// LookupIn resolves name for the workspace at root: its own secret
+// first, then the global one.
+func (s *Store) LookupIn(root, name string) (string, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	d, err := s.load()
+	if err != nil {
+		return "", false
+	}
+	if v := d.Workspaces[root].Credentials[name]; v != "" {
+		return v, true
+	}
+	v, ok := d.Credentials[name]
+	return v, ok && v != ""
+}
+
+// SetIn stores one secret for the workspace at root ("" = every
+// workspace), atomically.
+func (s *Store) SetIn(root, name, value string) error {
+	if root == "" {
+		return s.Set(map[string]string{name: value})
+	}
+	if s.Path == "" {
+		return fmt.Errorf("credstore: no credentials file path")
+	}
+	if !nameRe.MatchString(name) {
+		return fmt.Errorf("credstore: %q is not a variable name", name)
+	}
+	if value == "" {
+		return fmt.Errorf("credstore: %s is empty", name)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	d, err := s.load()
+	if err != nil {
+		return err
+	}
+	if d.Workspaces == nil {
+		d.Workspaces = map[string]scoped{}
+	}
+	sc := d.Workspaces[root]
+	if sc.Credentials == nil {
+		sc.Credentials = map[string]string{}
+	}
+	sc.Credentials[name] = value
+	d.Workspaces[root] = sc
+	return s.write(d)
+}
+
+// DeleteIn removes a workspace's secret ("" = the global one).
+func (s *Store) DeleteIn(root, name string) error {
+	if root == "" {
+		return s.Delete(name)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	d, err := s.load()
+	if err != nil {
+		return err
+	}
+	if sc, ok := d.Workspaces[root]; ok {
+		delete(sc.Credentials, name)
+		if len(sc.Credentials) == 0 {
+			delete(d.Workspaces, root)
+		}
+	}
+	return s.write(d)
+}
+
+// Secrets lists what applies to the workspace at root — its own secrets
+// and the global ones — by name, never values.
+func (s *Store) Secrets(root string) ([]Secret, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	d, err := s.load()
+	if err != nil {
+		return nil, err
+	}
+	var out []Secret
+	for n := range d.Workspaces[root].Credentials {
+		out = append(out, Secret{Name: n, Workspace: root})
+	}
+	for n := range d.Credentials {
+		out = append(out, Secret{Name: n})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Name != out[j].Name {
+			return out[i].Name < out[j].Name
+		}
+		return out[i].Workspace > out[j].Workspace // this workspace's first
+	})
+	return out, nil
+}
+
+// ValidName reports whether name can be a secret (an env var name).
+func ValidName(name string) bool { return nameRe.MatchString(name) }
 
 // Lookup returns a stored credential. A corrupt file reads as not found
 // here (the caller falls through to the next source); Set and Names report
@@ -123,6 +235,13 @@ func (s *Store) Values() map[string]string {
 	out := make(map[string]string, len(d.Credentials))
 	for n, v := range d.Credentials {
 		out[n] = v
+	}
+	// Workspace secrets too, under a distinct key: a value is redacted
+	// wherever it appears, whichever workspace saved it.
+	for root, sc := range d.Workspaces {
+		for n, v := range sc.Credentials {
+			out[n+"@"+filepath.Base(root)] = v
+		}
 	}
 	return out
 }

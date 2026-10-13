@@ -98,6 +98,7 @@ func Run(toolRoot, wsRoot string) Report {
 	r.Checks = append(r.Checks, MCPServers(wsRoot)...)
 	r.Checks = append(r.Checks, GH(toolRoot)...)
 	r.Checks = append(r.Checks, Sandbox(sandboxMode(wsRoot))...)
+	r.Checks = append(r.Checks, Secrets(os.Environ())...)
 	r.Healthy = true
 	for _, c := range r.Checks {
 		if c.Status == Fail {

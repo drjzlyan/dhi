@@ -1131,6 +1131,8 @@ func modalTitle(k modalKind) string {
 		return "comment on task"
 	case fTaskMove:
 		return "move task"
+	case fSecret:
+		return "secret (masked; stored outside the repo)"
 	}
 	return ""
 }

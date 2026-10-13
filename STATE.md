@@ -20,7 +20,12 @@
   mask); `internal/redact` (credstore `Values`/`Stamp`) on `bus.Redact`, `runtime.Config.Redact`
   (`redactHandler`, run Summary/Error, transcript records). No keychain fence: claude itself
   uses `/usr/bin/security`.
+- P4 DONE (F-089): `secret_request` → `Approvals.AskSecret` (Missing) → workspace `decideAsk` masked
+  form (`fSecret`) → `credstore.SetIn` (workspace table keyed by abs root, or global) → grant
+  `secret:NAME`; `Deps.SecretEnv` via `EnvRunner.RunEnv` into run/skill_run only; Settings
+  SECRETS; doctor `secrets/host-env`. `continueTurn` now Adds to bg before posting (race).
 - Gotchas:
+  - `credStore` in main is the one store: `secretStore()`/`secretSaver()` avoid typed nils.
   - A tool that changes cwd or sandbox must set the turn's `relaunch`; the running spawn can't
     see the change. P2 grants reuse this.
   - DM messages are top-level; `work_branch` with the same slug rebinds the card to the new thread.

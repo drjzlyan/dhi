@@ -618,6 +618,8 @@ func (r *Runtime) serveToolsFor(e *entry, trigger bus.Message, tt turnTools) *se
 			LessonRecord: tt.lesson,
 			WorkBranch:   tt.workBranch,
 			Access:       tt.access,
+			Secret:       r.secretSeam(e.m.ID),
+			SecretEnv:    r.secretEnv(e.m.ID),
 			Forge:        r.cfg.Forge,
 			SetProps:     r.cfg.SetProps,
 			SettingCheck: r.cfg.SettingCheck,
@@ -829,6 +831,7 @@ func (r *Runtime) cliPromptAt(ctx context.Context, e *entry, trigger bus.Message
 	grounding += "\nThe reserved workspace dotdir is addressed as .dhi/<rel-path>; ideation artifacts belong under .dhi/sessions/<session>/<file>."
 	grounding += "\nBefore changing code outside a task worktree, call work_branch: DHI makes the card, branch and worktree and continues you there. Never commit on the default branch."
 	grounding += "\nIf the sandbox blocks you (\"Operation not permitted\"), call permission_request for exactly what you need; do not give up or work around it."
+	grounding += r.secretsLine(e.m.ID)
 	// Stable sections first (they cache), volatile after (F-065); each
 	// carries its priority for the prompt budget (F-078).
 	sys := []section{

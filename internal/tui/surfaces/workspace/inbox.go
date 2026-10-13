@@ -73,8 +73,7 @@ func (m *Model) inboxKey(key string) bool {
 	// as everywhere else (enter still opens the editor chat).
 	if choice, ok := tools.DecideKeys[key]; ok && *c < len(items) && items[*c].Kind == inbox.Approval && m.approvals != nil {
 		if ap, ok := m.approvals.Get(items[*c].ApprovalID); ok {
-			m.approvals.Decide(ap, choice)
-			m.inboxHint = choice + ": " + ap.Agent + " " + ap.Describe()
+			m.inboxHint = m.decideAsk(ap, choice)
 		}
 		return true
 	}

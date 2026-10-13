@@ -87,7 +87,7 @@ func (fl Field) Cur() int {
 // CursorValue renders the value with the cursor block at the in-value
 // position (surfaces with custom field rows mirror Form.View).
 func (fl Field) CursorValue() string {
-	rs := []rune(fl.Value)
+	rs := []rune(fl.masked().Value) // a secret never renders, even focused
 	cur := fl.Cur()
 	out := string(rs[:cur]) + theme.GlyphCursor
 	if cur < len(rs) {

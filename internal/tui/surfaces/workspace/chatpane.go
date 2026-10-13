@@ -91,6 +91,9 @@ type chatPane struct {
 	// came from (F-087): the agent waits on it, so it must not hide in
 	// another surface.
 	approvals *tools.Approvals
+	// decide answers an ask (the Model's decideAsk: a missing secret
+	// opens the masked form); nil decides directly.
+	decide func(*tools.Approval, string) string
 }
 
 // reactionTokens is the fixed, width-safe reaction set (no emoji-width
@@ -362,8 +365,12 @@ func (p *chatPane) handleKey(key string) bool {
 	if !p.focus && !p.searching && !p.reactPick {
 		if choice, ok := tools.DecideKeys[key]; ok {
 			if ap := p.pendingAsk(); ap != nil {
-				p.approvals.Decide(ap, choice)
-				p.flash = choice + ": " + ap.Agent + " " + ap.Describe()
+				if p.decide != nil {
+					p.flash = p.decide(ap, choice)
+				} else {
+					p.approvals.Decide(ap, choice)
+					p.flash = choice + ": " + ap.Agent + " " + ap.Describe()
+				}
 				return true
 			}
 		}

@@ -11,7 +11,7 @@
   WORKFLOWS     │                                                                        │
   AUTOPILOTS    │ PREVIEW default (in use)                                               │
   MARKETPLACE   │   branch    task/login-timeout                                         │
-                │   worktree  .dhi/tasks/login-timeout/api                               │
+  SECRETS       │   worktree  .dhi/tasks/login-timeout/api                               │
                 │   commit    retry the token refresh                                    │
                 │   PR title  Fix login timeout                                          │
                 │   PR body   Created from DHI worktree `task/login-timeout`.            │

@@ -80,3 +80,51 @@ func TestChatPaneAskIsScopedAndComposerSafe(t *testing.T) {
 		t.Fatal("n did not deny")
 	}
 }
+
+type savedSecrets map[string]string
+
+func (s savedSecrets) SetIn(root, name, value string) error {
+	s[root+"|"+name] = value
+	return nil
+}
+
+// F-089: yes on a secret the agent asked for opens a masked field; the
+// value goes to the store (never the screen), then the ask is granted.
+func TestSecretAskCollectsTheValueMasked(t *testing.T) {
+	m, ws := newSurface(t)
+	m.approvals = tools.NewApprovals()
+	saved := savedSecrets{}
+	m.secrets = saved
+	done := make(chan error, 1)
+	go func() {
+		done <- m.approvals.AskSecret(context.Background(), "anvil", "STRIPE_KEY", "charge a test card", true)
+	}()
+	deadline := time.After(5 * time.Second)
+	for len(m.approvals.List()) == 0 {
+		select {
+		case <-m.approvals.Changes():
+		case <-deadline:
+			t.Fatal("no ask")
+		}
+	}
+	m.decideAsk(m.approvals.List()[0], "yes")
+	if m.form.kind != fSecret {
+		t.Fatalf("form = %v", m.form.kind)
+	}
+	for _, r := range "sk_test_123" {
+		m.HandleKey(string(r))
+	}
+	if view := ansi.Strip(m.View()); strings.Contains(view, "sk_test") || !strings.Contains(view, "•••") {
+		t.Fatalf("secret visible or not masked:\n%s", view)
+	}
+	m.HandleKey("enter")
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if saved[ws.Root+"|STRIPE_KEY"] != "sk_test_123" {
+		t.Fatalf("saved = %v", saved)
+	}
+	if !m.approvals.Granted("anvil", tools.AccessSecret+"STRIPE_KEY") {
+		t.Fatal("not granted for the workspace")
+	}
+}

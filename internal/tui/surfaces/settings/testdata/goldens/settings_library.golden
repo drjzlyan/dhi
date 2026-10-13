@@ -11,7 +11,7 @@
   WORKFLOWS     │   product-manager    builtin Owns the what and why: specs, acceptance  │
   AUTOPILOTS    │   reviewer           builtin Reviews diffs and PRs: correctness, tests │
   MARKETPLACE   │   scout              builtin Explores the codebase and reports finding │
-                │   scribe             builtin Keeps channels and tasks documented: summ │
+  SECRETS       │   scribe             builtin Keeps channels and tasks documented: summ │
                 │   tester             builtin Tests the work: writes and runs tests, re │
                 │  SKILLS                                                                │
                 │   code-review        builtin A repeatable pass over any diff — correct │

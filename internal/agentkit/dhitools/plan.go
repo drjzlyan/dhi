@@ -19,7 +19,7 @@ var planStatuses = map[string]bool{"todo": true, "doing": true, "done": true, "b
 // harnessSlugs are served to every agent whose turn serves tools, with
 // no allowlist entry: they report the agent's own work to DHI (no
 // effect outside the episode), so withholding them only hides progress.
-var harnessSlugs = []string{"plan_update", "lesson_record", "settings_propose", "project_update", "work_branch", "permission_request"}
+var harnessSlugs = []string{"plan_update", "lesson_record", "settings_propose", "project_update", "work_branch", "permission_request", "secret_request"}
 
 // planTools publishes the agent's plan onto its episode, where the board
 // shows it live. Absent when the runtime wires no seam.

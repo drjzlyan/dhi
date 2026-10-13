@@ -11,7 +11,7 @@
   WORKFLOWS     │  │ fullstack ▌[3]                                  │                   │
   AUTOPILOTS    │  │ frontend   [0]                                  │                   │
   MARKETPLACE   │  │ backend    [0]                                  │                   │
-                │  │ testers    [0]                                  │                   │
+  SECRETS       │  │ testers    [0]                                  │                   │
                 │  │ PMs        [0]                                  │                   │
                 │  │ designers  [0]                                  │                   │
                 │  │ devops     [0]                                  │                   │

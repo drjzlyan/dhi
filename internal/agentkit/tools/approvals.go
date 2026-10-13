@@ -19,18 +19,38 @@ type Approval struct {
 	Op     sandbox.Op
 	Target string // vpath or other display target
 	Reason string // policy explanation
-	Scope  string // capability scope (F-030 P2), or "write:<abs path>" (F-087); "" = no grant-memory
+	Scope  string // capability scope (F-030 P2), "write:<abs path>" (F-087) or "secret:<NAME>" (F-089); "" = no grant-memory
+	// Missing marks a secret request whose value is not stored yet: the
+	// answering surface collects it (masked) before allowing (F-089).
+	Missing bool
 
 	verdict chan decision
 }
 
-// IsAccess reports a sandbox-access request (F-087): its scope names a
-// path ("write:/abs"), and a plain yes remembers it for the workspace —
-// the access is useless for one call only.
-func (ap *Approval) IsAccess() bool { return strings.HasPrefix(ap.Scope, AccessWrite) }
+// IsAccess reports a sandbox-access or secret request (F-087, F-089): a
+// plain yes remembers it for the workspace — either is useless for one
+// call only.
+func (ap *Approval) IsAccess() bool {
+	return strings.HasPrefix(ap.Scope, AccessWrite) || ap.IsSecret()
+}
+
+// IsSecret reports a request to use a stored secret (F-089).
+func (ap *Approval) IsSecret() bool { return strings.HasPrefix(ap.Scope, AccessSecret) }
+
+// SecretName is the secret a request names ("" for other requests).
+func (ap *Approval) SecretName() string {
+	n, _ := strings.CutPrefix(ap.Scope, AccessSecret)
+	if !ap.IsSecret() {
+		return ""
+	}
+	return n
+}
 
 // AccessWrite prefixes a write-access scope: "write:" + absolute path.
 const AccessWrite = "write:"
+
+// AccessSecret prefixes a secret-use scope: "secret:" + NAME.
+const AccessSecret = "secret:"
 
 // decision is a human verdict: allow/deny plus where to remember it
 // ("" = not remembered).
@@ -106,17 +126,22 @@ func (a *Approvals) Ask(ctx context.Context, agent string, op sandbox.Op, target
 // verdict records an agent+scope grant so subsequent asks skip the
 // prompt. An empty scope never grants.
 func (a *Approvals) AskScope(ctx context.Context, agent, scope string, op sandbox.Op, target, reason string) error {
-	if scope != "" && a.granted(agent, scope) {
+	return a.ask(ctx, &Approval{Agent: agent, Op: op, Target: target, Reason: reason, Scope: scope})
+}
+
+// AskSecret parks a request to use the secret name (F-089); missing
+// tells the answering surface to collect the value first.
+func (a *Approvals) AskSecret(ctx context.Context, agent, name, reason string, missing bool) error {
+	return a.ask(ctx, &Approval{Agent: agent, Op: sandbox.OpRead, Target: name, Reason: reason,
+		Scope: AccessSecret + name, Missing: missing})
+}
+
+func (a *Approvals) ask(ctx context.Context, ap *Approval) error {
+	agent, scope, op, target := ap.Agent, ap.Scope, ap.Op, ap.Target
+	if scope != "" && !ap.Missing && a.granted(agent, scope) {
 		return nil
 	}
-	ap := &Approval{
-		Agent:   agent,
-		Op:      op,
-		Target:  target,
-		Reason:  reason,
-		Scope:   scope,
-		verdict: make(chan decision, 1),
-	}
+	ap.verdict = make(chan decision, 1)
 	a.mu.Lock()
 	a.seq++
 	ap.ID = a.seq
@@ -143,6 +168,9 @@ func (a *Approvals) AskScope(ctx context.Context, agent, scope string, op sandbo
 }
 
 func grantKey(agent, scope string) string { return agent + "|" + scope }
+
+// Granted reports a remembered grant of scope to agent (any layer).
+func (a *Approvals) Granted(agent, scope string) bool { return a.granted(agent, scope) }
 
 func (a *Approvals) granted(agent, scope string) bool {
 	a.mu.Lock()
@@ -242,6 +270,12 @@ const DecideHint = "y yes · o once · a always here · g everywhere · n no"
 func (ap *Approval) Describe() string {
 	if p, ok := strings.CutPrefix(ap.Scope, AccessWrite); ok {
 		return "write access to " + p
+	}
+	if n := ap.SecretName(); n != "" {
+		if ap.Missing {
+			return "the secret " + n + " (not stored yet: you'll type it, masked)"
+		}
+		return "use the secret " + n
 	}
 	return string(ap.Op) + " " + ap.Target
 }

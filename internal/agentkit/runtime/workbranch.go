@@ -34,14 +34,21 @@ func (c *relaunch) get() string {
 // post: the new turn resolves the card bound to the thread (and with it
 // the worktree) and its grants at spawn.
 func (r *Runtime) continueTurn(ctx context.Context, agentID string, trigger bus.Message, why string) {
+	// Count the continuation before it is visible: whoever sees the post
+	// and waits on WaitBackground must find it already tracked.
+	r.bg.Add(1)
 	posted, err := r.cfg.Bus.Post(bus.Message{
 		Channel: trigger.Channel, Thread: bus.ThreadOf(trigger),
 		Author: systemAuthor, Text: "@" + agentID + " continue: " + why,
 	})
 	if err != nil {
+		r.bg.Done()
 		return
 	}
-	r.goHandle(context.WithoutCancel(ctx), posted)
+	go func() {
+		defer r.bg.Done()
+		r.Handle(context.WithoutCancel(ctx), posted)
+	}()
 }
 
 // workBranchSeam backs the work_branch tool (F-086): it gives a chat

@@ -138,6 +138,9 @@ type Model struct {
 	openIdeator     func(proposalID int) bool // ideator jump (F-033 inbox)
 	inboxHint       string                    // last jump degrade hint (visible, never silent)
 	snoozeTarget    inbox.Item                // item parked by the fSnooze form
+	secrets         SecretSaver               // F-089: where a typed secret goes
+	secretAsk       *tools.Approval           // the request the fSecret form answers
+	secretChoice    string                    // the Decide choice it was answered with
 	snoozeChain     bool                      // expiry tick chain in flight (F-017)
 
 	chromeSeen string    // last chrome flash content (toast dedupe, F-026 P7)
@@ -186,6 +189,7 @@ type Deps struct {
 	Roster       profiface.Roster
 	ReviewSvc    *review.Service           // nil = task PR creation unavailable
 	Approvals    *tools.Approvals          // nil = no pending-approval inbox source
+	Secrets      SecretSaver               // stores a secret an agent asked for (F-089); nil = can't
 	Unread       *unread.Store             // shared read-mark store (F-017); opened here if nil
 	Autopilots   *autopilot.Store          // shared with Settings (F-023); opened here if nil
 	OpenChat     func() bool               // focus editor chat (approval jump)
@@ -252,6 +256,7 @@ func New(version string, ws *workspace.Workspace, d Deps) *Model {
 		m.rt = d.Runtime
 		m.now = time.Now
 		m.approvals = d.Approvals
+		m.secrets = d.Secrets
 		m.openChat = d.OpenChat
 		m.openReview = d.OpenReview
 		m.openEditor = d.OpenEditor
@@ -276,6 +281,7 @@ func New(version string, ws *workspace.Workspace, d Deps) *Model {
 			m.pane.profile = m.agentProfileLines
 			m.pane.agentWorking = d.AgentWorking
 			m.pane.approvals = d.Approvals
+			m.pane.decide = m.decideAsk
 			if cm, err := channelmeta.Open(ws.Root); err != nil {
 				m.chatMetaErr = err.Error()
 			} else {
@@ -564,7 +570,14 @@ const (
 	fTaskBulkMove
 	fSnooze
 	fTaskComment
+	fSecret
 )
+
+// SecretSaver stores a secret for the workspace at root ("" = every
+// workspace): credstore.Store (F-089).
+type SecretSaver interface {
+	SetIn(root, name, value string) error
+}
 
 // field is the canonical kit field: in-value cursor (left/right),
 // paste, shift+tab, focus-visible rendering ride kit.Form (F-026 P3a).
@@ -1490,6 +1503,8 @@ func (m *Model) submitForm() {
 		}
 		m.clearBoardMarks()
 		m.form = formState{kind: fNone, flash: "moved " + itoa(len(slugs)) + " card(s) to " + string(next)}
+	case fSecret:
+		m.submitSecret()
 	case fSnooze:
 		if m.snoozeTarget.Kind != inbox.AgentMessage {
 			f.err = "snooze target lost — reopen with z"

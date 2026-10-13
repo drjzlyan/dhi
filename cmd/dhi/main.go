@@ -344,6 +344,9 @@ func runTUI() (relaunch bool) {
 			}
 			// F-068 BRAIN: what the crew learned; s shares a lesson to the KB
 			// under its review policy.
+			if credStore != nil {
+				settingsDeps.Secrets = credStore // F-089 SECRETS: names only
+			}
 			settingsDeps.Lessons = lessons.Open(ws.Root)
 			settingsDeps.Memory = memory.Open(ws)
 			settingsDeps.Forge = forge.Open(ws.Root)      // F-069 PROPOSALS
@@ -398,6 +401,7 @@ func runTUI() (relaunch bool) {
 			Roster:       agentRT,
 			ReviewSvc:    reviewSvc,
 			Approvals:    approvals,
+			Secrets:      secretSaver(),
 			Unread:       unreadStore,
 			Autopilots:   wsAuto,
 			OpenChat: func() bool {
@@ -1078,15 +1082,41 @@ func openBus(ws *workspace.Workspace) *bus.Bus {
 	return b
 }
 
-// secretRedactor keeps stored credential values out of chat, tool
-// results, run records and transcripts (F-088). It re-reads the store
-// when the file changes, so a secret added mid-session is covered.
-var secretRedactor = func() *redact.Redactor {
+// credStore holds the secrets agents request by name (F-089) and the
+// integration credentials (F-047); nil when the user config dir cannot
+// be located.
+var credStore = func() *credstore.Store {
 	st, err := credstore.Open()
 	if err != nil {
 		return nil
 	}
-	return redact.New(st.Values, st.Stamp)
+	return st
+}()
+
+// secretStore and secretSaver hand credStore to the runtime and the UI
+// as interfaces, nil (not a typed nil) when there is no store.
+func secretStore() agentkitRuntime.SecretStore {
+	if credStore == nil {
+		return nil
+	}
+	return credStore
+}
+
+func secretSaver() wsview.SecretSaver {
+	if credStore == nil {
+		return nil
+	}
+	return credStore
+}
+
+// secretRedactor keeps stored credential values out of chat, tool
+// results, run records and transcripts (F-088). It re-reads the store
+// when the file changes, so a secret added mid-session is covered.
+var secretRedactor = func() *redact.Redactor {
+	if credStore == nil {
+		return nil
+	}
+	return redact.New(credStore.Values, credStore.Stamp)
 }()
 
 // newAgentRuntime wires the turn engine onto an existing bus; nil means
@@ -1234,6 +1264,12 @@ func runTmpEnv(env []string, ws *workspace.Workspace) []string {
 }
 
 func (r execRunner) Run(ctx context.Context, dir string, argv []string, allowNetwork bool) (string, error) {
+	return r.RunEnv(ctx, dir, argv, allowNetwork, nil)
+}
+
+// RunEnv runs with extra env: the secrets the calling agent was granted
+// (F-089), for this command only.
+func (r execRunner) RunEnv(ctx context.Context, dir string, argv []string, allowNetwork bool, extra []string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, r.timeout)
 	defer cancel()
 	// F-030 P2: DHI-served children are network-denied by default via the
@@ -1252,7 +1288,7 @@ func (r execRunner) Run(ctx context.Context, dir string, argv []string, allowNet
 	}
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	cmd.Dir = dir
-	cmd.Env = r.env
+	cmd.Env = append(append([]string(nil), r.env...), extra...)
 	cmd.WaitDelay = 500 * time.Millisecond
 	var buf bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &buf, &buf
@@ -1420,6 +1456,7 @@ func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cl
 		Bus:       b,
 		Approvals: approvals,
 		Redact:    secretRedactor.Func(),
+		Secrets:   secretStore(),
 		// Host agent CLIs (F-013/ADR-0012/0013): DHI ships no model
 		// engine of its own; every rostered agent thinks through one of
 		// these, resolved on the host PATH. Absent CLIs refuse roster

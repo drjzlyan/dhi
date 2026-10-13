@@ -92,3 +92,46 @@ func (d Deps) accessTools() []tool {
 		},
 	}}
 }
+
+// secretTools serves secret_request (F-089): the agent names a secret,
+// the human types the value into a masked field, and DHI passes it to
+// `run` as an env var. The value never comes back to the agent.
+func (d Deps) secretTools() []tool {
+	if d.Secret == nil {
+		return nil
+	}
+	type secretArgs struct {
+		Name   string `json:"name"`
+		Reason string `json:"reason"`
+	}
+	return []tool{{
+		info: mcp.ToolInfo{
+			Name: "secret_request",
+			Description: "Ask for a credential (API key, token) by env-var name, instead of asking for it in chat. " +
+				"Args: {\"name\":\"STRIPE_API_KEY\",\"reason\":\"why the task needs it\"}. The human types it into a masked field; " +
+				"you never see the value. Once granted it is set as $NAME in DHI's `run` tool only (not your own shell), " +
+				"and any output that echoes it shows ‹secret:NAME›. run has no network unless you have the network scope (permission_request).",
+			InputSchema: json.RawMessage(`{"type":"object","required":["name","reason"],"properties":{"name":{"type":"string"},"reason":{"type":"string"}},"additionalProperties":false}`),
+		},
+		parse: func(raw json.RawMessage) (any, error) {
+			var a secretArgs
+			if err := args(raw, &a); err != nil {
+				return nil, err
+			}
+			a.Name, a.Reason = strings.TrimSpace(a.Name), strings.TrimSpace(a.Reason)
+			if !secretNameRe.MatchString(a.Name) {
+				return nil, fmt.Errorf("name must be an env var name (A-Z, 0-9, _), e.g. GITHUB_TOKEN")
+			}
+			if a.Reason == "" {
+				return nil, fmt.Errorf("reason is required: say why the task needs it")
+			}
+			return a, nil
+		},
+		exec: func(ctx context.Context, dec any) (string, error) {
+			a := dec.(secretArgs)
+			return d.Secret(ctx, a.Name, a.Reason)
+		},
+	}}
+}
+
+var secretNameRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]{0,63}$`)

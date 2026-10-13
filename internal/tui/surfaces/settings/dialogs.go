@@ -48,6 +48,9 @@ const (
 	dlgConfigValue
 	dlgLanguages
 	dlgKeys
+	dlgSecretAdd
+	dlgSecretSet
+	dlgSecretDelete
 	dlgDisplay // read-only: profile, standards preview, last-run info
 )
 
@@ -122,6 +125,8 @@ func (m *Model) submitDialog() {
 		m.submitTeamCompose()
 	case dlgProject:
 		m.submitBrief()
+	case dlgSecretAdd, dlgSecretSet:
+		m.submitSecret()
 	case dlgConvExample:
 		m.submitExample()
 	case dlgIdentity:
@@ -160,6 +165,8 @@ func (m *Model) submitConfirmDialog() {
 	switch m.dkind {
 	case dlgConvDelete:
 		m.deleteTemplate(target)
+	case dlgSecretDelete:
+		m.deleteSecret(target)
 	case dlgConvLearn:
 		m.saveLearned()
 	case dlgIdentityConfirm:

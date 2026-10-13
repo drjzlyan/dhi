@@ -63,6 +63,9 @@ type Config struct {
 	// "cli:<name>". Agents whose manifest declares no engine inherit it;
 	// when it is also empty such agents refuse at build time by name.
 	DefaultEngine string
+	// Secrets resolves the secrets agents request by name (F-089); nil
+	// = no secret_request tool.
+	Secrets SecretStore
 	// Redact scrubs known secret values (F-088) from tool results, run
 	// records and transcripts; nil = none. The bus carries its own.
 	Redact func(string) string

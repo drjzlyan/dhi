@@ -11,7 +11,7 @@
   WORKFLOWS     │               commits, open a pull request, address review, merge when │
   AUTOPILOTS    │               checks pass.                                             │
   MARKETPLACE   │ Reviews       Every change goes through a pull request the user        │
-                │               reviews before it merges.                                │
+  SECRETS       │               reviews before it merges.                                │
                 │ Testing       Run before saying done: go test ./... (in repo)          │
                 │ Never         —                                                        │
                 │                                                                        │

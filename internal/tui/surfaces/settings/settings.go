@@ -30,6 +30,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
 	"github.com/drjzlyan/dhi/internal/autopilot"
 	"github.com/drjzlyan/dhi/internal/conventions"
+	"github.com/drjzlyan/dhi/internal/credstore"
 	"github.com/drjzlyan/dhi/internal/gitcore"
 	"github.com/drjzlyan/dhi/internal/settings"
 	"github.com/drjzlyan/dhi/internal/tasks"
@@ -57,6 +58,7 @@ type Model struct {
 	brainTyping bool
 	libCur      int // LIBRARY listing rows
 	teamCur     int // TEAMS rows
+	secretCur   int // SECRETS rows (F-089)
 	packCur     int // PACKS rows
 	stdCur      int // STANDARDS rows
 	wfCur       int // WORKFLOWS rows
@@ -118,6 +120,7 @@ const (
 	secWorkflows
 	secAutopilots
 	secMarketplace
+	secSecrets
 	secCount
 )
 
@@ -149,6 +152,8 @@ func (s sectionID) label() string {
 		return "AUTOPILOTS"
 	case secMarketplace:
 		return "MARKETPLACE"
+	case secSecrets:
+		return "SECRETS"
 	default:
 		return "CONFIG"
 	}
@@ -225,9 +230,19 @@ type Deps struct {
 	// AGENTS section lists them and r revokes the selected agent's. Nil
 	// hides the list.
 	Grants GrantStore
+	// Secrets lists and edits the stored secrets (F-089); nil hides them.
+	Secrets SecretStore
 }
 
 // GrantStore is the approvals queue's remembered-grant surface.
+// SecretStore is the credential store behind SECRETS (F-089): names and
+// scopes only ever leave it, never values.
+type SecretStore interface {
+	Secrets(root string) ([]credstore.Secret, error)
+	SetIn(root, name, value string) error
+	DeleteIn(root, name string) error
+}
+
 type GrantStore interface {
 	Grants() []tools.Grant
 	Revoke(agent, scope string) error
@@ -359,6 +374,8 @@ func (m *Model) HandleKey(key string) bool {
 		return m.autopilotsKey(key)
 	case secMarketplace:
 		return m.marketplaceKey(key)
+	case secSecrets:
+		return m.secretsKey(key)
 	default:
 		return m.configKey(key)
 	}
@@ -1375,6 +1392,8 @@ func (m *Model) sectionPane(w, h int) string {
 		content = m.autopilotsView()
 	case secMarketplace:
 		content = m.marketplaceView(w)
+	case secSecrets:
+		content = m.secretsView(w - 4)
 	default:
 		content = m.configView(w-4, h-3)
 	}
@@ -1435,6 +1454,8 @@ func (m *Model) sectionHints() []string {
 		sec = []string{"n new", "t rituals", "e arm/pause", "r run now", "c task cards", "o last run", "x remove"}
 	case secMarketplace:
 		sec = []string{"r refresh", "/ search", "enter install", "t pin key", "T clear", "v inspect"}
+	case secSecrets:
+		sec = []string{"a add", "e replace value", "x delete"}
 	}
 	return append(sec, global...)
 }

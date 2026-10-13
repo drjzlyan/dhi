@@ -133,6 +133,11 @@ type Deps struct {
 	// Access asks the human for sandbox access the agent lacks (F-087):
 	// write to a path, network, or running commands; nil = no tool.
 	Access func(ctx context.Context, kind, target, reason string) (string, error)
+	// Secret asks the human for a secret by name (F-089); nil = no tool.
+	Secret func(ctx context.Context, name, reason string) (string, error)
+	// SecretEnv is NAME=value for each secret the agent was granted; it
+	// is added to `run` and skill scripts only (F-089).
+	SecretEnv func() []string
 	// MemberRoots overrides where a member's vpaths resolve (F-067): on a
 	// task turn, member → the task worktree, so DHI's file tools act on
 	// the task branch exactly like the CLI's native tools in the same
@@ -272,6 +277,7 @@ func (d Deps) Handler() mcp.Handler {
 	all = append(all, d.projectTools()...)
 	all = append(all, d.workTools()...)
 	all = append(all, d.accessTools()...)
+	all = append(all, d.secretTools()...)
 	for _, s := range harnessSlugs {
 		allow[s] = true
 	}

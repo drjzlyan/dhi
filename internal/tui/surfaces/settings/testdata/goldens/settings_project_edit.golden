@@ -11,7 +11,7 @@
   WORKFLOWS     │  │ goals                                           │                   │
   AUTOPILOTS    │  │ users                                           │                   │
   MARKETPLACE   │  │ stack                                           │                   │
-                │  │ process    a\nb                                 │                   │
+  SECRETS       │  │ process    a\nb                                 │                   │
                 │  │ review                                          │                   │
                 │  │ testing                                         │                   │
                 │  │ never do                                        │                   │

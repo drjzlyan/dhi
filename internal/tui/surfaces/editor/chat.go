@@ -266,7 +266,11 @@ func (c *chatModel) handleKey(key string, apply func(string)) bool {
 			c.input = append(c.input, []rune(key)...)
 			return true
 		}
-		c.apprs.Decide(list[0], tools.DecideKeys[key])
+		// A secret still to be typed is answered in the workspace chat
+		// or inbox, which have the masked field (F-089); n still denies.
+		if ap := list[0]; !(ap.IsSecret() && ap.Missing && key != "n") {
+			c.apprs.Decide(ap, tools.DecideKeys[key])
+		}
 		return true
 	case "enter":
 		text := strings.TrimSpace(string(c.input))

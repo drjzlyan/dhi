@@ -18,6 +18,28 @@ type CommandRunner interface {
 	Run(ctx context.Context, dir string, argv []string, allowNetwork bool) (string, error)
 }
 
+// EnvRunner is a CommandRunner that can add environment to one run: the
+// secrets an agent was granted (F-089). They reach that command only —
+// never the agent CLI, whose own shell could print them into its session.
+type EnvRunner interface {
+	RunEnv(ctx context.Context, dir string, argv []string, allowNetwork bool, extra []string) (string, error)
+}
+
+// runWith runs argv with the agent's granted secrets in its environment.
+func (d Deps) runWith(ctx context.Context, argv []string, allowNet bool) (string, error) {
+	var extra []string
+	if d.SecretEnv != nil {
+		extra = d.SecretEnv()
+	}
+	if len(extra) > 0 {
+		if er, ok := d.Run.(EnvRunner); ok {
+			return er.RunEnv(ctx, d.Workdir, argv, allowNet, extra)
+		}
+		return "", fmt.Errorf("this runner cannot pass your granted secrets; nothing was run")
+	}
+	return d.Run.Run(ctx, d.Workdir, argv, allowNet)
+}
+
 // runAllow is the fixed command allowlist for the `run` tool (F-030 P1):
 // no free-form shell. A nil subcommand slice allows any args (a
 // read-only tool). The per-agent/per-workflow list arrives with M16.
@@ -89,7 +111,7 @@ func (d Deps) miscTools() []tool {
 				}
 				allowNet := set.EffectFor(scopes.Network) == scopes.Auto
 				argv := dec.(runPlan).argv
-				out, err := d.Run.Run(ctx, d.Workdir, argv, allowNet)
+				out, err := d.runWith(ctx, argv, allowNet)
 				if d.OnRun != nil {
 					d.OnRun(argv, err)
 				}
@@ -179,7 +201,7 @@ func (d Deps) miscTools() []tool {
 				}
 				allowNet := set.EffectFor(scopes.Network) == scopes.Auto
 				argv := append([]string{script}, plan.argv[1:]...)
-				out, err := d.Run.Run(ctx, d.Workdir, argv, allowNet)
+				out, err := d.runWith(ctx, argv, allowNet)
 				if err != nil {
 					if strings.TrimSpace(out) != "" {
 						return "", fmt.Errorf("%v\n%s", err, out)
