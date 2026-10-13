@@ -293,7 +293,8 @@ type DetachFn func(taskSlug, relPath string) error
 
 // Store is the loaded task set; safe for concurrent use.
 type Store struct {
-	ws *workspace.Workspace
+	releaseMu sync.Mutex // serialises Release test-and-clear (F-071)
+	ws        *workspace.Workspace
 
 	mutMu  sync.Mutex // serializes mutate's read-modify-write
 	mu     sync.RWMutex
@@ -1184,7 +1185,18 @@ func (s *Store) Ready() []Task {
 	return out
 }
 
-// Release clears Held once the brief has been handed off.
-func (s *Store) Release(slug string) error {
-	return s.mutate(slug, func(t *Task) { t.Held = false })
+// Release clears Held, reporting whether this call is the one that
+// cleared it: concurrent releasers (the task watcher and a turn's end)
+// race for the same card, and only the winner may hand its brief off.
+func (s *Store) Release(slug string) (bool, error) {
+	s.releaseMu.Lock()
+	defer s.releaseMu.Unlock()
+	t, ok := s.Get(slug)
+	if !ok {
+		return false, fmt.Errorf("tasks: unknown task %q", slug)
+	}
+	if !t.Held {
+		return false, nil
+	}
+	return true, s.mutate(slug, func(t *Task) { t.Held = false })
 }

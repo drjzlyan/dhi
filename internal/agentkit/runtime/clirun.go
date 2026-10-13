@@ -246,8 +246,12 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message, tl
 			prompt, system = r.cliPromptAt(ctx, e, trigger, wfText, level, &ep, true)
 		}
 		brief = failureBrief(fail, run, events)
-		tl.signal(lessons.SignalRetry)
-		tl.fail(brief)
+		if fail == clirun.FailCrash || fail == clirun.FailNoFinal {
+			// Only the agent's own failures teach anything; a rate limit,
+			// stall, overflow or timeout would just repeat in reflection.
+			tl.signal(lessons.SignalRetry)
+			tl.fail(brief)
+		}
 		wait := retryWait(fail, attempt)
 		r.notice(trigger, e.m.ID, fmt.Sprintf("retrying (attempt %d/%d) in %s… (%s)",
 			attempt+1, e.m.Retries, wait.Round(time.Second), fail))
@@ -754,11 +758,7 @@ func (r *Runtime) cliPromptAt(ctx context.Context, e *entry, trigger bus.Message
 	if wfText != "" {
 		system += "\n\n" + wfText
 	}
-	query := trigger.Text
-	if t, ok := r.boundTask(trigger); ok {
-		query += " " + t.Title
-	}
-	system += r.lessonsBlock(e.m.ID, query, lim)
+	system += r.lessonsBlock(e.m.ID, r.lessonQuery(trigger), lim)
 	system += r.memoryBlock(e.m.ID, lim)
 	system += r.forgeHint(e.m.ID)
 	system += r.knowledgeBlock(ctx, trigger.Text, lim)

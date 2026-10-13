@@ -42,7 +42,12 @@ func (tl *turnLog) fail(text string) {
 // noteCorrection marks a human trigger that corrects the agent's earlier
 // reply in the same conversation — the cheapest strong learning signal.
 func (r *Runtime) noteCorrection(agentID string, trigger bus.Message, tl *turnLog) {
-	if trigger.Author != bus.Human || !lessons.IsCorrection(stripMention(trigger.Text, agentID)) {
+	text := stripMention(trigger.Text, agentID)
+	switch {
+	case trigger.Author == bus.Human && lessons.IsCorrection(text):
+	case r.isReviewer(trigger.Author) && trigger.Author != agentID && !approves(text):
+		// A reviewer agent's findings teach like a human correction (F-071).
+	default:
 		return
 	}
 	// The agent's latest reply before the trigger, at the top level or
@@ -199,4 +204,42 @@ func (r *Runtime) consolidate(agentID string) {
 	r.cons.last[agentID] = day
 	r.cons.mu.Unlock()
 	_, _ = r.cfg.Lessons.Consolidate(agentID, 30)
+}
+
+// markLessonsUsed counts one use, once per turn, of the lessons the
+// turn's prompt carried (prompt rebuilds within the turn do not count).
+func (r *Runtime) markLessonsUsed(agentID string, trigger bus.Message) {
+	if r.cfg.Lessons == nil {
+		return
+	}
+	if ls, err := r.cfg.Lessons.Retrieve(agentID, r.lessonQuery(trigger), promptLevels[0].lessons); err == nil {
+		r.cfg.Lessons.MarkUsed(ls)
+	}
+}
+
+// lessonQuery is what lessons are retrieved against: the ask plus the
+// bound card's title.
+func (r *Runtime) lessonQuery(trigger bus.Message) string {
+	q := trigger.Text
+	if t, ok := r.boundTask(trigger); ok {
+		q += " " + t.Title
+	}
+	return q
+}
+
+// isReviewer reports a rostered agent with the reviewer role.
+func (r *Runtime) isReviewer(id string) bool {
+	e, ok := r.agentEntry(id)
+	return ok && e.m.Role == "reviewer"
+}
+
+// approves reports a review reply that signs off rather than finds.
+func approves(text string) bool {
+	low := strings.ToLower(text)
+	for _, w := range []string{"ready", "lgtm", "looks good", "approve", "no findings", "ship it"} {
+		if strings.Contains(low, w) {
+			return true
+		}
+	}
+	return false
 }

@@ -47,8 +47,8 @@ func (r *Runtime) ReleaseReady(ctx context.Context) {
 		return
 	}
 	for _, t := range r.cfg.Tasks.Ready() {
-		if err := r.cfg.Tasks.Release(t.Slug); err != nil {
-			continue
+		if won, err := r.cfg.Tasks.Release(t.Slug); err != nil || !won {
+			continue // another releaser handed it off
 		}
 		r.handoff(ctx, t, systemAuthor, "unblocked: "+strings.Join(t.DependsOn, ", ")+" done")
 	}
@@ -92,9 +92,8 @@ func (r *Runtime) teamBlock(agentID string, t tasks.Task) string {
 			parts = append(parts, fmt.Sprintf("%s (%s, %s)", k.Slug, orNobody(k.Assignee), mark))
 		}
 		fmt.Fprintf(&b, "\n- sub-tasks %d/%d done: %s", done, len(kids), strings.Join(parts, "; "))
-		if done < len(kids) {
-			b.WriteString("\n- open this card's PR only after every sub-task is done (DHI enforces it)")
-		}
+		b.WriteString("\n- this card tracks its sub-tasks: each one ships its own PR; this card has no branch or PR of its own. " +
+			"Coordinate, unblock, and move it to done when every sub-task is done")
 	} else if t.Parent == "" && r.cfg.Org != nil && t.Team != "" {
 		if team, ok := r.cfg.Org.Team(t.Team); ok && team.Lead == agentID {
 			var roster []string
@@ -215,24 +214,12 @@ func (r *Runtime) prOpened(ctx context.Context, author string, trigger bus.Messa
 		posted, err := r.cfg.Bus.Post(bus.Message{
 			Channel: trigger.Channel, Thread: bus.ThreadOf(trigger), Author: author,
 			Text: fmt.Sprintf("@%s please review the PR for task %s (%s) before it goes to the human. "+
-				"Post concrete findings with file:line, or say it is ready.", rev, slug, strings.Join(opened, "; ")),
+				"Reply to @%s with concrete findings (file:line), or tell @%s it is ready.", rev, slug, strings.Join(opened, "; "), author, author),
 		})
 		if err == nil {
 			go r.Handle(context.WithoutCancel(ctx), posted)
 		}
 	}
-}
-
-// openChildren names a card's sub-tasks that are not done (the parent's
-// PR waits for them).
-func (r *Runtime) openChildren(slug string) []string {
-	var out []string
-	for _, k := range r.cfg.Tasks.Children(slug) {
-		if k.Status != tasks.Done {
-			out = append(out, k.Slug)
-		}
-	}
-	return out
 }
 
 // prHook is the pr_open follow-up for a turn (nil without a task store).
@@ -243,7 +230,8 @@ func (r *Runtime) prHook(author string, trigger bus.Message) func(string, []stri
 	return r.prOpened(context.Background(), author, trigger)
 }
 
-// childGate refuses a parent card's PR while its sub-tasks are open.
+// childGate refuses a PR from a tracking card (one with sub-tasks): each
+// sub-task ships its own PR from its own branch.
 func (r *Runtime) childGate(trigger bus.Message) func(string) []string {
 	return func(seam string) []string {
 		if seam != workflow.SeamPR || r.cfg.Tasks == nil {
@@ -253,9 +241,15 @@ func (r *Runtime) childGate(trigger bus.Message) func(string) []string {
 		if !ok {
 			return nil
 		}
-		if open := r.openChildren(t.Slug); len(open) > 0 {
-			return []string{"sub-tasks still open: " + strings.Join(open, ", ")}
+		if kids := r.cfg.Tasks.Children(t.Slug); len(kids) > 0 {
+			return []string{"this card tracks sub-tasks; each sub-task opens its own PR"}
 		}
 		return nil
 	}
+}
+
+// isTracking reports a card with sub-tasks: it gets no worktree and no
+// verify of its own (F-071).
+func (r *Runtime) isTracking(t tasks.Task) bool {
+	return r.cfg.Tasks != nil && t.Slug != "" && len(r.cfg.Tasks.Children(t.Slug)) > 0
 }

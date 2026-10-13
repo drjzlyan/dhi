@@ -2,6 +2,9 @@ package sandbox
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 )
 
 // Bubblewrap wraps command execution in Linux's bwrap (bubblewrap).
@@ -14,6 +17,8 @@ type Bubblewrap struct {
 	rw           []string
 	ro           []string
 	allowNetwork bool
+	guard        []string // read-only binds over rw subtrees (Guarded)
+	reopen       []string // writable binds inside a guard
 }
 
 // bwrapSystemDirs are re-bound read-only so linked binaries, loaders,
@@ -61,7 +66,52 @@ func (b *Bubblewrap) WithExtraRoots(rw []string) (Sandbox, error) {
 		seen[r] = true
 		merged = append(merged, r)
 	}
-	return NewBubblewrapNetwork(b.bin, merged, b.ro, b.allowNetwork)
+	nb, err := NewBubblewrapNetwork(b.bin, merged, b.ro, b.allowNetwork)
+	if err != nil {
+		return nil, err
+	}
+	nb.guard, nb.reopen = b.guard, b.reopen
+	return nb, nil
+}
+
+// WithGuarded implements Guarder: guard subtrees are bound read-only on
+// top of the rw binds, then reopen subtrees writable again (a later bind
+// shadows an earlier one). Paths that do not exist are skipped.
+func (b *Bubblewrap) WithGuarded(guard, reopen []string) (Sandbox, error) {
+	nb := *b
+	nb.guard, nb.reopen = append([]string(nil), guard...), append([]string(nil), reopen...)
+	return &nb, nil
+}
+
+// guardArgs are the bind flags for the guarded subtrees.
+func (b *Bubblewrap) guardArgs() []string {
+	var out []string
+	for _, g := range b.guard {
+		if _, err := os.Stat(g); err == nil {
+			out = append(out, "--ro-bind", g, g)
+		}
+	}
+	for _, r := range b.reopen {
+		paths := []string{r}
+		if dir, ok := strings.CutSuffix(r, "/*"); ok {
+			// Every existing subdirectory, expanded at wrap time (a task
+			// worktree created since the last spawn is bound too).
+			paths = nil
+			if es, err := os.ReadDir(dir); err == nil {
+				for _, e := range es {
+					if e.IsDir() {
+						paths = append(paths, filepath.Join(dir, e.Name()))
+					}
+				}
+			}
+		}
+		for _, p := range paths {
+			if _, err := os.Stat(p); err == nil {
+				out = append(out, "--bind", p, p)
+			}
+		}
+	}
+	return out
 }
 
 // Name implements Sandbox.
@@ -95,6 +145,7 @@ func (b *Bubblewrap) Wrap(argv []string) ([]string, error) {
 	for _, r := range b.rw {
 		out = append(out, "--bind", r, r)
 	}
+	out = append(out, b.guardArgs()...)
 	return append(out, argv...), nil
 }
 
@@ -120,6 +171,7 @@ func (b *Bubblewrap) WrapNetwork(argv []string, allow bool) ([]string, error) {
 	for _, r := range b.rw {
 		out = append(out, "--bind", r, r)
 	}
+	out = append(out, b.guardArgs()...)
 	return append(out, argv...), nil
 }
 

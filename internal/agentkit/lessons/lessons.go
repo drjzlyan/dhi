@@ -252,7 +252,9 @@ func (s *Store) List(agent string) ([]Lesson, error) {
 
 // Retrieve picks the lessons for a turn: every pinned lesson, then the
 // best k live ones by relevance to query (similarity, confidence,
-// recency). The picked ones are marked used.
+// recency). It does not count a use: prompts are rebuilt within a turn
+// (compaction, fallback, verify rounds) — the caller marks once with
+// MarkUsed.
 func (s *Store) Retrieve(agent, query string, k int) ([]Lesson, error) {
 	all, err := s.List(agent)
 	if err != nil {
@@ -295,12 +297,11 @@ func (s *Store) Retrieve(agent, query string, k int) ([]Lesson, error) {
 		}
 		live = picked
 	}
-	out := append(pinned, live...)
-	s.markUsed(out)
-	return out, nil
+	return append(pinned, live...), nil
 }
 
-func (s *Store) markUsed(ls []Lesson) {
+// MarkUsed counts one use of each lesson (once per turn).
+func (s *Store) MarkUsed(ls []Lesson) {
 	now := s.now().UTC()
 	byFile := map[[2]string]map[string]bool{}
 	for _, l := range ls {

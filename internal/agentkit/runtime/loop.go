@@ -29,7 +29,7 @@ func (v verifyTarget) String() string { return strings.Join(v.argv, " ") }
 // success. Only a task worktree is ever verified: the shared checkout is
 // not the task's to judge.
 func (r *Runtime) verifyTargets(task tasks.Task, workdir string) []verifyTarget {
-	if r.taskWorktree(task) != filepath.Clean(workdir) || !exists(filepath.Join(workdir, "go.mod")) {
+	if r.isTracking(task) || r.taskWorktree(task) != filepath.Clean(workdir) || !exists(filepath.Join(workdir, "go.mod")) {
 		return nil
 	}
 	return []verifyTarget{{dir: workdir, argv: []string{"go", "test", "./..."}}}
@@ -179,7 +179,7 @@ func (r *Runtime) humanNote(trigger bus.Message, author, text string) {
 // somewhere DHI never learns about. Only an unambiguous case is
 // provisioned (one member); otherwise, and on failure, a named notice.
 func (r *Runtime) provisionWorktree(agentID string, trigger bus.Message, task tasks.Task) tasks.Task {
-	if len(task.ChangeSets) > 0 || r.cfg.Provision == nil || autopilotCard(task.Slug) {
+	if len(task.ChangeSets) > 0 || r.cfg.Provision == nil || autopilotCard(task.Slug) || r.isTracking(task) {
 		return task
 	}
 	members := r.cfg.WS.Members()

@@ -38,6 +38,15 @@ type RootExtender interface {
 	WithExtraRoots(rw []string) (Sandbox, error)
 }
 
+// Guarder is implemented by adapters that can deny writes to subtrees of
+// their rw roots (F-071 hardening: DHI's control files under .dhi/ are
+// written only by DHI itself, never by a wrapped agent or tool child).
+// A reopen entry "dir/*" reopens each subdirectory of dir but not the
+// files beside them.
+type Guarder interface {
+	WithGuarded(guard, reopen []string) (Sandbox, error)
+}
+
 // Wrap implements Sandbox by returning argv unchanged.
 func (Noop) Wrap(argv []string) ([]string, error) {
 	if len(argv) == 0 {

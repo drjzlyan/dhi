@@ -153,20 +153,22 @@ func CheckChange(userPath, wsPath, layerPath, key, raw string) (old string, err 
 	if err != nil {
 		return "", err
 	}
-	tmp, err := os.CreateTemp("", "dhi-setting-*.toml")
+	// A private directory, so Load's conventions file lookup beside the
+	// layer finds nothing stray (a shared /tmp might hold one).
+	dir, err := os.MkdirTemp("", "dhi-setting-")
 	if err != nil {
 		return "", err
 	}
-	defer func() { _ = os.Remove(tmp.Name()) }()
-	if _, err := tmp.WriteString(body); err != nil {
+	defer func() { _ = os.RemoveAll(dir) }()
+	tmp := filepath.Join(dir, "config.toml")
+	if err := os.WriteFile(tmp, []byte(body), 0o644); err != nil {
 		return "", err
 	}
-	_ = tmp.Close()
 	u, w := userPath, wsPath
 	if filepath.Clean(layerPath) == filepath.Clean(userPath) {
-		u = tmp.Name()
+		u = tmp
 	} else {
-		w = tmp.Name()
+		w = tmp
 	}
 	if _, err := Load(u, w); err != nil {
 		return "", err

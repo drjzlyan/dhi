@@ -52,6 +52,10 @@ func TestRetrieveRanksAndPins(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if again, _ := s.Retrieve("dev", "fix the failing go tests", 1); len(again) != 2 {
+		t.Fatal("retrieval must be repeatable")
+	}
+	s.MarkUsed(got)
 	if len(got) != 2 || got[0].ID != pin.ID || got[1].ID != race.ID {
 		t.Fatalf("retrieve = %+v", got)
 	}

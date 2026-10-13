@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -71,10 +72,10 @@ func TestLeadSeesRosterAndSplitInvite(t *testing.T) {
 	_ = st.SetPlan("schema", "billing", nil, false)
 	_ = st.SetPlan("api", "billing", []string{"schema"}, true)
 	prompt, _ = h.rt.cliPrompt(context.Background(), h.rt.agents["scout"], trig, "")
-	if !strings.Contains(prompt, "sub-tasks 0/2 done") || !strings.Contains(prompt, "open this card's PR only after every sub-task") {
+	if !strings.Contains(prompt, "sub-tasks 0/2 done") || !strings.Contains(prompt, "this card tracks its sub-tasks") {
 		t.Fatalf("parent block missing:\n%s", prompt)
 	}
-	if reasons := h.rt.childGate(trig)(workflow.SeamPR); len(reasons) != 1 || !strings.Contains(reasons[0], "api, schema") {
+	if reasons := h.rt.childGate(trig)(workflow.SeamPR); len(reasons) != 1 || !strings.Contains(reasons[0], "tracks sub-tasks") {
 		t.Fatalf("parent PR gate = %v", reasons)
 	}
 }
@@ -150,7 +151,75 @@ func TestPROpenedAsksReviewer(t *testing.T) {
 	}
 	h.rt.prOpened(context.Background(), "dev", trig)("billing", []string{"api: PR #7"})
 	ask := hasPrefix(h.bus.History("#core", trig.ID), "@rev please review the PR for task billing (api: PR #7)")
+	if ask != nil && !strings.Contains(ask.Text, "Reply to @dev") {
+		t.Fatalf("the reviewer must be told to answer the author: %q", ask.Text)
+	}
 	if ask == nil || ask.Author != "dev" {
 		t.Fatalf("review request missing: %+v", h.bus.History("#core", trig.ID))
+	}
+}
+
+// The watcher and a turn's end may release at once: one brief, not two.
+func TestReleaseReadyConcurrentOnce(t *testing.T) {
+	h, st := teamHarness(t)
+	for _, slug := range []string{"schema", "api"} {
+		if err := st.Create(slug, strings.ToUpper(slug), "dev", "core"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_ = st.SetPlan("api", "", []string{"schema"}, true)
+	_ = st.SetStatus("schema", tasks.Done)
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() { defer wg.Done(); h.rt.ReleaseReady(context.Background()) }()
+	}
+	wg.Wait()
+	n := 0
+	for _, m := range h.bus.History("#core", 0) {
+		if strings.HasPrefix(m.Text, "@dev task api") {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Fatalf("briefs = %d, want exactly 1", n)
+	}
+}
+
+// A reviewer agent's findings are a learning signal for the author; its
+// sign-off is not.
+func TestReviewerFindingsAreCorrections(t *testing.T) {
+	h, _ := teamHarness(t)
+	root := mustPost(t, h, bus.Message{Channel: "#core", Author: bus.Human, Text: "@dev do it"})
+	mustPost(t, h, bus.Message{Channel: "#core", Thread: root.ID, Author: "dev", Text: "done, PR #7", Kind: bus.KindReply})
+	finding := mustPost(t, h, bus.Message{Channel: "#core", Thread: root.ID, Author: "rev", Text: "@dev money.go:12 drops the remainder"})
+	tl := &turnLog{}
+	h.rt.noteCorrection("dev", finding, tl)
+	if len(tl.signals) != 1 || tl.correction != "money.go:12 drops the remainder" {
+		t.Fatalf("finding not a correction: %+v", tl)
+	}
+	ok := mustPost(t, h, bus.Message{Channel: "#core", Thread: root.ID, Author: "rev", Text: "@dev LGTM, ready"})
+	tl = &turnLog{}
+	h.rt.noteCorrection("dev", ok, tl)
+	if len(tl.signals) != 0 {
+		t.Fatal("a sign-off is not a correction")
+	}
+}
+
+// A tracking card (with sub-tasks) is never provisioned.
+func TestTrackingCardNotProvisioned(t *testing.T) {
+	h, st := teamHarness(t)
+	for _, slug := range []string{"epic", "part"} {
+		if err := st.Create(slug, slug, "scout", "core"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_ = st.SetPlan("part", "epic", nil, false)
+	called := false
+	h.rt.cfg.Provision = func(string, string) error { called = true; return nil }
+	epic, _ := st.Get("epic")
+	h.rt.provisionWorktree("scout", bus.Message{Channel: "#core"}, epic)
+	if called {
+		t.Fatal("a tracking card must not get a worktree")
 	}
 }

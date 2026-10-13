@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -20,6 +21,8 @@ type Seatbelt struct {
 	rw           []string
 	ro           []string
 	allowNetwork bool
+	guard        []string // write-denied subtrees inside rw (Guarded)
+	reopen       []string // writable again inside a guard
 }
 
 // seatbeltSystemDirs are read/exec allows every macOS process needs
@@ -44,12 +47,17 @@ func NewSeatbeltNetwork(bin string, rw, ro []string, allowNetwork bool) (*Seatbe
 	if bin == "" {
 		return nil, fmt.Errorf("sandbox: seatbelt: empty binary path")
 	}
-	p, err := seatbeltProfile(rw, ro, allowNetwork)
+	return newSeatbelt(bin, rw, ro, allowNetwork, nil, nil)
+}
+
+func newSeatbelt(bin string, rw, ro []string, allowNetwork bool, guard, reopen []string) (*Seatbelt, error) {
+	p, err := seatbeltProfile(rw, ro, allowNetwork, guard, reopen)
 	if err != nil {
 		return nil, err
 	}
 	return &Seatbelt{bin: bin, profile: p, rw: append([]string(nil), rw...),
-		ro: append([]string(nil), ro...), allowNetwork: allowNetwork}, nil
+		ro: append([]string(nil), ro...), allowNetwork: allowNetwork,
+		guard: append([]string(nil), guard...), reopen: append([]string(nil), reopen...)}, nil
 }
 
 // WrapNetwork implements NetworkPolicy: it re-generates the profile
@@ -58,7 +66,7 @@ func (s *Seatbelt) WrapNetwork(argv []string, allow bool) ([]string, error) {
 	if len(argv) == 0 {
 		return nil, fmt.Errorf("sandbox: empty argv")
 	}
-	p, err := seatbeltProfile(s.rw, s.ro, allow)
+	p, err := seatbeltProfile(s.rw, s.ro, allow, s.guard, s.reopen)
 	if err != nil {
 		return nil, err
 	}
@@ -87,7 +95,14 @@ func (s *Seatbelt) WithExtraRoots(rw []string) (Sandbox, error) {
 		seen[r] = true
 		merged = append(merged, r)
 	}
-	return NewSeatbeltNetwork(s.bin, merged, s.ro, s.allowNetwork)
+	return newSeatbelt(s.bin, merged, s.ro, s.allowNetwork, s.guard, s.reopen)
+}
+
+// WithGuarded implements Guarder: writes under guard are denied even
+// inside an rw root, except under reopen (SBPL: the last matching rule
+// wins — live-verified).
+func (s *Seatbelt) WithGuarded(guard, reopen []string) (Sandbox, error) {
+	return newSeatbelt(s.bin, s.rw, s.ro, s.allowNetwork, guard, reopen)
 }
 
 // Name implements Sandbox.
@@ -108,7 +123,7 @@ func (s *Seatbelt) Profile() string { return s.profile }
 
 // seatbeltProfile generates the SBPL source. Deny-by-default; every
 // allow is scoped to a registered tree or a system path.
-func seatbeltProfile(rw, ro []string, allowNetwork bool) (string, error) {
+func seatbeltProfile(rw, ro []string, allowNetwork bool, guard, reopen []string) (string, error) {
 	if len(rw) == 0 {
 		return "", fmt.Errorf("sandbox: seatbelt: no rw roots")
 	}
@@ -136,6 +151,28 @@ func seatbeltProfile(rw, ro []string, allowNetwork bool) (string, error) {
 	// Read: rw + ro roots + system dirs. Write: rw roots only.
 	b.WriteString("(allow file-read*" + subpaths(rw) + subpaths(ro) + subpaths(seatbeltSystemDirs) + ")\n")
 	b.WriteString("(allow file-write*" + subpaths(rw) + ")\n")
+	// Guarded subtrees (F-071 hardening): DHI's own control files are
+	// written by DHI, never by a wrapped child — deny, then reopen the
+	// parts a child legitimately writes. Later rules win.
+	if len(guard) > 0 {
+		b.WriteString("(deny file-write*" + subpaths(guard) + ")\n")
+		var plain, eachDir []string
+		for _, r := range reopen {
+			if dir, ok := strings.CutSuffix(r, "/*"); ok {
+				eachDir = append(eachDir, dir)
+			} else {
+				plain = append(plain, r)
+			}
+		}
+		if len(plain) > 0 {
+			b.WriteString("(allow file-write*" + subpaths(plain) + ")\n")
+		}
+		// "dir/*" reopens every subdirectory of dir but not the files
+		// beside them (task worktrees live next to the card files).
+		for _, d := range eachDir {
+			b.WriteString(`(allow file-write* (regex #"^` + regexp.QuoteMeta(d) + `/[^/]+/"))` + "\n")
+		}
+	}
 	// Exec: registered trees + system dirs.
 	b.WriteString("(allow process-exec*" + subpaths(rw) + subpaths(ro) + subpaths(seatbeltSystemDirs) + ")\n")
 

@@ -667,6 +667,7 @@ func (r *Runtime) Turn(ctx context.Context, agentID string, trigger bus.Message)
 	tl := &turnLog{}
 	r.noteCorrection(agentID, trigger, tl)
 	err := r.cliTurn(ctx, e, trigger, tl)
+	r.markLessonsUsed(agentID, trigger)
 	r.reflect(context.WithoutCancel(ctx), e, trigger, tl)
 	r.ReleaseReady(context.WithoutCancel(ctx)) // F-071: unblocked sub-cards start now
 	return err

@@ -213,7 +213,7 @@ func runTUI() (relaunch bool) {
 		if r, err := gitcore.ResolveRunner(mgr); err == nil {
 			gitRunner = r
 		}
-		runRunner = execRunner{env: termEnv, timeout: 5 * time.Minute, sandbox: decision.Sandbox}
+		runRunner = execRunner{env: termEnv, timeout: 5 * time.Minute, sandbox: guardWorkspace(decision.Sandbox, ws)}
 		if _, err := os.Stat(filepath.Join(toolRoot, "bin", "rg")); err == nil {
 			rgSearcher = search.Ripgrep{Bin: filepath.Join(toolRoot, "bin", "rg")}
 		}
@@ -260,7 +260,7 @@ func runTUI() (relaunch bool) {
 		// under .dhi/agents/. Guards carry the audited OS-sandbox
 		// adapter (nil here is impossible: the audit blocked first).
 		if messageBus != nil {
-			agentRT = newAgentRuntime(ws, messageBus, decision.Sandbox, termEnv, cfg.Engine, gitRunner, identityFn, sessionStore, runRunner, editorBridge, wsScopes, taskStore, reviewSvc, rgSearcher, mcpStore, convLive.Source(), cliLook, toolBin, mcpHome, decision.Worktrees,
+			agentRT = newAgentRuntime(ws, messageBus, guardWorkspace(decision.Sandbox, ws), termEnv, cfg.Engine, gitRunner, identityFn, sessionStore, runRunner, editorBridge, wsScopes, taskStore, reviewSvc, rgSearcher, mcpStore, convLive.Source(), cliLook, toolBin, mcpHome, decision.Worktrees,
 				liveTuning(userCfg, wsCfg, cfg))
 			if agentRT != nil {
 				// F-071: a held sub-card starts the moment its blockers are
@@ -1111,6 +1111,37 @@ func truncateTitle(s string) string {
 		return string(r[:59]) + "…"
 	}
 	return s
+}
+
+// guardWorkspace makes DHI's control files read-only to every wrapped
+// child (agent CLIs, the run/verify runner, forged scripts): manifests,
+// forged tools, grants, config, budgets, proposals and memory under .dhi/
+// are written by DHI itself, so an agent cannot approve its own tool,
+// grant itself a scope or raise its own budget. The trees agents
+// legitimately write — task worktrees and ideation sessions — stay
+// writable. An adapter without guard support is used as is.
+func guardWorkspace(sb sandbox.Sandbox, ws *workspace.Workspace) sandbox.Sandbox {
+	g, ok := sb.(sandbox.Guarder)
+	if !ok || ws == nil {
+		return sb
+	}
+	dhi := filepath.Join(ws.Root, workspace.DHIDir)
+	// Task and review worktrees are subdirectories of .dhi/tasks and
+	// .dhi/reviews, beside the card / review files agents must not edit.
+	reopen := []string{
+		filepath.Join(ws.Root, worktrees.TasksDir) + "/*",
+		filepath.Join(ws.Root, worktrees.ReviewsDir) + "/*",
+		filepath.Join(dhi, "sessions"),
+	}
+	for _, d := range reopen {
+		_ = os.MkdirAll(strings.TrimSuffix(d, "/*"), 0o755) // bubblewrap binds only existing paths
+	}
+	guarded, err := g.WithGuarded([]string{dhi}, reopen)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "dhi: guarding .dhi/:", err)
+		return sb
+	}
+	return guarded
 }
 
 // openEpisodes is the read side of the agents' episodes for the board

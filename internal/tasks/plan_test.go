@@ -39,8 +39,11 @@ func TestPlanDependenciesAndReady(t *testing.T) {
 	if len(r) != 1 || r[0].Slug != "api" {
 		t.Fatalf("ready = %+v", r)
 	}
-	if err := s.Release("api"); err != nil {
-		t.Fatal(err)
+	if won, err := s.Release("api"); err != nil || !won {
+		t.Fatalf("first release = %v %v", won, err)
+	}
+	if won, _ := s.Release("api"); won {
+		t.Fatal("a second release must lose")
 	}
 	if len(s.Ready()) != 0 || len(s.Blockers("ui")) != 1 {
 		t.Fatal("released card must leave the ready set; ui still waits on api")

@@ -34,6 +34,9 @@
 - P7 is DONE (F-071): `tasks.SetPlan/Ready/Release`, runtime/team.go (`ReleaseReady`, `WatchTasks`
   started in main, lead block, hand-off brief, reviewer on pr_open, parent PR gate), Agent HQ
   (workspace/hq.go), rituals (autopilot/rituals.go, Settings AUTOPILOTS `t`).
+- Hardening after review (ADR-0035): `.dhi/` is write-denied to wrapped children except
+  `.dhi/tasks/*/`, `.dhi/reviews/*/` and `.dhi/sessions` (main `guardWorkspace`). Task worktrees
+  default to `.dhi/tasks/<slug>/<member>` NEXT TO the card files; never reopen `.dhi/tasks` whole.
 - M29 is COMPLETE in code. Open items:
   - Live evals of learning, the tool forge and team flows (only the P1–P3 loop has live numbers).
   - Harder eval fixtures that need a second verify round.
