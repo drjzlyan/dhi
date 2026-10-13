@@ -1,5 +1,45 @@
 # STATE — current position
 
+### Session 55 (M31: onboarding that knows you, branch `m31`)
+
+- Plan: `~/.claude/plans/what-are-the-planned-partitioned-prism.md` (7 phases + polish, one commit
+  each). M30 was already on `origin/main` (STATE below said unpushed: it is merged). `m31` is cut
+  from it, committed locally, NOT pushed, no PR.
+- P1 F-079: roles lead/fullstack/frontend/backend/tester/product-manager/designer/devops;
+  `starter.Compose(counts)` → one team per lead (none → led by you), `ApplyAll` all-or-nothing;
+  wizard team step defaults to custom counts; Settings TEAMS `a` adds by role (or into a team).
+  Found + fixed: Settings form dialogs rendered an EMPTY box (the modal never got the form rows).
+- P2 F-080: `.dhi/project.toml` brief (`internal/agentkit/brief`, Detect from README/manifests/
+  verify commands/CI), `project` prompt section (prio 1), wizard project step, Settings PROJECT
+  (e/d/i), `project_update` harness tool → PROPOSALS (`setprop.LayerProject`), doctor row.
+  `kit.Form.ViewWidth` fits long fields.
+- P3 F-081: `[profile]` (user config) + `internal/agentkit/principal`: `Voice()` REPLACED the
+  fixed `teammateVoice` (it includes those chat rules); `Tuning.Principal` (git name resolved once in
+  `liveTuning`); wizard `you` step; Settings CONFIG YOU group; composed personas follow detail.
+- P4 F-082: `commit.body` example; `conventions.InferCommits` / `InferFromExample` /
+  `PRTemplate` / `Learn`; `Runner.Subjects`; wizard conventions step preselects "detected" + a
+  template toggle (the old "wizard templates" item); Settings CONVENTIONS `p` / `g`.
+- P5 F-083: `gitcore.SuggestIdentity` (repo config, top author, managed gh `api user`, os/user),
+  wizard found → `e` edits, unset → prefilled + candidates; Settings YOU `git identity` row.
+- P6 F-084: CONFIG rows for engine, sandbox, reflect model, languages, keys, license, max subject;
+  `e` types any value (checked by `settings.Check`); guard test `TestEverySettingHasAPlaceInSettings`.
+- P7 F-085 / ADR-0038: `internal/repair` (gitignore safe; library refs + dangling teams ask),
+  `repairgate` launch card, doctor `repairs/*`, `setup.State.Skipped` + `wizard.CatchUpSteps`
+  (project, you offered once to finished setups). Untracked this repo's `.dhi/setup.json`.
+- Live-verified in a scratch repo (tmux, `XDG_CONFIG_HOME` isolated): full wizard incl. detected
+  brief, learned conventional commits + PR template, 2 leads → 2 teams, profile saved; deleting
+  `.dhi/.gitignore` + a lead's manifest → repair card → fixed. NOT live: the lead interview (needs
+  an agent turn), identity write (this machine has no global git user.name — skipped on purpose).
+- Open: `.dhi/conventions.toml` is still untracked here (your call); workflows/packs/dependencies
+  still name their files in the UI; CONFIG labels are raw key names.
+- Gotchas:
+  - CONFIG rows are walked by index: add a row in DISPLAY order in the const block, and give it a
+    label containing its settings key or the guard test fails.
+  - `go build ./cmd/dhi` drops a `dhi` binary in the repo root — use `-o` or `make build`.
+  - The voice block is `principal.Profile.Voice()`; there is no `teammateVoice` any more.
+  - Settings form dialogs: the body is `m.dform.ViewWidth(...)` set in `View`; never set
+    `m.dlg.Lines` for a form dialog yourself.
+
 ### Session 54 (M30: teammate-grade collaboration, branch `m30`)
 
 - Plan: `~/.claude/plans/transient-baking-sun.md` (7 phases, one commit each).

@@ -1046,3 +1046,17 @@ Plan: `~/.claude/plans/transient-baking-sun.md`. One spec + commit per phase on 
 - [x] P5 Verify every top language + managed Rust/JDK/.NET toolchains (F-076, ADR-0036)
 - [x] P6 Harder evals exercising fix-and-retry (F-077) — live run pending
 - [x] P7 Top-class agent memory: durable stores, bounded growth, token budget, summaries (F-078, ADR-0037)
+
+## M31 — Onboarding that knows you (session 55)
+
+Plan: `~/.claude/plans/what-are-the-planned-partitioned-prism.md`. Branch `m31`, one commit per phase.
+
+- [x] P1 Team by role count: lead/fullstack/frontend/backend/tester/PM/designer/devops, one team per lead (F-079)
+- [x] P2 Project brief + how you work, detected from the repo, lead interview via project_update (F-080)
+- [x] P3 You: role, writing and reading style shape every employee's voice (F-081)
+- [x] P4 Commit/PR style learned from history, the PR template or a pasted example; wizard templates (F-082)
+- [x] P5 Git identity: suggest, confirm, change (F-083)
+- [x] P6 Settings parity: every setting editable in place, none needs a file (F-084)
+- [x] P7 Self-healing: named repairs at launch, setup catch-up (F-085, ADR-0038)
+- [ ] Live: the lead interview end to end; identity write on a machine without one
+
