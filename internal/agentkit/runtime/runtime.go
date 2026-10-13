@@ -757,6 +757,14 @@ func (r *Runtime) Turn(ctx context.Context, agentID string, trigger bus.Message)
 	r.workStart(agentKey(agentID))
 	defer r.workDone(agentKey(agentID))
 
+	// F-078: the memory bounds in force govern this turn's stores.
+	mt := r.tuning().memoryTuning()
+	if r.cfg.Memory != nil {
+		r.cfg.Memory.SetJournalMax(mt.JournalMax)
+	}
+	if r.cfg.Lessons != nil {
+		r.cfg.Lessons.SetPinnedMax(mt.PinnedMax)
+	}
 	// F-068: learn from the turn when it was learned the hard way.
 	r.consolidate(agentID)
 	tl := &turnLog{}

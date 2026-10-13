@@ -1218,6 +1218,11 @@ func liveTuning(userCfg, wsCfg string, boot settings.Config) func() agentkitRunt
 			Reflect:       c.Agents.Reflect,
 			ReflectModel:  c.Agents.ReflectModel,
 			TracePrompts:  c.Agents.TracePrompts,
+			Memory: agentkitRuntime.MemoryTuning{
+				PromptTokens: c.Memory.PromptTokens, SessionTokens: c.Memory.SessionTokens,
+				JournalMax: c.Memory.JournalMax, LessonsMax: c.Memory.LessonsMax,
+				PinnedMax: c.Memory.PinnedMax, DecayDays: c.Memory.DecayDays,
+			},
 			Budgets: budget.Limits{
 				TaskUSD: c.Budgets.TaskUSD, TaskTokens: c.Budgets.TaskTokens,
 				AgentDayUSD: c.Budgets.AgentDayUSD, WorkspaceDayUSD: c.Budgets.WorkspaceDayUSD,

@@ -3,6 +3,7 @@ package memory
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -79,5 +80,32 @@ func TestAppendValidation(t *testing.T) {
 	}
 	if err := s.Append("scout", "kind", "  "); err == nil {
 		t.Error("blank text accepted")
+	}
+}
+
+// F-078: a journal stays bounded — old entries move to the monthly
+// archive and a digest line each; the newest stay in the journal.
+func TestJournalRotatesIntoArchiveAndDigest(t *testing.T) {
+	s := fixture(t)
+	s.SetJournalMax(50)
+	for i := 0; i < 70; i++ {
+		if err := s.Append("scout", "note", "entry "+strconv.Itoa(i)+" "+strings.Repeat("words ", 8)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	all, err := s.Journal("scout", 0)
+	if err != nil || len(all) < 50 || len(all) > 62 || !strings.HasPrefix(all[len(all)-1].Text, "entry 69") {
+		t.Fatalf("journal = %d entries, last %q, %v", len(all), all[len(all)-1].Text, err)
+	}
+	d, _ := s.Digest("scout")
+	if !strings.Contains(d, ": entry 0 ") || strings.Contains(d, "entry 69") {
+		t.Fatalf("digest:\n%s", d)
+	}
+	dir, _ := s.dir("scout")
+	if m, _ := filepath.Glob(filepath.Join(dir, "journal-*.jsonl")); len(m) != 1 {
+		t.Fatalf("archive files = %v", m)
+	}
+	if tail, _ := s.Journal("scout", 3); len(tail) != 3 || !strings.HasPrefix(tail[2].Text, "entry 69") {
+		t.Fatalf("tail = %+v", tail)
 	}
 }

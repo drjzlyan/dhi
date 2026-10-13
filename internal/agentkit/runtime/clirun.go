@@ -80,6 +80,12 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message, tl
 	resume := ""
 	if tune.Resume && e.cli.ResumeOK && ep.Resumable(e.cli.Name, workdir) {
 		resume = ep.Session
+		// F-078: a session close to its context limit starts fresh with
+		// the episode's summary rather than overflowing mid-task.
+		if limit := tune.memoryTuning().SessionTokens; ep.LastContext > limit {
+			r.notice(trigger, e.m.ID, fmt.Sprintf("the CLI session is at %d tokens (memory.session_tokens %d); starting a fresh session with a summary", ep.LastContext, limit))
+			resume, ep.Session, ep.LastContext = "", "", 0
+		}
 	}
 	level := 0
 	prompt, system := r.cliPromptAt(ctx, e, trigger, wfText, level, &ep, resume != "")
@@ -182,7 +188,7 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message, tl
 					lastSig = failureSig(tail)
 					r.saveEpisode(ep)
 					r.notice(trigger, e.m.ID, fmt.Sprintf("verify failed: %s (round %d of %d) — sending it back", cmd, iter, maxIter))
-					if session != "" && tune.Resume {
+					if session != "" && tune.Resume && ep.LastContext <= tune.memoryTuning().SessionTokens {
 						resume, prompt = session, ""
 					} else {
 						resume = ""

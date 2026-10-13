@@ -23,6 +23,9 @@ func brainSurface(t *testing.T) (*Model, *lessons.Store) {
 	st := lessons.Open(ws.Root)
 	m.d.Lessons = st
 	m.now = func() time.Time { return time.Date(2026, 10, 15, 9, 0, 0, 0, time.UTC) }
+	// Lessons stamped two days before the view's clock: ages never drift
+	// with the wall clock.
+	st.SetClock(func() time.Time { return time.Date(2026, 10, 13, 9, 0, 0, 0, time.UTC) })
 	add := func(l lessons.Lesson) lessons.Lesson {
 		t.Helper()
 		out, _, err := st.Add(l)

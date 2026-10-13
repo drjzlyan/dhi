@@ -102,3 +102,65 @@ func TestConsolidateDecays(t *testing.T) {
 		}
 	}
 }
+
+// F-078: the lifecycle keeps a lesson file bounded — stale lessons
+// retire (established ones later), the weakest past the cap retire,
+// long-retired ones move to the archive, and pinned ones ride capped.
+func TestConsolidateWithPolicy(t *testing.T) {
+	s, now := testStore(t)
+	add := func(text string, conf float64, idleDays int) {
+		t.Helper()
+		l, _, err := s.Add(Lesson{Agent: "dev", Text: text, Confidence: conf, Source: SourceAgent})
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = s.Set(ScopePrivate, "dev", l.ID, func(x *Lesson) { x.LastUsed = now.Add(-time.Duration(idleDays) * 24 * time.Hour) })
+	}
+	add("prefer table tests in Go packages", 0.6, 40)
+	add("run the linter before every commit", 0.9, 40)
+	add("keep pull requests under four hundred lines", 0.9, 70)
+	add("document exported functions with examples", 0.6, 1)
+	rep, err := s.ConsolidateWith("dev", Policy{StaleDays: 30, ActiveMax: 1, PurgeDays: 90})
+	if err != nil {
+		t.Fatal(err)
+	}
+	status := map[string]string{}
+	all, _ := s.List("dev")
+	for _, l := range all {
+		status[l.Text] = l.Status
+	}
+	if status["prefer table tests in Go packages"] != StatusRetired || status["keep pull requests under four hundred lines"] != StatusRetired {
+		t.Fatalf("stale not retired: %v", status)
+	}
+	// Two remain active before the cap of 1: the weaker of them retires.
+	active := 0
+	for _, st := range status {
+		if st == StatusActive {
+			active++
+		}
+	}
+	if active != 1 || rep.Retired != 3 {
+		t.Fatalf("active=%d report=%+v statuses=%v", active, rep, status)
+	}
+	*now = now.Add(100 * 24 * time.Hour)
+	rep, _ = s.ConsolidateWith("dev", Policy{StaleDays: 30, ActiveMax: 10, PurgeDays: 90})
+	if rep.Purged != 3 {
+		t.Fatalf("purged = %d", rep.Purged)
+	}
+
+	for _, txt := range []string{"always rebase before merging", "never commit generated files", "name migrations by date"} {
+		l, _, _ := s.Add(Lesson{Agent: "dev", Text: txt, Confidence: 0.9})
+		_ = s.Set(ScopePrivate, "dev", l.ID, func(x *Lesson) { x.Status = StatusPinned })
+	}
+	s.SetPinnedMax(2)
+	got, _ := s.Retrieve("dev", "anything", 0)
+	pinned := 0
+	for _, l := range got {
+		if l.Status == StatusPinned {
+			pinned++
+		}
+	}
+	if pinned != 2 || s.PinnedCount("dev") != 3 {
+		t.Fatalf("pinned in prompt = %d, stored %d", pinned, s.PinnedCount("dev"))
+	}
+}

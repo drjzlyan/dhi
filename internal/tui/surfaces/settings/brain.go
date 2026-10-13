@@ -149,6 +149,10 @@ func (m *Model) brainAct(key string, l lessons.Lesson) {
 		if l.Status == lessons.StatusPinned {
 			set(lessons.StatusActive, "unpinned — it now competes on relevance")
 		} else {
+			if cap := m.d.Lessons.PinnedMax(); cap > 0 && m.d.Lessons.PinnedCount(l.Agent) >= cap {
+				m.flash = fmt.Sprintf("failed: %d lessons are pinned already (memory.pinned_max) — unpin one first", cap)
+				return
+			}
 			set(lessons.StatusPinned, "pinned — it rides every prompt and never decays")
 		}
 	case "x":

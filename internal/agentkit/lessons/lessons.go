@@ -15,6 +15,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/drjzlyan/dhi/internal/fsx"
+	"github.com/drjzlyan/dhi/internal/jsonl"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -22,6 +23,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/drjzlyan/dhi/internal/agentkit/knowledge"
@@ -73,7 +75,21 @@ type Store struct {
 	root string // .dhi/memory
 	mu   sync.Mutex
 	now  func() time.Time
+	// pinnedMax caps the pinned lessons a prompt carries (F-078); 0 =
+	// no cap. Settable while turns run.
+	pinnedMax atomic.Int32
 }
+
+// SetClock replaces the store's clock (tests pin it so ages render
+// deterministically).
+func (s *Store) SetClock(now func() time.Time) { s.now = now }
+
+// SetPinnedMax caps how many pinned lessons ride each prompt (newest
+// first) and how many BRAIN lets you pin; 0 = no cap.
+func (s *Store) SetPinnedMax(n int) { s.pinnedMax.Store(int32(max(n, 0))) }
+
+// PinnedMax is the current pinned cap (0 = none).
+func (s *Store) PinnedMax() int { return int(s.pinnedMax.Load()) }
 
 // Open roots the store at wsRoot.
 func Open(wsRoot string) *Store {
@@ -270,6 +286,12 @@ func (s *Store) Retrieve(agent, query string, k int) ([]Lesson, error) {
 			live = append(live, l)
 		}
 	}
+	if cap := s.PinnedMax(); cap > 0 && len(pinned) > cap {
+		// Pinned lessons ride every prompt: a bounded set, newest first
+		// (F-078), so pinning cannot grow a prompt without limit.
+		sort.SliceStable(pinned, func(i, j int) bool { return pinned[i].Updated.After(pinned[j].Updated) })
+		pinned = pinned[:cap]
+	}
 	now := s.now()
 	if len(live) > 0 {
 		docs := make([]string, len(live))
@@ -341,44 +363,131 @@ func (s *Store) Set(scope, agent, id string, fn func(*Lesson)) error {
 }
 
 // Report says what a consolidation pass changed.
-type Report struct{ Merged, Retired int }
+type Report struct{ Merged, Retired, Purged int }
 
-// Consolidate merges near-duplicates and retires lessons that have gone
-// stale: unused for staleDays with low confidence. Pinned lessons never
-// decay. Local and token-free.
+// Policy bounds a lesson file (F-078).
+type Policy struct {
+	// StaleDays: an active lesson unused this long retires unless it is
+	// well established (confidence >= 0.75); unused twice as long, it
+	// retires anyway. Pinned lessons never decay.
+	StaleDays int
+	// ActiveMax caps active lessons; the weakest past it retire.
+	ActiveMax int
+	// PurgeDays moves lessons retired this long to the archive file.
+	PurgeDays int
+}
+
+// DefaultPolicy is the shipped lesson lifecycle.
+func DefaultPolicy() Policy { return Policy{StaleDays: 30, ActiveMax: 200, PurgeDays: 90} }
+
+// Consolidate is ConsolidateWith the default policy and staleDays.
 func (s *Store) Consolidate(agent string, staleDays int) (Report, error) {
+	p := DefaultPolicy()
+	p.StaleDays = staleDays
+	return s.ConsolidateWith(agent, p)
+}
+
+// ConsolidateWith merges near-duplicates, retires stale and surplus
+// lessons, and archives long-retired ones (lessons-archive.jsonl beside
+// the file) — local, token-free and idempotent, so a daily pass keeps
+// every lesson file bounded.
+func (s *Store) ConsolidateWith(agent string, pol Policy) (Report, error) {
 	var rep Report
 	now := s.now()
-	pass := func(ls []Lesson) ([]Lesson, error) {
-		var out []Lesson
-		for _, l := range ls {
-			if l.live() {
-				if i := nearest(out, l.Text); i >= 0 && out[i].live() {
-					out[i].Confidence = clamp(max(out[i].Confidence, l.Confidence)+0.05, 0, 1)
-					out[i].Runs = appendUnique(out[i].Runs, l.Runs...)
-					out[i].Uses += l.Uses
-					rep.Merged++
-					continue
+	day := 24 * time.Hour
+	pass := func(file string) func(ls []Lesson) ([]Lesson, error) {
+		return func(ls []Lesson) ([]Lesson, error) {
+			var out []Lesson
+			for _, l := range ls {
+				if l.live() {
+					if i := nearest(out, l.Text); i >= 0 && out[i].live() {
+						out[i].Confidence = clamp(max(out[i].Confidence, l.Confidence)+0.05, 0, 1)
+						out[i].Runs = appendUnique(out[i].Runs, l.Runs...)
+						out[i].Uses += l.Uses
+						rep.Merged++
+						continue
+					}
+				}
+				last := l.LastUsed
+				if last.IsZero() {
+					last = l.Created
+				}
+				idle := now.Sub(last)
+				if l.Status == StatusActive && pol.StaleDays > 0 &&
+					(idle > time.Duration(pol.StaleDays)*day && l.Confidence < 0.75 ||
+						idle > time.Duration(2*pol.StaleDays)*day) {
+					l.Status, l.Updated = StatusRetired, now.UTC()
+					rep.Retired++
+				}
+				out = append(out, l)
+			}
+			// Cap the active set: the weakest (confidence, then recency) retire.
+			if pol.ActiveMax > 0 {
+				var act []int
+				for i, l := range out {
+					if l.Status == StatusActive {
+						act = append(act, i)
+					}
+				}
+				if over := len(act) - pol.ActiveMax; over > 0 {
+					strength := func(l Lesson) float64 {
+						age := now.Sub(l.LastUsed).Hours() / 24
+						return l.Confidence + 0.2/(1+age/30)
+					}
+					sort.SliceStable(act, func(a, b int) bool { return strength(out[act[a]]) < strength(out[act[b]]) })
+					for _, i := range act[:over] {
+						out[i].Status, out[i].Updated = StatusRetired, now.UTC()
+						rep.Retired++
+					}
 				}
 			}
-			last := l.LastUsed
-			if last.IsZero() {
-				last = l.Created
+			// Archive long-retired lessons: out of every scan, not lost.
+			if pol.PurgeDays > 0 {
+				kept := out[:0]
+				for _, l := range out {
+					if l.Status == StatusRetired && now.Sub(l.Updated) > time.Duration(pol.PurgeDays)*day {
+						if err := jsonl.Append(filepath.Join(filepath.Dir(file), "lessons-archive.jsonl"), l); err == nil {
+							rep.Purged++
+							continue
+						}
+					}
+					kept = append(kept, l)
+				}
+				out = kept
 			}
-			if l.Status == StatusActive && l.Confidence < 0.5 && now.Sub(last) > time.Duration(staleDays)*24*time.Hour {
-				l.Status = StatusRetired
-				rep.Retired++
-			}
-			out = append(out, l)
+			return out, nil
 		}
-		return out, nil
 	}
 	if agent != "" {
-		if err := s.mutate(ScopePrivate, agent, pass); err != nil {
+		p, err := s.path(ScopePrivate, agent)
+		if err != nil {
+			return rep, err
+		}
+		if err := s.mutate(ScopePrivate, agent, pass(p)); err != nil {
 			return rep, err
 		}
 	}
-	return rep, s.mutate(ScopeUser, "", pass)
+	p, err := s.path(ScopeUser, "")
+	if err != nil {
+		return rep, err
+	}
+	return rep, s.mutate(ScopeUser, "", pass(p))
+}
+
+// PinnedCount is how many lessons are pinned in the agent's file plus
+// the user scope.
+func (s *Store) PinnedCount(agent string) int {
+	all, err := s.List(agent)
+	if err != nil {
+		return 0
+	}
+	n := 0
+	for _, l := range all {
+		if l.Status == StatusPinned {
+			n++
+		}
+	}
+	return n
 }
 
 func clamp(v, lo, hi float64) float64 { return min(max(v, lo), hi) }

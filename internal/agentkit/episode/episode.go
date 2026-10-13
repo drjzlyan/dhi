@@ -61,6 +61,11 @@ type Episode struct {
 	VerifyTail string `json:"verify_tail,omitempty"`
 	Iterations int    `json:"iterations,omitempty"`
 
+	// LastContext is the prompt size of the latest call (fresh input +
+	// cache reads + cache writes): how full a resumed CLI session is
+	// (F-078). 0 = unknown.
+	LastContext int `json:"last_context,omitempty"`
+
 	Started time.Time `json:"started"`
 	Updated time.Time `json:"updated"`
 }
@@ -99,6 +104,9 @@ func Fold(e Episode, run tasks.Run, cli, workdir, session string, seen int64) Ep
 	}
 	e.CacheRead += run.CacheRead
 	e.CacheWrite += run.CacheWrite
+	if ctx := max(run.TokensIn, 0) + run.CacheRead + run.CacheWrite; ctx > 0 {
+		e.LastContext = ctx
+	}
 	e.CostUSD += run.CostUSD
 	e.LastStatus = string(run.Status)
 	if run.Status == tasks.RunOK {
@@ -251,4 +259,14 @@ func (s *Store) List(agent string) ([]Episode, error) {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Updated.After(out[j].Updated) })
 	return out, nil
+}
+
+// Delete removes one episode (missing is fine).
+func (s *Store) Delete(agent, key string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := os.Remove(s.path(agent, key)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("episode: %w", err)
+	}
+	return nil
 }

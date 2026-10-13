@@ -203,7 +203,36 @@ func (r *Runtime) consolidate(agentID string) {
 	}
 	r.cons.last[agentID] = day
 	r.cons.mu.Unlock()
-	_, _ = r.cfg.Lessons.Consolidate(agentID, 30)
+	mt := r.tuning().memoryTuning()
+	_, _ = r.cfg.Lessons.ConsolidateWith(agentID, lessons.Policy{
+		StaleDays: mt.DecayDays, ActiveMax: mt.LessonsMax, PurgeDays: 90})
+	r.collectEpisodes(agentID)
+}
+
+// episodeTTL is how long an episode for finished or removed work stays.
+const episodeTTL = 30 * 24 * time.Hour
+
+// collectEpisodes deletes an agent's episodes for task cards that are
+// done or gone and untouched for episodeTTL (F-078): the store keeps the
+// working state of live work, not every conversation forever.
+func (r *Runtime) collectEpisodes(agentID string) {
+	if r.cfg.Episodes == nil || r.cfg.Tasks == nil {
+		return
+	}
+	eps, err := r.cfg.Episodes.List(agentID)
+	if err != nil {
+		return
+	}
+	for _, ep := range eps {
+		slug, ok := strings.CutPrefix(ep.Key, "task:")
+		if !ok || time.Since(ep.Updated) < episodeTTL {
+			continue
+		}
+		if t, live := r.cfg.Tasks.Get(slug); live && t.Status != tasks.Done {
+			continue
+		}
+		_ = r.cfg.Episodes.Delete(agentID, ep.Key)
+	}
 }
 
 // markLessonsUsed counts one use, once per turn, of the lessons the

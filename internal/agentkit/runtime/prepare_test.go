@@ -2,6 +2,8 @@ package runtime
 
 import (
 	"context"
+	"github.com/drjzlyan/dhi/internal/agentkit/episode"
+	"github.com/drjzlyan/dhi/internal/tasks"
 	"os"
 	"path/filepath"
 	"strings"
@@ -148,5 +150,37 @@ func TestVerifyInstallsMissingToolchainAfterApproval(t *testing.T) {
 	res = r.verify(context.Background(), "scout", scopes.Set{scopes.Network: scopes.Auto}, []verifyTarget{tg})
 	if res.ok || !res.env || !strings.Contains(res.tail, "rust toolchain is not installed") || len(tc2.installs) != 0 {
 		t.Fatalf("denied: %+v installs=%v", res, tc2.installs)
+	}
+}
+
+func TestCollectEpisodesKeepsLiveWork(t *testing.T) {
+	h, st := teamHarness(t)
+	eps := h.rt.cfg.Episodes
+	old := time.Now().Add(-40 * 24 * time.Hour)
+	for _, slug := range []string{"live", "done", "gone"} {
+		if slug != "gone" {
+			if err := st.Create(slug, slug, "scout", ""); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	_ = st.SetStatus("done", tasks.Done)
+	for _, slug := range []string{"live", "done", "gone"} {
+		_ = eps.Update("scout", episode.Key(slug, "", 0), func(e *episode.Episode) { e.Updated = old })
+	}
+	h.rt.collectEpisodes("scout")
+	left, _ := eps.List("scout")
+	if len(left) != 1 || left[0].Key != "task:live" {
+		t.Fatalf("left = %+v", left)
+	}
+}
+
+func TestMemoryTuningDefaults(t *testing.T) {
+	mt := Tuning{}.memoryTuning()
+	if mt.PromptTokens != 24000 || mt.SessionTokens != 160000 || mt.JournalMax != 400 || mt.DecayDays != 30 {
+		t.Fatalf("defaults = %+v", mt)
+	}
+	if got := (Tuning{Memory: MemoryTuning{PromptTokens: 9000, PinnedMax: 3}}).memoryTuning(); got.PromptTokens != 9000 || got.PinnedMax != 3 {
+		t.Fatalf("overrides = %+v", got)
 	}
 }

@@ -242,3 +242,42 @@ func Repair[T any](path string) (int, error) {
 	_ = os.Remove(backup)
 	return moved, nil
 }
+
+// Compact keeps only the newest keep records in path and returns the
+// older ones it removed (F-078), so a caller can archive or summarise
+// them. Like Repair it rewrites in place under the append lock; corrupt
+// lines are dropped (Repair first to keep them).
+func Compact[T any](path string, keep int) ([]T, error) {
+	f, err := os.OpenFile(path, os.O_RDWR, 0o644)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("jsonl: open %s: %w", path, err)
+	}
+	defer func() { _ = f.Close() }()
+	if err := fsx.LockFile(f); err != nil {
+		return nil, fmt.Errorf("jsonl: lock %s: %w", path, err)
+	}
+	all, _, err := ReadTolerant[T](path)
+	if err != nil || len(all) <= keep {
+		return nil, err
+	}
+	old, kept := all[:len(all)-keep], all[len(all)-keep:]
+	var buf bytes.Buffer
+	for _, v := range kept {
+		b, err := json.Marshal(v)
+		if err != nil {
+			return nil, fmt.Errorf("jsonl: marshal: %w", err)
+		}
+		buf.Write(b)
+		buf.WriteByte('\n')
+	}
+	if err := f.Truncate(0); err != nil {
+		return nil, fmt.Errorf("jsonl: compact %s: %w", path, err)
+	}
+	if _, err := f.WriteAt(buf.Bytes(), 0); err != nil {
+		return nil, fmt.Errorf("jsonl: compact %s: %w", path, err)
+	}
+	return old, f.Sync()
+}

@@ -131,6 +131,26 @@ const (
 	AutonomyAsk      = "ask"
 )
 
+// Memory bounds what an agent carries and keeps (F-078), so a long-lived
+// virtual employee is never overloaded by its own history.
+type Memory struct {
+	// PromptTokens is the estimated token budget of one assembled prompt
+	// (system + prompt); every block shares it, lowest priority first.
+	PromptTokens int `toml:"prompt_tokens"`
+	// SessionTokens: a resumed CLI session whose last call carried more
+	// than this starts fresh with a summary instead of overflowing.
+	SessionTokens int `toml:"session_tokens"`
+	// JournalMax entries stay in an agent's journal; older ones roll into
+	// a monthly archive and the rolling digest.
+	JournalMax int `toml:"journal_max"`
+	// LessonsMax active lessons per file; PinnedMax pinned per prompt.
+	LessonsMax int `toml:"lessons_max"`
+	PinnedMax  int `toml:"pinned_max"`
+	// DecayDays: an unused lesson retires after this (twice this when it
+	// is well established).
+	DecayDays int `toml:"decay_days"`
+}
+
 // Budgets caps agent spend (F-066); 0 = no limit. Enforced between
 // spawns: a turn that would start over a limit refuses with a notice.
 type Budgets struct {
@@ -172,6 +192,7 @@ type Config struct {
 	Security  Security          `toml:"security"`
 	Agents    Agents            `toml:"agents"`
 	Budgets   Budgets           `toml:"budgets"`
+	Memory    Memory            `toml:"memory"`
 	// Conventions is the team-style layer (F-042): branch names, commit
 	// format, copyright header, PR text. It lives in its own tracked file
 	// (ConventionsPath), so the personal config never serialises it.
@@ -187,8 +208,15 @@ func Defaults() Config {
 		Terminal:    Terminal{Scrollback: 1000},
 		Security:    Security{Sandbox: SandboxAuto},
 		Agents:      Agents{Resume: true, Autonomy: AutonomyEnvelope, MaxIterations: 3, StallSeconds: 900, Reflect: true},
+		Memory:      DefaultMemory(),
 		Conventions: conventions.Defaults(),
 	}
+}
+
+// DefaultMemory is the shipped memory policy (F-078).
+func DefaultMemory() Memory {
+	return Memory{PromptTokens: 24000, SessionTokens: 160000, JournalMax: 400,
+		LessonsMax: 200, PinnedMax: 10, DecayDays: 30}
 }
 
 // Known reports the accepted top-level keys (for doctor warnings).
@@ -199,6 +227,8 @@ func Known() []string {
 		"terminal.scrollback", "security.sandbox",
 		"agents", "agents.max_turns", "agents.resume", "agents.autonomy",
 		"agents.max_iterations", "agents.stall_seconds", "agents.reflect", "agents.reflect_model", "agents.trace_prompts",
+		"memory", "memory.prompt_tokens", "memory.session_tokens", "memory.journal_max",
+		"memory.lessons_max", "memory.pinned_max", "memory.decay_days",
 		"budgets", "budgets.task_usd", "budgets.task_tokens",
 		"budgets.agent_day_usd", "budgets.workspace_day_usd",
 		"scopes.read", "scopes.write", "scopes.exec", "scopes.network",
@@ -374,6 +404,18 @@ func validate(c Config) error {
 			return fmt.Errorf("settings: %s %v is negative (0 = no limit)", key, v)
 		}
 	}
+	for key, r := range map[string][3]int{
+		"memory.prompt_tokens":  {c.Memory.PromptTokens, 4000, 400000},
+		"memory.session_tokens": {c.Memory.SessionTokens, 20000, 2000000},
+		"memory.journal_max":    {c.Memory.JournalMax, 50, 100000},
+		"memory.lessons_max":    {c.Memory.LessonsMax, 10, 10000},
+		"memory.pinned_max":     {c.Memory.PinnedMax, 0, 100},
+		"memory.decay_days":     {c.Memory.DecayDays, 1, 3650},
+	} {
+		if r[0] < r[1] || r[0] > r[2] {
+			return fmt.Errorf("settings: %s %d out of range %d..%d", key, r[0], r[1], r[2])
+		}
+	}
 	if err := c.Conventions.Validate(); err != nil {
 		return fmt.Errorf("settings: conventions.%w", err)
 	}
@@ -440,6 +482,14 @@ type fileLayer struct {
 		AgentDayUSD     *float64 `toml:"agent_day_usd"`
 		WorkspaceDayUSD *float64 `toml:"workspace_day_usd"`
 	} `toml:"budgets"`
+	Memory struct {
+		PromptTokens  *int `toml:"prompt_tokens"`
+		SessionTokens *int `toml:"session_tokens"`
+		JournalMax    *int `toml:"journal_max"`
+		LessonsMax    *int `toml:"lessons_max"`
+		PinnedMax     *int `toml:"pinned_max"`
+		DecayDays     *int `toml:"decay_days"`
+	} `toml:"memory"`
 	Conventions struct {
 		Branch struct {
 			Task   string `toml:"task"`
@@ -538,6 +588,12 @@ func (f fileLayer) mergeInto(dst *Config) {
 	setPtr(&dst.Budgets.TaskTokens, f.Budgets.TaskTokens)
 	setPtr(&dst.Budgets.AgentDayUSD, f.Budgets.AgentDayUSD)
 	setPtr(&dst.Budgets.WorkspaceDayUSD, f.Budgets.WorkspaceDayUSD)
+	setPtr(&dst.Memory.PromptTokens, f.Memory.PromptTokens)
+	setPtr(&dst.Memory.SessionTokens, f.Memory.SessionTokens)
+	setPtr(&dst.Memory.JournalMax, f.Memory.JournalMax)
+	setPtr(&dst.Memory.LessonsMax, f.Memory.LessonsMax)
+	setPtr(&dst.Memory.PinnedMax, f.Memory.PinnedMax)
+	setPtr(&dst.Memory.DecayDays, f.Memory.DecayDays)
 	cv, d := f.Conventions, &dst.Conventions
 	setStr(&d.Branch.Task, cv.Branch.Task)
 	setStr(&d.Branch.Review, cv.Branch.Review)

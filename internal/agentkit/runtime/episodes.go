@@ -28,6 +28,33 @@ type Tuning struct {
 
 	// F-074: save full prompts into run transcripts.
 	TracePrompts bool
+
+	// F-078: memory bounds; zero fields take DefaultMemory's values.
+	Memory MemoryTuning
+}
+
+// MemoryTuning mirrors settings.Memory (agentkit cannot import settings).
+type MemoryTuning struct {
+	PromptTokens, SessionTokens, JournalMax int
+	LessonsMax, PinnedMax, DecayDays        int
+}
+
+// memoryTuning fills zero fields with the shipped defaults.
+func (t Tuning) memoryTuning() MemoryTuning {
+	m, d := t.Memory, MemoryTuning{PromptTokens: 24000, SessionTokens: 160000, JournalMax: 400,
+		LessonsMax: 200, PinnedMax: 10, DecayDays: 30}
+	for _, f := range []struct{ v, def *int }{
+		{&m.PromptTokens, &d.PromptTokens}, {&m.SessionTokens, &d.SessionTokens}, {&m.JournalMax, &d.JournalMax},
+		{&m.LessonsMax, &d.LessonsMax}, {&m.DecayDays, &d.DecayDays},
+	} {
+		if *f.v <= 0 {
+			*f.v = *f.def
+		}
+	}
+	if m.PinnedMax < 0 {
+		m.PinnedMax = 0
+	}
+	return m
 }
 
 // tuning reads the configured Tuning; without a source, resume is on
