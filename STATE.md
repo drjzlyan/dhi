@@ -37,6 +37,12 @@
 - Hardening after review (ADR-0035): `.dhi/` is write-denied to wrapped children except
   `.dhi/tasks/*/`, `.dhi/reviews/*/` and `.dhi/sessions` (main `guardWorkspace`). Task worktrees
   default to `.dhi/tasks/<slug>/<member>` NEXT TO the card files; never reopen `.dhi/tasks` whole.
+- Post-P7 live regression (claude, 1 run each):
+  - Both arms 4/4. Single-turn tasks: DHI is about 15% cheaper than raw.
+  - BUT kv-followup cost DHI $0.85 vs raw $0.59. In P3 it was $0.52–0.54.
+  - Suspect the new always-served harness tools (plan_update, lesson_record) adding tool turns on
+    multi-turn work. Confirm with DHI_EVAL_KEEP=1 DHI_EVAL_TASK=kv-followup DHI_EVAL_REPEAT=3
+    before changing anything.
 - M29 is COMPLETE in code. Open items:
   - Live evals of learning, the tool forge and team flows (only the P1–P3 loop has live numbers).
   - Harder eval fixtures that need a second verify round.
