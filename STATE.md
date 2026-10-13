@@ -28,7 +28,13 @@
   Settings `m.saved` + `s` toggle (`saveEverywhere`), profile rows → user; `SetEngine` → user layer;
   repair `config-copies` (`repair.Input.UserConfig`); `standards.UserPath` (set in `main()`),
   STANDARDS `u`; wizard `instructions` step (+ catch-up).
+- P6 DONE (F-091): `skill_search`/`skill_suggest` → `skillprop.Review` (registry.Fetch digest/
+  signature + `pack.ReadSkills`) → PROPOSALS SKILLS (v review, y scope + attach → `skillprop.Install`
+  re-verifies the reviewed sha). `library.UserSkillsDir`, `registry.UserDir` (keys inherited, index
+  served), set in `main()`; boot `ReadOnly` root for your skills; pack scripts copied + recorded.
 - Gotchas:
+  - Package vars set by main (standards.UserPath, library.UserSkillsDir, registry.UserDir) are ""
+    in tests; set + t.Cleanup them in tests that need a user layer.
   - Settings must refresh `m.saved` whenever it reloads `m.cfg` (setprop does).
   - `standards.UserPath` is "" unless main sets it — tests stay hermetic.
   - `credStore` in main is the one store: `secretStore()`/`secretSaver()` avoid typed nils.

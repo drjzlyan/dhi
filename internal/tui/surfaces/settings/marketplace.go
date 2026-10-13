@@ -59,7 +59,7 @@ func (m *Model) marketplaceKey(key string) bool {
 		}
 		src, _ := m.d.Registry.Source()
 		m.openFormDialog("registry source", dlgRegistrySource, "",
-			kit.NewTextField("source", src))
+			append([]kit.Field{kit.NewTextField("source", src)}, m.registryScopeField()...)...)
 	case "enter", "i":
 		if m.mktCur < len(entries) {
 			e := entries[m.mktCur]
@@ -77,7 +77,7 @@ func (m *Model) marketplaceKey(key string) bool {
 			return true
 		}
 		m.openFormDialog("publisher key", dlgRegistryTrustKey, "",
-			kit.NewTextField("ed25519 public key (hex)", ""))
+			append([]kit.Field{kit.NewTextField("ed25519 public key (hex)", "")}, m.registryScopeField()...)...)
 	case "T":
 		if m.d.Registry == nil {
 			m.flash = "failed: registry unavailable"
@@ -96,6 +96,25 @@ func (m *Model) marketplaceKey(key string) bool {
 	return true
 }
 
+var registryScopes = []string{"this workspace", "every workspace"}
+
+// registryScopeField offers your registry (every workspace, F-091) when
+// there is one.
+func (m *Model) registryScopeField() []kit.Field {
+	if m.d.Registry == nil || m.d.Registry.Parent() == nil {
+		return nil
+	}
+	return []kit.Field{kit.NewToggleField("for", registryScopes, 0)}
+}
+
+// registryFor picks the registry a dialog's "for" toggle chose.
+func (m *Model) registryFor(vals []string) (*registry.Registry, string) {
+	if len(vals) > 1 && vals[1] == registryScopes[1] && m.d.Registry.Parent() != nil {
+		return m.d.Registry.Parent(), registryScopes[1]
+	}
+	return m.d.Registry, registryScopes[0]
+}
+
 // submitRegistryTrustKey pins a publisher public key so refreshes require
 // a verifying index signature.
 func (m *Model) submitRegistryTrustKey() {
@@ -105,12 +124,13 @@ func (m *Model) submitRegistryTrustKey() {
 		return
 	}
 	key := strings.TrimSpace(f.Values()[0])
-	if err := m.d.Registry.TrustKey(key); err != nil {
+	reg, where := m.registryFor(f.Values())
+	if err := reg.TrustKey(key); err != nil {
 		f.SetError(err.Error())
 		return
 	}
 	m.closeDialog()
-	m.flash = "publisher key pinned — refreshes now require a valid index signature"
+	m.flash = "publisher key pinned for " + where + " — refreshes now require a valid index signature"
 }
 
 // submitRegistrySource kicks an async refresh; the cache lands before the
@@ -128,7 +148,7 @@ func (m *Model) submitRegistrySource() {
 	}
 	f.Busy = true
 	f.Err = ""
-	reg := m.d.Registry
+	reg, _ := m.registryFor(f.Values())
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		defer cancel()

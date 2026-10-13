@@ -27,6 +27,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/principal"
 	"github.com/drjzlyan/dhi/internal/agentkit/registry"
 	"github.com/drjzlyan/dhi/internal/agentkit/setprop"
+	"github.com/drjzlyan/dhi/internal/agentkit/skillprop"
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
 	"github.com/drjzlyan/dhi/internal/autopilot"
 	"github.com/drjzlyan/dhi/internal/conventions"
@@ -226,6 +227,9 @@ type Deps struct {
 	// Forge holds agent-made tools (F-069): PROPOSALS approves, rejects
 	// and archives them. Nil shows only settings proposals.
 	Forge *forge.Store
+	// SkillProps are the skills employees suggested (F-091); approving
+	// one installs it through Registry.
+	SkillProps *skillprop.Store
 	// Lessons are what the crew has learned (F-068): the BRAIN section.
 	// Nil renders a named unavailable section.
 	Lessons *lessons.Store

@@ -51,6 +51,7 @@ const (
 	dlgSecretAdd
 	dlgSecretSet
 	dlgSecretDelete
+	dlgSkillInstall
 	dlgDisplay // read-only: profile, standards preview, last-run info
 )
 
@@ -127,6 +128,8 @@ func (m *Model) submitDialog() {
 		m.submitBrief()
 	case dlgSecretAdd, dlgSecretSet:
 		m.submitSecret()
+	case dlgSkillInstall:
+		m.submitSkillInstall()
 	case dlgConvExample:
 		m.submitExample()
 	case dlgIdentity:

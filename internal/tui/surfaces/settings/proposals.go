@@ -6,6 +6,7 @@ import (
 
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/agentkit/forge"
+	"github.com/drjzlyan/dhi/internal/agentkit/skillprop"
 	"github.com/drjzlyan/dhi/internal/tui/theme"
 )
 
@@ -15,10 +16,11 @@ import (
 
 // propItem is one selectable row.
 type propItem struct {
-	kind  string // "tool" (pending) | "active" (approved tool) | "setting"
+	kind  string // "tool" (pending) | "active" (approved tool) | "setting" | "skill"
 	tool  forge.Tool
 	calls int
 	set   *SettingProposal
+	skill *skillprop.Proposal
 }
 
 func (m *Model) propItems() []propItem {
@@ -26,6 +28,12 @@ func (m *Model) propItems() []propItem {
 	for _, sp := range m.pendingSettings() {
 		sp := sp
 		out = append(out, propItem{kind: "setting", set: &sp})
+	}
+	if m.d.SkillProps != nil {
+		for _, p := range m.d.SkillProps.Pending() {
+			p := p
+			out = append(out, propItem{kind: "skill", skill: &p})
+		}
 	}
 	if m.d.Forge == nil {
 		return out
@@ -72,6 +80,10 @@ func (m *Model) proposalsKey(key string) bool {
 	}
 	switch key {
 	case "enter", "v":
+		if it.kind == "skill" {
+			m.openDisplayDialog("suggested skill — "+it.skill.Entry, skillLines(*it.skill))
+			return true
+		}
 		if it.kind == "setting" {
 			m.openDisplayDialog("proposed setting — "+it.set.Key, it.set.lines())
 		} else {
@@ -89,6 +101,8 @@ func (m *Model) proposalsKey(key string) bool {
 			m.flash = fmt.Sprintf("approved — every agent can now call custom__%s (v%d)", t.Name, t.Version)
 		case "setting":
 			m.applySetting(*it.set)
+		case "skill":
+			m.openSkillInstall(*it.skill)
 		}
 		return true
 	case "n":
@@ -101,6 +115,12 @@ func (m *Model) proposalsKey(key string) bool {
 			m.flash = "rejected " + it.tool.Name
 		case "setting":
 			m.rejectSetting(*it.set)
+		case "skill":
+			if err := m.d.SkillProps.Resolve(it.skill.ID, skillprop.Rejected, ""); err != nil {
+				m.flash = "failed: " + err.Error()
+				return true
+			}
+			m.flash = "declined " + it.skill.Entry
 		}
 		m.propCur = max(0, min(m.propCur, len(m.propItems())-1))
 		return true
@@ -198,6 +218,19 @@ func (m *Model) propLine(it propItem, selected bool, w int) string {
 		nameStyle = theme.TabActive()
 	}
 	switch it.kind {
+	case "skill":
+		p := it.skill
+		flag := ""
+		if p.HasScripts() {
+			flag = " · ships a script"
+		}
+		trust := "unsigned"
+		if p.Signed {
+			trust = "signed"
+		}
+		return lead + theme.WarningText().Render(theme.GlyphDiamond) + " " + nameStyle.Render(padTo("skill "+p.Entry, 26)) +
+			theme.Chip().Render(trust) + " " + theme.Hint().Render(fmt.Sprintf("%d skill(s)%s · by %s · ", len(p.Skills), flag, p.Agent)) +
+			theme.TextDim().Render(clip(p.Reason, max(w-66, 16)))
 	case "setting":
 		sp := it.set
 		return lead + theme.WarningText().Render(theme.GlyphDiamond) + " " + nameStyle.Render(padTo(sp.Key, 26)) +

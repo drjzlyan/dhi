@@ -84,3 +84,13 @@ func (r *Runtime) secretsLine(agentID string) string {
 	}
 	return line
 }
+
+// skillSuggest binds the suggesting agent to the skill_suggest seam.
+func (r *Runtime) skillSuggest(agentID string) func(ctx context.Context, entry, reason string) (string, error) {
+	if r.cfg.SkillSuggest == nil {
+		return nil
+	}
+	return func(ctx context.Context, entry, reason string) (string, error) {
+		return r.cfg.SkillSuggest(ctx, agentID, entry, reason)
+	}
+}

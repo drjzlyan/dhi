@@ -63,6 +63,9 @@ type Config struct {
 	// "cli:<name>". Agents whose manifest declares no engine inherit it;
 	// when it is also empty such agents refuse at build time by name.
 	DefaultEngine string
+	// SkillSearch / SkillSuggest back the skill tools (F-091); nil = none.
+	SkillSearch  func(query string) ([]dhitools.SkillHit, error)
+	SkillSuggest func(ctx context.Context, agentID, entry, reason string) (string, error)
 	// Secrets resolves the secrets agents request by name (F-089); nil
 	// = no secret_request tool.
 	Secrets SecretStore

@@ -96,6 +96,14 @@ func (r *Registry) decodedKeys() ([]ed25519.PublicKey, error) {
 	if err != nil {
 		return nil, err
 	}
+	if r.parent != nil {
+		// Keys you pinned for every workspace are trusted here too (F-091).
+		mine, err := r.parent.TrustedKeys()
+		if err != nil {
+			return nil, err
+		}
+		hexes = append(hexes, mine...)
+	}
 	var out []ed25519.PublicKey
 	for _, h := range hexes {
 		k, err := ParsePublicKey(h)

@@ -135,6 +135,11 @@ type Deps struct {
 	Access func(ctx context.Context, kind, target, reason string) (string, error)
 	// Secret asks the human for a secret by name (F-089); nil = no tool.
 	Secret func(ctx context.Context, name, reason string) (string, error)
+	// SkillSearch lists the DHI registry entries matching a query and
+	// SkillSuggest records a reviewed suggestion for the human (F-091);
+	// nil = no skill tools.
+	SkillSearch  func(query string) ([]SkillHit, error)
+	SkillSuggest func(ctx context.Context, entry, reason string) (string, error)
 	// SecretEnv is NAME=value for each secret the agent was granted; it
 	// is added to `run` and skill scripts only (F-089).
 	SecretEnv func() []string
@@ -278,6 +283,7 @@ func (d Deps) Handler() mcp.Handler {
 	all = append(all, d.workTools()...)
 	all = append(all, d.accessTools()...)
 	all = append(all, d.secretTools()...)
+	all = append(all, d.skillTools()...)
 	for _, s := range harnessSlugs {
 		allow[s] = true
 	}

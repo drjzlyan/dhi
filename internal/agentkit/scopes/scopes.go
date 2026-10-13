@@ -143,6 +143,9 @@ var toolScopes = map[string]Scope{
 	"permission_request": Read,
 	// secret_request likewise: the masked card is the gate (F-089).
 	"secret_request": Read,
+	// skill_search reads the cached registry; skill_suggest only records
+	// a reviewed suggestion — the human's approval installs (F-091).
+	"skill_search": Read, "skill_suggest": Read,
 
 	"write": Write, "patch": Write, "editor_apply_edit": Write,
 	"artifact_create": Write, "artifact_edit": Write,

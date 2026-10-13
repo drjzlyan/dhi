@@ -27,6 +27,10 @@ type Input struct {
 	Home     string // home directory for `~` in worktrees.root ("" = the process's)
 	GOOS     string
 	LookPath func(string) (string, error)
+	// ReadOnly are extra trees sandboxed children may read and execute
+	// but never write: your skills for every workspace (F-091), whose
+	// scripts skill_run starts. Missing dirs are skipped.
+	ReadOnly []string
 }
 
 // Decision is the resolution outcome.
@@ -137,6 +141,11 @@ func Audit(in Input) Decision {
 			if err := os.MkdirAll(dir, 0o755); err == nil {
 				rw = append(rw, dir)
 			}
+		}
+	}
+	for _, r := range in.ReadOnly {
+		if resolved, err := filepath.EvalSymlinks(r); err == nil {
+			ro = append(ro, resolved)
 		}
 	}
 	switch cfg.Security.Sandbox {

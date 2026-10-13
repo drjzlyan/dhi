@@ -41,6 +41,7 @@ import (
 	agentkitRuntime "github.com/drjzlyan/dhi/internal/agentkit/runtime"
 	"github.com/drjzlyan/dhi/internal/agentkit/scopes"
 	"github.com/drjzlyan/dhi/internal/agentkit/setprop"
+	"github.com/drjzlyan/dhi/internal/agentkit/skillprop"
 	"github.com/drjzlyan/dhi/internal/agentkit/standards"
 	"github.com/drjzlyan/dhi/internal/agentkit/starter"
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
@@ -82,9 +83,13 @@ import (
 )
 
 func main() {
-	// F-090: your own standing instructions, read in every workspace.
+	// F-090/F-091: your own instructions, skills and registry, read in
+	// every workspace.
 	if cred, err := credstore.DefaultPath(); err == nil {
-		standards.UserPath = filepath.Join(filepath.Dir(cred), "standards.toml")
+		cfgDir := filepath.Dir(cred)
+		standards.UserPath = filepath.Join(cfgDir, "standards.toml")
+		library.UserSkillsDir = filepath.Join(cfgDir, "skills")
+		registry.UserDir = filepath.Join(cfgDir, "registry")
 	}
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
@@ -140,6 +145,7 @@ func runTUI() (relaunch bool) {
 		UserCfg:  userCfg,
 		GOOS:     runtime.GOOS,
 		LookPath: exec.LookPath,
+		ReadOnly: []string{library.UserSkillsDir}, // F-091: your skills' scripts
 	})
 
 	// Surfaces are built against the validated state (a blocked boot
@@ -354,8 +360,9 @@ func runTUI() (relaunch bool) {
 			}
 			settingsDeps.Lessons = lessons.Open(ws.Root)
 			settingsDeps.Memory = memory.Open(ws)
-			settingsDeps.Forge = forge.Open(ws.Root)      // F-069 PROPOSALS
-			settingsDeps.SetProps = setprop.Open(ws.Root) // F-070 settings proposals
+			settingsDeps.Forge = forge.Open(ws.Root)          // F-069 PROPOSALS
+			settingsDeps.SkillProps = skillprop.Open(ws.Root) // F-091 suggested skills
+			settingsDeps.SetProps = setprop.Open(ws.Root)     // F-070 settings proposals
 			settingsDeps.UserConfig, settingsDeps.WorkspaceConfig = userCfg, wsCfg
 			settingsDeps.LearnConventions = func() conventions.Inference { return learnConventions(gitRunner, memberDirs(ws)) }
 			// F-083: the git identity row reads, suggests and sets through
@@ -1538,6 +1545,31 @@ func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cl
 		// F-070: agents propose settings changes; the human applies them.
 		SetProps:     setprop.Open(ws.Root),
 		SettingCheck: settingCheck(ws),
+		// F-091: employees find and suggest skills from the DHI registry;
+		// DHI verifies the suggestion and the human installs it.
+		SkillSearch: func(q string) ([]dhitools.SkillHit, error) {
+			es, err := registry.New(ws).Search(q)
+			var out []dhitools.SkillHit
+			for _, e := range es {
+				out = append(out, dhitools.SkillHit{Name: e.Name, Version: e.Version, Description: e.Description})
+			}
+			return out, err
+		},
+		SkillSuggest: func(ctx context.Context, agent, entry, reason string) (string, error) {
+			p, err := skillprop.Review(ctx, registry.New(ws), entry)
+			if err != nil {
+				return "", err
+			}
+			p.Agent, p.Reason = agent, reason
+			if _, err := skillprop.Open(ws.Root).Propose(p); err != nil {
+				return "", err
+			}
+			what := fmt.Sprintf("%d skill(s), %s", len(p.Skills), p.Trust())
+			if p.HasScripts() {
+				what += ", ships a script"
+			}
+			return what, nil
+		},
 		// F-067: a task turn without a worktree gets one on the convention
 		// branch before the agent starts, so the work lands where DHI can
 		// verify it and open the PR.

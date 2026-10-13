@@ -120,15 +120,39 @@ func (ix *Index) Search(q string) []Entry {
 	return out
 }
 
-// Registry manages the cached index for one workspace.
+// Registry manages the cached index for one workspace, layered over
+// yours (F-091): keys you pin for every workspace are trusted here too,
+// and your cached index serves a workspace that never refreshed its own.
 type Registry struct {
-	ws *workspace.Workspace
+	ws     *workspace.Workspace
+	root   string    // explicit dir (your registry); "" = the workspace's
+	parent *Registry // yours; nil when UserDir is unset
 }
 
-// New returns a registry bound to ws.
-func New(ws *workspace.Workspace) *Registry { return &Registry{ws: ws} }
+// UserDir is your registry for every workspace: <config>/dhi/registry.
+// Set once by the app at startup; "" (tests, tools) means none.
+var UserDir string
 
-func (r *Registry) dir() string       { return filepath.Join(r.ws.Root, workspace.DirRegistry) }
+// New returns a registry bound to ws, over yours when UserDir is set.
+func New(ws *workspace.Workspace) *Registry { return &Registry{ws: ws, parent: User()} }
+
+// User is your registry for every workspace (nil when UserDir is unset).
+func User() *Registry {
+	if UserDir == "" {
+		return nil
+	}
+	return &Registry{root: UserDir}
+}
+
+// Parent is the registry this one layers over (nil = none).
+func (r *Registry) Parent() *Registry { return r.parent }
+
+func (r *Registry) dir() string {
+	if r.root != "" {
+		return r.root
+	}
+	return filepath.Join(r.ws.Root, workspace.DirRegistry)
+}
 func (r *Registry) cachePath() string { return filepath.Join(r.dir(), "index.toml") }
 func (r *Registry) sigPath() string   { return filepath.Join(r.dir(), "index.toml.sig") }
 func (r *Registry) srcPath() string   { return filepath.Join(r.dir(), "source") }
@@ -163,6 +187,9 @@ func (r *Registry) FetchedAt() (time.Time, bool) {
 // verifies against it (a tampered or unsigned cache refuses by name).
 func (r *Registry) index() (*Index, error) {
 	data, err := os.ReadFile(r.cachePath())
+	if os.IsNotExist(err) && r.parent != nil {
+		return r.parent.index() // yours serves a workspace without its own
+	}
 	if os.IsNotExist(err) {
 		return nil, fmt.Errorf("registry: no cached index — refresh from a source first")
 	}
@@ -262,10 +289,25 @@ func (r *Registry) Refresh(ctx context.Context, source string) error {
 	return writeAtomic(r.stampPath(), []byte(time.Now().UTC().Format(time.RFC3339)+"\n"))
 }
 
-// Install fetches the pack named by the cached index entry, verifies its
-// content digest against the pinned index value, and only then installs.
-// A digest mismatch refuses by name and installs nothing (acceptance 2).
-func (r *Registry) Install(ctx context.Context, name string, in *pack.Installer) (*pack.Result, error) {
+// Fetched is one pack fetched and digest-verified against the index
+// (F-091): what a reviewer inspects and an install writes. Close it.
+type Fetched struct {
+	Entry   Entry
+	Dir     string
+	Signed  bool // the index it came from verified against a pinned key
+	cleanup func()
+}
+
+// Close removes the fetched copy.
+func (f *Fetched) Close() {
+	if f != nil && f.cleanup != nil {
+		f.cleanup()
+	}
+}
+
+// Fetch resolves name from the cached index, fetches its source, and
+// refuses by name unless the content digest matches the index's.
+func (r *Registry) Fetch(ctx context.Context, name string) (*Fetched, error) {
 	ix, err := r.index()
 	if err != nil {
 		return nil, err
@@ -274,20 +316,50 @@ func (r *Registry) Install(ctx context.Context, name string, in *pack.Installer)
 	if !ok {
 		return nil, fmt.Errorf("registry: pack %q is not in the index", name)
 	}
+	keys, err := r.decodedKeys()
+	if err != nil {
+		return nil, err
+	}
 	dir, cleanup, err := resolve(ctx, entry.Source)
 	if err != nil {
 		return nil, err
 	}
-	defer cleanup()
 	got, err := Digest(dir)
 	if err != nil {
+		cleanup()
 		return nil, err
 	}
 	if !strings.EqualFold(got, entry.SHA256) {
+		cleanup()
 		return nil, fmt.Errorf("registry: pack %q digest mismatch (index %s, got %s) — refusing to install",
 			name, entry.SHA256, got)
 	}
-	return in.InstallDir(dir, entry.Source)
+	return &Fetched{Entry: entry, Dir: dir, Signed: len(keys) > 0, cleanup: cleanup}, nil
+}
+
+// Lookup returns the index entry for name without fetching it.
+func (r *Registry) Lookup(name string) (Entry, error) {
+	ix, err := r.index()
+	if err != nil {
+		return Entry{}, err
+	}
+	e, ok := ix.Entry(name)
+	if !ok {
+		return Entry{}, fmt.Errorf("registry: pack %q is not in the index", name)
+	}
+	return e, nil
+}
+
+// Install fetches the pack named by the cached index entry, verifies its
+// content digest against the pinned index value, and only then installs.
+// A digest mismatch refuses by name and installs nothing (acceptance 2).
+func (r *Registry) Install(ctx context.Context, name string, in *pack.Installer) (*pack.Result, error) {
+	f, err := r.Fetch(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	return in.InstallDir(f.Dir, f.Entry.Source)
 }
 
 // Digest is the canonical SHA-256 of a pack directory's contents: files

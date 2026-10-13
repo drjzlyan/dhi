@@ -620,6 +620,8 @@ func (r *Runtime) serveToolsFor(e *entry, trigger bus.Message, tt turnTools) *se
 			Access:       tt.access,
 			Secret:       r.secretSeam(e.m.ID),
 			SecretEnv:    r.secretEnv(e.m.ID),
+			SkillSearch:  r.cfg.SkillSearch,
+			SkillSuggest: r.skillSuggest(e.m.ID),
 			Forge:        r.cfg.Forge,
 			SetProps:     r.cfg.SetProps,
 			SettingCheck: r.cfg.SettingCheck,

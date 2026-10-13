@@ -136,6 +136,7 @@ type PackRec struct {
 	Workflows   []string  `json:"workflows,omitempty"`
 	Roles       []string  `json:"roles,omitempty"`
 	Skills      []string  `json:"skills,omitempty"`
+	Scripts     []string  `json:"scripts,omitempty"` // skill scripts, relative to .dhi/skills (F-091)
 	Standards   []string  `json:"standards,omitempty"`
 	MCPServers  []string  `json:"mcp_servers,omitempty"`
 }
@@ -293,25 +294,10 @@ func (in *Installer) InstallDir(dir, source string) (*Result, error) {
 		}
 		roles = append(roles, roleItem{slug: slug, role: r})
 	}
-	type skillItem struct {
-		slug  string
-		skill *library.Skill
-	}
-	var skills []skillItem
-	for _, rel := range spec.Skills {
-		if strings.Contains(rel, "..") || filepath.IsAbs(rel) {
-			return nil, fmt.Errorf("pack: skill path %q escapes the pack", rel)
-		}
-		data, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(rel)))
-		if err != nil {
-			return nil, fmt.Errorf("pack: %s: %w", rel, err)
-		}
-		slug := strings.TrimSuffix(filepath.Base(rel), ".md")
-		k, err := library.ParseSkill(slug, data)
-		if err != nil {
-			return nil, fmt.Errorf("pack: %s: %w", rel, err)
-		}
-		skills = append(skills, skillItem{slug: slug, skill: k})
+	// Skills (with their scripts, F-091) are validated before any write.
+	skills, _, err := ReadSkills(dir)
+	if err != nil {
+		return nil, err
 	}
 
 	// MCP server cards install to .dhi/mcp; validated before any write.
@@ -394,9 +380,9 @@ func (in *Installer) InstallDir(dir, source string) (*Result, error) {
 		}
 	}
 	for _, k := range skills {
-		path := filepath.Join(skillDir, k.slug+".md")
-		if _, err := os.Stat(path); err == nil && !owned["skill/"+k.slug] {
-			conflicts = append(conflicts, "skill "+k.slug)
+		path := filepath.Join(skillDir, k.Slug+".md")
+		if _, err := os.Stat(path); err == nil && !owned["skill/"+k.Slug] {
+			conflicts = append(conflicts, "skill "+k.Slug)
 		}
 	}
 	for _, m := range mcps {
@@ -443,11 +429,11 @@ func (in *Installer) InstallDir(dir, source string) (*Result, error) {
 	}
 	sort.Strings(roleSlugs)
 	skillSlugs := make([]string, 0, len(skills))
+	if err := WriteSkills(filepath.Join(in.WS.Root, workspace.DirSkills), skills); err != nil {
+		return nil, err
+	}
 	for _, k := range skills {
-		if err := library.WriteSkill(in.WS, k.skill); err != nil {
-			return nil, fmt.Errorf("pack: write skill %s: %w", k.slug, err)
-		}
-		skillSlugs = append(skillSlugs, k.slug)
+		skillSlugs = append(skillSlugs, k.Slug)
 	}
 	sort.Strings(skillSlugs)
 	mcpSlugs := make([]string, 0, len(mcps))
@@ -475,6 +461,7 @@ func (in *Installer) InstallDir(dir, source string) (*Result, error) {
 		Workflows:   wfSlugs,
 		Roles:       roleSlugs,
 		Skills:      skillSlugs,
+		Scripts:     skillScripts(skills),
 		Standards:   addedStd,
 		MCPServers:  mcpSlugs,
 	}
@@ -615,6 +602,11 @@ func (in *Installer) Uninstall(packName string) error {
 	skillDir := filepath.Join(in.WS.Root, workspace.DirSkills)
 	for _, slug := range rec.Skills {
 		if err := remove(skillDir, slug+".md"); err != nil {
+			return err
+		}
+	}
+	for _, rel := range rec.Scripts {
+		if err := remove(skillDir, filepath.FromSlash(rel)); err != nil {
 			return err
 		}
 	}

@@ -150,6 +150,9 @@ func parseRole(slug string, data []byte) (*Role, error) {
 // Frontmatter is `key: value` lines (name, description, optional
 // script) inside a --- fence; the body is the rest.
 func parseSkill(slug string, data []byte) (*Skill, error) {
+	if len(data) > MaxSkillBytes {
+		return nil, fmt.Errorf("skill is %d KiB; the limit is %d KiB (every attached skill rides in every prompt)", len(data)>>10, MaxSkillBytes>>10)
+	}
 	text := strings.ReplaceAll(string(data), "\r\n", "\n")
 	lines := strings.Split(text, "\n")
 	if len(lines) == 0 || strings.TrimSpace(lines[0]) != "---" {
@@ -225,6 +228,23 @@ func WriteSkill(ws *workspace.Workspace, k *Skill) error {
 	return s.WriteSkill(ws, k)
 }
 
+// MaxSkillBytes caps one skill doc (F-091): attached skills are pasted
+// into every turn's prompt.
+const MaxSkillBytes = 64 << 10
+
+// UserSkillsDir is your own skills, available in every workspace
+// (F-091): <config>/dhi/skills. Set once by the app at startup; ""
+// (tests, tools) means none. A workspace's own card of the same slug
+// shadows yours.
+var UserSkillsDir string
+
+// Source labels: where a card was read from.
+const (
+	SourceBuiltin = "builtin"
+	SourceYours   = "yours" // UserSkillsDir, every workspace
+	SourceLocal   = "local" // this workspace's .dhi/
+)
+
 // Store is the merged library: embedded builtins shadowed by local
 // cards. Open never fails — malformed local cards become warnings so
 // the doctor names them and everything else keeps working.
@@ -246,8 +266,12 @@ func Fingerprint(ws *workspace.Workspace) string {
 		return ""
 	}
 	var b strings.Builder
-	for _, dir := range []string{workspace.DirRoles, workspace.DirSkills, workspace.DirPersonas} {
-		entries, err := os.ReadDir(filepath.Join(ws.Root, dir))
+	dirs := []string{filepath.Join(ws.Root, workspace.DirRoles), filepath.Join(ws.Root, workspace.DirSkills), filepath.Join(ws.Root, workspace.DirPersonas)}
+	if UserSkillsDir != "" {
+		dirs = append(dirs, UserSkillsDir)
+	}
+	for _, dir := range dirs {
+		entries, err := os.ReadDir(dir)
 		if err != nil {
 			continue
 		}
@@ -291,6 +315,17 @@ func Open(ws *workspace.Workspace) *Store {
 		s.sources["skill/"+k.Slug] = "builtin"
 		return nil
 	})
+	if UserSkillsDir != "" {
+		s.loadLocalDir(UserSkillsDir, ".md", "skill", func(slug string, data []byte) error {
+			k, err := parseSkill(slug, data)
+			if err != nil {
+				return err
+			}
+			s.skills[k.Slug] = k
+			s.sources["skill/"+k.Slug] = SourceYours
+			return nil
+		})
+	}
 	if ws != nil {
 		s.loadLocalDir(filepath.Join(ws.Root, workspace.DirRoles), ".toml", "role",
 			func(slug string, data []byte) error {
@@ -454,11 +489,17 @@ func (s *Store) Script(slug string) (string, error) {
 	if !ok {
 		return "", fmt.Errorf("library: skill %q not found", slug)
 	}
-	if s.sources["skill/"+slug] != "local" {
-		return "", fmt.Errorf("library: skill %q is %s — scripts run only from local cards", slug, orBuiltin(s.sources["skill/"+slug]))
-	}
-	if s.root == "" {
-		return "", fmt.Errorf("library: no workspace root — scripts unavailable")
+	var dir string
+	switch s.sources["skill/"+slug] {
+	case SourceLocal:
+		if s.root == "" {
+			return "", fmt.Errorf("library: no workspace root — scripts unavailable")
+		}
+		dir = filepath.Join(s.root, workspace.DirSkills)
+	case SourceYours:
+		dir = UserSkillsDir
+	default:
+		return "", fmt.Errorf("library: skill %q is %s — scripts run only from installed cards", slug, orBuiltin(s.sources["skill/"+slug]))
 	}
 	if strings.TrimSpace(k.Script) == "" {
 		return "", fmt.Errorf("library: skill %q declares no script", slug)
@@ -466,7 +507,6 @@ func (s *Store) Script(slug string) (string, error) {
 	if err := validScriptRel(k.Script); err != nil {
 		return "", err
 	}
-	dir := filepath.Join(s.root, workspace.DirSkills)
 	abs := filepath.Join(dir, filepath.FromSlash(path.Clean(k.Script)))
 	if rel, err := filepath.Rel(dir, abs); err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return "", fmt.Errorf("library: skill %q script escapes the skills directory", slug)
@@ -486,6 +526,12 @@ func (s *Store) Script(slug string) (string, error) {
 
 // WriteSkill validates-then-writes a local skill doc atomically.
 func (s *Store) WriteSkill(ws *workspace.Workspace, k *Skill) error {
+	return WriteSkillAt(filepath.Join(ws.Root, workspace.DirSkills), k)
+}
+
+// WriteSkillAt validates-then-writes a skill doc into dir (a workspace's
+// .dhi/skills, or UserSkillsDir for every workspace — F-091).
+func WriteSkillAt(dir string, k *Skill) error {
 	if !validSlug(k.Slug) {
 		return fmt.Errorf("library: skill slug %q is not a slug (lowercase [a-z0-9._-])", k.Slug)
 	}
@@ -519,7 +565,6 @@ func (s *Store) WriteSkill(ws *workspace.Workspace, k *Skill) error {
 	if back.Name != k.Name || back.Description != k.Description || back.Body != k.Body || back.Script != strings.TrimSpace(k.Script) {
 		return fmt.Errorf("library: skill round-trip mismatch")
 	}
-	dir := filepath.Join(ws.Root, workspace.DirSkills)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("library: mkdir skills: %w", err)
 	}
@@ -528,7 +573,15 @@ func (s *Store) WriteSkill(ws *workspace.Workspace, k *Skill) error {
 
 // Delete removes a LOCAL card; builtin slugs refuse by name.
 func (s *Store) Delete(ws *workspace.Workspace, kind, slug string) error {
-	if src := s.Source(kind, slug); src != "local" {
+	src := s.Source(kind, slug)
+	if src == SourceYours && kind == "skill" {
+		// Yours (F-091): deleting it removes it from every workspace.
+		if err := os.Remove(filepath.Join(UserSkillsDir, slug+".md")); err != nil {
+			return fmt.Errorf("library: delete skill %s: %w", slug, err)
+		}
+		return nil
+	}
+	if src != SourceLocal {
 		return fmt.Errorf("library: %s %q is %s — only local cards can be deleted", kind, slug, orBuiltin(src))
 	}
 	var path string

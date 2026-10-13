@@ -1069,6 +1069,6 @@ Plan: `~/.claude/plans/for-tasks-that-needs-nested-kernighan.md`. Branch `m32` (
 - [x] P3 Secret fences (credentials file, keychain) + redaction everywhere (F-088)
 - [x] P4 secret_request: masked card, stored by name, injected into run only (F-089)
 - [x] P5 Global layer: per-layer saves, user standards/instructions, wizard "every workspace" (F-090)
-- [ ] P6 skill_suggest: registry-verified install, workspace or global (F-091)
+- [x] P6 skill_suggest: registry-verified install, workspace or global (F-091)
 - [ ] P7 Live verification of the yume-forge case and the rest (F-092)
 
