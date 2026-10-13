@@ -36,6 +36,9 @@ const (
 	dlgRegistryInstall
 	dlgRegistryTrustKey
 	dlgRegistryUntrust
+	dlgConvNew
+	dlgConvEdit
+	dlgConvDelete
 	dlgDisplay // read-only: profile, standards preview, last-run info
 )
 
@@ -113,6 +116,8 @@ func (m *Model) submitDialog() {
 		m.showStdPreview()
 	case dlgWorkflowNew:
 		m.submitWorkflowNew()
+	case dlgConvNew, dlgConvEdit:
+		m.submitTemplate()
 	case dlgAutoNew:
 		m.submitAutoNew()
 	case dlgLibNew, dlgLibEdit:
@@ -129,6 +134,8 @@ func (m *Model) submitDialog() {
 func (m *Model) submitConfirmDialog() {
 	target := m.dtarget
 	switch m.dkind {
+	case dlgConvDelete:
+		m.deleteTemplate(target)
 	case dlgTeamDelete:
 		if err := m.d.Org.DeleteTeam(target); err != nil {
 			m.dlg.Lines = append(m.dlg.Lines[:2], theme.DangerText().Render(err.Error()))

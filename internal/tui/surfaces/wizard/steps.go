@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"time"
 
@@ -386,7 +387,7 @@ func (s *conventionsStep) Apply() error {
 		s.form.SetError(err.Error())
 		return err
 	}
-	if next == s.env.Conventions {
+	if reflect.DeepEqual(next, s.env.Conventions) {
 		return nil
 	}
 	if s.env.SaveConventions == nil {

@@ -22,9 +22,24 @@ const (
 // Config is the conventions schema; Defaults() is the baseline.
 type Config struct {
 	Branch    Branch    `toml:"branch"`
+	Worktree  Worktree  `toml:"worktree"`
 	Commit    Commit    `toml:"commit"`
 	Copyright Copyright `toml:"copyright"`
 	PR        PR        `toml:"pr"`
+
+	// Templates are the team's named naming schemes (F-075); Active names
+	// the one last applied — built-in or from Templates. Applying a
+	// template copies its fields into the flat rules above, so every
+	// consumer reads the flat rules and nothing else.
+	Templates map[string]Template `toml:"templates,omitempty"`
+	Active    string              `toml:"active,omitempty"`
+}
+
+// Worktree names task worktree folders under the tasks directory
+// (F-075). Placeholders: {slug}, {member}, {ticket}, {user}, {date};
+// {member} is required so a multi-repo card never collides.
+type Worktree struct {
+	Task string `toml:"task"`
 }
 
 // Branch names task and review branches. Placeholders: {slug}, {id},
@@ -46,6 +61,10 @@ type Commit struct {
 	// CoAuthorEnabled is set.
 	CoAuthor        string `toml:"co_author"`
 	CoAuthorEnabled bool   `toml:"co_author_enabled"`
+	// Subject is the commit subject shape agents follow and the human's
+	// commit form starts from (F-075), e.g. "{ticket}: {subject}".
+	// Placeholders: {ticket}, {slug}, {type}, {subject}. "" = free.
+	Subject string `toml:"subject,omitempty"`
 }
 
 // Copyright configures the header agents put on new source files.
@@ -67,7 +86,8 @@ type PR struct {
 // Defaults is the built-in baseline every layer merges onto.
 func Defaults() Config {
 	return Config{
-		Branch: Branch{Task: "task/{slug}", Review: "review/{id}"},
+		Branch:   Branch{Task: "task/{slug}", Review: "review/{id}"},
+		Worktree: Worktree{Task: DefaultWorktree},
 		Commit: Commit{
 			Format:        FormatFree,
 			TicketPattern: `[A-Z][A-Z0-9]+-\d+`,
@@ -128,8 +148,7 @@ func checkRef(ref string) error {
 // ValidateBranchPattern reports whether a pattern can produce a valid
 // ref (checked with representative values).
 func ValidateBranchPattern(pattern string) error {
-	_, err := ExpandBranch(pattern, map[string]string{
-		"slug": "x", "id": "1", "user": "u", "date": "20260101"})
+	_, err := ExpandBranch(pattern, SampleVars())
 	return err
 }
 
@@ -161,11 +180,28 @@ func (c Config) Validate() error {
 	if c.Copyright.Enabled && strings.TrimSpace(c.Copyright.Holder) == "" {
 		return fmt.Errorf("copyright.holder is required when copyright.enabled")
 	}
-	if err := checkPlaceholders("pr.title", c.PR.Title, "title", "slug"); err != nil {
+	if err := checkPlaceholders("pr.title", c.PR.Title, prTitleVars...); err != nil {
 		return err
 	}
-	if err := checkPlaceholders("pr.body", c.PR.Body, "branch", "member", "title"); err != nil {
+	if err := checkPlaceholders("pr.body", c.PR.Body, prBodyVars...); err != nil {
 		return err
+	}
+	if err := ValidateWorktreePattern(c.Worktree.Task); err != nil {
+		return fmt.Errorf("worktree.task: %w", err)
+	}
+	if err := checkPlaceholders("commit.subject", c.Commit.Subject, subjectVars...); err != nil {
+		return err
+	}
+	for name, t := range c.Templates {
+		if !templateNameRe.MatchString(name) {
+			return fmt.Errorf("templates.%s: name must be lowercase letters, digits and dashes", name)
+		}
+		probe := Defaults()
+		probe.Apply(t)
+		probe.Templates, probe.Active = nil, ""
+		if err := probe.Validate(); err != nil {
+			return fmt.Errorf("templates.%s.%w", name, err)
+		}
 	}
 	return nil
 }
@@ -310,6 +346,13 @@ func Render(tpl string, vars map[string]string) string {
 	})
 }
 
+// Placeholder sets per template field (F-075).
+var (
+	prTitleVars = []string{"title", "slug", "ticket"}
+	prBodyVars  = []string{"branch", "member", "title", "slug", "ticket", "assignee"}
+	subjectVars = []string{"ticket", "slug", "type", "subject"}
+)
+
 // Guidance renders the rules as an instruction block for an agent's
 // system prompt, so it follows them before DHI's gates have to refuse.
 func (c Config) Guidance() string {
@@ -323,6 +366,9 @@ func (c Config) Guidance() string {
 		fmt.Fprintf(&b, "- Commit subjects start with a ticket key matching %s, e.g. \"PROJ-123: subject\".\n", c.Commit.TicketPattern)
 	default:
 		b.WriteString("- Commit messages: a short imperative subject, then a body explaining why.\n")
+	}
+	if c.Commit.Subject != "" {
+		fmt.Fprintf(&b, "- Commit subjects take the shape %q (the ticket is the task's ticket key, else its slug).\n", c.Commit.Subject)
 	}
 	fmt.Fprintf(&b, "- Keep commit subjects within %d characters.\n", c.Commit.MaxSubject)
 	if c.Commit.CoAuthorEnabled {

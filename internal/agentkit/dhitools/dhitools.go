@@ -580,7 +580,11 @@ func (d Deps) taskTools() []tool {
 			var opened, failures []string
 			title := a.Title
 			if cv := d.conv(); cv != nil { // conventions.pr.title (F-042)
-				title = conventions.Render(cv.PR.Title, map[string]string{"title": a.Title, "slug": slug})
+				ticket := conventions.TicketFor(cv.Commit.TicketPattern, append([]string{t.Slug, t.Title, t.Epic}, t.Labels...)...)
+				if ticket == "" {
+					ticket = slug
+				}
+				title = conventions.Render(cv.PR.Title, map[string]string{"title": a.Title, "slug": slug, "ticket": ticket})
 			}
 			for _, cs := range t.ChangeSets {
 				res, err := d.PR(ctx, cs.Member, cs.Branch, title, a.Base)

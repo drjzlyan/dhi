@@ -95,3 +95,23 @@ func TestEnsureCreatesTheExternalBase(t *testing.T) {
 		t.Fatalf("base not created: %v", err)
 	}
 }
+
+func TestTaskAtPlacesTemplateFolders(t *testing.T) {
+	ws := t.TempDir()
+	l, _ := Resolve(ws, "", "")
+	for sub, want := range map[string]string{
+		"login/api":      ".dhi/tasks/login/api",
+		"PROJ-1/api":     ".dhi/tasks/PROJ-1/api",
+		"api-login":      ".dhi/tasks/api-login",
+		"u/20261013/api": ".dhi/tasks/u/20261013/api",
+	} {
+		rel, abs := l.TaskAt(sub)
+		if rel != filepath.FromSlash(want) || abs != filepath.Join(ws, want) {
+			t.Errorf("TaskAt(%q) = %q, %q", sub, rel, abs)
+		}
+	}
+	rel, _ := l.TaskAt("login/api")
+	if rel2, _ := l.Task("login", "api"); rel != rel2 {
+		t.Fatalf("default template must match Task: %q vs %q", rel, rel2)
+	}
+}

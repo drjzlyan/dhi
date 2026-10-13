@@ -216,3 +216,18 @@ func rosterAgent(t *testing.T, ws *workspace.Workspace, id, role string) {
 		t.Fatal(err)
 	}
 }
+
+func TestCommitFormStartsFromSubjectTemplate(t *testing.T) {
+	m, _, store, _ := boardFixture(t)
+	m.commitPrefix = func(slug string) string { return "PROJ-7: " }
+	if err := store.Create("proj-7-login", "Login", bus.Human, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Attach("proj-7-login", "alpha", "task/proj-7-login", ""); err != nil {
+		t.Fatal(err)
+	}
+	m.HandleKey("c")
+	if m.form.kind != fTaskCommit || m.form.values()[0] != "PROJ-7: " {
+		t.Fatalf("commit form = %v %q", m.form.kind, m.form.values())
+	}
+}

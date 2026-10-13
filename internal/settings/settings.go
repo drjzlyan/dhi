@@ -209,7 +209,26 @@ func Known() []string {
 		"conventions.commit.co_author_enabled",
 		"conventions.copyright.enabled", "conventions.copyright.holder",
 		"conventions.copyright.license", "conventions.copyright.year",
-		"conventions.pr.title", "conventions.pr.body"}
+		"conventions.pr.title", "conventions.pr.body",
+		"conventions.worktree.task", "conventions.commit.subject", "conventions.active"}
+}
+
+// templateFields are the keys a [conventions.templates.<name>] table may
+// carry (F-075).
+var templateFields = map[string]bool{
+	"description": true, "branch.task": true, "branch.review": true, "worktree.task": true,
+	"commit.format": true, "commit.ticket_pattern": true, "commit.subject": true,
+	"pr.title": true, "pr.body": true,
+}
+
+// knownTemplateKey accepts conventions.templates.<name>.<field>.
+func knownTemplateKey(dotted string) bool {
+	rest, ok := strings.CutPrefix(dotted, "conventions.templates.")
+	if !ok {
+		return false
+	}
+	_, field, ok := strings.Cut(rest, ".")
+	return ok && templateFields[field]
 }
 
 // ConventionsFile is the name of the conventions layer that sits next to
@@ -426,6 +445,9 @@ type fileLayer struct {
 			Task   string `toml:"task"`
 			Review string `toml:"review"`
 		} `toml:"branch"`
+		Worktree struct {
+			Task string `toml:"task"`
+		} `toml:"worktree"`
 		Commit struct {
 			Format        string `toml:"format"`
 			TicketPattern string `toml:"ticket_pattern"`
@@ -433,6 +455,8 @@ type fileLayer struct {
 			CoAuthor      string `toml:"co_author"`
 			// A pointer, so a layer can switch the trailer off explicitly.
 			CoAuthorEnabled *bool `toml:"co_author_enabled"`
+			// A pointer, so a layer can set free subjects ("") explicitly.
+			Subject *string `toml:"subject"`
 		} `toml:"commit"`
 		Copyright struct {
 			Enabled *bool  `toml:"enabled"`
@@ -444,6 +468,9 @@ type fileLayer struct {
 			Title string `toml:"title"`
 			Body  string `toml:"body"`
 		} `toml:"pr"`
+		// Templates merge by name across layers (F-075).
+		Templates map[string]conventions.Template `toml:"templates"`
+		Active    string                          `toml:"active"`
 	} `toml:"conventions"`
 }
 
@@ -514,6 +541,15 @@ func (f fileLayer) mergeInto(dst *Config) {
 	cv, d := f.Conventions, &dst.Conventions
 	setStr(&d.Branch.Task, cv.Branch.Task)
 	setStr(&d.Branch.Review, cv.Branch.Review)
+	setStr(&d.Worktree.Task, cv.Worktree.Task)
+	setPtr(&d.Commit.Subject, cv.Commit.Subject)
+	for name, t := range cv.Templates {
+		if d.Templates == nil {
+			d.Templates = map[string]conventions.Template{}
+		}
+		d.Templates[name] = t
+	}
+	setStr(&d.Active, cv.Active)
 	setStr(&d.Commit.Format, cv.Commit.Format)
 	setStr(&d.Commit.TicketPattern, cv.Commit.TicketPattern)
 	setStr(&d.Commit.CoAuthor, cv.Commit.CoAuthor)
@@ -600,7 +636,7 @@ func UnknownKeys(data []byte) ([]string, error) {
 				walk(dotted, sub)
 				continue
 			}
-			if !known[dotted] && !knownLanguageKey(dotted) && !strings.HasPrefix(dotted, "keys.") {
+			if !known[dotted] && !knownLanguageKey(dotted) && !knownTemplateKey(dotted) && !strings.HasPrefix(dotted, "keys.") {
 				out = append(out, dotted)
 			}
 		}

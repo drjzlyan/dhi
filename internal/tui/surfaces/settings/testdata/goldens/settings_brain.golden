@@ -6,10 +6,10 @@
   TEAMS         │                                                                                                      │
   PACKS         │  DEV ─────────────────────────────────────────────────────────────────────────────────────────────   │
   STANDARDS     │   ◆ ▮▮▮▮▯ Run go test with -race in this repo                     ×6 · reflection · 2d  standard?    │
-  WORKFLOWS     │   ● ▮▮▮▯▯ Distribute the remainder one cent at a time             ×0 · reflection · 2d               │
-  AUTOPILOTS    │   ✗ ▮▮▯▯▯ Use the legacy money package                            ×0 · agent · 2d                    │
+  CONVENTIONS   │   ● ▮▮▮▯▯ Distribute the remainder one cent at a time             ×0 · reflection · 2d               │
+  WORKFLOWS     │   ✗ ▮▮▯▯▯ Use the legacy money package                            ×0 · agent · 2d                    │
+  AUTOPILOTS    │                                                                                                      │
   MARKETPLACE   │                                                                                                      │
-                │                                                                                                      │
                 │                                                                                                      │
                 │                                                                                                      │
                 │                                                                                                      │

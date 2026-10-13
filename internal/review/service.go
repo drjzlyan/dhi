@@ -38,6 +38,9 @@ type Service struct {
 	// the built-in line.
 	prBody   string
 	prBodyFn func() string // live source; wins over prBody when set
+	// prVars adds a branch's task placeholders ({slug}, {ticket},
+	// {assignee} — F-075) to the PR body; nil = none.
+	prVars func(branch string) map[string]string
 }
 
 // NewService wires the orchestration layer. runner and gh may be nil;
@@ -65,6 +68,9 @@ func (s *Service) SetDiffForTest(fn func(ctx context.Context, dir string, args .
 // SetPRBodyFunc installs a source for the PR body template, read each time a
 // PR is opened, so an edit to the conventions applies without a restart.
 func (s *Service) SetPRBodyFunc(fn func() string) { s.prBodyFn = fn }
+
+// SetPRVarsFunc installs the source of a branch's task placeholders.
+func (s *Service) SetPRVarsFunc(fn func(branch string) map[string]string) { s.prVars = fn }
 
 // SetPRBody installs the PR body template. Placeholders: {branch},
 // {member}, {title}.
@@ -268,7 +274,14 @@ func (s *Service) CreatePRForBranch(ctx context.Context, memberName, branch, tit
 	if tpl == "" {
 		tpl = "Created from DHI worktree `{branch}`."
 	}
-	body := conventions.Render(tpl, map[string]string{"branch": branch, "member": memberName, "title": title})
+	vars := map[string]string{}
+	if s.prVars != nil {
+		for k, v := range s.prVars(branch) {
+			vars[k] = v
+		}
+	}
+	vars["branch"], vars["member"], vars["title"] = branch, memberName, title
+	body := conventions.Render(tpl, vars)
 	meta, err := s.gh.CreatePR(ctx, repoURL, title, body, base, branch)
 	if err != nil {
 		return PRMeta{}, err

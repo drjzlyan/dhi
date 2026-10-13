@@ -128,6 +128,7 @@ type Model struct {
 	trace        *tracePane                              // open task trace (F-074)
 	assign       *assignPicker                           // assignee picker (F-073)
 	branchForFn  func(slug string) string                // conventional task branch (F-073/F-075)
+	commitPrefix func(slug string) string                // commit subject start (F-075)
 	openWorktree func(label, dir string) bool            // editor: worktree as a tree root (F-073)
 	// takeAfterAttach is the card whose attach form came from T: once
 	// attached, its worktree opens in the editor.
@@ -199,6 +200,9 @@ type Deps struct {
 	// BranchFor expands the conventions' task-branch template for a card
 	// (F-073); nil falls back to task/<slug>.
 	BranchFor func(slug string) string
+	// CommitPrefix is the start of a commit subject for a card from the
+	// conventions' subject template ("PROJ-12: "); "" = none (F-075).
+	CommitPrefix func(slug string) string
 	// OpenWorktree shows a task worktree as an editor tree root and
 	// switches to the editor (F-073 take-it flow).
 	OpenWorktree func(label, dir string) bool
@@ -254,6 +258,7 @@ func New(version string, ws *workspace.Workspace, d Deps) *Model {
 		m.working = d.Working
 		m.agentWorking = d.AgentWorking
 		m.branchForFn = d.BranchFor
+		m.commitPrefix = d.CommitPrefix
 		m.openWorktree = d.OpenWorktree
 		m.episodes = d.Episodes
 		m.sessions = d.Sessions
@@ -954,7 +959,11 @@ func (m *Model) boardKey(key string) bool {
 			m.flashErr("card has no worktree — attach one first (w)")
 			return true
 		}
-		m.form = openForm(fTaskCommit, tk.Slug, textField("message ", ""))
+		prefix := ""
+		if m.commitPrefix != nil {
+			prefix = m.commitPrefix(tk.Slug)
+		}
+		m.form = openForm(fTaskCommit, tk.Slug, textField("message ", prefix))
 	case "u":
 		if m.taskStore == nil || len(tk.ChangeSets) == 0 {
 			m.flashErr("card has no worktree — attach one first (w)")

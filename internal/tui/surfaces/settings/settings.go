@@ -58,6 +58,7 @@ type Model struct {
 	packCur     int // PACKS rows
 	stdCur      int // STANDARDS rows
 	wfCur       int // WORKFLOWS rows
+	convCur     int // CONVENTIONS rows (F-075)
 	autoCur     int // AUTOPILOTS rows
 	mktCur      int // MARKETPLACE rows
 	mktQuery    string
@@ -101,6 +102,7 @@ const (
 	secTeams
 	secPacks
 	secStandards
+	secConventions
 	secWorkflows
 	secAutopilots
 	secMarketplace
@@ -125,6 +127,8 @@ func (s sectionID) label() string {
 		return "PACKS"
 	case secStandards:
 		return "STANDARDS"
+	case secConventions:
+		return "CONVENTIONS"
 	case secWorkflows:
 		return "WORKFLOWS"
 	case secAutopilots:
@@ -321,6 +325,8 @@ func (m *Model) HandleKey(key string) bool {
 		return m.packsKey(key)
 	case secStandards:
 		return m.standardsKey(key)
+	case secConventions:
+		return m.conventionsKey(key)
 	case secWorkflows:
 		return m.workflowsKey(key)
 	case secAutopilots:
@@ -1190,6 +1196,8 @@ func (m *Model) sectionPane(w, h int) string {
 		content = m.packsView()
 	case secStandards:
 		content = m.standardsView()
+	case secConventions:
+		content = m.conventionsView(w - 4)
 	case secWorkflows:
 		content = m.workflowsView()
 	case secAutopilots:
@@ -1244,6 +1252,8 @@ func (m *Model) sectionHints() []string {
 		sec = []string{"i install", "x uninstall"}
 	case secStandards:
 		sec = []string{"w workspace", "t team", "g agent", "v preview"}
+	case secConventions:
+		sec = []string{"enter use", "n new from selected", "e edit", "d delete"}
 	case secWorkflows:
 		sec = []string{"n new", "d default", "v preview"}
 	case secLibrary:

@@ -14,7 +14,12 @@
   `agents.trace_prompts`) + stderr tail; `internal/agentkit/trace` merges runs, thread, comments,
   activity; board `r` / inbox failed run open the trace view (run chips, filters, search, `x`
   export to `.dhi/traces/`). Old `runReplay` remains only for a failed run whose card is gone.
+- P4 DONE (F-075): `conventions.Template` + built-ins + `Templates`/`Active` (applying copies
+  into the flat rules — consumers read only flat rules), `worktree.task`, `commit.subject`,
+  `{ticket}` via `TicketFor`, Settings CONVENTIONS section (saves to `.dhi/conventions.toml`),
+  `taskVars` in main feeds branch/worktree/PR vars.
 - Gotchas:
+  - `conventions.Config` holds a map: compare with `reflect.DeepEqual`, never `==`.
   - Card activity is stamped with the wall clock: goldens that render it must select a run
     first (run-scoped views omit activity).
   - `formSubmit`: `f` points at `m.form`; read `f.orig` BEFORE `closeForm()`.

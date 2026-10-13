@@ -86,6 +86,13 @@ func (l Layout) Task(slug, member string) (rel, abs string) {
 	return l.path("tasks", TasksDir, slug, member)
 }
 
+// TaskAt places a task worktree at sub, a clean relative folder path the
+// conventions' worktree template produced (F-075), under the tasks base.
+func (l Layout) TaskAt(sub string) (rel, abs string) {
+	dir, leaf := filepath.Split(filepath.FromSlash(sub))
+	return l.path("tasks", TasksDir, filepath.Clean(dir), leaf)
+}
+
 // Review returns a review worktree's relative and absolute path.
 func (l Layout) Review(id, member string) (rel, abs string) {
 	return l.path("reviews", ReviewsDir, id, member)

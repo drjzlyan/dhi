@@ -237,9 +237,21 @@ func runTUI() (relaunch bool) {
 		if ts, err := tasks.Open(ws); err == nil {
 			taskStore = ts
 			taskStore.SetIdentity(identityFn)
-			wireTaskSeam(ws, ts, func() string { return convLive.Get().Branch.Task }, decision.Worktrees)
+			wireTaskSeam(ws, ts, convLive.Get, decision.Worktrees)
 		}
 		reviewSvc = openReviewService(ws, func() conventions.Config { return convLive.Get() }, decision.Worktrees)
+		if reviewSvc != nil && taskStore != nil {
+			reviewSvc.SetPRVarsFunc(func(branch string) map[string]string {
+				for _, tk := range taskStore.List() {
+					for _, cs := range tk.ChangeSets {
+						if cs.Branch == branch {
+							return taskVars(taskStore, convLive.Get(), tk.Slug, cs.Member)
+						}
+					}
+				}
+				return nil
+			})
+		}
 		mcpStore = mcpserver.Open(ws.Root)
 		if ss, err := ideation.Open(ws); err == nil {
 			sessionStore = ss
@@ -383,11 +395,21 @@ func runTUI() (relaunch bool) {
 			Working:      agentRT.Working,
 			AgentWorking: agentRT.AgentWorking,
 			BranchFor: func(slug string) string {
-				b, err := conventions.ExpandBranch(convLive.Get().Branch.Task, branchVars(slug))
+				c := convLive.Get()
+				b, err := conventions.ExpandBranch(c.Branch.Task, taskVars(taskStore, c, slug, ""))
 				if err != nil {
 					return ""
 				}
 				return b
+			},
+			CommitPrefix: func(slug string) string {
+				c := convLive.Get()
+				if c.Commit.Subject == "" || strings.Contains(c.Commit.Subject, "{type}") {
+					return "" // a commit type is the author's call
+				}
+				v := taskVars(taskStore, c, slug, "")
+				v["subject"] = ""
+				return conventions.Render(c.Commit.Subject, v)
 			},
 			OpenWorktree: func(label, dir string) bool {
 				if appRef == nil {
@@ -890,7 +912,7 @@ func openReviewService(ws *workspace.Workspace, conv func() conventions.Config, 
 
 // wireTaskSeam connects task ChangeSets to hermetic-git worktrees when
 // the shim exists; without it, attaching reports a visible error.
-func wireTaskSeam(ws *workspace.Workspace, ts *tasks.Store, branchPattern func() string, wt worktrees.Layout) {
+func wireTaskSeam(ws *workspace.Workspace, ts *tasks.Store, conv func() conventions.Config, wt worktrees.Layout) {
 	root, err := toolchain.DefaultRoot()
 	if err != nil {
 		return
@@ -905,13 +927,19 @@ func wireTaskSeam(ws *workspace.Workspace, ts *tasks.Store, branchPattern func()
 			if !ok {
 				return "", fmt.Errorf("unknown member %q", member)
 			}
+			c := conv()
+			vars := taskVars(ts, c, slug, member)
 			if branch == "" {
 				var err error
-				if branch, err = conventions.ExpandBranch(branchPattern(), branchVars(slug)); err != nil {
+				if branch, err = conventions.ExpandBranch(c.Branch.Task, vars); err != nil {
 					return "", err
 				}
 			}
-			rel, dst := wt.Task(slug, member)
+			sub, err := conventions.ExpandWorktree(c.Worktree.Task, vars)
+			if err != nil {
+				return "", err
+			}
+			rel, dst := wt.TaskAt(sub)
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 			defer cancel()
 			if err := runner.WorktreeAdd(ctx, mem.Path, dst, branch, startpoint); err != nil {
@@ -1275,13 +1303,13 @@ func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cl
 			if taskStore == nil {
 				return fmt.Errorf("task store unavailable")
 			}
-			pattern := conventions.Defaults().Branch.Task
+			c := conventions.Defaults()
 			if conv != nil {
-				if c := conv(); c != nil {
-					pattern = c.Branch.Task
+				if cc := conv(); cc != nil {
+					c = *cc
 				}
 			}
-			branch, err := conventions.ExpandBranch(pattern, branchVars(slug))
+			branch, err := conventions.ExpandBranch(c.Branch.Task, taskVars(taskStore, c, slug, member))
 			if err != nil {
 				return err
 			}
@@ -1316,7 +1344,7 @@ func branchVars(id string) map[string]string {
 		user = strings.ToLower(u.Username)
 	}
 	return map[string]string{
-		"slug": id, "id": id, "user": user,
+		"slug": id, "id": id, "user": user, "ticket": id, "member": "",
 		"date": time.Now().Format("20060102"),
 	}
 }
@@ -1388,4 +1416,22 @@ func worktreeHint(wt worktrees.Layout) string {
 		return ""
 	}
 	return filepath.Join(wt.Base(), "tasks", "<slug>", "<member>")
+}
+
+// taskVars supplies a task's naming placeholders (F-075): the branch
+// vars plus {member}, {title}, {assignee} and {ticket} — the card's ticket
+// key found by the ticket pattern in its slug, title, epic or labels,
+// else the slug itself.
+func taskVars(ts *tasks.Store, c conventions.Config, slug, member string) map[string]string {
+	v := branchVars(slug)
+	v["member"] = member
+	if ts != nil {
+		if tk, ok := ts.Get(slug); ok {
+			v["title"], v["assignee"] = tk.Title, tk.Assignee
+			if t := conventions.TicketFor(c.Commit.TicketPattern, append([]string{tk.Slug, tk.Title, tk.Epic}, tk.Labels...)...); t != "" {
+				v["ticket"] = t
+			}
+		}
+	}
+	return v
 }

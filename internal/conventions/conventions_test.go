@@ -89,7 +89,11 @@ func TestValidateRejects(t *testing.T) {
 		func(c *Config) { c.Commit.CoAuthor = "no-email" },
 		func(c *Config) { c.Commit.CoAuthorEnabled = true },
 		func(c *Config) { c.Copyright.Enabled = true },
-		func(c *Config) { c.PR.Title = "{ticket}: {title}" },
+		func(c *Config) { c.PR.Title = "{nope}: {title}" },
+		func(c *Config) { c.Worktree.Task = "{slug}" },      // no {member}
+		func(c *Config) { c.Worktree.Task = "../{member}" }, // climbs out
+		func(c *Config) { c.Commit.Subject = "{summary}" },  // unknown placeholder
+		func(c *Config) { c.Templates = map[string]Template{"Bad Name": {}} },
 		func(c *Config) { c.PR.Body = "see {summary}" },
 	}
 	for i, mut := range bad {
