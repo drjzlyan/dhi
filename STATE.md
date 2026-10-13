@@ -18,7 +18,14 @@
   into the flat rules — consumers read only flat rules), `worktree.task`, `commit.subject`,
   `{ticket}` via `TicketFor`, Settings CONVENTIONS section (saves to `.dhi/conventions.toml`),
   `taskVars` in main feeds branch/worktree/PR vars.
+- P5a DONE (F-076): `internal/agentkit/verifyplan` (detect + prepare + env signatures), member
+  `verify` override, ask-gated prepare (network scope → approvals), `toolchain.BuildEnv` cache
+  redirection for agents and the runner (`agentEnv` in main), wider `run` allowlist.
+- P5b NEXT: optional managed rust/jdk/maven/gradle/dotnet (manifest `optional`, `sha512`,
+  component merge for Rust, `current` links + env), lazy install via approvals; live test each.
 - Gotchas:
+  - Go verify has no prepare on purpose (the module cache is shared); don't add `go mod download`
+    or every Go task asks for network.
   - `conventions.Config` holds a map: compare with `reflect.DeepEqual`, never `==`.
   - Card activity is stamped with the wall clock: goldens that render it must select a run
     first (run-scoped views omit activity).

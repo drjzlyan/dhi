@@ -164,6 +164,7 @@ func runTUI() (relaunch bool) {
 	edOpts = append(edOpts, editor.WithLanguages(langs))
 	var rgSearcher search.Searcher
 	var termEnv []string
+	var agentEnv []string // termEnv + redirected build caches (F-076)
 	var identityFn gitcore.IdentityFunc
 	var gitRunner *gitcore.Runner
 	var runRunner dhitools.CommandRunner
@@ -213,7 +214,10 @@ func runTUI() (relaunch bool) {
 		if r, err := gitcore.ResolveRunner(mgr); err == nil {
 			gitRunner = r
 		}
-		runRunner = execRunner{env: termEnv, timeout: 5 * time.Minute, sandbox: guardWorkspace(decision.Sandbox, ws)}
+		// Agents and DHI's own verify build with caches redirected into
+		// the toolchain's writable folders (F-076); terminals keep home.
+		agentEnv = append(append([]string(nil), termEnv...), mgr.BuildEnv()...)
+		runRunner = execRunner{env: agentEnv, timeout: 5 * time.Minute, sandbox: guardWorkspace(decision.Sandbox, ws)}
 		if _, err := os.Stat(filepath.Join(toolRoot, "bin", "rg")); err == nil {
 			rgSearcher = search.Ripgrep{Bin: filepath.Join(toolRoot, "bin", "rg")}
 		}
@@ -272,7 +276,7 @@ func runTUI() (relaunch bool) {
 		// under .dhi/agents/. Guards carry the audited OS-sandbox
 		// adapter (nil here is impossible: the audit blocked first).
 		if messageBus != nil {
-			agentRT = newAgentRuntime(ws, messageBus, guardWorkspace(decision.Sandbox, ws), termEnv, cfg.Engine, gitRunner, identityFn, sessionStore, runRunner, editorBridge, wsScopes, taskStore, reviewSvc, rgSearcher, mcpStore, convLive.Source(), cliLook, toolBin, mcpHome, decision.Worktrees,
+			agentRT = newAgentRuntime(ws, messageBus, guardWorkspace(decision.Sandbox, ws), agentEnv, cfg.Engine, gitRunner, identityFn, sessionStore, runRunner, editorBridge, wsScopes, taskStore, reviewSvc, rgSearcher, mcpStore, convLive.Source(), cliLook, toolBin, mcpHome, decision.Worktrees,
 				liveTuning(userCfg, wsCfg, cfg))
 			if agentRT != nil {
 				// F-071: a held sub-card starts the moment its blockers are

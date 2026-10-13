@@ -172,6 +172,11 @@ type Runtime struct {
 	cancels map[string]map[int]context.CancelFunc // workKey → in-flight turns (F-073)
 	nextCxl int
 
+	// prepared remembers each verify directory's dependency install by
+	// lockfile fingerprint (F-076), so prepare runs once per change.
+	prepMu   sync.Mutex
+	prepared map[string]string
+
 	// hops counts agent-authored dispatches per channel since the last
 	// human message (F-036 hop budget).
 	hopMu sync.Mutex

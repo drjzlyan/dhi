@@ -50,6 +50,11 @@ const (
 type Member struct {
 	Name string // alias used in vpaths; lowercase
 	Path string // absolute path to the repo root
+	// Verify overrides the test command DHI detects for this member
+	// (F-076): an argv, run with no shell. VerifySet with an empty Verify
+	// turns verification off for the member.
+	Verify    []string
+	VerifySet bool
 }
 
 // Workspace is the loaded multi-repo model.
@@ -102,7 +107,8 @@ func validDepKind(kind string) bool {
 }
 
 type member struct {
-	Path string `toml:"path"`
+	Path   string    `toml:"path"`
+	Verify *[]string `toml:"verify,omitempty"`
 }
 
 // Create writes an initial workspace.toml under root and reserves the
@@ -233,7 +239,11 @@ func Load(root string) (*Workspace, error) {
 			return nil, fmt.Errorf("workspace: duplicate member path %s", abs)
 		}
 		seenPaths[abs] = true
-		ws.members = append(ws.members, Member{Name: name, Path: abs})
+		mem := Member{Name: name, Path: abs}
+		if m.Verify != nil {
+			mem.Verify, mem.VerifySet = append([]string(nil), (*m.Verify)...), true
+		}
+		ws.members = append(ws.members, mem)
 	}
 	if len(ws.members) == 0 {
 		return nil, fmt.Errorf("workspace: no members configured")
@@ -431,7 +441,12 @@ func saveConfig(root string, members []Member, deps []Dependency) error {
 		if rel, err := filepath.Rel(root, p); err == nil && !strings.HasPrefix(rel, "..") {
 			p = rel
 		}
-		cfg.Members[m.Name] = member{Path: p}
+		mm := member{Path: p}
+		if m.VerifySet {
+			v := append([]string{}, m.Verify...)
+			mm.Verify = &v
+		}
+		cfg.Members[m.Name] = mm
 	}
 	for _, d := range deps {
 		cfg.Dependencies = append(cfg.Dependencies, dependency(d))

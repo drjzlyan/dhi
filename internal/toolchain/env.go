@@ -2,6 +2,7 @@ package toolchain
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -56,4 +57,30 @@ func firstPathEntry(pathList string) string {
 // WritableSubdirs are the toolchain folders sandboxed agent processes may
 // write: npm's cache (npx-run MCP servers) and the MCP servers' private
 // HOME. Everything else under the prefix is read-only to them.
-var WritableSubdirs = []string{"npm-cache", "mcp-home"}
+var WritableSubdirs = []string{"npm-cache", "mcp-home",
+	// F-076: build caches for the ecosystems DHI verifies.
+	"uv-cache", "cargo-home", "gradle-home", "m2", "nuget", "dotnet-home"}
+
+// BuildEnv points the package managers' caches at the toolchain's
+// writable folders (F-076): a sandboxed build may not write $HOME
+// (~/.cargo, ~/.m2, ~/.gradle, ~/.nuget), and a denied cache write would
+// read as an environment failure. It is for DHI's command runner and the
+// agent CLIs — the user's own terminals keep their home caches.
+func (m *Manager) BuildEnv() []string {
+	sub := func(name string) string { return filepath.Join(m.root, name) }
+	return []string{
+		"npm_config_cache=" + sub("npm-cache"),
+		"npm_config_update_notifier=false",
+		"COREPACK_HOME=" + filepath.Join(sub("npm-cache"), "corepack"),
+		"UV_CACHE_DIR=" + sub("uv-cache"),
+		"UV_PYTHON_INSTALL_DIR=" + filepath.Join(sub("uv-cache"), "python"),
+		"CARGO_HOME=" + sub("cargo-home"),
+		"GRADLE_USER_HOME=" + sub("gradle-home"),
+		"MAVEN_OPTS=-Dmaven.repo.local=" + filepath.Join(sub("m2"), "repository"),
+		"NUGET_PACKAGES=" + sub("nuget"),
+		"DOTNET_CLI_HOME=" + sub("dotnet-home"),
+		"DOTNET_CLI_TELEMETRY_OPTOUT=1",
+		"DOTNET_NOLOGO=1",
+		"DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1",
+	}
+}

@@ -143,13 +143,14 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message, tl
 			if len(targets) > 0 && changed {
 				iter++
 				ep.Iterations = iter
-				cmd, tail, ok := r.verify(ctx, targets)
+				res := r.verify(ctx, e.m.ID, r.agentScopes(e.m), targets)
+				cmd, tail, ok := res.cmd, res.tail, res.ok
 				if hasTask {
 					_ = r.cfg.Tasks.SetTestsPass(task.Slug, ok)
 				}
 				ep.VerifyCmd, ep.VerifyTail = cmd, tail
 				switch {
-				case !ok && envFailure(tail):
+				case !ok && res.env:
 					// Not the agent's bug: the check could not run here.
 					ep.Verify = "env"
 					r.notice(trigger, e.m.ID, fmt.Sprintf("could not verify: `%s` needs something this environment lacks (network, a module, a permission); the result is unverified:\n%s",

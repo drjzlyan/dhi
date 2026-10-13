@@ -24,6 +24,14 @@ type CommandRunner interface {
 var runAllow = map[string][]string{
 	"go": {"build", "test", "vet", "fmt"},
 	"rg": nil,
+	// F-076: the build/test commands of every ecosystem DHI verifies.
+	"npm":      {"test", "run", "ci", "install"},
+	"corepack": {"pnpm", "yarn"},
+	"uv":       {"run", "sync", "pip", "venv"},
+	"cargo":    {"build", "test", "check", "fmt", "clippy", "fetch"},
+	"mvn":      {"test", "verify", "compile", "package", "-q", "-o", "-B"},
+	"gradle":   {"test", "build", "check", "assemble", "--offline", "--quiet"},
+	"dotnet":   {"build", "test", "restore", "format"},
 }
 
 type runPlan struct {
@@ -40,7 +48,7 @@ func (d Deps) miscTools() []tool {
 		{
 			info: mcp.ToolInfo{
 				Name:        "run",
-				Description: "Run an allowlisted hermetic command (go build/test/vet/fmt, rg). No shell. Args: {\"program\":\"go\",\"args\":[\"test\",\"./...\"]}. Mutating: crosses approvals.",
+				Description: "Run an allowlisted hermetic command: go build/test/vet/fmt, rg, npm test/run/ci/install, corepack pnpm/yarn, uv run/sync/pip/venv, cargo build/test/check/fmt/clippy/fetch, mvn, gradle, dotnet build/test/restore/format. No shell. Args: {\"program\":\"go\",\"args\":[\"test\",\"./...\"]}. Mutating: crosses approvals.",
 				InputSchema: json.RawMessage(`{"type":"object","required":["program"],"properties":{"program":{"type":"string"},"args":{"type":"array","items":{"type":"string"}}},"additionalProperties":false}`),
 			},
 			parse: func(raw json.RawMessage) (any, error) {

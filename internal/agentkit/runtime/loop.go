@@ -3,7 +3,6 @@ package runtime
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -11,28 +10,41 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/agentkit/dhitools"
 	"github.com/drjzlyan/dhi/internal/agentkit/episode"
+	"github.com/drjzlyan/dhi/internal/agentkit/scopes"
+	"github.com/drjzlyan/dhi/internal/agentkit/verifyplan"
+	"github.com/drjzlyan/dhi/internal/sandbox"
 	"github.com/drjzlyan/dhi/internal/tasks"
 )
 
 // verifyTarget is one check the goal loop runs after a successful spawn
-// (F-067): a command in a directory.
+// (F-067, F-076): a detected (or configured) plan for a directory.
 type verifyTarget struct {
 	dir  string
 	argv []string
+	plan verifyplan.Target
 }
 
 func (v verifyTarget) String() string { return strings.Join(v.argv, " ") }
 
-// verifyTargets finds what to check in a task worktree: a Go module runs
-// `go test ./...`. Other ecosystems have no allowlisted test runner yet,
-// so they get no verify — and the loop says so rather than claiming
-// success. Only a task worktree is ever verified: the shared checkout is
-// not the task's to judge.
+// verifyTargets finds what to check in a task worktree (F-076): the
+// member's configured `verify`, else what verifyplan detects — Go,
+// JS/TS, Python, Rust, Maven, Gradle or .NET. Only a task worktree is
+// ever verified: the shared checkout is not the task's to judge.
 func (r *Runtime) verifyTargets(task tasks.Task, workdir string) []verifyTarget {
-	if r.isTracking(task) || r.taskWorktree(task) != filepath.Clean(workdir) || !exists(filepath.Join(workdir, "go.mod")) {
+	if r.isTracking(task) || r.taskWorktree(task) != filepath.Clean(workdir) {
 		return nil
 	}
-	return []verifyTarget{{dir: workdir, argv: []string{"go", "test", "./..."}}}
+	var o verifyplan.Override
+	if r.cfg.WS != nil {
+		if m, ok := r.cfg.WS.Member(task.ChangeSets[0].Member); ok {
+			o = verifyplan.Override{Argv: m.Verify, Set: m.VerifySet}
+		}
+	}
+	var out []verifyTarget
+	for _, t := range verifyplan.Plan(workdir, o) {
+		out = append(out, verifyTarget{dir: t.Dir, argv: t.Test, plan: t})
+	}
+	return out
 }
 
 // taskWorktree is the card's first worktree, absolute ("" = none).
@@ -75,42 +87,80 @@ func (r *Runtime) worktreeState(ctx context.Context, dir string) (string, bool) 
 	return strings.TrimSpace(head) + "\n" + st, true
 }
 
-// envFailures mark a verify that could not run here — no network for a
-// module download, a sandbox denial — as opposed to failing tests. Those
-// are named to the human, never sent back as bugs to "fix".
-var envFailures = []string{
-	"dial tcp", "proxy.golang.org", "cannot find module providing", "no required module provides",
-	"operation not permitted", "go: downloading", "connection refused", "no such host",
-}
-
-func envFailure(tail string) bool {
-	low := strings.ToLower(tail)
-	for _, s := range envFailures {
-		if strings.Contains(low, s) {
-			return true
-		}
-	}
-	return false
-}
+// envFailure reports a verify that could not run here — no network for
+// a dependency, a missing toolchain, a sandbox denial — as opposed to
+// failing tests. Those are named to the human, never sent back as bugs.
+func envFailure(tail string) bool { return verifyplan.EnvFailure(tail) }
 
 // autopilotCard reports a per-run autopilot card ("auto-<slug>-<id>",
 // workspace/autopilots.go): a recurring chore, not feature work, so it is
 // never given a worktree.
 func autopilotCard(slug string) bool { return strings.HasPrefix(slug, "auto-") }
 
-func exists(p string) bool { _, err := os.Stat(p); return err == nil }
+// verifyResult is one verify pass: the failing command and its output
+// tail, or ok. env marks a check that could not run here.
+type verifyResult struct {
+	cmd, tail string
+	ok, env   bool
+}
 
-// verify runs the targets through the sandboxed command runner (the one
-// the `run` tool uses). It returns the first failure's command and the
-// tail of its output; ok when every target passed.
-func (r *Runtime) verify(ctx context.Context, targets []verifyTarget) (cmd, tail string, ok bool) {
+// verify runs each target through the sandboxed command runner (the one
+// the `run` tool uses): first its dependency install when the lockfiles
+// changed since the last one (network, gated by the agent's network
+// scope — an ask crosses the approvals inbox and "always" persists),
+// then the test command offline.
+func (r *Runtime) verify(ctx context.Context, agentID string, sc scopes.Set, targets []verifyTarget) verifyResult {
 	for _, t := range targets {
+		if res, ok := r.prepare(ctx, agentID, sc, t); !ok {
+			return res
+		}
 		out, err := r.cfg.Run.Run(ctx, t.dir, t.argv, false)
 		if err != nil {
-			return t.String(), tailLines(out+"\n"+err.Error(), 40), false
+			tail := tailLines(out+"\n"+err.Error(), 40)
+			return verifyResult{cmd: t.String(), tail: tail, env: envFailure(tail)}
 		}
 	}
-	return "", "", true
+	return verifyResult{ok: true}
+}
+
+// prepare installs a target's dependencies once per lockfile state.
+func (r *Runtime) prepare(ctx context.Context, agentID string, sc scopes.Set, t verifyTarget) (verifyResult, bool) {
+	if len(t.plan.Prepare) == 0 {
+		return verifyResult{}, true
+	}
+	fp := t.plan.Fingerprint()
+	r.prepMu.Lock()
+	done := r.prepared[t.dir] == fp
+	r.prepMu.Unlock()
+	if done {
+		return verifyResult{}, true
+	}
+	first := strings.Join(t.plan.Prepare[0], " ")
+	switch sc.EffectFor(scopes.Network) {
+	case scopes.Deny:
+		return verifyResult{cmd: first, tail: "dependencies were not installed: network is denied (scopes.network)", env: true}, false
+	case scopes.Ask:
+		if r.cfg.Approvals == nil {
+			return verifyResult{cmd: first, tail: "dependencies were not installed: network needs approval and no approvals queue is running", env: true}, false
+		}
+		if err := r.cfg.Approvals.AskScope(ctx, agentID, string(scopes.Network), sandbox.OpNet,
+			first+" in "+t.dir, "install dependencies so DHI can run the tests"); err != nil {
+			return verifyResult{cmd: first, tail: "dependencies were not installed: " + err.Error(), env: true}, false
+		}
+	}
+	for _, argv := range t.plan.Prepare {
+		out, err := r.cfg.Run.Run(ctx, t.dir, argv, true)
+		if err != nil {
+			return verifyResult{cmd: strings.Join(argv, " "), tail: tailLines(out+"\n"+err.Error(), 40), env: true}, false
+		}
+	}
+	r.prepMu.Lock()
+	if r.prepared == nil {
+		r.prepared = map[string]string{}
+	}
+	r.prepared[t.dir] = fp
+	r.prepMu.Unlock()
+	return verifyResult{}, true
 }
 
 func tailLines(s string, n int) string {
