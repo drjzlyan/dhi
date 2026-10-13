@@ -45,6 +45,9 @@ const (
 	dlgConvLearn
 	dlgIdentity
 	dlgIdentityConfirm
+	dlgConfigValue
+	dlgLanguages
+	dlgKeys
 	dlgDisplay // read-only: profile, standards preview, last-run info
 )
 
@@ -85,6 +88,7 @@ func minInt(a, b int) int {
 
 func (m *Model) closeDialog() {
 	m.dlg, m.dform, m.dkind, m.dtarget = nil, nil, 0, ""
+	m.valueHint = ""
 }
 
 // dialogKey implements the focus trap: while a dialog is open every
@@ -122,6 +126,12 @@ func (m *Model) submitDialog() {
 		m.submitExample()
 	case dlgIdentity:
 		m.submitIdentity()
+	case dlgConfigValue:
+		m.submitValue()
+	case dlgLanguages:
+		m.submitLanguages()
+	case dlgKeys:
+		m.submitKeys()
 	case dlgPackInstall:
 		m.submitPackInstall()
 	case dlgStdLayer:

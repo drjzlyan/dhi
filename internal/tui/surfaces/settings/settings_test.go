@@ -165,11 +165,13 @@ func TestConventionRowsCycleAndPersist(t *testing.T) {
 	m.cursor = rowBranchTask
 	feed(m, "l") // task/{slug} → feature/{slug}
 	m.cursor = rowCommitCoAuthor
-	feed(m, "enter")
-	if m.cfg.Conventions.Commit.CoAuthorEnabled || !strings.Contains(m.flash, "co_author") {
-		t.Fatalf("co-author enabled without a value: flash=%q", m.flash)
+	feed(m, "enter") // nothing to switch on yet: asks for the co-author
+	if m.cfg.Conventions.Commit.CoAuthorEnabled || m.dkind != dlgConfigValue {
+		t.Fatalf("co-author enabled without a value, or no editor: dkind=%v", m.dkind)
 	}
-	m.cfg.Conventions.Commit.CoAuthor = "Bot <bot@x.io>"
+	for _, r := range "Bot <bot@x.io>" {
+		m.HandleKey(string(r))
+	}
 	feed(m, "enter")
 
 	if !strings.Contains(m.flash, "agents use it from their next action") {
@@ -189,9 +191,83 @@ func TestCopyrightRowNeedsHolder(t *testing.T) {
 	m, _ := newSurface(t)
 	m.cursor = rowCopyright
 	feed(m, "enter")
-	if m.cfg.Conventions.Copyright.Enabled || !strings.Contains(m.flash, "holder") {
-		t.Fatalf("enabled=%v flash=%q; want refusal naming the holder key",
-			m.cfg.Conventions.Copyright.Enabled, m.flash)
+	if m.cfg.Conventions.Copyright.Enabled || m.dkind != dlgConfigValue || !strings.Contains(ansi.Strip(m.View()), "holder") {
+		t.Fatalf("enabled=%v; want the holder editor:\n%s", m.cfg.Conventions.Copyright.Enabled, ansi.Strip(m.View()))
+	}
+	for _, r := range "Acme Inc" {
+		m.HandleKey(string(r))
+	}
+	feed(m, "enter")
+	if c := m.cfg.Conventions.Copyright; !c.Enabled || c.Holder != "Acme Inc" {
+		t.Fatalf("copyright %+v", c)
+	}
+}
+
+func TestTypedValuesAreCheckedAndSaved(t *testing.T) {
+	m, path := newSurface(t)
+	m.cursor = rowMaxTurns
+	feed(m, "e")
+	if m.dkind != dlgConfigValue || !strings.Contains(ansi.Strip(m.View()), "0 = the CLI's default") {
+		t.Fatalf("editor:\n%s", ansi.Strip(m.View()))
+	}
+	feed(m, "ctrl+a", "delete", "4", "2", "enter")
+	if m.cfg.Agents.MaxTurns != 42 || m.dlg != nil {
+		t.Fatalf("max turns %d dlg %v", m.cfg.Agents.MaxTurns, m.dlg != nil)
+	}
+	m.cursor = rowMaxIter
+	feed(m, "e", "ctrl+a", "delete", "9", "9", "enter")
+	if m.dform == nil || !strings.Contains(m.dform.Err, "between 1 and 10") || m.cfg.Agents.MaxIterations != 3 {
+		t.Fatalf("out of range accepted: %+v %d", m.dform, m.cfg.Agents.MaxIterations)
+	}
+	feed(m, "esc")
+	m.cursor = rowTaskUSD
+	feed(m, "e", "ctrl+a", "delete", "$", "3", ".", "5", "enter")
+	m.cursor = rowSandbox
+	feed(m, "enter")
+	m.cursor = rowReflectModel
+	feed(m, "enter")
+	for _, r := range "claude-haiku-4-5" {
+		m.HandleKey(string(r))
+	}
+	feed(m, "enter")
+	c, err := settings.Load(path, "")
+	if err != nil || c.Agents.MaxTurns != 42 || c.Budgets.TaskUSD != 3.5 || c.Security.Sandbox != settings.SandboxOff ||
+		c.Agents.ReflectModel != "claude-haiku-4-5" {
+		t.Fatalf("persisted %+v %+v %v", c.Agents, c.Budgets, err)
+	}
+}
+
+func TestKeysAndLanguagesAreEditable(t *testing.T) {
+	m, path := newSurface(t)
+	m.cursor = rowKeys
+	feed(m, "enter")
+	for _, r := range "ctrl+k=ctrl+p, x=d" {
+		m.HandleKey(string(r))
+	}
+	feed(m, "enter")
+	if m.cfg.Keys["ctrl+k"] != "ctrl+p" || m.cfg.Keys["x"] != "d" {
+		t.Fatalf("keys %v", m.cfg.Keys)
+	}
+	feed(m, "enter", "ctrl+e")
+	for _, r := range ", ctrl+c=q" {
+		m.HandleKey(string(r))
+	}
+	feed(m, "enter")
+	if m.dform == nil || !strings.Contains(m.dform.Err, "ctrl+c always quits") {
+		t.Fatalf("ctrl+c remap accepted: %+v", m.dform)
+	}
+	feed(m, "esc")
+	m.cursor = rowLanguages
+	feed(m, "enter", "right", "enter") // first language → off
+	c, err := settings.Load(path, "")
+	if err != nil || c.Keys["x"] != "d" {
+		t.Fatalf("keys not persisted: %v %v", c.Keys, err)
+	}
+	if lc := c.Editor.Languages["go"]; lc.Enabled == nil || *lc.Enabled {
+		t.Fatalf("go not switched off: %+v", c.Editor.Languages)
+	}
+	if v := ansi.Strip(m.View()); !strings.Contains(v, "of") {
+		t.Fatalf("languages row:\n%s", v)
 	}
 }
 
@@ -296,5 +372,42 @@ func TestYouRowsCycleAndPersist(t *testing.T) {
 	}
 	if !strings.Contains(m.flash, "live") {
 		t.Fatalf("flash %q", m.flash)
+	}
+}
+
+// F-084: every setting is reachable from Settings, so nobody needs a
+// config file. A new key in settings.Known() fails here until it gets a
+// CONFIG row or is named as owned by another section.
+func TestEverySettingHasAPlaceInSettings(t *testing.T) {
+	m, _ := newSurface(t)
+	m.Resize(140, 400)
+	view := ansi.Strip(strings.Join(m.configView(130, 0), "\n"))
+	elsewhere := map[string]string{
+		"schema": "internal",
+		// Naming templates (CONVENTIONS section: use, edit, learn).
+		"conventions.branch.review": "CONVENTIONS", "conventions.commit.ticket_pattern": "CONVENTIONS",
+		"conventions.commit.subject": "CONVENTIONS", "conventions.commit.body": "CONVENTIONS",
+		"conventions.pr.title": "CONVENTIONS", "conventions.pr.body": "CONVENTIONS",
+		"conventions.worktree.task": "CONVENTIONS", "conventions.active": "CONVENTIONS",
+		"conventions.commit.co_author_enabled": "the co-author row", "conventions.copyright.enabled": "the copyright row",
+		"conventions.copyright.holder": "the copyright row",
+		"conventions.copyright.year":   "the current year, always",
+	}
+	known := settings.Known()
+	isContainer := func(k string) bool {
+		for _, o := range known {
+			if strings.HasPrefix(o, k+".") {
+				return true
+			}
+		}
+		return false
+	}
+	for _, k := range known {
+		if isContainer(k) || elsewhere[k] != "" {
+			continue
+		}
+		if !strings.Contains(view, k) {
+			t.Errorf("setting %s has no CONFIG row and no owner", k)
+		}
 	}
 }

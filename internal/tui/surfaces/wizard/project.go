@@ -62,7 +62,7 @@ func (s *projectStep) Apply() error {
 		s.form.SetError(err.Error())
 		return err
 	}
-	s.env.Applied = append(s.env.Applied, "project brief saved to "+brief.File+" — every employee reads it")
+	s.env.Applied = append(s.env.Applied, "project brief saved — every employee reads it")
 	return nil
 }
 

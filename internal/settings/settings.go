@@ -853,3 +853,7 @@ func setPtr[T any](dst *T, src *T) {
 		*dst = *src
 	}
 }
+
+// Check validates a merged config the way Load does (F-084: Settings
+// checks a typed value before saving it).
+func Check(c Config) error { return validate(c) }

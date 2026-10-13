@@ -77,8 +77,10 @@ type Model struct {
 	ident   *gitcore.Identity      // cached git identity (F-083); nil = not read yet
 	identOK bool
 	wantID  gitcore.Identity // the identity awaiting confirmation
-	dkind   dialogKind
-	dtarget string
+	// valueHint explains the value a CONFIG editor dialog wants (F-084).
+	valueHint string
+	dkind     dialogKind
+	dtarget   string
 
 	flash  string
 	events chan settingsEvent
@@ -406,10 +408,18 @@ func (m *Model) configKey(key string) bool {
 		}
 		m.cycle(-1)
 		return true
+	case "e":
+		if m.cursor == rowIdentity {
+			m.openIdentityForm()
+			return true
+		}
+		m.openValueEditor()
+		return true
 	}
 	return false
 }
 
+// CONFIG rows, in display order (j/k walks them by index).
 const (
 	// You (F-081, F-083): your git identity, who the crew works for and
 	// how you write and read.
@@ -422,43 +432,59 @@ const (
 	rowOrder
 	rowFormat
 	rowDetail
+	// Appearance, editor and terminal.
 	rowTheme
 	rowReducedMotion
 	rowTabWidth
 	rowLineNumbers
 	rowScrollback
-	rowScopesBase // then 7 capability-scope rows (F-030 P2)
-	// The personal worktree location (F-053) follows the scopes; the
-	// conventions rows (F-042), which save to their own tracked file, follow it.
-	rowWorktrees      = rowScopesBase + 7
-	rowBranchTask     = rowWorktrees + 1
-	rowCommitFormat   = rowBranchTask + 1
-	rowCommitCoAuthor = rowBranchTask + 2
-	rowCopyright      = rowBranchTask + 3
-	// Agents & budgets (F-066, F-067) follow the conventions rows.
-	rowResume       = rowBranchTask + 4
-	rowAutonomy     = rowResume + 1
-	rowMaxTurns     = rowResume + 2
-	rowMaxIter      = rowResume + 3
-	rowStall        = rowResume + 4
-	rowReflect      = rowResume + 5
-	rowTracePrompts = rowResume + 6
-	rowTaskUSD      = rowResume + 7
-	rowTaskTokens   = rowResume + 8
-	rowAgentDayUSD  = rowResume + 9
-	rowWorkDayUSD   = rowResume + 10
-	// Memory (F-078) follows the budgets.
-	rowMemPrompt  = rowResume + 11
-	rowMemSession = rowResume + 12
-	rowMemJournal = rowResume + 13
-	rowMemLessons = rowResume + 14
-	rowMemPinned  = rowResume + 15
-	rowMemDecay   = rowResume + 16
-	rowCount      = rowResume + 17
+	rowLanguages // editor.languages on/off (F-084)
+	// Seven capability-scope rows (F-030 P2), then the sandbox.
+	rowScopesBase
+	_
+	_
+	_
+	_
+	_
+	_
+	rowSandbox
+	// The personal worktree location (F-053), then the conventions rows
+	// (F-042), which save to their own tracked file.
+	rowWorktrees
+	rowBranchTask
+	rowCommitFormat
+	rowCommitCoAuthor
+	rowCopyright
+	rowLicense
+	rowMaxSubject
+	// Agents & budgets (F-066, F-067).
+	rowEngine
+	rowResume
+	rowAutonomy
+	rowMaxTurns
+	rowMaxIter
+	rowStall
+	rowReflect
+	rowReflectModel
+	rowTracePrompts
+	rowTaskUSD
+	rowTaskTokens
+	rowAgentDayUSD
+	rowWorkDayUSD
+	// Memory (F-078).
+	rowMemPrompt
+	rowMemSession
+	rowMemJournal
+	rowMemLessons
+	rowMemPinned
+	rowMemDecay
+	// Key remaps (F-058).
+	rowKeys
+	rowCount
 )
 
 // Preset cycles for the agents & budgets rows (0 = the CLI default / no
-// limit); any other value is hand-edited in config.toml and shows as-is.
+// limit); e types any other value (F-084).
 var (
 	maxTurnPresets  = []int{0, 10, 20, 30, 50, 100}
 	maxIterPresets  = []int{1, 2, 3, 5, 8}
@@ -485,12 +511,12 @@ func cycleNum[T int | float64](cur T, opts []T, dir int) T {
 	return opts[0]
 }
 
-// worktreePresets is the cycle for worktrees.root; any other path is
-// hand-edited in config.toml and shows as-is. "" keeps worktrees inside .dhi/.
+// worktreePresets is the cycle for worktrees.root; e types any other
+// path. "" keeps worktrees inside .dhi/.
 var worktreePresets = []string{"", "../.dhi-worktrees", "~/dhi-worktrees"}
 
-// branchPresets is the cycle for conventions.branch.task; any other
-// pattern is hand-edited in config.toml and shows as-is.
+// branchPresets is the cycle for conventions.branch.task; e types any
+// other pattern.
 var branchPresets = []string{"task/{slug}", "feature/{slug}", "{user}/{slug}", "{user}/{date}-{slug}"}
 
 func cycleString(cur string, opts []string, dir int) string {
@@ -574,16 +600,25 @@ func (m *Model) cycle(dir int) {
 	case rowCommitCoAuthor:
 		cm := &m.cfg.Conventions.Commit
 		if !cm.CoAuthorEnabled && strings.TrimSpace(cm.CoAuthor) == "" {
-			m.flash = "set conventions.commit.co_author = \"Name <email>\" in " + settings.ConventionsFile + " first"
+			m.openValueEditor() // nothing to switch on yet: ask for the name first
 			return
 		}
 		cm.CoAuthorEnabled = !cm.CoAuthorEnabled
 	case rowCopyright:
 		if !m.cfg.Conventions.Copyright.Enabled && strings.TrimSpace(m.cfg.Conventions.Copyright.Holder) == "" {
-			m.flash = "set conventions.copyright.holder in config.toml first"
+			m.openValueEditor()
 			return
 		}
 		m.cfg.Conventions.Copyright.Enabled = !m.cfg.Conventions.Copyright.Enabled
+	case rowLanguages, rowKeys, rowReflectModel, rowLicense:
+		m.openValueEditor()
+		return
+	case rowSandbox:
+		m.cfg.Security.Sandbox = cycleString(m.cfg.Security.Sandbox, []string{settings.SandboxAuto, settings.SandboxOff}, dir)
+	case rowMaxSubject:
+		m.cfg.Conventions.Commit.MaxSubject = cycleNum(m.cfg.Conventions.Commit.MaxSubject, []int{50, 72, 100, 120}, dir)
+	case rowEngine:
+		m.cfg.Engine = cycleString(m.cfg.Engine, m.engineChoices(), dir)
 	case rowResume:
 		m.cfg.Agents.Resume = !m.cfg.Agents.Resume
 	case rowAutonomy:
@@ -641,7 +676,7 @@ func (m *Model) cycle(dir int) {
 
 func (m *Model) applyAndPersist() {
 	m.cfg.Apply()
-	if m.cursor >= rowBranchTask && m.cursor < rowResume {
+	if m.cursor >= rowBranchTask && m.cursor <= rowMaxSubject {
 		// One row, one key, into the same file the CONVENTIONS section
 		// writes (F-075): never the whole merged table.
 		c := m.cfg.Conventions
@@ -662,6 +697,8 @@ func (m *Model) applyAndPersist() {
 			rowBranchTask:   {"branch.task": c.Branch.Task},
 			rowCommitFormat: {"commit.format": c.Commit.Format},
 			rowCopyright:    {"copyright.enabled": c.Copyright.Enabled, "copyright.holder": c.Copyright.Holder},
+			rowLicense:      {"copyright.license": c.Copyright.License},
+			rowMaxSubject:   {"commit.max_subject": c.Commit.MaxSubject},
 		}[m.cursor]
 		if m.patchConventions(c, key, nil, "saved") {
 			m.flash += " — agents use it from their next action"
@@ -678,8 +715,18 @@ func (m *Model) applyAndPersist() {
 	}
 	// Conventions are a separate, tracked file shared with the team and
 	// are re-read while DHI runs (F-052), so say so.
-	if m.cursor >= rowResume || m.cursor < rowTheme {
+	switch {
+	case m.cursor == rowSandbox:
+		m.flash = "saved — the sandbox changes after a restart"
+		return
+	case m.cursor == rowEngine:
+		m.flash = "saved — employees without their own CLI use it from their next turn"
+		return
+	case m.cursor >= rowResume && m.cursor < rowKeys, m.cursor < rowTheme:
 		m.flash = "saved (live — agents use it from their next spawn)"
+		return
+	case m.cursor == rowKeys, m.cursor == rowLanguages:
+		m.flash = "saved — applies after a restart"
 		return
 	}
 	if m.cursor == rowWorktrees {
@@ -1271,6 +1318,11 @@ func (m *Model) View() string {
 		// never replace its content. A form dialog's body is its form.
 		if m.dform != nil {
 			m.dlg.Lines = m.dform.ViewWidth(min(w-railW-8, 96))
+			if m.valueHint != "" {
+				for _, l := range kit.WrapWords(m.valueHint, min(w-railW-8, 96)) {
+					m.dlg.Lines = append(m.dlg.Lines, theme.Hint().Render(l))
+				}
+			}
 		}
 		view = kit.Overlay(strings.Split(view, "\n"), m.dlg.View(), w, h)
 	case m.form.open:
@@ -1352,7 +1404,7 @@ func (m *Model) sectionHints() []string {
 	var sec []string
 	switch m.sec {
 	case secConfig:
-		sec = []string{"enter/l change", "h/l back"}
+		sec = []string{"enter/l change", "h back", "e type a value"}
 	case secAgents:
 		sec = []string{"n new", "e edit", "a archive", "x delete", "v profile"}
 		if m.selectedHasGrants() {
@@ -1436,7 +1488,8 @@ func (m *Model) configView(w, budget int) []string {
 	add(rowTabWidth, "editor.tab_width", itoa(m.cfg.Editor.TabWidth))
 	add(rowLineNumbers, "editor.line_numbers", boolValue(m.cfg.Editor.LineNumbers))
 	add(rowScrollback, "terminal.scrollback", itoa(m.cfg.Terminal.Scrollback))
-	head("agent scopes")
+	add(rowLanguages, "editor.languages", m.languagesValue())
+	head("agent scopes & sandbox")
 	for i, name := range scopeRowNames {
 		val := m.cfg.Scopes[name]
 		if val == "" {
@@ -1444,6 +1497,7 @@ func (m *Model) configView(w, budget int) []string {
 		}
 		add(rowScopesBase+i, "scopes."+name, val)
 	}
+	add(rowSandbox, "security.sandbox", sandboxValue(m.cfg.Security.Sandbox))
 	wt := m.cfg.Worktrees.Root
 	if wt == "" {
 		wt = theme.TextMuted().Render("inside .dhi/")
@@ -1457,14 +1511,18 @@ func (m *Model) configView(w, budget int) []string {
 	add(rowBranchTask, "conventions.branch.task", m.cfg.Conventions.Branch.Task)
 	add(rowCommitFormat, "conventions.commit.format", m.cfg.Conventions.Commit.Format)
 	add(rowCommitCoAuthor, "conventions.commit.co_author", co)
-	add(rowCopyright, "conventions.copyright.enabled", boolValue(m.cfg.Conventions.Copyright.Enabled))
+	add(rowCopyright, "conventions.copyright", copyrightValue(m.cfg.Conventions.Copyright))
+	add(rowLicense, "conventions.copyright.license", orMuted(m.cfg.Conventions.Copyright.License == "", "none", m.cfg.Conventions.Copyright.License))
+	add(rowMaxSubject, "conventions.commit.max_subject", itoa(m.cfg.Conventions.Commit.MaxSubject)+" characters")
 	head("agents & budgets")
+	add(rowEngine, "engine", orMuted(m.cfg.Engine == "", "none — pick a coding CLI", strings.TrimPrefix(m.cfg.Engine, "cli:")))
 	add(rowResume, "agents.resume", boolValue(m.cfg.Agents.Resume))
 	add(rowAutonomy, "agents.autonomy", autonomyValue(m.cfg.Agents.Autonomy))
 	add(rowMaxTurns, "agents.max_turns", orMuted(m.cfg.Agents.MaxTurns == 0, "CLI default", itoa(m.cfg.Agents.MaxTurns)))
 	add(rowMaxIter, "agents.max_iterations", itoa(m.cfg.Agents.MaxIterations))
 	add(rowStall, "agents.stall_seconds", orMuted(m.cfg.Agents.StallSeconds == 0, "off", stallText(m.cfg.Agents.StallSeconds)))
 	add(rowReflect, "agents.reflect", boolValue(m.cfg.Agents.Reflect))
+	add(rowReflectModel, "agents.reflect_model", orMuted(m.cfg.Agents.ReflectModel == "", "the employee's own model", m.cfg.Agents.ReflectModel))
 	add(rowTracePrompts, "agents.trace_prompts", boolValue(m.cfg.Agents.TracePrompts))
 	add(rowTaskUSD, "budgets.task_usd", orMuted(m.cfg.Budgets.TaskUSD == 0, "no limit", usd(m.cfg.Budgets.TaskUSD)))
 	add(rowTaskTokens, "budgets.task_tokens", orMuted(m.cfg.Budgets.TaskTokens == 0, "no limit", tokensText(m.cfg.Budgets.TaskTokens)))
@@ -1478,7 +1536,7 @@ func (m *Model) configView(w, budget int) []string {
 	add(rowMemPinned, "memory.pinned_max", orMuted(m.cfg.Memory.PinnedMax == 0, "no cap", itoa(m.cfg.Memory.PinnedMax)+" pinned"))
 	add(rowMemDecay, "memory.decay_days", itoa(m.cfg.Memory.DecayDays)+" days unused")
 	head("keys")
-	lines = append(lines, line{"  " + theme.TextDim().Render(leader("[keys]", settingNameW)) + m.keysValue(), -1})
+	add(rowKeys, "keys", m.keysValue())
 
 	top := 0
 	if budget > 0 && len(lines) > budget {
@@ -1540,8 +1598,7 @@ func tokensText(n int) string {
 	return itoa(n)
 }
 
-// boolValue renders a boolean setting as a colored mark plus the word
-// config.toml uses, so the screen and the file agree.
+// boolValue renders a boolean setting as a colored mark plus the word.
 func boolValue(b bool) string {
 	if b {
 		return theme.SuccessText().Render(theme.GlyphCheck + " true")
@@ -1558,11 +1615,10 @@ func leader(name string, w int) string {
 	return name + " " + theme.RuleText().Render(strings.Repeat("·", n)) + " "
 }
 
-// keysValue lists the [keys] remaps (F-058); they are edited in
-// config.toml, so the row is read-only.
+// keysValue lists the key remaps (F-058); enter edits them (F-084).
 func (m *Model) keysValue() string {
 	if len(m.cfg.Keys) == 0 {
-		return theme.Hint().Render(`none · add [keys] "ctrl+k" = "ctrl+p" to config.toml`)
+		return theme.Hint().Render(`none · enter to remap a key`)
 	}
 	pairs := make([]string, 0, len(m.cfg.Keys))
 	for k, v := range m.cfg.Keys {

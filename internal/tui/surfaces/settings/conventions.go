@@ -2,7 +2,6 @@ package settings
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -227,7 +226,11 @@ func (m *Model) patchConventionsAt(path string, next conventions.Config, set map
 		m.flash = "failed: " + err.Error()
 		return false
 	}
-	m.flash = ok + " → " + m.displayConvPath(path) + " (live)"
+	who := "just for you"
+	if m.d.WS != nil && path == m.conventionsFile() {
+		who = "shared with your team"
+	}
+	m.flash = ok + " — " + who + " (live)"
 	return true
 }
 
@@ -243,20 +246,6 @@ func flatKeys(c conventions.Config, withActive bool) map[string]any {
 		set["active"] = c.Active
 	}
 	return set
-}
-
-func (m *Model) displayConvPath(p string) string {
-	if m.d.WS != nil {
-		if rel, err := filepath.Rel(m.d.WS.Root, p); err == nil {
-			return rel
-		}
-	}
-	if home, err := os.UserHomeDir(); err == nil {
-		if rel, err := filepath.Rel(home, p); err == nil && !strings.HasPrefix(rel, "..") {
-			return "~/" + rel
-		}
-	}
-	return p
 }
 
 // conventionsView lists templates (active marked) over a live preview

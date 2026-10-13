@@ -493,11 +493,11 @@ func (s *conventionsStep) Apply() error {
 	}
 	s.env.Conventions = next
 	s.env.Changed = true
-	where := "your user config"
+	who := "just for you"
 	if s.env.Root != "" {
-		where = ".dhi/conventions.toml (shared with your team)"
+		who = "shared with your team"
 	}
-	s.env.Applied = append(s.env.Applied, "conventions saved to "+where)
+	s.env.Applied = append(s.env.Applied, "conventions saved — "+who)
 	return nil
 }
 
