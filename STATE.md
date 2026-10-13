@@ -35,8 +35,9 @@
 - M30 is COMPLETE in code on branch `m30` (not pushed, no PR). Open items:
   - live eval `DHI_EVAL=1 DHI_EVAL_TASK=fix-retry-hidden make eval` (spends tokens);
   - optional toolchains live-checked on darwin/arm64 only, and without the sandbox;
-  - the `T` take-it flow not driven in the real editor (worktree root named `slug (branch)`;
-    member-reload terminal cleanup may close a terminal opened in it);
+  - `T` take-it verified live (attach → editor root → edit → `:w` lands on the task branch). The
+    editor's worktree roots are not persisted: after a restart, `T` on the card reopens it. Not
+    checked: member-reload terminal cleanup with a terminal opened inside a taken worktree;
   - not done: channel-file segmentation, KB index cache, spend rotation, wizard templates.
 - Review fixes after M30: bus caches parsed channel files (`Bus.ReplyCount`), `Bus.Recent`
   recovers a thread root outside its window, co-author saves to the user conventions file,
