@@ -2,10 +2,14 @@ package runtime
 
 import (
 	"context"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
+	"github.com/drjzlyan/dhi/internal/gitcore"
 	"github.com/drjzlyan/dhi/internal/tasks"
 )
 
@@ -82,5 +86,71 @@ func TestContinueTurnPostsToTheAgent(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("no continuation post: %+v", h.bus.History("#general", 0))
+	}
+}
+
+// M32 review: work_branch carries only what changed during the turn. A
+// file you (or another agent) had already changed stays in the shared
+// checkout, and the agent is told so.
+func TestWorkBranchCarriesOnlyThisTurnsChanges(t *testing.T) {
+	gitBin, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("git not on PATH")
+	}
+	h := episodeHarness(t)
+	repo := h.ws.Members()[0].Path
+	g := func(dir string, args ...string) {
+		t.Helper()
+		if out, err := exec.Command(gitBin, append([]string{"-C", dir, "-c", "user.email=t@t", "-c", "user.name=t"}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v %s", args, err, out)
+		}
+	}
+	write := func(p, s string) {
+		if err := os.WriteFile(p, []byte(s), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(filepath.Join(repo, "a.go"), "package a\n")
+	write(filepath.Join(repo, "b.go"), "package a\n")
+	g(repo, "init", "-q", "-b", "main")
+	g(repo, "add", "a.go", "b.go")
+	g(repo, "commit", "-qm", "seed")
+	write(filepath.Join(repo, "b.go"), "package a // yours, half done\n") // dirty before the turn
+
+	h.rt.cfg.Git = gitcore.NewRunner(gitBin, os.Environ())
+	st, _ := tasks.Open(h.ws)
+	st.SetAttach(func(slug, member, branch, _ string) (string, error) {
+		rel := filepath.Join(".dhi", "tasks", slug, member)
+		g(repo, "worktree", "add", "-q", "-b", branch, filepath.Join(h.ws.Root, rel))
+		return rel, nil
+	}, nil)
+	h.rt.cfg.Tasks = st
+	h.rt.cfg.Provision = func(slug, member string) error { return st.Attach(slug, member, "task/"+slug, "") }
+	trig := mustPost(t, h, bus.Message{Channel: "dm:scout", Author: bus.Human, Text: "fix it"})
+	wb := h.rt.workBranchSeam("scout", trig, &relaunch{}) // the turn begins: b.go is already dirty
+
+	write(filepath.Join(repo, "a.go"), "package a // the agent's fix\n")
+	write(filepath.Join(repo, "c.go"), "package a // new\n")
+	out, err := wb(context.Background(), "fix", "Fix", "", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "b.go") {
+		t.Fatalf("not told about b.go: %q", out)
+	}
+	read := func(p string) string { b, _ := os.ReadFile(p); return string(b) }
+	if !strings.Contains(read(filepath.Join(repo, "b.go")), "yours") {
+		t.Fatal("your half-done b.go left the shared checkout")
+	}
+	if strings.Contains(read(filepath.Join(repo, "a.go")), "agent") {
+		t.Fatal("the agent's a.go edit stayed in the shared checkout")
+	}
+	card, _ := st.Get("fix")
+	wt := filepath.Join(h.ws.Root, card.ChangeSets[0].Path)
+	if !strings.Contains(read(filepath.Join(wt, "a.go")), "agent") || read(filepath.Join(wt, "c.go")) == "" {
+		t.Fatal("the agent's changes did not reach the worktree")
+	}
+	if strings.Contains(read(filepath.Join(wt, "b.go")), "yours") {
+		t.Fatal("your edit was carried into the agent's branch")
 	}
 }

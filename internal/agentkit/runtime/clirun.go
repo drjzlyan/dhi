@@ -405,7 +405,20 @@ func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Messag
 	relaunched := false
 	var dog *time.Timer
 	if in.stall > 0 {
-		dog = time.AfterFunc(in.stall, func() { stalled.Store(true); stopSpawn() })
+		var self atomic.Pointer[time.Timer]
+		// Silence while the agent waits on you (an approval, a secret)
+		// is not a stall: re-arm instead of killing the spawn (M32).
+		dog = time.AfterFunc(in.stall, func() {
+			if r.cfg.Approvals != nil && r.cfg.Approvals.PendingFor(e.m.ID) {
+				if t := self.Load(); t != nil {
+					t.Reset(in.stall)
+				}
+				return
+			}
+			stalled.Store(true)
+			stopSpawn()
+		})
+		self.Store(dog)
 	}
 	for ev := range e.cli.ParseStream(stdout) {
 		if dog != nil {

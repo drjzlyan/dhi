@@ -37,6 +37,13 @@
   `work_branch` auto + claude `MCP_TOOL_TIMEOUT` (WaitEnv) 1h, relaunch stops the spawn, carry
   excludes .dhi, `Run.Context` (last call) for resume, served tools finally get `cfg.Run`
   (pre-existing: `run` never worked for CLI agents), chat-pane notes.
+- Review fixes: carry moves only files dirtied this turn (pre-dirty stay, agent told); stall
+  watchdog re-arms while `Approvals.PendingFor(agent)`; `SaveChanged`/`DuplicateKeys` treat `scopes`
+  as one table (`replaceTables`).
+- Known gaps (not fixed): remote main is unprotected (push is not blocked — use GitHub branch
+  protection); a spawn stopped for relaunch has no session id, so the continuation starts fresh
+  (claude's system/init line carries session_id — capture it); Linux guards only existing ref
+  files (packed-refs main is unprotected); `.dhi/tmp/<agent>` is never cleaned.
 - M32 COMPLETE in code on `m32` (not pushed, no PR). Open: live skill suggestion + two-workspace
   global check; codex/opencode TempEnv/WaitEnv; Linux. One editor-package test failed once under
   `make verify` load and never again (5 reruns) — watch it.

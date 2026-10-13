@@ -198,6 +198,18 @@ func (a *Approvals) List() []*Approval {
 	return out
 }
 
+// PendingFor reports whether agent is waiting on any pending approval.
+func (a *Approvals) PendingFor(agent string) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	for _, ap := range a.pending {
+		if ap.Agent == agent {
+			return true
+		}
+	}
+	return false
+}
+
 // Get returns a pending approval by id.
 func (a *Approvals) Get(id int) (*Approval, bool) {
 	a.mu.Lock()

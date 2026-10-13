@@ -31,8 +31,10 @@ ran nothing and committed nothing. Two separate causes:
     already owns.
   - Binds the card to this thread and provisions the convention branch and
     worktree through the same `Provision` path task turns use.
-  - `carry` (on by default) stashes uncommitted changes in the member
-    checkout and pops them in the worktree.
+  - `carry` (on by default) moves only what changed during this turn:
+    files already dirty when the turn began (yours, or another agent's)
+    stay in the shared checkout, and the agent is told which. `.dhi/` is
+    never carried. `work_branch` needs no approval (M32 P7).
   - It then asks the turn to continue. When the spawn ends, DHI posts
     `@agent continue: …` in the thread, and the new turn runs in the
     worktree.
@@ -54,4 +56,5 @@ ran nothing and committed nothing. Two separate causes:
 - [x] work_branch: card + bound thread + worktree, relaunch requested, next workdir = worktree
 - [x] work_branch: another agent's slug refused; second call reports the existing worktree
 - [x] continuation post wakes the agent in the same thread
+- [x] carry leaves files dirty before the turn in the shared checkout (real git)
 - [ ] live: a DM "analyse and fix" runs Bash, calls work_branch, commits on task/<slug> (M32 P7)

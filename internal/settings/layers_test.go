@@ -62,3 +62,37 @@ func TestDuplicateKeysFindsCopiedValues(t *testing.T) {
 		t.Fatal("removed the wrong keys")
 	}
 }
+
+// scopes merges as a whole table: an edit of one scope for this
+// workspace must not drop the scopes you set for every workspace.
+func TestSaveChangedKeepsUserScopesForWholeTables(t *testing.T) {
+	dir := t.TempDir()
+	user, ws := filepath.Join(dir, "user.toml"), filepath.Join(dir, "ws.toml")
+	_ = os.WriteFile(user, []byte("schema = 1\n[scopes]\nnetwork = \"auto\"\n"), 0o644)
+	c, err := Load(user, ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := Snapshot(c)
+	c.Scopes["write"] = "auto"
+	if _, err := SaveChanged(ws, before, c); err != nil {
+		t.Fatal(err)
+	}
+	c2, err := Load(user, ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c2.Scopes["network"] != "auto" || c2.Scopes["write"] != "auto" {
+		t.Fatalf("scopes after reload = %v", c2.Scopes)
+	}
+}
+
+func TestDuplicateKeysTreatsScopesAsOneTable(t *testing.T) {
+	dir := t.TempDir()
+	user, ws := filepath.Join(dir, "user.toml"), filepath.Join(dir, "ws.toml")
+	_ = os.WriteFile(user, []byte("schema = 1\n[scopes]\nnetwork = \"auto\"\n"), 0o644)
+	_ = os.WriteFile(ws, []byte("schema = 1\n[scopes]\nnetwork = \"auto\"\nwrite = \"auto\"\n"), 0o644)
+	if dup, _ := DuplicateKeys(user, ws); len(dup) != 0 {
+		t.Fatalf("partial scopes copy reported: %v", dup)
+	}
+}

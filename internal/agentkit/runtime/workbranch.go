@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 
@@ -62,6 +63,12 @@ func (r *Runtime) workBranchSeam(agentID string, trigger bus.Message, rl *relaun
 	if r.cfg.Tasks == nil || r.cfg.Provision == nil {
 		return nil
 	}
+	// What was already dirty when the turn began is not the agent's to
+	// move: your own half-done edit, or another agent's (M32 review).
+	pre := map[string]map[string]bool{}
+	for _, m := range r.cfg.WS.Members() {
+		pre[m.Name] = r.dirtyPaths(context.Background(), m.Path)
+	}
 	return func(ctx context.Context, slug, title, member string, carry bool) (string, error) {
 		if cur, ok := r.boundTask(trigger); ok && len(cur.ChangeSets) > 0 {
 			return fmt.Sprintf("this thread already works in %s on branch %s (task %s)",
@@ -83,9 +90,9 @@ func (r *Runtime) workBranchSeam(agentID string, trigger bus.Message, rl *relaun
 		if err := r.cfg.Tasks.BindThread(slug, trigger.Channel, bus.ThreadOf(trigger)); err != nil {
 			return "", err
 		}
-		stashed := false
+		stashed, left := false, []string(nil)
 		if carry {
-			if stashed, err = r.stashChanges(ctx, member); err != nil {
+			if stashed, left, err = r.stashChanges(ctx, member, pre[member]); err != nil {
 				return "", fmt.Errorf("could not carry your changes: %w", err)
 			}
 		}
@@ -110,6 +117,10 @@ func (r *Runtime) workBranchSeam(agentID string, trigger bus.Message, rl *relaun
 			} else {
 				note = " Your uncommitted changes moved there."
 			}
+		}
+		if len(left) > 0 {
+			note += fmt.Sprintf(" %d file(s) were already changed before this turn and stay in the shared checkout (%s); if you edited them, redo those edits in the worktree.",
+				len(left), strings.Join(left, ", "))
 		}
 		why := fmt.Sprintf("task %s now works in %s on branch %s.%s", slug, cs.Path, cs.Branch, note)
 		rl.set(why)
@@ -148,28 +159,61 @@ func (r *Runtime) memberPath(name string) string {
 	return ""
 }
 
-// stashChanges stashes the member checkout's uncommitted work (tracked
-// and untracked), reporting whether anything was stashed.
-func (r *Runtime) stashChanges(ctx context.Context, member string) (bool, error) {
+// stashChanges stashes the files that became dirty during this turn
+// (tracked and untracked, never .dhi/) — not what was dirty before it
+// began (pre). It reports whether anything was stashed and the
+// pre-dirty files it left alone.
+func (r *Runtime) stashChanges(ctx context.Context, member string, pre map[string]bool) (bool, []string, error) {
 	if r.cfg.Git == nil {
-		return false, fmt.Errorf("git unavailable")
+		return false, nil, fmt.Errorf("git unavailable")
 	}
 	dir := r.memberPath(member)
-	out, _, err := r.cfg.Git.Run(ctx, dir, "status", "--porcelain", "--", ".", ":(exclude).dhi")
+	var carry, left []string
+	for p := range r.dirtyPaths(ctx, dir) {
+		if pre[p] {
+			left = append(left, p)
+		} else {
+			carry = append(carry, p)
+		}
+	}
+	sort.Strings(carry)
+	sort.Strings(left)
+	if len(carry) == 0 {
+		return false, left, nil
+	}
+	args := append([]string{"stash", "push", "--include-untracked", "-m", "dhi: work_branch carry", "--"}, carry...)
+	if _, _, err := r.cfg.Git.Run(ctx, dir, args...); err != nil {
+		return false, left, err
+	}
+	return true, left, nil
+}
+
+// dirtyPaths is the set of changed or untracked paths in dir, outside
+// .dhi/ (nil when git cannot say).
+func (r *Runtime) dirtyPaths(ctx context.Context, dir string) map[string]bool {
+	if r.cfg.Git == nil || dir == "" {
+		return nil
+	}
+	out, _, err := r.cfg.Git.Run(ctx, dir, "status", "--porcelain", "-z", "--untracked-files=all", "--", ".", ":(exclude).dhi")
 	if err != nil {
-		return false, err
+		return nil
 	}
-	if strings.TrimSpace(out) == "" {
-		return false, nil
+	set := map[string]bool{}
+	fields := strings.Split(out, "\x00")
+	for i := 0; i < len(fields); i++ {
+		f := fields[i]
+		if len(f) < 4 {
+			continue
+		}
+		set[f[3:]] = true
+		if f[0] == 'R' || f[0] == 'C' {
+			i++ // the rename's source path follows
+			if i < len(fields) && fields[i] != "" {
+				set[fields[i]] = true
+			}
+		}
 	}
-	// Never DHI's own dir: .dhi/ (its .gitignore, runtime state) stays
-	// with the workspace, not the agent's change (live: the gitignore
-	// moved into the worktree and runtime files showed up untracked).
-	if _, _, err := r.cfg.Git.Run(ctx, dir, "stash", "push", "--include-untracked", "-m", "dhi: work_branch carry",
-		"--", ".", ":(exclude).dhi"); err != nil {
-		return false, err
-	}
-	return true, nil
+	return set
 }
 
 func (r *Runtime) popChanges(ctx context.Context, dir string) error {

@@ -9,7 +9,10 @@ your own values into the workspace, where they froze: a later change to
 your config never reached it.
 
 ## Behaviour
-- **One key at a time** (`settings.Snapshot` / `SaveChanged`). A save
+- **One key at a time** (`settings.Snapshot` / `SaveChanged`). `scopes`
+  merges as a whole table, so a change to one scope writes the whole
+  effective table (otherwise yours would be dropped), and the repair
+  treats it as one unit. A save
   writes only the leaves that differ from the last saved snapshot,
   removed map entries included, to one layer file. Everything else in
   that file stays as it was.

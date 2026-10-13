@@ -41,6 +41,7 @@ func SaveChanged(path string, before map[string]any, after Config) ([]string, er
 	if len(set)+len(del) == 0 {
 		return nil, nil
 	}
+	set, del = wholeTables(set, del)
 	m, err := readLayer(path)
 	if err != nil {
 		return nil, err
@@ -64,6 +65,58 @@ func SaveChanged(path string, before map[string]any, after Config) ([]string, er
 	keys := append(set, del...)
 	sort.Strings(keys)
 	return keys, nil
+}
+
+// replaceTables are the tables a layer replaces as a whole when merged
+// (Load: scopes), not key by key: a change to one of their leaves must
+// write the whole effective table, or the layer would drop the rest.
+var replaceTables = []string{"scopes"}
+
+func isReplaceTable(k string) bool {
+	for _, t := range replaceTables {
+		if t == k {
+			return true
+		}
+	}
+	return false
+}
+
+// wholeTables turns leaf changes under a replace-whole table into one
+// write of that table.
+func wholeTables(set, del []string) ([]string, []string) {
+	var outSet, outDel []string
+	hit := map[string]bool{}
+	for _, list := range [][]string{set, del} {
+		for _, k := range list {
+			for _, t := range replaceTables {
+				if strings.HasPrefix(k, t+".") {
+					hit[t] = true
+				}
+			}
+		}
+	}
+	keep := func(k string) bool {
+		for t := range hit {
+			if strings.HasPrefix(k, t+".") {
+				return false
+			}
+		}
+		return true
+	}
+	for _, k := range set {
+		if keep(k) {
+			outSet = append(outSet, k)
+		}
+	}
+	for _, k := range del {
+		if keep(k) {
+			outDel = append(outDel, k)
+		}
+	}
+	for t := range hit {
+		outSet = append(outSet, t)
+	}
+	return outSet, outDel
 }
 
 // diffLeaves records the dotted leaves that differ: set for a new or
@@ -167,6 +220,13 @@ func sameLeaves(prefix string, u, w map[string]any, out *[]string) {
 		key := join(prefix, k)
 		uv, ok := u[k]
 		if !ok {
+			continue
+		}
+		if prefix == "" && isReplaceTable(k) {
+			// A whole-table override is a copy only if all of it is.
+			if reflect.DeepEqual(uv, wv) {
+				*out = append(*out, key)
+			}
 			continue
 		}
 		um, uIsMap := uv.(map[string]any)
