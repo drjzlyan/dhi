@@ -20,6 +20,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/clirun"
 	"github.com/drjzlyan/dhi/internal/agentkit/dhitools"
 	"github.com/drjzlyan/dhi/internal/agentkit/episode"
+	"github.com/drjzlyan/dhi/internal/agentkit/forge"
 	"github.com/drjzlyan/dhi/internal/agentkit/knowledge"
 	"github.com/drjzlyan/dhi/internal/agentkit/lessons"
 	"github.com/drjzlyan/dhi/internal/agentkit/library"
@@ -134,6 +135,9 @@ type Config struct {
 	// Tuning supplies max-turns, resume and budgets per turn; nil = the
 	// defaults (resume on, no caps).
 	Tuning func() Tuning
+	// Forge holds the tools agents built (F-069): tool_propose and every
+	// approved custom__<name> are served to all agents. nil = none.
+	Forge *forge.Store
 	// Lessons is what agents have learned (F-068): retrieved into prompts,
 	// grown by reflection and lesson_record. nil = no learning.
 	Lessons *lessons.Store

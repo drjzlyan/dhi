@@ -17,6 +17,7 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
+	"github.com/drjzlyan/dhi/internal/agentkit/forge"
 	"github.com/drjzlyan/dhi/internal/agentkit/lessons"
 	"github.com/drjzlyan/dhi/internal/agentkit/library"
 	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
@@ -45,6 +46,8 @@ type Model struct {
 	cursor   int   // CONFIG rows
 	cfgRowAt []int // CONFIG: visible line → setting row (-1 = header), for clicks
 	agentCur int   // AGENTS roster rows
+	// PROPOSALS (F-069/F-070): selected row.
+	propCur int
 	// BRAIN (F-068): lesson cursor, filter text, and whether / is typing.
 	brainCur    int
 	brainFilter string
@@ -92,6 +95,7 @@ const (
 	secConfig sectionID = iota
 	secAgents
 	secBrain
+	secProposals
 	secLibrary
 	secTeams
 	secPacks
@@ -110,6 +114,8 @@ func (s sectionID) label() string {
 		return "AGENTS"
 	case secBrain:
 		return "BRAIN"
+	case secProposals:
+		return "PROPOSALS"
 	case secLibrary:
 		return "LIBRARY"
 	case secTeams:
@@ -171,6 +177,9 @@ type Deps struct {
 	// RunScript executes a local skill's declared script (sandboxed,
 	// network denied). Nil disables the LIBRARY run action.
 	RunScript runner
+	// Forge holds agent-made tools (F-069): PROPOSALS approves, rejects
+	// and archives them. Nil shows only settings proposals.
+	Forge *forge.Store
 	// Lessons are what the crew has learned (F-068): the BRAIN section.
 	// Nil renders a named unavailable section.
 	Lessons *lessons.Store
@@ -295,6 +304,8 @@ func (m *Model) HandleKey(key string) bool {
 		return m.agentsKey(key)
 	case secBrain:
 		return m.brainKey(key)
+	case secProposals:
+		return m.proposalsKey(key)
 	case secLibrary:
 		return m.libraryKey(key)
 	case secTeams:
@@ -1159,6 +1170,8 @@ func (m *Model) sectionPane(w, h int) string {
 		content = m.agentsView()
 	case secBrain:
 		content = m.brainView(w - 4)
+	case secProposals:
+		content = m.proposalsView(w - 4)
 	case secLibrary:
 		content = strings.Split(m.libraryBody(w), "\n")
 	case secTeams:
@@ -1213,6 +1226,8 @@ func (m *Model) sectionHints() []string {
 		}
 	case secBrain:
 		sec = []string{"p pin", "x retire", "s share", "/ filter"}
+	case secProposals:
+		sec = []string{"v view", "y approve", "n reject", "x archive"}
 	case secTeams:
 		sec = []string{"n new", "e edit", "x delete"}
 	case secPacks:

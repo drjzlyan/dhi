@@ -1,6 +1,7 @@
   CONFIG        ╭─ › packs ──────────────────────────────────────────────────────────────╮
   AGENTS        │ (no packs installed — "i" to install from a path or git URL)           │
   BRAIN         │                                                                        │
+  PROPOSALS     │                                                                        │
   LIBRARY       │                                                                        │
   TEAMS         │                                                                        │
 ▌ PACKS         │                                                                        │
@@ -8,7 +9,6 @@
   WORKFLOWS     │                                                                        │
   AUTOPILOTS    │                                                                        │
   MARKETPLACE   │                                                                        │
-                │                                                                        │
                 │                                                                        │
                 │                                                                        │
                 │                                                                        │

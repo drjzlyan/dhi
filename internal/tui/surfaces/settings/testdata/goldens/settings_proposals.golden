@@ -1,0 +1,26 @@
+  CONFIG        ╭─ › proposals ────────────────────────────────────────────────────────────────────────────────────────╮
+  AGENTS        │ what agents asked you to approve · nothing they propose is active until you say y                    │
+  BRAIN         │                                                                                                      │
+▌ PROPOSALS     │  PENDING ─────────────────────────────────────────────────────────────────────────────────────────   │
+  LIBRARY       │ ▌ ◆ race_test         exec recipe · v1 · by dev · Run one package's tests with -race                 │
+  TEAMS         │                                                                                                      │
+  PACKS         │  FORGED TOOLS ────────────────────────────────────────────────────────────────────────────────────   │
+  STANDARDS     │   ✓ custom__check_all         exec v1 · 0 call(s) · Vet and race-test every package                  │
+  WORKFLOWS     │                                                                                                      │
+  AUTOPILOTS    │                                                                                                      │
+  MARKETPLACE   │                                                                                                      │
+                │                                                                                                      │
+                │                                                                                                      │
+                │                                                                                                      │
+                │                                                                                                      │
+                │                                                                                                      │
+                │                                                                                                      │
+                │                                                                                                      │
+                │                                                                                                      │
+                │                                                                                                      │
+                │                                                                                                      │
+                │                                                                                                      │
+                │                                                                                                      │
+                │                                                                                                      │
+                │ v view • y approve • n reject • x archive • [ ] sections • ctrl+s write                              │
+                ╰──────────────────────────────────────────────────────────────────────────────────────────────────────╯

@@ -1,6 +1,7 @@
   CONFIG        ╭─ › agents ─────────────────────────────────────────────────────────────╮
 ▌ AGENTS        │ ▌ scout       m-1           claude    2 tools                          │
   BRAIN         │   muse        archived                                                 │
+  PROPOSALS     │                                                                        │
   LIBRARY       │                                                                        │
   TEAMS         │                                                                        │
   PACKS         │                                                                        │
@@ -8,7 +9,6 @@
   WORKFLOWS     │                                                                        │
   AUTOPILOTS    │                                                                        │
   MARKETPLACE   │                                                                        │
-                │                                                                        │
                 │                                                                        │
                 │                                                                        │
                 │                                                                        │

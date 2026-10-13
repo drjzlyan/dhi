@@ -26,6 +26,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/clirun"
 	"github.com/drjzlyan/dhi/internal/agentkit/dhitools"
 	"github.com/drjzlyan/dhi/internal/agentkit/episode"
+	"github.com/drjzlyan/dhi/internal/agentkit/forge"
 	"github.com/drjzlyan/dhi/internal/agentkit/knowledge"
 	"github.com/drjzlyan/dhi/internal/agentkit/lessons"
 	"github.com/drjzlyan/dhi/internal/agentkit/library"
@@ -317,6 +318,7 @@ func runTUI() (relaunch bool) {
 			// F-068 BRAIN: what the crew learned; s shares a lesson to the KB
 			// under its review policy.
 			settingsDeps.Lessons = lessons.Open(ws.Root)
+			settingsDeps.Forge = forge.Open(ws.Root) // F-069 PROPOSALS
 			if kb, kerr := knowledge.Open(ws, knowledge.Review, rgSearcher); kerr == nil {
 				settingsDeps.ShareLesson = func(l lessons.Lesson) (string, error) {
 					author := l.Agent
@@ -1193,6 +1195,7 @@ func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cl
 		Spend:    budget.Open(ws.Root),
 		Tuning:   tune,
 		Lessons:  lessons.Open(ws.Root), // F-068: learned rules, retrieval + reflection
+		Forge:    forge.Open(ws.Root),   // F-069: agent-made tools, active once approved
 		// F-067: a task turn without a worktree gets one on the convention
 		// branch before the agent starts, so the work lands where DHI can
 		// verify it and open the PR.

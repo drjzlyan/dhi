@@ -1,6 +1,7 @@
   CONFIG        ╭─ › teams ──────────────────────────────────────────────────────────────╮
   AGENTS        │ ▌ platform        lead: scout       1 members                          │
   BRAIN         │                                                                        │
+  PROPOSALS     │                                                                        │
   LIBRARY       │                                                                        │
 ▌ TEAMS         │                                                                        │
   PACKS         │                                                                        │
@@ -8,7 +9,6 @@
   WORKFLOWS     │                                                                        │
   AUTOPILOTS    │                                                                        │
   MARKETPLACE   │                                                                        │
-                │                                                                        │
                 │                                                                        │
                 │                                                                        │
                 │                                                                        │

@@ -28,3 +28,4 @@ dhi-git-*.sha256
 # Python bytecode from scripts/, and per-agent run logs (runtime state).
 __pycache__/
 .dhi/agents/*/runs/
+.dhi/tools/usage.toml

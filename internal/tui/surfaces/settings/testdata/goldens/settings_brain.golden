@@ -1,14 +1,14 @@
   CONFIG        ╭─ › brain ────────────────────────────────────────────────────────────────────────────────────────────╮
   AGENTS        │ what your crew has learned · 4 lesson(s)  / to filter                                                │
 ▌ BRAIN         │                                                                                                      │
-  LIBRARY       │  YOUR PREFERENCES ────────────────────────────────────────────────────────────────────────────────   │
-  TEAMS         │ ▌ ● ▮▮▮▮▮ Keep pull requests small and focused                    ×0 · correction · 2d               │
-  PACKS         │                                                                                                      │
-  STANDARDS     │  DEV ─────────────────────────────────────────────────────────────────────────────────────────────   │
-  WORKFLOWS     │   ◆ ▮▮▮▮▯ Run go test with -race in this repo                     ×6 · reflection · 2d  standard?    │
-  AUTOPILOTS    │   ● ▮▮▮▯▯ Distribute the remainder one cent at a time             ×0 · reflection · 2d               │
-  MARKETPLACE   │   ✗ ▮▮▯▯▯ Use the legacy money package                            ×0 · agent · 2d                    │
-                │                                                                                                      │
+  PROPOSALS     │  YOUR PREFERENCES ────────────────────────────────────────────────────────────────────────────────   │
+  LIBRARY       │ ▌ ● ▮▮▮▮▮ Keep pull requests small and focused                    ×0 · correction · 2d               │
+  TEAMS         │                                                                                                      │
+  PACKS         │  DEV ─────────────────────────────────────────────────────────────────────────────────────────────   │
+  STANDARDS     │   ◆ ▮▮▮▮▯ Run go test with -race in this repo                     ×6 · reflection · 2d  standard?    │
+  WORKFLOWS     │   ● ▮▮▮▯▯ Distribute the remainder one cent at a time             ×0 · reflection · 2d               │
+  AUTOPILOTS    │   ✗ ▮▮▯▯▯ Use the legacy money package                            ×0 · agent · 2d                    │
+  MARKETPLACE   │                                                                                                      │
                 │                                                                                                      │
                 │                                                                                                      │
                 │                                                                                                      │

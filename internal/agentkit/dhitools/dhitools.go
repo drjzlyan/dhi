@@ -15,6 +15,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/drjzlyan/dhi/internal/agentkit/forge"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -110,6 +111,9 @@ type Deps struct {
 	// PlanUpdate stores the agent's published plan on its episode
 	// (F-067); nil omits plan_update.
 	PlanUpdate func([]PlanStep) error
+	// Forge holds agent-made tools (F-069): tool_propose plus every
+	// approved custom__<name>. nil = neither.
+	Forge *forge.Store
 	// LessonRecord stores a lesson the agent is sure of (F-068); scope is
 	// "private" or "user". nil omits lesson_record.
 	LessonRecord func(text, scope string, tags []string) (string, error)
@@ -125,6 +129,10 @@ type Deps struct {
 func (d Deps) envelopeCovers(name string, decoded any) bool {
 	if d.Envelope == "" {
 		return false
+	}
+	if strings.HasPrefix(name, forge.Prefix) {
+		// Forged tools run their steps in Workdir, like run.
+		return filepath.Clean(d.Workdir) == filepath.Clean(d.Envelope)
 	}
 	switch name {
 	case "run", "git_commit":
@@ -243,8 +251,16 @@ func (d Deps) Handler() mcp.Handler {
 	all = append(all, d.searchTools()...)
 	all = append(all, d.planTools()...)
 	all = append(all, d.lessonTools()...)
+	all = append(all, d.forgeTools()...)
 	for _, s := range harnessSlugs {
 		allow[s] = true
+	}
+	// Approved forged tools are workspace tools the human signed off:
+	// served to every agent, gated by their declared scope.
+	for _, t := range all {
+		if strings.HasPrefix(t.info.Name, forge.Prefix) || t.info.Name == "tool_propose" {
+			allow[t.info.Name] = true
+		}
 	}
 
 	var served []tool
@@ -293,6 +309,9 @@ func (h *handler) CallTool(ctx context.Context, name string, raw json.RawMessage
 			set = scopes.Default()
 		}
 		sc := scopes.ToolScope(name)
+		if csc, ok := h.deps.customScope(name); ok {
+			sc = csc // a forged tool runs at its declared scope (F-069)
+		}
 		eff := set.EffectFor(sc)
 		if eff == scopes.Ask && h.deps.envelopeCovers(name, decoded) {
 			eff = scopes.Auto

@@ -500,7 +500,7 @@ func (r *Runtime) serveToolsFor(e *entry, trigger bus.Message, tt turnTools) *se
 	if r.cfg.WS == nil || e.cli == nil || !e.cli.MCPWired() {
 		return nil
 	}
-	wantDHI, wantBridge := tt.plan != nil || tt.lesson != nil, false
+	wantDHI, wantBridge := tt.plan != nil || tt.lesson != nil || r.cfg.Forge != nil, false
 	for _, t := range e.m.Tools {
 		if dhitools.Serves(t) {
 			wantDHI = true
@@ -544,6 +544,7 @@ func (r *Runtime) serveToolsFor(e *entry, trigger bus.Message, tt turnTools) *se
 			PlanUpdate:   tt.plan,
 			MemberRoots:  tt.memberRoots,
 			LessonRecord: tt.lesson,
+			Forge:        r.cfg.Forge,
 		}.Handler()
 	}
 	// Third-party MCP servers (F-034 part C): dialed under the sandbox,
@@ -748,6 +749,7 @@ func (r *Runtime) cliPromptAt(ctx context.Context, e *entry, trigger bus.Message
 	}
 	system += r.lessonsBlock(e.m.ID, query, lim)
 	system += r.memoryBlock(e.m.ID, lim)
+	system += r.forgeHint(e.m.ID)
 	system += r.knowledgeBlock(ctx, trigger.Text, lim)
 	if level > 0 {
 		system += "\n\n(Context was compacted after the previous attempt overflowed: older history, journal and knowledge were trimmed.)"

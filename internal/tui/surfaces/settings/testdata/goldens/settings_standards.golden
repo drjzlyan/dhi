@@ -1,6 +1,7 @@
   CONFIG        ╭─ › standards ──────────────────────────────────────────────────────────╮
   AGENTS        │ ▌ workspace       1 rules                                              │
   BRAIN         │   scout           0 rules -                                            │
+  PROPOSALS     │                                                                        │
   LIBRARY       │                                                                        │
   TEAMS         │                                                                        │
   PACKS         │                                                                        │
@@ -8,7 +9,6 @@
   WORKFLOWS     │                                                                        │
   AUTOPILOTS    │                                                                        │
   MARKETPLACE   │                                                                        │
-                │                                                                        │
                 │                                                                        │
                 │                                                                        │
                 │                                                                        │
