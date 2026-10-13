@@ -270,9 +270,12 @@ func TestBoardFlows(t *testing.T) {
 		t.Fatalf("status = %v", tk.Status)
 	}
 
-	// Assign via modal.
+	// Assign via the picker (F-073): a typed name off the roster still
+	// assigns.
 	m.HandleKey("a")
-	typeInto(t, m, 0, "alice")
+	for _, k := range []string{"a", "l", "i", "c", "e"} {
+		m.HandleKey(k)
+	}
 	m.HandleKey("enter")
 	tk, _ = store.Get("fix-login")
 	if tk.Assignee != "alice" {

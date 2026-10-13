@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/agentkit/episode"
@@ -63,6 +64,7 @@ func (r *Runtime) WatchTasks(ctx context.Context) {
 	}
 	ch, cancel := r.cfg.Tasks.Subscribe()
 	defer cancel()
+	handed := map[string]time.Time{} // slug → newest agent reassignment handed off
 	for {
 		select {
 		case <-ctx.Done():
@@ -70,9 +72,32 @@ func (r *Runtime) WatchTasks(ctx context.Context) {
 		case c := <-ch:
 			if c.Kind == tasks.TaskUpdated {
 				r.ReleaseReady(ctx)
+				r.agentReassigned(ctx, c.Slug, handed)
 			}
 		}
 	}
+}
+
+// agentReassigned hands a card off when an agent moved it to another
+// agent with task_assign (F-073): the new owner is told and continues in
+// the card's worktree. The human's reassignments are handed off by the
+// board itself, so only agent actors count here.
+func (r *Runtime) agentReassigned(ctx context.Context, slug string, handed map[string]time.Time) {
+	t, ok := r.cfg.Tasks.Get(slug)
+	if !ok || len(t.Activity) == 0 {
+		return
+	}
+	a := t.Activity[len(t.Activity)-1]
+	if a.Kind != tasks.ActAssignee || a.To == "" || a.To != t.Assignee || !r.isAgent(a.Actor) ||
+		!r.isAgent(a.To) || !a.At.After(handed[slug]) {
+		return
+	}
+	handed[slug] = a.At
+	why := "reassigned by " + a.Actor
+	for _, cs := range t.ChangeSets {
+		why += fmt.Sprintf("; continue in worktree %s on branch %s", cs.Path, cs.Branch)
+	}
+	r.handoff(ctx, t, a.Actor, why)
 }
 
 // teamBlock tells a card's assignee about the decomposition around it:

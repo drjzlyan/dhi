@@ -124,12 +124,15 @@ func WithIdentity(fn gitcore.IdentityFunc) Option {
 
 // Model is the Editor surface.
 type Model struct {
-	version string
-	ws      *workspace.Workspace
-	members []memberRef
-	roots   []*node
-	rows    []treeRow
-	list    kit.List
+	// worktrees are task worktrees the human took (F-073), shown as extra
+	// tree roots after the members.
+	worktrees []memberRef
+	version   string
+	ws        *workspace.Workspace
+	members   []memberRef
+	roots     []*node
+	rows      []treeRow
+	list      kit.List
 	// treeGits caches each member's branch + changed paths for the
 	// file tree (F-064); nil means reload on the next render.
 	treeGits map[string]*treeGit
@@ -267,7 +270,7 @@ func New(version string, ws *workspace.Workspace, opts ...Option) *Model {
 		for _, mem := range ws.Members() {
 			m.members = append(m.members, memberRef{name: mem.Name, path: mem.Path})
 		}
-		m.roots = buildRoots(m.members)
+		m.roots = buildRoots(m.navRefs())
 		m.refreshRows()
 	}
 	for _, opt := range opts {
@@ -460,7 +463,7 @@ func (m *Model) reloadMembers() {
 		alivePath[mem.Path] = true
 		m.members = append(m.members, memberRef{name: mem.Name, path: mem.Path})
 	}
-	m.roots = buildRoots(m.members)
+	m.roots = buildRoots(m.navRefs())
 	m.refreshRows()
 	m.items = nil // fuzzy find reindexes lazily
 	// Close terminals pinned to removed member dirs.
@@ -1393,6 +1396,47 @@ func (m *Model) OpenPaths(paths ...string) int {
 		opened++
 	}
 	return opened
+}
+
+// navRefs is every nav-tree root: members, then taken task worktrees.
+func (m *Model) navRefs() []memberRef {
+	return append(append([]memberRef(nil), m.members...), m.worktrees...)
+}
+
+// OpenWorktree adds dir to the nav tree as its own root — a task
+// worktree the human just took (F-073) — expands it and puts the tree
+// cursor on it, so the next keys browse and edit the task's files.
+func (m *Model) OpenWorktree(label, dir string) bool {
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return false
+	}
+	if st, err := os.Stat(abs); err != nil || !st.IsDir() {
+		return false
+	}
+	known := false
+	for _, w := range m.worktrees {
+		known = known || w.path == abs
+	}
+	if !known {
+		m.worktrees = append(m.worktrees, memberRef{name: label, path: abs})
+	}
+	m.roots = buildRoots(m.navRefs())
+	for _, r := range m.roots {
+		if r.path == abs && !r.expanded {
+			r.toggle()
+		}
+	}
+	m.refreshRows()
+	for i, row := range m.rows {
+		if row.node.path == abs {
+			m.list.Cursor = i
+			break
+		}
+	}
+	m.items = nil // fuzzy find reindexes with the new root
+	m.bufFocus = false
+	return true
 }
 
 // FocusChat opens the chat sidebar focused (F-016 approval jump). False

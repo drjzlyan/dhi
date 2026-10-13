@@ -6,7 +6,12 @@
 - P1 DONE (F-072): Slack-like rail (no `dm:`), rail `/` filter + `ctrl+g` switcher, stream
   lines hidden from chat/unread/inbox, live status line, `bus.KindAlert`, teammate-voice prompt
   + reply sanitizer, `kit.RenderMarkdown` in workspace/editor/ideator chat.
+- P2 DONE (F-073): owner-first board cards, `enter` card page (all comments formatted), `a`
+  fuzzy assignee picker, `T` take-it (assign + worktree + active + editor root), reassign stops
+  the old agent's turn (`Runtime.CancelThread`) and hands off with the worktree; agent
+  `task_assign` hand-offs via `Runtime.agentReassigned`.
 - Gotchas:
+  - `formSubmit`: `f` points at `m.form`; read `f.orig` BEFORE `closeForm()`.
   - `bus.Conversational(m)` is the one filter for "what people see". Any new chat view must
     use it. `unread.AddressedToHuman` already does.
   - Alerts are `KindAlert`: never replayed to the agent, always attention. Don't post

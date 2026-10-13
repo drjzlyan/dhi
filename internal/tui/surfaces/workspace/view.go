@@ -165,6 +165,9 @@ func (m *Model) mainPane(w, h int) string {
 	}
 	pane := p.View()
 
+	if m.assign != nil {
+		return kit.Overlay(strings.Split(pane, "\n"), m.assign.pal.View(minInt(w-4, 64)), w, h)
+	}
 	if m.form.kind == fNone {
 		return pane
 	}
@@ -217,7 +220,14 @@ func (m *Model) sectionHints() []string {
 		if m.replay != nil {
 			return []string{"esc close", "j/k scroll", "g/G top/bottom"}
 		}
-		return []string{"h/l lane", "n new", "s/S status", "m move",
+		if m.assign != nil {
+			return []string{"type to filter", "enter assign", "esc cancel"}
+		}
+		if m.card != nil {
+			return []string{"esc back", "j/k scroll", "N comment", "a assign", "T take it",
+				"o thread", "r runs", "s/S status", "c commit", "p PR"}
+		}
+		return []string{"enter open", "a assign", "T take it", "h/l lane", "n new", "s/S status", "m move",
 			"/ filter", "L/P/E/D meta", "N comment", "space mark", "M bulk"}
 	case secChannels:
 		if m.pane == nil {
@@ -237,6 +247,9 @@ func (m *Model) sectionHints() []string {
 func (m *Model) activeSectionFor(w, h int) string {
 	if m.replay != nil {
 		return m.replayBody()
+	}
+	if m.sec == secBoard && m.card != nil && m.taskStore != nil {
+		return m.cardPageBody(w, maxInt(h, 6))
 	}
 	switch m.sec {
 	case secBoard:
@@ -326,7 +339,7 @@ func (m *Model) boardBody(w, h int) string {
 		if m.ws != nil {
 			root = m.ws.Root
 		}
-		detailLines = boardDetailLines(tk, wrapW, root)
+		detailLines = boardDetailLines(tk, wrapW, root, m.cardWorking(tk))
 		detailLines = append(detailLines, m.episodeLines(tk, wrapW)...)
 		detailLines = append(detailLines, boardNotesLines(tk, wrapW, detailW > 0, m.now)...)
 		if m.working != nil && tk.ThreadChannel != "" && m.working(tk.ThreadChannel, tk.ThreadID) {
@@ -425,34 +438,6 @@ func (m *Model) boardFilterLine() string {
 	return ""
 }
 
-// boardCard renders one lane row proportional to the lane budget
-// (F-026 P3): a mark/priority prefix, slug, ellipsized title, assignee
-// chip — no fixed pads.
-func boardCard(tk tasks.Task, laneW int, marked, working bool) string {
-	// Two lines per card (F-064): the title is what a person scans a lane
-	// for, so it gets the first line whole; the slug and assignee sit on
-	// a quiet meta line under it. "unassigned" is not printed — the
-	// detail pane says it.
-	title := tk.Title
-	if title == "" {
-		title = tk.Slug
-	}
-	prefix, prefixW := "", 0
-	if laneW >= 14 {
-		prefix, prefixW = boardMarkPrefix(tk.Priority, marked, working), 3
-	}
-	avail := laneW - prefixW - 1 // one cell of air before the next lane
-	top := prefix + kit.ClipEllipsis(title, maxInt(avail, 4))
-
-	meta := theme.TextMuted().Render(tk.Slug)
-	if tk.Assignee != "" {
-		who := lipgloss.NewStyle().Foreground(theme.AuthorColor(tk.Assignee)).Render("@" + tk.Assignee)
-		meta += theme.TextMuted().Render(" · ") + who
-	}
-	bottom := strings.Repeat(" ", prefixW) + kit.ClipEllipsis(meta, maxInt(avail, 4))
-	return top + "\n" + bottom
-}
-
 // boardMarkPrefix is the 3-cell mark+priority indicator.
 func boardMarkPrefix(p tasks.Priority, marked, working bool) string {
 	mark := " "
@@ -490,11 +475,7 @@ func clampInt(v, lo, hi int) int {
 // boardDetailLines is the JIRA-issue fact block for the selected card;
 // wrapW word-wraps the title (F-026 P3 — long titles wrapped, never
 // silently clipped at the pane edge).
-func boardDetailLines(tk tasks.Task, wrapW int, wsRoot string) []string {
-	who := tk.Assignee
-	if who == "" {
-		who = "unassigned"
-	}
+func boardDetailLines(tk tasks.Task, wrapW int, wsRoot string, working bool) []string {
 	lines := []string{
 		theme.Brand().Render(tk.Slug) + "  " + theme.Chip().Render(string(tk.Status)),
 	}
@@ -502,8 +483,11 @@ func boardDetailLines(tk tasks.Task, wrapW int, wsRoot string) []string {
 	if tk.Title == "" {
 		lines = append(lines, "-")
 	}
-	lines = append(lines,
-		theme.TextDim().Render("assignee "+who+" · team "+orDash(tk.Team)))
+	owner := assigneeChip(tk.Assignee, working)
+	if tk.Team != "" {
+		owner += theme.TextDim().Render(" · team " + tk.Team)
+	}
+	lines = append(lines, owner)
 	if meta := boardMetaLine(tk); meta != "" {
 		lines = append(lines, theme.TextDim().Render(meta))
 	}
@@ -561,11 +545,9 @@ func boardNotesLines(tk tasks.Task, wrapW int, wide bool, now func() time.Time) 
 			from = 0
 		}
 		for _, c := range tk.Comments[from:] {
-			out = append(out, theme.AccentText().Render(c.Author)+" "+theme.Hint().Render(timeAgo(c.At, now())))
-			for _, l := range kit.WrapWords(c.Text, w-2) {
-				out = append(out, "  "+l)
-			}
+			out = append(out, commentLines(c, w, now())...)
 		}
+		out = append(out, theme.Hint().Render("  enter open the card"))
 	}
 	if n := len(tk.Activity); n > 0 {
 		out = append(out, "", theme.TextDim().Render("ACTIVITY"))

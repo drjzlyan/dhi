@@ -665,6 +665,23 @@ func (a *App) OpenInEditor(paths []string) bool {
 	return false
 }
 
+// OpenWorktreeInEditor shows a task worktree as an editor tree root and
+// switches to the editor (F-073 take-it flow).
+func (a *App) OpenWorktreeInEditor(label, dir string) bool {
+	for i, s := range a.surfaces {
+		if s.Meta().ID != "editor" {
+			continue
+		}
+		op, ok := s.(interface{ OpenWorktree(label, dir string) bool })
+		if !ok || !op.OpenWorktree(label, dir) {
+			return false
+		}
+		a.selectSurface(i)
+		return true
+	}
+	return false
+}
+
 // applyInEditor routes an agent edit to the editor surface (ADR-0023);
 // "" means success, else a named error.
 func (a *App) applyInEditor(abs, old, new string, all bool) string {

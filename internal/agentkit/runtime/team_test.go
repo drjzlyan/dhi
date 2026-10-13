@@ -223,3 +223,32 @@ func TestTrackingCardNotProvisioned(t *testing.T) {
 		t.Fatal("a tracking card must not get a worktree")
 	}
 }
+
+// F-073: an agent moving a card to another agent hands it off, naming
+// the worktree; the human's own reassignments are the board's to hand off.
+func TestAgentReassignHandsOff(t *testing.T) {
+	h, st := teamHarness(t)
+	if err := st.Create("csv", "CSV export", "scout", ""); err != nil {
+		t.Fatal(err)
+	}
+	handed := map[string]time.Time{}
+	if err := st.AssignAs("csv", "dev", bus.Human); err != nil {
+		t.Fatal(err)
+	}
+	h.rt.agentReassigned(context.Background(), "csv", handed)
+	if n := len(h.bus.History("dm:dev", 0)); n != 0 {
+		t.Fatalf("human reassignment handed off by the runtime too (%d posts)", n)
+	}
+	if err := st.AssignAs("csv", "rev", "dev"); err != nil {
+		t.Fatal(err)
+	}
+	h.rt.agentReassigned(context.Background(), "csv", handed)
+	h.rt.agentReassigned(context.Background(), "csv", handed) // a repeat change event is not a second hand-off
+	posts := h.bus.History("dm:rev", 0)
+	if len(posts) != 1 || !strings.Contains(posts[0].Text, "reassigned by dev") || posts[0].Author != "dev" {
+		t.Fatalf("hand-off posts = %+v", posts)
+	}
+	if tk, _ := st.Get("csv"); tk.ThreadChannel != "dm:rev" {
+		t.Fatalf("card not bound to the brief: %+v", tk.ThreadChannel)
+	}
+}

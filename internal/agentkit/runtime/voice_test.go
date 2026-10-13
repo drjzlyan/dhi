@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -60,5 +61,21 @@ func TestPresenceIsNilSafe(t *testing.T) {
 	var r *Runtime // no crew installed: the app still wires the method values
 	if r.AgentWorking("x") || r.Working("#general", 0) || r.ActiveCount() != 0 {
 		t.Fatal("nil runtime reported work")
+	}
+}
+
+func TestCancelThreadStopsRegisteredTurns(t *testing.T) {
+	r := &Runtime{}
+	ctx, release := r.cancellable(context.Background(), workKey("#general", 7))
+	defer release()
+	if n := r.CancelThread("#general", 8); n != 0 {
+		t.Fatalf("other thread cancelled %d turns", n)
+	}
+	if n := r.CancelThread("#general", 7); n != 1 || ctx.Err() == nil {
+		t.Fatalf("cancelled=%d err=%v", n, ctx.Err())
+	}
+	release()
+	if n := r.CancelThread("#general", 7); n != 0 {
+		t.Fatal("released turn still registered")
 	}
 }

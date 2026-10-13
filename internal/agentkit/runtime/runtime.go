@@ -167,8 +167,10 @@ type Runtime struct {
 
 	// work tracks in-flight turns per thread so the board can show a
 	// live "working" indicator (F-035 Part D). Key: channel + "#" + root.
-	workMu sync.Mutex
-	work   map[string]int
+	workMu  sync.Mutex
+	work    map[string]int
+	cancels map[string]map[int]context.CancelFunc // workKey → in-flight turns (F-073)
+	nextCxl int
 
 	// hops counts agent-authored dispatches per channel since the last
 	// human message (F-036 hop budget).
@@ -193,6 +195,50 @@ func (r *Runtime) Working(channel string, thread int64) bool {
 	r.workMu.Lock()
 	defer r.workMu.Unlock()
 	return r.work[workKey(channel, thread)] > 0
+}
+
+// cancellable registers the turn under its thread so CancelThread can
+// stop it (a card reassigned away from a busy agent — F-073).
+func (r *Runtime) cancellable(ctx context.Context, key string) (context.Context, func()) {
+	ctx, cancel := context.WithCancel(ctx)
+	r.workMu.Lock()
+	if r.cancels == nil {
+		r.cancels = map[string]map[int]context.CancelFunc{}
+	}
+	if r.cancels[key] == nil {
+		r.cancels[key] = map[int]context.CancelFunc{}
+	}
+	id := r.nextCxl
+	r.nextCxl++
+	r.cancels[key][id] = cancel
+	r.workMu.Unlock()
+	return ctx, func() {
+		r.workMu.Lock()
+		delete(r.cancels[key], id)
+		if len(r.cancels[key]) == 0 {
+			delete(r.cancels, key)
+		}
+		r.workMu.Unlock()
+		cancel()
+	}
+}
+
+// CancelThread stops every turn in flight on the thread (the spawned
+// CLI is killed through its context) and reports how many it stopped.
+func (r *Runtime) CancelThread(channel string, thread int64) int {
+	if r == nil {
+		return 0
+	}
+	r.workMu.Lock()
+	var fns []context.CancelFunc
+	for _, c := range r.cancels[workKey(channel, thread)] {
+		fns = append(fns, c)
+	}
+	r.workMu.Unlock()
+	for _, c := range fns {
+		c()
+	}
+	return len(fns)
 }
 
 // agentKey is the work-map key for an agent's own presence.
@@ -686,6 +732,8 @@ func (r *Runtime) Turn(ctx context.Context, agentID string, trigger bus.Message)
 	key := workKey(trigger.Channel, bus.ThreadOf(trigger))
 	r.workStart(key)
 	defer r.workDone(key)
+	ctx, release := r.cancellable(ctx, key)
+	defer release()
 	r.workStart(agentKey(agentID))
 	defer r.workDone(agentKey(agentID))
 

@@ -382,7 +382,20 @@ func runTUI() (relaunch bool) {
 			},
 			Working:      agentRT.Working,
 			AgentWorking: agentRT.AgentWorking,
-			Sessions:     sessionStore,
+			BranchFor: func(slug string) string {
+				b, err := conventions.ExpandBranch(convLive.Get().Branch.Task, branchVars(slug))
+				if err != nil {
+					return ""
+				}
+				return b
+			},
+			OpenWorktree: func(label, dir string) bool {
+				if appRef == nil {
+					return false
+				}
+				return appRef.OpenWorktreeInEditor(label, dir)
+			},
+			Sessions: sessionStore,
 			OpenIdeator: func(id int) bool {
 				if appRef == nil {
 					return false

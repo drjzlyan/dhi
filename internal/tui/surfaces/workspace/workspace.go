@@ -124,12 +124,19 @@ type Model struct {
 	openEditor   func(paths []string) bool               // editor open-in-editor (repos `e`, F-026 P3)
 	working      func(channel string, thread int64) bool // live turn indicator (F-035 Part D)
 	agentWorking func(id string) bool                    // agent presence (F-072/F-073)
-	episodes     *episode.Store                          // assignee plan / verify / spend (F-067)
-	sessions     *ideation.Store                         // pending proposals → inbox (F-033)
-	openIdeator  func(proposalID int) bool               // ideator jump (F-033 inbox)
-	inboxHint    string                                  // last jump degrade hint (visible, never silent)
-	snoozeTarget inbox.Item                              // item parked by the fSnooze form
-	snoozeChain  bool                                    // expiry tick chain in flight (F-017)
+	card         *cardPage                               // open card page (F-073)
+	assign       *assignPicker                           // assignee picker (F-073)
+	branchForFn  func(slug string) string                // conventional task branch (F-073/F-075)
+	openWorktree func(label, dir string) bool            // editor: worktree as a tree root (F-073)
+	// takeAfterAttach is the card whose attach form came from T: once
+	// attached, its worktree opens in the editor.
+	takeAfterAttach string
+	episodes        *episode.Store            // assignee plan / verify / spend (F-067)
+	sessions        *ideation.Store           // pending proposals → inbox (F-033)
+	openIdeator     func(proposalID int) bool // ideator jump (F-033 inbox)
+	inboxHint       string                    // last jump degrade hint (visible, never silent)
+	snoozeTarget    inbox.Item                // item parked by the fSnooze form
+	snoozeChain     bool                      // expiry tick chain in flight (F-017)
 
 	chromeSeen string    // last chrome flash content (toast dedupe, F-026 P7)
 	chromeAt   time.Time // when that content first appeared
@@ -188,6 +195,12 @@ type Deps struct {
 	// AgentWorking reports whether an agent has any turn in flight: the
 	// rail's presence dot and the board's "working" chip (F-072/F-073).
 	AgentWorking func(id string) bool
+	// BranchFor expands the conventions' task-branch template for a card
+	// (F-073); nil falls back to task/<slug>.
+	BranchFor func(slug string) string
+	// OpenWorktree shows a task worktree as an editor tree root and
+	// switches to the editor (F-073 take-it flow).
+	OpenWorktree func(label, dir string) bool
 	// Sessions is the ideation store: pending agent proposals surface in
 	// the inbox (F-033). nil = no proposal rows.
 	Sessions *ideation.Store
@@ -239,6 +252,8 @@ func New(version string, ws *workspace.Workspace, d Deps) *Model {
 		m.openEditor = d.OpenEditor
 		m.working = d.Working
 		m.agentWorking = d.AgentWorking
+		m.branchForFn = d.BranchFor
+		m.openWorktree = d.OpenWorktree
 		m.episodes = d.Episodes
 		m.sessions = d.Sessions
 		m.openIdeator = d.OpenIdeator
@@ -684,6 +699,12 @@ func (m *Model) sectionKey(key string) bool {
 	case secInbox:
 		return m.inboxKey(key)
 	case secBoard:
+		if m.assign != nil {
+			return m.assignPickerKey(key)
+		}
+		if m.card != nil {
+			return m.cardPageKey(key)
+		}
 		return m.boardKey(key)
 	case secChannels:
 		return m.pane != nil && m.pane.handleKey(key)
@@ -893,11 +914,15 @@ func (m *Model) boardKey(key string) bool {
 				toggleFieldAt("lane ", statusLabels(), statusIndex(tk.Status)))
 		}
 	case "a":
-		m.form = openForm(fTaskAssign, tk.Slug, textField("assignee ", tk.Assignee))
+		m.openAssignPicker(tk)
+	case "T":
+		m.takeCard(tk)
+	case "enter":
+		m.openCardPage(tk)
 	case "w":
 		m.form = openForm(fTaskAttach, tk.Slug,
 			textField("member ", ""),
-			textField("branch ", "task/"+tk.Slug))
+			textField("branch ", m.branchFor(tk.Slug)))
 	case "t":
 		m.form = openForm(fTaskThread, tk.Slug,
 			textField("channel ", tk.ThreadChannel),
@@ -1270,7 +1295,12 @@ func (m *Model) submitForm() {
 				return
 			}
 		}
+		slug := f.orig // closeForm resets the form f points at
 		m.closeForm()
+		if m.takeAfterAttach == slug {
+			m.takeAfterAttach = ""
+			m.openTakenWorktree(slug)
+		}
 	case fTaskThread:
 		if m.taskStore == nil {
 			f.err = "task store unavailable"
@@ -1509,18 +1539,29 @@ func isCloneSource(loc string) bool {
 // thread when the card has one, else the team channel (a bare post
 // reaches the team lead), else the assignee's DM. A card with neither
 // an assignee nor a team has no one to hand to and posts nothing.
-func (m *Model) handoff(tk tasks.Task) {
+func (m *Model) handoff(tk tasks.Task) { m.handoffFrom(tk, "") }
+
+// handoffFrom is handoff for a card that changed hands: the brief names
+// the previous owner and the worktree the work lives in (F-073).
+func (m *Model) handoffFrom(tk tasks.Task, prev string) {
 	if m.bus == nil || tk.Assignee == bus.Human || (tk.Assignee == "" && tk.Team == "") {
 		return
 	}
 	ch, thread := "dm:"+tk.Assignee, int64(0)
+	// A thread in someone else's DM would route the brief to them: a
+	// card that changed hands starts over in the new owner's DM (F-073).
+	ownThread := tk.ThreadChannel != "" &&
+		(!bus.IsDM(tk.ThreadChannel) || tk.ThreadChannel == "dm:"+tk.Assignee)
 	switch {
-	case tk.ThreadChannel != "":
+	case ownThread:
 		ch, thread = tk.ThreadChannel, tk.ThreadID
-	case tk.Team != "":
-		ch = "#" + tk.Team
+	case tk.Team != "" && (tk.ThreadChannel == "" || tk.Assignee == ""):
+		ch = "#" + tk.Team // a bare team post reaches the team lead
 	}
 	text := fmt.Sprintf("task %s: %s", tk.Slug, tk.Title)
+	if brief := continuationBrief(tk, prev); brief != "" {
+		text += "." + brief
+	}
 	if tk.Assignee != "" && !strings.HasPrefix(ch, "dm:") {
 		text = "@" + tk.Assignee + " " + text
 	}
@@ -1533,7 +1574,7 @@ func (m *Model) handoff(tk tasks.Task) {
 	// card-bound — the card context, run records, worktree and verify
 	// loop all hang off that binding. Unbound, an assigned card ran as a
 	// plain chat turn.
-	if tk.ThreadChannel == "" && m.taskStore != nil {
+	if !ownThread && m.taskStore != nil {
 		if err := m.taskStore.BindThread(tk.Slug, posted.Channel, posted.ID); err != nil {
 			m.flashErr("hand-off: could not bind the card to its thread: " + err.Error())
 		}

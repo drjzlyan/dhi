@@ -1040,7 +1040,7 @@ better every week, a self-running team, lowest cost per outcome. Measured by eva
 Plan: `~/.claude/plans/transient-baking-sun.md`. One spec + commit per phase on branch `m30`.
 
 - [x] P1 Chat like Slack: grouped rail without `dm:`, name search + switcher, messages only, live status line, alerts, markdown (F-072)
-- [ ] P2 Board cards, comments, assignment picker, take-it-yourself, reassign to any agent (F-073)
+- [x] P2 Board cards, comments, assignment picker, take-it-yourself, reassign to any agent (F-073)
 - [ ] P3 Task traces: timestamped transcripts, merged timeline view, export (F-074)
 - [ ] P4 Naming templates: branch / worktree / commit / PR, user templates in Settings (F-075)
 - [ ] P5 Verify every top language + managed Rust/JDK/.NET toolchains (F-076, ADR-0036)

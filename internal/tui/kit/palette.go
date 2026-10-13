@@ -29,9 +29,13 @@ func (it PaletteItem) text() string {
 // to behavior — so the same primitive serves the shell and any surface.
 type Palette struct {
 	Items []PaletteItem
-	query []rune
-	cur   int
-	rank  []int // indexes into Items, best first
+	// Title and Noun name the box and its footer count ("command
+	// palette", "commands" when empty) so a surface can reuse it as a
+	// picker.
+	Title, Noun string
+	query       []rune
+	cur         int
+	rank        []int // indexes into Items, best first
 }
 
 // paletteRows is how many matches show at once.
@@ -115,7 +119,11 @@ func (p *Palette) View(width int) string {
 	inner := width - 4
 	lines := []string{theme.Brand().Render("› " + string(p.query) + "▌"), ""}
 	if len(p.rank) == 0 {
-		lines = append(lines, theme.TextDim().Render("  no matching command"))
+		empty := "  no matching command"
+		if p.Noun != "" {
+			empty = "  no match"
+		}
+		lines = append(lines, theme.TextDim().Render(empty))
 	}
 	start := 0
 	if p.cur >= paletteRows {
@@ -136,8 +144,12 @@ func (p *Palette) View(width int) string {
 		}
 		lines = append(lines, row)
 	}
-	lines = append(lines, "", theme.Hint().Render(fmt.Sprintf("%d commands · enter run · ↑/↓ move · esc close", len(p.rank))))
-	m := Modal{Title: "command palette", Lines: lines, Width: width}
+	title, noun, verb := p.Title, p.Noun, "pick"
+	if title == "" {
+		title, noun, verb = "command palette", "commands", "run"
+	}
+	lines = append(lines, "", theme.Hint().Render(fmt.Sprintf("%d %s · enter %s · ↑/↓ move · esc close", len(p.rank), noun, verb)))
+	m := Modal{Title: title, Lines: lines, Width: width}
 	return m.View()
 }
 
