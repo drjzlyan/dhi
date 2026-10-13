@@ -41,6 +41,16 @@ type Task struct {
 	Followups    []string `toml:"followups"`
 	BudgetTokens int      `toml:"budget_tokens"` // 0 = no budget
 	Expect       []Expect `toml:"expect"`
+	// Verify is the DHI arm's verify command for the member (F-077,
+	// through the F-076 workspace override): a fixture can check more
+	// than the agent is shown, so the first fix fails verification and
+	// the retry loop has to work. Empty = DHI detects it.
+	Verify []string `toml:"verify"`
+	// MaxIterations caps DHI's verify rounds (0 = the default 3).
+	MaxIterations int `toml:"max_iterations"`
+	// ExpectRounds is the verify rounds the fixture is built to need;
+	// reported against the actual rounds, never scored.
+	ExpectRounds int `toml:"expect_verify_rounds"`
 
 	dir string // fixture directory (holds seed/)
 }
@@ -218,6 +228,11 @@ type Result struct {
 	WallMs     int64   `json:"wall_ms"`
 
 	OverBudget bool `json:"over_budget,omitempty"`
+
+	// DHI's goal loop (F-077): verify rounds run and the last verdict
+	// (pass / fail / stuck / env / "" = no verify).
+	VerifyRounds int    `json:"verify_rounds,omitempty"`
+	Verify       string `json:"verify,omitempty"`
 }
 
 // promptTokens is the whole prompt: fresh input plus cache reads and
@@ -261,6 +276,7 @@ type ArmSummary struct {
 	CacheShare         int // percent of the whole prompt served from cache
 	CostUSD            float64
 	Attempts, Asks     int
+	VerifyRounds       int
 	MeanWallMs         int64
 	tokens, in, cached int // in = whole prompt tokens
 }
@@ -277,6 +293,7 @@ func Summarize(results []Result) []ArmSummary {
 		s.Runs++
 		s.Attempts += r.Attempts
 		s.Asks += r.Asks
+		s.VerifyRounds += r.VerifyRounds
 		s.CostUSD += r.CostUSD
 		s.MeanWallMs += r.WallMs
 		if r.TokensIn >= 0 {
@@ -308,11 +325,11 @@ func Summarize(results []Result) []ArmSummary {
 // Table renders summaries as aligned text for `make eval` output.
 func Table(sums []ArmSummary) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "%-4s %7s %12s %7s %9s %8s %5s %8s\n", "arm", "success", "tokens/ok", "cached", "cost", "attempts", "asks", "wall")
+	fmt.Fprintf(&b, "%-4s %7s %12s %7s %9s %8s %5s %6s %8s\n", "arm", "success", "tokens/ok", "cached", "cost", "attempts", "asks", "rounds", "wall")
 	for _, s := range sums {
-		fmt.Fprintf(&b, "%-4s %3d/%-3d %12d %6d%% %9s %8d %5d %7.1fs\n",
+		fmt.Fprintf(&b, "%-4s %3d/%-3d %12d %6d%% %9s %8d %5d %6d %7.1fs\n",
 			s.Arm, s.OK, s.Runs, s.TokensPerOK, s.CacheShare, fmt.Sprintf("$%.4f", s.CostUSD),
-			s.Attempts, s.Asks, float64(s.MeanWallMs)/1e3)
+			s.Attempts, s.Asks, s.VerifyRounds, float64(s.MeanWallMs)/1e3)
 	}
 	return b.String()
 }

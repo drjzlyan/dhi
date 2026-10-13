@@ -71,8 +71,9 @@ func TestLive(t *testing.T) {
 				if os.Getenv("DHI_EVAL_KEEP") == "1" {
 					t.Logf("kept %s run: %s", r.Arm, dir)
 				}
-				t.Logf("%-14s %-3s ok=%-5v tokens=%d+%d cached=%d written=%d cost=$%.4f attempts=%d asks=%d %s %v",
-					r.Task, r.Arm, r.OK, r.TokensIn, r.TokensOut, r.CacheRead, r.CacheWrite, r.CostUSD, r.Attempts, r.Asks, r.Err, r.Unmet)
+				t.Logf("%-16s %-3s ok=%-5v tokens=%d+%d cached=%d written=%d cost=$%.4f attempts=%d asks=%d rounds=%d/%d %s %s %v",
+					r.Task, r.Arm, r.OK, r.TokensIn, r.TokensOut, r.CacheRead, r.CacheWrite, r.CostUSD, r.Attempts, r.Asks,
+					r.VerifyRounds, task.ExpectRounds, r.Verify, r.Err, r.Unmet)
 				results = append(results, r)
 			}
 		}

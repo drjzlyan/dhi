@@ -1,0 +1,12 @@
+name = "multi-bug"
+prompt = """Users report that app/text.Truncate mangles accented names like "Zoë Ångström". Fix it — and make sure the whole package's tests pass. Do not change the tests."""
+budget_tokens = 600000
+# Three independent bugs (unicode truncation, rounding, overflow); the
+# prompt names one symptom.
+
+[[expect]]
+file = "app/text_test.go"
+contains = "Zoë Å…"
+
+[[expect]]
+run = ["go", "test", "./..."]

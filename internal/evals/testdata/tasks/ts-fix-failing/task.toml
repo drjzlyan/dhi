@@ -1,0 +1,12 @@
+name = "ts-fix-failing"
+prompt = """The TypeScript tests in app/ fail. Find the bug in app/src/slug.ts and fix it. Do not change the tests."""
+budget_tokens = 400000
+# F-076: DHI detects package.json's test script (node's test runner with
+# native type stripping, no dependencies) and verifies with npm test.
+
+[[expect]]
+file = "app/src/slug.test.ts"
+contains = "slugify('  Hello,   World!  ')"
+
+[[expect]]
+run = ["npm", "test"]

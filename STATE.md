@@ -25,6 +25,9 @@
   sha512 pins, Rust component merge, `tools/<name>/current` + `ToolEnv`, `Config.Toolchain` seam
   → `ensureTools` asks via approvals then installs. Live-verified on darwin/arm64 only
   (`DHI_SMOKE_OPTIONAL=1`); the other three platforms are pinned but not run.
+- P6 DONE in code (F-077): `Result.VerifyRounds/Verify`, fixture `verify`/`max_iterations`/
+  `expect_verify_rounds`, fixtures fix-retry-hidden, multi-bug, py-fix-failing, ts-fix-failing.
+  NOT RUN LIVE (tokens): `DHI_EVAL=1 DHI_EVAL_TASK=fix-retry-hidden make eval`.
 - Gotchas:
   - Go verify has no prepare on purpose (the module cache is shared); don't add `go mod download`
     or every Go task asks for network.

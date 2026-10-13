@@ -1,0 +1,17 @@
+name = "fix-retry-hidden"
+prompt = """In app/, refunds are being added to the ledger total instead of subtracted (see app/ledger). Fix ledger.Total. Do not change the tests."""
+budget_tokens = 600000
+# DHI verifies with the report package's build-tagged checks too, which
+# also catch an accumulation overflow the prompt does not mention: a fix
+# for the named symptom alone fails verification once, and the retry
+# loop has to finish the job.
+verify = ["go", "test", "-tags", "verify", "./..."]
+max_iterations = 3
+expect_verify_rounds = 2
+
+[[expect]]
+file = "app/ledger/ledger_test.go"
+contains = "{Kind: Refund, Cents: 200}"
+
+[[expect]]
+run = ["go", "test", "-tags", "verify", "./..."]

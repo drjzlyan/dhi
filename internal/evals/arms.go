@@ -192,6 +192,9 @@ func RunDHI(c Config, t Task, root string) Result {
 	if err := workspace.Create(root, Member); err != nil {
 		return fail("workspace", err)
 	}
+	if err := setMemberVerify(root, t.Verify); err != nil {
+		return fail("workspace", err)
+	}
 	ws, err := workspace.Load(root)
 	if err != nil {
 		return fail("workspace", err)
@@ -236,6 +239,7 @@ func RunDHI(c Config, t Task, root string) Result {
 		// The app's goal-loop seams (F-067): DHI provisions the task
 		// worktree and verifies the work itself.
 		Run:       execRunner{env: c.Env},
+		Tuning:    func() agentruntime.Tuning { return evalTuning(t) },
 		Provision: func(slug, member string) error { return st.Attach(slug, member, "task/"+slug, "") },
 	}, []*manifest.Agent{m})
 	if err != nil {
@@ -285,7 +289,48 @@ func RunDHI(c Config, t Task, root string) Result {
 		r.CacheRead, r.CacheWrite = rl.CacheRead, rl.CacheWrite
 		r.CostUSD, r.HasCost = rl.CostSum, rl.Costed > 0
 	}
+	if ep, ok, err := episode.Open(root).Get(evalAgent, episode.Key("eval-"+t.Name, "", 0)); err == nil && ok {
+		r.VerifyRounds, r.Verify = ep.Iterations, ep.Verify
+	}
 	return scoreIn(t, root, memberDir, r)
+}
+
+// evalTuning is the runtime's defaults with the fixture's round cap.
+func evalTuning(t Task) agentruntime.Tuning {
+	tu := agentruntime.Tuning{Resume: true, Autonomy: "envelope", MaxIterations: 3, Reflect: true}
+	if t.MaxIterations > 0 {
+		tu.MaxIterations = t.MaxIterations
+	}
+	return tu
+}
+
+// setMemberVerify writes the fixture's verify override onto the member
+// in workspace.toml (F-076's per-member `verify`).
+func setMemberVerify(root string, argv []string) error {
+	if len(argv) == 0 {
+		return nil
+	}
+	p := filepath.Join(root, workspace.ConfigFile)
+	b, err := os.ReadFile(p)
+	if err != nil {
+		return err
+	}
+	q := make([]string, len(argv))
+	for i, a := range argv {
+		q[i] = strconv.Quote(a)
+	}
+	line := "verify = [" + strings.Join(q, ", ") + "]\n"
+	s := string(b)
+	head := "[members." + Member + "]\n"
+	i := strings.Index(s, head)
+	if i < 0 {
+		return fmt.Errorf("evals: no [members.%s] in %s", Member, p)
+	}
+	end := i + len(head)
+	if j := strings.Index(s[end:], "\n"); j >= 0 {
+		end += j + 1 // after the path line
+	}
+	return os.WriteFile(p, []byte(s[:end]+line+s[end:]), 0o644)
 }
 
 // execRunner is the eval's stand-in for the app's sandboxed `run` seam:

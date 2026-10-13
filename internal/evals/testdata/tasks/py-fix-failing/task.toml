@@ -1,0 +1,11 @@
+name = "py-fix-failing"
+prompt = """The Python tests in app/ fail. Find the bug in app/pricing.py and fix it. Do not change the tests."""
+budget_tokens = 400000
+# F-076: DHI detects a uv project and verifies with unittest.
+
+[[expect]]
+file = "app/tests/test_pricing.py"
+contains = "self.assertEqual(apply_discount(1999, 15), 1699)"
+
+[[expect]]
+run = ["python3", "-m", "unittest", "discover", "-s", "tests", "-t", "."]

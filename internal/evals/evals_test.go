@@ -1,6 +1,7 @@
 package evals
 
 import (
+	"github.com/drjzlyan/dhi/internal/workspace"
 	"os"
 	"path/filepath"
 	"strings"
@@ -209,5 +210,48 @@ func TestRunExpectation(t *testing.T) {
 	unmet := task.Check(root)
 	if len(unmet) != 1 || !strings.Contains(unmet[0], "sh -c echo boom; exit 1 failed: boom") {
 		t.Fatalf("unmet = %v", unmet)
+	}
+}
+
+// F-077: a fixture's verify lands on the member as the workspace
+// override DHI's goal loop reads, and its round cap reaches the tuning.
+func TestFixtureVerifyOverrideAndRounds(t *testing.T) {
+	ts, err := LoadTasks("testdata/tasks")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var hidden Task
+	for _, x := range ts {
+		if x.Name == "fix-retry-hidden" {
+			hidden = x
+		}
+	}
+	if len(hidden.Verify) == 0 || hidden.ExpectRounds != 2 || hidden.MaxIterations != 3 {
+		t.Fatalf("fix-retry-hidden = %+v", hidden)
+	}
+	root := t.TempDir()
+	if err := hidden.Stage(root); err != nil {
+		t.Fatal(err)
+	}
+	if err := workspace.Create(root, Member); err != nil {
+		t.Fatal(err)
+	}
+	if err := setMemberVerify(root, hidden.Verify); err != nil {
+		t.Fatal(err)
+	}
+	ws, err := workspace.Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, _ := ws.Member(Member)
+	if !m.VerifySet || strings.Join(m.Verify, " ") != "go test -tags verify ./..." {
+		t.Fatalf("member verify = %v set=%v", m.Verify, m.VerifySet)
+	}
+	if tu := evalTuning(hidden); tu.MaxIterations != 3 || !tu.Resume {
+		t.Fatalf("tuning = %+v", tu)
+	}
+	tbl := Table(Summarize([]Result{{Arm: "dhi", OK: true, VerifyRounds: 2, TokensIn: 1}}))
+	if !strings.Contains(tbl, "rounds") || !strings.Contains(tbl, "     2 ") {
+		t.Fatalf("table lacks rounds:\n%s", tbl)
 	}
 }
