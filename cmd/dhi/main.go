@@ -52,6 +52,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/ideation"
 	"github.com/drjzlyan/dhi/internal/langserver"
 	"github.com/drjzlyan/dhi/internal/lsp"
+	"github.com/drjzlyan/dhi/internal/repair"
 	"github.com/drjzlyan/dhi/internal/review"
 	"github.com/drjzlyan/dhi/internal/sandbox"
 	"github.com/drjzlyan/dhi/internal/search"
@@ -66,6 +67,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/tui/surfaces/editor"
 	"github.com/drjzlyan/dhi/internal/tui/surfaces/gatechain"
 	ideator "github.com/drjzlyan/dhi/internal/tui/surfaces/ideator"
+	"github.com/drjzlyan/dhi/internal/tui/surfaces/repairgate"
 	reviewer "github.com/drjzlyan/dhi/internal/tui/surfaces/reviewer"
 	settingsview "github.com/drjzlyan/dhi/internal/tui/surfaces/settings"
 	"github.com/drjzlyan/dhi/internal/tui/surfaces/wizard"
@@ -579,8 +581,26 @@ func runTUI() (relaunch bool) {
 		}
 		gates = append(gates, bootgate.New(version.Version, first, mgr))
 	}
+	// Self-healing (F-085, ADR-0038): safe repairs run now and are
+	// reported; the rest wait on the user's yes in the same card.
+	if decision.Block == "" && ws != nil {
+		if g := repairGate(ws, gitRunner); g != nil {
+			gates = append(gates, g)
+		}
+	}
 	if autoWizard {
 		gates = append(gates, newWizard())
+	} else if decision.Block == "" {
+		// A finished setup still owes steps added since (F-085): offer each once.
+		env := newSetupEnv(cwd, ws, userCfg, toolRoot, cfg.Conventions, cfg.Engine, identityFn, cliLook,
+			func() { startLesson("tour") })
+		if st := loadSetupState(ws); st.Finished {
+			if steps := wizard.CatchUpSteps(env, version.Version, st); steps != nil {
+				w := wizard.New(env, st, steps...)
+				wizards = append(wizards, w)
+				gates = append(gates, w)
+			}
+		}
 	}
 	toolsAtLaunch := toolsFingerprint(toolRoot)
 	var tail *gatechain.RelaunchGate
@@ -1653,4 +1673,34 @@ func suggestIdentity(ctx context.Context, r *gitcore.Runner, dirs []string, tool
 		extra = append(extra, gitcore.Suggestion{Identity: gitcore.Identity{Name: u.Name}, Source: "your computer account"})
 	}
 	return gitcore.SuggestIdentity(ctx, r, dirs, extra...)
+}
+
+// repairGate finds what DHI can fix in the workspace, applies the safe
+// repairs, and returns the card that reports them and asks about the
+// rest; nil when there is nothing to say (F-085).
+func repairGate(ws *workspace.Workspace, git *gitcore.Runner) *repairgate.Model {
+	in := repair.Input{WS: ws, Library: library.Open(ws)}
+	if o, err := agentkitOrg.Load(ws.Root); err == nil {
+		in.Org = o
+	}
+	if git != nil {
+		in.Ignored = func(rel string) bool {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			_, _, err := git.Run(ctx, ws.Root, "check-ignore", "-q", rel)
+			return err == nil
+		}
+	}
+	rs := repair.Find(in)
+	var ask []repair.Repair
+	for _, r := range rs {
+		if !r.Safe {
+			ask = append(ask, r)
+		}
+	}
+	g := repairgate.New(version.Version, repair.Run(rs, true), ask)
+	if !g.Needed() {
+		return nil
+	}
+	return g
 }

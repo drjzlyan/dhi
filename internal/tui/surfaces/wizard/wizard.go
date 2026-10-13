@@ -168,6 +168,31 @@ func New(env *Env, state setup.State, steps ...Step) *Model {
 	return m
 }
 
+// catchUpIDs are steps added after people first ran setup (M31). A
+// finished setup offers each once, while it applies and was never
+// applied or skipped (F-085).
+var catchUpIDs = map[string]bool{"project": true, "you": true}
+
+// CatchUpSteps returns the steps a finished setup still owes the user,
+// with the closing step; nil when there are none.
+func CatchUpSteps(env *Env, version string, st setup.State) []Step {
+	var out []Step
+	var done Step
+	for _, s := range DefaultSteps(env, version) {
+		if s.ID() == "done" {
+			done = s
+			continue
+		}
+		if catchUpIDs[s.ID()] && s.Applies() && !st.Settled(s.ID()) {
+			out = append(out, s)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return append(out, done)
+}
+
 // DefaultSteps is the core P2 step list; later phases pass more to New.
 func DefaultSteps(env *Env, version string) []Step {
 	return []Step{
@@ -300,6 +325,8 @@ func (m *Model) act(a Action) {
 func (m *Model) advance(skip bool) {
 	if skip {
 		m.skipped[m.cur().ID()] = true
+		m.state.MarkSkipped(m.cur().ID(), m.env.now())
+		m.persist()
 	}
 	n := m.firstApplicable(m.idx + 1)
 	if n >= len(m.steps) {

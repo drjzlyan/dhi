@@ -1,0 +1,129 @@
+package repair
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/drjzlyan/dhi/internal/agentkit/library"
+	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
+	"github.com/drjzlyan/dhi/internal/agentkit/org"
+	"github.com/drjzlyan/dhi/internal/setup"
+	"github.com/drjzlyan/dhi/internal/workspace"
+)
+
+func fixture(t *testing.T) Input {
+	t.Helper()
+	root := t.TempDir()
+	os.MkdirAll(filepath.Join(root, "api"), 0o755)
+	if err := workspace.Create(root, "api"); err != nil {
+		t.Fatal(err)
+	}
+	ws, err := workspace.Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	o, err := org.Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return Input{WS: ws, Org: o, Library: library.Open(ws)}
+}
+
+func byID(rs []Repair, id string) (Repair, bool) {
+	for _, r := range rs {
+		if r.ID == id {
+			return r, true
+		}
+	}
+	return Repair{}, false
+}
+
+func TestGitignoreWrittenThenTopUpOnly(t *testing.T) {
+	in := fixture(t)
+	path := filepath.Join(in.WS.Root, ".dhi", ".gitignore")
+	r, ok := byID(Find(in), "gitignore")
+	if !ok || !r.Safe || !strings.Contains(r.What, "write .dhi/.gitignore") {
+		t.Fatalf("missing gitignore: %+v", r)
+	}
+	if res := Run(Find(in), true); len(res.Done) != 1 {
+		t.Fatalf("run %+v", res)
+	}
+	data, _ := os.ReadFile(path)
+	if string(data) != setup.GitignoreBody {
+		t.Fatalf("body:\n%s", data)
+	}
+	if _, ok := byID(Find(in), "gitignore"); ok {
+		t.Fatal("complete gitignore still repaired")
+	}
+	// An older DHI wrote fewer entries: only the new ones are appended.
+	os.WriteFile(path, []byte("# mine\nchannels/\nmemory/\n"), 0o644)
+	r, _ = byID(Find(in), "gitignore")
+	if !strings.Contains(r.What, "add") {
+		t.Fatalf("top-up: %+v", r)
+	}
+	Run([]Repair{r}, true)
+	data, _ = os.ReadFile(path)
+	if !strings.HasPrefix(string(data), "# mine\nchannels/\nmemory/\n\n# added by DHI\n") ||
+		strings.Count(string(data), "channels/") != 1 || !strings.Contains(string(data), "episodes/") {
+		t.Fatalf("topped up:\n%s", data)
+	}
+}
+
+func TestGitignoreSkipsWhatGitAlreadyIgnores(t *testing.T) {
+	in := fixture(t)
+	in.Ignored = func(string) bool { return true } // a root .gitignore covers .dhi/
+	if _, ok := byID(Find(in), "gitignore"); ok {
+		t.Fatal("repair offered though git ignores everything")
+	}
+}
+
+func TestLibraryRefsAskThenDropOnlyWhatIsMissing(t *testing.T) {
+	in := fixture(t)
+	a := &manifest.Agent{ID: "ada", Name: "Ada", Model: manifest.ModelDefault, Role: "fixer", Persona: "gone-persona",
+		Skills: []string{"docs", "gone-skill"}, Tools: []string{"read"}}
+	if err := in.Org.CreateAgent(in.WS, a); err != nil {
+		t.Fatal(err)
+	}
+	r, ok := byID(Find(in), "library-refs:ada")
+	if !ok || r.Safe || !strings.Contains(r.What, "persona gone-persona, skill gone-skill") {
+		t.Fatalf("repair %+v", r)
+	}
+	if res := Run(Find(in), true); len(res.Done) != 1 { // safe only: gitignore
+		t.Fatalf("safe run touched an agent: %+v", res)
+	}
+	if err := r.Apply(); err != nil {
+		t.Fatal(err)
+	}
+	roster, _ := org.LoadRoster(in.WS)
+	got := roster[0]
+	if got.Role != "fixer" || got.Persona != "" || len(got.Skills) != 1 || got.Skills[0] != "docs" {
+		t.Fatalf("fixed %+v", got)
+	}
+}
+
+func TestDanglingTeamLeadGoesToYou(t *testing.T) {
+	in := fixture(t)
+	for _, id := range []string{"ada", "bob"} {
+		in.Org.CreateAgent(in.WS, &manifest.Agent{ID: id, Name: id, Model: manifest.ModelDefault, Tools: []string{"read"}})
+	}
+	if err := in.Org.CreateTeam("core", "ada", []string{"ada", "bob"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := byID(Find(in), "team:core"); ok {
+		t.Fatal("healthy team repaired")
+	}
+	in.Org.DeleteAgent(in.WS, "ada")
+	r, ok := byID(Find(in), "team:core")
+	if !ok || r.Safe || r.What != "team core: its lead ada is gone: you lead it" {
+		t.Fatalf("repair %+v", r)
+	}
+	if err := r.Apply(); err != nil {
+		t.Fatal(err)
+	}
+	tm, _ := in.Org.Team("core")
+	if tm.Lead != org.Human || len(tm.Members) != 1 || tm.Members[0] != "bob" {
+		t.Fatalf("team %+v", tm)
+	}
+}

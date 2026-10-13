@@ -1,0 +1,21 @@
+
+
+
+
+
+
+
+
+
+        ╭─ › dhi 9.9.9 ────────────────────────────────────────────────────────────────────╮
+        │ DHI checked your workspace                                                       │
+        │                                                                                  │
+        │ Fixed on its own:                                                                │
+        │ ✓ keep DHI's runtime files out of git: write .dhi/.gitignore                     │
+        │                                                                                  │
+        │ Can fix, with your OK (these change files your team shares):                     │
+        │ • team core: its lead ada is gone: you lead it                                   │
+        │ • bob uses persona x, which no longer exists: drop it                            │
+        │                                                                                  │
+        │ enter fix them · esc not now                                                     │
+        ╰──────────────────────────────────────────────────────────────────────────────────╯

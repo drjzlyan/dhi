@@ -1383,3 +1383,28 @@ func TestIdentityFoundCanBeChanged(t *testing.T) {
 		t.Fatalf("set %+v", f.setCalls)
 	}
 }
+
+// ---- catch-up (F-085) ----
+
+func TestCatchUpOffersNewStepsOnce(t *testing.T) {
+	f := newFixture(t, true)
+	f.env.SaveProfile = func(settings.Profile) error { return nil }
+	st := setup.State{Finished: true}
+	st.Mark("welcome", time.Now())
+	steps := CatchUpSteps(f.env, "9.9.9", st)
+	if len(steps) != 2 || steps[0].ID() != "you" || steps[1].ID() != "done" {
+		t.Fatalf("catch-up %v", titles(New(f.env, st, steps...)))
+	}
+	m := New(f.env, st, steps...)
+	m.Resize(100, 40)
+	run(m, m.Init())
+	key(m, "esc") // skip "you"
+	last := f.persisted[len(f.persisted)-1]
+	if CatchUpSteps(f.env, "9.9.9", last) != nil {
+		t.Fatalf("a skipped step is offered again: %+v", last)
+	}
+	st.Mark("you", time.Now())
+	if CatchUpSteps(f.env, "9.9.9", st) != nil {
+		t.Fatal("an applied step is offered again")
+	}
+}

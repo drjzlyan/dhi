@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/drjzlyan/dhi/internal/settings"
@@ -24,6 +25,23 @@ const StateFile = "setup.json"
 type State struct {
 	Finished bool              `json:"finished"`
 	Steps    map[string]string `json:"steps,omitempty"`
+	// Skipped maps a step the user skipped to when (F-085): catch-up runs
+	// never offer it again.
+	Skipped map[string]string `json:"skipped,omitempty"`
+}
+
+// MarkSkipped records that the user skipped a step.
+func (s *State) MarkSkipped(id string, at time.Time) {
+	if s.Skipped == nil {
+		s.Skipped = map[string]string{}
+	}
+	s.Skipped[id] = at.UTC().Format(time.RFC3339)
+}
+
+// Settled reports whether a step was applied or skipped before.
+func (s State) Settled(id string) bool {
+	_, skipped := s.Skipped[id]
+	return s.Has(id) || skipped
 }
 
 // Mark records a step as applied.
@@ -168,26 +186,25 @@ func isGit(dir string) bool {
 	return err == nil
 }
 
-// GitignoreBody keeps per-user runtime state out of version control while
-// the contract (workspace.toml, conventions.toml, standards.toml, agents/)
-// stays tracked. It is written to .dhi/.gitignore for new workspaces.
-const GitignoreBody = `# DHI per-user runtime state (written by dhi setup). The contract files —
-# workspace.toml, conventions.toml, standards.toml, agents/*.toml — stay tracked.
-channels/
-knowledge/
-memory/
-reviews/
-sessions/
-tasks/
-agents/.archived/
-agents/*/runs/
-config.toml
-marketplace.json
-unread.json
-welcome.seen
-setup.json
-org.toml
+// RuntimeEntries are the per-user runtime paths under .dhi/ that stay
+// out of version control, while the contract (workspace.toml,
+// conventions.toml, standards.toml, project.toml, agents/) stays tracked.
+// New runtime state is added here so existing workspaces get it through
+// the gitignore repair (F-085).
+var RuntimeEntries = []string{
+	"channels/", "knowledge/", "memory/", "reviews/", "sessions/", "tasks/",
+	"agents/.archived/", "agents/*/runs/",
+	"config.toml", "marketplace.json", "unread.json", "welcome.seen", "setup.json", "org.toml",
+	"evals/", "episodes/", "traces/", "proposals/", "spend.jsonl", "grants.json", "tools/usage.toml",
+}
+
+// GitignoreHeader opens .dhi/.gitignore.
+const GitignoreHeader = `# DHI per-user runtime state (written by dhi setup). The contract files —
+# workspace.toml, conventions.toml, standards.toml, project.toml, agents/*.toml — stay tracked.
 `
+
+// GitignoreBody is written to .dhi/.gitignore for new workspaces.
+var GitignoreBody = GitignoreHeader + strings.Join(RuntimeEntries, "\n") + "\n"
 
 // InitWorkspace creates a workspace at root with the given members (or
 // the discovered ones when none are given) and the .dhi/.gitignore. It

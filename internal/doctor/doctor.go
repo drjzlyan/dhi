@@ -34,6 +34,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/gitcore"
 	"github.com/drjzlyan/dhi/internal/ideation"
 	"github.com/drjzlyan/dhi/internal/langserver"
+	"github.com/drjzlyan/dhi/internal/repair"
 	"github.com/drjzlyan/dhi/internal/sandbox"
 	"github.com/drjzlyan/dhi/internal/settings"
 	"github.com/drjzlyan/dhi/internal/tasks"
@@ -82,6 +83,7 @@ func Run(toolRoot, wsRoot string) Report {
 	r.Checks = append(r.Checks, Authority(wsRoot)...)
 	r.Checks = append(r.Checks, Standards(wsRoot)...)
 	r.Checks = append(r.Checks, Project(wsRoot)...)
+	r.Checks = append(r.Checks, Repairs(toolRoot, wsRoot)...)
 	r.Checks = append(r.Checks, Workflows(wsRoot)...)
 	r.Checks = append(r.Checks, Dependencies(wsRoot)...)
 	r.Checks = append(r.Checks, RuntimesAt(toolRoot)...)
@@ -688,6 +690,43 @@ func Project(wsRoot string) []Check {
 			Detail: "no project brief: employees don't know what the project is — Settings → PROJECT, d drafts one"}}
 	}
 	return []Check{{Name: "project/brief", Status: OK, Detail: brief.File}}
+}
+
+// Repairs lists what DHI would fix at the next launch (F-085): safe
+// repairs it applies on its own, the rest after asking.
+func Repairs(toolRoot, wsRoot string) []Check {
+	if wsRoot == "" {
+		return nil
+	}
+	ws, err := workspace.Load(wsRoot)
+	if err != nil {
+		return nil
+	}
+	in := repair.Input{WS: ws, Library: library.Open(ws)}
+	if o, err := org.Load(wsRoot); err == nil {
+		in.Org = o
+	}
+	if toolRoot != "" {
+		if r, err := gitcore.ResolveRunner(toolchain.New(toolRoot)); err == nil {
+			in.Ignored = func(rel string) bool {
+				_, _, err := r.Run(context.Background(), wsRoot, "check-ignore", "-q", rel)
+				return err == nil
+			}
+		}
+	}
+	rs := repair.Find(in)
+	if len(rs) == 0 {
+		return []Check{{Name: "repairs", Status: OK, Detail: "nothing to fix"}}
+	}
+	var out []Check
+	for _, r := range rs {
+		how := "fixed at the next launch"
+		if !r.Safe {
+			how = "DHI asks at the next launch"
+		}
+		out = append(out, Check{Name: "repairs/" + r.ID, Status: Warn, Detail: r.What + " (" + how + ")"})
+	}
+	return out
 }
 
 // RunStore probes the run schema recorded on cards (F-014 §Part C):
