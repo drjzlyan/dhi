@@ -156,8 +156,9 @@ const (
 )
 
 type identityMsg struct {
-	id  gitcore.Identity
-	err error
+	id   gitcore.Identity
+	err  error
+	sugs []gitcore.Suggestion // when unset: where a name/email might come from
 }
 
 type identityStep struct {
@@ -165,6 +166,8 @@ type identityStep struct {
 	env   *Env
 	phase identityPhase
 	found gitcore.Identity
+	sugs  []gitcore.Suggestion
+	best  gitcore.Suggestion
 	form  *kit.Form
 	want  gitcore.Identity
 	err   string
@@ -180,12 +183,16 @@ func (s *identityStep) Enter() tea.Cmd {
 		return nil
 	}
 	s.phase = idChecking
-	resolve := s.env.Identity
+	resolve, suggest := s.env.Identity, s.env.SuggestIdentity
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		id, err := resolve(ctx)
-		return identityMsg{id, err}
+		var sugs []gitcore.Suggestion
+		if errors.Is(err, gitcore.ErrIdentityUnset) && suggest != nil {
+			sugs = suggest(ctx)
+		}
+		return identityMsg{id, err, sugs}
 	}
 }
 
@@ -205,17 +212,31 @@ func (s *identityStep) Update(msg tea.Msg) tea.Cmd {
 		s.phase, s.err = idUnavailable, m.err.Error()
 		return nil
 	}
+	s.sugs = m.sugs
+	s.best = gitcore.BestSuggestion(m.sugs)
+	s.collect(s.best.Identity)
+	return nil
+}
+
+// collect opens the name/email form prefilled with id.
+func (s *identityStep) collect(id gitcore.Identity) {
 	s.phase = idCollect
 	s.form = kit.NewForm("git identity",
-		kit.NewTextField("name", ""), kit.NewTextField("email", ""))
-	return nil
+		kit.NewTextField("name", id.Name), kit.NewTextField("email", id.Email))
 }
 
 func (s *identityStep) HandleKey(key string) Action {
 	switch s.phase {
 	case idChecking:
 		return Stay
-	case idFound, idUnavailable:
+	case idFound:
+		if key == "e" {
+			s.best = gitcore.Suggestion{}
+			s.collect(s.found)
+			return Stay
+		}
+		return s.base.HandleKey(key)
+	case idUnavailable:
 		return s.base.HandleKey(key)
 	case idCollect:
 		switch s.form.HandleKey(key) {
@@ -279,12 +300,24 @@ func (s *identityStep) View(w, f int) []string {
 			"  " + theme.TextStyle().Render(s.found.Name) + dim(" <"+s.found.Email+">"),
 			"",
 			dim("Commits made by you and your agents carry this author."),
+			dim("enter uses it · e changes it"),
 		}
 	case idCollect:
+		head := "Commits need an author. Who are you?"
+		if s.found.Name != "" {
+			head = "Change the author on your commits."
+		}
 		out = append([]string{
-			theme.TextStyle().Render("Commits need an author. Who are you?"),
+			theme.TextStyle().Render(head),
 			dim("Saved to your global git config — nothing else changes."), "",
 		}, formLines(s.form)...)
+		if s.best.Source != "" {
+			out = append(out, "", ok("suggested — "+s.best.Source))
+			for _, sg := range s.sugs {
+				who := strings.TrimSpace(sg.Name + " <" + sg.Email + ">")
+				out = append(out, dim("  "+strings.ReplaceAll(who, " <>", "")+" · "+sg.Source))
+			}
+		}
 	case idConfirm:
 		out = []string{theme.TextStyle().Render("DHI will run:"), ""}
 		for _, c := range gitcore.IdentityCommands(s.want) {

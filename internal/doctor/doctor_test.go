@@ -10,10 +10,9 @@ import (
 	"testing"
 
 	"github.com/drjzlyan/dhi/internal/agentkit/brief"
+	agentkitStandards "github.com/drjzlyan/dhi/internal/agentkit/standards"
 	"github.com/drjzlyan/dhi/internal/sandbox"
 	"github.com/drjzlyan/dhi/internal/settings"
-
-	agentkitStandards "github.com/drjzlyan/dhi/internal/agentkit/standards"
 )
 
 func statusOf(checks []Check, name string) (Check, bool) {

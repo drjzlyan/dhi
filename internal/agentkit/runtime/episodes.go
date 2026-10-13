@@ -1,13 +1,13 @@
 package runtime
 
 import (
-	"github.com/drjzlyan/dhi/internal/agentkit/principal"
 	"strings"
 	"time"
 
 	"github.com/drjzlyan/dhi/internal/agentkit/budget"
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/agentkit/episode"
+	"github.com/drjzlyan/dhi/internal/agentkit/principal"
 	"github.com/drjzlyan/dhi/internal/tasks"
 )
 

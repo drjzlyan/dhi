@@ -1,9 +1,9 @@
 package settings
 
 import (
-	"github.com/drjzlyan/dhi/internal/agentkit/brief"
 	"strings"
 
+	"github.com/drjzlyan/dhi/internal/agentkit/brief"
 	"github.com/drjzlyan/dhi/internal/agentkit/standards"
 	"github.com/drjzlyan/dhi/internal/tui/kit"
 	"github.com/drjzlyan/dhi/internal/tui/theme"

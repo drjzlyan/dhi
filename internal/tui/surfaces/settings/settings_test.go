@@ -117,6 +117,7 @@ func TestScrollbackBounds(t *testing.T) {
 func TestNoSavePathIsSessionOnly(t *testing.T) {
 	m := New(settings.Defaults(), "", Deps{})
 	m.Resize(60, 20)
+	m.cursor = rowTheme
 	feed(m, "enter")
 	if !strings.Contains(ansi.Strip(m.View()), "session-only") {
 		t.Errorf("flash missing:\n%s", ansi.Strip(m.View()))
@@ -283,6 +284,7 @@ func TestYouRowsCycleAndPersist(t *testing.T) {
 	if v := ansi.Strip(m.View()); !strings.Contains(v, "YOU") || !strings.Contains(v, "profile.role") {
 		t.Fatalf("you group missing:\n%s", v)
 	}
+	m.cursor = rowRole
 	feed(m, "l") // role developer → tech lead
 	m.cursor = rowFormat
 	feed(m, "l") // prose → bullets

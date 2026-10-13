@@ -73,3 +73,35 @@ func TestIdentityCommandsQuote(t *testing.T) {
 		t.Fatalf("cmds = %q", cmds)
 	}
 }
+
+func TestSuggestIdentityOrderAndMerge(t *testing.T) {
+	r := writeGitStub(t, `#!/bin/sh
+case "$*" in
+*"--local --get user.name"*) exit 1;;
+*"--local --get user.email"*) echo 'work@acme.io';;
+*"log -n 200"*) printf 'Ada L\tada@home.org\ndependabot[bot]\tbot@x\nAda L\tada@home.org\nBob\tbob@x\n';;
+*) exit 1;;
+esac
+`)
+	sugs := SuggestIdentity(context.Background(), r, []string{t.TempDir()},
+		Suggestion{Identity{"Ada Lovelace", ""}, "your computer account"},
+		Suggestion{Identity{"Ada L", "ada@home.org"}, "dup"})
+	if len(sugs) != 3 {
+		t.Fatalf("suggestions %+v", sugs)
+	}
+	if sugs[0].Email != "work@acme.io" || sugs[0].Source != "this repo's git config" ||
+		sugs[1].Identity != (Identity{"Ada L", "ada@home.org"}) || sugs[2].Source != "your computer account" {
+		t.Fatalf("order %+v", sugs)
+	}
+	best := BestSuggestion(sugs)
+	if best.Name != "Ada L" || best.Email != "work@acme.io" ||
+		best.Source != "name from most commits in this repo, email from this repo's git config" {
+		t.Fatalf("best %+v", best)
+	}
+	if b := BestSuggestion(sugs[1:2]); b.Source != "from most commits in this repo" {
+		t.Fatalf("single source %q", b.Source)
+	}
+	if b := BestSuggestion(nil); b.Name != "" || b.Source != "" {
+		t.Fatalf("empty %+v", b)
+	}
+}

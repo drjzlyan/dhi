@@ -95,3 +95,105 @@ func SetIdentity(ctx context.Context, r *Runner, id Identity) error {
 	_, _, err := r.Run(ctx, "", "config", "--global", "user.email", id.Email)
 	return err
 }
+
+// Suggestion is a candidate identity and where it was found (F-083).
+type Suggestion struct {
+	Identity
+	Source string
+}
+
+// SuggestIdentity gathers candidate identities, best first: each repo's
+// local config, then its most frequent human commit author, then extra
+// (sources the caller resolved: GitHub, the OS account). Duplicates and
+// bots are dropped. Nothing is written.
+func SuggestIdentity(ctx context.Context, r *Runner, dirs []string, extra ...Suggestion) []Suggestion {
+	var out []Suggestion
+	seen := map[Identity]bool{}
+	add := func(s Suggestion) {
+		s.Name, s.Email = strings.TrimSpace(s.Name), strings.TrimSpace(s.Email)
+		if (s.Name == "" && s.Email == "") || seen[s.Identity] || isBot(s.Identity) {
+			return
+		}
+		seen[s.Identity] = true
+		out = append(out, s)
+	}
+	if r != nil {
+		for _, d := range dirs {
+			name, _, _ := r.Run(ctx, d, "config", "--local", "--get", "user.name")
+			email, _, _ := r.Run(ctx, d, "config", "--local", "--get", "user.email")
+			add(Suggestion{Identity{strings.TrimSpace(name), strings.TrimSpace(email)}, "this repo's git config"})
+		}
+		for _, d := range dirs {
+			if id, ok := topAuthor(ctx, r, d); ok {
+				add(Suggestion{id, "most commits in this repo"})
+			}
+		}
+	}
+	for _, s := range extra {
+		add(s)
+	}
+	return out
+}
+
+// BestSuggestion merges suggestions field by field: the first name and
+// the first email found, with both sources named.
+func BestSuggestion(sugs []Suggestion) Suggestion {
+	var best Suggestion
+	var nameFrom, emailFrom string
+	for _, s := range sugs {
+		if best.Name == "" && s.Name != "" {
+			best.Name, nameFrom = s.Name, s.Source
+		}
+		if best.Email == "" && s.Email != "" {
+			best.Email, emailFrom = s.Email, s.Source
+		}
+	}
+	switch {
+	case nameFrom != "" && nameFrom == emailFrom:
+		best.Source = "from " + nameFrom
+	case nameFrom != "" && emailFrom != "":
+		best.Source = "name from " + nameFrom + ", email from " + emailFrom
+	case nameFrom != "":
+		best.Source = "name from " + nameFrom
+	case emailFrom != "":
+		best.Source = "email from " + emailFrom
+	}
+	return best
+}
+
+func isBot(id Identity) bool {
+	l := strings.ToLower(id.Name + " " + id.Email)
+	return strings.Contains(l, "[bot]") || strings.Contains(l, "dependabot") || strings.Contains(l, "github-actions") ||
+		strings.HasPrefix(strings.ToLower(id.Email), "noreply@")
+}
+
+// topAuthor is the most frequent human author of dir's last 200 commits.
+func topAuthor(ctx context.Context, r *Runner, dir string) (Identity, bool) {
+	out, _, err := r.Run(ctx, dir, "log", "-n", "200", "--format=%an%x09%ae")
+	if err != nil {
+		return Identity{}, false
+	}
+	counts := map[Identity]int{}
+	var order []Identity
+	for _, l := range strings.Split(out, "\n") {
+		name, email, ok := strings.Cut(strings.TrimSpace(l), "\t")
+		if !ok {
+			continue
+		}
+		id := Identity{strings.TrimSpace(name), strings.TrimSpace(email)}
+		if isBot(id) {
+			continue
+		}
+		if counts[id] == 0 {
+			order = append(order, id)
+		}
+		counts[id]++
+	}
+	var best Identity
+	for _, id := range order { // first seen (newest) wins a tie
+		if counts[id] > counts[best] {
+			best = id
+		}
+	}
+	return best, best != Identity{}
+}

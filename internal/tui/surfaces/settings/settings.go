@@ -7,8 +7,6 @@ package settings
 import (
 	"context"
 	"fmt"
-	"github.com/drjzlyan/dhi/internal/agentkit/memory"
-	"github.com/drjzlyan/dhi/internal/agentkit/principal"
 	"os"
 	"path/filepath"
 	"sort"
@@ -23,8 +21,10 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/lessons"
 	"github.com/drjzlyan/dhi/internal/agentkit/library"
 	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
+	"github.com/drjzlyan/dhi/internal/agentkit/memory"
 	"github.com/drjzlyan/dhi/internal/agentkit/org"
 	"github.com/drjzlyan/dhi/internal/agentkit/pack"
+	"github.com/drjzlyan/dhi/internal/agentkit/principal"
 	"github.com/drjzlyan/dhi/internal/agentkit/registry"
 	"github.com/drjzlyan/dhi/internal/agentkit/setprop"
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
@@ -74,6 +74,9 @@ type Model struct {
 	dlg     *kit.Modal
 	dform   *kit.Form
 	learned *conventions.Inference // pending learned conventions (F-082)
+	ident   *gitcore.Identity      // cached git identity (F-083); nil = not read yet
+	identOK bool
+	wantID  gitcore.Identity // the identity awaiting confirmation
 	dkind   dialogKind
 	dtarget string
 
@@ -172,6 +175,11 @@ type Deps struct {
 	// the LIBRARY section and the agent form pickers. Nil degrades to
 	// a named empty section.
 	Library *library.Store
+	// Identity / SetIdentity / SuggestIdentity back the git identity row
+	// (F-083); nil Identity shows it as unavailable.
+	Identity        gitcore.IdentityFunc
+	SetIdentity     func(ctx context.Context, id gitcore.Identity) error
+	SuggestIdentity func(ctx context.Context) []gitcore.Suggestion
 	// LearnConventions infers the team's commit and PR style from git
 	// history and the repo's PR template (F-082); nil hides g.
 	LearnConventions func() conventions.Inference
@@ -386,9 +394,16 @@ func (m *Model) configKey(key string) bool {
 		}
 		return true
 	case "enter", "right", "l":
+		if m.cursor == rowIdentity {
+			m.openIdentityForm()
+			return true
+		}
 		m.cycle(1)
 		return true
 	case "left", "h":
+		if m.cursor == rowIdentity {
+			return true
+		}
 		m.cycle(-1)
 		return true
 	}
@@ -396,8 +411,10 @@ func (m *Model) configKey(key string) bool {
 }
 
 const (
-	// You (F-081): who the crew works for and how you write and read.
-	rowRole = iota
+	// You (F-081, F-083): your git identity, who the crew works for and
+	// how you write and read.
+	rowIdentity = iota
+	rowRole
 	rowTone
 	rowLength
 	rowEmoji
@@ -1403,6 +1420,7 @@ func (m *Model) configView(w, budget int) []string {
 	}
 	pp := m.cfg.Profile.Principal("", "")
 	head("you")
+	add(rowIdentity, "git identity", m.identityValue())
 	add(rowRole, "profile.role", pp.Role)
 	add(rowTone, "profile.writing.tone", pp.Tone)
 	add(rowLength, "profile.writing.length", pp.Length)

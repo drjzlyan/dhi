@@ -3,7 +3,6 @@ package wizard
 import (
 	"context"
 	"errors"
-	"github.com/drjzlyan/dhi/internal/agentkit/brief"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -13,6 +12,7 @@ import (
 
 	"charm.land/bubbletea/v2"
 
+	"github.com/drjzlyan/dhi/internal/agentkit/brief"
 	"github.com/drjzlyan/dhi/internal/agentkit/catalog"
 	"github.com/drjzlyan/dhi/internal/agentkit/clirun"
 	"github.com/drjzlyan/dhi/internal/agentkit/starter"
@@ -1333,5 +1333,53 @@ func TestConventionsStepTemplateSyncsTheFields(t *testing.T) {
 	c := f.savedConv
 	if c == nil || c.Active != "ticket" || c.Commit.Format != conventions.FormatTicket || c.Branch.Task != "{ticket}/{slug}" || c.Commit.Subject != "{ticket}: {subject}" {
 		t.Fatalf("saved %+v", c)
+	}
+}
+
+// ---- identity suggestions and edits (F-083) ----
+
+func TestIdentitySuggestedWhenUnset(t *testing.T) {
+	f := newFixture(t, true)
+	f.env.Identity = func(context.Context) (gitcore.Identity, error) { return gitcore.Identity{}, gitcore.ErrIdentityUnset }
+	f.env.SuggestIdentity = func(context.Context) []gitcore.Suggestion {
+		return []gitcore.Suggestion{
+			{Identity: gitcore.Identity{Name: "Ada L", Email: "ada@home.org"}, Source: "most commits in this repo"},
+			{Identity: gitcore.Identity{Name: "Ada Lovelace"}, Source: "your computer account"},
+		}
+	}
+	m := f.wizard()
+	key(m, "enter")
+	v := plain(m)
+	for _, want := range []string{"Ada L", "ada@home.org", "suggested — from most commits in this repo", "Ada Lovelace · your computer account"} {
+		if !strings.Contains(v, want) {
+			t.Fatalf("lacks %q:\n%s", want, v)
+		}
+	}
+	golden.Snapshot(t, "wizard_identity_suggested", v)
+	key(m, "enter", "enter") // accept the suggestion, confirm the commands
+	if len(f.setCalls) != 1 || f.setCalls[0] != (gitcore.Identity{Name: "Ada L", Email: "ada@home.org"}) {
+		t.Fatalf("set %+v", f.setCalls)
+	}
+}
+
+func TestIdentityFoundCanBeChanged(t *testing.T) {
+	f := newFixture(t, true)
+	m := f.wizard()
+	key(m, "enter")
+	if v := plain(m); !strings.Contains(v, "e changes it") {
+		t.Fatalf("no change hint:\n%s", v)
+	}
+	key(m, "e")
+	if v := plain(m); !strings.Contains(v, "Change the author") || !strings.Contains(v, "Ada") {
+		t.Fatalf("edit form not prefilled:\n%s", v)
+	}
+	key(m, "tab", "ctrl+e")
+	for i := 0; i < len("ada@example.com"); i++ {
+		key(m, "backspace")
+	}
+	typeText(m, "ada@work.io")
+	key(m, "enter", "enter")
+	if len(f.setCalls) != 1 || f.setCalls[0].Email != "ada@work.io" || f.setCalls[0].Name != "Ada" {
+		t.Fatalf("set %+v", f.setCalls)
 	}
 }

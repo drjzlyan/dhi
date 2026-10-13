@@ -397,3 +397,33 @@ func (g *GHCLI) IssueComments(ctx context.Context, repo, number string) ([]Remot
 	}
 	return rcs, nil
 }
+
+// GHUser is the signed-in GitHub account (F-083: identity suggestions).
+type GHUser struct {
+	Login string `json:"login"`
+	Name  string `json:"name"`
+	Email string `json:"email"`
+	ID    int64  `json:"id"`
+}
+
+// NoReplyEmail is GitHub's private commit email for the account.
+func (u GHUser) NoReplyEmail() string {
+	if u.Login == "" || u.ID == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%d+%s@users.noreply.github.com", u.ID, u.Login)
+}
+
+// User reads the signed-in account; it fails when gh is absent or not
+// signed in (never prompts).
+func (g *GHCLI) User(ctx context.Context) (GHUser, error) {
+	out, err := g.run(ctx, "api", "user")
+	if err != nil {
+		return GHUser{}, fmt.Errorf("review: gh api user: %w", err)
+	}
+	var u GHUser
+	if err := json.Unmarshal([]byte(out), &u); err != nil {
+		return GHUser{}, fmt.Errorf("review: gh api user: %w", err)
+	}
+	return u, nil
+}

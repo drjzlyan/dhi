@@ -16,15 +16,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/drjzlyan/dhi/internal/autopilot"
-	"github.com/drjzlyan/dhi/internal/ideation"
-	"github.com/drjzlyan/dhi/internal/sandbox"
-	"github.com/drjzlyan/dhi/internal/tasks"
-
-	agentkitStandards "github.com/drjzlyan/dhi/internal/agentkit/standards"
-	agentkitWorkflow "github.com/drjzlyan/dhi/internal/agentkit/workflow"
-
 	"github.com/drjzlyan/dhi/internal/agentkit/brief"
+	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/agentkit/clirun"
 	"github.com/drjzlyan/dhi/internal/agentkit/dhitools"
 	"github.com/drjzlyan/dhi/internal/agentkit/library"
@@ -35,14 +28,18 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/pack"
 	"github.com/drjzlyan/dhi/internal/agentkit/registry"
 	"github.com/drjzlyan/dhi/internal/agentkit/scopes"
+	agentkitStandards "github.com/drjzlyan/dhi/internal/agentkit/standards"
+	agentkitWorkflow "github.com/drjzlyan/dhi/internal/agentkit/workflow"
+	"github.com/drjzlyan/dhi/internal/autopilot"
 	"github.com/drjzlyan/dhi/internal/gitcore"
+	"github.com/drjzlyan/dhi/internal/ideation"
 	"github.com/drjzlyan/dhi/internal/langserver"
+	"github.com/drjzlyan/dhi/internal/sandbox"
 	"github.com/drjzlyan/dhi/internal/settings"
+	"github.com/drjzlyan/dhi/internal/tasks"
 	"github.com/drjzlyan/dhi/internal/toolchain"
 	"github.com/drjzlyan/dhi/internal/unread"
 	"github.com/drjzlyan/dhi/internal/workspace"
-
-	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 )
 
 // lookPath resolves an executable on PATH; swappable in tests.

@@ -2,13 +2,14 @@ package settings
 
 import (
 	"fmt"
-	"github.com/drjzlyan/dhi/internal/conventions"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 
 	"github.com/BurntSushi/toml"
+
+	"github.com/drjzlyan/dhi/internal/conventions"
 )
 
 // Agent-proposable settings (F-070). An agent may ask for any of these;

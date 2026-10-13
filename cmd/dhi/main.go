@@ -345,6 +345,19 @@ func runTUI() (relaunch bool) {
 			settingsDeps.SetProps = setprop.Open(ws.Root) // F-070 settings proposals
 			settingsDeps.UserConfig, settingsDeps.WorkspaceConfig = userCfg, wsCfg
 			settingsDeps.LearnConventions = func() conventions.Inference { return learnConventions(gitRunner, memberDirs(ws)) }
+			// F-083: the git identity row reads, suggests and sets through
+			// the same hermetic git as the wizard.
+			settingsDeps.Identity = identityFn
+			if identityFn != nil {
+				mgr := toolchain.New(toolRoot)
+				idRunner := func() *gitcore.Runner { return gitcore.NewRunner(mgr.GitBin(), mgr.GitIdentityEnv(nil)) }
+				settingsDeps.SetIdentity = func(ctx context.Context, id gitcore.Identity) error {
+					return gitcore.SetIdentity(ctx, idRunner(), id)
+				}
+				settingsDeps.SuggestIdentity = func(ctx context.Context) []gitcore.Suggestion {
+					return suggestIdentity(ctx, idRunner(), memberDirs(ws), toolRoot)
+				}
+			}
 			if kb, kerr := knowledge.Open(ws, knowledge.Review, rgSearcher); kerr == nil {
 				settingsDeps.ShareLesson = func(l lessons.Lesson) (string, error) {
 					author := l.Agent
@@ -674,6 +687,15 @@ func newSetupEnv(cwd string, ws *workspace.Workspace, userCfg, toolRoot string,
 		mgr := toolchain.New(toolRoot)
 		env.SetIdentity = func(ctx context.Context, id gitcore.Identity) error {
 			return gitcore.SetIdentity(ctx, gitcore.NewRunner(mgr.GitBin(), mgr.GitIdentityEnv(nil)), id)
+		}
+		env.SuggestIdentity = func(ctx context.Context) []gitcore.Suggestion {
+			dirs := []string{cwd}
+			if env.Root != "" {
+				if w, err := workspace.Load(env.Root); err == nil {
+					dirs = memberDirs(w)
+				}
+			}
+			return suggestIdentity(ctx, gitcore.NewRunner(mgr.GitBin(), mgr.GitIdentityEnv(nil)), dirs, toolRoot)
 		}
 	}
 	// You step (F-081): the profile is personal, so it lives in the user config.
@@ -1606,4 +1628,29 @@ func learnConventions(r *gitcore.Runner, dirs []string) conventions.Inference {
 		}
 	}
 	return inf
+}
+
+// suggestIdentity gathers git identity candidates (F-083): the repos'
+// config and history, the signed-in GitHub account (managed gh only),
+// and the computer account's full name.
+func suggestIdentity(ctx context.Context, r *gitcore.Runner, dirs []string, toolRoot string) []gitcore.Suggestion {
+	var extra []gitcore.Suggestion
+	if shim := filepath.Join(toolRoot, "bin", "gh"); toolRoot != "" {
+		if _, err := os.Stat(shim); err == nil {
+			gctx, cancel := context.WithTimeout(ctx, 4*time.Second)
+			if u, err := review.NewGHCLI(shim).User(gctx); err == nil {
+				email := u.Email
+				if email == "" {
+					email = u.NoReplyEmail()
+				}
+				extra = append(extra, gitcore.Suggestion{Identity: gitcore.Identity{Name: u.Name, Email: email},
+					Source: "your GitHub account (" + u.Login + ")"})
+			}
+			cancel()
+		}
+	}
+	if u, err := osuser.Current(); err == nil && strings.TrimSpace(u.Name) != "" {
+		extra = append(extra, gitcore.Suggestion{Identity: gitcore.Identity{Name: u.Name}, Source: "your computer account"})
+	}
+	return gitcore.SuggestIdentity(ctx, r, dirs, extra...)
 }

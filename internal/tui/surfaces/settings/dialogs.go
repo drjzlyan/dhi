@@ -43,6 +43,8 @@ const (
 	dlgProject
 	dlgConvExample
 	dlgConvLearn
+	dlgIdentity
+	dlgIdentityConfirm
 	dlgDisplay // read-only: profile, standards preview, last-run info
 )
 
@@ -118,6 +120,8 @@ func (m *Model) submitDialog() {
 		m.submitBrief()
 	case dlgConvExample:
 		m.submitExample()
+	case dlgIdentity:
+		m.submitIdentity()
 	case dlgPackInstall:
 		m.submitPackInstall()
 	case dlgStdLayer:
@@ -148,6 +152,8 @@ func (m *Model) submitConfirmDialog() {
 		m.deleteTemplate(target)
 	case dlgConvLearn:
 		m.saveLearned()
+	case dlgIdentityConfirm:
+		m.applyIdentity()
 	case dlgTeamDelete:
 		if err := m.d.Org.DeleteTeam(target); err != nil {
 			m.dlg.Lines = append(m.dlg.Lines[:2], theme.DangerText().Render(err.Error()))
