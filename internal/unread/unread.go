@@ -446,10 +446,14 @@ type Item struct {
 // AddressedToHuman is the attention predicate: a message needs the
 // human only when it is addressed to them — any agent message in a DM
 // (dm:<id> is 1:1) or a channel message mentioning "you". The human's
-// own messages and agent-to-agent chatter never do.
+// own messages, agent-to-agent chatter and relayed stream lines never
+// do; a runtime alert always does (F-072).
 func AddressedToHuman(m bus.Message) bool {
-	if m.Author == bus.Human {
-		return false
+	if m.Author == bus.Human || !bus.Conversational(m) {
+		return false // tool lines are trace, never attention (F-072)
+	}
+	if m.Kind == bus.KindAlert {
+		return true
 	}
 	if strings.HasPrefix(m.Channel, "dm:") {
 		return true

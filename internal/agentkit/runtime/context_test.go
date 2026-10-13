@@ -136,9 +136,9 @@ func TestRetryAuthFailsFastWithNotice(t *testing.T) {
 		t.Fatalf("spawns = %d, want 1 (auth never retries)", got)
 	}
 	hist := h.bus.History("#general", 0)
-	n := hasPrefix(hist, "claude is not authenticated")
-	if n == nil || n.Kind != bus.KindStream {
-		t.Fatalf("missing stream-marked auth notice: %+v", hist)
+	n := hasPrefix(hist, "I couldn't finish: claude is not authenticated")
+	if n == nil || n.Kind != bus.KindAlert {
+		t.Fatalf("missing auth alert (F-072): %+v", hist)
 	}
 }
 

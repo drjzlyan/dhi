@@ -138,8 +138,8 @@ func TestBudgetRefusesSpawn(t *testing.T) {
 	if _, statErr := os.Stat(filepath.Join(h.dumpDir, "n")); statErr == nil {
 		t.Fatal("a refused turn must not spawn")
 	}
-	if hasPrefix(h.bus.History("#general", 0), "budget reached") == nil {
-		t.Fatal("budget refusal must be named in the thread")
+	if n := hasPrefix(h.bus.History("#general", 0), "I stopped: the budget is reached"); n == nil || n.Kind != bus.KindAlert {
+		t.Fatal("budget refusal must be named in the thread as an alert (F-072)")
 	}
 }
 

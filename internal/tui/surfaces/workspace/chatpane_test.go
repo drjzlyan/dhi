@@ -248,7 +248,7 @@ func TestRenderBoundsAndThreadHeader(t *testing.T) {
 
 	rows := p.render(70, 20)
 	joined := ansi.Strip(strings.Join(rows, "\n"))
-	if !strings.Contains(joined, "thread #") {
+	if !strings.Contains(joined, "· thread (c back)") {
 		t.Fatalf("thread header missing:\n%s", joined)
 	}
 	for i, l := range rows {

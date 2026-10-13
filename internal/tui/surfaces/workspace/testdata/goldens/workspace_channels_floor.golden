@@ -1,11 +1,11 @@
- CHANNELS          #general  · thread #1                                         thread #1                    
- DIRECT MESSAGES   ── Sat Sep 19 ──────────────────────────────────────────────                               
- #general          ▌ you   10:00  please review the login flow                   you please review the        
- #frontend         scout   10:00  @you summary posted to the board card              login flow               
- dm:scout          you     10:00  please review the login flow                   scout ↳ on it — found a      
-                                                                                     race in the token        
-                    >   (i to type)                                                  refresh                  
-                                                                                                              
+ CHANNELS          #general                                                Thread                             
+  #general         ── Sat Sep 19 ────────────────────────────────────────                                     
+  #frontend        ▌ you   10:00  please review the login flow ↳ 1 reply   you  10:00                         
+                   scout   10:00  @you summary posted to the board card     please review the login flow      
+ DIRECT MESSAGES   you     10:00  please review the login flow ↳ 1 reply                                      
+  scout                                                                    scout  10:00                       
+                    >   (i to type)                                         on it — found a race in the token 
+                                                                            refresh                           
                                                                                                               
                                                                                                               
                                                                                                               

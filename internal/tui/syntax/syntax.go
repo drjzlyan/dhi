@@ -115,7 +115,24 @@ func (c Class) Style() (lipgloss.Style, bool) {
 // is empty or too large, or lexing fails — callers then render plain,
 // never fake-coloured (F-011).
 func Lex(path, text string) []Line {
-	lexer := lexers.Match(path)
+	return lexWith(lexers.Match(path), text)
+}
+
+// LexLang tokenizes text for a language named by a markdown fence info
+// string ("go", "python", "ts", …); nil when the name is unknown.
+func LexLang(lang, text string) []Line {
+	lang = strings.ToLower(strings.TrimSpace(lang))
+	if lang == "" {
+		return nil
+	}
+	lexer := lexers.Get(lang)
+	if lexer == nil {
+		lexer = lexers.Match("x." + lang)
+	}
+	return lexWith(lexer, text)
+}
+
+func lexWith(lexer chroma.Lexer, text string) []Line {
 	if lexer == nil || len(text) == 0 || len(text) > MaxSize {
 		return nil
 	}

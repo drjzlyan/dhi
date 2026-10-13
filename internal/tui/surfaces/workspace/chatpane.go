@@ -52,6 +52,9 @@ type chatPane struct {
 
 	// F-022 agent-profile seam: the Model injects a renderer.
 	profile func(id string) []string
+	// agentWorking feeds presence dots and the live status line (F-072);
+	// nil renders neither.
+	agentWorking func(id string) bool
 
 	channels   []string
 	active     int
@@ -76,6 +79,12 @@ type chatPane struct {
 	search    string
 	reactPick bool
 	editID    int64 // message being edited (0 = compose new)
+
+	// F-072 find by name: the rail filter (rail focus, "/") and the
+	// quick switcher (ctrl+g) over every channel and DM.
+	railSearching bool
+	railQuery     string
+	switcher      *switcherState
 }
 
 // reactionTokens is the fixed, width-safe reaction set (no emoji-width
@@ -143,12 +152,21 @@ func (p *chatPane) channelName() string {
 // capturing reports whether plain keys are text for the pane: the
 // composer, the message search, or the reaction picker ("?" is a token).
 func (p *chatPane) capturing() bool {
-	return p.focus || p.searching || p.reactPick
+	return p.focus || p.searching || p.reactPick || p.railSearching || p.switcher != nil
 }
 
 func (p *chatPane) hints() []string {
+	if p.switcher != nil {
+		return []string{"type to filter", "↑/↓ select", "enter open", "esc close"}
+	}
+	if p.railSearching {
+		return []string{"type to filter", "enter open", "esc clear"}
+	}
 	if p.focus {
 		return []string{"enter send", "esc blur"}
+	}
+	if p.railFocus {
+		return []string{"j/k select", "enter open", "/ find", "ctrl+g jump", "v profile", "tab transcript"}
 	}
 	if p.profileID != "" {
 		return []string{"esc close", "i compose", "j/k select", ",/. channel"}
@@ -159,7 +177,7 @@ func (p *chatPane) hints() []string {
 	// tab is width-gated (the rail is a column only on wide floors) —
 	// never advertise an inert key (F-026 P3).
 	base := []string{"i compose", "j/k select", "t thread", "v profile",
-		"/ search", "+ react", "e edit", "p pin", "R all read", ",/. channel"}
+		"/ search", "+ react", "e edit", "p pin", "R all read", ",/. channel", "ctrl+g jump"}
 	if p.lastWidth >= slackCtxMin {
 		return append([]string{"tab rail"}, base...)
 	}
@@ -184,14 +202,14 @@ func (p *chatPane) openChannel(i int) {
 	p.profileID = ""
 	p.cursor = 0
 	p.railFocus = false // opening returns focus to the transcript
-	p.clampRail()
+	p.railCur = p.railIndexOf(p.channels[i])
 	p.resubscribe()
 	p.markChannelRead(p.channelName())
 }
 
 func (p *chatPane) clampRail() {
-	if p.railCur >= len(p.channels) {
-		p.railCur = maxInt(len(p.channels)-1, 0)
+	if n := len(p.railList()); p.railCur >= n {
+		p.railCur = maxInt(n-1, 0)
 	}
 	if p.railCur < 0 {
 		p.railCur = 0
@@ -323,6 +341,18 @@ func (p *chatPane) handleKey(key string) bool {
 	if p.bus == nil {
 		return false
 	}
+	if p.switcher != nil {
+		p.switcherKey(key)
+		return true
+	}
+	if key == "ctrl+g" {
+		p.openSwitcher()
+		return true
+	}
+	if p.railSearching {
+		p.railSearchKey(key)
+		return true
+	}
 	if p.searching {
 		switch key {
 		case "esc":
@@ -379,7 +409,7 @@ func (p *chatPane) handleKey(key string) bool {
 	if p.railFocus {
 		switch key {
 		case "j", "down":
-			if p.railCur < len(p.channels)-1 {
+			if p.railCur < len(p.railList())-1 {
 				p.railCur++
 			}
 			return true
@@ -389,15 +419,28 @@ func (p *chatPane) handleKey(key string) bool {
 			}
 			return true
 		case "enter":
-			p.openChannel(p.railCur)
+			p.openNamed(p.channelAt(p.railCur))
 			return true
 		case "i":
-			p.openChannel(p.railCur)
+			p.openNamed(p.channelAt(p.railCur))
 			p.focus = true
 			return true
+		case "/":
+			p.railSearching = true
+			p.railQuery = ""
+			p.railCur = 0
+			return true
+		case "esc":
+			if p.railQuery != "" {
+				p.railQuery = ""
+				p.clampRail()
+				return true
+			}
+			p.railFocus = false
+			return true
 		case "v":
-			if ch := p.channelAt(p.railCur); strings.HasPrefix(ch, "dm:") {
-				p.profileID = strings.TrimPrefix(ch, "dm:")
+			if ch := p.channelAt(p.railCur); bus.IsDM(ch) {
+				p.profileID = bus.ChannelLabel(ch)
 			}
 			return true
 		}
@@ -498,12 +541,24 @@ func (p *chatPane) handleKey(key string) bool {
 	return false
 }
 
-// channelAt returns the rail label at index i ("" when out of range).
+// channelAt returns the channel at rail row i of the (filtered) rail
+// ("" when out of range).
 func (p *chatPane) channelAt(i int) string {
-	if i >= 0 && i < len(p.channels) {
-		return p.channels[i]
+	if list := p.railList(); i >= 0 && i < len(list) {
+		return list[i]
 	}
 	return ""
+}
+
+// openNamed opens a channel by id (no-op when it left the rail).
+func (p *chatPane) openNamed(ch string) {
+	for i, c := range p.channels {
+		if c == ch {
+			p.railQuery = ""
+			p.openChannel(i)
+			return
+		}
+	}
 }
 
 func (p *chatPane) composerKey(key string) bool {
@@ -585,7 +640,7 @@ func (p *chatPane) visibleHistory() []bus.Message {
 		return nil
 	}
 	if p.threadID == 0 {
-		return p.filterSearch(p.bus.History(p.channelName(), 0))
+		return p.filterSearch(conversational(p.bus.History(p.channelName(), 0)))
 	}
 	var out []bus.Message
 	for _, m := range p.bus.History(p.channelName(), 0) {
@@ -595,7 +650,7 @@ func (p *chatPane) visibleHistory() []bus.Message {
 		}
 	}
 	out = append(out, p.bus.History(p.channelName(), p.threadID)...)
-	return p.filterSearch(out)
+	return p.filterSearch(conversational(out))
 }
 
 // filterSearch narrows history to messages matching the search text
@@ -630,7 +685,7 @@ func (p *chatPane) displayText(m bus.Message) string {
 // replies render beside it; narrow screens drill inline.
 func (p *chatPane) navMsgs(wide bool) []bus.Message {
 	if wide && p.threadID != 0 {
-		return p.filterSearch(p.bus.History(p.channelName(), 0))
+		return p.filterSearch(conversational(p.bus.History(p.channelName(), 0)))
 	}
 	return p.visibleHistory()
 }
@@ -654,22 +709,32 @@ func (p *chatPane) render(width, height int) []string {
 
 // renderWide is the Slack floor: rail | transcript | context pane.
 func (p *chatPane) renderWide(width, height int) []string {
-	transW := width - slackRailW - slackCtxW - 2 // the two separators
+	ctxW := p.ctxWidth(width)
+	transW := width - slackRailW - ctxW - 2 // the two separators
 	if transW < 30 {
 		transW = 30
 	}
 	rail := p.railLines(slackRailW, height)
 	trans := p.transcriptLines(transW, height, true)
-	ctx := p.contextLines(slackCtxW, height)
+	ctx := p.contextLines(ctxW, height)
 
 	rows := make([]string, 0, height)
 	for y := 0; y < height; y++ {
 		r := railLineAt(rail, y, slackRailW)
 		tr := padToANSI(lineAt(trans, y, transW), transW)
-		c := lineAt(ctx, y, slackCtxW)
+		c := lineAt(ctx, y, ctxW)
 		rows = append(rows, r+" "+tr+" "+c)
 	}
 	return rows
+}
+
+// ctxWidth sizes the right pane: an open thread or profile gets a third
+// of the floor (code blocks need room), the closed pane stays slim.
+func (p *chatPane) ctxWidth(width int) int {
+	if p.threadID == 0 && p.profileID == "" {
+		return slackCtxW
+	}
+	return min(max(width/3, slackCtxW), 64)
 }
 
 // renderNarrow keeps the pre-M11 single-column floor: horizontal rail,
@@ -680,11 +745,14 @@ func (p *chatPane) renderNarrow(width, height int) []string {
 	lines = append(lines, theme.TextDim().Render(strings.Repeat("─", minInt(width, 56))))
 
 	history := p.visibleHistory()
-	header := p.channelName()
+	header := p.header()
 	if p.threadID != 0 {
-		header += theme.Hint().Render("  · thread #" + itoa(int(p.threadID)) + " (c back)")
+		header += theme.Hint().Render("  · thread (c back)")
 	}
-	lines = append(lines, theme.Brand().Render(header))
+	lines = append(lines, header)
+	if p.switcher != nil {
+		return append(lines, p.switcherLines(width, height-len(lines))...)
+	}
 
 	body := height - 5 // rail, rule, header, input/hint, blank
 	if body < 3 {
@@ -709,7 +777,7 @@ func (p *chatPane) renderNarrow(width, height int) []string {
 
 	lines = append(lines, p.transcriptRender(history, wrap, body)...)
 
-	lines = append(lines, "")
+	lines = append(lines, p.statusLine())
 	lines = append(lines, p.composerBar(width))
 	return lines
 }
@@ -720,14 +788,14 @@ func (p *chatPane) renderNarrow(width, height int) []string {
 func (p *chatPane) transcriptLines(width, height int, wide bool) []string {
 	history := p.navMsgs(wide)
 	var lines []string
-	header := p.channelName()
-	if p.threadID != 0 {
-		header += theme.Hint().Render("  · thread #" + itoa(int(p.threadID)))
-	}
+	header := p.header()
 	if n := p.pinnedCount(); n > 0 {
 		header += theme.TextDim().Render("  · " + itoa(n) + " pinned")
 	}
-	lines = append(lines, theme.Brand().Render(header))
+	lines = append(lines, header)
+	if p.switcher != nil {
+		return append(lines, p.switcherLines(width, height-1)...)
+	}
 	extra := 0
 	if bar := p.searchBar(); bar != "" {
 		lines = append(lines, bar)
@@ -738,7 +806,7 @@ func (p *chatPane) transcriptLines(width, height int, wide bool) []string {
 		extra++
 	}
 	lines = append(lines, p.transcriptRender(history, width, height-3-extra)...)
-	lines = append(lines, "")
+	lines = append(lines, p.statusLine())
 	lines = append(lines, p.composerBar(width))
 	return lines
 }
@@ -777,49 +845,67 @@ func (p *chatPane) composerBar(width int) string {
 // Empty history renders the named empty state (caller's header aside).
 func (p *chatPane) transcriptRender(history []bus.Message, width, body int) []string {
 	if len(history) == 0 {
+		if ch := p.channelName(); bus.IsDM(ch) {
+			return []string{theme.TextDim().Render(
+				"(no messages yet — press i to message " + bus.ChannelLabel(ch) + " directly)")}
+		}
 		return []string{theme.TextDim().Render(
 			"(no messages yet — press i and say hi, @mention an agent)")}
 	}
 	if p.cursor >= len(history) {
 		p.cursor = maxInt(len(history)-1, 0)
 	}
-	tr := &kit.Transcript{Width: width, Tail: body}
+	tr := &kit.Transcript{Width: width, Tail: body, Markdown: kit.ChatMarkdown}
 	if !p.focus {
 		tr.CursorAt = p.cursor
 	}
 	for _, msg := range history {
 		row := kit.TrnRow{
-			Author: msg.Author,
-			Text:   p.rowText(msg),
-			Thread: msg.Thread != 0,
-			At:     msg.At,
-			Kind:   kit.TrnAgent,
+			Author:   msg.Author,
+			Text:     p.displayText(msg),
+			Suffix:   p.rowSuffix(msg),
+			Thread:   msg.Thread != 0,
+			At:       msg.At,
+			Kind:     kit.TrnAgent,
+			Markdown: true,
 		}
-		if msg.Author == bus.Human {
+		switch {
+		case msg.Author == bus.Human:
 			row.Kind = kit.TrnHuman
+		case msg.Kind == bus.KindAlert:
+			row.Kind = kit.TrnAlert
 		}
 		tr.Rows = append(tr.Rows, row)
 	}
 	return tr.View()
 }
 
-// rowText appends the F-035 markers: an edit note, reaction chips and a
-// pin marker, over the immutable bus text.
-func (p *chatPane) rowText(msg bus.Message) string {
-	text := p.displayText(msg)
-	if p.meta == nil {
-		return text
+// rowSuffix is the F-035 metadata under a message: a pin marker, an
+// edit note and reaction chips (kept out of the body so markdown never
+// parses it), plus a reply count on a top-level message with a thread.
+func (p *chatPane) rowSuffix(msg bus.Message) string {
+	var parts []string
+	if p.meta != nil {
+		if p.meta.IsPinned(msg.Channel, msg.ID) {
+			parts = append(parts, theme.WarningText().Render("pinned"))
+		}
+		if _, edited := p.meta.EditedText(msg.Channel, msg.ID); edited {
+			parts = append(parts, theme.TextDim().Render("(edited)"))
+		}
+		if rx := p.meta.Reactions(msg.Channel, msg.ID); len(rx) > 0 {
+			parts = append(parts, theme.Hint().Render("["+strings.Join(rx, " ")+"]"))
+		}
 	}
-	if _, edited := p.meta.EditedText(msg.Channel, msg.ID); edited {
-		text += theme.TextDim().Render(" (edited)")
+	if msg.Thread == 0 && p.bus != nil {
+		if n := len(conversational(p.bus.History(msg.Channel, msg.ID))); n > 0 {
+			word := " replies"
+			if n == 1 {
+				word = " reply"
+			}
+			parts = append(parts, theme.AccentText().Render("↳ "+itoa(n)+word))
+		}
 	}
-	if rx := p.meta.Reactions(msg.Channel, msg.ID); len(rx) > 0 {
-		text += " " + theme.Hint().Render("["+strings.Join(rx, " ")+"]")
-	}
-	if p.meta.IsPinned(msg.Channel, msg.ID) {
-		text = theme.WarningText().Render("pin ") + text
-	}
-	return text
+	return strings.Join(parts, " ")
 }
 
 // searchBar renders the active search/filter state ("" when idle).
@@ -847,45 +933,6 @@ func (p *chatPane) reactBar() string {
 	return theme.Hint().Render("react: ") + strings.Join(parts, " ")
 }
 
-// railLines renders the vertical channel sidebar: groups, unread
-// markers, rail cursor, active channel highlight.
-func (p *chatPane) railLines(width, height int) []string {
-	bg := theme.InsetBg()
-	inset := func(s string) string { return kit.PaintRow(s, width, bg) }
-	var lines []string
-	lines = append(lines, inset(" "+theme.SectionHeader().Render("CHANNELS")))
-	for _, ch := range p.channels {
-		if strings.HasPrefix(ch, "dm:") {
-			// DM group header goes right before the first DM.
-			lines = append(lines, inset(" "+theme.SectionHeader().Render("DIRECT MESSAGES")))
-			break
-		}
-	}
-	for i, ch := range p.channels {
-		label := " " + ch
-		if n := p.unreadCount(ch); n > 0 {
-			if n == 1 {
-				label += " " + theme.DangerText().Render(theme.GlyphDot)
-			} else {
-				label += " " + theme.DangerText().Render(theme.GlyphDot+itoa(n))
-			}
-		}
-		if i == p.railCur && p.railFocus {
-			label = theme.GlyphCursor + label[1:]
-		}
-		if i == p.active {
-			label = theme.TabActive().Render(label)
-		} else {
-			label = theme.TextDim().Render(label)
-		}
-		lines = append(lines, inset(label))
-	}
-	for len(lines) < height {
-		lines = append(lines, inset(""))
-	}
-	return lines[:height]
-}
-
 // contextLines renders the right pane: the open thread beside the
 // transcript, or an agent profile; blank when closed.
 func (p *chatPane) contextLines(width, height int) []string {
@@ -903,26 +950,7 @@ func (p *chatPane) contextLines(width, height int) []string {
 			body = append(body, theme.TextDim().Render(" (profile unavailable)"))
 		}
 	case p.threadID != 0:
-		wrap := width - 12 // room for the author prefix + margins
-		body = append(body, theme.Brand().Render(" thread #"+itoa(int(p.threadID))), "")
-		for _, msg := range p.visibleHistory() {
-			style := theme.TabActive()
-			if msg.Author != bus.Human {
-				style = theme.Brand()
-			}
-			tag := ""
-			if msg.Thread != 0 {
-				tag = theme.Hint().Render(" ↳")
-			}
-			prefix := style.Render(msg.Author) + tag + " "
-			for i, seg := range wrapWords(msg.Text, wrap) {
-				if i > 0 {
-					seg = "  " + seg
-				}
-				body = append(body, " "+prefix+seg)
-				prefix = "  "
-			}
-		}
+		body = append(body, p.threadLines(width)...)
 	default:
 		// The closed side pane is not a dead zone (F-026 P3): it names
 		// what opens it, then quiet blank rows on the elevated shade.
@@ -971,29 +999,6 @@ func padToANSI(s string, w int) string {
 	return s
 }
 
-func (p *chatPane) rail() string {
-	var parts []string
-	for i, ch := range p.channels {
-		label := ch
-		if n := p.unreadCount(ch); n > 0 {
-			if n == 1 {
-				label += " " + theme.DangerText().Render(theme.GlyphDot)
-			} else {
-				label += " " + theme.DangerText().Render(theme.GlyphDot+itoa(n))
-			}
-		}
-		if i == p.active {
-			parts = append(parts, theme.TabActive().Render("["+label+"]"))
-		} else {
-			parts = append(parts, theme.TextDim().Render(label))
-		}
-	}
-	if len(parts) == 0 {
-		parts = append(parts, theme.TextDim().Render("#general"))
-	}
-	return strings.Join(parts, " ")
-}
-
 // unreadCount reports the channel's unread attention count via the
 // Model-injected seam (nil-safe: no store → no markers).
 func (p *chatPane) unreadCount(ch string) int {
@@ -1008,44 +1013,4 @@ func minInt(a, b int) int {
 		return a
 	}
 	return b
-}
-
-// wrapWords wraps text to width on spaces (long words hard-split).
-func wrapWords(text string, width int) []string {
-	if width < 12 {
-		width = 12
-	}
-	var out []string
-	for _, para := range strings.Split(text, "\n") {
-		words := strings.Fields(para)
-		if len(words) == 0 {
-			out = append(out, "")
-			continue
-		}
-		cur := ""
-		flush := func() {
-			out = append(out, cur)
-			cur = ""
-		}
-		for _, w := range words {
-			switch {
-			case cur == "":
-				cur = w
-			case len([]rune(cur))+1+len([]rune(w)) <= width:
-				cur += " " + w
-			default:
-				flush()
-				cur = w
-			}
-			for len([]rune(cur)) > width { // hard-split oversized word
-				r := []rune(cur)
-				out = append(out, string(r[:width]))
-				cur = string(r[width:])
-			}
-		}
-		if cur != "" || len(out) == 0 {
-			flush()
-		}
-	}
-	return out
 }

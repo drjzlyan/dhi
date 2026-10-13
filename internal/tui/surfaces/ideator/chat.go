@@ -19,7 +19,13 @@ func (m *Model) chatHistory() []bus.Message {
 	if !ok || m.bus == nil {
 		return nil
 	}
-	return m.bus.History(sess.Channel, 0)
+	var out []bus.Message
+	for _, msg := range m.bus.History(sess.Channel, 0) {
+		if bus.Conversational(msg) { // tool lines live in the trace (F-072)
+			out = append(out, msg)
+		}
+	}
+	return out
 }
 
 // chatKey handles keys while TRANSCRIPT is active and the composer is
@@ -146,16 +152,21 @@ func (m *Model) chatBody(w, h int) string {
 	// The transcript renders through the shared kit.Transcript (F-026
 	// P6): day dividers, stamps, author styles, shared wrap. Each row is
 	// tagged with its bus id so the exchange replays in order.
-	tr := &kit.Transcript{Width: w - 2}
+	tr := &kit.Transcript{Width: w - 2, Markdown: kit.ChatMarkdown}
 	for _, msg := range m.chatHistory() {
 		row := kit.TrnRow{
-			Author: msg.Author,
-			Text:   fmt.Sprintf("#%d %s", msg.ID, msg.Text),
-			At:     msg.At,
-			Kind:   kit.TrnAgent,
+			Author:   msg.Author,
+			Text:     msg.Text,
+			Suffix:   theme.TextMuted().Render(fmt.Sprintf("#%d", msg.ID)),
+			At:       msg.At,
+			Kind:     kit.TrnAgent,
+			Markdown: true,
 		}
-		if msg.Author == busHuman {
+		switch {
+		case msg.Author == busHuman:
 			row.Kind = kit.TrnHuman
+		case msg.Kind == bus.KindAlert:
+			row.Kind = kit.TrnAlert
 		}
 		tr.Rows = append(tr.Rows, row)
 	}

@@ -10,7 +10,6 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/agentkit/runtime"
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
-	"github.com/drjzlyan/dhi/internal/preview"
 	"github.com/drjzlyan/dhi/internal/tui/kit"
 	"github.com/drjzlyan/dhi/internal/tui/theme"
 	"github.com/drjzlyan/dhi/internal/unread"
@@ -307,7 +306,7 @@ func (c *chatModel) lastSuggestion() string {
 	h := c.bus.History(c.channelName(), 0)
 	for i := len(h) - 1; i >= 0; i-- {
 		m := h[i]
-		if m.Author == bus.Human || !strings.Contains(m.Text, "```") {
+		if m.Author == bus.Human || !bus.Conversational(m) || !strings.Contains(m.Text, "```") {
 			continue
 		}
 		parts := strings.Split(m.Text, "```")
@@ -365,19 +364,19 @@ func (c *chatModel) view(h int) string {
 	return strings.Join(lines, "\n")
 }
 
-func channelLabel(ch string) string {
-	if ch == "#general" {
-		return "#general"
-	}
-	return ch
-}
+func channelLabel(ch string) string { return bus.ChannelLabel(ch) }
 
 // transcript renders the most recent rows that fit maxRows through the
 // shared kit.Transcript (F-026 P4): day dividers, HH:MM stamps, author
 // styles, and code fences via the injected markdown seam (agents post
 // diffs and code — raw fences never render well).
 func (c *chatModel) transcript(maxRows int) []string {
-	history := c.bus.History(c.channelName(), 0)
+	var history []bus.Message
+	for _, m := range c.bus.History(c.channelName(), 0) {
+		if bus.Conversational(m) { // tool lines live in the trace (F-072)
+			history = append(history, m)
+		}
+	}
 	if n := len(history); n > chatTranscriptN {
 		history = history[n-chatTranscriptN:]
 	}
@@ -387,18 +386,16 @@ func (c *chatModel) transcript(maxRows int) []string {
 	tr := &kit.Transcript{
 		// The panel's inner width (edges + padding) — the transcript
 		// wraps to what actually renders (F-026 P4).
-		Width: chatWidth - 4,
-		Markdown: func(md string, width int) string {
-			if out, err := preview.Render(md, width); err == nil {
-				return out
-			}
-			return md
-		},
+		Width:    chatWidth - 4,
+		Markdown: kit.ChatMarkdown,
 	}
 	for _, m := range history {
-		row := kit.TrnRow{Author: m.Author, Text: m.Text, At: m.At, Kind: kit.TrnAgent}
-		if m.Author == bus.Human {
+		row := kit.TrnRow{Author: m.Author, Text: m.Text, At: m.At, Kind: kit.TrnAgent, Markdown: true}
+		switch {
+		case m.Author == bus.Human:
 			row.Kind = kit.TrnHuman
+		case m.Kind == bus.KindAlert:
+			row.Kind = kit.TrnAlert
 		}
 		tr.Rows = append(tr.Rows, row)
 	}

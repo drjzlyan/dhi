@@ -380,8 +380,9 @@ func runTUI() (relaunch bool) {
 				}
 				return appRef.OpenInEditor(paths)
 			},
-			Working:  agentRT.Working,
-			Sessions: sessionStore,
+			Working:      agentRT.Working,
+			AgentWorking: agentRT.AgentWorking,
+			Sessions:     sessionStore,
 			OpenIdeator: func(id int) bool {
 				if appRef == nil {
 					return false

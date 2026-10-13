@@ -29,10 +29,17 @@ func TestWideFloorThreeColumns(t *testing.T) {
 		t.Fatalf("rows = %d, want height", len(rows))
 	}
 	joined := ansi.Strip(strings.Join(rows, "\n"))
-	for _, want := range []string{"CHANNELS", "DIRECT MESSAGES", "#general", "dm:scout", "#frontend"} {
+	for _, want := range []string{"CHANNELS", "DIRECT MESSAGES", "#general", "scout", "#frontend"} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("rail missing %q:\n%s", want, joined)
 		}
+	}
+	// DMs read as the agent's name (F-072), under their own header.
+	if strings.Contains(joined, "dm:") {
+		t.Fatalf("rail leaks the dm: prefix:\n%s", joined)
+	}
+	if strings.Index(joined, "DIRECT MESSAGES") < strings.Index(joined, "#frontend") {
+		t.Fatalf("DIRECT MESSAGES header must follow the channels:\n%s", joined)
 	}
 	if !strings.Contains(joined, "please review the login flow") {
 		t.Fatalf("transcript missing:\n%s", joined)
@@ -56,7 +63,7 @@ func TestWideThreadPaneBesideTranscript(t *testing.T) {
 	}
 	rows := p.render(110, 20)
 	joined := ansi.Strip(strings.Join(rows, "\n"))
-	if !strings.Contains(joined, "thread #") {
+	if !strings.Contains(joined, "Thread") {
 		t.Fatalf("thread pane missing:\n%s", joined)
 	}
 	// Replies render word-wrapped in the pane.

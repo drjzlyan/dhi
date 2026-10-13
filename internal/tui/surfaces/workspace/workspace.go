@@ -123,6 +123,7 @@ type Model struct {
 	openReview   func(id string) bool                    // reviewer select (F-016 jump)
 	openEditor   func(paths []string) bool               // editor open-in-editor (repos `e`, F-026 P3)
 	working      func(channel string, thread int64) bool // live turn indicator (F-035 Part D)
+	agentWorking func(id string) bool                    // agent presence (F-072/F-073)
 	episodes     *episode.Store                          // assignee plan / verify / spend (F-067)
 	sessions     *ideation.Store                         // pending proposals → inbox (F-033)
 	openIdeator  func(proposalID int) bool               // ideator jump (F-033 inbox)
@@ -184,6 +185,9 @@ type Deps struct {
 	// Working reports an in-flight agent turn for a thread (F-035
 	// Part D); nil renders no live indicator.
 	Working func(channel string, thread int64) bool
+	// AgentWorking reports whether an agent has any turn in flight: the
+	// rail's presence dot and the board's "working" chip (F-072/F-073).
+	AgentWorking func(id string) bool
 	// Sessions is the ideation store: pending agent proposals surface in
 	// the inbox (F-033). nil = no proposal rows.
 	Sessions *ideation.Store
@@ -234,6 +238,7 @@ func New(version string, ws *workspace.Workspace, d Deps) *Model {
 		m.openReview = d.OpenReview
 		m.openEditor = d.OpenEditor
 		m.working = d.Working
+		m.agentWorking = d.AgentWorking
 		m.episodes = d.Episodes
 		m.sessions = d.Sessions
 		m.openIdeator = d.OpenIdeator
@@ -248,6 +253,7 @@ func New(version string, ws *workspace.Workspace, d Deps) *Model {
 		if d.Bus != nil {
 			m.pane = newChatPane(d.Bus, d.Runtime, m.org)
 			m.pane.profile = m.agentProfileLines
+			m.pane.agentWorking = d.AgentWorking
 			if cm, err := channelmeta.Open(ws.Root); err != nil {
 				m.chatMetaErr = err.Error()
 			} else {

@@ -7,6 +7,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/mattn/go-runewidth"
 
+	"github.com/drjzlyan/dhi/internal/ansi"
 	"github.com/drjzlyan/dhi/internal/tui/theme"
 )
 
@@ -19,6 +20,9 @@ const (
 	TrnHuman TrnAuthor = iota
 	TrnAgent
 	TrnSystem
+	// TrnAlert is a runtime event the human must act on (F-072): the
+	// body reads in the warning colour.
+	TrnAlert
 )
 
 // TrnRow is one transcript row. At drives the HH:MM stamp and the day
@@ -34,6 +38,10 @@ type TrnRow struct {
 	Markdown bool
 	At       time.Time
 	Sep      string
+	// Suffix is styled metadata (an edit note, reactions, a pin) placed
+	// after the body's last line, or on its own line when it won't fit —
+	// kept out of Text so markdown never parses it.
+	Suffix string
 }
 
 // Transcript renders channel/thread transcripts for every surface
@@ -155,21 +163,46 @@ func (t *Transcript) View() []string {
 // textLines renders one row's text: markdown through the seam (block
 // content keeps its line structure), word-wrapped prose otherwise.
 func (t *Transcript) textLines(r TrnRow, textW int) []string {
+	out, rendered := t.bodyLines(r, textW)
+	if r.Suffix == "" {
+		return out
+	}
+	// Prose takes the suffix on its last line when it fits; rendered
+	// markdown (which may end in a code block) gets it on its own line.
+	last := strings.TrimRight(ansi.Strip(out[len(out)-1]), " ")
+	if !rendered && runeWidth(last)+1+runeWidth(r.Suffix) <= textW {
+		out[len(out)-1] = padTo(clip(out[len(out)-1], runeWidth(last))+" "+r.Suffix, textW)
+		return out
+	}
+	return append(out, padTo(r.Suffix, textW))
+}
+
+// bodyLines renders the text; rendered reports the markdown path.
+func (t *Transcript) bodyLines(r TrnRow, textW int) (lines []string, rendered bool) {
 	text := r.Text
 	if r.Markdown && t.Markdown != nil {
-		if rendered := t.Markdown(text, textW); rendered != "" {
-			text = rendered
+		// The seam returns lines already styled and wrapped to textW;
+		// "" means plain prose, wrapped below.
+		if md := t.Markdown(text, textW); md != "" {
+			var out []string
+			for _, l := range strings.Split(md, "\n") {
+				out = append(out, padTo(clip(l, textW), textW))
+			}
+			return out, true
 		}
 	}
 	// Bodies read in the primary text color; who spoke is carried by the
 	// author label's color (F-055) — an all-accent transcript is hard to
 	// read and leaves the accent meaning nothing.
 	st := theme.TextStyle()
-	if r.Kind == TrnSystem {
+	switch r.Kind {
+	case TrnSystem:
 		st = theme.TextMuted()
+	case TrnAlert:
+		st = theme.WarningText()
 	}
 	if strings.TrimSpace(text) == "" {
-		return []string{""}
+		return []string{""}, false
 	}
 	var out []string
 	for _, l := range strings.Split(strings.TrimRight(text, "\n"), "\n") {
@@ -184,7 +217,7 @@ func (t *Transcript) textLines(r TrnRow, textW int) []string {
 			out = append(out, st.Render(padTo(w, textW)))
 		}
 	}
-	return out
+	return out, false
 }
 
 // WrapWords breaks text at spaces to fit width, hard-breaking tokens
@@ -246,6 +279,8 @@ func authorStyle(r TrnRow) lipgloss.Style {
 		return theme.AccentText()
 	case TrnAgent:
 		return lipgloss.NewStyle().Foreground(theme.AuthorColor(r.Author)).Bold(true)
+	case TrnAlert:
+		return theme.WarningText().Bold(true)
 	}
 	return theme.TextMuted()
 }

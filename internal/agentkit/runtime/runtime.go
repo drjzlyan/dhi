@@ -9,6 +9,7 @@ package runtime
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strconv"
@@ -186,19 +187,41 @@ func workKey(channel string, thread int64) string {
 
 // Working reports whether an agent turn is in flight for the thread.
 func (r *Runtime) Working(channel string, thread int64) bool {
+	if r == nil { // no crew installed: nobody is working
+		return false
+	}
 	r.workMu.Lock()
 	defer r.workMu.Unlock()
 	return r.work[workKey(channel, thread)] > 0
 }
 
+// agentKey is the work-map key for an agent's own presence.
+func agentKey(id string) string { return "@" + id }
+
+// AgentWorking reports whether agentID has a turn in flight anywhere —
+// the rail's presence dot and the board's "working" chip (F-072/F-073).
+func (r *Runtime) AgentWorking(id string) bool {
+	if r == nil { // no crew installed: nobody is working
+		return false
+	}
+	r.workMu.Lock()
+	defer r.workMu.Unlock()
+	return r.work[agentKey(id)] > 0
+}
+
 // ActiveCount is how many agent turns are in flight right now across
 // every thread (the shell's "N working" presence chip).
 func (r *Runtime) ActiveCount() int {
+	if r == nil { // no crew installed: nobody is working
+		return 0
+	}
 	r.workMu.Lock()
 	defer r.workMu.Unlock()
 	n := 0
-	for _, c := range r.work {
-		n += c
+	for k, c := range r.work {
+		if !strings.HasPrefix(k, "@") { // presence keys mirror thread keys
+			n += c
+		}
 	}
 	return n
 }
@@ -534,7 +557,7 @@ func (r *Runtime) Handle(ctx context.Context, msg bus.Message) {
 		}
 	} else if len(targets) > 0 && !r.takeHop(msg.Channel) {
 		_, _ = r.cfg.Bus.Post(bus.Message{
-			Channel: msg.Channel, Thread: msg.Thread, Author: systemAuthor,
+			Channel: msg.Channel, Thread: msg.Thread, Author: systemAuthor, Kind: bus.KindAlert,
 			Text: fmt.Sprintf("hand-off limit (%d) reached in this channel; a human message resumes agent-to-agent routing", maxAgentHops),
 		})
 		return
@@ -645,6 +668,7 @@ func (r *Runtime) Turn(ctx context.Context, agentID string, trigger bus.Message)
 	// named path instead of silently degrading to built-ins.
 	if r.cfg.Standards {
 		if err := standards.Check(r.cfg.WS.Root); err != nil {
+			r.alert(trigger, agentID, turnRefused(err))
 			return fmt.Errorf("runtime: %s: %w", agentID, err)
 		}
 	}
@@ -652,6 +676,7 @@ func (r *Runtime) Turn(ctx context.Context, agentID string, trigger bus.Message)
 	// by name rather than silently falling back to the builtin.
 	if r.cfg.Workflows {
 		if _, _, err := r.activeWorkflow(e.m); err != nil {
+			r.alert(trigger, agentID, turnRefused(err))
 			return fmt.Errorf("runtime: %s: %w", agentID, err)
 		}
 	}
@@ -661,12 +686,17 @@ func (r *Runtime) Turn(ctx context.Context, agentID string, trigger bus.Message)
 	key := workKey(trigger.Channel, bus.ThreadOf(trigger))
 	r.workStart(key)
 	defer r.workDone(key)
+	r.workStart(agentKey(agentID))
+	defer r.workDone(agentKey(agentID))
 
 	// F-068: learn from the turn when it was learned the hard way.
 	r.consolidate(agentID)
 	tl := &turnLog{}
 	r.noteCorrection(agentID, trigger, tl)
 	err := r.cliTurn(ctx, e, trigger, tl)
+	if err != nil && !errors.Is(err, errAlerted) && ctx.Err() == nil {
+		r.alert(trigger, agentID, "I couldn't finish: "+err.Error())
+	}
 	r.markLessonsUsed(agentID, trigger)
 	r.reflect(context.WithoutCancel(ctx), e, trigger, tl)
 	r.ReleaseReady(context.WithoutCancel(ctx)) // F-071: unblocked sub-cards start now

@@ -487,10 +487,10 @@ exit 1
 		t.Fatalf("transcripts = %v, want 2", got)
 	}
 	// No success reply was posted for the failed turn — only the retry
-	// notice from the exhausted budget.
+	// notice and the human-facing alert naming the failure (F-072).
 	hist := b.History("#general", 0)
-	if n := len(hist); n > 2 {
-		t.Fatalf("history = %d messages, want trigger + retry notice only: %+v", n, hist)
+	if n := len(hist); n != 3 || hist[2].Kind != bus.KindAlert {
+		t.Fatalf("history = %d messages, want trigger + retry notice + alert: %+v", n, hist)
 	}
 	if has(hist, "Recovered on retry.") != nil {
 		t.Fatal("a success reply was posted despite the failed turn")

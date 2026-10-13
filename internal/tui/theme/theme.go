@@ -443,6 +443,9 @@ func DialogTitle() lipgloss.Style {
 // dialog title rows (F-064) — one shade above the panel.
 func HeaderBg() lipgloss.Style { return lipgloss.NewStyle().Background(Current.BgHeader) }
 
+// SelectionBg paints a selected row's background.
+func SelectionBg() lipgloss.Style { return lipgloss.NewStyle().Background(Current.BgSelection) }
+
 // RowAltBg paints every other row of a long list (quiet zebra).
 func RowAltBg() lipgloss.Style { return lipgloss.NewStyle().Background(Current.BgRowAlt) }
 

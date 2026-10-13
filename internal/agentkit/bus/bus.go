@@ -46,7 +46,29 @@ const (
 	// Older replies carry no kind and are not replayed — positive
 	// marking, so legacy unmarked progress lines never leak back in.
 	KindReply = "reply"
+	// KindAlert marks a runtime event the human must act on (a budget
+	// stop, an auth failure, a failed or stuck task — F-072): shown in
+	// chat as a system line and counted as attention, but never replayed
+	// to the agent as its own words.
+	KindAlert = "alert"
 )
+
+// Conversational reports whether m is part of the human-readable
+// conversation: everything except relayed stream lines and routine
+// notices (F-072), which belong to the trace view.
+func Conversational(m Message) bool { return m.Kind != KindStream }
+
+// ChannelLabel names a channel for people: a DM reads as the agent's id
+// ("dm:scout" → "scout"); named channels keep their "#".
+func ChannelLabel(ch string) string {
+	if id, ok := strings.CutPrefix(ch, "dm:"); ok {
+		return id
+	}
+	return ch
+}
+
+// IsDM reports whether ch is a direct-message channel.
+func IsDM(ch string) bool { return strings.HasPrefix(ch, "dm:") }
 
 var nameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]*$`)
 

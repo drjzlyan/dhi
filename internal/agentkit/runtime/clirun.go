@@ -111,8 +111,8 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message, tl
 		// F-066: budgets bind between spawns (a CLI runs to completion).
 		if msg, ok := r.budgetCheck(e.m.ID, task.Slug, tune.Budgets); !ok {
 			r.saveEpisode(ep)
-			r.notice(trigger, e.m.ID, "budget reached — "+msg+". Raise it in Settings → CONFIG, then ask again.")
-			return fmt.Errorf("runtime: %s: budget: %s", e.m.ID, msg)
+			r.alert(trigger, e.m.ID, "I stopped: the budget is reached — "+msg+". Raise it in Settings → CONFIG, then ask again.")
+			return fmt.Errorf("runtime: %s: budget: %s: %w", e.m.ID, msg, errAlerted)
 		}
 		run, events := r.cliSpawnOnce(ctx, e, trigger, spawnInput{
 			prompt: prompt + brief, system: system, workdir: workdir, attempt: attempt,
@@ -133,7 +133,7 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message, tl
 		ep = episode.Fold(ep, run, e.cli.Name, workdir, session, trigger.ID)
 
 		if run.Status == tasks.RunOK {
-			summary := run.Summary
+			summary := sanitizeReply(run.Summary)
 			changed := true
 			if stateOK {
 				now, ok := r.worktreeState(ctx, workdir)
@@ -191,7 +191,7 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message, tl
 					continue
 				}
 			} else if len(targets) == 0 && r.taskWorktree(task) != "" && r.cfg.Run != nil && iter == 0 {
-				r.notice(trigger, e.m.ID, "no verify command for this project (Go modules are checked with go test); the result is unverified")
+				r.notice(trigger, e.m.ID, "no verify command detected for this project; the result is unverified")
 			}
 			if summary != "" {
 				// F-036: the final reply re-enters dispatch so an
@@ -216,9 +216,6 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message, tl
 		// else retries with a brief of what failed and where it stopped.
 		lastErr := fmt.Errorf("runtime: %s: run %s: %s", e.m.ID, run.ID, run.Error)
 		fail := clirun.Classify(run.Status == tasks.RunTimeout, run.Error)
-		if fail == clirun.FailAuth {
-			r.notice(trigger, e.m.ID, authHint(e.cli))
-		}
 		// F-066: a resumed spawn that fails may be a dead session (expired,
 		// pruned, another machine). Fall back to one fresh spawn — named,
 		// never silent — without spending the retry budget.
@@ -233,7 +230,8 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message, tl
 		}
 		if !fail.Retryable() || attempt >= e.m.Retries ||
 			fail == clirun.FailOverflow && level == maxCompaction {
-			return lastErr
+			r.alert(trigger, e.m.ID, humanFailure(fail, e.cli))
+			return fmt.Errorf("%w (%w)", lastErr, errAlerted)
 		}
 		if fail == clirun.FailOverflow {
 			level++
@@ -747,6 +745,7 @@ func (r *Runtime) cliPromptAt(ctx context.Context, e *entry, trigger bus.Message
 	grounding := "\n\nFiles are addressed as <member>/<rel-path>. Members: " + strings.Join(members, ", ")
 	grounding += "\nThe reserved workspace dotdir is addressed as .dhi/<rel-path>; ideation artifacts belong under .dhi/sessions/<session>/<file>."
 	system += grounding
+	system += "\n\n" + teammateVoice
 	if r.cfg.Standards {
 		system += "\n\n" + standards.Resolve(r.cfg.WS.Root, e.m.ID, r.teamLookup())
 	}

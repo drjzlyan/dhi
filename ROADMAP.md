@@ -1034,3 +1034,15 @@ better every week, a self-running team, lowest cost per outcome. Measured by eva
 - [x] P5 Tool forge: recipe/script tools via tool_propose, approved in Settings PROPOSALS, served as custom__<name>; repetition hint (F-069, ADR-0034)
 - [x] P6 Settings proposals: settings_propose (checked against the layer stack), @you in the Inbox, applied as one key from Settings PROPOSALS (F-070)
 - [x] P7 Self-running team: sub-cards with dependencies released by DHI, lead decomposition, structured hand-offs, reviewer loop, Agent HQ record, standup/review rituals (F-071)
+
+## M30 — Teammate-grade collaboration, verify everywhere, durable memory
+
+Plan: `~/.claude/plans/transient-baking-sun.md`. One spec + commit per phase on branch `m30`.
+
+- [x] P1 Chat like Slack: grouped rail without `dm:`, name search + switcher, messages only, live status line, alerts, markdown (F-072)
+- [ ] P2 Board cards, comments, assignment picker, take-it-yourself, reassign to any agent (F-073)
+- [ ] P3 Task traces: timestamped transcripts, merged timeline view, export (F-074)
+- [ ] P4 Naming templates: branch / worktree / commit / PR, user templates in Settings (F-075)
+- [ ] P5 Verify every top language + managed Rust/JDK/.NET toolchains (F-076, ADR-0036)
+- [ ] P6 Harder evals exercising fix-and-retry (F-077)
+- [ ] P7 Top-class agent memory: durable stores, bounded growth, token budget, summaries (F-078, ADR-0037)

@@ -1,5 +1,19 @@
 # STATE — current position
 
+### Session 54 (M30: teammate-grade collaboration, branch `m30`)
+
+- Plan: `~/.claude/plans/transient-baking-sun.md` (7 phases, one commit each).
+- P1 DONE (F-072): Slack-like rail (no `dm:`), rail `/` filter + `ctrl+g` switcher, stream
+  lines hidden from chat/unread/inbox, live status line, `bus.KindAlert`, teammate-voice prompt
+  + reply sanitizer, `kit.RenderMarkdown` in workspace/editor/ideator chat.
+- Gotchas:
+  - `bus.Conversational(m)` is the one filter for "what people see". Any new chat view must
+    use it. `unread.AddressedToHuman` already does.
+  - Alerts are `KindAlert`: never replayed to the agent, always attention. Don't post
+    human-facing failures as `KindReply` (they would replay as the agent's own words).
+  - Workspace keys: send Escape and the next key separately in tmux, or they parse as alt+key.
+  - Runtime presence methods must stay nil-safe: main wires method values even with no crew.
+
 ### Session 53 (M29: Virtual Employee, P1 = F-065)
 
 - Plan: `~/.claude/plans/make-sure-the-agent-jazzy-otter.md`. There are seven phases.
