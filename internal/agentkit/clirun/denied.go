@@ -36,8 +36,11 @@ func DeniedPath(text string) string {
 	if !mkdirRe.MatchString(text) {
 		p = filepath.Dir(p)
 	}
-	if p == "/" {
-		return ""
+	if p == "/" || p == "/dev" || strings.HasPrefix(p, "/dev/") {
+		return "" // device nodes are the sandbox's business, never a grant
+	}
+	if strings.Contains(p+"/", "/.git/") {
+		return "" // git internals: the default branch is locked on purpose (work_branch)
 	}
 	return p
 }

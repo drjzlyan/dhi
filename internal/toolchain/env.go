@@ -60,7 +60,10 @@ func firstPathEntry(pathList string) string {
 // HOME. Everything else under the prefix is read-only to them.
 var WritableSubdirs = []string{"npm-cache", "mcp-home",
 	// F-076: build caches for the ecosystems DHI verifies.
-	"uv-cache", "cargo-home", "gradle-home", "m2", "nuget", "dotnet-home"}
+	"uv-cache", "cargo-home", "gradle-home", "m2", "nuget", "dotnet-home",
+	// F-086 (live): go build/test write GOCACHE before anything else; the
+	// default ~/Library/Caches/go-build is outside the sandbox.
+	"go-cache", "go-path"}
 
 // BuildEnv points the package managers' caches at the toolchain's
 // writable folders (F-076): a sandboxed build may not write $HOME
@@ -83,6 +86,9 @@ func (m *Manager) BuildEnv() []string {
 		"DOTNET_CLI_TELEMETRY_OPTOUT=1",
 		"DOTNET_NOLOGO=1",
 		"DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1",
+		"GOCACHE=" + sub("go-cache"),
+		"GOPATH=" + sub("go-path"),
+		"GOMODCACHE=" + filepath.Join(sub("go-path"), "pkg", "mod"),
 	}
 }
 

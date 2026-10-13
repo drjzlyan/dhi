@@ -32,6 +32,14 @@
   signature + `pack.ReadSkills`) → PROPOSALS SKILLS (v review, y scope + attach → `skillprop.Install`
   re-verifies the reviewed sha). `library.UserSkillsDir`, `registry.UserDir` (keys inherited, index
   served), set in `main()`; boot `ReadOnly` root for your skills; pack scripts copied + recorded.
+- P7 DONE (F-092): live tmux runs of the yume-forge DM. Fixed: Seatbelt /dev writes, Go caches in
+  BuildEnv, default-branch ref lock in the guard (`gitcore.DefaultBranchRefs`), TMPPREFIX,
+  `work_branch` auto + claude `MCP_TOOL_TIMEOUT` (WaitEnv) 1h, relaunch stops the spawn, carry
+  excludes .dhi, `Run.Context` (last call) for resume, served tools finally get `cfg.Run`
+  (pre-existing: `run` never worked for CLI agents), chat-pane notes.
+- M32 COMPLETE in code on `m32` (not pushed, no PR). Open: live skill suggestion + two-workspace
+  global check; codex/opencode TempEnv/WaitEnv; Linux. One editor-package test failed once under
+  `make verify` load and never again (5 reruns) — watch it.
 - Gotchas:
   - Package vars set by main (standards.UserPath, library.UserSkillsDir, registry.UserDir) are ""
     in tests; set + t.Cleanup them in tests that need a user layer.

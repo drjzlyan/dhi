@@ -248,6 +248,10 @@ type Run struct {
 	// Prompt-cache accounting (F-065); 0 = not reported.
 	CacheRead  int `toml:"cache_read,omitempty"`
 	CacheWrite int `toml:"cache_write,omitempty"`
+	// Context is the prompt size of the run's LAST model call (fresh
+	// input + cache read + cache write), when the CLI streams per-call
+	// usage; 0 = unknown. The totals above sum every call of the run.
+	Context int `toml:"context,omitempty"`
 	// Session is the CLI session id this run reported (F-066); a later
 	// turn of the same episode resumes it.
 	Session string `toml:"session,omitempty"`

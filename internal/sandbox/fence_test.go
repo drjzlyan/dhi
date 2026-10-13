@@ -48,3 +48,15 @@ func TestBubblewrapMasksSecretsInsideABoundRoot(t *testing.T) {
 		t.Fatalf("masked a path outside every root: %v", argv)
 	}
 }
+
+// F-086 (live): shells and git write /dev/null; without it every
+// redirect fails EPERM inside the sandbox.
+func TestSeatbeltAllowsDeviceNodeWrites(t *testing.T) {
+	p, err := seatbeltProfile([]string{t.TempDir()}, nil, true, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(p, `(allow file-write* (literal "/dev/null")`) {
+		t.Fatalf("profile lacks /dev/null:\n%s", p)
+	}
+}

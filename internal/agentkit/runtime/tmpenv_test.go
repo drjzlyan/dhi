@@ -24,6 +24,9 @@ func TestCLIEnvPointsTempAtThePrivateAgentDir(t *testing.T) {
 		k, v, _ := strings.Cut(kv, "=")
 		got[k] = append(got[k], v)
 	}
+	if got["MCP_TOOL_TIMEOUT"][0] != "3600000" {
+		t.Fatalf("MCP_TOOL_TIMEOUT = %v", got["MCP_TOOL_TIMEOUT"])
+	}
 	for _, k := range []string{"TMPDIR", "CLAUDE_CODE_TMPDIR"} {
 		if len(got[k]) != 1 || got[k][0] != want {
 			t.Fatalf("%s = %v, want exactly [%s]", k, got[k], want)

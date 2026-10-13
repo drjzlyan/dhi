@@ -14,6 +14,8 @@ func TestDeniedPath(t *testing.T) {
 		{"command failed (exit 1): no such file", ""},
 		{"EPERM: operation not permitted", ""},
 		{"rm: /x: Operation not permitted", ""}, // parent is "/" — never offered
+		{"zsh:1: operation not permitted: /dev/null", ""},
+		{"fatal: cannot lock ref 'refs/heads/main': Unable to create '/r/.git/refs/heads/main.lock': Operation not permitted", ""},
 	} {
 		if got := DeniedPath(c.in); got != c.want {
 			t.Errorf("DeniedPath(%q) = %q, want %q", c.in, got, c.want)

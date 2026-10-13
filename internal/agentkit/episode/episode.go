@@ -104,7 +104,12 @@ func Fold(e Episode, run tasks.Run, cli, workdir, session string, seen int64) Ep
 	}
 	e.CacheRead += run.CacheRead
 	e.CacheWrite += run.CacheWrite
-	if ctx := max(run.TokensIn, 0) + run.CacheRead + run.CacheWrite; ctx > 0 {
+	// The size the session resumes at is the last call's prompt. The run
+	// totals sum every call (a 15-call run of a 13k prompt "is" 200k), so
+	// they are only the fallback for CLIs that report nothing per call.
+	if run.Context > 0 {
+		e.LastContext = run.Context
+	} else if ctx := max(run.TokensIn, 0) + run.CacheRead + run.CacheWrite; ctx > 0 {
 		e.LastContext = ctx
 	}
 	e.CostUSD += run.CostUSD

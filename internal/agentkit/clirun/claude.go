@@ -25,6 +25,7 @@ var Claude = &CLI{
 	// /private/tmp/claude-<uid>/<cwd> and fails EPERM under the sandbox;
 	// CLAUDE_CODE_TMPDIR moves that base (F-086).
 	TempEnv: []string{"CLAUDE_CODE_TMPDIR"},
+	WaitEnv: []string{"MCP_TOOL_TIMEOUT"},
 	StateRoot: func() []string {
 		home, err := os.UserHomeDir()
 		if err != nil {
@@ -152,6 +153,12 @@ func claudeAssistantEvents(ev map[string]any) []StreamEvent {
 	msg, _ := ev["message"].(map[string]any)
 	content, _ := msg["content"].([]any)
 	var out []StreamEvent
+	if u, ok := msg["usage"].(map[string]any); ok {
+		n := func(k string) int { f, _ := u[k].(float64); return int(f) }
+		if ctx := n("input_tokens") + n("cache_read_input_tokens") + n("cache_creation_input_tokens"); ctx > 0 {
+			out = append(out, StreamEvent{Kind: EventUsage, Context: ctx})
+		}
+	}
 	for _, raw := range content {
 		b, ok := raw.(map[string]any)
 		if !ok {

@@ -155,14 +155,18 @@ func (r *Runtime) stashChanges(ctx context.Context, member string) (bool, error)
 		return false, fmt.Errorf("git unavailable")
 	}
 	dir := r.memberPath(member)
-	out, _, err := r.cfg.Git.Run(ctx, dir, "status", "--porcelain")
+	out, _, err := r.cfg.Git.Run(ctx, dir, "status", "--porcelain", "--", ".", ":(exclude).dhi")
 	if err != nil {
 		return false, err
 	}
 	if strings.TrimSpace(out) == "" {
 		return false, nil
 	}
-	if _, _, err := r.cfg.Git.Run(ctx, dir, "stash", "push", "--include-untracked", "-m", "dhi: work_branch carry"); err != nil {
+	// Never DHI's own dir: .dhi/ (its .gitignore, runtime state) stays
+	// with the workspace, not the agent's change (live: the gitignore
+	// moved into the worktree and runtime files showed up untracked).
+	if _, _, err := r.cfg.Git.Run(ctx, dir, "stash", "push", "--include-untracked", "-m", "dhi: work_branch carry",
+		"--", ".", ":(exclude).dhi"); err != nil {
 		return false, err
 	}
 	return true, nil

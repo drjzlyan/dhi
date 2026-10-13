@@ -157,8 +157,9 @@ var toolScopes = map[string]Scope{
 	// approval (the human decision is the proposal's resolution).
 	"propose_session": Read,
 
-	// work_branch cuts a branch and may move the shared checkout's
-	// uncommitted changes into the new worktree (F-086).
-	"work_branch": Git,
+	// work_branch only isolates the agent's own work: a card, a new branch,
+	// a worktree, and its uncommitted edits moved there (F-086). Asking
+	// first made the right move wait on a card (live: the call timed out).
+	"work_branch": Read,
 	"git_commit":  Git, "git_push": Push, "pr_open": Push, "run": Exec, "skill_run": Exec,
 }

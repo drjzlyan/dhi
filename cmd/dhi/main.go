@@ -1393,7 +1393,13 @@ func guardWorkspace(sb sandbox.Sandbox, ws *workspace.Workspace) sandbox.Sandbox
 	for _, d := range reopen {
 		_ = os.MkdirAll(strings.TrimSuffix(d, "/*"), 0o755) // bubblewrap binds only existing paths
 	}
-	guarded, err := g.WithGuarded([]string{dhi}, reopen)
+	guard := []string{dhi}
+	// F-086: the default branch moves only through DHI or you. An agent's
+	// own `git commit` on main fails, so work lands on a task branch.
+	for _, m := range ws.Members() {
+		guard = append(guard, gitcore.DefaultBranchRefs(m.Path)...)
+	}
+	guarded, err := g.WithGuarded(guard, reopen)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "dhi: guarding .dhi/:", err)
 		return sb

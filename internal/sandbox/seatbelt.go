@@ -151,6 +151,10 @@ func seatbeltProfile(rw, ro []string, allowNetwork bool, guard, reopen []string)
 	// Read: rw + ro roots + system dirs. Write: rw roots only.
 	b.WriteString("(allow file-read*" + subpaths(rw) + subpaths(ro) + subpaths(seatbeltSystemDirs) + ")\n")
 	b.WriteString("(allow file-write*" + subpaths(rw) + ")\n")
+	// Device nodes every shell and git touch (F-086, live): a redirect to
+	// /dev/null, a terminal, the fd links. Without them `cmd >/dev/null`
+	// and git fail EPERM before doing anything.
+	b.WriteString(seatbeltDeviceWrites)
 	// Guarded subtrees (F-071 hardening): DHI's own control files are
 	// written by DHI, never by a wrapped child — deny, then reopen the
 	// parts a child legitimately writes. Later rules win.
@@ -194,6 +198,11 @@ func seatbeltProfile(rw, ro []string, allowNetwork bool, guard, reopen []string)
 	}
 	return b.String(), nil
 }
+
+// seatbeltDeviceWrites admits writes to the harmless device nodes only.
+const seatbeltDeviceWrites = `(allow file-write* (literal "/dev/null") (literal "/dev/zero") (literal "/dev/tty") (literal "/dev/dtracehelper") (regex #"^/dev/fd/") (regex #"^/dev/ttys[0-9]+$") (literal "/dev/ptmx"))
+(allow file-ioctl (literal "/dev/null") (literal "/dev/tty") (regex #"^/dev/ttys[0-9]+$") (literal "/dev/dtracehelper"))
+`
 
 // CredentialPaths lists the user's credential trees reads may
 // never cross, even with broad file-read. Missing dirs are harmless

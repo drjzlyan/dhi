@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
 )
 
@@ -69,5 +70,17 @@ func TestSecretRequestAllowedWithoutValueFails(t *testing.T) {
 	h.approvals.ResolveFor(firstPending(t, h.approvals).ID, tools.LayerOnce)
 	if err := <-errc; err == nil || !strings.Contains(err.Error(), "no value") {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+// Live (M32): the served `run` tool never got the runner, so it always
+// answered "command runner unavailable" and secrets could not reach it.
+func TestServedToolsGetTheRunner(t *testing.T) {
+	h := episodeHarness(t)
+	h.rt.cfg.Run = &fakeRunner{}
+	e, _ := h.rt.agentEntry("scout")
+	d := h.rt.toolDeps(e, bus.Message{Channel: "#general"}, turnTools{}, nil, nil)
+	if d.Run == nil {
+		t.Fatalf("run = %v", d.Run)
 	}
 }

@@ -30,6 +30,7 @@ const (
 	EventCommand  = "command"  // a tool command the CLI ran
 	EventError    = "error"    // an error inside the stream
 	EventFinal    = "final"    // terminal line; Detail carries the raw JSON
+	EventUsage    = "usage"    // one model call's prompt size (Context); nothing to show
 )
 
 // StreamEvent is one neutral transcript event from any CLI's stream.
@@ -39,6 +40,8 @@ type StreamEvent struct {
 	// Denied is the path the OS sandbox refused to let a tool write
 	// (F-087): parsed from an EPERM tool error, "" otherwise.
 	Denied string
+	// Context is an EventUsage's prompt size for that call.
+	Context int
 }
 
 // Usage is what a finished run reports about itself. -1 tokens mean the
@@ -126,6 +129,11 @@ type CLI struct {
 	// per-uid Bash dir and dies on a sandboxed /tmp). The runtime points
 	// TMPDIR and each of these at a private writable dir (F-086).
 	TempEnv []string
+	// WaitEnv names env vars bounding how long the CLI waits on one MCP
+	// tool call (claude: MCP_TOOL_TIMEOUT, ms). DHI's tools may wait on a
+	// human (an approval, a masked secret), so the runtime sets them to
+	// an hour; the CLI's default gave up while the card was still open.
+	WaitEnv []string
 
 	// BuildArgs renders the headless argv (without the binary).
 	BuildArgs func(in RunInput) []string

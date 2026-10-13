@@ -195,6 +195,8 @@ func (m *Model) statusFlash() string {
 		msg, fg = m.inboxHint, theme.Current.Warning
 	case m.form.flash != "":
 		msg, fg = "✓ "+m.form.flash, theme.Current.Success
+	case m.pane != nil && m.pane.note != "":
+		msg, fg = m.pane.note, theme.Current.TextMuted
 	}
 	if msg == "" {
 		m.chromeSeen = ""

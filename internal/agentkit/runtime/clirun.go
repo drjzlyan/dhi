@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -129,6 +130,7 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message, tl
 			prompt: prompt + brief, system: system, workdir: workdir, attempt: attempt,
 			resume: resume, maxTurns: tune.MaxTurns, stall: tune.Stall,
 			mcpConfig: mcpConfig, mcpEndpoint: mcpEndpoint, mcpGeminiDir: mcpGeminiDir,
+			relaunch: rl,
 		})
 		r.recordRun(trigger, run)
 		r.recordSpend(run, task.Slug)
@@ -305,6 +307,7 @@ type spawnInput struct {
 	stall                                time.Duration // watchdog; 0 = off
 	model                                string        // "" = the agent's model
 	quiet                                bool          // don't relay the stream (reflection)
+	relaunch                             *relaunch     // set mid-run: stop this spawn, the work moved
 	mcpConfig, mcpEndpoint, mcpGeminiDir string
 }
 
@@ -399,6 +402,7 @@ func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Messag
 	var final string
 	var events []clirun.StreamEvent
 	var stamps []time.Time // when each event arrived (F-074 trace)
+	relaunched := false
 	var dog *time.Timer
 	if in.stall > 0 {
 		dog = time.AfterFunc(in.stall, func() { stalled.Store(true); stopSpawn() })
@@ -418,6 +422,17 @@ func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Messag
 		if ev.Kind == clirun.EventFinal {
 			final = ev.Detail
 		}
+		if ev.Kind == clirun.EventUsage {
+			run.Context = ev.Context // the last call's wins
+		}
+		// F-086 (live): once the work moved (a worktree, a sandbox grant),
+		// this spawn's cwd and sandbox are stale, and an agent told to stop
+		// kept editing the shared checkout. End it; the turn continues in
+		// a fresh run.
+		if in.relaunch != nil && in.relaunch.get() != "" && !relaunched {
+			relaunched = true
+			stopSpawn()
+		}
 	}
 	if dog != nil {
 		dog.Stop()
@@ -427,6 +442,9 @@ func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Messag
 	run.Exit = exitCode(waitErr)
 
 	switch {
+	case relaunched:
+		run.Status = tasks.RunOK
+		run.Summary = "(stopped: continuing in a fresh run — " + in.relaunch.get() + ")"
 	case stalled.Load():
 		run.Status = tasks.RunError
 		run.Error = fmt.Sprintf("stalled: no output for %s", in.stall)
@@ -587,46 +605,7 @@ func (r *Runtime) serveToolsFor(e *entry, trigger bus.Message, tt turnTools) *se
 			}
 			return append(reasons, kids(seam)...)
 		}
-		handler = dhitools.Deps{
-			Agent:       e.m,
-			Tasks:       r.cfg.Tasks,
-			KB:          r.cfg.Knowledge,
-			Memory:      r.cfg.Memory,
-			Bus:         r.cfg.Bus,
-			WS:          r.cfg.WS,
-			Search:      r.cfg.Search,
-			Approvals:   r.cfg.Approvals,
-			Git:         r.cfg.Git,
-			Identity:    r.cfg.Identity,
-			Sessions:    r.cfg.Sessions,
-			Editor:      r.cfg.Editor,
-			Scopes:      r.agentScopes(e.m),
-			Gate:        gate,
-			OnRun:       onRun,
-			PR:          r.cfg.PR,
-			Skills:      r.lib(),
-			Conventions: r.cfg.Conventions,
-			Channel:     trigger.Channel,
-			Thread:      trigger.Thread,
-			Workdir:     r.cliWorkdir(trigger),
-			Relay:       func(m bus.Message) { r.Handle(context.Background(), m) },
-
-			Envelope:     tt.envelope,
-			EnvelopeTask: tt.task,
-			PlanUpdate:   tt.plan,
-			MemberRoots:  tt.memberRoots,
-			LessonRecord: tt.lesson,
-			WorkBranch:   tt.workBranch,
-			Access:       tt.access,
-			Secret:       r.secretSeam(e.m.ID),
-			SecretEnv:    r.secretEnv(e.m.ID),
-			SkillSearch:  r.cfg.SkillSearch,
-			SkillSuggest: r.skillSuggest(e.m.ID),
-			Forge:        r.cfg.Forge,
-			SetProps:     r.cfg.SetProps,
-			SettingCheck: r.cfg.SettingCheck,
-			OnPR:         r.prHook(e.m.ID, trigger),
-		}.Handler()
+		handler = r.toolDeps(e, trigger, tt, gate, onRun).Handler()
 	}
 	// Third-party MCP servers (F-034 part C): dialed under the sandbox,
 	// allowlist-gated, network deny-by-default.
@@ -745,6 +724,51 @@ func (r *Runtime) serveToolsFor(e *entry, trigger bus.Message, tt turnTools) *se
 
 // compositeHandler merges DHI's own tools with the bridged third-party
 // MCP servers: listing both, routing by the mcp__ prefix.
+// toolDeps assembles the served tools' seams for one turn of e.
+func (r *Runtime) toolDeps(e *entry, trigger bus.Message, tt turnTools, gate func(string) []string, onRun func([]string, error)) dhitools.Deps {
+	return dhitools.Deps{
+		Agent:       e.m,
+		Tasks:       r.cfg.Tasks,
+		KB:          r.cfg.Knowledge,
+		Memory:      r.cfg.Memory,
+		Bus:         r.cfg.Bus,
+		WS:          r.cfg.WS,
+		Search:      r.cfg.Search,
+		Approvals:   r.cfg.Approvals,
+		Git:         r.cfg.Git,
+		Identity:    r.cfg.Identity,
+		Run:         r.cfg.Run, // live (M32): never wired — `run` always said "runner unavailable"
+		Sessions:    r.cfg.Sessions,
+		Editor:      r.cfg.Editor,
+		Scopes:      r.agentScopes(e.m),
+		Gate:        gate,
+		OnRun:       onRun,
+		PR:          r.cfg.PR,
+		Skills:      r.lib(),
+		Conventions: r.cfg.Conventions,
+		Channel:     trigger.Channel,
+		Thread:      trigger.Thread,
+		Workdir:     r.cliWorkdir(trigger),
+		Relay:       func(m bus.Message) { r.Handle(context.Background(), m) },
+
+		Envelope:     tt.envelope,
+		EnvelopeTask: tt.task,
+		PlanUpdate:   tt.plan,
+		MemberRoots:  tt.memberRoots,
+		LessonRecord: tt.lesson,
+		WorkBranch:   tt.workBranch,
+		Access:       tt.access,
+		Secret:       r.secretSeam(e.m.ID),
+		SecretEnv:    r.secretEnv(e.m.ID),
+		SkillSearch:  r.cfg.SkillSearch,
+		SkillSuggest: r.skillSuggest(e.m.ID),
+		Forge:        r.cfg.Forge,
+		SetProps:     r.cfg.SetProps,
+		SettingCheck: r.cfg.SettingCheck,
+		OnPR:         r.prHook(e.m.ID, trigger),
+	}
+}
+
 // redactHandler scrubs known secret values from every tool result before
 // the agent reads it (F-088): a file, a command's output or an MCP reply
 // that echoes a secret reaches the model as ‹secret:NAME›.
@@ -831,7 +855,7 @@ func (r *Runtime) cliPromptAt(ctx context.Context, e *entry, trigger bus.Message
 	}
 	grounding := "\n\nFiles are addressed as <member>/<rel-path>. Members: " + strings.Join(members, ", ")
 	grounding += "\nThe reserved workspace dotdir is addressed as .dhi/<rel-path>; ideation artifacts belong under .dhi/sessions/<session>/<file>."
-	grounding += "\nBefore changing code outside a task worktree, call work_branch: DHI makes the card, branch and worktree and continues you there. Never commit on the default branch."
+	grounding += "\nBefore changing code outside a task worktree, call work_branch: DHI makes the card, branch and worktree and continues you there. The default branch is locked: a commit to it fails."
 	grounding += "\nIf the sandbox blocks you (\"Operation not permitted\"), call permission_request for exactly what you need; do not give up or work around it."
 	grounding += r.secretsLine(e.m.ID)
 	// Stable sections first (they cache), volatile after (F-065); each
@@ -986,9 +1010,13 @@ func (r *Runtime) cliEnv(c *clirun.CLI, agentID, mcpConfig string) []string {
 	}
 	if dir := r.agentTmp(agentID); dir != "" {
 		env = setEnv(env, "TMPDIR="+dir)
+		env = setEnv(env, "TMPPREFIX="+filepath.Join(dir, "zsh")) // zsh heredocs ignore TMPDIR
 		for _, k := range c.TempEnv {
 			env = setEnv(env, k+"="+dir)
 		}
+	}
+	for _, k := range c.WaitEnv {
+		env = setEnv(env, k+"="+strconv.Itoa(int(humanWait/time.Millisecond)))
 	}
 	// A per-turn MCP config must override any pass-through value of the
 	// same key: the turn's loopback endpoint, never the user's.
@@ -997,6 +1025,9 @@ func (r *Runtime) cliEnv(c *clirun.CLI, agentID, mcpConfig string) []string {
 	}
 	return env
 }
+
+// humanWait bounds one served tool call that waits on the human.
+const humanWait = time.Hour
 
 // agentTmp is the agent's private temp dir, <ws>/.dhi/tmp/<agent>
 // (0700: claude refuses a temp base other users can read). "" when it

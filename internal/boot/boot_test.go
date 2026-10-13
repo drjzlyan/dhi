@@ -289,7 +289,8 @@ func TestToolchainIsReadOnlyToAgents(t *testing.T) {
 	}
 	var write string
 	for _, line := range strings.Split(sb.Profile(), "\n") {
-		if strings.HasPrefix(line, "(allow file-write*") {
+		// The roots line; device nodes (/dev/null…) have a rule of their own.
+		if strings.HasPrefix(line, "(allow file-write*") && strings.Contains(line, "(subpath") {
 			write = line
 		}
 	}

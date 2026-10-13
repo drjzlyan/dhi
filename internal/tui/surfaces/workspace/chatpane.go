@@ -65,6 +65,7 @@ type chatPane struct {
 
 	focus    bool   // composer focused
 	flash    string // post-failure notice for the chrome bar (F-026 P3)
+	note     string // what an answered ask did (F-087): news, not a failure
 	input    []rune
 	cursor   int   // selected message index (blurred navigation)
 	threadID int64 // 0 = channel view; else thread filter
@@ -366,10 +367,10 @@ func (p *chatPane) handleKey(key string) bool {
 		if choice, ok := tools.DecideKeys[key]; ok {
 			if ap := p.pendingAsk(); ap != nil {
 				if p.decide != nil {
-					p.flash = p.decide(ap, choice)
+					p.note = p.decide(ap, choice)
 				} else {
 					p.approvals.Decide(ap, choice)
-					p.flash = choice + ": " + ap.Agent + " " + ap.Describe()
+					p.note = choice + ": " + ap.Agent + " " + ap.Describe()
 				}
 				return true
 			}
