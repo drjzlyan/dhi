@@ -35,7 +35,13 @@ Every other project came back "unverified", the agents' `run` tool knew only
   redirected into the toolchain's writable folders, because a sandboxed
   build may not write `$HOME`. The user's own terminals keep their caches.
 - **Agents' `run` tool** allows each ecosystem's build and test commands
-  (npm, corepack pnpm/yarn, uv, cargo, mvn, gradle, dotnet).
+  (npm, corepack pnpm/yarn, uv, cargo, mvn, gradle, dotnet). Within a
+  worktree the agent can edit, these run project-defined code (npm
+  scripts, `uv run`, build scripts, Maven/Gradle goals), so the allowlist
+  is a convenience, not a boundary: the OS sandbox is the boundary.
+- **Prepare grants** use their own approvals scope (`verify-deps`):
+  "allow always" on a dependency install never widens the agent's own
+  network scope.
 
 ## Acceptance (P5a)
 - [x] Detection table per ecosystem and lockfile; non-projects skipped;

@@ -184,3 +184,29 @@ func TestMemoryTuningDefaults(t *testing.T) {
 		t.Fatalf("overrides = %+v", got)
 	}
 }
+
+// "Allow always" on a verify install must not widen the agent's own
+// network grant.
+func TestVerifyInstallGrantIsNotNetworkGrant(t *testing.T) {
+	nr := &netRunner{}
+	ap := tools.NewApprovals()
+	r := &Runtime{cfg: Config{Run: nr, Approvals: ap}}
+	go func() {
+		for i := 0; i < 200; i++ {
+			if l := ap.List(); len(l) > 0 {
+				ap.ResolveAlways(l[0].ID)
+				return
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+	}()
+	r.verify(context.Background(), "scout", scopes.Set{scopes.Network: scopes.Ask}, []verifyTarget{nodeTarget(t)})
+	for _, g := range ap.Grants() {
+		if g.Scope == string(scopes.Network) {
+			t.Fatalf("verify install granted the network scope: %+v", g)
+		}
+	}
+	if gs := ap.Grants(); len(gs) != 1 || gs[0].Scope != verifyDepsScope {
+		t.Fatalf("grants = %+v", gs)
+	}
+}

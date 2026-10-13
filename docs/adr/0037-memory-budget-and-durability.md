@@ -37,7 +37,10 @@ efficient, resilient and hard to break.
    established ones later, the weakest past `lessons_max` retire,
    long-retired ones move to an archive, pinned lessons are capped.
    Episodes of done or removed cards are collected after 30 days.
-   Prompts read logs by tail (`jsonl.Tail`, `Bus.Recent`), never whole.
+   Prompt history and journals are read by tail (`jsonl.Tail`,
+   `Bus.Recent`, which still recovers a thread's root). Channel files
+   themselves are not rotated: the chat UI, unread scans and reflection
+   read them whole, parsed once per file change (a cache in the bus).
 4. **One prompt budget.** The whole prompt (system + prompt) is fitted to
    `memory.prompt_tokens` (estimated at 4 runes per token). Every block is
    a section with a priority and a floor; the lowest priority shrinks
@@ -64,3 +67,5 @@ efficient, resilient and hard to break.
   a repair leaves a `.repair` copy that doctor names.
 - The brief is extractive, so it can be verbose or miss nuance; a model
   summary can be added behind `agents.reflect_model` later.
+- Not done: channel-file segmentation (channels keep stream lines for
+  traces, so they grow fastest), a KB index cache, spend-ledger rotation.

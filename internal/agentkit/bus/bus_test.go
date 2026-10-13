@@ -186,3 +186,22 @@ func TestCorruptLineIsQuarantinedNotFatal(t *testing.T) {
 		t.Fatalf("recent window 1 = %+v", got)
 	}
 }
+
+// The thread root is the brief: a long tool-heavy thread must not push
+// it out of a prompt's window.
+func TestRecentKeepsThreadRootPastTheWindow(t *testing.T) {
+	ws := fixtureWS(t)
+	b, _ := Open(ws)
+	root, _ := b.Post(Message{Channel: "dm:scout", Author: Human, Text: "task brief: fix the ledger"})
+	for i := 0; i < 300; i++ {
+		_, _ = b.Post(Message{Channel: "dm:scout", Thread: root.ID, Author: "scout", Kind: KindStream, Text: "bash: go test"})
+	}
+	_, _ = b.Post(Message{Channel: "dm:scout", Thread: root.ID, Author: "scout", Kind: KindReply, Text: "done"})
+	got := b.Recent("dm:scout", root.ID, 50)
+	if len(got) == 0 || got[0].Text != "task brief: fix the ledger" || got[len(got)-1].Text != "done" {
+		t.Fatalf("recent = first %+v last %+v (%d)", got[0], got[len(got)-1], len(got))
+	}
+	if n := b.ReplyCount("dm:scout", root.ID); n != 1 {
+		t.Fatalf("reply count = %d, want 1 (stream lines excluded)", n)
+	}
+}

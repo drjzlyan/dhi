@@ -25,6 +25,9 @@ var runAllow = map[string][]string{
 	"go": {"build", "test", "vet", "fmt"},
 	"rg": nil,
 	// F-076: the build/test commands of every ecosystem DHI verifies.
+	// They run project-defined code (npm scripts, uv run, build scripts,
+	// Maven/Gradle goals) in a worktree the agent can edit, so this list
+	// is a convenience, not a boundary — the OS sandbox is.
 	"npm":      {"test", "run", "ci", "install"},
 	"corepack": {"pnpm", "yarn"},
 	"uv":       {"run", "sync", "pip", "venv"},

@@ -110,6 +110,12 @@ type Bus struct {
 
 	repaired []string // corrupt lines quarantined at Open (F-078)
 
+	// cache keeps each channel file's parsed records until the file
+	// changes (size or mtime), so a UI frame or a prompt that reads a
+	// channel several times parses it once.
+	cacheMu sync.Mutex
+	cache   map[string]fileCache
+
 	// Now stamps message timestamps; nil = wall clock. Tests pin it so
 	// transcript renders (HH:MM stamps, day dividers) stay deterministic.
 	Now func() time.Time
@@ -168,25 +174,63 @@ func Open(ws *workspace.Workspace) (*Bus, error) {
 	return b, load(filepath.Join(base, "dm"))
 }
 
-// History returns a snapshot of one channel (thread==0) or one thread,
-// oldest first. Unknown channels read as empty.
-func (b *Bus) History(channel string, thread int64) []Message {
+// fileCache is one parsed channel file.
+type fileCache struct {
+	size    int64
+	mod     time.Time
+	msgs    []Message
+	replies map[int64]int // thread root → conversational replies
+}
+
+// all returns every record of channel's file, parsed once per change.
+// Callers must not modify the returned slice.
+func (b *Bus) all(channel string) fileCache {
 	path, err := fileFor(b.root, channel)
 	if err != nil {
-		return nil
+		return fileCache{}
+	}
+	st, err := os.Stat(path)
+	if err != nil {
+		return fileCache{}
+	}
+	b.cacheMu.Lock()
+	defer b.cacheMu.Unlock()
+	if c, ok := b.cache[path]; ok && c.size == st.Size() && c.mod.Equal(st.ModTime()) {
+		return c
 	}
 	msgs, _, err := jsonl.ReadTolerant[Message](path)
 	if err != nil {
-		return nil
+		return fileCache{}
 	}
-	out := msgs[:0]
+	c := fileCache{size: st.Size(), mod: st.ModTime(), msgs: msgs, replies: map[int64]int{}}
 	for _, m := range msgs {
+		if m.Thread != 0 && Conversational(m) {
+			c.replies[m.Thread]++
+		}
+	}
+	if b.cache == nil {
+		b.cache = map[string]fileCache{}
+	}
+	b.cache[path] = c
+	return c
+}
+
+// History returns a snapshot of one channel (thread==0) or one thread,
+// oldest first. Unknown channels read as empty.
+func (b *Bus) History(channel string, thread int64) []Message {
+	var out []Message
+	for _, m := range b.all(channel).msgs {
 		if thread == 0 && m.Thread == 0 || thread != 0 && m.Thread == thread {
 			out = append(out, m)
 		}
 	}
 	return out
 }
+
+// ReplyCount is how many conversational replies thread root has
+// (relayed stream lines excluded) — the chat's "↳ N replies" without a
+// scan per message (F-072).
+func (b *Bus) ReplyCount(channel string, root int64) int { return b.all(channel).replies[root] }
 
 // Repaired names the channel files whose corrupt lines Open quarantined.
 func (b *Bus) Repaired() []string { return append([]string(nil), b.repaired...) }
@@ -204,9 +248,21 @@ func (b *Bus) Recent(channel string, thread int64, window int) []Message {
 		return nil
 	}
 	out := msgs[:0]
+	sawRoot := false
 	for _, m := range msgs {
 		if thread == 0 && m.Thread == 0 || thread != 0 && (m.Thread == thread || m.ID == thread) {
 			out = append(out, m)
+			sawRoot = sawRoot || m.ID == thread
+		}
+	}
+	if thread != 0 && !sawRoot {
+		// A thread's root is its brief: one that fell out of the window
+		// is fetched and kept first, never dropped.
+		for _, m := range b.all(channel).msgs {
+			if m.ID == thread {
+				out = append([]Message{m}, out...)
+				break
+			}
 		}
 	}
 	return out

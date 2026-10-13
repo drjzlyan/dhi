@@ -194,7 +194,11 @@ func (m *Model) conventionsFile() string {
 // patchConventions validates next (the whole effective rules) and writes
 // only the keys this action owns into the conventions file.
 func (m *Model) patchConventions(next conventions.Config, set map[string]any, tpls map[string]*conventions.Template, ok string) bool {
-	path := m.conventionsFile()
+	return m.patchConventionsAt(m.conventionsFile(), next, set, tpls, ok)
+}
+
+// patchConventionsAt is patchConventions into a named conventions file.
+func (m *Model) patchConventionsAt(path string, next conventions.Config, set map[string]any, tpls map[string]*conventions.Template, ok string) bool {
 	if path == "" {
 		m.flash = "failed: no conventions file to save to"
 		return false

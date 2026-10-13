@@ -582,11 +582,23 @@ func (m *Model) applyAndPersist() {
 		// One row, one key, into the same file the CONVENTIONS section
 		// writes (F-075): never the whole merged table.
 		c := m.cfg.Conventions
+		if m.cursor == rowCommitCoAuthor {
+			// The co-author is personal ("Name <email>"): it goes to the
+			// user's conventions file, never the tracked team file.
+			if m.savePath == "" {
+				m.flash = "(no config path — change is session-only)"
+				return
+			}
+			if m.patchConventionsAt(settings.ConventionsPath(m.savePath), c,
+				map[string]any{"commit.co_author_enabled": c.Commit.CoAuthorEnabled, "commit.co_author": c.Commit.CoAuthor}, nil, "saved") {
+				m.flash += " — agents use it from their next action"
+			}
+			return
+		}
 		key := map[int]map[string]any{
-			rowBranchTask:     {"branch.task": c.Branch.Task},
-			rowCommitFormat:   {"commit.format": c.Commit.Format},
-			rowCommitCoAuthor: {"commit.co_author_enabled": c.Commit.CoAuthorEnabled, "commit.co_author": c.Commit.CoAuthor},
-			rowCopyright:      {"copyright.enabled": c.Copyright.Enabled, "copyright.holder": c.Copyright.Holder},
+			rowBranchTask:   {"branch.task": c.Branch.Task},
+			rowCommitFormat: {"commit.format": c.Commit.Format},
+			rowCopyright:    {"copyright.enabled": c.Copyright.Enabled, "copyright.holder": c.Copyright.Holder},
 		}[m.cursor]
 		if m.patchConventions(c, key, nil, "saved") {
 			m.flash += " — agents use it from their next action"

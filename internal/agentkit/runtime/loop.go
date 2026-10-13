@@ -154,6 +154,10 @@ func (r *Runtime) ensureTools(ctx context.Context, agentID string, t verifyTarge
 	return verifyResult{}, true
 }
 
+// verifyDepsScope is the approvals grant scope of verify's dependency
+// installs (F-076).
+const verifyDepsScope = "verify-deps"
+
 // prepare installs a target's dependencies once per lockfile state.
 func (r *Runtime) prepare(ctx context.Context, agentID string, sc scopes.Set, t verifyTarget) (verifyResult, bool) {
 	if len(t.plan.Prepare) == 0 {
@@ -174,7 +178,10 @@ func (r *Runtime) prepare(ctx context.Context, agentID string, sc scopes.Set, t 
 		if r.cfg.Approvals == nil {
 			return verifyResult{cmd: first, tail: "dependencies were not installed: network needs approval and no approvals queue is running", env: true}, false
 		}
-		if err := r.cfg.Approvals.AskScope(ctx, agentID, string(scopes.Network), sandbox.OpNet,
+		// Its own grant scope: "allow always" here covers dependency
+		// installs for verification only, never the agent's own network
+		// tools (which ask under scopes.Network).
+		if err := r.cfg.Approvals.AskScope(ctx, agentID, verifyDepsScope, sandbox.OpNet,
 			first+" in "+t.dir, "install dependencies so DHI can run the tests"); err != nil {
 			return verifyResult{cmd: first, tail: "dependencies were not installed: " + err.Error(), env: true}, false
 		}

@@ -122,3 +122,20 @@ func TestConventionWritersDoNotRevertEachOther(t *testing.T) {
 		t.Fatalf("reloaded = %+v", cfg.Conventions)
 	}
 }
+
+// The co-author is personal: it never lands in the tracked team file.
+func TestCoAuthorStaysOutOfTheTeamFile(t *testing.T) {
+	m, ws, _, _ := agentSurface(t)
+	m.savePath = filepath.Join(t.TempDir(), "config.toml")
+	m.cfg.Conventions.Commit.CoAuthor = "Dana <dana@example.com>"
+	m.sec = secConfig
+	m.cursor = rowCommitCoAuthor
+	feed(m, "enter")
+	if b, err := os.ReadFile(filepath.Join(ws.Root, ".dhi", settings.ConventionsFile)); err == nil && strings.Contains(string(b), "dana@") {
+		t.Fatalf("co-author written to the team file:\n%s", b)
+	}
+	b, err := os.ReadFile(settings.ConventionsPath(m.savePath))
+	if err != nil || !strings.Contains(string(b), "dana@example.com") {
+		t.Fatalf("co-author not in the user file: %v\n%s", err, b)
+	}
+}

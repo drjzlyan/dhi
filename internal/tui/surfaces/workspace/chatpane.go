@@ -897,7 +897,7 @@ func (p *chatPane) rowSuffix(msg bus.Message) string {
 		}
 	}
 	if msg.Thread == 0 && p.bus != nil {
-		if n := len(conversational(p.bus.History(msg.Channel, msg.ID))); n > 0 {
+		if n := p.bus.ReplyCount(msg.Channel, msg.ID); n > 0 {
 			word := " replies"
 			if n == 1 {
 				word = " reply"

@@ -32,9 +32,15 @@
   Compact), bus quarantine + `Bus.Recent`, journal rotation + digest, lesson Policy, episode GC,
   session compaction (`Episode.LastContext`), prompt budget (`budgetfit.go` sections), history
   brief, `[memory]` settings + CONFIG rows, BRAIN `m`, notes paging, doctor memory checks.
-- M30 is COMPLETE in code on branch `m30` (not pushed, no PR). Open items: live eval
-  (`fix-retry-hidden`), optional toolchains live-checked on darwin/arm64 only, wizard still offers
-  branch presets rather than templates.
+- M30 is COMPLETE in code on branch `m30` (not pushed, no PR). Open items:
+  - live eval `DHI_EVAL=1 DHI_EVAL_TASK=fix-retry-hidden make eval` (spends tokens);
+  - optional toolchains live-checked on darwin/arm64 only, and without the sandbox;
+  - the `T` take-it flow not driven in the real editor (worktree root named `slug (branch)`;
+    member-reload terminal cleanup may close a terminal opened in it);
+  - not done: channel-file segmentation, KB index cache, spend rotation, wizard templates.
+- Review fixes after M30: bus caches parsed channel files (`Bus.ReplyCount`), `Bus.Recent`
+  recovers a thread root outside its window, co-author saves to the user conventions file,
+  verify installs grant `verify-deps` (never `network`).
 - Gotchas:
   - The prompt builder is a list of `section`s (`cliPromptAt`); a new block must be a section
     with a priority/floor, or it escapes the budget.

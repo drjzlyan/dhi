@@ -17,7 +17,8 @@ and exposed no limits. See ADR-0037.
   repairs and huge logs.
 - **Bounded:** journal rotation into monthly archives plus a capped
   digest; lesson lifecycle (decay, active cap, pinned cap, archive);
-  episode collection; prompts read logs by tail.
+  episode collection; prompt history and journals read by tail (channel
+  files are cached per change for the UI, not rotated — see ADR-0037).
 - **One budget per prompt:** prioritised sections with floors; the human's
   message never trimmed; head+tail truncation; three compaction levels.
 - **Brief of dropped history** in place of "N messages omitted".
