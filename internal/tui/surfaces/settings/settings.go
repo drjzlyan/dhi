@@ -79,8 +79,11 @@ type Model struct {
 	wantID  gitcore.Identity // the identity awaiting confirmation
 	// valueHint explains the value a CONFIG editor dialog wants (F-084).
 	valueHint string
-	dkind     dialogKind
-	dtarget   string
+	// cfgKeys are the settings keys CONFIG rendered, in order (F-084:
+	// the coverage guard reads them; rows show plain labels).
+	cfgKeys []string
+	dkind   dialogKind
+	dtarget string
 
 	flash  string
 	events chan settingsEvent
@@ -1467,8 +1470,10 @@ func (m *Model) configView(w, budget int) []string {
 		rule := theme.Rule(max(w-len(t)-3, 0))
 		lines = append(lines, line{" " + theme.SectionHeader().Render(t) + " " + rule, -1})
 	}
-	add := func(row int, name, value string) {
-		lines = append(lines, line{settingRow(m.cursor == row, name, value), row})
+	m.cfgKeys = m.cfgKeys[:0]
+	add := func(row int, key, value string) {
+		m.cfgKeys = append(m.cfgKeys, key)
+		lines = append(lines, line{settingRow(m.cursor == row, settingLabel(key), value), row})
 	}
 	pp := m.cfg.Profile.Principal("", "")
 	head("you")
@@ -1731,10 +1736,44 @@ func (m *Model) formView() []string {
 	return out
 }
 
-// settingNameW fits the longest key ("conventions.copyright.enabled")
+// settingLabels name CONFIG rows in plain words (F-084): people read
+// what a setting does, never the key it is stored under.
+var settingLabels = map[string]string{
+	"profile.role": "you are a", "profile.writing.tone": "writing tone", "profile.writing.length": "writing length",
+	"profile.writing.emoji": "emoji in writing", "profile.writing.language": "writing language",
+	"profile.reading.order": "replies start with", "profile.reading.format": "reply format",
+	"profile.reading.detail": "reply detail",
+	"reduced_motion":         "reduce motion", "editor.tab_width": "tab width", "editor.line_numbers": "line numbers",
+	"terminal.scrollback": "terminal scrollback", "editor.languages": "editor languages",
+	"scopes.read": "may read files", "scopes.write": "may write files", "scopes.exec": "may run commands",
+	"scopes.network": "may use the network", "scopes.git": "may use git", "scopes.push": "may push",
+	"scopes.admin": "may change admin settings", "security.sandbox": "sandbox",
+	"worktrees.root": "task worktrees folder", "conventions.branch.task": "task branch name",
+	"conventions.commit.format": "commit format", "conventions.commit.co_author": "co-author trailer",
+	"conventions.copyright": "copyright header", "conventions.copyright.license": "license",
+	"conventions.commit.max_subject": "commit subject limit",
+	"engine":                         "default coding CLI", "agents.resume": "resume CLI sessions", "agents.autonomy": "autonomy",
+	"agents.max_turns": "CLI turns per run", "agents.max_iterations": "verify → fix rounds",
+	"agents.stall_seconds": "stall watchdog", "agents.reflect": "learn from turns",
+	"agents.reflect_model": "reflection model", "agents.trace_prompts": "save full prompts",
+	"budgets.task_usd": "budget per task", "budgets.task_tokens": "tokens per task",
+	"budgets.agent_day_usd": "budget per employee a day", "budgets.workspace_day_usd": "budget per day",
+	"memory.prompt_tokens": "prompt size", "memory.session_tokens": "session size",
+	"memory.journal_max": "journal entries kept", "memory.lessons_max": "lessons kept",
+	"memory.pinned_max": "pinned lessons", "memory.decay_days": "lessons fade after", "keys": "key remaps",
+}
+
+func settingLabel(key string) string {
+	if l, ok := settingLabels[key]; ok {
+		return l
+	}
+	return key
+}
+
+// settingNameW fits the longest label
 // plus its dotted leader
 // plus a two-cell gutter, so a value never runs into its name.
-const settingNameW = 33
+const settingNameW = 28
 
 func settingRow(selected bool, name, value string) string {
 	if selected {

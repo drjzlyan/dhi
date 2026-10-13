@@ -290,6 +290,13 @@ func (m *Model) HandleKey(key string) bool {
 		m.act(Back)
 		return true
 	case "ctrl+x":
+		// Skipping setup skips every step still ahead, so a catch-up
+		// run never comes back for them (F-085).
+		for i := m.idx; i < len(m.steps); i++ {
+			if id := m.steps[i].ID(); id != "done" && !m.state.Has(id) {
+				m.state.MarkSkipped(id, m.env.now())
+			}
+		}
 		m.finish()
 		return true
 	}

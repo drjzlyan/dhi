@@ -23,10 +23,13 @@ the UI told people to "hand-edit config.toml".
   off.
 - **Keys.** `pressed=meant, …` in one field; ctrl+c and other invalid remaps
   are refused by name.
+- **Labels.** Rows read in plain words ("budget per task", "may run
+  commands", "writing tone"), not storage keys (`settingLabels`).
 - **Copy.** No UI text names a config file any more: conventions say
   "shared with your team" or "just for you".
 - **Guard.** `TestEverySettingHasAPlaceInSettings` walks `settings.Known()`
-  and fails for any key with no CONFIG row and no named owner (template keys
+  against the keys CONFIG rendered (`cfgKeys`) and fails for any key with no
+  row and no named owner (template keys
   belong to CONVENTIONS).
 
 ## Not done

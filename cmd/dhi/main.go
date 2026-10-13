@@ -331,12 +331,14 @@ func runTUI() (relaunch bool) {
 				Reload:     reloadRoster,
 				Autopilots: autoStore,
 				Bus:        messageBus,
-				Runtime:    agentRT,
 				Tasks:      taskStore,
 				Registry:   registry.New(ws),
 				RunScript:  runRunner,
 			}
 			if agentRT != nil {
+				// Only a live runtime: a typed-nil one inside the interface
+				// would pass a nil check and panic on Handle.
+				settingsDeps.Runtime = agentRT
 				settingsDeps.Grants = agentRT.Approvals() // F-067 remembered grants
 			}
 			// F-068 BRAIN: what the crew learned; s shares a lesson to the KB

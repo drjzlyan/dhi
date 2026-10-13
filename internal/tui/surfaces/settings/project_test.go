@@ -1,6 +1,7 @@
 package settings
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -84,11 +85,23 @@ func TestProjectInterviewAsksTheLead(t *testing.T) {
 		t.Fatal(err)
 	}
 	feed(m, "i")
-	if !strings.Contains(m.flash, "asked atlas") {
+	if !strings.Contains(m.flash, "once employees are running") {
 		t.Fatalf("flash %q", m.flash)
 	}
+	rt := &fakeTurns{}
+	m.d.Runtime = rt
+	feed(m, "i")
+	if !strings.Contains(m.flash, "asked atlas to interview you") || len(rt.got) != 1 ||
+		!strings.HasPrefix(rt.got[0].Text, "@atlas Please interview me") || rt.got[0].ID == 0 {
+		t.Fatalf("flash %q handled %+v", m.flash, rt.got)
+	}
 	hist := b.History("#core", 0)
-	if len(hist) != 1 || !strings.HasPrefix(hist[0].Text, "@atlas Please interview me") || hist[0].Author != bus.Human {
+	if len(hist) != 2 || !strings.HasPrefix(hist[1].Text, "@atlas Please interview me") || hist[1].Author != bus.Human {
 		t.Fatalf("history %+v", hist)
 	}
 }
+
+// fakeTurns records what Settings hands to the runtime.
+type fakeTurns struct{ got []bus.Message }
+
+func (f *fakeTurns) Handle(_ context.Context, msg bus.Message) { f.got = append(f.got, msg) }

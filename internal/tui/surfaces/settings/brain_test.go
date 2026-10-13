@@ -133,7 +133,7 @@ func TestBrainMemoryView(t *testing.T) {
 	l := m.brainSelected()
 	if l.Status != lessons.StatusPinned {
 		feed(m, "p")
-		if !strings.Contains(m.flash, "memory.pinned_max") {
+		if !strings.Contains(m.flash, "pinned lessons") {
 			t.Fatalf("pin past the cap: flash %q", m.flash)
 		}
 	}

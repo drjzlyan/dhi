@@ -30,11 +30,16 @@
   brief, learned conventional commits + PR template, 2 leads → 2 teams, profile saved; deleting
   `.dhi/.gitignore` + a lead's manifest → repair card → fixed. NOT live: the lead interview (needs
   an agent turn), identity write (this machine has no global git user.name — skipped on purpose).
+- Review fixes: the interview hands the post to `Runtime.Handle` (a bare bus post wakes nobody);
+  Settings gets `Runtime` only when it is live (typed nil panicked on Handle); ctrl+x marks the
+  remaining steps skipped so catch-up never nags; TEAMS `a` uses the profile persona; CONFIG rows
+  show plain labels (`settingLabels`) and the guard reads `m.cfgKeys`; without git the gitignore
+  repair only writes a missing file the root .gitignore doesn't cover.
 - Open: `.dhi/conventions.toml` is still untracked here (your call); workflows/packs/dependencies
-  still name their files in the UI; CONFIG labels are raw key names.
+  still name their files in the UI.
 - Gotchas:
-  - CONFIG rows are walked by index: add a row in DISPLAY order in the const block, and give it a
-    label containing its settings key or the guard test fails.
+  - CONFIG rows are walked by index: add a row in DISPLAY order in the const block, render it with
+    its settings key (`add(row, key, value)`) and give it a `settingLabels` entry.
   - `go build ./cmd/dhi` drops a `dhi` binary in the repo root — use `-o` or `make build`.
   - The voice block is `principal.Profile.Voice()`; there is no `teammateVoice` any more.
   - Settings form dialogs: the body is `m.dform.ViewWidth(...)` set in `View`; never set

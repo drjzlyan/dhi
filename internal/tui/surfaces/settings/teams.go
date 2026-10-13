@@ -151,6 +151,8 @@ func (m *Model) submitTeamCompose() {
 	opt := starter.Options{
 		AgentTaken: m.agentTaken(),
 		TeamTaken:  func(s string) bool { _, ok := m.d.Org.Team(s); return ok },
+		// New employees speak the way you read (F-081).
+		Persona: m.cfg.Profile.Principal("", "").Persona(),
 	}
 	if vals[0] != newTeams {
 		opt.Into = vals[0]

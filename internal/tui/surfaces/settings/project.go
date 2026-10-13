@@ -1,6 +1,7 @@
 package settings
 
 import (
+	"context"
 	"strings"
 
 	"github.com/drjzlyan/dhi/internal/agentkit/brief"
@@ -89,11 +90,16 @@ func (m *Model) askInterview() string {
 		if t.Lead == "" || t.Lead == org.Human {
 			continue
 		}
-		_, err := m.d.Bus.Post(bus.Message{Channel: "#" + t.Name, Author: bus.Human,
+		posted, err := m.d.Bus.Post(bus.Message{Channel: "#" + t.Name, Author: bus.Human,
 			Text: "@" + t.Lead + " " + brief.InterviewRequest})
 		if err != nil {
 			return "failed: " + err.Error()
 		}
+		if m.d.Runtime == nil {
+			return "asked " + t.Lead + " in #" + t.Name + " — they answer once employees are running"
+		}
+		// A post alone wakes nobody: hand it to the runtime, as chat does.
+		m.d.Runtime.Handle(context.Background(), posted)
 		return "asked " + t.Lead + " to interview you — answer in #" + t.Name
 	}
 	return "no team has an employee as lead — add one in TEAMS (a), then press i again"

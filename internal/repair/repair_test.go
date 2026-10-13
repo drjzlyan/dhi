@@ -13,6 +13,23 @@ import (
 	"github.com/drjzlyan/dhi/internal/workspace"
 )
 
+func TestGitignoreWithoutGitIsCautious(t *testing.T) {
+	in := fixture(t)
+	in.Ignored = nil
+	os.WriteFile(filepath.Join(in.WS.Root, ".gitignore"), []byte(".dhi/channels/\n"), 0o644)
+	if _, ok := byID(Find(in), "gitignore"); ok {
+		t.Fatal("wrote .dhi/.gitignore though the root one covers .dhi/")
+	}
+	os.Remove(filepath.Join(in.WS.Root, ".gitignore"))
+	if _, ok := byID(Find(in), "gitignore"); !ok {
+		t.Fatal("missing file not written")
+	}
+	os.WriteFile(filepath.Join(in.WS.Root, ".dhi", ".gitignore"), []byte("channels/\n"), 0o644)
+	if _, ok := byID(Find(in), "gitignore"); ok {
+		t.Fatal("topped up without git to check")
+	}
+}
+
 func fixture(t *testing.T) Input {
 	t.Helper()
 	root := t.TempDir()
@@ -28,7 +45,7 @@ func fixture(t *testing.T) Input {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return Input{WS: ws, Org: o, Library: library.Open(ws)}
+	return Input{WS: ws, Org: o, Library: library.Open(ws), Ignored: func(string) bool { return false }}
 }
 
 func byID(rs []Repair, id string) (Repair, bool) {

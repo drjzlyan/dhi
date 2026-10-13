@@ -29,7 +29,8 @@ type Repair struct {
 }
 
 // Input is what Find looks at. Ignored reports whether git already
-// ignores a path relative to the workspace root (nil = nothing is).
+// ignores a path relative to the workspace root; nil means git cannot be
+// asked, and the gitignore repair only writes a plainly missing file.
 type Input struct {
 	WS      *workspace.Workspace
 	Org     *org.Org
@@ -92,6 +93,14 @@ func gitignore(in Input) (Repair, bool) {
 			have[strings.TrimSpace(sc.Text())] = true
 		}
 		_ = f.Close()
+	}
+	if in.Ignored == nil {
+		// Without git to ask, only the plainly missing file is written,
+		// and not when the root .gitignore already speaks for .dhi/.
+		root, _ := os.ReadFile(filepath.Join(in.WS.Root, ".gitignore"))
+		if exists || strings.Contains(string(root), ".dhi/") {
+			return Repair{}, false
+		}
 	}
 	var missing []string
 	for _, e := range setup.RuntimeEntries {

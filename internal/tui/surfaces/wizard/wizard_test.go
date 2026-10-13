@@ -1408,3 +1408,24 @@ func TestCatchUpOffersNewStepsOnce(t *testing.T) {
 		t.Fatal("an applied step is offered again")
 	}
 }
+
+func TestCatchUpSkipSetupSettlesEveryStep(t *testing.T) {
+	f := newFixture(t, true)
+	f.env.SaveProfile = func(settings.Profile) error { return nil }
+	f.env.DetectBrief = func() brief.Brief { return brief.Brief{Name: "x"} }
+	f.env.SaveBrief = func(brief.Brief) error { return nil }
+	f.env.HasBrief = func() bool { return false }
+	st := setup.State{Finished: true}
+	steps := CatchUpSteps(f.env, "9.9.9", st)
+	if len(steps) != 3 { // project, you, done
+		t.Fatalf("catch-up %d steps", len(steps))
+	}
+	m := New(f.env, st, steps...)
+	m.Resize(100, 40)
+	run(m, m.Init())
+	key(m, "ctrl+x")
+	last := f.persisted[len(f.persisted)-1]
+	if got := CatchUpSteps(f.env, "9.9.9", last); got != nil {
+		t.Fatalf("skip setup left steps to nag about: %+v", last)
+	}
+}

@@ -153,7 +153,7 @@ func TestScopesEditorCyclesAndPersists(t *testing.T) {
 	if err != nil || !strings.Contains(string(data), `write = "auto"`) {
 		t.Fatalf("config not persisted: %v\n%s", err, data)
 	}
-	if !strings.Contains(ansi.Strip(m.View()), "scopes.write") {
+	if !strings.Contains(ansi.Strip(m.View()), "may write files") {
 		t.Error("scope row not rendered")
 	}
 }
@@ -277,7 +277,7 @@ func TestWorktreeRootRowCyclesPersistsAndSaysItNeedsARestart(t *testing.T) {
 	if got := m.cfg.Worktrees.Root; got != "" {
 		t.Fatalf("default root = %q", got)
 	}
-	if !strings.Contains(ansi.Strip(m.View()), "worktrees.root") {
+	if !strings.Contains(ansi.Strip(m.View()), "task worktrees folder") {
 		t.Error("worktrees row not rendered")
 	}
 	feed(m, "l") // inside .dhi → next to the workspace
@@ -310,7 +310,7 @@ func TestAgentsAndBudgetRowsPersist(t *testing.T) {
 	m, path := newSurface(t)
 	m.cursor = rowTaskUSD
 	view := ansi.Strip(m.View())
-	for _, want := range []string{"AGENTS & BUDGETS", "budgets.task_usd", "no limit"} {
+	for _, want := range []string{"AGENTS & BUDGETS", "budget per task", "no limit"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("view missing %q", want)
 		}
@@ -345,7 +345,7 @@ func TestAgentsAndBudgetRowsPersist(t *testing.T) {
 func TestReflectRowPersists(t *testing.T) {
 	m, path := newSurface(t)
 	m.cursor = rowReflect
-	if !strings.Contains(ansi.Strip(m.View()), "agents.reflect") {
+	if !strings.Contains(ansi.Strip(m.View()), "learn from turns") {
 		t.Fatal("reflect row not rendered")
 	}
 	feed(m, "enter")
@@ -357,7 +357,7 @@ func TestReflectRowPersists(t *testing.T) {
 
 func TestYouRowsCycleAndPersist(t *testing.T) {
 	m, path := newSurface(t)
-	if v := ansi.Strip(m.View()); !strings.Contains(v, "YOU") || !strings.Contains(v, "profile.role") {
+	if v := ansi.Strip(m.View()); !strings.Contains(v, "YOU") || !strings.Contains(v, "you are a") {
 		t.Fatalf("you group missing:\n%s", v)
 	}
 	m.cursor = rowRole
@@ -381,7 +381,11 @@ func TestYouRowsCycleAndPersist(t *testing.T) {
 func TestEverySettingHasAPlaceInSettings(t *testing.T) {
 	m, _ := newSurface(t)
 	m.Resize(140, 400)
-	view := ansi.Strip(strings.Join(m.configView(130, 0), "\n"))
+	m.configView(130, 0)
+	rendered := map[string]bool{}
+	for _, k := range m.cfgKeys {
+		rendered[k] = true
+	}
 	elsewhere := map[string]string{
 		"schema": "internal",
 		// Naming templates (CONVENTIONS section: use, edit, learn).
@@ -406,7 +410,7 @@ func TestEverySettingHasAPlaceInSettings(t *testing.T) {
 		if isContainer(k) || elsewhere[k] != "" {
 			continue
 		}
-		if !strings.Contains(view, k) {
+		if !rendered[k] {
 			t.Errorf("setting %s has no CONFIG row and no owner", k)
 		}
 	}

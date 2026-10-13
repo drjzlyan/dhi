@@ -266,3 +266,15 @@ func TestTeamsAddByRoleRefusesNothingAndLeadsIntoATeam(t *testing.T) {
 		t.Fatalf("lead into a team accepted: %+v", m.dform)
 	}
 }
+
+func TestTeamsAddByRoleFollowsHowYouRead(t *testing.T) {
+	m, ws, _, _ := agentSurface(t)
+	m.d.Library = library.Open(ws)
+	m.cfg.Profile.Reading.Detail = "brief"
+	m.sec = secTeams
+	feed(m, "a", "tab", "right", "enter") // one lead
+	roster, _ := org.LoadRoster(ws)
+	if len(roster) != 1 || roster[0].Persona != "terse" {
+		t.Fatalf("roster %+v", roster[0])
+	}
+}
