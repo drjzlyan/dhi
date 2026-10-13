@@ -2,6 +2,7 @@ package toolchain
 
 import (
 	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -35,6 +36,24 @@ func VerifyHash(path, wantHex string) error {
 	if !strings.EqualFold(got, wantHex) {
 		return fmt.Errorf("toolchain: sha256 mismatch for %s: got %s want %s",
 			filepath.Base(path), got, wantHex)
+	}
+	return nil
+}
+
+// VerifyHash512 is VerifyHash for vendors that publish only sha512
+// (Apache Maven, .NET — F-076).
+func VerifyHash512(path, wantHex string) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("toolchain: hash %s: %w", path, err)
+	}
+	defer func() { _ = f.Close() }()
+	h := sha512.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return fmt.Errorf("toolchain: hash %s: %w", path, err)
+	}
+	if got := hex.EncodeToString(h.Sum(nil)); !strings.EqualFold(got, wantHex) {
+		return fmt.Errorf("toolchain: sha512 mismatch for %s: got %s want %s", filepath.Base(path), got, wantHex)
 	}
 	return nil
 }

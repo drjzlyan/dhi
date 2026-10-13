@@ -82,3 +82,71 @@ func TestVerifyPrepareRespectsNetworkScope(t *testing.T) {
 		t.Fatalf("ask approved: %+v calls=%v", res, nr.calls)
 	}
 }
+
+// fakeToolchain is an optional-toolchain seam that records installs.
+type fakeToolchain struct {
+	installed map[string]bool
+	installs  []string
+}
+
+func (f *fakeToolchain) Optional(name string) (int64, bool) {
+	return 300 << 20, name == "rust" || name == "jdk"
+}
+func (f *fakeToolchain) Installed(name string) bool { return f.installed[name] }
+func (f *fakeToolchain) Install(_ context.Context, name string) error {
+	f.installs = append(f.installs, name)
+	f.installed[name] = true
+	return nil
+}
+
+func TestVerifyInstallsMissingToolchainAfterApproval(t *testing.T) {
+	nr := &netRunner{}
+	tc := &fakeToolchain{installed: map[string]bool{}}
+	ap := tools.NewApprovals()
+	r := &Runtime{cfg: Config{Run: nr, Toolchain: tc, Approvals: ap}}
+	dir := t.TempDir()
+	_ = os.WriteFile(filepath.Join(dir, "Cargo.toml"), []byte("[package]"), 0o644)
+	p := verifyplan.Detect(dir)[0]
+	tg := verifyTarget{dir: dir, argv: p.Test, plan: p}
+
+	var asked string
+	go func() {
+		for i := 0; i < 200; i++ {
+			if l := ap.List(); len(l) > 0 {
+				asked = l[0].Target
+				ap.Resolve(l[0].ID, true)
+				return
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+	}()
+	res := r.verify(context.Background(), "scout", scopes.Set{scopes.Network: scopes.Auto}, []verifyTarget{tg})
+	if !res.ok || strings.Join(tc.installs, ",") != "rust" {
+		t.Fatalf("res=%+v installs=%v", res, tc.installs)
+	}
+	if !strings.Contains(asked, "install the managed rust toolchain (300 MB download)") {
+		t.Fatalf("approval asked %q", asked)
+	}
+	// Installed now: no second ask, no second install.
+	r.verify(context.Background(), "scout", scopes.Set{scopes.Network: scopes.Auto}, []verifyTarget{tg})
+	if len(tc.installs) != 1 || len(ap.List()) != 0 {
+		t.Fatalf("reinstalled or re-asked: %v", tc.installs)
+	}
+
+	// Denied: unverified, named, nothing installed.
+	tc2 := &fakeToolchain{installed: map[string]bool{}}
+	r.cfg.Toolchain = tc2
+	go func() {
+		for i := 0; i < 200; i++ {
+			if l := ap.List(); len(l) > 0 {
+				ap.Resolve(l[0].ID, false)
+				return
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+	}()
+	res = r.verify(context.Background(), "scout", scopes.Set{scopes.Network: scopes.Auto}, []verifyTarget{tg})
+	if res.ok || !res.env || !strings.Contains(res.tail, "rust toolchain is not installed") || len(tc2.installs) != 0 {
+		t.Fatalf("denied: %+v installs=%v", res, tc2.installs)
+	}
+}

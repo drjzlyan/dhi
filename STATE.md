@@ -21,8 +21,10 @@
 - P5a DONE (F-076): `internal/agentkit/verifyplan` (detect + prepare + env signatures), member
   `verify` override, ask-gated prepare (network scope → approvals), `toolchain.BuildEnv` cache
   redirection for agents and the runner (`agentEnv` in main), wider `run` allowlist.
-- P5b NEXT: optional managed rust/jdk/maven/gradle/dotnet (manifest `optional`, `sha512`,
-  component merge for Rust, `current` links + env), lazy install via approvals; live test each.
+- P5b DONE (ADR-0036): optional rust/jdk/maven/gradle/dotnet pinned (`scripts/pin-optional.py`),
+  sha512 pins, Rust component merge, `tools/<name>/current` + `ToolEnv`, `Config.Toolchain` seam
+  → `ensureTools` asks via approvals then installs. Live-verified on darwin/arm64 only
+  (`DHI_SMOKE_OPTIONAL=1`); the other three platforms are pinned but not run.
 - Gotchas:
   - Go verify has no prepare on purpose (the module cache is shared); don't add `go mod download`
     or every Go task asks for network.

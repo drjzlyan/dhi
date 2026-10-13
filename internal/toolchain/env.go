@@ -3,6 +3,7 @@ package toolchain
 import (
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -83,4 +84,51 @@ func (m *Manager) BuildEnv() []string {
 		"DOTNET_NOLOGO=1",
 		"DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1",
 	}
+}
+
+// ToolEnv is the environment the managed tools declare (JAVA_HOME,
+// DOTNET_ROOT — F-076), pointing at each tool's stable current/ link.
+// It is computed from the embedded manifest at launch, so a tool
+// installed mid-session is reachable without a restart.
+func (m *Manager) ToolEnv() []string {
+	mf, err := Embedded()
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, name := range sortedTools(mf) {
+		spec, ok := mf.Tools[name].Platforms[PlatformKey()]
+		if !ok {
+			continue
+		}
+		home := filepath.Join(m.root, "tools", name, "current")
+		keys := make([]string, 0, len(spec.Env))
+		for k := range spec.Env {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			out = append(out, k+"="+strings.ReplaceAll(spec.Env[k], "{home}", home))
+		}
+	}
+	return out
+}
+
+func sortedTools(mf *Manifest) []string {
+	out := make([]string, 0, len(mf.Tools))
+	for n := range mf.Tools {
+		out = append(out, n)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// Installed reports whether name is in the lockfile.
+func (m *Manager) Installed(name string) bool {
+	lf, err := m.ReadLockfile()
+	if err != nil {
+		return false
+	}
+	_, ok := lf.Tools[name]
+	return ok
 }

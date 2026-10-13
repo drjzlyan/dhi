@@ -106,9 +106,7 @@ func (m *Manager) Resolve(mf *Manifest, names []string) ([]PlanEntry, error) {
 		return nil, err
 	}
 	if len(names) == 0 {
-		for name := range mf.Tools {
-			names = append(names, name)
-		}
+		names = mf.Required() // optional tools install on demand (F-076)
 	}
 	var plan []PlanEntry
 	for _, name := range names {
@@ -217,7 +215,7 @@ func (m *Manager) install(ctx context.Context, mf *Manifest, names []string) err
 		}
 		lf.Tools[entry.Tool] = LockedTool{
 			Version: entry.To,
-			SHA256:  spec.SHA256,
+			SHA256:  spec.Digest(),
 			Path:    filepath.Join("tools", entry.Tool, entry.To),
 		}
 		m.emit(Event{Kind: EventToolDone, Tool: entry.Tool})
@@ -240,7 +238,11 @@ func (m *Manager) installOne(ctx context.Context, entry PlanEntry, tool Tool, sp
 		return err
 	}
 	m.emit(Event{Kind: EventDownloadDone, Tool: entry.Tool})
-	if err := VerifyHash(archivePath, spec.SHA256); err != nil {
+	verify := func() error { return VerifyHash(archivePath, spec.SHA256) }
+	if spec.SHA512 != "" {
+		verify = func() error { return VerifyHash512(archivePath, spec.SHA512) }
+	}
+	if err := verify(); err != nil {
 		return err
 	}
 	m.emit(Event{Kind: EventVerified, Tool: entry.Tool})
@@ -248,6 +250,11 @@ func (m *Manager) installOne(ctx context.Context, entry PlanEntry, tool Tool, sp
 	extractDir := filepath.Join(stageDir, "root")
 	if err := Extract(archivePath, spec.Format, spec.Strip, extractDir); err != nil {
 		return err
+	}
+	if spec.Merge == MergeRustComponents {
+		if err := mergeRustComponents(extractDir); err != nil {
+			return err
+		}
 	}
 	m.emit(Event{Kind: EventExtracted, Tool: entry.Tool})
 
@@ -260,6 +267,13 @@ func (m *Manager) installOne(ctx context.Context, entry PlanEntry, tool Tool, sp
 		return fmt.Errorf("toolchain: activate %s@%s: %w", entry.Tool, entry.To, err)
 	}
 	m.emit(Event{Kind: EventActivated, Tool: entry.Tool})
+	// A stable current/ link (F-076): env such as JAVA_HOME points there,
+	// so it is right before the first install and after every upgrade.
+	cur := filepath.Join(filepath.Dir(target), "current")
+	_ = os.Remove(cur)
+	if err := os.Symlink(entry.To, cur); err != nil {
+		return fmt.Errorf("toolchain: %s current link: %w", entry.Tool, err)
+	}
 
 	if err := m.linkShims(entry.Tool, tool, target, spec.BinDir); err != nil {
 		return err

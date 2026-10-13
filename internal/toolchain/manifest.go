@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"regexp"
 	"runtime"
+	"sort"
 	"strings"
 )
 
@@ -20,6 +21,7 @@ const SchemaVersion = 1
 
 var (
 	sha256Re   = regexp.MustCompile(`^[0-9a-f]{64}$`)
+	sha512Re   = regexp.MustCompile(`^[0-9a-f]{128}$`)
 	shimNameRe = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 )
 
@@ -51,13 +53,28 @@ type Tool struct {
 	Platforms map[string]PlatformSpec `json:"platforms"`
 	// Shims are the executable names placed on DHI's child-process PATH.
 	Shims []string `json:"shims"`
+	// Optional tools (F-076: rust, jdk, maven, gradle, dotnet) are not part
+	// of the first-run install; DHI installs one when a project first
+	// needs it, after the human approves the download.
+	Optional bool `json:"optional,omitempty"`
 }
 
 // PlatformSpec pins one downloadable artifact for a "os/arch" key.
 type PlatformSpec struct {
 	URL    string `json:"url"`
-	SHA256 string `json:"sha256"`
-	Format Format `json:"format"`
+	SHA256 string `json:"sha256,omitempty"`
+	// SHA512 pins vendors that publish only a sha512 (F-076); exactly one
+	// of SHA256 and SHA512 is set.
+	SHA512 string `json:"sha512,omitempty"`
+	// Merge folds a multi-component archive into one tree after
+	// extraction: "rust-components" merges the directories the archive's
+	// `components` file lists (docs skipped) into a single sysroot.
+	Merge string `json:"merge,omitempty"`
+	// Env is set for DHI's builds and agents while the tool is managed:
+	// "{home}" expands to the tool's stable current/ directory
+	// (JAVA_HOME, DOTNET_ROOT).
+	Env    map[string]string `json:"env,omitempty"`
+	Format Format            `json:"format"`
 	// Strip drops N leading path components from every archive entry
 	// (e.g. 1 for a GitHub-style "name-version/" root). 0 keeps layout.
 	Strip int `json:"strip,omitempty"`
@@ -148,8 +165,20 @@ func validSpec(tool, plat string, spec PlatformSpec) error {
 	default:
 		return fmt.Errorf("toolchain: %s/%s: url must be https (got %q)", tool, plat, spec.URL)
 	}
-	if !sha256Re.MatchString(spec.SHA256) {
+	switch {
+	case spec.SHA256 != "" && spec.SHA512 != "":
+		return fmt.Errorf("toolchain: %s/%s: pin sha256 or sha512, not both", tool, plat)
+	case spec.SHA512 != "":
+		if !sha512Re.MatchString(spec.SHA512) {
+			return fmt.Errorf("toolchain: %s/%s: sha512 must be 128 hex chars", tool, plat)
+		}
+	case !sha256Re.MatchString(spec.SHA256):
 		return fmt.Errorf("toolchain: %s/%s: sha256 must be 64 hex chars", tool, plat)
+	}
+	switch spec.Merge {
+	case "", MergeRustComponents:
+	default:
+		return fmt.Errorf("toolchain: %s/%s: unknown merge %q", tool, plat, spec.Merge)
 	}
 	if !spec.Format.Valid() {
 		return fmt.Errorf("toolchain: %s/%s: unsupported format %q", tool, plat, spec.Format)
@@ -183,9 +212,7 @@ func isLoopback(u *url.URL) bool {
 // this platform or without a recorded size contribute 0.
 func (mf *Manifest) DownloadSize(names []string) (per map[string]int64, total int64) {
 	if len(names) == 0 {
-		for n := range mf.Tools {
-			names = append(names, n)
-		}
+		names = mf.Required()
 	}
 	per = map[string]int64{}
 	for _, n := range names {
@@ -197,4 +224,29 @@ func (mf *Manifest) DownloadSize(names []string) (per map[string]int64, total in
 		total += spec.Size
 	}
 	return per, total
+}
+
+// MergeRustComponents is the PlatformSpec.Merge mode for Rust's
+// standalone installer archives.
+const MergeRustComponents = "rust-components"
+
+// Required lists the tools the first-run install fetches: every
+// non-optional tool, sorted.
+func (mf *Manifest) Required() []string {
+	var out []string
+	for n, t := range mf.Tools {
+		if !t.Optional {
+			out = append(out, n)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// Digest is the pinned digest, prefixed by algorithm for sha512.
+func (s PlatformSpec) Digest() string {
+	if s.SHA512 != "" {
+		return "sha512:" + s.SHA512
+	}
+	return s.SHA256
 }

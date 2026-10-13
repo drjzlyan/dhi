@@ -1043,6 +1043,6 @@ Plan: `~/.claude/plans/transient-baking-sun.md`. One spec + commit per phase on 
 - [x] P2 Board cards, comments, assignment picker, take-it-yourself, reassign to any agent (F-073)
 - [x] P3 Task traces: timestamped transcripts, merged timeline view, export (F-074)
 - [x] P4 Naming templates: branch / worktree / commit / PR, user templates in Settings (F-075)
-- [ ] P5 Verify every top language + managed Rust/JDK/.NET toolchains (F-076, ADR-0036)
+- [x] P5 Verify every top language + managed Rust/JDK/.NET toolchains (F-076, ADR-0036)
 - [ ] P6 Harder evals exercising fix-and-retry (F-077)
 - [ ] P7 Top-class agent memory: durable stores, bounded growth, token budget, summaries (F-078, ADR-0037)

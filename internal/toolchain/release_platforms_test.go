@@ -50,8 +50,8 @@ func TestEveryReleasePlatformIsPinnedForEveryTool(t *testing.T) {
 			if spec.Size <= 0 {
 				t.Errorf("%s/%s: no download size recorded — run scripts/pin-sizes.py (the first-run screen shows it)", name, plat)
 			}
-			if spec.URL == "" || len(spec.SHA256) != 64 {
-				t.Errorf("%s/%s: incomplete pin (url=%q sha256 len=%d)", name, plat, spec.URL, len(spec.SHA256))
+			if spec.URL == "" || (len(spec.SHA256) != 64 && len(spec.SHA512) != 128) {
+				t.Errorf("%s/%s: incomplete pin (url=%q sha256 len=%d sha512 len=%d)", name, plat, spec.URL, len(spec.SHA256), len(spec.SHA512))
 			}
 		}
 	}

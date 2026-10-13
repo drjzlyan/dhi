@@ -163,6 +163,21 @@ func Toolchain(root string) []Check {
 		}
 	}
 
+	// Optional toolchains (F-076) install on first use; name the ones
+	// still absent so "why is my Rust task unverified" has an answer.
+	if mf, err := toolchain.Embedded(); err == nil {
+		var absent []string
+		for _, name := range sortedNames(mf) {
+			if _, ok := lf.Tools[name]; mf.Tools[name].Optional && !ok {
+				absent = append(absent, name)
+			}
+		}
+		if len(absent) > 0 {
+			checks = append(checks, Check{Name: "toolchain/optional", Status: OK,
+				Detail: "not installed yet (installed on first use, after you approve): " + strings.Join(absent, ", ")})
+		}
+	}
+
 	if entries, _ := os.ReadDir(filepath.Join(root, "staging")); len(entries) > 0 {
 		checks = append(checks, Check{Name: "toolchain/staging", Status: Warn,
 			Detail: fmt.Sprintf("%d leftover staging dir(s)", len(entries))})
@@ -1126,4 +1141,13 @@ func Dependencies(wsRoot string) []Check {
 	}
 	return []Check{{Name: "dependencies", Status: OK,
 		Detail: fmt.Sprintf("%d declared edge(s)", len(deps))}}
+}
+
+func sortedNames(mf *toolchain.Manifest) []string {
+	out := make([]string, 0, len(mf.Tools))
+	for n := range mf.Tools {
+		out = append(out, n)
+	}
+	sort.Strings(out)
+	return out
 }

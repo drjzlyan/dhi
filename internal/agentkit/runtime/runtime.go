@@ -151,6 +151,21 @@ type Config struct {
 	// branch and records it on the card (F-067; tasks.Store.Attach in the
 	// app). nil = DHI never provisions; the agent works where it is.
 	Provision func(slug, member string) error
+
+	// Toolchain installs optional managed toolchains on demand (F-076):
+	// verify asks the human once (the approvals inbox) before the first
+	// download. nil = never installs.
+	Toolchain Toolchain
+}
+
+// Toolchain is the optional-toolchain seam (cmd/dhi adapts the toolchain
+// manager).
+type Toolchain interface {
+	// Optional reports whether name is an optional managed tool and its
+	// download size on this platform.
+	Optional(name string) (size int64, ok bool)
+	Installed(name string) bool
+	Install(ctx context.Context, name string) error
 }
 
 // Runtime manages rostered agents and executes their turns.

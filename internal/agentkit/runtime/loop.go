@@ -111,6 +111,9 @@ type verifyResult struct {
 // then the test command offline.
 func (r *Runtime) verify(ctx context.Context, agentID string, sc scopes.Set, targets []verifyTarget) verifyResult {
 	for _, t := range targets {
+		if res, ok := r.ensureTools(ctx, agentID, t); !ok {
+			return res
+		}
 		if res, ok := r.prepare(ctx, agentID, sc, t); !ok {
 			return res
 		}
@@ -121,6 +124,34 @@ func (r *Runtime) verify(ctx context.Context, agentID string, sc scopes.Set, tar
 		}
 	}
 	return verifyResult{ok: true}
+}
+
+// ensureTools installs the optional managed toolchains a target needs
+// (F-076) — Rust, a JDK, Maven, Gradle, .NET — after the human approves
+// the download in the approvals inbox ("allow always" covers later ones).
+func (r *Runtime) ensureTools(ctx context.Context, agentID string, t verifyTarget) (verifyResult, bool) {
+	tc := r.cfg.Toolchain
+	if tc == nil {
+		return verifyResult{}, true
+	}
+	for _, name := range t.plan.Tools {
+		size, optional := tc.Optional(name)
+		if !optional || tc.Installed(name) {
+			continue
+		}
+		what := fmt.Sprintf("install the managed %s toolchain (%d MB download)", name, (size+(1<<20)-1)>>20)
+		if r.cfg.Approvals == nil {
+			return verifyResult{cmd: t.String(), tail: "the " + name + " toolchain is not installed", env: true}, false
+		}
+		if err := r.cfg.Approvals.AskScope(ctx, agentID, "toolchain", sandbox.OpExec, what,
+			"DHI needs it to run this project's tests"); err != nil {
+			return verifyResult{cmd: t.String(), tail: "the " + name + " toolchain is not installed: " + err.Error(), env: true}, false
+		}
+		if err := tc.Install(ctx, name); err != nil {
+			return verifyResult{cmd: t.String(), tail: "installing the " + name + " toolchain failed: " + err.Error(), env: true}, false
+		}
+	}
+	return verifyResult{}, true
 }
 
 // prepare installs a target's dependencies once per lockfile state.

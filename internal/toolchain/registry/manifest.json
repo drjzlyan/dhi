@@ -233,6 +233,239 @@
           "size": 13783869
         }
       }
+    },
+    "rust": {
+      "version": "1.99.0",
+      "optional": true,
+      "platforms": {
+        "darwin/arm64": {
+          "url": "https://static.rust-lang.org/dist/2026-10-01/rust-1.99.0-aarch64-apple-darwin.tar.gz",
+          "sha256": "f35e7c5b2cf63e67c075d323e4d6b87501219311f09744ab24caecb761c96643",
+          "format": "tar.gz",
+          "strip": 1,
+          "bin_dir": "bin",
+          "merge": "rust-components",
+          "size": 306520360
+        },
+        "darwin/amd64": {
+          "url": "https://static.rust-lang.org/dist/2026-10-01/rust-1.99.0-x86_64-apple-darwin.tar.gz",
+          "sha256": "596756101bf43cd335fb247f5cc9ede0c157245523baff25a66694682495cfcb",
+          "format": "tar.gz",
+          "strip": 1,
+          "bin_dir": "bin",
+          "merge": "rust-components",
+          "size": 233835030
+        },
+        "linux/amd64": {
+          "url": "https://static.rust-lang.org/dist/2026-10-01/rust-1.99.0-x86_64-unknown-linux-gnu.tar.gz",
+          "sha256": "de0581ca9d732295a6474cfbd02461db27d69acd5050a8206523a8d6fa1599db",
+          "format": "tar.gz",
+          "strip": 1,
+          "bin_dir": "bin",
+          "merge": "rust-components",
+          "size": 396970137
+        },
+        "linux/arm64": {
+          "url": "https://static.rust-lang.org/dist/2026-10-01/rust-1.99.0-aarch64-unknown-linux-gnu.tar.gz",
+          "sha256": "42214e693ec00733e2a591e67c13af98faf02a82934108a9f37afd247b376dd0",
+          "format": "tar.gz",
+          "strip": 1,
+          "bin_dir": "bin",
+          "merge": "rust-components",
+          "size": 345659805
+        }
+      },
+      "shims": [
+        "rustc",
+        "cargo",
+        "rustdoc",
+        "rustfmt",
+        "cargo-fmt",
+        "cargo-clippy",
+        "clippy-driver"
+      ]
+    },
+    "jdk": {
+      "version": "21.0.12.1+1-LTS",
+      "optional": true,
+      "platforms": {
+        "darwin/arm64": {
+          "url": "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.12.1%2B1/OpenJDK21U-jdk_aarch64_mac_hotspot_21.0.12.1_1.tar.gz",
+          "sha256": "3623232f33a9c3baadf304480b2535f9a3cba8a58d42ecbb438ba267315d9998",
+          "format": "tar.gz",
+          "strip": 1,
+          "bin_dir": "Contents/Home/bin",
+          "env": {
+            "JAVA_HOME": "{home}/Contents/Home"
+          },
+          "size": 200073404
+        },
+        "darwin/amd64": {
+          "url": "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.12.1%2B1/OpenJDK21U-jdk_x64_mac_hotspot_21.0.12.1_1.tar.gz",
+          "sha256": "44db0f08196daf19a47f90d13388b0c943b67663cb537f998fe29e836fa842ce",
+          "format": "tar.gz",
+          "strip": 1,
+          "bin_dir": "Contents/Home/bin",
+          "env": {
+            "JAVA_HOME": "{home}/Contents/Home"
+          },
+          "size": 194316575
+        },
+        "linux/amd64": {
+          "url": "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.12.1%2B1/OpenJDK21U-jdk_x64_linux_hotspot_21.0.12.1_1.tar.gz",
+          "sha256": "ce79869e1307ed8ee1e2baa86a412b1eb5b75d10a01006d788a6f968bcfaee94",
+          "format": "tar.gz",
+          "strip": 1,
+          "bin_dir": "bin",
+          "env": {
+            "JAVA_HOME": "{home}"
+          },
+          "size": 207473347
+        },
+        "linux/arm64": {
+          "url": "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.12.1%2B1/OpenJDK21U-jdk_aarch64_linux_hotspot_21.0.12.1_1.tar.gz",
+          "sha256": "23e37e026f12f3e706f18938ff611db3032d075b09d0879a25d06718c773e223",
+          "format": "tar.gz",
+          "strip": 1,
+          "bin_dir": "bin",
+          "env": {
+            "JAVA_HOME": "{home}"
+          },
+          "size": 205641175
+        }
+      },
+      "shims": [
+        "java",
+        "javac",
+        "jar"
+      ]
+    },
+    "maven": {
+      "version": "3.9.16",
+      "optional": true,
+      "platforms": {
+        "darwin/arm64": {
+          "url": "https://repo.maven.apache.org/maven2/org/apache/maven/apache-maven/3.9.16/apache-maven-3.9.16-bin.tar.gz",
+          "sha512": "831a8591fe20c8243b1dbe7d71e3244f31d1665b0804b2e825e38cbbe5ce0cafb8338851f90780735568773e0a6cd07bbec107cda0b896b008b861075358b6f6",
+          "format": "tar.gz",
+          "strip": 1,
+          "bin_dir": "bin",
+          "size": 9278065
+        },
+        "darwin/amd64": {
+          "url": "https://repo.maven.apache.org/maven2/org/apache/maven/apache-maven/3.9.16/apache-maven-3.9.16-bin.tar.gz",
+          "sha512": "831a8591fe20c8243b1dbe7d71e3244f31d1665b0804b2e825e38cbbe5ce0cafb8338851f90780735568773e0a6cd07bbec107cda0b896b008b861075358b6f6",
+          "format": "tar.gz",
+          "strip": 1,
+          "bin_dir": "bin",
+          "size": 9278065
+        },
+        "linux/amd64": {
+          "url": "https://repo.maven.apache.org/maven2/org/apache/maven/apache-maven/3.9.16/apache-maven-3.9.16-bin.tar.gz",
+          "sha512": "831a8591fe20c8243b1dbe7d71e3244f31d1665b0804b2e825e38cbbe5ce0cafb8338851f90780735568773e0a6cd07bbec107cda0b896b008b861075358b6f6",
+          "format": "tar.gz",
+          "strip": 1,
+          "bin_dir": "bin",
+          "size": 9278065
+        },
+        "linux/arm64": {
+          "url": "https://repo.maven.apache.org/maven2/org/apache/maven/apache-maven/3.9.16/apache-maven-3.9.16-bin.tar.gz",
+          "sha512": "831a8591fe20c8243b1dbe7d71e3244f31d1665b0804b2e825e38cbbe5ce0cafb8338851f90780735568773e0a6cd07bbec107cda0b896b008b861075358b6f6",
+          "format": "tar.gz",
+          "strip": 1,
+          "bin_dir": "bin",
+          "size": 9278065
+        }
+      },
+      "shims": [
+        "mvn"
+      ]
+    },
+    "gradle": {
+      "version": "9.8.1",
+      "optional": true,
+      "platforms": {
+        "darwin/arm64": {
+          "url": "https://services.gradle.org/distributions/gradle-9.8.1-bin.zip",
+          "sha256": "dce76f55f8e251a3a1f130eb120f30b3d271de2b76c9b0729d316b5a1b6dc01f",
+          "format": "zip",
+          "strip": 1,
+          "bin_dir": "bin",
+          "size": 151620101
+        },
+        "darwin/amd64": {
+          "url": "https://services.gradle.org/distributions/gradle-9.8.1-bin.zip",
+          "sha256": "dce76f55f8e251a3a1f130eb120f30b3d271de2b76c9b0729d316b5a1b6dc01f",
+          "format": "zip",
+          "strip": 1,
+          "bin_dir": "bin",
+          "size": 151620101
+        },
+        "linux/amd64": {
+          "url": "https://services.gradle.org/distributions/gradle-9.8.1-bin.zip",
+          "sha256": "dce76f55f8e251a3a1f130eb120f30b3d271de2b76c9b0729d316b5a1b6dc01f",
+          "format": "zip",
+          "strip": 1,
+          "bin_dir": "bin",
+          "size": 151620101
+        },
+        "linux/arm64": {
+          "url": "https://services.gradle.org/distributions/gradle-9.8.1-bin.zip",
+          "sha256": "dce76f55f8e251a3a1f130eb120f30b3d271de2b76c9b0729d316b5a1b6dc01f",
+          "format": "zip",
+          "strip": 1,
+          "bin_dir": "bin",
+          "size": 151620101
+        }
+      },
+      "shims": [
+        "gradle"
+      ]
+    },
+    "dotnet": {
+      "version": "10.0.401",
+      "optional": true,
+      "platforms": {
+        "darwin/arm64": {
+          "url": "https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.401/dotnet-sdk-10.0.401-osx-arm64.tar.gz",
+          "sha512": "69f64eb00dc045398755c440b152225d544301a345a146a16e86a56a0c52b7c94b2c331520e976dbb821f18d31930aafbd25bb85961e3517e0665414ce0cbcff",
+          "format": "tar.gz",
+          "env": {
+            "DOTNET_ROOT": "{home}"
+          },
+          "size": 230753980
+        },
+        "darwin/amd64": {
+          "url": "https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.401/dotnet-sdk-10.0.401-osx-x64.tar.gz",
+          "sha512": "33401b4a2da8554e3306db6072ea8569d9fcc608509c271e0aa4b39e7cc432da3631f14e7e1e2445d67d72550d18ce44a8bbd2382a756867ad2edab6b1c963c0",
+          "format": "tar.gz",
+          "env": {
+            "DOTNET_ROOT": "{home}"
+          },
+          "size": 238641497
+        },
+        "linux/amd64": {
+          "url": "https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.401/dotnet-sdk-10.0.401-linux-x64.tar.gz",
+          "sha512": "51c8b999af9e8dd9998c9edc5944e19a90788862068acd38694e098889054ce8c23d4f0c5cccfa16bf187d044562359e5ee69a9f8ad0bbe913ba90311fbce25b",
+          "format": "tar.gz",
+          "env": {
+            "DOTNET_ROOT": "{home}"
+          },
+          "size": 240059572
+        },
+        "linux/arm64": {
+          "url": "https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.401/dotnet-sdk-10.0.401-linux-arm64.tar.gz",
+          "sha512": "58ace73ced6b4360754689a686bdfb8a317f4da6cb8bb416dbc7d0ba9f47e43e3c09f5eb1f1a1cfaacbd10df9558da4882bf2a5e195d6ab56a02c1f9f76102ed",
+          "format": "tar.gz",
+          "env": {
+            "DOTNET_ROOT": "{home}"
+          },
+          "size": 232558062
+        }
+      },
+      "shims": [
+        "dotnet"
+      ]
     }
   }
 }

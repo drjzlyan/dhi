@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -216,7 +217,7 @@ func runTUI() (relaunch bool) {
 		}
 		// Agents and DHI's own verify build with caches redirected into
 		// the toolchain's writable folders (F-076); terminals keep home.
-		agentEnv = append(append([]string(nil), termEnv...), mgr.BuildEnv()...)
+		agentEnv = append(append(append([]string(nil), termEnv...), mgr.BuildEnv()...), mgr.ToolEnv()...)
 		runRunner = execRunner{env: agentEnv, timeout: 5 * time.Minute, sandbox: guardWorkspace(decision.Sandbox, ws)}
 		if _, err := os.Stat(filepath.Join(toolRoot, "bin", "rg")); err == nil {
 			rgSearcher = search.Ripgrep{Bin: filepath.Join(toolRoot, "bin", "rg")}
@@ -1303,6 +1304,7 @@ func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cl
 		// F-067: a task turn without a worktree gets one on the convention
 		// branch before the agent starts, so the work lands where DHI can
 		// verify it and open the PR.
+		Toolchain: optionalToolchain(),
 		Provision: func(slug, member string) error {
 			if taskStore == nil {
 				return fmt.Errorf("task store unavailable")
@@ -1438,4 +1440,43 @@ func taskVars(ts *tasks.Store, c conventions.Config, slug, member string) map[st
 		}
 	}
 	return v
+}
+
+// toolchainSeam adapts the toolchain manager to the runtime's optional-
+// toolchain seam (F-076); installs are serialised.
+type toolchainSeam struct {
+	mgr *toolchain.Manager
+	mu  sync.Mutex
+}
+
+func (t *toolchainSeam) Optional(name string) (int64, bool) {
+	mf, err := toolchain.Embedded()
+	if err != nil {
+		return 0, false
+	}
+	tool, ok := mf.Tools[name]
+	if !ok || !tool.Optional {
+		return 0, false
+	}
+	return tool.Platforms[toolchain.PlatformKey()].Size, true
+}
+
+func (t *toolchainSeam) Installed(name string) bool { return t.mgr.Installed(name) }
+
+func (t *toolchainSeam) Install(ctx context.Context, name string) error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.mgr.Installed(name) {
+		return nil // another verify installed it while this one waited
+	}
+	return t.mgr.InstallEmbedded(ctx, []string{name})
+}
+
+// optionalToolchain is the runtime's install seam, nil without a prefix.
+func optionalToolchain() agentkitRuntime.Toolchain {
+	root, err := toolchain.DefaultRoot()
+	if err != nil {
+		return nil
+	}
+	return &toolchainSeam{mgr: toolchain.New(root)}
 }
