@@ -110,6 +110,36 @@ func (s *Store) Names() ([]string, error) {
 	return out, nil
 }
 
+// Values returns every stored value by name, for redaction only (F-088):
+// the redactor must know a value to keep it out of what DHI writes.
+// Nothing else reads values in bulk.
+func (s *Store) Values() map[string]string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	d, err := s.load()
+	if err != nil {
+		return nil
+	}
+	out := make(map[string]string, len(d.Credentials))
+	for n, v := range d.Credentials {
+		out[n] = v
+	}
+	return out
+}
+
+// Stamp changes whenever the file does (size and mtime), so a cache of
+// Values knows to reload.
+func (s *Store) Stamp() string {
+	if s.Path == "" {
+		return ""
+	}
+	fi, err := os.Stat(s.Path)
+	if err != nil {
+		return "absent"
+	}
+	return fmt.Sprintf("%d:%d", fi.Size(), fi.ModTime().UnixNano())
+}
+
 // Set writes one or more credentials in a single atomic update.
 func (s *Store) Set(values map[string]string) error {
 	if s.Path == "" {

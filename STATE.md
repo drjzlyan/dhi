@@ -16,6 +16,10 @@
   `StreamEvent.Denied` → `offerAccess` card; grants are `write:<path>` scopes with a `tools.Layer`
   (once/workspace/everywhere, user file via `PersistUser`); `spawnSandbox` adds them per spawn.
   `Approvals.Decide` + `DecideKeys` (y/o/a/g/n) on chat pane ask strip, inbox rows, editor chat.
+- P3 DONE (F-088): `CredentialPaths` += dhi credentials.toml/grants.json (seatbelt deny, bwrap
+  mask); `internal/redact` (credstore `Values`/`Stamp`) on `bus.Redact`, `runtime.Config.Redact`
+  (`redactHandler`, run Summary/Error, transcript records). No keychain fence: claude itself
+  uses `/usr/bin/security`.
 - Gotchas:
   - A tool that changes cwd or sandbox must set the turn's `relaunch`; the running spawn can't
     see the change. P2 grants reuse this.

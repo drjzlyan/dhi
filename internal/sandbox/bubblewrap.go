@@ -146,7 +146,38 @@ func (b *Bubblewrap) Wrap(argv []string) ([]string, error) {
 		out = append(out, "--bind", r, r)
 	}
 	out = append(out, b.guardArgs()...)
+	out = append(out, b.credentialMasks()...)
 	return append(out, argv...), nil
+}
+
+// credentialMasks hides the credential paths that fall inside a bound
+// root (F-088): bubblewrap shows only what is bound, but a CLI state root
+// or a grant could cover ~/.config. A directory becomes an empty tmpfs,
+// a file /dev/null.
+func (b *Bubblewrap) credentialMasks() []string {
+	var out []string
+	for _, c := range CredentialPaths() {
+		inside := false
+		for _, r := range append(append([]string(nil), b.ro...), b.rw...) {
+			if c == r || strings.HasPrefix(c, r+string(filepath.Separator)) {
+				inside = true
+				break
+			}
+		}
+		if !inside {
+			continue
+		}
+		fi, err := os.Stat(c)
+		switch {
+		case err != nil:
+			continue
+		case fi.IsDir():
+			out = append(out, "--tmpfs", c)
+		default:
+			out = append(out, "--ro-bind", "/dev/null", c)
+		}
+	}
+	return out
 }
 
 // WrapNetwork implements NetworkPolicy: it binds with the requested
@@ -172,6 +203,7 @@ func (b *Bubblewrap) WrapNetwork(argv []string, allow bool) ([]string, error) {
 		out = append(out, "--bind", r, r)
 	}
 	out = append(out, b.guardArgs()...)
+	out = append(out, b.credentialMasks()...)
 	return append(out, argv...), nil
 }
 

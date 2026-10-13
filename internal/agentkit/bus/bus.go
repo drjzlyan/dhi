@@ -116,6 +116,10 @@ type Bus struct {
 	cacheMu sync.Mutex
 	cache   map[string]fileCache
 
+	// Redact, when set, scrubs known secret values from every posted
+	// text before it is persisted or delivered (F-088).
+	Redact func(string) string
+
 	// Now stamps message timestamps; nil = wall clock. Tests pin it so
 	// transcript renders (HH:MM stamps, day dividers) stay deterministic.
 	Now func() time.Time
@@ -325,6 +329,9 @@ func (b *Bus) Post(m Message) (Message, error) {
 	}
 	if m.Author == "" {
 		return Message{}, fmt.Errorf("bus: empty author")
+	}
+	if b.Redact != nil {
+		m.Text = b.Redact(m.Text)
 	}
 	path, err := fileFor(b.root, m.Channel)
 	if err != nil {

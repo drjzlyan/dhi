@@ -63,6 +63,9 @@ type Config struct {
 	// "cli:<name>". Agents whose manifest declares no engine inherit it;
 	// when it is also empty such agents refuse at build time by name.
 	DefaultEngine string
+	// Redact scrubs known secret values (F-088) from tool results, run
+	// records and transcripts; nil = none. The bus carries its own.
+	Redact func(string) string
 	// CLIEnv is the base environment for CLI spawns (hermetic toolchain
 	// PATH and the like). The executor extends it with each CLI's
 	// declared pass-through — the exact set, nothing else (ADR-0012 §4).

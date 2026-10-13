@@ -464,6 +464,9 @@ func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Messag
 		run.Error = "CLI stream ended without a final event"
 	}
 
+	if r.cfg.Redact != nil {
+		run.Summary, run.Error = r.cfg.Redact(run.Summary), r.cfg.Redact(run.Error)
+	}
 	tr := transcript{events: events, stamps: stamps, in: in, stderr: stderr.lastLine(),
 		full: r.tuning().TracePrompts}
 	run.Transcript = r.saveTranscript(tr, run)
@@ -499,6 +502,9 @@ func (r *Runtime) saveTranscript(tr transcript, run tasks.Run) string {
 	enc := json.NewEncoder(f)
 	put := func(rec trace.Record) bool {
 		rec.Attempt = run.Attempt
+		if r.cfg.Redact != nil {
+			rec.Detail = r.cfg.Redact(rec.Detail)
+		}
 		return enc.Encode(rec) == nil
 	}
 	sent := fmt.Sprintf("prompt %d chars · system %d chars", len([]rune(tr.in.prompt)), len([]rune(tr.in.system)))
@@ -650,6 +656,9 @@ func (r *Runtime) serveToolsFor(e *entry, trigger bus.Message, tt turnTools) *se
 		closeBridge()
 		return nil
 	}
+	if r.cfg.Redact != nil {
+		handler = redactHandler{Handler: handler, redact: r.cfg.Redact}
+	}
 	endpoint, stop, err := mcp.ServeLoopback(handler)
 	if err != nil {
 		// Named degrade, never silent: the turn proceeds without served
@@ -732,6 +741,22 @@ func (r *Runtime) serveToolsFor(e *entry, trigger bus.Message, tt turnTools) *se
 
 // compositeHandler merges DHI's own tools with the bridged third-party
 // MCP servers: listing both, routing by the mcp__ prefix.
+// redactHandler scrubs known secret values from every tool result before
+// the agent reads it (F-088): a file, a command's output or an MCP reply
+// that echoes a secret reaches the model as ‹secret:NAME›.
+type redactHandler struct {
+	mcp.Handler
+	redact func(string) string
+}
+
+func (h redactHandler) CallTool(ctx context.Context, name string, args json.RawMessage) (string, bool, error) {
+	out, isErr, err := h.Handler.CallTool(ctx, name, args)
+	if err != nil {
+		err = errors.New(h.redact(err.Error()))
+	}
+	return h.redact(out), isErr, err
+}
+
 type compositeHandler struct {
 	dhi    mcp.Handler
 	bridge mcp.Handler

@@ -197,11 +197,17 @@ func seatbeltProfile(rw, ro []string, allowNetwork bool, guard, reopen []string)
 
 // CredentialPaths lists the user's credential trees reads may
 // never cross, even with broad file-read. Missing dirs are harmless
-// (a deny on an absent path never matches).
+// (a deny on an absent path never matches). DHI's own secrets and
+// grants files are among them (F-088): an agent must not read the
+// values DHI injects by name, nor the grants it is held to.
 func CredentialPaths() []string {
 	home, err := os.UserHomeDir()
 	if err != nil || home == "" {
 		return nil
+	}
+	cfg := os.Getenv("XDG_CONFIG_HOME")
+	if cfg == "" {
+		cfg = filepath.Join(home, ".config")
 	}
 	return []string{
 		filepath.Join(home, ".ssh"),
@@ -211,6 +217,8 @@ func CredentialPaths() []string {
 		filepath.Join(home, ".config", "gcloud"),
 		filepath.Join(home, ".azure"),
 		filepath.Join(home, ".netrc"),
+		filepath.Join(cfg, "dhi", "credentials.toml"),
+		filepath.Join(cfg, "dhi", "grants.json"),
 	}
 }
 

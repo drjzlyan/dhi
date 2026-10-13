@@ -52,6 +52,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/ideation"
 	"github.com/drjzlyan/dhi/internal/langserver"
 	"github.com/drjzlyan/dhi/internal/lsp"
+	"github.com/drjzlyan/dhi/internal/redact"
 	"github.com/drjzlyan/dhi/internal/repair"
 	"github.com/drjzlyan/dhi/internal/review"
 	"github.com/drjzlyan/dhi/internal/sandbox"
@@ -1073,8 +1074,20 @@ func openBus(ws *workspace.Workspace) *bus.Bus {
 		fmt.Fprintln(os.Stderr, "dhi: message bus:", err)
 		return nil
 	}
+	b.Redact = secretRedactor.Func()
 	return b
 }
+
+// secretRedactor keeps stored credential values out of chat, tool
+// results, run records and transcripts (F-088). It re-reads the store
+// when the file changes, so a secret added mid-session is covered.
+var secretRedactor = func() *redact.Redactor {
+	st, err := credstore.Open()
+	if err != nil {
+		return nil
+	}
+	return redact.New(st.Values, st.Stamp)
+}()
 
 // newAgentRuntime wires the turn engine onto an existing bus; nil means
 // no crew (no roster, or a broken one). Org + layered coding standards
@@ -1406,6 +1419,7 @@ func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cl
 		WS:        ws,
 		Bus:       b,
 		Approvals: approvals,
+		Redact:    secretRedactor.Func(),
 		// Host agent CLIs (F-013/ADR-0012/0013): DHI ships no model
 		// engine of its own; every rostered agent thinks through one of
 		// these, resolved on the host PATH. Absent CLIs refuse roster
