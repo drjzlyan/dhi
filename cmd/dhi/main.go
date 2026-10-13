@@ -279,7 +279,7 @@ func runTUI() (relaunch bool) {
 		// adapter (nil here is impossible: the audit blocked first).
 		if messageBus != nil {
 			agentRT = newAgentRuntime(ws, messageBus, guardWorkspace(decision.Sandbox, ws), agentEnv, cfg.Engine, gitRunner, identityFn, sessionStore, runRunner, editorBridge, wsScopes, taskStore, reviewSvc, rgSearcher, mcpStore, convLive.Source(), cliLook, toolBin, mcpHome, decision.Worktrees,
-				liveTuning(userCfg, wsCfg, cfg))
+				liveTuning(userCfg, wsCfg, cfg, identityFn))
 			if agentRT != nil {
 				// F-071: a held sub-card starts the moment its blockers are
 				// done, whoever moved them.
@@ -675,6 +675,13 @@ func newSetupEnv(cwd string, ws *workspace.Workspace, userCfg, toolRoot string,
 			return gitcore.SetIdentity(ctx, gitcore.NewRunner(mgr.GitBin(), mgr.GitIdentityEnv(nil)), id)
 		}
 	}
+	// You step (F-081): the profile is personal, so it lives in the user config.
+	if c, err := settings.Load(userCfg, ""); err == nil {
+		env.Profile = c.Profile
+	}
+	if userCfg != "" {
+		env.SaveProfile = func(p settings.Profile) error { return settings.SaveProfile(userCfg, p) }
+	}
 	env.SaveConventions = func(root string, c conventions.Config) error {
 		path := settings.ConventionsPath(userCfg)
 		if root != "" {
@@ -756,7 +763,9 @@ func newSetupEnv(cwd string, ws *workspace.Workspace, userCfg, toolRoot string,
 		if err != nil {
 			return nil, err
 		}
-		tpls, err := starter.Compose(c, composeOptions(w, o))
+		opt := composeOptions(w, o)
+		opt.Persona = env.Profile.Principal("", "").Persona() // how you read sets their voice
+		tpls, err := starter.Compose(c, opt)
 		if err != nil {
 			return nil, err
 		}
@@ -1231,13 +1240,33 @@ func openEpisodes(ws *workspace.Workspace) *episode.Store {
 // liveTuning re-reads [agents] and [budgets] for every turn (F-066), so a
 // Settings edit governs the next spawn without a restart. A broken edit
 // keeps the boot values; doctor and the Settings view name the problem.
-func liveTuning(userCfg, wsCfg string, boot settings.Config) func() agentkitRuntime.Tuning {
+func liveTuning(userCfg, wsCfg string, boot settings.Config, identityFn gitcore.IdentityFunc) func() agentkitRuntime.Tuning {
+	// The principal's name comes from git (F-081); resolved once it
+	// succeeds, so a turn never waits on git config.
+	var (
+		idMu sync.Mutex
+		id   gitcore.Identity
+	)
+	identity := func() gitcore.Identity {
+		idMu.Lock()
+		defer idMu.Unlock()
+		if id.Name == "" && identityFn != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			if got, err := identityFn(ctx); err == nil {
+				id = got
+			}
+			cancel()
+		}
+		return id
+	}
 	return func() agentkitRuntime.Tuning {
 		c, err := settings.Load(userCfg, wsCfg)
 		if err != nil {
 			c = boot
 		}
+		who := identity()
 		return agentkitRuntime.Tuning{
+			Principal:     c.Profile.Principal(who.Name, who.Email),
 			MaxTurns:      c.Agents.MaxTurns,
 			Resume:        c.Agents.Resume,
 			Autonomy:      c.Agents.Autonomy,

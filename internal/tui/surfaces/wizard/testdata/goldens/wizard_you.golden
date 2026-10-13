@@ -1,0 +1,31 @@
+
+
+
+
+
+
+
+
+             DHI setup
+             ✓ welcome › ✓ identity › ◐ you › ○ conventions › ○ done
+             
+             How do you work?
+             Your employees deliver work in your name. Tell them how you write, and how
+             you like to read their replies. Change it any time in Settings → CONFIG.
+             
+             you are a ▌[developer]
+             tone       [plain]
+             length     [normal]
+             emoji      [no]
+             language   English
+             replies    [summary-first]
+             as         [prose]
+             detail     [normal]
+             
+             Writing: commits, PR descriptions and comments written for you.
+             Replies: how employees answer you in chat.
+             
+             Ada reads replies best with the outcome in the first sentence, then the
+             details, in short plain paragraphs.
+             
+             enter continue · esc skip step · ctrl+b back · ctrl+x skip setup

@@ -692,3 +692,23 @@ func TestAgentsLoopKeys(t *testing.T) {
 		t.Fatalf("agents = %+v %v", c.Agents, err)
 	}
 }
+
+func TestProfileLayersAndValidates(t *testing.T) {
+	dir := t.TempDir()
+	user := filepath.Join(dir, "user.toml")
+	ws := filepath.Join(dir, "ws.toml")
+	os.WriteFile(user, []byte("schema = 1\n[profile]\nrole = \"founder\"\n[profile.writing]\ntone = \"casual\"\nemoji = true\n[profile.reading]\nformat = \"bullets\"\n"), 0o644)
+	os.WriteFile(ws, []byte("schema = 1\n[profile.reading]\ndetail = \"brief\"\n"), 0o644)
+	c, err := Load(user, ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := c.Profile.Principal("Ada", "ada@x")
+	if p.Role != "founder" || p.Tone != "casual" || !p.Emoji || p.Format != "bullets" || p.Detail != "brief" || p.Order != "summary-first" {
+		t.Fatalf("principal %+v", p)
+	}
+	os.WriteFile(ws, []byte("schema = 1\n[profile.writing]\ntone = \"snarky\"\n"), 0o644)
+	if _, err := Load(user, ws); err == nil || !strings.Contains(err.Error(), "profile.writing.tone") {
+		t.Fatalf("bad tone: %v", err)
+	}
+}

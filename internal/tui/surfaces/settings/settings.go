@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/drjzlyan/dhi/internal/agentkit/memory"
+	"github.com/drjzlyan/dhi/internal/agentkit/principal"
 	"os"
 	"path/filepath"
 	"sort"
@@ -391,7 +392,16 @@ func (m *Model) configKey(key string) bool {
 }
 
 const (
-	rowTheme = iota
+	// You (F-081): who the crew works for and how you write and read.
+	rowRole = iota
+	rowTone
+	rowLength
+	rowEmoji
+	rowLanguage
+	rowOrder
+	rowFormat
+	rowDetail
+	rowTheme
 	rowReducedMotion
 	rowTabWidth
 	rowLineNumbers
@@ -471,6 +481,16 @@ func cycleString(cur string, opts []string, dir int) string {
 	return opts[0]
 }
 
+// languagePresets is the cycle for profile.writing.language.
+var languagePresets = []string{"English", "Spanish", "German", "French", "Portuguese", "Hindi", "Japanese", "Chinese"}
+
+func orStr(v, def string) string {
+	if v == "" {
+		return def
+	}
+	return v
+}
+
 // scopeRowNames orders the settings scope rows.
 var scopeRowNames = []string{"read", "write", "exec", "network", "git", "push", "admin"}
 
@@ -479,7 +499,24 @@ var scopeEffects = []string{"auto", "ask", "deny"}
 
 // cycle applies one modification step and persists + applies live.
 func (m *Model) cycle(dir int) {
+	pr := &m.cfg.Profile
 	switch m.cursor {
+	case rowRole:
+		pr.Role = cycleString(orStr(pr.Role, principal.Roles[0]), principal.Roles, dir)
+	case rowTone:
+		pr.Writing.Tone = cycleString(orStr(pr.Writing.Tone, principal.Tones[0]), principal.Tones, dir)
+	case rowLength:
+		pr.Writing.Length = cycleString(orStr(pr.Writing.Length, principal.Lengths[1]), principal.Lengths, dir)
+	case rowEmoji:
+		pr.Writing.Emoji = !pr.Writing.Emoji
+	case rowLanguage:
+		pr.Writing.Language = cycleString(orStr(pr.Writing.Language, principal.Language), languagePresets, dir)
+	case rowOrder:
+		pr.Reading.Order = cycleString(orStr(pr.Reading.Order, principal.Orders[0]), principal.Orders, dir)
+	case rowFormat:
+		pr.Reading.Format = cycleString(orStr(pr.Reading.Format, principal.Formats[0]), principal.Formats, dir)
+	case rowDetail:
+		pr.Reading.Detail = cycleString(orStr(pr.Reading.Detail, principal.Details[0]), principal.Details, dir)
 	case rowTheme:
 		names := settings.ThemeNames()
 		for i, n := range names {
@@ -620,7 +657,7 @@ func (m *Model) applyAndPersist() {
 	}
 	// Conventions are a separate, tracked file shared with the team and
 	// are re-read while DHI runs (F-052), so say so.
-	if m.cursor >= rowResume {
+	if m.cursor >= rowResume || m.cursor < rowTheme {
 		m.flash = "saved (live — agents use it from their next spawn)"
 		return
 	}
@@ -1360,6 +1397,16 @@ func (m *Model) configView(w, budget int) []string {
 	add := func(row int, name, value string) {
 		lines = append(lines, line{settingRow(m.cursor == row, name, value), row})
 	}
+	pp := m.cfg.Profile.Principal("", "")
+	head("you")
+	add(rowRole, "profile.role", pp.Role)
+	add(rowTone, "profile.writing.tone", pp.Tone)
+	add(rowLength, "profile.writing.length", pp.Length)
+	add(rowEmoji, "profile.writing.emoji", boolValue(pp.Emoji))
+	add(rowLanguage, "profile.writing.language", pp.Language)
+	add(rowOrder, "profile.reading.order", pp.Order)
+	add(rowFormat, "profile.reading.format", pp.Format)
+	add(rowDetail, "profile.reading.detail", pp.Detail)
 	head("appearance")
 	add(rowTheme, "theme", m.themeValue())
 	add(rowReducedMotion, "reduced_motion", boolValue(m.cfg.ReducedMotion))

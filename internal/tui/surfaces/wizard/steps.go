@@ -196,6 +196,7 @@ func (s *identityStep) Update(msg tea.Msg) tea.Cmd {
 	}
 	if m.err == nil {
 		s.found, s.phase = m.id, idFound
+		s.env.WhoName = m.id.Name
 		return nil
 	}
 	if !errors.Is(m.err, gitcore.ErrIdentityUnset) {
@@ -262,6 +263,7 @@ func (s *identityStep) Apply() error {
 		s.err = err.Error()
 		return err
 	}
+	s.env.WhoName = s.want.Name
 	s.env.Applied = append(s.env.Applied, "git identity set to "+s.want.Name+" <"+s.want.Email+">")
 	return nil
 }

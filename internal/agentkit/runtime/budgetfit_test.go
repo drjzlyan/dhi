@@ -7,6 +7,7 @@ import (
 
 	"github.com/drjzlyan/dhi/internal/agentkit/brief"
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
+	"github.com/drjzlyan/dhi/internal/agentkit/principal"
 )
 
 func TestFitSectionsShrinksLowestPriorityFirst(t *testing.T) {
@@ -81,5 +82,21 @@ func TestSystemPromptCarriesTheProjectBrief(t *testing.T) {
 	i, j := strings.Index(system, "Project: shop"), strings.Index(system, "Files are addressed")
 	if i < 0 || !strings.Contains(system, "Never: never touch prod") || j < i {
 		t.Fatalf("brief missing or after grounding:\n%s", system)
+	}
+}
+
+func TestSystemPromptSpeaksForThePrincipal(t *testing.T) {
+	h := newHarness(t, baseDoc())
+	trig := mustPost(t, h, bus.Message{Channel: "#general", Author: bus.Human, Text: "@scout go"})
+	_, system := h.rt.cliPromptAt(context.Background(), h.rt.agents["scout"], trig, "", 0, nil, false)
+	if !strings.Contains(system, "You work for the user (developer)") || !strings.Contains(system, "no tool logs") {
+		t.Fatalf("default voice missing:\n%s", system)
+	}
+	h.rt.cfg.Tuning = func() Tuning {
+		return Tuning{MaxIterations: 3, Principal: principal.Profile{Name: "Ada", Role: "founder", Format: "bullets"}}
+	}
+	_, system = h.rt.cliPromptAt(context.Background(), h.rt.agents["scout"], trig, "", 0, nil, false)
+	if !strings.Contains(system, "You work for Ada (founder)") || !strings.Contains(system, "short bullet points") {
+		t.Fatalf("principal voice missing:\n%s", system)
 	}
 }

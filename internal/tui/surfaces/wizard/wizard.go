@@ -15,6 +15,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/starter"
 	"github.com/drjzlyan/dhi/internal/conventions"
 	"github.com/drjzlyan/dhi/internal/gitcore"
+	"github.com/drjzlyan/dhi/internal/settings"
 	"github.com/drjzlyan/dhi/internal/setup"
 	"github.com/drjzlyan/dhi/internal/tui/kit"
 	"github.com/drjzlyan/dhi/internal/tui/theme"
@@ -88,6 +89,12 @@ type Env struct {
 	RosterCount      func() int
 	DetectCLIs       func() map[string]string
 	ApplyTeam        func(templateSlug string) (starter.Result, error)
+	// You step (F-081): the user's profile, saved to the user config.
+	// WhoName is the git name, for the preview only.
+	Profile     settings.Profile
+	SaveProfile func(p settings.Profile) error
+	WhoName     string
+
 	// Project step (F-080): DetectBrief drafts the brief from the repo,
 	// SaveBrief writes it, HasBrief reports one exists (nil = unknown).
 	DetectBrief func() brief.Brief
@@ -162,6 +169,7 @@ func DefaultSteps(env *Env, version string) []Step {
 		&workspaceStep{env: env},
 		&projectStep{env: env},
 		&identityStep{env: env},
+		&styleStep{env: env},
 		&conventionsStep{env: env},
 		&cliStep{env: env},
 		&teamStep{env: env},

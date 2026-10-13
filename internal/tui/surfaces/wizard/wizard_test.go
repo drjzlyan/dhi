@@ -1254,3 +1254,45 @@ func TestGoldenProjectStep(t *testing.T) {
 	key(m, "enter", "tab", "tab", "tab", "tab", "tab") // cursor on a long value
 	golden.Snapshot(t, "wizard_project", plain(m))
 }
+
+// ---- you step (F-081) ----
+
+func TestStyleStepSavesTheProfileWithDefaults(t *testing.T) {
+	f := newFixture(t, true)
+	var saved []settings.Profile
+	f.env.SaveProfile = func(p settings.Profile) error { saved = append(saved, p); return nil }
+	m := f.wizard()
+	key(m, "enter", "enter") // welcome, identity (found: Ada)
+	if m.steps[m.idx].ID() != "you" {
+		t.Fatalf("on %s, want you", m.steps[m.idx].ID())
+	}
+	v := plain(m)
+	for _, want := range []string{"How do you work?", "developer", "plain", "English", "Ada reads replies best"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("you step lacks %q:\n%s", want, v)
+		}
+	}
+	golden.Snapshot(t, "wizard_you", v)
+	key(m, "tab", "right")                             // tone → formal
+	key(m, "tab", "tab", "tab", "tab", "tab", "right") // as → bullets
+	key(m, "enter")
+	if len(saved) != 1 || saved[0].Writing.Tone != "formal" || saved[0].Reading.Format != "bullets" ||
+		saved[0].Role != "developer" || saved[0].Writing.Length != "normal" || saved[0].Writing.Language != "English" {
+		t.Fatalf("saved %+v", saved)
+	}
+	if f.env.Profile.Writing.Tone != "formal" {
+		t.Fatal("env profile not updated for later steps")
+	}
+}
+
+func TestStyleStepStartsFromTheSavedProfile(t *testing.T) {
+	f := newFixture(t, true)
+	f.env.Profile = settings.Profile{Role: "CTO", Reading: settings.ProfileReading{Detail: "detailed"}}
+	f.env.SaveProfile = func(settings.Profile) error { return nil }
+	m := f.wizard()
+	key(m, "enter", "enter")
+	step := m.steps[m.idx].(*styleStep)
+	if v := step.form.Values(); v[0] != "CTO" || v[7] != "detailed" {
+		t.Fatalf("values %v", v)
+	}
+}

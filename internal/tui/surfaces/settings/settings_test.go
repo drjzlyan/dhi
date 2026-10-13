@@ -22,6 +22,7 @@ func newSurface(t *testing.T) (*Model, string) {
 
 func TestNavigateAndCycleTheme(t *testing.T) {
 	m, _ := newSurface(t)
+	m.cursor = rowTheme
 	if !strings.Contains(ansi.Strip(m.View()), "dark-futuristic") {
 		t.Fatal("theme row missing initial value")
 	}
@@ -46,6 +47,7 @@ func TestNavigateAndCycleTheme(t *testing.T) {
 func TestReducedMotionTogglesLiveAndPersists(t *testing.T) {
 	theme.MotionForTest(t, true)
 	m, path := newSurface(t)
+	m.cursor = rowTheme
 	feed(m, "j") // reduced_motion row
 	feed(m, "enter")
 	if !m.cfg.ReducedMotion {
@@ -73,6 +75,7 @@ func TestReducedMotionTogglesLiveAndPersists(t *testing.T) {
 
 func TestTabWidthCyclesAndPersists(t *testing.T) {
 	m, path := newSurface(t)
+	m.cursor = rowTheme
 	feed(m, "j", "j") // tab_width
 	feed(m, "l")      // 4 → 8
 
@@ -91,6 +94,7 @@ func TestTabWidthCyclesAndPersists(t *testing.T) {
 
 func TestLineNumbersToggle(t *testing.T) {
 	m, _ := newSurface(t)
+	m.cursor = rowTheme
 	feed(m, "j", "j", "j") // line_numbers
 	was := m.cfg.Editor.LineNumbers
 	feed(m, "enter")
@@ -271,5 +275,24 @@ func TestReflectRowPersists(t *testing.T) {
 	back, err := settings.Load(path, "")
 	if err != nil || back.Agents.Reflect {
 		t.Fatalf("reflect not persisted off: %+v %v", back.Agents, err)
+	}
+}
+
+func TestYouRowsCycleAndPersist(t *testing.T) {
+	m, path := newSurface(t)
+	if v := ansi.Strip(m.View()); !strings.Contains(v, "YOU") || !strings.Contains(v, "profile.role") {
+		t.Fatalf("you group missing:\n%s", v)
+	}
+	feed(m, "l") // role developer → tech lead
+	m.cursor = rowFormat
+	feed(m, "l") // prose → bullets
+	m.cursor = rowEmoji
+	feed(m, "enter")
+	c, err := settings.Load(path, "")
+	if err != nil || c.Profile.Role != "tech lead" || c.Profile.Reading.Format != "bullets" || !c.Profile.Writing.Emoji {
+		t.Fatalf("persisted %+v %v", c.Profile, err)
+	}
+	if !strings.Contains(m.flash, "live") {
+		t.Fatalf("flash %q", m.flash)
 	}
 }

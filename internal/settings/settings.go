@@ -9,10 +9,12 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/BurntSushi/toml"
 
+	"github.com/drjzlyan/dhi/internal/agentkit/principal"
 	"github.com/drjzlyan/dhi/internal/agentkit/scopes"
 	"github.com/drjzlyan/dhi/internal/conventions"
 	"github.com/drjzlyan/dhi/internal/langserver"
@@ -153,6 +155,37 @@ type Memory struct {
 
 // Budgets caps agent spend (F-066); 0 = no limit. Enforced between
 // spawns: a turn that would start over a limit refuses with a notice.
+// Profile is the principal (F-081): the person the employees work for.
+// Personal: it belongs in the user config. Empty fields take
+// principal's defaults.
+type Profile struct {
+	Role    string         `toml:"role,omitempty"`
+	Writing ProfileWriting `toml:"writing"`
+	Reading ProfileReading `toml:"reading"`
+}
+
+// ProfileWriting is how work written in the user's name should sound.
+type ProfileWriting struct {
+	Tone     string `toml:"tone,omitempty"`
+	Length   string `toml:"length,omitempty"`
+	Emoji    bool   `toml:"emoji"`
+	Language string `toml:"language,omitempty"`
+}
+
+// ProfileReading is how replies to the user should be shaped.
+type ProfileReading struct {
+	Order  string `toml:"order,omitempty"`
+	Format string `toml:"format,omitempty"`
+	Detail string `toml:"detail,omitempty"`
+}
+
+// Principal converts the profile for the runtime, with the git identity.
+func (p Profile) Principal(name, email string) principal.Profile {
+	return principal.Profile{Name: name, Email: email, Role: p.Role,
+		Tone: p.Writing.Tone, Length: p.Writing.Length, Emoji: p.Writing.Emoji, Language: p.Writing.Language,
+		Order: p.Reading.Order, Format: p.Reading.Format, Detail: p.Reading.Detail}.Normalized()
+}
+
 type Budgets struct {
 	TaskUSD         float64 `toml:"task_usd"`
 	TaskTokens      int     `toml:"task_tokens"`
@@ -193,6 +226,7 @@ type Config struct {
 	Agents    Agents            `toml:"agents"`
 	Budgets   Budgets           `toml:"budgets"`
 	Memory    Memory            `toml:"memory"`
+	Profile   Profile           `toml:"profile"`
 	// Conventions is the team-style layer (F-042): branch names, commit
 	// format, copyright header, PR text. It lives in its own tracked file
 	// (ConventionsPath), so the personal config never serialises it.
@@ -231,6 +265,9 @@ func Known() []string {
 		"memory.lessons_max", "memory.pinned_max", "memory.decay_days",
 		"budgets", "budgets.task_usd", "budgets.task_tokens",
 		"budgets.agent_day_usd", "budgets.workspace_day_usd",
+		"profile", "profile.role", "profile.writing", "profile.writing.tone", "profile.writing.length",
+		"profile.writing.emoji", "profile.writing.language", "profile.reading", "profile.reading.order",
+		"profile.reading.format", "profile.reading.detail",
 		"scopes.read", "scopes.write", "scopes.exec", "scopes.network",
 		"scopes.git", "scopes.push", "scopes.admin",
 		"conventions.branch.task", "conventions.branch.review",
@@ -416,6 +453,18 @@ func validate(c Config) error {
 			return fmt.Errorf("settings: %s %d out of range %d..%d", key, r[0], r[1], r[2])
 		}
 	}
+	for key, v := range map[string][2]any{
+		"profile.writing.tone":   {c.Profile.Writing.Tone, principal.Tones},
+		"profile.writing.length": {c.Profile.Writing.Length, principal.Lengths},
+		"profile.reading.order":  {c.Profile.Reading.Order, principal.Orders},
+		"profile.reading.format": {c.Profile.Reading.Format, principal.Formats},
+		"profile.reading.detail": {c.Profile.Reading.Detail, principal.Details},
+	} {
+		val, choices := v[0].(string), v[1].([]string)
+		if val != "" && !slices.Contains(choices, val) {
+			return fmt.Errorf("settings: %s %q (want one of: %s)", key, val, strings.Join(choices, ", "))
+		}
+	}
 	if err := c.Conventions.Validate(); err != nil {
 		return fmt.Errorf("settings: conventions.%w", err)
 	}
@@ -482,6 +531,20 @@ type fileLayer struct {
 		AgentDayUSD     *float64 `toml:"agent_day_usd"`
 		WorkspaceDayUSD *float64 `toml:"workspace_day_usd"`
 	} `toml:"budgets"`
+	Profile struct {
+		Role    string `toml:"role"`
+		Writing struct {
+			Tone     string `toml:"tone"`
+			Length   string `toml:"length"`
+			Emoji    *bool  `toml:"emoji"`
+			Language string `toml:"language"`
+		} `toml:"writing"`
+		Reading struct {
+			Order  string `toml:"order"`
+			Format string `toml:"format"`
+			Detail string `toml:"detail"`
+		} `toml:"reading"`
+	} `toml:"profile"`
 	Memory struct {
 		PromptTokens  *int `toml:"prompt_tokens"`
 		SessionTokens *int `toml:"session_tokens"`
@@ -554,6 +617,16 @@ func (f fileLayer) mergeInto(dst *Config) {
 		}
 		dst.Keys[strings.TrimSpace(k)] = strings.TrimSpace(v)
 	}
+	setStr(&dst.Profile.Role, f.Profile.Role)
+	setStr(&dst.Profile.Writing.Tone, f.Profile.Writing.Tone)
+	setStr(&dst.Profile.Writing.Length, f.Profile.Writing.Length)
+	setStr(&dst.Profile.Writing.Language, f.Profile.Writing.Language)
+	if f.Profile.Writing.Emoji != nil {
+		dst.Profile.Writing.Emoji = *f.Profile.Writing.Emoji
+	}
+	setStr(&dst.Profile.Reading.Order, f.Profile.Reading.Order)
+	setStr(&dst.Profile.Reading.Format, f.Profile.Reading.Format)
+	setStr(&dst.Profile.Reading.Detail, f.Profile.Reading.Detail)
 	if f.Editor.TabWidth != 0 {
 		dst.Editor.TabWidth = f.Editor.TabWidth
 	}

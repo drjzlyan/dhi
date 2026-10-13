@@ -246,3 +246,47 @@ func PatchConventions(path string, set map[string]any, templates map[string]*con
 	}
 	return os.WriteFile(path, []byte(b.String()), 0o644)
 }
+
+// SaveProfile replaces the [profile] table in the layer at path (F-081),
+// leaving every other key in the file as it was. The result must load.
+func SaveProfile(path string, p Profile) error {
+	m, err := readLayer(path)
+	if err != nil {
+		return err
+	}
+	prof := map[string]any{
+		"writing": map[string]any{"tone": p.Writing.Tone, "length": p.Writing.Length,
+			"emoji": p.Writing.Emoji, "language": p.Writing.Language},
+		"reading": map[string]any{"order": p.Reading.Order, "format": p.Reading.Format, "detail": p.Reading.Detail},
+	}
+	if p.Role != "" {
+		prof["role"] = p.Role
+	}
+	m["profile"] = prof
+	out, err := encodeLayer(m)
+	if err != nil {
+		return err
+	}
+	if err := checkLoads(path, out); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, []byte(out), 0o644)
+}
+
+// checkLoads refuses a layer body that would not load on its own.
+func checkLoads(path, body string) error {
+	dir, err := os.MkdirTemp("", "dhi-setting-")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = os.RemoveAll(dir) }()
+	tmp := filepath.Join(dir, filepath.Base(path))
+	if err := os.WriteFile(tmp, []byte(body), 0o644); err != nil {
+		return err
+	}
+	_, err = Load(tmp, "")
+	return err
+}

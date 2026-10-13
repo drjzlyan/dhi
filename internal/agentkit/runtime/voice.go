@@ -11,13 +11,6 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/clirun"
 )
 
-// teammateVoice is the system-prompt note that keeps chat human (F-072):
-// the final reply is what teammates read, so it carries no tool logs.
-const teammateVoice = "Your final reply is posted to team chat (or the task's thread) for people to read. " +
-	"Write it like a teammate: short plain prose, what you did and what is left, no tool logs, " +
-	"no command transcripts, no internal reasoning. Put code, diffs and commands in fenced ``` blocks " +
-	"with a language tag. Use channel_post only for a brief update a person needs before you finish."
-
 // alert posts a runtime event the human must act on (F-072): shown in
 // chat as a system line under the agent's name, counted as attention,
 // never replayed to the agent as something it said.

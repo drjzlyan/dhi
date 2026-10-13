@@ -48,3 +48,22 @@ func TestCheckAndSetLayerKey(t *testing.T) {
 		t.Fatalf("Value = %q", v)
 	}
 }
+
+func TestSaveProfileKeepsOtherKeys(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	os.WriteFile(path, []byte("schema = 1\ntheme = \"light-paper\"\n"), 0o644)
+	p := Profile{Role: "founder", Writing: ProfileWriting{Tone: "casual", Emoji: true}, Reading: ProfileReading{Format: "bullets"}}
+	if err := SaveProfile(path, p); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load(path, "")
+	if err != nil || c.Theme != "light-paper" || c.Profile.Role != "founder" || !c.Profile.Writing.Emoji || c.Profile.Reading.Format != "bullets" {
+		t.Fatalf("loaded %+v / %v", c.Profile, err)
+	}
+	if err := SaveProfile(path, Profile{Writing: ProfileWriting{Tone: "snarky"}}); err == nil {
+		t.Fatal("invalid profile saved")
+	}
+	if c, _ := Load(path, ""); c.Profile.Role != "founder" {
+		t.Fatal("refused save changed the file")
+	}
+}

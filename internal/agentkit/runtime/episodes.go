@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"github.com/drjzlyan/dhi/internal/agentkit/principal"
 	"strings"
 	"time"
 
@@ -31,6 +32,9 @@ type Tuning struct {
 
 	// F-078: memory bounds; zero fields take DefaultMemory's values.
 	Memory MemoryTuning
+
+	// F-081: the person the crew works for; zero = defaults, "the user".
+	Principal principal.Profile
 }
 
 // MemoryTuning mirrors settings.Memory (agentkit cannot import settings).
