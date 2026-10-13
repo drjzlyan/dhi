@@ -84,6 +84,7 @@ func (m *Model) applySetting(sp SettingProposal) {
 	if c, err := dhisettings.Load(m.d.UserConfig, m.d.WorkspaceConfig); err == nil {
 		m.cfg = c
 		m.cfg.Apply()
+		m.saved = dhisettings.Snapshot(c)
 	}
 	m.flash = fmt.Sprintf("applied %s = %s (%s layer) — live from the agents' next spawn", sp.Key, sp.New, sp.Layer)
 }

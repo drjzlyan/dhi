@@ -24,7 +24,13 @@
   form (`fSecret`) → `credstore.SetIn` (workspace table keyed by abs root, or global) → grant
   `secret:NAME`; `Deps.SecretEnv` via `EnvRunner.RunEnv` into run/skill_run only; Settings
   SECRETS; doctor `secrets/host-env`. `continueTurn` now Adds to bg before posting (race).
+- P5 DONE (F-090): `settings.Snapshot`/`SaveChanged`/`LayerHas`/`DuplicateKeys`/`RemoveKeys`;
+  Settings `m.saved` + `s` toggle (`saveEverywhere`), profile rows → user; `SetEngine` → user layer;
+  repair `config-copies` (`repair.Input.UserConfig`); `standards.UserPath` (set in `main()`),
+  STANDARDS `u`; wizard `instructions` step (+ catch-up).
 - Gotchas:
+  - Settings must refresh `m.saved` whenever it reloads `m.cfg` (setprop does).
+  - `standards.UserPath` is "" unless main sets it — tests stay hermetic.
   - `credStore` in main is the one store: `secretStore()`/`secretSaver()` avoid typed nils.
   - A tool that changes cwd or sandbox must set the turn's `relaunch`; the running spawn can't
     see the change. P2 grants reuse this.

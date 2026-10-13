@@ -84,8 +84,16 @@ type Model struct {
 	// cfgKeys are the settings keys CONFIG rendered, in order (F-084:
 	// the coverage guard reads them; rows show plain labels).
 	cfgKeys []string
-	dkind   dialogKind
-	dtarget string
+
+	// saved is the config as last persisted (F-090): a save writes only
+	// what differs from it, to one layer, never the whole merged config.
+	saved map[string]any
+	// saveEverywhere sends CONFIG edits to your user config (every
+	// workspace) instead of this workspace's; s toggles it. Profile rows
+	// are always yours.
+	saveEverywhere bool
+	dkind          dialogKind
+	dtarget        string
 
 	flash  string
 	events chan settingsEvent
@@ -252,9 +260,44 @@ type GrantStore interface {
 // and (optionally) the workspace services behind agent management.
 func New(cfg settings.Config, savePath string, d Deps) *Model {
 	return &Model{cfg: cfg, savePath: savePath, d: d,
-		events: make(chan settingsEvent, 4),
-		now:    time.Now,
+		events:         make(chan settingsEvent, 4),
+		now:            time.Now,
+		saved:          settings.Snapshot(cfg),
+		saveEverywhere: d.WorkspaceConfig == "",
 	}
+}
+
+// scopeHint names where CONFIG edits are going, and the key to switch.
+func (m *Model) scopeHint() string {
+	if m.d.WorkspaceConfig == "" || m.d.UserConfig == "" {
+		return "saves for every workspace"
+	}
+	if m.saveEverywhere {
+		return "s: saving for every workspace"
+	}
+	return "s: saving for this workspace"
+}
+
+// rowKey is the settings key CONFIG rendered at row ("" before a render).
+func (m *Model) rowKey(row int) string {
+	if row >= 0 && row < len(m.cfgKeys) {
+		return m.cfgKeys[row]
+	}
+	return ""
+}
+
+// layerFor is where an edit of key is saved (F-090): profile settings
+// are yours everywhere; others follow the s toggle.
+func (m *Model) layerFor(key string) (path string, everywhere bool) {
+	if strings.HasPrefix(key, "profile.") || m.saveEverywhere || m.d.WorkspaceConfig == "" {
+		if m.d.UserConfig != "" {
+			return m.d.UserConfig, true
+		}
+	}
+	if m.d.WorkspaceConfig != "" {
+		return m.d.WorkspaceConfig, false
+	}
+	return m.savePath, false
 }
 
 func (m *Model) Meta() surfaces.Meta { return surfaces.Meta{ID: "settings", Title: "Settings"} }
@@ -403,6 +446,19 @@ func (m *Model) Wheel(dy int) bool {
 
 func (m *Model) configKey(key string) bool {
 	switch key {
+	case "s":
+		// F-090: where the next edits go. Profile rows are always yours.
+		if m.d.WorkspaceConfig == "" || m.d.UserConfig == "" {
+			m.flash = "there is only one place to save here"
+			return true
+		}
+		m.saveEverywhere = !m.saveEverywhere
+		if m.saveEverywhere {
+			m.flash = "edits now save for every workspace (your config)"
+		} else {
+			m.flash = "edits now save for this workspace only"
+		}
+		return true
 	case "j", "down":
 		if m.cursor < rowCount-1 {
 			m.cursor++
@@ -725,14 +781,27 @@ func (m *Model) applyAndPersist() {
 		}
 		return
 	}
-	if m.savePath == "" {
+	path, everywhere := m.layerFor(m.rowKey(m.cursor))
+	if path == "" {
 		m.flash = "(no config path — change is session-only)"
 		return
 	}
-	if err := m.cfg.Save(m.savePath); err != nil {
+	keys, err := settings.SaveChanged(path, m.saved, m.cfg)
+	if err != nil {
 		m.flash = "save failed: " + err.Error()
 		return
 	}
+	if everywhere && m.d.WorkspaceConfig != "" {
+		// "Every workspace" must win here too: drop this workspace's own
+		// value for the same keys.
+		_ = settings.RemoveKeys(m.d.WorkspaceConfig, keys)
+	}
+	m.saved = settings.Snapshot(m.cfg)
+	where := " for this workspace"
+	if everywhere {
+		where = " for every workspace"
+	}
+	defer func() { m.flash = strings.Replace(m.flash, "saved", "saved"+where, 1) }()
 	// Conventions are a separate, tracked file shared with the team and
 	// are re-read while DHI runs (F-052), so say so.
 	switch {
@@ -1426,7 +1495,7 @@ func (m *Model) sectionHints() []string {
 	var sec []string
 	switch m.sec {
 	case secConfig:
-		sec = []string{"enter/l change", "h back", "e type a value"}
+		sec = []string{"enter/l change", "h back", "e type a value", m.scopeHint()}
 	case secAgents:
 		sec = []string{"n new", "e edit", "a archive", "x delete", "v profile"}
 		if m.selectedHasGrants() {
@@ -1443,7 +1512,7 @@ func (m *Model) sectionHints() []string {
 	case secPacks:
 		sec = []string{"i install", "x uninstall"}
 	case secStandards:
-		sec = []string{"w workspace", "t team", "g agent", "v preview"}
+		sec = []string{"u yours", "w workspace", "t team", "g agent", "v preview"}
 	case secConventions:
 		sec = []string{"enter use", "p learn from example", "g learn from git", "n new from selected", "e edit", "d delete"}
 	case secWorkflows:
@@ -1494,6 +1563,10 @@ func (m *Model) configView(w, budget int) []string {
 	m.cfgKeys = m.cfgKeys[:0]
 	add := func(row int, key, value string) {
 		m.cfgKeys = append(m.cfgKeys, key)
+		if m.d.WorkspaceConfig != "" && m.d.UserConfig != "" && !strings.HasPrefix(key, "profile.") &&
+			settings.LayerHas(m.d.WorkspaceConfig, key) {
+			value += theme.Hint().Render("  · this workspace")
+		}
 		lines = append(lines, line{settingRow(m.cursor == row, settingLabel(key), value), row})
 	}
 	pp := m.cfg.Profile.Principal("", "")

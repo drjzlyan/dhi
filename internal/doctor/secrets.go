@@ -4,6 +4,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/drjzlyan/dhi/internal/settings"
 )
 
 // tokenNameRe matches env var names that usually hold a credential.
@@ -28,4 +30,13 @@ func Secrets(environ []string) []Check {
 	sort.Strings(names)
 	return []Check{{Name: "secrets/host-env", Status: Warn, Detail: strings.Join(names, ", ") +
 		" are exported and every agent inherits them; store them in Settings → SECRETS and unset them to keep them by-name and redacted"}}
+}
+
+// settingsUserPath is your config.toml ("" when it cannot be located).
+func settingsUserPath() string {
+	p, err := settings.DefaultUserPath()
+	if err != nil {
+		return ""
+	}
+	return p
 }

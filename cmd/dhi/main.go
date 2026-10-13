@@ -41,6 +41,7 @@ import (
 	agentkitRuntime "github.com/drjzlyan/dhi/internal/agentkit/runtime"
 	"github.com/drjzlyan/dhi/internal/agentkit/scopes"
 	"github.com/drjzlyan/dhi/internal/agentkit/setprop"
+	"github.com/drjzlyan/dhi/internal/agentkit/standards"
 	"github.com/drjzlyan/dhi/internal/agentkit/starter"
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
 	"github.com/drjzlyan/dhi/internal/autopilot"
@@ -81,6 +82,10 @@ import (
 )
 
 func main() {
+	// F-090: your own standing instructions, read in every workspace.
+	if cred, err := credstore.DefaultPath(); err == nil {
+		standards.UserPath = filepath.Join(filepath.Dir(cred), "standards.toml")
+	}
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
 		case "doctor":
@@ -902,14 +907,46 @@ func newSetupEnv(cwd string, ws *workspace.Workspace, userCfg, toolRoot string,
 		return os.WriteFile(p, []byte("tour\n"), 0o644)
 	}
 	env.StartTour = startTour
+	// The default engine is your CLI, so it is saved for every workspace
+	// (F-090): a new workspace starts with it, and this one's own copy is
+	// dropped so yours governs. Settings can still pin a workspace.
 	env.SetEngine = func(engine string) error {
-		wsCfg := filepath.Join(env.Root, workspace.DHIDir, "config.toml")
-		c, err := settings.Load(userCfg, wsCfg)
+		c, err := settings.Load(userCfg, "")
 		if err != nil {
 			return err
 		}
+		before := settings.Snapshot(c)
 		c.Engine = engine
-		return c.Save(wsCfg)
+		if _, err := settings.SaveChanged(userCfg, before, c); err != nil {
+			return err
+		}
+		if env.Root != "" {
+			return settings.RemoveKeys(filepath.Join(env.Root, workspace.DHIDir, "config.toml"), []string{"engine"})
+		}
+		return nil
+	}
+	// F-090: the instructions step — yours (every workspace) or this
+	// workspace's standing instructions.
+	if standards.UserPath != "" {
+		env.Instructions = func() (mine, here []string) {
+			mine, _ = standards.LoadUser()
+			if env.Root != "" {
+				if snap, err := standards.Inspect(env.Root); err == nil {
+					here = snap.Workspace
+				}
+			}
+			return mine, here
+		}
+		env.SaveInstructions = func(lines []string, everywhere bool) error {
+			if everywhere || env.Root == "" {
+				return standards.SaveUser(lines)
+			}
+			snap, err := standards.Inspect(env.Root)
+			if err != nil {
+				return err
+			}
+			return standards.Save(env.Root, lines, snap.Teams, snap.Agents)
+		}
 	}
 	env.Persist = func(root string, st setup.State) error {
 		var firstErr error
@@ -1760,7 +1797,7 @@ func suggestIdentity(ctx context.Context, r *gitcore.Runner, dirs []string, tool
 // repairs, and returns the card that reports them and asks about the
 // rest; nil when there is nothing to say (F-085).
 func repairGate(ws *workspace.Workspace, git *gitcore.Runner) *repairgate.Model {
-	in := repair.Input{WS: ws, Library: library.Open(ws)}
+	in := repair.Input{WS: ws, Library: library.Open(ws), UserConfig: settingsUserPath()}
 	if o, err := agentkitOrg.Load(ws.Root); err == nil {
 		in.Org = o
 	}
@@ -1784,4 +1821,13 @@ func repairGate(ws *workspace.Workspace, git *gitcore.Runner) *repairgate.Model 
 		return nil
 	}
 	return g
+}
+
+// settingsUserPath is your config.toml ("" when it cannot be located).
+func settingsUserPath() string {
+	p, err := settings.DefaultUserPath()
+	if err != nil {
+		return ""
+	}
+	return p
 }

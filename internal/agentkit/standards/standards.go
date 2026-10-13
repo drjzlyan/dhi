@@ -1,7 +1,8 @@
 // Package standards resolves DHI's layered coding instructions
 // (F-003/F-008 follow-up): guidance injected into every agent turn,
 // independent of how the turn was triggered. Layers, most specific
-// last: compiled built-ins → workspace (.dhi/standards.toml
+// last: compiled built-ins → yours in every workspace (UserPath,
+// F-090) → workspace (.dhi/standards.toml
 // [workspace]) → each team the agent belongs to → per-agent override
 // ("extend" appends, "replace" discards upstream). Resolution reads the
 // file fresh per call so edits apply without reloads.
@@ -56,6 +57,63 @@ type doc struct {
 	Agents    map[string]agentLayer `toml:"agents"`
 }
 
+// UserPath is your own standards file, read in every workspace right
+// after the built-ins (F-090): <config>/dhi/standards.toml. Set once by
+// the app at startup; "" (tests, tools) means no user layer.
+var UserPath string
+
+type userDoc struct {
+	Schema   int      `toml:"schema"`
+	Everyone []string `toml:"everyone"`
+}
+
+// LoadUser reads your every-workspace instructions (none when the file
+// or UserPath is absent; malformed is an error naming the file).
+func LoadUser() ([]string, error) {
+	if UserPath == "" {
+		return nil, nil
+	}
+	data, err := os.ReadFile(UserPath)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var d userDoc
+	md, err := toml.Decode(string(data), &d)
+	if err != nil {
+		return nil, fmt.Errorf("standards: parse %s: %w", UserPath, err)
+	}
+	if und := md.Undecoded(); len(und) > 0 {
+		return nil, fmt.Errorf("standards: %s: unknown key %s (only everyone = [...])", UserPath, und[0])
+	}
+	if d.Schema != SchemaVersion {
+		return nil, fmt.Errorf("standards: %s: schema %d, want %d", UserPath, d.Schema, SchemaVersion)
+	}
+	return d.Everyone, nil
+}
+
+// SaveUser writes your every-workspace instructions.
+func SaveUser(lines []string) error {
+	if UserPath == "" {
+		return fmt.Errorf("standards: no user config dir")
+	}
+	if err := os.MkdirAll(filepath.Dir(UserPath), 0o755); err != nil {
+		return err
+	}
+	var b strings.Builder
+	b.WriteString("# Your instructions for every employee in every workspace (DHI)\n")
+	if err := toml.NewEncoder(&b).Encode(userDoc{Schema: SchemaVersion, Everyone: cleanLines(lines)}); err != nil {
+		return err
+	}
+	tmp := UserPath + ".tmp"
+	if err := os.WriteFile(tmp, []byte(b.String()), 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, UserPath)
+}
+
 // TeamLookup resolves an agent id to its team slugs (wired from org).
 type TeamLookup func(agentID string) []string
 
@@ -64,6 +122,9 @@ type TeamLookup func(agentID string) []string
 // the path instead of being silently ignored. Runtime refuses turns
 // when Check fails; Resolve assumes Check passed.
 func Check(root string) error {
+	if _, err := LoadUser(); err != nil {
+		return err
+	}
 	if _, err := os.Stat(filepath.Join(root, File)); os.IsNotExist(err) {
 		return nil
 	}
@@ -77,6 +138,9 @@ func Check(root string) error {
 // Check first — a malformed document is surfaced only there.
 func Resolve(root, agentID string, teams TeamLookup) string {
 	lines := append([]string(nil), Builtins...)
+	if mine, err := LoadUser(); err == nil {
+		lines = append(lines, mine...) // yours, every workspace (F-090)
+	}
 	if d, err := loadDoc(root); err == nil {
 		lines = append(lines, d.Workspace...)
 		slugs := make([]string, 0, len(d.Teams))

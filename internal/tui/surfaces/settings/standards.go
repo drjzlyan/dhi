@@ -17,6 +17,7 @@ const (
 	stdWorkspace stdRowKind = iota
 	stdTeam
 	stdAgent
+	stdYou // yours, every workspace (F-090)
 )
 
 type stdRow struct {
@@ -35,6 +36,10 @@ func (m *Model) standardRows() []stdRow {
 		return []stdRow{{kind: stdWorkspace, label: "workspace", count: 0}}
 	}
 	rows := []stdRow{{kind: stdWorkspace, label: "workspace", count: len(snap.Workspace)}}
+	if standards.UserPath != "" {
+		mine, _ := standards.LoadUser()
+		rows = append([]stdRow{{kind: stdYou, label: "you", count: len(mine)}}, rows...)
+	}
 	if m.d.Org != nil {
 		for _, t := range m.d.Org.Teams() {
 			rows = append(rows, stdRow{kind: stdTeam, label: t.Name,
@@ -68,6 +73,16 @@ func (m *Model) standardsKey(key string) bool {
 			m.stdCur--
 			m.flash = ""
 		}
+		return true
+	case "u":
+		// F-090: yours, read by every employee in every workspace.
+		if standards.UserPath == "" {
+			m.flash = "no user config dir — your instructions can't be saved"
+			return true
+		}
+		mine, _ := standards.LoadUser()
+		m.openFormDialog("your instructions — every workspace", dlgStdLayer, "@you",
+			kit.NewTextField("rules (csv)", strings.Join(mine, ", ")))
 		return true
 	case "w":
 		snap, _ := standards.Inspect(m.d.WS.Root)
@@ -140,6 +155,14 @@ func (m *Model) submitStdLayer() {
 	root := m.d.WS.Root
 	vals := f.Values()
 	switch {
+	case m.dtarget == "@you":
+		if err := standards.SaveUser(csvSplit(vals[0])); err != nil {
+			f.SetError(err.Error())
+			return
+		}
+		m.closeDialog()
+		m.flash = "saved for every workspace — every employee reads them from their next turn"
+		return
 	case strings.HasPrefix(m.dtarget, "@workspace"):
 		if err := standards.Save(root, csvSplit(vals[0]), nil, nil); err != nil {
 			f.SetError(err.Error())
@@ -254,6 +277,8 @@ func (m *Model) standardsView() []string {
 	for i, r := range rows {
 		var line string
 		switch r.kind {
+		case stdYou:
+			line = padTo("you", 16) + theme.TextDim().Render(itoa(r.count)+" rules") + theme.Hint().Render(" every workspace")
 		case stdWorkspace:
 			line = padTo("workspace", 16) + theme.TextDim().Render(itoa(r.count)+" rules")
 		case stdTeam:

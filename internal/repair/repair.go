@@ -16,6 +16,7 @@ import (
 
 	"github.com/drjzlyan/dhi/internal/agentkit/library"
 	"github.com/drjzlyan/dhi/internal/agentkit/org"
+	"github.com/drjzlyan/dhi/internal/settings"
 	"github.com/drjzlyan/dhi/internal/setup"
 	"github.com/drjzlyan/dhi/internal/workspace"
 )
@@ -36,6 +37,8 @@ type Input struct {
 	Org     *org.Org
 	Library *library.Store
 	Ignored func(rel string) bool
+	// UserConfig is your config.toml; "" skips the config-copies repair.
+	UserConfig string
 }
 
 // Find lists the repairs that apply now, safe ones first.
@@ -45,6 +48,9 @@ func Find(in Input) []Repair {
 	}
 	var out []Repair
 	if r, ok := gitignore(in); ok {
+		out = append(out, r)
+	}
+	if r, ok := configCopies(in); ok {
 		out = append(out, r)
 	}
 	if in.Org != nil && in.Library != nil {
@@ -258,4 +264,26 @@ func danglingTeams(in Input) []Repair {
 		})
 	}
 	return out
+}
+
+// configCopies drops from this workspace's personal config the values an
+// older DHI copied from yours when it saved the whole merged config
+// (F-090). They equal yours, so nothing changes now; afterwards a change
+// you make for every workspace reaches this one too. Safe: .dhi/config.toml
+// is per-user runtime state, not tracked.
+func configCopies(in Input) (Repair, bool) {
+	if in.UserConfig == "" {
+		return Repair{}, false
+	}
+	wsCfg := filepath.Join(in.WS.Root, workspace.DHIDir, "config.toml")
+	dup, err := settings.DuplicateKeys(in.UserConfig, wsCfg)
+	if err != nil || len(dup) == 0 {
+		return Repair{}, false
+	}
+	return Repair{
+		ID:    "config-copies",
+		What:  fmt.Sprintf("this workspace's config repeats %d of your settings (%s); DHI removes the copies so your own settings apply here", len(dup), strings.Join(dup, ", ")),
+		Safe:  true,
+		Apply: func() error { return settings.RemoveKeys(wsCfg, dup) },
+	}, true
 }

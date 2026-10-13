@@ -703,7 +703,7 @@ func Repairs(toolRoot, wsRoot string) []Check {
 	if err != nil {
 		return nil
 	}
-	in := repair.Input{WS: ws, Library: library.Open(ws)}
+	in := repair.Input{WS: ws, Library: library.Open(ws), UserConfig: settingsUserPath()}
 	if o, err := org.Load(wsRoot); err == nil {
 		in.Org = o
 	}

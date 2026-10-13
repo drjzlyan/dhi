@@ -111,6 +111,13 @@ type Env struct {
 	ComposeTeam func(c starter.Counts) ([]starter.Result, error)
 	SetEngine   func(engine string) error
 
+	// Instructions step (F-090): what every employee should always do.
+	// Instructions loads (yours, this workspace's); SaveInstructions
+	// writes them for every workspace (everywhere) or this one. Nil hides
+	// the step.
+	Instructions     func() (mine, here []string)
+	SaveInstructions func(lines []string, everywhere bool) error
+
 	// Persist stores progress (user scope always, workspace scope when
 	// root != ""). nil = progress is not remembered.
 	Persist func(root string, s setup.State) error
@@ -171,7 +178,7 @@ func New(env *Env, state setup.State, steps ...Step) *Model {
 // catchUpIDs are steps added after people first ran setup (M31). A
 // finished setup offers each once, while it applies and was never
 // applied or skipped (F-085).
-var catchUpIDs = map[string]bool{"project": true, "you": true}
+var catchUpIDs = map[string]bool{"project": true, "you": true, "instructions": true}
 
 // CatchUpSteps returns the steps a finished setup still owes the user,
 // with the closing step; nil when there are none.
@@ -201,6 +208,7 @@ func DefaultSteps(env *Env, version string) []Step {
 		&projectStep{env: env},
 		&identityStep{env: env},
 		&styleStep{env: env},
+		&instructionsStep{env: env},
 		&conventionsStep{env: env},
 		&cliStep{env: env},
 		&teamStep{env: env},
