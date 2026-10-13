@@ -1,6 +1,6 @@
 # F-068 — Self-learning: lessons, reflection on signal, consolidation, Brain
 
-Status: done (M29 P4); live eval of learning not yet run
+Status: done (M29 P4) · ADR-0033 — live eval of learning not yet run
 
 ## Problem
 An agent's memory changed only when the agent chose to call
