@@ -88,8 +88,13 @@ func (r *Runtime) agentReassigned(ctx context.Context, slug string, handed map[s
 		return
 	}
 	a := t.Activity[len(t.Activity)-1]
-	if a.Kind != tasks.ActAssignee || a.To == "" || a.To != t.Assignee || !r.isAgent(a.Actor) ||
-		!r.isAgent(a.To) || !a.At.After(handed[slug]) {
+	// Only a real hand-over of live work: not a first assignment (the
+	// lead's plan, released by ReleaseReady), not a held sub-card waiting
+	// on blockers, not finished work, and not a card already bound to the
+	// new owner's thread (a repeat event, or a restart after the hand-off).
+	if a.Kind != tasks.ActAssignee || a.From == "" || a.To == "" || a.To != t.Assignee ||
+		!r.isAgent(a.Actor) || !r.isAgent(a.To) || !a.At.After(handed[slug]) ||
+		t.Held || t.Status == tasks.Done || t.ThreadChannel == "dm:"+a.To {
 		return
 	}
 	handed[slug] = a.At

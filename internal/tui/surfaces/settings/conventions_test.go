@@ -79,3 +79,46 @@ func TestConventionsTemplatesSection(t *testing.T) {
 		t.Fatal("team template not deleted")
 	}
 }
+
+// Both writers share one file and patch only their keys: a CONFIG row
+// save neither reverts a template nor copies it elsewhere, and a deleted
+// template stays deleted after a reload.
+func TestConventionWritersDoNotRevertEachOther(t *testing.T) {
+	m, ws, _, _ := agentSurface(t)
+	path := filepath.Join(ws.Root, ".dhi", settings.ConventionsFile)
+	if err := os.WriteFile(path, []byte("[conventions.copyright]\nholder = \"Acme\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m.sec = secConventions
+	feed(m, "n")
+	typeDialog(m, "team")
+	feed(m, "enter")
+	if m.dlg != nil {
+		t.Fatalf("template not saved: %q", m.dform.Err)
+	}
+	m.sec = secConfig
+	m.cursor = rowCommitFormat
+	feed(m, "l") // a CONFIG row save
+	data, _ := os.ReadFile(path)
+	if !strings.Contains(string(data), `holder = "Acme"`) || !strings.Contains(string(data), "[conventions.templates.team") {
+		t.Fatalf("CONFIG save rewrote other keys:\n%s", data)
+	}
+	m.sec = secConventions
+	for i, n := range m.convNames() {
+		if n == "team" {
+			m.convCur = i
+		}
+	}
+	feed(m, "d")
+	feed(m, "enter")
+	cfg, err := settings.Load(m.savePath, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, ok := cfg.Conventions.Lookup("team"); ok {
+		t.Fatal("deleted template came back on reload")
+	}
+	if cfg.Conventions.Commit.Format != "conventional" || cfg.Conventions.Copyright.Holder != "Acme" {
+		t.Fatalf("reloaded = %+v", cfg.Conventions)
+	}
+}

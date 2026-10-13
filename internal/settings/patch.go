@@ -2,6 +2,7 @@ package settings
 
 import (
 	"fmt"
+	"github.com/drjzlyan/dhi/internal/conventions"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -197,4 +198,51 @@ func SetLayerKey(path, key, raw string) error {
 		return err
 	}
 	return os.WriteFile(path, []byte(body), 0o644)
+}
+
+// PatchConventions writes only the named conventions keys into the
+// conventions layer at path (F-075), keeping every other key in that
+// file: set maps dotted keys under [conventions] ("branch.task") to
+// values; templates replaces whole named templates, and a nil entry
+// deletes one. Two writers (Settings CONFIG rows and the CONVENTIONS
+// section) can then share one file without either reverting the other.
+func PatchConventions(path string, set map[string]any, templates map[string]*conventions.Template) error {
+	m, err := readLayer(path)
+	if err != nil {
+		return err
+	}
+	for k, v := range set {
+		setDotted(m, "conventions."+k, v)
+	}
+	for name, t := range templates {
+		if t == nil {
+			if cv, ok := m["conventions"].(map[string]any); ok {
+				if tp, ok := cv["templates"].(map[string]any); ok {
+					delete(tp, name)
+				}
+			}
+			continue
+		}
+		var sb strings.Builder
+		if err := toml.NewEncoder(&sb).Encode(t); err != nil {
+			return fmt.Errorf("settings: encode template %s: %w", name, err)
+		}
+		tm := map[string]any{}
+		if _, err := toml.Decode(sb.String(), &tm); err != nil {
+			return fmt.Errorf("settings: template %s: %w", name, err)
+		}
+		setDotted(m, "conventions.templates."+name, tm)
+	}
+	var b strings.Builder
+	b.WriteString("# DHI team conventions (tracked; hand-editable)\n")
+	if err := toml.NewEncoder(&b).Encode(m); err != nil {
+		return fmt.Errorf("settings: encode conventions: %w", err)
+	}
+	if err := onlyConventions([]byte(b.String())); err != nil {
+		return fmt.Errorf("settings: %s: %w", path, err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, []byte(b.String()), 0o644)
 }

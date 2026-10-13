@@ -55,7 +55,7 @@ func (m *Model) conventionsKey(key string) bool {
 			m.flash = "failed: " + err.Error()
 			return true
 		}
-		if m.saveConventions(next, "using template "+name) {
+		if m.patchConventions(next, flatKeys(next, true), nil, "using template "+name) {
 			m.cfg.Conventions = next
 		}
 	case "n":
@@ -140,7 +140,15 @@ func (m *Model) submitTemplate() {
 		m.dform.SetError(err.Error())
 		return
 	}
-	if m.saveConventions(next, "template "+name+" saved") {
+	tpl := map[string]*conventions.Template{name: &t}
+	if m.dtarget != "" && m.dtarget != name {
+		tpl[m.dtarget] = nil // renamed
+	}
+	var set map[string]any
+	if next.Active == name {
+		set = flatKeys(next, true)
+	}
+	if m.patchConventions(next, set, tpl, "template "+name+" saved") {
 		m.cfg.Conventions = next
 		m.closeDialog()
 		for i, n := range m.convNames() {
@@ -160,10 +168,12 @@ func (m *Model) deleteTemplate(name string) {
 		}
 	}
 	next.Templates = tpls
+	var set map[string]any
 	if next.Active == name {
 		next.Active = ""
+		set = map[string]any{"active": ""}
 	}
-	if m.saveConventions(next, "template "+name+" deleted") {
+	if m.patchConventions(next, set, map[string]*conventions.Template{name: nil}, "template "+name+" deleted") {
 		m.cfg.Conventions = next
 	}
 	m.closeDialog()
@@ -181,18 +191,38 @@ func (m *Model) conventionsFile() string {
 	return ""
 }
 
-func (m *Model) saveConventions(c conventions.Config, ok string) bool {
+// patchConventions validates next (the whole effective rules) and writes
+// only the keys this action owns into the conventions file.
+func (m *Model) patchConventions(next conventions.Config, set map[string]any, tpls map[string]*conventions.Template, ok string) bool {
 	path := m.conventionsFile()
 	if path == "" {
 		m.flash = "failed: no conventions file to save to"
 		return false
 	}
-	if err := settings.SaveConventions(path, c); err != nil {
+	if err := next.Validate(); err != nil {
+		m.flash = "failed: " + err.Error()
+		return false
+	}
+	if err := settings.PatchConventions(path, set, tpls); err != nil {
 		m.flash = "failed: " + err.Error()
 		return false
 	}
 	m.flash = ok + " → " + m.displayConvPath(path) + " (live)"
 	return true
+}
+
+// flatKeys are the rules a template sets, as conventions keys (plus
+// active when withActive).
+func flatKeys(c conventions.Config, withActive bool) map[string]any {
+	set := map[string]any{
+		"branch.task": c.Branch.Task, "branch.review": c.Branch.Review, "worktree.task": c.Worktree.Task,
+		"commit.format": c.Commit.Format, "commit.ticket_pattern": c.Commit.TicketPattern,
+		"commit.subject": c.Commit.Subject, "pr.title": c.PR.Title, "pr.body": c.PR.Body,
+	}
+	if withActive {
+		set["active"] = c.Active
+	}
+	return set
 }
 
 func (m *Model) displayConvPath(p string) string {

@@ -252,3 +252,33 @@ func TestAgentReassignHandsOff(t *testing.T) {
 		t.Fatalf("card not bound to the brief: %+v", tk.ThreadChannel)
 	}
 }
+
+// A lead assigning a held sub-card, or a card's first assignment, is
+// not a hand-off: ReleaseReady hands the card over when its blockers
+// finish.
+func TestAgentAssignOfHeldOrNewCardIsNotHandedOff(t *testing.T) {
+	h, st := teamHarness(t)
+	handed := map[string]time.Time{}
+	if err := st.Create("api", "API", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.AssignAs("api", "dev", "scout"); err != nil { // first assignment
+		t.Fatal(err)
+	}
+	h.rt.agentReassigned(context.Background(), "api", handed)
+	if err := st.Create("ui", "UI", "dev", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetPlan("ui", "", []string{"api"}, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.AssignAs("ui", "rev", "scout"); err != nil { // held: waits on api
+		t.Fatal(err)
+	}
+	h.rt.agentReassigned(context.Background(), "ui", handed)
+	for _, ch := range []string{"dm:dev", "dm:rev"} {
+		if n := len(h.bus.History(ch, 0)); n != 0 {
+			t.Fatalf("%s got %d hand-off posts", ch, n)
+		}
+	}
+}

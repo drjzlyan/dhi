@@ -549,6 +549,21 @@ func (m *Model) cycle(dir int) {
 
 func (m *Model) applyAndPersist() {
 	m.cfg.Apply()
+	if m.cursor >= rowBranchTask && m.cursor < rowResume {
+		// One row, one key, into the same file the CONVENTIONS section
+		// writes (F-075): never the whole merged table.
+		c := m.cfg.Conventions
+		key := map[int]map[string]any{
+			rowBranchTask:     {"branch.task": c.Branch.Task},
+			rowCommitFormat:   {"commit.format": c.Commit.Format},
+			rowCommitCoAuthor: {"commit.co_author_enabled": c.Commit.CoAuthorEnabled, "commit.co_author": c.Commit.CoAuthor},
+			rowCopyright:      {"copyright.enabled": c.Copyright.Enabled, "copyright.holder": c.Copyright.Holder},
+		}[m.cursor]
+		if m.patchConventions(c, key, nil, "saved") {
+			m.flash += " — agents use it from their next action"
+		}
+		return
+	}
 	if m.savePath == "" {
 		m.flash = "(no config path — change is session-only)"
 		return
@@ -561,14 +576,6 @@ func (m *Model) applyAndPersist() {
 	// are re-read while DHI runs (F-052), so say so.
 	if m.cursor >= rowResume {
 		m.flash = "saved (live — agents use it from their next spawn)"
-		return
-	}
-	if m.cursor >= rowBranchTask {
-		if err := settings.SaveConventions(settings.ConventionsPath(m.savePath), m.cfg.Conventions); err != nil {
-			m.flash = "save failed: " + err.Error()
-			return
-		}
-		m.flash = "saved to " + settings.ConventionsFile + " (live — agents use it from their next action)"
 		return
 	}
 	if m.cursor == rowWorktrees {
