@@ -258,22 +258,15 @@ func (c *chatModel) handleKey(key string, apply func(string)) bool {
 			}
 		}
 		return true
-	case "y", "n", "a":
-		// Approval answers only when one is pending (F-030 P2 adds `a` =
-		// grant-always); otherwise these are ordinary composer letters.
+	case "y", "n", "a", "o", "g":
+		// Approval answers only when one is pending (tools.DecideKeys);
+		// otherwise these are ordinary composer letters.
 		list := c.apprs.List()
 		if len(list) == 0 {
 			c.input = append(c.input, []rune(key)...)
 			return true
 		}
-		switch key {
-		case "y":
-			c.apprs.Resolve(list[0].ID, true)
-		case "n":
-			c.apprs.Resolve(list[0].ID, false)
-		case "a":
-			c.apprs.ResolveAlways(list[0].ID)
-		}
+		c.apprs.Decide(list[0], tools.DecideKeys[key])
 		return true
 	case "enter":
 		text := strings.TrimSpace(string(c.input))
@@ -345,13 +338,13 @@ func (c *chatModel) view(h int) string {
 	lines = append(lines, c.transcript(transcriptH)...)
 
 	if list := c.apprs.List(); len(list) > 0 {
-		lines = append(lines, "", theme.DangerText().Render("approvals — y allow · n deny · a always"))
+		lines = append(lines, "", theme.DangerText().Render("approvals — "+tools.DecideHint))
 		for i, a := range list {
 			if i >= 3 {
 				lines = append(lines, theme.TextDim().Render(itoa(len(list)-i)+" more…"))
 				break
 			}
-			lines = append(lines, theme.Hint().Render("#"+itoa(a.ID)+" "+string(a.Op))+" "+a.Target)
+			lines = append(lines, theme.Hint().Render("#"+itoa(a.ID)+" "+a.Agent)+" "+a.Describe())
 		}
 	}
 

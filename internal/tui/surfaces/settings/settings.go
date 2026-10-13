@@ -1670,11 +1670,16 @@ func (m *Model) grantsView() []string {
 	gs := m.d.Grants.Grants()
 	out := []string{"", " " + theme.SectionHeader().Render("ALWAYS ALLOWED") + " " + theme.Rule(20)}
 	if len(gs) == 0 {
-		return append(out, "  "+theme.Hint().Render("none — answering an approval with \"always\" remembers it here"))
+		return append(out, "  "+theme.Hint().Render("none — answering an approval with a, g or a sandbox yes remembers it here"))
 	}
 	for _, g := range gs {
-		line := padTo(g.Agent, 12) + padTo(g.Scope, 10)
-		out = append(out, "  "+theme.TextDim().Render(line)+theme.Hint().Render("since "+g.At.Local().Format("Jan 2")))
+		what := g.Scope
+		if p, ok := strings.CutPrefix(g.Scope, tools.AccessWrite); ok {
+			what = "write " + p
+		}
+		where := map[tools.Layer]string{tools.LayerOnce: "this session", tools.LayerWorkspace: "this workspace", tools.LayerEverywhere: "every workspace"}[g.Layer]
+		line := padTo(g.Agent, 12) + padTo(what, 34)
+		out = append(out, "  "+theme.TextDim().Render(line)+theme.Hint().Render(where+" · since "+g.At.Local().Format("Jan 2")))
 	}
 	return out
 }

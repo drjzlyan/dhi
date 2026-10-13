@@ -275,6 +275,7 @@ func New(version string, ws *workspace.Workspace, d Deps) *Model {
 			m.pane = newChatPane(d.Bus, d.Runtime, m.org)
 			m.pane.profile = m.agentProfileLines
 			m.pane.agentWorking = d.AgentWorking
+			m.pane.approvals = d.Approvals
 			if cm, err := channelmeta.Open(ws.Root); err != nil {
 				m.chatMetaErr = err.Error()
 			} else {

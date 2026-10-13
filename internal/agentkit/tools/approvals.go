@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -18,15 +19,24 @@ type Approval struct {
 	Op     sandbox.Op
 	Target string // vpath or other display target
 	Reason string // policy explanation
-	Scope  string // capability scope (F-030 P2); "" = no grant-memory
+	Scope  string // capability scope (F-030 P2), or "write:<abs path>" (F-087); "" = no grant-memory
 
 	verdict chan decision
 }
 
-// decision is a human verdict: allow/deny plus whether to remember it.
+// IsAccess reports a sandbox-access request (F-087): its scope names a
+// path ("write:/abs"), and a plain yes remembers it for the workspace —
+// the access is useless for one call only.
+func (ap *Approval) IsAccess() bool { return strings.HasPrefix(ap.Scope, AccessWrite) }
+
+// AccessWrite prefixes a write-access scope: "write:" + absolute path.
+const AccessWrite = "write:"
+
+// decision is a human verdict: allow/deny plus where to remember it
+// ("" = not remembered).
 type decision struct {
-	allow  bool
-	always bool
+	allow bool
+	layer Layer
 }
 
 // Approvals is the pending-approval queue shared by all agents in a
@@ -39,9 +49,25 @@ type Approvals struct {
 	pending   []*Approval
 	OnRequest func(*Approval)
 	changes   chan struct{}
-	grants    map[string]time.Time // agent|scope → always-allow, when granted (F-030 P2)
-	// grantsPath persists grants across restarts (F-067); "" = in memory.
-	grantsPath string
+	grants    map[string]grantRec // agent|scope → always-allow (F-030 P2), with its layer (F-087)
+	// grantsPath persists workspace grants across restarts (F-067);
+	// userGrantsPath the "everywhere" ones (F-087). "" = in memory.
+	grantsPath, userGrantsPath string
+}
+
+// Layer is how long a grant lasts (F-087): this DHI session only, this
+// workspace (.dhi/grants.json), or every workspace (the user config).
+type Layer string
+
+const (
+	LayerOnce       Layer = "once"
+	LayerWorkspace  Layer = "workspace"
+	LayerEverywhere Layer = "everywhere"
+)
+
+type grantRec struct {
+	at    time.Time
+	layer Layer
 }
 
 // NewApprovals returns an empty queue. The change-signal channel is
@@ -106,8 +132,8 @@ func (a *Approvals) AskScope(ctx context.Context, agent, scope string, op sandbo
 		if !d.allow {
 			return fmt.Errorf("denied by operator: %s %s", op, target)
 		}
-		if d.always && scope != "" {
-			a.grant(agent, scope)
+		if d.layer != "" && scope != "" {
+			a.grant(agent, scope, d.layer)
 		}
 		return nil
 	case <-ctx.Done():
@@ -125,12 +151,12 @@ func (a *Approvals) granted(agent, scope string) bool {
 	return ok
 }
 
-func (a *Approvals) grant(agent, scope string) {
+func (a *Approvals) grant(agent, scope string, layer Layer) {
 	a.mu.Lock()
 	if a.grants == nil {
-		a.grants = map[string]time.Time{}
+		a.grants = map[string]grantRec{}
 	}
-	a.grants[grantKey(agent, scope)] = time.Now().UTC()
+	a.grants[grantKey(agent, scope)] = grantRec{at: time.Now().UTC(), layer: layer}
 	a.mu.Unlock()
 	_ = a.saveGrants() // best-effort: the grant holds for this session regardless
 }
@@ -159,30 +185,68 @@ func (a *Approvals) Get(id int) (*Approval, bool) {
 // Resolve answers the approval: true allows the parked operation to
 // proceed. Unknown ids return false.
 func (a *Approvals) Resolve(id int, allow bool) bool {
-	a.mu.Lock()
-	var found *Approval
-	kept := a.pending[:0]
-	for _, ap := range a.pending {
-		if ap.ID == id {
-			found = ap
-			continue
-		}
-		kept = append(kept, ap)
-	}
-	a.pending = kept
-	a.signal()
-	a.mu.Unlock()
-	if found == nil {
-		return false
-	}
-	found.verdict <- decision{allow: allow}
-	close(found.verdict)
-	return true
+	return a.resolve(id, decision{allow: allow})
 }
 
 // ResolveAlways allows the approval and, when it carries a scope,
-// records an agent+scope grant so future asks skip the prompt.
+// records an agent+scope grant for this workspace so future asks skip
+// the prompt.
 func (a *Approvals) ResolveAlways(id int) bool {
+	return a.ResolveFor(id, LayerWorkspace)
+}
+
+// ResolveFor allows the approval and remembers its scope at layer
+// (F-087): once (this session), this workspace, or everywhere.
+func (a *Approvals) ResolveFor(id int, layer Layer) bool {
+	return a.resolve(id, decision{allow: true, layer: layer})
+}
+
+// Decide applies a human answer from any surface (F-087), so every
+// surface means the same thing by the same key:
+//   - "yes": allow; a sandbox-access request is remembered for this
+//     workspace (one call is no use to a sandbox fixed at spawn).
+//   - "once": allow; access lasts this DHI session.
+//   - "always": allow and remember for this workspace.
+//   - "everywhere": allow and remember for every workspace.
+//   - "no": deny.
+func (a *Approvals) Decide(ap *Approval, choice string) bool {
+	switch choice {
+	case "yes":
+		if ap.IsAccess() {
+			return a.ResolveFor(ap.ID, LayerWorkspace)
+		}
+		return a.Resolve(ap.ID, true)
+	case "once":
+		if ap.IsAccess() {
+			return a.ResolveFor(ap.ID, LayerOnce)
+		}
+		return a.Resolve(ap.ID, true)
+	case "always":
+		return a.ResolveFor(ap.ID, LayerWorkspace)
+	case "everywhere":
+		return a.ResolveFor(ap.ID, LayerEverywhere)
+	case "no":
+		return a.Resolve(ap.ID, false)
+	}
+	return false
+}
+
+// DecideKeys maps the shared approval keys to Decide choices.
+var DecideKeys = map[string]string{"y": "yes", "o": "once", "a": "always", "g": "everywhere", "n": "no"}
+
+// DecideHint is the one-line legend for those keys.
+const DecideHint = "y yes · o once · a always here · g everywhere · n no"
+
+// Describe renders an approval for a card: "write /path" for access,
+// else op and target.
+func (ap *Approval) Describe() string {
+	if p, ok := strings.CutPrefix(ap.Scope, AccessWrite); ok {
+		return "write access to " + p
+	}
+	return string(ap.Op) + " " + ap.Target
+}
+
+func (a *Approvals) resolve(id int, d decision) bool {
 	a.mu.Lock()
 	var found *Approval
 	kept := a.pending[:0]
@@ -199,7 +263,7 @@ func (a *Approvals) ResolveAlways(id int) bool {
 	if found == nil {
 		return false
 	}
-	found.verdict <- decision{allow: true, always: true}
+	found.verdict <- d
 	close(found.verdict)
 	return true
 }

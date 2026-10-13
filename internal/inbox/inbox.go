@@ -129,6 +129,15 @@ func opWord(op sandbox.Op) string {
 	}
 }
 
+// approvalWhat names what is asked: sandbox access by its path, else
+// the op and target.
+func approvalWhat(ap *tools.Approval) string {
+	if ap.IsAccess() {
+		return ap.Describe()
+	}
+	return opWord(ap.Op) + " " + ap.Target
+}
+
 func approvalItem(ap *tools.Approval) Item {
 	return Item{
 		Kind:       Approval,
@@ -137,7 +146,7 @@ func approvalItem(ap *tools.Approval) Item {
 		Op:         ap.Op,
 		Target:     ap.Target,
 		At:         time.Unix(0, int64(ap.ID)),
-		Row:        "approve  " + ap.Agent + ": " + opWord(ap.Op) + " " + ap.Target,
+		Row:        "approve  " + ap.Agent + ": " + approvalWhat(ap),
 	}
 }
 

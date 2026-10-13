@@ -139,6 +139,8 @@ var toolScopes = map[string]Scope{
 	"settings_propose": Read,
 	// project_update likewise only records a proposal (F-080).
 	"project_update": Read,
+	// permission_request IS an approval: the card it parks is the gate (F-087).
+	"permission_request": Read,
 
 	"write": Write, "patch": Write, "editor_apply_edit": Write,
 	"artifact_create": Write, "artifact_edit": Write,

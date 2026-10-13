@@ -74,6 +74,7 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message, tl
 	rl := &relaunch{}
 	serve := r.serveToolsFor(e, trigger, turnTools{
 		workBranch:  r.workBranchSeam(e.m.ID, trigger, rl),
+		access:      r.accessSeam(e.m.ID, trigger, rl),
 		envelope:    r.envelopeFor(task, hasTask, workdir, tune),
 		task:        task.Slug,
 		plan:        r.planSeam(e.m.ID, ep.Key),
@@ -352,7 +353,7 @@ func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Messag
 		Resume: in.resume, MaxTurns: in.maxTurns,
 		MCPConfig: in.mcpConfig, MCPURL: in.mcpEndpoint, MCPGeminiDir: in.mcpGeminiDir,
 	})...)
-	wrapped, err := e.guard.Sandbox.Wrap(argv)
+	wrapped, err := r.spawnSandbox(e).Wrap(argv)
 	if err != nil {
 		run.Status = tasks.RunError
 		run.Error = fmt.Sprintf("wrap: %v", err)
@@ -408,6 +409,9 @@ func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Messag
 		}
 		events = append(events, ev)
 		stamps = append(stamps, time.Now().UTC())
+		if ev.Denied != "" && !in.quiet {
+			r.offerAccess(e.m.ID, trigger, ev.Denied)
+		}
 		if !in.quiet {
 			r.cliEvent(e.m.ID, trigger, ev)
 		}
@@ -607,6 +611,7 @@ func (r *Runtime) serveToolsFor(e *entry, trigger bus.Message, tt turnTools) *se
 			MemberRoots:  tt.memberRoots,
 			LessonRecord: tt.lesson,
 			WorkBranch:   tt.workBranch,
+			Access:       tt.access,
 			Forge:        r.cfg.Forge,
 			SetProps:     r.cfg.SetProps,
 			SettingCheck: r.cfg.SettingCheck,
@@ -798,6 +803,7 @@ func (r *Runtime) cliPromptAt(ctx context.Context, e *entry, trigger bus.Message
 	grounding := "\n\nFiles are addressed as <member>/<rel-path>. Members: " + strings.Join(members, ", ")
 	grounding += "\nThe reserved workspace dotdir is addressed as .dhi/<rel-path>; ideation artifacts belong under .dhi/sessions/<session>/<file>."
 	grounding += "\nBefore changing code outside a task worktree, call work_branch: DHI makes the card, branch and worktree and continues you there. Never commit on the default branch."
+	grounding += "\nIf the sandbox blocks you (\"Operation not permitted\"), call permission_request for exactly what you need; do not give up or work around it."
 	// Stable sections first (they cache), volatile after (F-065); each
 	// carries its priority for the prompt budget (F-078).
 	sys := []section{

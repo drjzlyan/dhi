@@ -187,7 +187,7 @@ func seatbeltProfile(rw, ro []string, allowNetwork bool, guard, reopen []string)
 	// admitted trees (F-025/ADR-0012: the CLI runs as the user, the
 	// sandbox guards path/process escape).
 	b.WriteString("(allow file-read*)\n")
-	for _, d := range seatbeltCredentialDenies() {
+	for _, d := range CredentialPaths() {
 		if d != "" {
 			b.WriteString(`(deny file-read* (subpath ` + sbplQuote(d) + `))` + "\n")
 		}
@@ -195,10 +195,10 @@ func seatbeltProfile(rw, ro []string, allowNetwork bool, guard, reopen []string)
 	return b.String(), nil
 }
 
-// seatbeltCredentialDenies lists the user's credential trees reads may
+// CredentialPaths lists the user's credential trees reads may
 // never cross, even with broad file-read. Missing dirs are harmless
 // (a deny on an absent path never matches).
-func seatbeltCredentialDenies() []string {
+func CredentialPaths() []string {
 	home, err := os.UserHomeDir()
 	if err != nil || home == "" {
 		return nil

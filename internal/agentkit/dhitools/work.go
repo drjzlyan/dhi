@@ -55,3 +55,40 @@ func (d Deps) workTools() []tool {
 		},
 	}}
 }
+
+// accessTools serves permission_request (F-087): an agent blocked by the
+// sandbox asks for what it needs instead of giving up.
+func (d Deps) accessTools() []tool {
+	if d.Access == nil {
+		return nil
+	}
+	type accessArgs struct {
+		Kind   string `json:"kind"`
+		Target string `json:"target"`
+		Reason string `json:"reason"`
+	}
+	return []tool{{
+		info: mcp.ToolInfo{
+			Name: "permission_request",
+			Description: "Ask the human for access your sandbox denies, instead of giving up. " +
+				"Args: {\"kind\":\"write|network|exec\",\"target\":\"/abs/folder (write) or what it is for\",\"reason\":\"why the task needs it\"}. " +
+				"It waits for the answer. Write access takes effect in a fresh run: after it is granted, end your run with one short line and DHI continues you. " +
+				"A failed write that says \"Operation not permitted\" is the sandbox; ask for the folder.",
+			InputSchema: json.RawMessage(`{"type":"object","required":["kind","target","reason"],"properties":{"kind":{"type":"string","enum":["write","network","exec"]},"target":{"type":"string"},"reason":{"type":"string"}},"additionalProperties":false}`),
+		},
+		parse: func(raw json.RawMessage) (any, error) {
+			var a accessArgs
+			if err := args(raw, &a); err != nil {
+				return nil, err
+			}
+			if strings.TrimSpace(a.Reason) == "" {
+				return nil, fmt.Errorf("reason is required: say why the task needs it")
+			}
+			return a, nil
+		},
+		exec: func(ctx context.Context, dec any) (string, error) {
+			a := dec.(accessArgs)
+			return d.Access(ctx, a.Kind, a.Target, strings.TrimSpace(a.Reason))
+		},
+	}}
+}

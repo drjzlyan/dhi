@@ -1065,7 +1065,7 @@ Plan: `~/.claude/plans/what-are-the-planned-partitioned-prism.md`. Branch `m31`,
 Plan: `~/.claude/plans/for-tasks-that-needs-nested-kernighan.md`. Branch `m32` (from `m31`), one commit per phase. ADR-0039.
 
 - [x] P1 Agents can run Bash in the sandbox (private TMPDIR / CLAUDE_CODE_TMPDIR) and commit on their own branch (work_branch, default-branch guard) (F-086)
-- [ ] P2 permission_request + sandbox denials become cards; grants once / workspace / everywhere; relaunch with access (F-087)
+- [x] P2 permission_request + sandbox denials become cards; grants once / workspace / everywhere; relaunch with access (F-087)
 - [ ] P3 Secret fences (credentials file, keychain) + redaction everywhere (F-088)
 - [ ] P4 secret_request: masked card, stored by name, injected into run only (F-089)
 - [ ] P5 Global layer: per-layer saves, user standards/instructions, wizard "every workspace" (F-090)

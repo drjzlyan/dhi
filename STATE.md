@@ -12,6 +12,10 @@
   `work_branch` harness tool (card + bind thread + Provision + carry via stash) → `relaunch` →
   `continueTurn` posts `@agent continue: …`; `git_commit` refuses main/master/origin HEAD.
   `Runtime.WaitBackground` tracks Handle's turns (fixed a test failing on the m31 base).
+- P2 DONE (F-087): `permission_request` (write path / network / exec), `clirun.DeniedPath` →
+  `StreamEvent.Denied` → `offerAccess` card; grants are `write:<path>` scopes with a `tools.Layer`
+  (once/workspace/everywhere, user file via `PersistUser`); `spawnSandbox` adds them per spawn.
+  `Approvals.Decide` + `DecideKeys` (y/o/a/g/n) on chat pane ask strip, inbox rows, editor chat.
 - Gotchas:
   - A tool that changes cwd or sandbox must set the turn's `relaunch`; the running spawn can't
     see the change. P2 grants reuse this.

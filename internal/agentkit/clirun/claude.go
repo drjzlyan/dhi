@@ -183,7 +183,8 @@ func claudeUserEvents(ev map[string]any) []StreamEvent {
 			continue
 		}
 		if isErr, _ := b["is_error"].(bool); isErr {
-			out = append(out, StreamEvent{Kind: EventError, Detail: truncate(toolResultText(b["content"]), 200)})
+			text := toolResultText(b["content"])
+			out = append(out, StreamEvent{Kind: EventError, Detail: truncate(text, 200), Denied: DeniedPath(text)})
 		}
 	}
 	return out

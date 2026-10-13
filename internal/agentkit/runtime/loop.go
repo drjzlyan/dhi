@@ -228,6 +228,7 @@ type turnTools struct {
 	memberRoots    map[string]string                                                                 // member → task worktree for the file tools
 	lesson         func(text, scope string, tags []string) (string, error)                           // lesson_record seam; nil = none
 	workBranch     func(ctx context.Context, slug, title, member string, carry bool) (string, error) // work_branch seam (F-086); nil = none
+	access         func(ctx context.Context, kind, target, reason string) (string, error)            // permission_request seam (F-087); nil = none
 }
 
 // envelopeFor decides the autonomy envelope (F-067, ADR-0032): only a

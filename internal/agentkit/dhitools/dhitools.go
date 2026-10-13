@@ -130,6 +130,9 @@ type Deps struct {
 	// WorkBranch moves a chat turn's work onto its own card, convention
 	// branch and worktree (F-086); nil = no work_branch tool.
 	WorkBranch func(ctx context.Context, slug, title, member string, carry bool) (string, error)
+	// Access asks the human for sandbox access the agent lacks (F-087):
+	// write to a path, network, or running commands; nil = no tool.
+	Access func(ctx context.Context, kind, target, reason string) (string, error)
 	// MemberRoots overrides where a member's vpaths resolve (F-067): on a
 	// task turn, member → the task worktree, so DHI's file tools act on
 	// the task branch exactly like the CLI's native tools in the same
@@ -268,6 +271,7 @@ func (d Deps) Handler() mcp.Handler {
 	all = append(all, d.settingTools()...)
 	all = append(all, d.projectTools()...)
 	all = append(all, d.workTools()...)
+	all = append(all, d.accessTools()...)
 	for _, s := range harnessSlugs {
 		allow[s] = true
 	}

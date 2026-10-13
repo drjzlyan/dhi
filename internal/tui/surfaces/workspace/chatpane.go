@@ -10,6 +10,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/agentkit/channelmeta"
 	"github.com/drjzlyan/dhi/internal/agentkit/org"
+	"github.com/drjzlyan/dhi/internal/agentkit/tools"
 	"github.com/drjzlyan/dhi/internal/ansi"
 	"github.com/drjzlyan/dhi/internal/tui/kit"
 	"github.com/drjzlyan/dhi/internal/tui/theme"
@@ -85,6 +86,11 @@ type chatPane struct {
 	railSearching bool
 	railQuery     string
 	switcher      *switcherState
+
+	// approvals, when set, puts a pending ask on screen in the chat it
+	// came from (F-087): the agent waits on it, so it must not hide in
+	// another surface.
+	approvals *tools.Approvals
 }
 
 // reactionTokens is the fixed, width-safe reaction set (no emoji-width
@@ -352,6 +358,15 @@ func (p *chatPane) handleKey(key string) bool {
 	if p.railSearching {
 		p.railSearchKey(key)
 		return true
+	}
+	if !p.focus && !p.searching && !p.reactPick {
+		if choice, ok := tools.DecideKeys[key]; ok {
+			if ap := p.pendingAsk(); ap != nil {
+				p.approvals.Decide(ap, choice)
+				p.flash = choice + ": " + ap.Agent + " " + ap.Describe()
+				return true
+			}
+		}
 	}
 	if p.searching {
 		switch key {
@@ -805,10 +820,44 @@ func (p *chatPane) transcriptLines(width, height int, wide bool) []string {
 		lines = append(lines, bar)
 		extra++
 	}
-	lines = append(lines, p.transcriptRender(history, width, height-3-extra)...)
+	ask := p.askLines(width)
+	lines = append(lines, p.transcriptRender(history, width, height-3-extra-len(ask))...)
+	lines = append(lines, ask...)
 	lines = append(lines, p.statusLine())
 	lines = append(lines, p.composerBar(width))
 	return lines
+}
+
+// pendingAsk is the oldest approval an agent in this channel is waiting
+// on: in a DM its agent's, elsewhere any agent's.
+func (p *chatPane) pendingAsk() *tools.Approval {
+	if p.approvals == nil {
+		return nil
+	}
+	dm, isDM := strings.CutPrefix(p.channelName(), "dm:")
+	for _, ap := range p.approvals.List() {
+		if !isDM || ap.Agent == dm {
+			return ap
+		}
+	}
+	return nil
+}
+
+// askLines renders the pending ask above the status line, with its keys
+// (answered while the composer is not focused).
+func (p *chatPane) askLines(width int) []string {
+	ap := p.pendingAsk()
+	if ap == nil {
+		return nil
+	}
+	what := ap.Agent + " asks: " + ap.Describe()
+	if ap.Reason != "" {
+		what += " — " + ap.Reason
+	}
+	return []string{
+		kit.PaintRow(" "+theme.DangerText().Render(theme.GlyphDiamond+" ")+theme.TextStyle().Render(kit.ClipEllipsis(what, width-4)), width, theme.HeaderBg()),
+		kit.PaintRow("   "+theme.Hint().Render(tools.DecideHint+"  (esc the composer first)"), width, theme.HeaderBg()),
+	}
 }
 
 // pinnedCount is the number of pinned messages in the active channel.

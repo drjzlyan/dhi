@@ -180,6 +180,11 @@ type Runtime struct {
 
 	cons consolidator // daily lesson consolidation (F-068)
 
+	// offering dedupes the access cards raised from sandbox denials
+	// (F-087): agent|path → a card is pending.
+	offerMu  sync.Mutex
+	offering map[string]bool
+
 	// bg tracks the turns Handle dispatches and the hand-offs the
 	// runtime posts itself, so a caller can wait for them to drain
 	// (WaitBackground).

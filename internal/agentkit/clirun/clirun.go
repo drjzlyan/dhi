@@ -36,6 +36,9 @@ const (
 type StreamEvent struct {
 	Kind   string // Event* constant
 	Detail string // human-readable one-liner (command, error, raw final)
+	// Denied is the path the OS sandbox refused to let a tool write
+	// (F-087): parsed from an EPERM tool error, "" otherwise.
+	Denied string
 }
 
 // Usage is what a finished run reports about itself. -1 tokens mean the

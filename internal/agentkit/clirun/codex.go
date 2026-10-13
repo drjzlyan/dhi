@@ -208,7 +208,7 @@ func codexLineEvents(it codexItem) (StreamEvent, bool) {
 					return StreamEvent{Kind: EventError, Detail: fmt.Sprintf(
 						"command failed (exit %d): %s", it.Item.ExitCode,
 						truncate(strings.TrimSpace(it.Item.Output), 120),
-					)}, true
+					), Denied: DeniedPath(it.Item.Output)}, true
 				}
 				return StreamEvent{}, false
 			}

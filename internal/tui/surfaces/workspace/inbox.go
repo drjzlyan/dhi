@@ -69,6 +69,15 @@ func (m *Model) reviewIDFor(slug string) string {
 func (m *Model) inboxKey(key string) bool {
 	items := m.inboxItems()
 	c := &m.cursors[secInbox]
+	// F-087: an approval row is answered in place, with the same keys
+	// as everywhere else (enter still opens the editor chat).
+	if choice, ok := tools.DecideKeys[key]; ok && *c < len(items) && items[*c].Kind == inbox.Approval && m.approvals != nil {
+		if ap, ok := m.approvals.Get(items[*c].ApprovalID); ok {
+			m.approvals.Decide(ap, choice)
+			m.inboxHint = choice + ": " + ap.Agent + " " + ap.Describe()
+		}
+		return true
+	}
 	switch key {
 	case "j", "down":
 		if *c < len(items)-1 {

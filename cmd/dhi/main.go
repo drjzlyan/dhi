@@ -1395,6 +1395,13 @@ func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cl
 	if err := approvals.Persist(filepath.Join(ws.Root, workspace.DHIDir, "grants.json")); err != nil {
 		fmt.Fprintln(os.Stderr, "dhi:", err)
 	}
+	// F-087: grants given "everywhere" live beside the credentials, in
+	// the user config every workspace reads.
+	if cred, err := credstore.DefaultPath(); err == nil {
+		if err := approvals.PersistUser(filepath.Join(filepath.Dir(cred), "grants.json")); err != nil {
+			fmt.Fprintln(os.Stderr, "dhi:", err)
+		}
+	}
 	rt, err := agentkitRuntime.New(agentkitRuntime.Config{
 		WS:        ws,
 		Bus:       b,
