@@ -46,6 +46,9 @@ type taskCreateArgs struct {
 	Team     string   `json:"team"`
 	Labels   []string `json:"labels"`
 	Priority string   `json:"priority"`
+	// F-071 decomposition: the card this splits, and cards to finish first.
+	Parent    string   `json:"parent"`
+	DependsOn []string `json:"depends_on"`
 }
 
 // Deps carries the stores one agent's tool surface operates on. The
@@ -112,6 +115,9 @@ type Deps struct {
 	// PlanUpdate stores the agent's published plan on its episode
 	// (F-067); nil omits plan_update.
 	PlanUpdate func([]PlanStep) error
+	// OnPR runs after pr_open opened a task's PR(s) (F-071: hand the PR
+	// to a reviewer agent). nil = nothing follows.
+	OnPR func(slug string, opened []string)
 	// SetProps + SettingCheck serve settings_propose (F-070); nil omits it.
 	SetProps     *setprop.Store
 	SettingCheck SettingCheck
@@ -389,8 +395,8 @@ func (d Deps) taskTools() []tool {
 	out = append(out, tool{
 		info: mcp.ToolInfo{
 			Name:        "task_create",
-			Description: "Create a task card. Args: {\"slug\": \"short-kebab-id\", \"title\": \"what and why\", optional \"assignee\": \"agent-id\", \"team\": \"team\", \"labels\": [\"x\"], \"priority\": \"low|medium|high|urgent\"}. An assignee is @mentioned in the team channel (when a team is given) so it picks the task up.",
-			InputSchema: json.RawMessage(`{"type":"object","required":["slug","title"],"properties":{"slug":{"type":"string"},"title":{"type":"string"},"assignee":{"type":"string"},"team":{"type":"string"},"labels":{"type":"array","items":{"type":"string"}},"priority":{"type":"string"}},"additionalProperties":false}`),
+			Description: "Create a task card. Args: {\"slug\": \"short-kebab-id\", \"title\": \"what and why\", optional \"assignee\": \"agent-id\", \"team\": \"team\", \"labels\": [\"x\"], \"priority\": \"low|medium|high|urgent\", \"parent\": \"card it splits\", \"depends_on\": [\"cards to finish first\"]}. The assignee gets the brief (team channel, else a DM) and the card is bound to it; with open dependencies the brief is held and DHI hands it off when they are done.",
+			InputSchema: json.RawMessage(`{"type":"object","required":["slug","title"],"properties":{"slug":{"type":"string"},"title":{"type":"string"},"assignee":{"type":"string"},"team":{"type":"string"},"labels":{"type":"array","items":{"type":"string"}},"priority":{"type":"string"},"parent":{"type":"string"},"depends_on":{"type":"array","items":{"type":"string"}}},"additionalProperties":false}`),
 		},
 		parse: func(raw json.RawMessage) (any, error) {
 			var a taskCreateArgs
@@ -417,14 +423,36 @@ func (d Deps) taskTools() []tool {
 					return "", fmt.Errorf("created task %s but priority refused: %w", slug, err)
 				}
 			}
-			// Hand the brief to the assignee through the team channel so
-			// the F-036 dispatch wakes it (agent @mentions route).
-			if a.Assignee != "" && a.Team != "" && d.Bus != nil {
-				if posted, err := d.Bus.Post(bus.Message{
-					Channel: "#" + strings.TrimSpace(a.Team), Author: d.Agent.ID,
-					Text: fmt.Sprintf("@%s new task %s: %s", strings.TrimSpace(a.Assignee), slug, strings.TrimSpace(a.Title)),
-				}); err == nil && d.Relay != nil {
-					d.Relay(posted)
+			// F-071: place the card in its decomposition; open
+			// dependencies hold the brief until they are done.
+			parent := strings.TrimSpace(a.Parent)
+			if parent != "" || len(a.DependsOn) > 0 {
+				if err := d.Tasks.SetPlan(slug, parent, a.DependsOn, false); err != nil {
+					return "", fmt.Errorf("created task %s but its plan was refused: %w", slug, err)
+				}
+				if blockers := d.Tasks.Blockers(slug); len(blockers) > 0 {
+					if err := d.Tasks.SetPlan(slug, parent, a.DependsOn, true); err != nil {
+						return "", err
+					}
+					return fmt.Sprintf("created task %s; its brief is held until %s are done", slug, strings.Join(blockers, ", ")), nil
+				}
+			}
+			// Hand the brief to the assignee (team channel, else DM) and
+			// bind the card to it so the assignee's turn is card-bound
+			// (F-036 dispatch; F-067 binding).
+			assignee := strings.TrimSpace(a.Assignee)
+			if assignee != "" && assignee != bus.Human && d.Bus != nil {
+				ch := "dm:" + assignee
+				if team := strings.TrimSpace(a.Team); team != "" {
+					ch = "#" + team
+				}
+				posted, err := d.Bus.Post(bus.Message{Channel: ch, Author: d.Agent.ID,
+					Text: fmt.Sprintf("@%s new task %s: %s", assignee, slug, strings.TrimSpace(a.Title))})
+				if err == nil {
+					_ = d.Tasks.BindThread(slug, posted.Channel, posted.ID)
+					if d.Relay != nil {
+						d.Relay(posted)
+					}
 				}
 			}
 			return "created task " + slug, nil
@@ -564,6 +592,9 @@ func (d Deps) taskTools() []tool {
 			}
 			if len(failures) > 0 {
 				return strings.Join(opened, "; "), fmt.Errorf("pr_open failed for %s", strings.Join(failures, "; "))
+			}
+			if d.OnPR != nil {
+				d.OnPR(slug, opened) // F-071: a reviewer agent reviews it first
 			}
 			return strings.Join(opened, "; "), nil
 		},

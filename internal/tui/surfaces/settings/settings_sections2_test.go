@@ -204,3 +204,28 @@ func TestAgentsProfileModal(t *testing.T) {
 		t.Fatal("esc did not close the profile modal")
 	}
 }
+
+// F-071: t adds the team rituals, paused, once.
+func TestAutopilotsAddRituals(t *testing.T) {
+	m, ws, company, _ := agentSurface(t)
+	writeRosterAgent(t, ws.Root, "scout")
+	m.d.Autopilots = mustAutoStore(t, ws)
+	if err := company.CreateTeam("core", "scout", []string{"scout"}); err != nil {
+		t.Fatal(err)
+	}
+	m.sec = secAutopilots
+	feed(m, "t")
+	if !strings.Contains(m.flash, "added 2 ritual(s), paused") {
+		t.Fatalf("flash = %q", m.flash)
+	}
+	for _, slug := range []string{"standup-core", "review-scout"} {
+		c, ok := m.d.Autopilots.Get(slug)
+		if !ok || c.Enabled {
+			t.Fatalf("%s: %+v %v", slug, c, ok)
+		}
+	}
+	feed(m, "t")
+	if !strings.Contains(m.flash, "already here") {
+		t.Fatalf("second t: %q", m.flash)
+	}
+}

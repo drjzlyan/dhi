@@ -562,16 +562,18 @@ func f32(v uint32) float64 { return float64(v>>8) / 255 }
 // ---------------------------------------------------------------------------
 
 var (
-	GlyphDot       = "●" // presence/status indicator
-	GlyphCursor    = "▌" // list cursor
-	GlyphChevron   = "›" // breadcrumb separator
-	GlyphCheck     = "✓"
-	GlyphCross     = "✗"
-	GlyphDiamond   = "◆" // approval pending
-	GlyphAt        = "@" // mention
-	GlyphBullet    = "•"
-	GlyphBusy      = "◐" // static activity indicator (reduced motion)
-	GlyphTodo      = "○" // a plan step not started (F-067)
+	GlyphDot     = "●" // presence/status indicator
+	GlyphCursor  = "▌" // list cursor
+	GlyphChevron = "›" // breadcrumb separator
+	GlyphCheck   = "✓"
+	GlyphCross   = "✗"
+	GlyphDiamond = "◆" // approval pending
+	GlyphAt      = "@" // mention
+	GlyphBullet  = "•"
+	GlyphBusy    = "◐" // static activity indicator (reduced motion)
+	GlyphTodo    = "○" // a plan step not started (F-067)
+	// SparkBars are the eight levels of a sparkline, low to high (F-071).
+	SparkBars      = "▁▂▃▄▅▆▇█"
 	GlyphBranch    = "⎇" // git branch marker; missing from many fonts, so branches show as a TextDim pill instead (F-064)
 	GlyphGutterBar = "▎" // git gutter: added/modified line (F-040)
 	GlyphGutterDel = "▁" // git gutter: lines deleted below

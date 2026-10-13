@@ -39,6 +39,9 @@ func (m *Model) autopilotsKey(key string) bool {
 			m.flash = ""
 		}
 		return true
+	case "t":
+		m.addRituals()
+		return true
 	case "n":
 		if m.d.Autopilots == nil {
 			return false
@@ -303,4 +306,40 @@ func cursorGlyph(on bool) string {
 		return theme.GlyphCursor + " "
 	}
 	return "  "
+}
+
+// addRituals adds the team rituals (F-071): a daily standup per team led
+// by an agent, a weekly self-review per agent — paused, so the human arms
+// the ones they want with e.
+func (m *Model) addRituals() {
+	if m.d.Autopilots == nil || m.d.Org == nil {
+		m.flash = "rituals unavailable (not inside a workspace)"
+		return
+	}
+	leads := map[string]string{}
+	var teams []string
+	rows, _ := m.agentRows()
+	rostered := map[string]bool{}
+	var agents []string
+	for _, r := range rows {
+		if !r.archived {
+			rostered[r.id] = true
+			agents = append(agents, r.id)
+		}
+	}
+	for _, t := range m.d.Org.Teams() {
+		teams = append(teams, t.Name)
+		if rostered[t.Lead] {
+			leads[t.Name] = t.Lead
+		}
+	}
+	n, err := m.d.Autopilots.AddRituals(autopilot.Rituals(leads, teams, agents))
+	switch {
+	case err != nil:
+		m.flash = "failed: " + err.Error()
+	case n == 0:
+		m.flash = "every ritual is already here"
+	default:
+		m.flash = fmt.Sprintf("added %d ritual(s), paused — e arms the ones you want", n)
+	}
 }

@@ -514,7 +514,15 @@ func (r *Runtime) serveToolsFor(e *entry, trigger bus.Message, tt turnTools) *se
 	}
 	var handler mcp.Handler
 	if wantDHI {
-		gate, onRun := r.workflowEnforcer(e.m, trigger)
+		wfGate, onRun := r.workflowEnforcer(e.m, trigger)
+		kids := r.childGate(trigger)
+		gate := func(seam string) []string {
+			var reasons []string
+			if wfGate != nil {
+				reasons = wfGate(seam)
+			}
+			return append(reasons, kids(seam)...)
+		}
 		handler = dhitools.Deps{
 			Agent:       e.m,
 			Tasks:       r.cfg.Tasks,
@@ -547,6 +555,7 @@ func (r *Runtime) serveToolsFor(e *entry, trigger bus.Message, tt turnTools) *se
 			Forge:        r.cfg.Forge,
 			SetProps:     r.cfg.SetProps,
 			SettingCheck: r.cfg.SettingCheck,
+			OnPR:         r.prHook(e.m.ID, trigger),
 		}.Handler()
 	}
 	// Third-party MCP servers (F-034 part C): dialed under the sandbox,
@@ -763,7 +772,8 @@ func (r *Runtime) cliPromptAt(ctx context.Context, e *entry, trigger bus.Message
 		text = trigger.Text
 	}
 	b.WriteString(text)
-	b.WriteString(r.taskBlock(trigger, lim))
+	b.WriteString(r.taskBlock(e.m.ID, trigger, lim))
+	b.WriteString(r.handoffBrief(e.m.ID, trigger))
 	var seen int64
 	if ep != nil && resumed {
 		seen = ep.SeenID

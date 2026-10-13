@@ -179,6 +179,13 @@ type Task struct {
 	PRNumber int    // GitHub PR created from this card's branch (0 = none)
 	PRURL    string // PR URL once created
 
+	// Team decomposition (F-071): Parent is the card this one was split
+	// from; DependsOn are cards that must be done first; Held means the
+	// brief has not been handed off yet because a dependency is open.
+	Parent    string
+	DependsOn []string
+	Held      bool
+
 	// Comments are durable notes by agents and the human; Activity is
 	// the audit trail of changes (F-037).
 	Comments []Comment
@@ -267,6 +274,9 @@ type file struct {
 	Propagations  []Propagation `toml:"propagation,omitempty"`
 	PRNumber      int           `toml:"pr_number,omitempty"`
 	PRURL         string        `toml:"pr_url,omitempty"`
+	Parent        string        `toml:"parent,omitempty"`
+	DependsOn     []string      `toml:"depends_on,omitempty"`
+	Held          bool          `toml:"held,omitempty"`
 	Comments      []Comment     `toml:"comment,omitempty"`
 	Activity      []Activity    `toml:"activity,omitempty"`
 	CreatedAt     time.Time     `toml:"created_at"`
@@ -434,6 +444,9 @@ func parseCard(path, slug string) (Task, error) {
 		Propagations:  f.Propagations,
 		PRNumber:      f.PRNumber,
 		PRURL:         f.PRURL,
+		Parent:        f.Parent,
+		DependsOn:     f.DependsOn,
+		Held:          f.Held,
 		Comments:      f.Comments,
 		Activity:      f.Activity,
 		CreatedAt:     f.CreatedAt,
@@ -910,6 +923,7 @@ func writeCard(path string, t Task) error {
 		Labels: t.Labels, Priority: t.Priority, Epic: t.Epic, Due: t.Due,
 		ThreadChannel: t.ThreadChannel, ThreadID: t.ThreadID,
 		PRNumber: t.PRNumber, PRURL: t.PRURL,
+		Parent: t.Parent, DependsOn: t.DependsOn, Held: t.Held,
 		Comments: t.Comments, Activity: t.Activity,
 		ChangeSets: t.ChangeSets,
 		Runs:       t.Runs,
@@ -1075,3 +1089,102 @@ func (s *Store) PushBranch(slug string) error {
 
 // cardPathForTest exposes the on-disk path for tests only.
 func (s *Store) cardPathForTest(slug string) string { return s.cardPath(slug) }
+
+// SetPlan places a card in a decomposition (F-071): its parent card and
+// the cards it waits on. Both must exist; a card cannot wait on itself or
+// on a card that (transitively) waits on it. held marks the brief as not
+// yet handed off.
+func (s *Store) SetPlan(slug, parent string, deps []string, held bool) error {
+	s.mu.RLock()
+	_, ok := s.tasks[slug]
+	if parent != "" {
+		if _, pok := s.tasks[parent]; !pok || parent == slug {
+			s.mu.RUnlock()
+			return fmt.Errorf("tasks: parent %q is not another card", parent)
+		}
+	}
+	for _, d := range deps {
+		if _, dok := s.tasks[d]; !dok || d == slug {
+			s.mu.RUnlock()
+			return fmt.Errorf("tasks: dependency %q is not another card", d)
+		}
+		if s.waitsOn(d, slug, map[string]bool{}) {
+			s.mu.RUnlock()
+			return fmt.Errorf("tasks: %s depending on %s would form a cycle", slug, d)
+		}
+	}
+	s.mu.RUnlock()
+	if !ok {
+		return fmt.Errorf("tasks: unknown task %q", slug)
+	}
+	return s.mutate(slug, func(t *Task) {
+		t.Parent, t.DependsOn, t.Held = parent, append([]string(nil), deps...), held
+	})
+}
+
+// waitsOn reports whether from (transitively) depends on target; the
+// caller holds s.mu.
+func (s *Store) waitsOn(from, target string, seen map[string]bool) bool {
+	if seen[from] {
+		return false
+	}
+	seen[from] = true
+	for _, d := range s.tasks[from].DependsOn {
+		if d == target || s.waitsOn(d, target, seen) {
+			return true
+		}
+	}
+	return false
+}
+
+// Children are the cards split from parent, by slug.
+func (s *Store) Children(parent string) []Task {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var out []Task
+	for _, slug := range s.order {
+		if t := s.tasks[slug]; t.Parent == parent && parent != "" {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+// Blockers are the open dependencies of slug ("" when free to start).
+func (s *Store) Blockers(slug string) []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var out []string
+	for _, d := range s.tasks[slug].DependsOn {
+		if dep, ok := s.tasks[d]; ok && dep.Status != Done {
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
+// Ready lists held cards whose dependencies are all done: their briefs
+// can be handed off now.
+func (s *Store) Ready() []Task {
+	s.mu.RLock()
+	var held []string
+	for _, slug := range s.order {
+		if s.tasks[slug].Held {
+			held = append(held, slug)
+		}
+	}
+	s.mu.RUnlock()
+	var out []Task
+	for _, slug := range held {
+		if len(s.Blockers(slug)) == 0 {
+			t, _ := s.Get(slug)
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+// Release clears Held once the brief has been handed off.
+func (s *Store) Release(slug string) error {
+	return s.mutate(slug, func(t *Task) { t.Held = false })
+}

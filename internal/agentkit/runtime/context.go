@@ -101,7 +101,7 @@ func (r *Runtime) historyBlock(agentID string, trigger bus.Message, lim promptLi
 
 // taskBlock renders the card bound to the trigger's thread, if any, so
 // the agent works from the task's state rather than rediscovering it.
-func (r *Runtime) taskBlock(trigger bus.Message, lim promptLimits) string {
+func (r *Runtime) taskBlock(agentID string, trigger bus.Message, lim promptLimits) string {
 	t, ok := r.boundTask(trigger)
 	if !ok {
 		return ""
@@ -129,6 +129,7 @@ func (r *Runtime) taskBlock(trigger bus.Message, lim promptLimits) string {
 	if t.PRURL != "" {
 		b.WriteString("\n- pull request: " + t.PRURL)
 	}
+	b.WriteString(r.teamBlock(agentID, t))
 	if c := lastN(t.Comments, lim.comments); len(c) > 0 {
 		b.WriteString("\n- recent comments:")
 		for _, cm := range c {

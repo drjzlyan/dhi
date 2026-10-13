@@ -263,6 +263,9 @@ func runTUI() (relaunch bool) {
 			agentRT = newAgentRuntime(ws, messageBus, decision.Sandbox, termEnv, cfg.Engine, gitRunner, identityFn, sessionStore, runRunner, editorBridge, wsScopes, taskStore, reviewSvc, rgSearcher, mcpStore, convLive.Source(), cliLook, toolBin, mcpHome, decision.Worktrees,
 				liveTuning(userCfg, wsCfg, cfg))
 			if agentRT != nil {
+				// F-071: a held sub-card starts the moment its blockers are
+				// done, whoever moved them.
+				go agentRT.WatchTasks(context.Background())
 				edOpts = append(edOpts, editor.WithChat(agentRT))
 			}
 		}

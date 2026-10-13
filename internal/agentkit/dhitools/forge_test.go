@@ -72,3 +72,28 @@ func TestToolProposeRefusesUnsafe(t *testing.T) {
 		}
 	}
 }
+
+// F-071: task_create holds a brief behind open dependencies, otherwise
+// hands it off and binds the card to it.
+func TestTaskCreateHoldsAndBinds(t *testing.T) {
+	f, m := newFixture(t, "task_create")
+	f.approvals.OnRequest = func(ap *tools.Approval) { go f.approvals.Resolve(ap.ID, true) }
+	h := Deps{Agent: m, WS: f.ws, Tasks: f.tasks, Bus: f.bus, Approvals: f.approvals}.Handler()
+	if out, isErr := call(h, t, "task_create", `{"slug":"schema","title":"Schema","assignee":"dev"}`); isErr {
+		t.Fatal(out)
+	}
+	card, _ := f.tasks.Get("schema")
+	if card.ThreadChannel != "dm:dev" || card.ThreadID == 0 {
+		t.Fatalf("handed-off card must be bound to its brief: %+v", card)
+	}
+	out, isErr := call(h, t, "task_create", `{"slug":"api","title":"API","assignee":"dev","depends_on":["schema"]}`)
+	if isErr || !strings.Contains(out, "held until schema are done") {
+		t.Fatalf("create = %q", out)
+	}
+	if api, _ := f.tasks.Get("api"); !api.Held || api.ThreadID != 0 {
+		t.Fatalf("a blocked card must be held, not handed off: %+v", api)
+	}
+	if out, isErr := call(h, t, "task_create", `{"slug":"loop","title":"x","depends_on":["loop"]}`); !isErr {
+		t.Fatalf("self-dependency must refuse: %q", out)
+	}
+}

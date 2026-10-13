@@ -31,7 +31,13 @@
 - P5 is DONE (F-069, ADR-0034): `internal/agentkit/forge`, `.dhi/tools/`, Settings PROPOSALS.
 - P6 is DONE (F-070): `internal/agentkit/setprop`, `settings.CheckChange`/`SetLayerKey`
   (one key, never the whole layer), PROPOSALS lists settings proposals.
-- Next: P7 self-running team (F-071).
+- P7 is DONE (F-071): `tasks.SetPlan/Ready/Release`, runtime/team.go (`ReleaseReady`, `WatchTasks`
+  started in main, lead block, hand-off brief, reviewer on pr_open, parent PR gate), Agent HQ
+  (workspace/hq.go), rituals (autopilot/rituals.go, Settings AUTOPILOTS `t`).
+- M29 is COMPLETE in code. Open items:
+  - Live evals of learning, the tool forge and team flows (only the P1–P3 loop has live numbers).
+  - Harder eval fixtures that need a second verify round.
+  - Verify runs only for Go modules.
 - Gotcha: eval/agent envs must keep USER. Claude on macOS reads its Keychain login by user, and
   without it the run fails as "Not logged in".
 - User decisions:

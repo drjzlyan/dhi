@@ -54,7 +54,9 @@ func (m *Model) agentProfileLines(id string) []string {
 		Standards: true,
 	}
 	p := profile.Build(m.ws, deps, id)
-	return compactProfileLines(p)
+	out := compactProfileLines(p)
+	// F-071 Agent HQ: the employee record.
+	return append(append(out, ""), perfLines(m.agentPerf(id, profileRuns(p), len(p.TasksDone)))...)
 }
 
 func compactProfileLines(p *profile.Profile) []string {
