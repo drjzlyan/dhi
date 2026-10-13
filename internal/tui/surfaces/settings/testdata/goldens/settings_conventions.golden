@@ -1,16 +1,17 @@
   CONFIG        ╭─ › conventions ────────────────────────────────────────────────────────╮
   PROJECT       │ Naming templates: task branches, worktree folders, commit subjects, PR │
   AGENTS        │ title and description. Enter uses one; n copies it into a template you │
-  BRAIN         │ can edit.                                                              │
-  PROPOSALS     │                                                                        │
-  LIBRARY       │ ▌ ● default        built-in  task/<slug> branches, free-form commits   │
-  TEAMS         │     feature        built-in  feature/<slug> branches, Conventional Co… │
-  PACKS         │     ticket         built-in  <TICKET>/<slug> branches, "TICKET: subje… │
-  STANDARDS     │     personal       built-in  <user>/<slug> branches, free-form commits │
-▌ CONVENTIONS   │                                                                        │
-  WORKFLOWS     │ PREVIEW default (in use)                                               │
-  AUTOPILOTS    │   branch    task/login-timeout                                         │
-  MARKETPLACE   │   worktree  .dhi/tasks/login-timeout/api                               │
+  BRAIN         │ can edit; p learns your style from a commit or PR you paste, g from    │
+  PROPOSALS     │ your git history.                                                      │
+  LIBRARY       │                                                                        │
+  TEAMS         │ ▌ ● default        built-in  task/<slug> branches, free-form commits   │
+  PACKS         │     feature        built-in  feature/<slug> branches, Conventional Co… │
+  STANDARDS     │     ticket         built-in  <TICKET>/<slug> branches, "TICKET: subje… │
+▌ CONVENTIONS   │     personal       built-in  <user>/<slug> branches, free-form commits │
+  WORKFLOWS     │                                                                        │
+  AUTOPILOTS    │ PREVIEW default (in use)                                               │
+  MARKETPLACE   │   branch    task/login-timeout                                         │
+                │   worktree  .dhi/tasks/login-timeout/api                               │
                 │   commit    retry the token refresh                                    │
                 │   PR title  Fix login timeout                                          │
                 │   PR body   Created from DHI worktree `task/login-timeout`.            │
@@ -21,6 +22,5 @@
                 │   the slug.                                                            │
                 │                                                                        │
                 │                                                                        │
-                │                                                                        │
-                │ enter use • n new from selected • e edit • d delete • [ ] sections • … │
+                │ enter use • p learn from example • g learn from git • n new from sele… │
                 ╰────────────────────────────────────────────────────────────────────────╯

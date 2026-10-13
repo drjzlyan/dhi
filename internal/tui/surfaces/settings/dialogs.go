@@ -41,6 +41,8 @@ const (
 	dlgConvDelete
 	dlgTeamCompose
 	dlgProject
+	dlgConvExample
+	dlgConvLearn
 	dlgDisplay // read-only: profile, standards preview, last-run info
 )
 
@@ -114,6 +116,8 @@ func (m *Model) submitDialog() {
 		m.submitTeamCompose()
 	case dlgProject:
 		m.submitBrief()
+	case dlgConvExample:
+		m.submitExample()
 	case dlgPackInstall:
 		m.submitPackInstall()
 	case dlgStdLayer:
@@ -142,6 +146,8 @@ func (m *Model) submitConfirmDialog() {
 	switch m.dkind {
 	case dlgConvDelete:
 		m.deleteTemplate(target)
+	case dlgConvLearn:
+		m.saveLearned()
 	case dlgTeamDelete:
 		if err := m.d.Org.DeleteTeam(target); err != nil {
 			m.dlg.Lines = append(m.dlg.Lines[:2], theme.DangerText().Render(err.Error()))

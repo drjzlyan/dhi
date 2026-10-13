@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/drjzlyan/dhi/internal/ansi"
+	"github.com/drjzlyan/dhi/internal/conventions"
 	"github.com/drjzlyan/dhi/internal/settings"
 	"github.com/drjzlyan/dhi/internal/testutil/golden"
 )
@@ -137,5 +138,60 @@ func TestCoAuthorStaysOutOfTheTeamFile(t *testing.T) {
 	b, err := os.ReadFile(settings.ConventionsPath(m.savePath))
 	if err != nil || !strings.Contains(string(b), "dana@example.com") {
 		t.Fatalf("co-author not in the user file: %v\n%s", err, b)
+	}
+}
+
+func TestConventionsLearnFromExample(t *testing.T) {
+	m, ws, _, _ := agentSurface(t)
+	m.sec = secConventions
+	feed(m, "p")
+	if m.dkind != dlgConvExample {
+		t.Fatal("p did not open the example form")
+	}
+	feed(m, "enter")
+	if m.dform == nil || !strings.Contains(m.dform.Err, "paste a commit") {
+		t.Fatalf("empty example accepted: %+v", m.dform)
+	}
+	for _, r := range `feat(api): add login\n\nWhy: users asked.\nRisk: low` {
+		m.HandleKey(string(r))
+	}
+	feed(m, "enter")
+	if m.dkind != dlgConvLearn {
+		t.Fatal("no confirmation after the example")
+	}
+	v := ansi.Strip(m.View())
+	if !strings.Contains(v, "Conventional Commit") || !strings.Contains(v, "Why: users asked. ⏎ Risk: low") {
+		t.Fatalf("confirmation:\n%s", v)
+	}
+	golden.Snapshot(t, "settings_conventions_learn", m.View())
+	feed(m, "enter")
+	c := m.cfg.Conventions
+	if c.Commit.Format != conventions.FormatConventional || c.Commit.Body != "Why: users asked.\nRisk: low" {
+		t.Fatalf("not applied: %+v", c.Commit)
+	}
+	data, _ := os.ReadFile(filepath.Join(ws.Root, ".dhi", settings.ConventionsFile))
+	if !strings.Contains(string(data), `format = "conventional"`) || !strings.Contains(string(data), "Risk: low") {
+		t.Fatalf("not saved:\n%s", data)
+	}
+}
+
+func TestConventionsLearnFromGit(t *testing.T) {
+	m, _, _, _ := agentSurface(t)
+	m.sec = secConventions
+	feed(m, "g")
+	if !strings.Contains(m.flash, "unavailable") {
+		t.Fatalf("flash %q", m.flash)
+	}
+	m.d.LearnConventions = func() conventions.Inference { return conventions.Inference{} }
+	feed(m, "g")
+	if !strings.Contains(m.flash, "not enough history") {
+		t.Fatalf("flash %q", m.flash)
+	}
+	m.d.LearnConventions = func() conventions.Inference {
+		return conventions.InferCommits([]string{"PROJ-1: a", "PROJ-2: b", "PROJ-3: c", "PROJ-4: d", "PROJ-5: e"})
+	}
+	feed(m, "g", "enter")
+	if c := m.cfg.Conventions.Commit; c.Format != conventions.FormatTicket || c.Subject != "{ticket}: {subject}" {
+		t.Fatalf("not applied: %+v", c)
 	}
 }

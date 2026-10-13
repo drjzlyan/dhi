@@ -1,0 +1,26 @@
+  CONFIG        ╭─ › conventions ────────────────────────────────────────────────────────╮
+  PROJECT       │ Naming templates: task branches, worktree folders, commit subjects, PR │
+  AGENTS        │ title and description. Enter uses one; n copies it into a template you │
+  BRAIN         │ can edit; p learns your style from a commit or PR you paste, g from    │
+  PROPOSALS     │ your git history.                                                      │
+  LIBRARY       │                                                                        │
+  TEAMS     ╭─ › learned from your example ──────────────────────────────────╮           │
+  PACKS     │ • subject is a Conventional Commit                             │           │
+            │ • commit bodies follow your example's structure                │           │
+▌           │                                                                │           │
+            │   branch    task/login-timeout                                 │           │
+            │   worktree  .dhi/tasks/login-timeout/api                       │           │
+            │   commit    fix: retry the token refresh                       │           │
+            │   PR title  Fix login timeout                                  │           │
+            │   PR body   Created from DHI worktree `task/login-timeout`.    │           │
+            │   body      Why: users asked. ⏎ Risk: low                      │           │
+            │                                                                │           │
+            │ enter save · esc cancel                                        │           │
+            ╰────────────────────────────────────────────────────────────────╯           │
+                │   {assignee} {type} {subject}. The ticket is the first match of        │
+                │   [A-Z][A-Z0-9]+-\d+ in the card's slug, title, epic or labels, else   │
+                │   the slug.                                                            │
+                │                                                                        │
+                │                                                                        │
+                │ enter use • p learn from example • g learn from git • n new from sele… │
+                ╰────────────────────────────────────────────────────────────────────────╯

@@ -23,6 +23,7 @@ type Template struct {
 		Format        string `toml:"format,omitempty"`
 		TicketPattern string `toml:"ticket_pattern,omitempty"`
 		Subject       string `toml:"subject,omitempty"`
+		Body          string `toml:"body,omitempty"`
 	} `toml:"commit"`
 	PR PR `toml:"pr"`
 }
@@ -107,6 +108,7 @@ func (c *Config) Apply(t Template) {
 	set(&c.Commit.Format, t.Commit.Format)
 	set(&c.Commit.TicketPattern, t.Commit.TicketPattern)
 	c.Commit.Subject = t.Commit.Subject // "" is a real choice: free subjects
+	c.Commit.Body = t.Commit.Body       // and "" a body that just explains why
 	set(&c.PR.Title, t.PR.Title)
 	set(&c.PR.Body, t.PR.Body)
 }
@@ -126,6 +128,7 @@ func (c *Config) Activate(name string) error {
 func (c Config) Snapshot() Template {
 	t := Template{Branch: c.Branch, Worktree: c.Worktree, PR: c.PR}
 	t.Commit.Format, t.Commit.TicketPattern, t.Commit.Subject = c.Commit.Format, c.Commit.TicketPattern, c.Commit.Subject
+	t.Commit.Body = c.Commit.Body
 	return t
 }
 

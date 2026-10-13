@@ -1296,3 +1296,42 @@ func TestStyleStepStartsFromTheSavedProfile(t *testing.T) {
 		t.Fatalf("values %v", v)
 	}
 }
+
+// ---- conventions learned and templates (F-082) ----
+
+func TestConventionsStepPreselectsWhatWasLearned(t *testing.T) {
+	f := newFixture(t, true)
+	f.env.LearnConventions = func() conventions.Inference {
+		return conventions.InferCommits([]string{"feat: a", "fix: b", "docs: c", "feat: d", "chore: e"})
+	}
+	m := f.wizard()
+	key(m, "enter", "enter") // welcome, identity
+	v := plain(m)
+	if !strings.Contains(v, "learned from your repo") || !strings.Contains(v, "[conventional]") || !strings.Contains(v, "[detected]") {
+		t.Fatalf("detection not shown:\n%s", v)
+	}
+	golden.Snapshot(t, "wizard_conventions_learned", v)
+	key(m, "enter")
+	if f.savedConv == nil || f.savedConv.Commit.Format != conventions.FormatConventional {
+		t.Fatalf("learned format not saved: %+v", f.savedConv)
+	}
+}
+
+func TestConventionsStepTemplateSyncsTheFields(t *testing.T) {
+	f := newFixture(t, true)
+	m := f.wizard()
+	key(m, "enter", "enter")
+	for i := 0; i < fieldTemplate; i++ {
+		key(m, "tab")
+	}
+	key(m, "right", "right", "right") // current → default → feature → ticket
+	v := plain(m)
+	if !strings.Contains(v, "[ticket]") || !strings.Contains(v, "{ticket}/{slug}") {
+		t.Fatalf("template did not sync the fields:\n%s", v)
+	}
+	key(m, "enter")
+	c := f.savedConv
+	if c == nil || c.Active != "ticket" || c.Commit.Format != conventions.FormatTicket || c.Branch.Task != "{ticket}/{slug}" || c.Commit.Subject != "{ticket}: {subject}" {
+		t.Fatalf("saved %+v", c)
+	}
+}

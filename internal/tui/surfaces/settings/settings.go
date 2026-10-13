@@ -73,6 +73,7 @@ type Model struct {
 	form    agentForm // legacy agent modal (create/edit/source) — P5 folds into kit dialogs
 	dlg     *kit.Modal
 	dform   *kit.Form
+	learned *conventions.Inference // pending learned conventions (F-082)
 	dkind   dialogKind
 	dtarget string
 
@@ -171,6 +172,9 @@ type Deps struct {
 	// the LIBRARY section and the agent form pickers. Nil degrades to
 	// a named empty section.
 	Library *library.Store
+	// LearnConventions infers the team's commit and PR style from git
+	// history and the repo's PR template (F-082); nil hides g.
+	LearnConventions func() conventions.Inference
 	// Reload swaps the live runtime roster after a successful crew
 	// write; nil means changes apply on next launch (named in flash).
 	Reload func() error
@@ -1350,7 +1354,7 @@ func (m *Model) sectionHints() []string {
 	case secStandards:
 		sec = []string{"w workspace", "t team", "g agent", "v preview"}
 	case secConventions:
-		sec = []string{"enter use", "n new from selected", "e edit", "d delete"}
+		sec = []string{"enter use", "p learn from example", "g learn from git", "n new from selected", "e edit", "d delete"}
 	case secWorkflows:
 		sec = []string{"n new", "d default", "v preview"}
 	case secLibrary:

@@ -344,6 +344,7 @@ func runTUI() (relaunch bool) {
 			settingsDeps.Forge = forge.Open(ws.Root)      // F-069 PROPOSALS
 			settingsDeps.SetProps = setprop.Open(ws.Root) // F-070 settings proposals
 			settingsDeps.UserConfig, settingsDeps.WorkspaceConfig = userCfg, wsCfg
+			settingsDeps.LearnConventions = func() conventions.Inference { return learnConventions(gitRunner, memberDirs(ws)) }
 			if kb, kerr := knowledge.Open(ws, knowledge.Review, rgSearcher); kerr == nil {
 				settingsDeps.ShareLesson = func(l lessons.Lesson) (string, error) {
 					author := l.Agent
@@ -742,6 +743,20 @@ func newSetupEnv(cwd string, ws *workspace.Workspace, userCfg, toolRoot string,
 			return starter.Result{}, err
 		}
 		return starter.Apply(w, o, library.Open(w), tpl)
+	}
+	env.LearnConventions = func() conventions.Inference {
+		if env.Root == "" {
+			return conventions.Inference{}
+		}
+		w, err := workspace.Load(env.Root)
+		if err != nil {
+			return conventions.Inference{}
+		}
+		var r *gitcore.Runner
+		if toolRoot != "" {
+			r, _ = gitcore.ResolveRunner(toolchain.New(toolRoot))
+		}
+		return learnConventions(r, memberDirs(w))
 	}
 	env.DetectBrief = func() brief.Brief {
 		var dirs []string
@@ -1559,4 +1574,36 @@ func composeOptions(w *workspace.Workspace, o *agentkitOrg.Org) starter.Options 
 		AgentTaken: func(id string) bool { return taken[id] },
 		TeamTaken:  func(slug string) bool { _, ok := o.Team(slug); return ok },
 	}
+}
+
+// memberDirs lists the workspace's member repositories.
+func memberDirs(ws *workspace.Workspace) []string {
+	var dirs []string
+	for _, mb := range ws.Members() {
+		dirs = append(dirs, mb.Path)
+	}
+	return dirs
+}
+
+// learnConventions infers commit and PR style from the members' recent
+// history (hermetic git) and their PR templates (F-082). A nil runner
+// learns from the templates only.
+func learnConventions(r *gitcore.Runner, dirs []string) conventions.Inference {
+	var subjects []string
+	if r != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		for _, d := range dirs {
+			subjects = append(subjects, r.Subjects(ctx, d, 50)...)
+		}
+	}
+	inf := conventions.InferCommits(subjects)
+	for _, d := range dirs {
+		if t := conventions.PRTemplate(d); t != "" {
+			inf.PRBody = t
+			inf.Evidence = append(inf.Evidence, "PR descriptions use "+filepath.Base(d)+"'s pull request template")
+			break
+		}
+	}
+	return inf
 }

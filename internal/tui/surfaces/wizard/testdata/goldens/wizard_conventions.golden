@@ -9,7 +9,6 @@
 
 
 
-
            DHI setup
            ✓ welcome › – workspace › ✓ identity › ◐ conventions › ○ done
            
@@ -21,7 +20,9 @@
            co-author  
            copyright  
            license    
+           template   [current]
            
+           template: a ready-made naming scheme (branches, commit subjects, PR text).
            co-author: "Name <email>", added to commits as a Co-Authored-By trailer.
            copyright: the holder named in new-file headers; license is an SPDX id (MIT).
            

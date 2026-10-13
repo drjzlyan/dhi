@@ -65,6 +65,9 @@ type Commit struct {
 	// commit form starts from (F-075), e.g. "{ticket}: {subject}".
 	// Placeholders: {ticket}, {slug}, {type}, {subject}. "" = free.
 	Subject string `toml:"subject,omitempty"`
+	// Body is an example commit body (F-082): agents follow its
+	// structure and style, not its words. "" = a body that explains why.
+	Body string `toml:"body,omitempty"`
 }
 
 // Copyright configures the header agents put on new source files.
@@ -369,6 +372,12 @@ func (c Config) Guidance() string {
 	}
 	if c.Commit.Subject != "" {
 		fmt.Fprintf(&b, "- Commit subjects take the shape %q (the ticket is the task's ticket key, else its slug).\n", c.Commit.Subject)
+	}
+	if body := strings.TrimSpace(c.Commit.Body); body != "" {
+		b.WriteString("- Commit bodies follow the structure and style of this example (its sections and tone, not its words):\n")
+		for _, l := range strings.Split(body, "\n") {
+			b.WriteString("    " + l + "\n")
+		}
 	}
 	fmt.Fprintf(&b, "- Keep commit subjects within %d characters.\n", c.Commit.MaxSubject)
 	if c.Commit.CoAuthorEnabled {

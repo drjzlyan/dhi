@@ -66,6 +66,9 @@ type Env struct {
 
 	Conventions     conventions.Config
 	SaveConventions func(root string, c conventions.Config) error // root "" = user scope
+	// LearnConventions infers commit/PR style from the repo (F-082); it
+	// seeds the step only while the conventions are uncustomised.
+	LearnConventions func() conventions.Inference
 
 	// Team step (F-045). RosterCount nil = unknown (offer the step);
 	// ApplyTeam nil hides it. DetectCLIs maps a CLI name to its version

@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 
@@ -181,4 +182,20 @@ func parseWorktreePorcelain(out string) []Worktree {
 	}
 	flush()
 	return wts
+}
+
+// Subjects returns up to n recent commit subjects in dir, newest first,
+// merges excluded (F-082). An empty or missing repo yields none.
+func (r *Runner) Subjects(ctx context.Context, dir string, n int) []string {
+	out, _, err := r.Run(ctx, dir, "log", "--no-merges", "--format=%s", "-n", strconv.Itoa(n))
+	if err != nil {
+		return nil
+	}
+	var subs []string
+	for _, l := range strings.Split(out, "\n") {
+		if l = strings.TrimSpace(l); l != "" {
+			subs = append(subs, l)
+		}
+	}
+	return subs
 }

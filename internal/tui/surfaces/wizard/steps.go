@@ -317,7 +317,16 @@ type conventionsStep struct {
 	base
 	env  *Env
 	form *kit.Form
+	// start is the config the form edits: the saved conventions, plus
+	// what was learned from the repo when nothing was customised (F-082).
+	start    conventions.Config
+	evidence []string
+	tplIdx   int
 }
+
+// fieldTemplate is the naming-template toggle, last so the other
+// fields keep their places.
+const fieldTemplate = 5
 
 func (*conventionsStep) ID() string    { return "conventions" }
 func (*conventionsStep) Title() string { return "conventions" }
@@ -332,7 +341,34 @@ func indexOf(list []string, v string) int {
 }
 
 func (s *conventionsStep) Enter() tea.Cmd {
-	c := s.env.Conventions
+	s.start, s.evidence, s.tplIdx = s.env.Conventions, nil, 0
+	if s.env.LearnConventions != nil && s.start.Active == "" &&
+		reflect.DeepEqual(s.start.Commit, conventions.Defaults().Commit) {
+		if inf := s.env.LearnConventions(); !inf.Empty() {
+			s.start.Learn(inf)
+			s.evidence = inf.Evidence
+		}
+	}
+	s.build(s.start, 0, nil)
+	return nil
+}
+
+// templateChoices is the toggle: the starting rules, then the built-ins.
+func (s *conventionsStep) templateChoices() []string {
+	first := "current"
+	if len(s.evidence) > 0 {
+		first = "detected"
+	}
+	out := []string{first}
+	for _, b := range conventions.Builtins() {
+		out = append(out, b.Name)
+	}
+	return out
+}
+
+// build (re)creates the form from c, keeping the text fields' values
+// (keep, when set) and the cursor.
+func (s *conventionsStep) build(c conventions.Config, cur int, keep []string) {
 	branches := branchPresets
 	bi := indexOf(branches, c.Branch.Task)
 	if bi < 0 { // a hand-edited pattern stays selectable
@@ -347,14 +383,30 @@ func (s *conventionsStep) Enter() tea.Cmd {
 	if c.Copyright.Enabled {
 		holder = c.Copyright.Holder
 	}
+	license := c.Copyright.License
+	if keep != nil {
+		co, holder, license = keep[2], keep[3], keep[4]
+	}
 	s.form = kit.NewForm("conventions",
 		kit.NewToggleField("commits", commitFormats, indexOf(commitFormats, c.Commit.Format)),
 		kit.NewToggleField("branch", branches, bi),
 		kit.NewTextField("co-author", co),
 		kit.NewTextField("copyright", holder),
-		kit.NewTextField("license", c.Copyright.License),
+		kit.NewTextField("license", license),
+		kit.NewToggleField("template", s.templateChoices(), s.tplIdx),
 	)
-	return nil
+	for s.form.Cur() != cur {
+		s.form.HandleKey("tab")
+	}
+}
+
+// templated is the start config with the chosen template applied.
+func (s *conventionsStep) templated() conventions.Config {
+	c := s.start
+	if s.tplIdx > 0 {
+		_ = c.Activate(s.templateChoices()[s.tplIdx])
+	}
+	return c
 }
 
 func (s *conventionsStep) HandleKey(key string) Action {
@@ -364,6 +416,11 @@ func (s *conventionsStep) HandleKey(key string) Action {
 	case kit.FormSubmit:
 		return Next
 	}
+	// Picking a template shows its commit format and branch above.
+	if i := s.form.ToggleIndex(fieldTemplate); i != s.tplIdx {
+		s.tplIdx = i
+		s.build(s.templated(), fieldTemplate, s.form.Values())
+	}
 	return Stay
 }
 
@@ -372,7 +429,7 @@ func (s *conventionsStep) CapturesText() bool { return true }
 // next derives the Config the form describes from the current one.
 func (s *conventionsStep) next() conventions.Config {
 	v := s.form.Values()
-	c := s.env.Conventions
+	c := s.templated()
 	c.Commit.Format = v[0]
 	c.Branch.Task = v[1]
 	c.Commit.CoAuthor = strings.TrimSpace(v[2])
@@ -417,7 +474,14 @@ func (s *conventionsStep) View(w, f int) []string {
 		dim("←/→ cycles · leave co-author and copyright empty to keep them off."), "",
 	}
 	out = append(out, formLines(s.form)...)
+	if len(s.evidence) > 0 {
+		out = append(out, "", ok("learned from your repo"))
+		for _, e := range s.evidence {
+			out = append(out, dim("  "+e))
+		}
+	}
 	out = append(out, "",
+		dim("template: a ready-made naming scheme (branches, commit subjects, PR text)."),
 		dim("co-author: \"Name <email>\", added to commits as a Co-Authored-By trailer."),
 		dim("copyright: the holder named in new-file headers; license is an SPDX id (MIT)."))
 	return out

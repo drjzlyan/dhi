@@ -277,14 +277,14 @@ func Known() []string {
 		"conventions.copyright.enabled", "conventions.copyright.holder",
 		"conventions.copyright.license", "conventions.copyright.year",
 		"conventions.pr.title", "conventions.pr.body",
-		"conventions.worktree.task", "conventions.commit.subject", "conventions.active"}
+		"conventions.worktree.task", "conventions.commit.subject", "conventions.commit.body", "conventions.active"}
 }
 
 // templateFields are the keys a [conventions.templates.<name>] table may
 // carry (F-075).
 var templateFields = map[string]bool{
 	"description": true, "branch.task": true, "branch.review": true, "worktree.task": true,
-	"commit.format": true, "commit.ticket_pattern": true, "commit.subject": true,
+	"commit.format": true, "commit.ticket_pattern": true, "commit.subject": true, "commit.body": true,
 	"pr.title": true, "pr.body": true,
 }
 
@@ -570,6 +570,8 @@ type fileLayer struct {
 			CoAuthorEnabled *bool `toml:"co_author_enabled"`
 			// A pointer, so a layer can set free subjects ("") explicitly.
 			Subject *string `toml:"subject"`
+			// Likewise the body example (F-082).
+			Body *string `toml:"body"`
 		} `toml:"commit"`
 		Copyright struct {
 			Enabled *bool  `toml:"enabled"`
@@ -672,6 +674,7 @@ func (f fileLayer) mergeInto(dst *Config) {
 	setStr(&d.Branch.Review, cv.Branch.Review)
 	setStr(&d.Worktree.Task, cv.Worktree.Task)
 	setPtr(&d.Commit.Subject, cv.Commit.Subject)
+	setPtr(&d.Commit.Body, cv.Commit.Body)
 	for name, t := range cv.Templates {
 		if d.Templates == nil {
 			d.Templates = map[string]conventions.Template{}

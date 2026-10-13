@@ -68,6 +68,20 @@ func (m *Model) conventionsKey(key string) bool {
 			return true
 		}
 		m.openTemplateDialog("edit template "+name, dlgConvEdit, name, t)
+	case "p":
+		m.openFormDialog("learn from an example", dlgConvExample, "",
+			kit.NewTextField("commit", ""), kit.NewTextField("PR", ""))
+	case "g":
+		if m.d.LearnConventions == nil {
+			m.flash = "learning from git history is unavailable here"
+			return true
+		}
+		inf := m.d.LearnConventions()
+		if inf.Empty() {
+			m.flash = "not enough history to learn from yet — p learns from an example instead"
+			return true
+		}
+		m.confirmLearn("learned from your repo", inf)
 	case "d", "x":
 		name, _, builtin := m.convSelected()
 		if builtin {
@@ -98,6 +112,7 @@ func (m *Model) openTemplateDialog(title string, kind dialogKind, target string,
 		kit.NewToggleField("commit format ", commitFormatChoices, fi),
 		kit.NewTextField("ticket regexp ", t.Commit.TicketPattern),
 		kit.NewTextField("commit subject", t.Commit.Subject),
+		kit.NewTextField("commit body   ", strings.ReplaceAll(t.Commit.Body, "\n", `\n`)),
 		kit.NewTextField("PR title      ", t.PR.Title),
 		kit.NewTextField("PR body       ", strings.ReplaceAll(t.PR.Body, "\n", `\n`)),
 	)
@@ -121,7 +136,8 @@ func (m *Model) submitTemplate() {
 	t.Branch.Task, t.Branch.Review = strings.TrimSpace(v[2]), strings.TrimSpace(v[3])
 	t.Worktree.Task = strings.TrimSpace(v[4])
 	t.Commit.Format, t.Commit.TicketPattern, t.Commit.Subject = v[5], strings.TrimSpace(v[6]), strings.TrimSpace(v[7])
-	t.PR.Title, t.PR.Body = strings.TrimSpace(v[8]), strings.ReplaceAll(strings.TrimSpace(v[9]), `\n`, "\n")
+	t.Commit.Body = strings.ReplaceAll(strings.TrimSpace(v[8]), `\n`, "\n")
+	t.PR.Title, t.PR.Body = strings.TrimSpace(v[9]), strings.ReplaceAll(strings.TrimSpace(v[10]), `\n`, "\n")
 
 	next := m.cfg.Conventions
 	tpls := map[string]conventions.Template{}
@@ -221,7 +237,7 @@ func flatKeys(c conventions.Config, withActive bool) map[string]any {
 	set := map[string]any{
 		"branch.task": c.Branch.Task, "branch.review": c.Branch.Review, "worktree.task": c.Worktree.Task,
 		"commit.format": c.Commit.Format, "commit.ticket_pattern": c.Commit.TicketPattern,
-		"commit.subject": c.Commit.Subject, "pr.title": c.PR.Title, "pr.body": c.PR.Body,
+		"commit.subject": c.Commit.Subject, "commit.body": c.Commit.Body, "pr.title": c.PR.Title, "pr.body": c.PR.Body,
 	}
 	if withActive {
 		set["active"] = c.Active
@@ -248,7 +264,7 @@ func (m *Model) displayConvPath(p string) string {
 func (m *Model) conventionsView(w int) []string {
 	c := m.cfg.Conventions
 	var out []string
-	for _, l := range kit.WrapWords("Naming templates: task branches, worktree folders, commit subjects, PR title and description. Enter uses one; n copies it into a template you can edit.", max(w, 20)) {
+	for _, l := range kit.WrapWords("Naming templates: task branches, worktree folders, commit subjects, PR title and description. Enter uses one; n copies it into a template you can edit; p learns your style from a commit or PR you paste, g from your git history.", max(w, 20)) {
 		out = append(out, theme.TextDim().Render(l))
 	}
 	out = append(out, "")
@@ -308,4 +324,59 @@ func padRight(s string, n int) string {
 		return s + strings.Repeat(" ", n-r)
 	}
 	return s
+}
+
+// submitExample learns from a pasted commit message and/or PR (F-082).
+func (m *Model) submitExample() {
+	v := m.dform.Values()
+	unesc := func(s string) string { return strings.ReplaceAll(strings.TrimSpace(s), `\n`, "\n") }
+	inf := conventions.InferFromExample(unesc(v[0]), unesc(v[1]))
+	if inf.Empty() {
+		m.dform.SetError("paste a commit message, a PR description, or both (\\n for new lines)")
+		return
+	}
+	m.confirmLearn("learned from your example", inf)
+}
+
+// confirmLearn shows what would change; enter saves it.
+func (m *Model) confirmLearn(title string, inf conventions.Inference) {
+	next := m.cfg.Conventions
+	next.Learn(inf)
+	lines := []string{}
+	for _, e := range inf.Evidence {
+		lines = append(lines, "• "+e)
+	}
+	lines = append(lines, "")
+	for _, l := range next.Preview() {
+		lines = append(lines, "  "+l)
+	}
+	if b := strings.TrimSpace(next.Commit.Body); b != "" {
+		lines = append(lines, "  body      "+strings.ReplaceAll(b, "\n", " ⏎ "))
+	}
+	lines = append(lines, "", theme.Hint().Render("enter save · esc cancel"))
+	m.learned = &inf
+	m.dform = nil
+	m.dlg = &kit.Modal{Title: title, Lines: lines, Width: min(max(m.width-24, 40), 96)}
+	m.dkind = dlgConvLearn
+	m.dtarget = ""
+}
+
+// saveLearned writes the learned rules as the team's conventions.
+func (m *Model) saveLearned() {
+	if m.learned == nil {
+		m.closeDialog()
+		return
+	}
+	next := m.cfg.Conventions
+	next.Learn(*m.learned)
+	set := map[string]any{
+		"commit.format": next.Commit.Format, "commit.ticket_pattern": next.Commit.TicketPattern,
+		"commit.subject": next.Commit.Subject, "commit.max_subject": next.Commit.MaxSubject,
+		"commit.body": next.Commit.Body, "pr.body": next.PR.Body,
+	}
+	if m.patchConventions(next, set, nil, "commit and PR style saved") {
+		m.cfg.Conventions = next
+	}
+	m.learned = nil
+	m.closeDialog()
 }
