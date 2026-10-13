@@ -1,0 +1,26 @@
+  CONFIG        ╭─ › teams ──────────────────────────────────────────────────────────────╮
+  AGENTS        │ (no teams — "a" adds employees by role, "n" creates an empty team)     │
+  BRAIN         │                                                                        │
+  PROPOSALS     │                                                                        │
+  LIBRARY       │                                                                        │
+▌ TEAMS         │                                                                        │
+  PACKS         │                                                                        │
+  STANDARDS     │  ╭─ › add employees by role ───────────────────────╮                   │
+  CONVENTIONS   │  │ into       [new team(s)]                        │                   │
+  WORKFLOWS     │  │ leads      [2]                                  │                   │
+  AUTOPILOTS    │  │ fullstack ▌[3]                                  │                   │
+  MARKETPLACE   │  │ frontend   [0]                                  │                   │
+                │  │ backend    [0]                                  │                   │
+                │  │ testers    [0]                                  │                   │
+                │  │ PMs        [0]                                  │                   │
+                │  │ designers  [0]                                  │                   │
+                │  │ devops     [0]                                  │                   │
+                │  │ tab field · ←/→ cycle · enter save · esc cancel │                   │
+                │  ╰─────────────────────────────────────────────────╯                   │
+                │                                                                        │
+                │                                                                        │
+                │                                                                        │
+                │                                                                        │
+                │                                                                        │
+                │ a add by role • n new • e edit • x delete • [ ] sections • ctrl+s wri… │
+                ╰────────────────────────────────────────────────────────────────────────╯

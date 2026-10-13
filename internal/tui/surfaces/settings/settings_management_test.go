@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/drjzlyan/dhi/internal/agentkit/library"
 	"github.com/drjzlyan/dhi/internal/agentkit/org"
 	"github.com/drjzlyan/dhi/internal/ansi"
 	"github.com/drjzlyan/dhi/internal/autopilot"
@@ -190,4 +191,78 @@ func TestPacksSectionGolden(t *testing.T) {
 	m, _, _, _ := agentSurface(t)
 	m.sec = secPacks
 	golden.Snapshot(t, "settings_packs", m.View())
+}
+
+func TestTeamsAddByRoleCreatesOneTeamPerLead(t *testing.T) {
+	m, ws, o, reloads := agentSurface(t)
+	m.d.Library = library.Open(ws)
+	m.sec = secTeams
+	feed(m, "a")
+	if m.dkind != dlgTeamCompose || m.dform == nil {
+		t.Fatal("a did not open the compose dialog")
+	}
+	feed(m, "tab", "right", "right")          // leads 2
+	feed(m, "tab", "right", "right", "right") // fullstack 3
+	golden.Snapshot(t, "settings_teams_compose", m.View())
+	feed(m, "enter")
+	if m.dlg != nil {
+		t.Fatalf("dialog stayed open: %s", m.dform.Err)
+	}
+	if len(o.Teams()) != 2 || *reloads != 1 {
+		t.Fatalf("teams %+v reloads %d", o.Teams(), *reloads)
+	}
+	roster, _ := org.LoadRoster(ws)
+	if len(roster) != 5 {
+		t.Fatalf("%d agents", len(roster))
+	}
+	if !strings.Contains(ansi.Strip(m.View()), "added atlas") {
+		t.Fatalf("flash missing:\n%s", ansi.Strip(m.View()))
+	}
+}
+
+func TestTeamsAddByRoleIntoExistingTeam(t *testing.T) {
+	m, ws, o, _ := agentSurface(t)
+	m.d.Library = library.Open(ws)
+	writeRosterAgent(t, ws.Root, "atlas")
+	if err := o.CreateTeam("core", "atlas", []string{"atlas"}); err != nil {
+		t.Fatal(err)
+	}
+	m.sec = secTeams
+	feed(m, "a", "right") // into: core
+	for i := 0; i < 5; i++ {
+		feed(m, "tab")
+	}
+	feed(m, "right") // testers 1
+	feed(m, "enter")
+	if m.dlg != nil {
+		t.Fatalf("dialog stayed open: %s", m.dform.Err)
+	}
+	tm, _ := o.Team("core")
+	if len(tm.Members) != 2 || tm.Lead != "atlas" {
+		t.Fatalf("core = %+v", tm)
+	}
+	for _, id := range tm.Members {
+		if id == "atlas" {
+			continue
+		}
+		if id != "forge" {
+			t.Fatalf("new member %q (atlas is taken, forge is next)", id)
+		}
+	}
+}
+
+func TestTeamsAddByRoleRefusesNothingAndLeadsIntoATeam(t *testing.T) {
+	m, ws, o, _ := agentSurface(t)
+	m.d.Library = library.Open(ws)
+	m.sec = secTeams
+	feed(m, "a", "enter")
+	if m.dlg == nil || !strings.Contains(m.dform.Err, "at least one") {
+		t.Fatalf("empty compose accepted: %+v", m.dform)
+	}
+	feed(m, "esc")
+	_ = o.CreateTeam("core", "you", nil)
+	feed(m, "a", "right", "tab", "right", "enter") // into core, leads 1
+	if m.dlg == nil || !strings.Contains(m.dform.Err, "leads start their own team") {
+		t.Fatalf("lead into a team accepted: %+v", m.dform)
+	}
 }

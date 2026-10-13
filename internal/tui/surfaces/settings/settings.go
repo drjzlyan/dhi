@@ -1205,7 +1205,10 @@ func (m *Model) View() string {
 	switch {
 	case m.dlg != nil:
 		// Dialogs overlay the panel over a dimmed backdrop (F-024),
-		// never replace its content.
+		// never replace its content. A form dialog's body is its form.
+		if m.dform != nil {
+			m.dlg.Lines = m.dform.View()
+		}
 		view = kit.Overlay(strings.Split(view, "\n"), m.dlg.View(), w, h)
 	case m.form.open:
 		// The legacy agent form rides the same overlay system.
@@ -1295,7 +1298,7 @@ func (m *Model) sectionHints() []string {
 	case secProposals:
 		sec = []string{"v view", "y approve", "n reject", "x archive"}
 	case secTeams:
-		sec = []string{"n new", "e edit", "x delete"}
+		sec = []string{"a add by role", "n new", "e edit", "x delete"}
 	case secPacks:
 		sec = []string{"i install", "x uninstall"}
 	case secStandards:

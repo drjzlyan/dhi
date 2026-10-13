@@ -1,9 +1,11 @@
 package settings
 
 import (
+	"strconv"
 	"strings"
 
 	"github.com/drjzlyan/dhi/internal/agentkit/org"
+	"github.com/drjzlyan/dhi/internal/agentkit/starter"
 	"github.com/drjzlyan/dhi/internal/tui/kit"
 	"github.com/drjzlyan/dhi/internal/tui/theme"
 )
@@ -57,6 +59,20 @@ func (m *Model) teamsKey(key string) bool {
 			kit.NewTextField("name", t.Name),
 			kit.NewToggleField("lead", m.leadChoices(t.Lead), leadIx),
 			kit.NewTextField("members", strings.Join(t.Members, ", ")))
+		return true
+	case "a":
+		if m.d.Org == nil || m.d.WS == nil || m.d.Library == nil {
+			return false
+		}
+		into := []string{newTeams}
+		for _, t := range rows {
+			into = append(into, t.Name)
+		}
+		fields := []kit.Field{kit.NewToggleField("into", into, 0)}
+		for _, sl := range starter.Slots {
+			fields = append(fields, kit.NewToggleField(sl.Label, countChoices, 0))
+		}
+		m.openFormDialog("add employees by role", dlgTeamCompose, "", fields...)
 		return true
 	case "x", "d":
 		if m.d.Org == nil || m.teamCur >= len(rows) {
@@ -116,6 +132,59 @@ func (m *Model) submitTeam() {
 	m.flash = "team " + slug + " saved"
 }
 
+// newTeams is the compose form's "leads start new teams" choice (F-079).
+const newTeams = "new team(s)"
+
+var countChoices = []string{"0", "1", "2", "3", "4", "5", "6", "7", "8", "9"}
+
+// submitTeamCompose creates employees from role counts: new teams (one
+// per lead, or one led by you) or added to an existing team.
+func (m *Model) submitTeamCompose() {
+	f := m.dform
+	vals := f.Values()
+	c := starter.Counts{}
+	for i, sl := range starter.Slots {
+		if n, err := strconv.Atoi(vals[1+i]); err == nil && n > 0 {
+			c[sl.Role] = n
+		}
+	}
+	opt := starter.Options{
+		AgentTaken: m.agentTaken(),
+		TeamTaken:  func(s string) bool { _, ok := m.d.Org.Team(s); return ok },
+	}
+	if vals[0] != newTeams {
+		opt.Into = vals[0]
+	}
+	tpls, err := starter.Compose(c, opt)
+	if err != nil {
+		f.SetError(err.Error())
+		return
+	}
+	res, err := starter.ApplyAll(m.d.WS, m.d.Org, m.d.Library, tpls)
+	if err != nil {
+		f.SetError(err.Error())
+		return
+	}
+	var created []string
+	for _, r := range res {
+		created = append(created, r.Created...)
+	}
+	m.closeDialog()
+	m.afterCrewWrite(nil, "added "+strings.Join(created, ", "), "")
+}
+
+// agentTaken marks the roster and archived ids as used.
+func (m *Model) agentTaken() func(string) bool {
+	taken := map[string]bool{}
+	for _, id := range m.rosterIDs() {
+		taken[id] = true
+	}
+	for _, id := range m.d.Org.Archived(m.d.WS) {
+		taken[id] = true
+	}
+	return func(id string) bool { return taken[id] }
+}
+
 func (m *Model) teamsView() []string {
 	if m.d.Org == nil {
 		return []string{theme.TextDim().Render(
@@ -123,7 +192,7 @@ func (m *Model) teamsView() []string {
 	}
 	rows := m.teamRows()
 	if len(rows) == 0 {
-		return []string{theme.TextDim().Render("(no teams — \"n\" to create one)")}
+		return []string{theme.TextDim().Render("(no teams — \"a\" adds employees by role, \"n\" creates an empty team)")}
 	}
 	out := []string{}
 	for i, t := range rows {

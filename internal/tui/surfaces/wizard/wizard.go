@@ -87,7 +87,10 @@ type Env struct {
 	RosterCount      func() int
 	DetectCLIs       func() map[string]string
 	ApplyTeam        func(templateSlug string) (starter.Result, error)
-	SetEngine        func(engine string) error
+	// ComposeTeam creates teams from role counts (F-079); nil hides
+	// the custom choice.
+	ComposeTeam func(c starter.Counts) ([]starter.Result, error)
+	SetEngine   func(engine string) error
 
 	// Persist stores progress (user scope always, workspace scope when
 	// root != ""). nil = progress is not remembered.

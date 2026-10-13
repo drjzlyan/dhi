@@ -735,6 +735,21 @@ func newSetupEnv(cwd string, ws *workspace.Workspace, userCfg, toolRoot string,
 		}
 		return starter.Apply(w, o, library.Open(w), tpl)
 	}
+	env.ComposeTeam = func(c starter.Counts) ([]starter.Result, error) {
+		w, err := workspace.Load(env.Root)
+		if err != nil {
+			return nil, err
+		}
+		o, err := agentkitOrg.Load(env.Root)
+		if err != nil {
+			return nil, err
+		}
+		tpls, err := starter.Compose(c, composeOptions(w, o))
+		if err != nil {
+			return nil, err
+		}
+		return starter.ApplyAll(w, o, library.Open(w), tpls)
+	}
 	// Integrations step: credentials live in the user-level file, the card in
 	// the workspace; both resolve env.Root at call time.
 	env.CredentialsPath, _ = credstore.DefaultPath()
@@ -1485,4 +1500,22 @@ func optionalToolchain() agentkitRuntime.Toolchain {
 		return nil
 	}
 	return &toolchainSeam{mgr: toolchain.New(root)}
+}
+
+// composeOptions marks every roster id (archived included) and team slug
+// as taken, so composed employees never collide with existing ones (F-079).
+func composeOptions(w *workspace.Workspace, o *agentkitOrg.Org) starter.Options {
+	taken := map[string]bool{}
+	if roster, err := agentkitOrg.LoadRoster(w); err == nil {
+		for _, a := range roster {
+			taken[a.ID] = true
+		}
+	}
+	for _, id := range o.Archived(w) {
+		taken[id] = true
+	}
+	return starter.Options{
+		AgentTaken: func(id string) bool { return taken[id] },
+		TeamTaken:  func(slug string) bool { _, ok := o.Team(slug); return ok },
+	}
 }

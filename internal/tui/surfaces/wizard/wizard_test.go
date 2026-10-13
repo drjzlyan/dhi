@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -408,9 +409,10 @@ func TestRerunHidesInapplicableStepsAheadOfYou(t *testing.T) {
 
 type teamFixture struct {
 	*fixture
-	applied []string
-	engines []string
-	roster  int
+	applied  []string
+	composed []starter.Counts
+	engines  []string
+	roster   int
 }
 
 func newTeamFixture(t *testing.T) *teamFixture {
@@ -423,6 +425,10 @@ func newTeamFixture(t *testing.T) *teamFixture {
 	f.env.ApplyTeam = func(slug string) (starter.Result, error) {
 		f.applied = append(f.applied, slug)
 		return starter.Result{Team: slug, Created: []string{"atlas", "forge"}, TeamCreated: true}, nil
+	}
+	f.env.ComposeTeam = func(c starter.Counts) ([]starter.Result, error) {
+		f.composed = append(f.composed, c)
+		return []starter.Result{{Team: "atlas-team", Created: []string{"atlas", "forge"}, TeamCreated: true}}, nil
 	}
 	f.env.SetEngine = func(e string) error { f.engines = append(f.engines, e); return nil }
 	return f
@@ -442,6 +448,7 @@ func (f *teamFixture) toTeam(t *testing.T) *Model {
 func TestTeamStepPreviewsTheTeamAndItsLead(t *testing.T) {
 	f := newTeamFixture(t)
 	m := f.toTeam(t)
+	key(m, "right", "right") // custom → solo → squad
 	v := plain(m)
 	for _, want := range []string{"Squad", "Atlas", "planner", "mentor", "★ lead", "Forge", "coding CLIs found: claude, opencode"} {
 		if !strings.Contains(v, want) {
@@ -464,6 +471,7 @@ func TestTeamStepPreviewsTheTeamAndItsLead(t *testing.T) {
 func TestTeamStepAppliesTeamAndEngineAndRelaunches(t *testing.T) {
 	f := newTeamFixture(t)
 	m := f.toTeam(t)
+	key(m, "right", "right") // → squad
 	key(m, "enter")
 	if strings.Join(f.applied, ",") != "squad" || strings.Join(f.engines, ",") != "cli:claude" {
 		t.Fatalf("applied=%v engines=%v", f.applied, f.engines)
@@ -483,7 +491,7 @@ func TestTeamStepDecideLaterLeavesEngineAlone(t *testing.T) {
 	m := f.toTeam(t)
 	key(m, "tab", "left") // engine: claude → decide later (wraps)
 	key(m, "enter")
-	if len(f.applied) != 1 || len(f.engines) != 0 {
+	if len(f.composed) != 1 || len(f.engines) != 0 {
 		t.Fatalf("applied=%v engines=%v; 'decide later' must not set an engine", f.applied, f.engines)
 	}
 }
@@ -507,6 +515,7 @@ func TestTeamStepApplyFailureKeepsTheStepWithTheError(t *testing.T) {
 		return starter.Result{}, errors.New("agent \"sage\" is archived")
 	}
 	m := f.toTeam(t)
+	key(m, "right", "right") // → squad
 	key(m, "enter")
 	if m.steps[m.idx].ID() != "team" || !strings.Contains(plain(m), "archived") || f.env.Changed {
 		t.Fatalf("failure must keep the step, show why, and not mark changed:\n%s", plain(m))
@@ -535,7 +544,7 @@ func TestTeamStepWithoutAnyCLIExplainsAndStillWorks(t *testing.T) {
 		t.Fatalf("no-CLI guidance missing:\n%s", v)
 	}
 	key(m, "enter")
-	if len(f.applied) != 1 || len(f.engines) != 0 {
+	if len(f.composed) != 1 || len(f.engines) != 0 {
 		t.Fatalf("applied=%v engines=%v", f.applied, f.engines)
 	}
 }
@@ -544,6 +553,43 @@ func TestGoldenTeamStep(t *testing.T) {
 	f := newTeamFixture(t)
 	m := f.toTeam(t)
 	golden.Snapshot(t, "wizard_team", plain(m))
+	key(m, "right", "right") // → squad: count rows hide
+	golden.Snapshot(t, "wizard_team_preset", plain(m))
+}
+
+func TestTeamStepCustomCountsComposeTeams(t *testing.T) {
+	f := newTeamFixture(t)
+	m := f.toTeam(t)
+	v := plain(m)
+	for _, want := range []string{"leads", "fullstack", "testers", "1 team · 4 employees", "Atlas ★", "(fullstack)"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("custom view lacks %q:\n%s", want, v)
+		}
+	}
+	key(m, "tab", "tab", "right")                      // team leads 1 → 2
+	key(m, "tab", "tab", "tab", "tab", "tab", "right") // PMs 0 → 1
+	if v := plain(m); !strings.Contains(v, "2 teams · 6 employees") {
+		t.Fatalf("summary did not follow the counts:\n%s", v)
+	}
+	key(m, "enter")
+	want := starter.Counts{"lead": 2, "fullstack": 2, "tester": 1, "product-manager": 1}
+	if len(f.composed) != 1 || !reflect.DeepEqual(f.composed[0], want) {
+		t.Fatalf("composed %v, want %v", f.composed, want)
+	}
+	if len(f.applied) != 0 || !strings.Contains(strings.Join(f.env.Applied, "|"), "team atlas-team created") {
+		t.Fatalf("applied=%v env=%v", f.applied, f.env.Applied)
+	}
+}
+
+func TestTeamStepTabSkipsCountsForAPreset(t *testing.T) {
+	f := newTeamFixture(t)
+	m := f.toTeam(t)
+	key(m, "right", "right") // squad
+	step := m.steps[m.idx].(*teamStep)
+	key(m, "tab", "tab")
+	if step.form.Cur() != fieldTeam {
+		t.Fatalf("tab landed on hidden field %d", step.form.Cur())
+	}
 }
 
 func TestDefaultEngineFollowsPreferenceNotAlphabet(t *testing.T) {

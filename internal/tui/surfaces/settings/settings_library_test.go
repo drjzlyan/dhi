@@ -52,8 +52,8 @@ func TestLibraryCardPreview(t *testing.T) {
 		t.Fatalf("preview dialog missing: %+v", m.dlg)
 	}
 	out := ansi.Strip(strings.Join(m.dlg.Lines, "\n"))
-	// Roles sort by slug: the first row is "fixer".
-	if !strings.Contains(out, "fixer") || !strings.Contains(out, "reproduce") {
+	// Roles sort by slug: the first row is "backend".
+	if !strings.Contains(out, "backend") || !strings.Contains(out, "APIs") {
 		t.Fatalf("first role card not previewed: %s", out)
 	}
 	feed(m, "esc")

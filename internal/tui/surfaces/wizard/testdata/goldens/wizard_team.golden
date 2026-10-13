@@ -6,24 +6,26 @@
 
 
 
-
-
-         DHI setup
-         ✓ welcome › ✓ identity › ✓ conventions › ◐ team › ○ done
-         
-         Who's on your team?
-         A starter team gives you working employees now; edit or replace any of them later.
-         
-         team      ▌[squad]
-         engine     [claude]
-         coding CLIs found: claude, opencode — ←/→ picks the default engine
-         
-         Squad
-         A planner leads: breaks work down, a fixer builds, a reviewer checks, a
-         scribe documents.
-           Atlas    planner   mentor  ★ lead
-           Forge    fixer     pragmatic
-           Sage     reviewer  meticulous
-           Quill    scribe    friendly
-         
-         enter continue · esc skip step · ctrl+b back · ctrl+x skip setup
+             DHI setup
+             ✓ welcome › ✓ identity › ✓ conventions › ◐ team › ○ done
+             
+             Who's on your team?
+             Pick how many of each role you want, or a ready-made team. Change it any
+             time in Settings → TEAMS.
+             
+             team      ▌[custom]
+             engine     [claude]
+             leads      [1]
+             fullstack  [2]
+             frontend   [0]
+             backend    [0]
+             testers    [1]
+             PMs        [0]
+             designers  [0]
+             devops     [0]
+             coding CLIs found: claude, opencode — ←/→ picks the default engine
+             
+             1 team · 4 employees
+               atlas-team  Atlas ★, Forge (fullstack), Sage (fullstack), Quill (tester)
+             
+             enter continue · esc skip step · ctrl+b back · ctrl+x skip setup

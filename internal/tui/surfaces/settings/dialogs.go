@@ -39,6 +39,7 @@ const (
 	dlgConvNew
 	dlgConvEdit
 	dlgConvDelete
+	dlgTeamCompose
 	dlgDisplay // read-only: profile, standards preview, last-run info
 )
 
@@ -108,6 +109,8 @@ func (m *Model) submitDialog() {
 	switch m.dkind {
 	case dlgTeam:
 		m.submitTeam()
+	case dlgTeamCompose:
+		m.submitTeamCompose()
 	case dlgPackInstall:
 		m.submitPackInstall()
 	case dlgStdLayer:
