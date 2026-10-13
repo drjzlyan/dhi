@@ -61,9 +61,10 @@ func (*welcomeStep) Title() string { return "welcome" }
 var welcomeLines = []string{
 	"Welcome. Let's get DHI ready — about a minute.",
 	"",
-	"We'll check your workspace, your git identity and your team's",
-	"conventions. Everything has a sensible default: skip any step and",
-	"change it later from Settings or the command palette (ctrl+p).",
+	"We'll draft a brief of your project, check your git identity, learn",
+	"how you write and how your team names its work, and hire your team.",
+	"Everything starts on a default read from your repo: press enter to",
+	"keep it, skip any step, and change it later in Settings (ctrl+p).",
 }
 
 func (s *welcomeStep) View(w, f int) []string {

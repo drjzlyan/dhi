@@ -121,7 +121,11 @@ func (s *styleStep) View(w, f int) []string {
 		who = s.env.WhoName
 	}
 	sample := s.profile().Principal(who, "")
-	for _, l := range kit.WrapWords(strings.SplitN(sample.Voice(), "\n", 4)[2], w) {
+	line := strings.SplitN(sample.Voice(), "\n", 4)[2]
+	if who == "" {
+		line = "You read" + strings.TrimPrefix(line, "the user reads")
+	}
+	for _, l := range kit.WrapWords(line, w) {
 		out = append(out, theme.AccentText().Render(l))
 	}
 	return out

@@ -110,7 +110,7 @@ func SuggestIdentity(ctx context.Context, r *Runner, dirs []string, extra ...Sug
 	var out []Suggestion
 	seen := map[Identity]bool{}
 	add := func(s Suggestion) {
-		s.Name, s.Email = strings.TrimSpace(s.Name), strings.TrimSpace(s.Email)
+		s.Name, s.Email = strings.Join(strings.Fields(s.Name), " "), strings.TrimSpace(s.Email)
 		if (s.Name == "" && s.Email == "") || seen[s.Identity] || isBot(s.Identity) {
 			return
 		}

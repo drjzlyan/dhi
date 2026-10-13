@@ -330,19 +330,19 @@ func TestCtrlXSkipsEverythingButStillRelaunchesIfChanged(t *testing.T) {
 func TestReducedMotionShowsWelcomeInFull(t *testing.T) {
 	f := newFixture(t, true)
 	m := f.wizard()
-	if !strings.Contains(plain(m), "change it later from Settings") {
+	if !strings.Contains(plain(m), "change it later in Settings") {
 		t.Fatalf("reduced motion must not hide text behind a clock:\n%s", plain(m))
 	}
 	theme.MotionForTest(t, true)
 	m2 := New(f.env, setup.State{}, DefaultSteps(f.env, "9.9.9")...)
 	m2.Resize(100, 40)
-	if strings.Contains(plain(m2), "Everything has") || strings.Contains(plain(m2), "Welcome.") {
+	if strings.Contains(plain(m2), "Everything starts") || strings.Contains(plain(m2), "Welcome.") {
 		t.Fatalf("with motion the text starts hidden:\n%s", plain(m2))
 	}
 	for i := 0; i < 60; i++ {
 		m2.Update(tickMsg{})
 	}
-	if !strings.Contains(plain(m2), "change it later from Settings") {
+	if !strings.Contains(plain(m2), "change it later in Settings") {
 		t.Fatalf("text never finished revealing:\n%s", plain(m2))
 	}
 }

@@ -2,6 +2,7 @@ package wizard
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -193,7 +194,9 @@ func (s *teamStep) Apply() error {
 			s.form.SetError("team created, but the default engine was not saved: " + err.Error())
 			return err
 		}
-		s.env.Applied = append(s.env.Applied, "default engine cli:"+engine)
+		if line := "default engine cli:" + engine; !slices.Contains(s.env.Applied, line) {
+			s.env.Applied = append(s.env.Applied, line) // the CLI step may have said it already
+		}
 	}
 	return nil
 }
