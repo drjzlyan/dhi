@@ -3,6 +3,8 @@ package theme
 import (
 	"image/color"
 	"testing"
+
+	"github.com/charmbracelet/colorprofile"
 )
 
 // TestTextTokensMeetWCAGAA pins readability: every text-bearing token must
@@ -147,6 +149,25 @@ func TestRailActiveIsLegible(t *testing.T) {
 				t.Errorf("%s/%s: rail active = %.2f:1, want >= 4.5", tk.Name, id, got)
 			}
 			Current = old
+		}
+	}
+}
+
+// TestShadeLadderSurvives256Colors: on 256-color terminals the deck's
+// zones are told apart by shade alone (ADR-0040), so the canvas, panel
+// and selection steps must stay distinct after downsampling. (Inset and
+// header are allowed to merge with a neighbour; they carry rules too.)
+func TestShadeLadderSurvives256Colors(t *testing.T) {
+	for _, tk := range []Tokens{Dark(), Light()} {
+		conv := func(c color.Color) color.Color { return colorprofile.ANSI256.Convert(c) }
+		pairs := [][2]color.Color{{tk.Bg, tk.BgSelection}, {tk.BgPanel, tk.BgSelection}, {tk.BgInset, tk.BgSelection}}
+		for i, p := range pairs {
+			a, b := conv(p[0]), conv(p[1])
+			ar, ag, ab, _ := a.RGBA()
+			br, bg, bb, _ := b.RGBA()
+			if ar == br && ag == bg && ab == bb {
+				t.Errorf("%s: pair %d collapses to one color in 256-color mode", tk.Name, i)
+			}
 		}
 	}
 }

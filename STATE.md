@@ -1,5 +1,29 @@
 # STATE — current position
 
+### Session 57 (M33: command deck UI refresh, branch `m33-ux`)
+
+- User asked for a bold UX/UI pass; chose "bold refresh", all surfaces, the "command deck"
+  direction. Plan `~/.claude/plans/unified-jingling-treasure.md`; F-093, ADR-0040. Branch `m33-ux`
+  from `main` (M32 was already there), committed locally, NOT pushed, no PR.
+- Done: `kit.Panel` renders deck panes by default (`Boxed` keeps frames for boot/repair gates and the
+  wizard card) with identical geometry, so hit origins are unchanged. Bodies grew one row (footers
+  gone: `h-3` → `h-2` in each mainPane). `surfaces.HintProvider` (`Hints() (flash, hints)`) feeds
+  `kit.StatusLine` (ModeBlock, Flash, Hints, Globals, More, `KeyAt` for clicks); gates show SETUP +
+  their own hints (`gatechain.Chain.Hints`). Editor `Hints()` switches by focus zone like
+  StatusContext. `kit.Composer`, `kit.EmptyInline`, `kit.Count`; `theme.DeckRule/DeckDivider/
+  ModeBlock/ModeFill/OnFill/SurfaceText/RailActive`; contrast + 256-color tests.
+- Screenshots: `scripts/screenshots.sh` now warms up (accepts repairs, skips setup) so shots show the
+  app; `DHI_SHOT_THEME/SIZE/OUT`, `DHI_SHOT_FIRSTRUN=1` + `gate|wizard|team`. README assets
+  regenerated.
+- Gotchas:
+  - Tests that looked for hints/flash in `View()` now use `fullView(m)` (workspace `clicks_test.go`,
+    settings `settings_test.go`): View + Hints.
+  - Spinner frames are `· ◦ • • ◦ ·` (braille rendered as tofu in the capture font); `GlyphBusy` is
+    `●` and must never be a frame (bootstrap reduced-motion test).
+  - Light theme: BorderFocused is too pale for text, so use `theme.SurfaceText()` for hue-colored
+    text and `ModeFill()` for solid fills.
+- Deferred (see ROADMAP M33): ship toast, wizard role grid, boot-gate progress, settings rail groups.
+
 ### Session 56 (M32: agents that can ask, branch `m32`)
 
 - Plan: `~/.claude/plans/for-tasks-that-needs-nested-kernighan.md` (7 phases, one commit each);

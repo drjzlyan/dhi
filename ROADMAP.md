@@ -1074,3 +1074,14 @@ Plan: `~/.claude/plans/for-tasks-that-needs-nested-kernighan.md`. Branch `m32` (
 - [x] Live: skill suggestion from a signed registry; global layer across two workspaces; codex; Linux (Docker, bwrap) — round 2 in F-092
 - [x] Live: opencode/cursor/copilot/antigravity under the sandbox (round 3 in F-092)
 
+
+## M33 — Command deck: a bold UI/UX refresh (session 57)
+
+Plan: `~/.claude/plans/unified-jingling-treasure.md`. Branch `m33-ux` (from `main`), one commit per phase. F-093, ADR-0040.
+
+- [x] P0 Spec, ADR, themed/sized screenshot variants (+ warmup, first-run shots), real-workspace shell golden
+- [x] P1–P2 Deck panes (gradient header rule, no boxes), pill tabs, status row owns every hint (HintProvider, whole-hint drop, `? more`, clickable), mode block + attention pill
+- [x] P3 Board cards wrap titles, aligned inbox, shared composer, `kit.Count` plurals, no zero counts, `EmptyInline`
+- [x] P4 First run: wizard card + connected stepper, font-safe pulse, aligned form fields, SETUP status row for gates, splash keycaps
+- [x] P5–P6 Rail/help in the view's hue (AA-tested), 256-color shade ladder test
+- [ ] Deferred: ship toast/celebration, wizard team role grid, boot-gate per-tool progress, settings rail group headers, inbox context-pane action keycaps

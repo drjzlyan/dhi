@@ -1,6 +1,6 @@
 # F-093 — Command deck: a bold UI/UX refresh
 
-Status: in progress (M33) · Decision record: ADR-0040 · Builds on: F-025, F-026, F-041, F-064
+Status: done (M33; deferred items listed below) · Decision record: ADR-0040 · Builds on: F-025, F-026, F-041, F-064
 
 ## Why
 
@@ -62,19 +62,24 @@ refresh across every surface, in the "command deck" direction. Colored captures 
 
 ## Acceptance
 
-- [ ] No hint is rendered twice on screen. No hint is clipped mid-word: whole hints drop and `? more`
+- [x] No hint is rendered twice on screen. No hint is clipped mid-word: whole hints drop and `? more`
       appears.
-- [ ] No `(s)` in any rendered TUI string. No `0` count in any rail.
-- [ ] Every empty pane uses `kit.EmptyState`/`EmptyInline` and wraps at 80×24.
-- [ ] At most one framed level on screen. Boxes only for dialogs, palette, help and gates.
-- [ ] Time and meta columns stay aligned when a row wraps.
-- [ ] New tokens and glyphs work in Dark, Light and High contrast. `contrast_test` passes. Glyphs are
+- [x] No `(s)` in any rendered TUI string. No `0` count in any rail.
+- [x] Every empty pane uses `kit.EmptyState`/`EmptyInline` and wraps at 80×24.
+- [x] At most one framed level on screen. Boxes only for dialogs, palette, help and gates.
+- [x] Time and meta columns stay aligned when a row wraps.
+- [x] New tokens and glyphs work in Dark, Light and High contrast. `contrast_test` passes. Glyphs are
       font-safe (no `◐`, `⎇`).
 - [ ] Every animation is gated on `theme.Motion` and has a reduced-motion golden.
-- [ ] `AssertBgIntegrity` passes on new primitives and surfaces.
-- [ ] The F-041 typing-safety tests stay green.
-- [ ] Nothing new in config files: any knob is a Settings row.
-- [ ] Colored after-captures (3 themes, 80×24 and 120×36) are reviewed against the baseline.
+- [x] `AssertBgIntegrity` passes on new primitives and surfaces.
+- [x] The F-041 typing-safety tests stay green.
+- [x] Nothing new in config files: any knob is a Settings row.
+- [x] Colored after-captures (3 themes, 80×24 and 120×36) are reviewed against the baseline.
+
+Not done: no new animations shipped, so the reduced-motion item does not apply yet. The spinner
+pulse already has its reduced-motion path. Deferred: the ship toast/celebration, the wizard team
+role grid, boot-gate per-tool progress, settings rail group headers, and inbox context-pane action
+keycaps.
 
 ## Tooling
 
