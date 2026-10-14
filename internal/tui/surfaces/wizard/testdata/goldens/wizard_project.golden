@@ -7,24 +7,24 @@
 
 
 
-            DHI setup
-            ✓ welcome › ● project › ○ identity › ○ conventions › ○ done
-            
-            Tell your team about the project.
-            We drafted this from your repo. Fix anything that's off, add how you like to
-            work, or press enter to keep it. Your employees read it on every task;
-            change it any time in Settings → PROJECT.
-            
-            name       widget
-            summary    Turns gears into sprockets.
-            goals      
-            users      
-            stack      Go
-            process   …, open a pull request, address review, merge when checks pass.▌
-            review     
-            testing    Run before saying done: go test ./...
-            never do   
-            
-            \n starts a new line · tab next field
-            
-            enter continue · esc skip step · ctrl+b back · ctrl+x skip setup
+          ╭─ dhi setup ──────────────────────────────────────────────────────────────────╮
+          │ ✓ welcome ── ● project ── ○ identity ── ○ conventions ── ○ done              │
+          │                                                                              │
+          │ Tell your team about the project.                                            │
+          │ We drafted this from your repo. Fix anything that's off, add how you like to │
+          │ work, or press enter to keep it. Your employees read it on every task;       │
+          │ change it any time in Settings → PROJECT.                                    │
+          │                                                                              │
+          │ name       widget                                                            │
+          │ summary    Turns gears into sprockets.                                       │
+          │ goals                                                                        │
+          │ users                                                                        │
+          │ stack      Go                                                                │
+          │ process   …, open a pull request, address review, merge when checks pass.▌   │
+          │ review                                                                       │
+          │ testing    Run before saying done: go test ./...                             │
+          │ never do                                                                     │
+          │                                                                              │
+          │ \n starts a new line · tab next field                                        │
+          │                                                                              │
+          ╰──────────────────────────────────────────────────────────────────────────────╯

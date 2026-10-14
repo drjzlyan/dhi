@@ -906,12 +906,22 @@ func (a *App) buildStatus() *kit.StatusLine {
 	} else {
 		sl.Globals = []string{"^p palette", "? help", fmt.Sprintf("1-%d views", len(a.surfaces)), "tab next", quit}
 	}
-	if !a.gateActive() {
-		if hp, ok := a.Active().(surfaces.HintProvider); ok {
+	if a.gateActive() {
+		// A gate (boot, repair, setup) owns every key: the status row
+		// names it and offers only its own keys and quit — view switches
+		// and attention would promise what the gate will not do.
+		sl.Left = []kit.StatusSegment{kit.ModeBlock("setup")}
+		sl.Globals, sl.More = []string{"^c quit"}, ""
+		if hp, ok := a.gate.(surfaces.HintProvider); ok {
 			sl.Flash, sl.Hints = hp.Hints()
 		}
+		sl.Width = a.width
+		return sl
 	}
-	if sc, ok := a.Active().(statusContext); ok && !a.gateActive() {
+	if hp, ok := a.Active().(surfaces.HintProvider); ok {
+		sl.Flash, sl.Hints = hp.Hints()
+	}
+	if sc, ok := a.Active().(statusContext); ok {
 		zone, mode := sc.StatusContext()
 		if mode != "" {
 			sl.Left = append(sl.Left, kit.StatusSegment{Text: " "}, kit.ModeChip(mode))

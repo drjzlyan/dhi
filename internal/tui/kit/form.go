@@ -296,7 +296,7 @@ func (f *Form) View() []string {
 		if len(fl.Toggle) > 0 {
 			val = mark + "[" + fl.Toggle[fl.sel] + "]"
 		} else if active {
-			val = fl.masked().CursorValue()
+			val = " " + fl.masked().CursorValue() // same column as inactive values
 		} else {
 			val = " " + fl.masked().Value
 		}
@@ -346,6 +346,8 @@ func (f *Form) ViewWidth(w int) []string {
 			val = string(rs[start:cur]) + theme.GlyphCursor + string(rs[cur:max(cur, end)])
 			if start > 0 {
 				val = "…" + val
+			} else {
+				val = " " + val // same column as inactive values (F-093)
 			}
 			val = ClipEllipsis(val, avail)
 		}

@@ -8,23 +8,23 @@
 
 
 
-              DHI setup
-              ✓ welcome › ✓ identity › ✓ conventions › ● team › ○ done
-              
-              Who's on your team?
-              Pick how many of each role you want, or a ready-made team. Change it any
-              time in Settings → TEAMS.
-              
-              team      ▌[squad]
-              engine     [claude]
-              coding CLIs found: claude, opencode — ←/→ picks the default engine
-              
-              Squad
-              A planner leads: breaks work down, a fixer builds, a reviewer checks, a
-              scribe documents.
-                Atlas    planner   mentor  ★ lead
-                Forge    fixer     pragmatic
-                Sage     reviewer  meticulous
-                Quill    scribe    friendly
-              
-              enter continue · esc skip step · ctrl+b back · ctrl+x skip setup
+          ╭─ dhi setup ──────────────────────────────────────────────────────────────────╮
+          │ ✓ welcome ── ✓ identity ── ✓ conventions ── ● team ── ○ done                 │
+          │                                                                              │
+          │ Who's on your team?                                                          │
+          │ Pick how many of each role you want, or a ready-made team. Change it any     │
+          │ time in Settings → TEAMS.                                                    │
+          │                                                                              │
+          │ team      ▌[squad]                                                           │
+          │ engine     [claude]                                                          │
+          │ coding CLIs found: claude, opencode — ←/→ picks the default engine           │
+          │                                                                              │
+          │ Squad                                                                        │
+          │ A planner leads: breaks work down, a fixer builds, a reviewer checks, a      │
+          │ scribe documents.                                                            │
+          │   Atlas    planner   mentor  ★ lead                                          │
+          │   Forge    fixer     pragmatic                                               │
+          │   Sage     reviewer  meticulous                                              │
+          │   Quill    scribe    friendly                                                │
+          │                                                                              │
+          ╰──────────────────────────────────────────────────────────────────────────────╯

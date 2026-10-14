@@ -406,22 +406,32 @@ func (m *Model) View() string {
 	f := m.frame - m.enterFrame
 	body := m.cur().View(w, f)
 
-	var lines []string
-	lines = append(lines, theme.Brand().Render("DHI setup"))
-	lines = append(lines, kit.Stepper(m.stepItems(), w, m.frame))
-	lines = append(lines, "")
+	// One card (F-093): the stepper heads it, the step fills it; the
+	// keys live on the shell status row (Hints).
+	lines := []string{kit.Stepper(m.stepItems(), w, m.frame), ""}
 	lines = append(lines, body...)
-	lines = append(lines, "", theme.Hint().Render(m.keyLine()))
-	return kit.Center(strings.Join(lines, "\n"), m.width, m.height)
+	card := kit.NewPanel("dhi setup", true)
+	card.Boxed = true
+	card.Width = w + 4
+	card.SetContent(append(lines, "")...)
+	if len(lines)+3 > m.height { // a short terminal: no frame, no clip
+		return kit.Center(strings.Join(lines, "\n"), m.width, m.height)
+	}
+	return kit.Center(card.View(), m.width, m.height)
 }
 
-func (m *Model) keyLine() string {
+// Hints implements surfaces.HintProvider (ADR-0040): the wizard's keys
+// on the shell status row, most important first.
+func (m *Model) Hints() (string, []string) {
+	return "", m.keys()
+}
+
+func (m *Model) keys() []string {
 	parts := []string{"enter continue", "esc skip step"}
 	if m.prevApplicable(m.idx-1) >= 0 {
-		parts = append(parts, "ctrl+b back")
+		parts = append(parts, "^b back")
 	}
-	parts = append(parts, "ctrl+x skip setup")
-	return strings.Join(parts, " · ")
+	return append(parts, "^x skip setup")
 }
 
 func (m *Model) stepItems() []kit.StepItem {

@@ -67,12 +67,15 @@ func NoWorkspace(width, height int, version string) string {
 	if width >= 30 && height >= 14 {
 		lines = append(strings.Split(HeroBlock(version), "\n"), "")
 	}
+	key := func(k, what string) string {
+		return theme.Keycap().Render(" "+k+" ") + theme.TextDim().Render("  "+what)
+	}
 	lines = append(lines,
-		theme.TextStyle().Render("This folder is not a DHI workspace yet."),
+		theme.TextStyle().Bold(true).Render("This folder is not a DHI workspace yet."),
+		theme.TextDim().Render("Set it up in about a minute, or start dhi inside a workspace."),
 		"",
-		theme.Hint().Render("press ")+theme.AccentText().Render("ctrl+p")+
-			theme.Hint().Render(" → ")+theme.AccentText().Render("Run setup wizard"),
-		theme.Hint().Render("to make it one, or start dhi inside a workspace"),
+		key("^p", "open the palette → Run setup wizard"),
+		key("^c", "quit"),
 	)
 	return kit.Center(strings.Join(lines, "\n"), width, height)
 }

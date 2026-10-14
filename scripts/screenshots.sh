@@ -16,6 +16,7 @@
 #   DHI_SHOT_THEME=light-paper|high-contrast|dark-futuristic  theme to capture
 #   DHI_SHOT_SIZE=120x36                                     override every size
 #   DHI_SHOT_OUT=/some/dir                                   where PNGs land
+#   DHI_SHOT_FIRSTRUN=1                                      keep the repair gate + wizard
 set -eu
 
 FREEZE=github.com/charmbracelet/freeze@v0.2.2
@@ -96,7 +97,7 @@ warmup() {
 }
 
 WANT=${1:-}
-warmup
+[ -n "${DHI_SHOT_FIRSTRUN:-}" ] || warmup
 
 echo "capturing…"
 { [ -z "$WANT" ] || [ "$WANT" = board ]; } && shot board 150x40
@@ -111,4 +112,8 @@ echo "capturing…"
 { [ -z "$WANT" ] || [ "$WANT" = inbox ]; } && shot inbox 150x40 '['
 { [ -z "$WANT" ] || [ "$WANT" = help ]; } && shot help 150x40 '?'
 { [ -z "$WANT" ] || [ "$WANT" = narrow ]; } && shot narrow 72x30
+# First-run screens: only with DHI_SHOT_FIRSTRUN=1 (no warmup).
+[ "$WANT" = gate ] && shot gate 120x36
+[ "$WANT" = wizard ] && shot wizard 120x36 Enter
+[ "$WANT" = team ] && shot team 120x36 Enter Enter Enter Enter Enter
 echo "done"

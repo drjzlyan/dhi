@@ -119,6 +119,18 @@ func (c *Chain) View() string {
 	return c.gates[c.cur].View()
 }
 
+// Hints forwards the current gate's status-row keys (ADR-0040); a gate
+// without them shows none.
+func (c *Chain) Hints() (string, []string) {
+	if c.Finished() {
+		return "", nil
+	}
+	if hp, ok := c.gates[c.cur].(interface{ Hints() (string, []string) }); ok {
+		return hp.Hints()
+	}
+	return "", nil
+}
+
 // NeedsRelaunch is true when any chained gate asks for a restart.
 func (c *Chain) NeedsRelaunch() bool {
 	for _, g := range c.gates {

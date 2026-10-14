@@ -15,9 +15,11 @@ import (
 // deterministic under test. Under reduced motion (theme.Motion false,
 // F-012) each primitive degrades to a static, complete rendering.
 
-// SpinnerFrames are the activity-indicator frames; the frame index
-// advances once per caller tick.
-var SpinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+// SpinnerFrames are the activity-indicator frames — a breathing dot; the
+// frame index advances once per caller tick. Braille spinners render as
+// boxes in common fonts (F-093), so the pulse uses ·, ◦ and •; the
+// static reduced-motion glyph (theme.GlyphBusy, ●) is never a frame.
+var SpinnerFrames = []string{"·", "◦", "•", "•", "◦", "·"}
 
 // SpinnerGlyph renders the brand-colored spinner for frame, or the static
 // busy glyph under reduced motion.
@@ -104,11 +106,13 @@ type StepItem struct {
 
 // Stepper renders wizard progress on one line:
 //
-//	✓ welcome › ◐ identity › ○ team
+//	✓ welcome ── ● identity ── ○ team
 //
-// When that does not fit width it collapses to "2/3 identity".
+// The connector is green behind finished steps and a quiet rule ahead
+// (F-093). When that does not fit width it collapses to "2/3 identity".
 func Stepper(items []StepItem, width, frame int) string {
-	sep := theme.TextDim().Render(" " + theme.GlyphChevron + " ")
+	done := theme.SuccessText().Render(" ── ")
+	ahead := theme.RuleText().Render(" ── ")
 	parts := make([]string, 0, len(items))
 	for _, it := range items {
 		switch it.State {
@@ -122,7 +126,17 @@ func Stepper(items []StepItem, width, frame int) string {
 			parts = append(parts, theme.TextDim().Render("○ "+it.Label))
 		}
 	}
-	line := strings.Join(parts, sep)
+	var line string
+	for i, p := range parts {
+		if i > 0 {
+			if items[i-1].State == StepDone || items[i-1].State == StepSkipped {
+				line += done
+			} else {
+				line += ahead
+			}
+		}
+		line += p
+	}
 	if width <= 0 || len([]rune(ansi.Strip(line))) <= width {
 		return line
 	}
