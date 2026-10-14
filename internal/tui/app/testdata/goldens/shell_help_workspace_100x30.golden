@@ -1,7 +1,7 @@
  ◆ dhi   1 Workspace   2 Editor   3 Settings                                                        
            ╔════════════════════════════════════════════════════════════════════════════╗           
            ║                                                                            ║           
-           ║  DHI — GLOBAL KEYS ──────────────────────────────────────────────────────  ║           
+           ║  DHI — global keys ──────────────────────────────────────────────────────  ║           
            ║                                                                            ║           
            ║    1-3              jump between views                                     ║           
            ║    tab / shift+tab  cycle views                                            ║           
@@ -9,7 +9,7 @@
            ║    ?                toggle this help                                       ║           
            ║    ctrl+c           quit DHI                                               ║           
            ║                                                                            ║           
-           ║  WORKSPACE — HERE ───────────────────────────────────────────────────────  ║           
+           ║  Workspace — here ───────────────────────────────────────────────────────  ║           
            ║                                                                            ║           
            ║    [ / ]            switch sections                                        ║           
            ║    j / k            move the cursor                                        ║           

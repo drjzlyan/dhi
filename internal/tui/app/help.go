@@ -142,7 +142,7 @@ func (a *App) helpView() string {
 		if len(rows) > 0 {
 			rows = append(rows, "")
 		}
-		rows = append(rows, theme.SectionHeader().Render(strings.ToUpper(s.title))+" "+
+		rows = append(rows, theme.SectionHeader().Render(s.title)+" "+
 			theme.Rule(max(innerW-ansi.Width(s.title)-1, 0)), "")
 		rows = append(rows, sec...)
 	}
