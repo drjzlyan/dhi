@@ -5,32 +5,8 @@ coverage.out
 dhi-git-*.tar.gz
 dhi-git-*.sha256
 
-# Self-hosting .dhi/: track the workspace contract (workspace.toml,
-# agents, standards), ignore per-user runtime state and reserved
-# scratch trees.
-.dhi/channels/
-.dhi/knowledge/
-.dhi/memory/
-.dhi/reviews/
-.dhi/sessions/
-.dhi/tasks/
-.dhi/marketplace.json
-.dhi/unread.json
-.dhi/welcome.seen
-.dhi/org.toml
-.dhi/config.toml
-.dhi/agents/.archived/
-.dhi/evals/
-.dhi/episodes/
-.dhi/spend.jsonl
-.dhi/grants.json
-.dhi/traces/
-.dhi/setup.json
+# .dhi/ is the local self-hosting workspace: per-user, never tracked.
+.dhi/
 
-# Python bytecode from scripts/, and per-agent run logs (runtime state).
+# Python bytecode from scripts/.
 __pycache__/
-.dhi/agents/*/runs/
-.dhi/tools/usage.toml
-.dhi/proposals/
-.dhi/tmp/
-.dhi/hooks/
