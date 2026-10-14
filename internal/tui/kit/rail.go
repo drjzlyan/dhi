@@ -100,7 +100,7 @@ func (r *Rail) renderRow(i int) string {
 	tailW := runeWidth(ansi.Strip(tail))
 	plain := padTo(marker+label, r.Width-tailW) + tail
 	if i == r.Active {
-		return theme.TabActive().Render(plain)
+		return theme.RailActive().Render(plain)
 	}
 	return theme.RailDim().Render(plain)
 }

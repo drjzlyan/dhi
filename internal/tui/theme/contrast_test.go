@@ -133,3 +133,20 @@ func TestModeBlockIsLegible(t *testing.T) {
 		}
 	}
 }
+
+// TestRailActiveIsLegible: the rail's highlighted row (F-093) reads at
+// AA on the selection shade in every view and theme.
+func TestRailActiveIsLegible(t *testing.T) {
+	defer SetSurface(surface)
+	for _, tk := range []Tokens{Dark(), Light(), HighContrast()} {
+		for _, id := range []string{"workspace", "editor", "ideator", "reviewer", "settings"} {
+			old := Current
+			Current = tk
+			SetSurface(id)
+			if got := ratio(SurfaceText(), tk.BgSelection); got < 4.5 {
+				t.Errorf("%s/%s: rail active = %.2f:1, want >= 4.5", tk.Name, id, got)
+			}
+			Current = old
+		}
+	}
+}

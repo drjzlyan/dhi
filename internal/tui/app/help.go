@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 
+	"charm.land/lipgloss/v2"
+
 	"github.com/drjzlyan/dhi/internal/ansi"
 	"github.com/drjzlyan/dhi/internal/tui/kit"
 	"github.com/drjzlyan/dhi/internal/tui/theme"
@@ -140,7 +142,8 @@ func (a *App) helpView() string {
 		if len(rows) > 0 {
 			rows = append(rows, "")
 		}
-		rows = append(rows, theme.TabActive().Render(s.title), "")
+		rows = append(rows, theme.SectionHeader().Render(strings.ToUpper(s.title))+" "+
+			theme.Rule(max(innerW-ansi.Width(s.title)-1, 0)), "")
 		rows = append(rows, sec...)
 	}
 	if len(rows) == 0 {
@@ -178,5 +181,7 @@ func keycap(k string, w int) string {
 	if pad := w - ansi.Width(k); pad > 0 {
 		k += strings.Repeat(" ", pad)
 	}
-	return theme.Keycap().Render(k)
+	// The box is on the elevated shade, where a keycap fill would vanish:
+	// keys read in the view's hue instead (F-093).
+	return lipgloss.NewStyle().Foreground(theme.SurfaceText()).Bold(true).Render(k)
 }

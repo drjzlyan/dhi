@@ -342,6 +342,26 @@ func SurfaceAccent() color.Color {
 	return Current.BorderFocused
 }
 
+// SurfaceText is the view's hue as a text color: SurfaceAccent, except
+// that the brand view uses Accent (BorderFocused is an edge color, too
+// pale for text on light selections).
+func SurfaceText() color.Color {
+	if Current.Name != HighContrast().Name {
+		switch surface {
+		case "editor", "ideator", "reviewer", "settings":
+			return SurfaceAccent()
+		}
+		return Current.Accent
+	}
+	return SurfaceAccent()
+}
+
+// RailActive styles a rail's highlighted row in the view's hue (F-093),
+// so the rail, tab and mode block agree on where you are.
+func RailActive() lipgloss.Style {
+	return lipgloss.NewStyle().Background(Current.BgSelection).Foreground(SurfaceText()).Bold(true)
+}
+
 // TabCurrent styles the active view's tab in its identity accent.
 func TabCurrent() lipgloss.Style {
 	return Pill(SurfaceAccent()).Bold(true) // tinted in the view's own hue (F-064)
