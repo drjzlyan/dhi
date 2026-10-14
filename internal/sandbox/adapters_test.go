@@ -96,7 +96,7 @@ func TestBubblewrapWrapShape(t *testing.T) {
 	for _, want := range []string{
 		" --unshare-all ", " --share-net ", " --die-with-parent ",
 		" --proc /proc ", " --tmpfs /tmp ",
-		" --ro-bind /usr /usr ", " --ro-bind /etc /etc ",
+		" --ro-bind-try /usr /usr ", " --ro-bind-try /etc /etc ",
 		" --bind /ws/repo /ws/repo ", " --bind /ws/.dhi /ws/.dhi ",
 		" --ro-bind /opt/dhi /opt/dhi ",
 	} {

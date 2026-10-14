@@ -89,6 +89,16 @@ func (r *Registry) TrustedKeys() ([]string, error) {
 	return out, nil
 }
 
+// AllTrustedKeys is every key enforced here: this workspace's and yours.
+func (r *Registry) AllTrustedKeys() []string {
+	keys, _ := r.TrustedKeys()
+	if r.parent != nil {
+		mine, _ := r.parent.TrustedKeys()
+		keys = append(keys, mine...)
+	}
+	return keys
+}
+
 // decodedKeys parses the pinned keys, refusing a malformed entry by name
 // (a bad pin silently ignored would weaken every later verify).
 func (r *Registry) decodedKeys() ([]ed25519.PublicKey, error) {

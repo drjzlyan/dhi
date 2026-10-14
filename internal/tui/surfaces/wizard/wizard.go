@@ -99,7 +99,10 @@ type Env struct {
 	// WhoName is the git name, for the preview only.
 	Profile     settings.Profile
 	SaveProfile func(p settings.Profile) error
-	WhoName     string
+	// ProfileSaved reports your config already has a profile: it is
+	// yours in every workspace, so a new workspace does not ask (F-090).
+	ProfileSaved bool
+	WhoName      string
 
 	// Project step (F-080): DetectBrief drafts the brief from the repo,
 	// SaveBrief writes it, HasBrief reports one exists (nil = unknown).

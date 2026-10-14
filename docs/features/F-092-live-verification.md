@@ -79,3 +79,76 @@ fresh run with the path in its sandbox.
   behaviour.
 - Linux/bubblewrap: the `/tmp` failure was macOS-only; the ref guard and
   credential masks are covered by unit tests only.
+
+## Round 2: the "not done or not verified" list
+
+### Code
+- **The session survives a relaunch.** Claude's `system`/`init` line
+  carries `session_id`, so a run DHI stops still records its session
+  (`EventSession`). A grant's continuation (same thread and cwd) now
+  resumes instead of re-analysing.
+- **`.dhi/tmp` cleanup.** At launch, entries untouched for 24h are removed
+  (`runtime.CleanTmp`); recent ones stay, in case another DHI is open on
+  the same workspace.
+- **Linux packed refs.** `gitcore.LooseDefaultRefs` writes a loose ref
+  file for a default branch that exists only in `packed-refs`, so
+  bubblewrap has a file to guard.
+- **Remote default branch.** Agent CLIs get a config-defined pre-push hook
+  (`hook.dhi-default-branch.*` via `GIT_CONFIG_*`, git ≥ 2.47). It runs
+  alongside the repo's own hooks, and the script lives in `.dhi/hooks/`,
+  which agents cannot write. It refuses pushes to main, master or the
+  remote's HEAD branch. `git push --no-verify` bypasses it; GitHub branch
+  protection remains the real fence.
+- **Exec grants.** `permission_request {kind: exec, target: /abs/program}`
+  grants the program's folder read and execute, never write
+  (`exec:<dir>`, `ReadOnlyExtender`), from the next spawn.
+- **Codex:** the dhi MCP server's `tool_timeout_sec` is 3600.
+- **A new workspace's wizard** no longer asks "you" or "instructions" once
+  you have set them for every workspace.
+- **Identity:** a `~/.gitconfig` that links to a missing file is named in
+  the error, instead of git's "could not lock config file".
+- **Editor tests:** polling deadlines are 15s; they return as soon as the
+  condition holds. The earlier one-off failure did not reproduce in 16
+  stress runs.
+
+### Live
+- **Codex (0.162.1):**
+  - First run: it would not start inside Seatbelt ("Failed to synchronize
+    managed preferences"). Probed: it needs read-only POSIX shared memory
+    plus preference reads; the profile now allows both, reads only.
+  - Then: it called `work_branch` before editing, continued in the
+    worktree, and committed on `task/fix-addition`.
+  - Its push to a local file remote hit the exec gap above.
+- **Push guard:** an agent's `git push origin task/x:main` was refused by
+  the hook; `git push origin task/x` went through; the remote's `main` was
+  unchanged.
+- **Skills, from a local registry signed with `scripts/registry-sign`:**
+  1. The key was pinned and the registry refreshed for every workspace.
+  2. anvil `skill_search`ed and `skill_suggest`ed it ("signed by a
+     publisher you trust, digest verified, ships a script").
+  3. PROPOSALS showed the skill and script in full.
+  4. It was installed for every workspace and added to anvil: files in
+     `<config>/dhi/skills`, script executable.
+  - MARKETPLACE now shows an inherited registry and keys as yours.
+- **Global layer:** with an instruction saved for every workspace, a brand
+  new second repo was set up through the wizard. It had the skill (LIBRARY),
+  the instruction (STANDARDS preview) and the engine (CONFIG, unmarked),
+  and no `.dhi/config.toml` was written. This run is what showed the
+  wizard asking "you" and "instructions" again (fixed above).
+- **Linux (Docker, golang:1.27 arm64, bubblewrap):**
+  - Every spawn failed at first: `/lib64` does not exist on arm64 Debian,
+    and DHI bound it unconditionally. Now `--ro-bind-try`.
+  - Then `TestLiveBubblewrap` (`DHI_LIVE_BWRAP=1`) passed: a commit on a
+    packed-only `main` was refused, the task branch committed, the
+    credentials file was masked, and `/dev/null` and `/tmp` worked.
+- **Full test suite on Linux** (first time): everything passed except the
+  mcp stdio test. Its fake server was an awk one-liner, and Debian's mawk
+  buffers input, so it never answered and the dial had no deadline. It is
+  now a portable sh read loop with a timeout. The suite is green on Linux.
+
+### Still open
+- Codex adapters other than claude and codex (opencode, cursor,
+  copilot, antigravity) declare no TempEnv/WaitEnv; none has been run
+  live.
+- `git push --no-verify` bypasses the push guard; use GitHub branch
+  protection.

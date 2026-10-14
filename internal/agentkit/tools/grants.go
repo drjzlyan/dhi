@@ -79,10 +79,16 @@ func readGrants(path string) ([]Grant, error) {
 
 // Targets lists the paths agent may write beyond its sandbox roots
 // (F-087): every remembered "write:<path>" grant, any layer.
-func (a *Approvals) Targets(agent string) []string {
+func (a *Approvals) Targets(agent string) []string { return a.targets(agent, AccessWrite) }
+
+// ExecTargets lists the folders agent may run programs from beyond its
+// sandbox roots (read and execute, never write).
+func (a *Approvals) ExecTargets(agent string) []string { return a.targets(agent, AccessExec) }
+
+func (a *Approvals) targets(agent, prefix string) []string {
 	var out []string
 	for _, g := range a.Grants() {
-		if p, ok := strings.CutPrefix(g.Scope, AccessWrite); ok && g.Agent == agent {
+		if p, ok := strings.CutPrefix(g.Scope, prefix); ok && g.Agent == agent {
 			out = append(out, p)
 		}
 	}

@@ -3,6 +3,8 @@ package wizard
 import (
 	"strings"
 	"testing"
+
+	"github.com/drjzlyan/dhi/internal/settings"
 )
 
 // F-090: instructions save for every workspace by default, split on ;
@@ -43,5 +45,17 @@ func TestInstructionsStepSavesForEveryWorkspace(t *testing.T) {
 func TestInstructionsAreACatchUpStep(t *testing.T) {
 	if !catchUpIDs["instructions"] {
 		t.Fatal("finished setups are never offered the new step")
+	}
+}
+
+// F-090 (live): a second workspace does not ask for what you already set
+// for every workspace.
+func TestYoursAreNotAskedAgain(t *testing.T) {
+	env := &Env{Root: "/ws2",
+		Instructions:     func() ([]string, []string) { return []string{"say the test command"}, nil },
+		SaveInstructions: func([]string, bool) error { return nil },
+		SaveProfile:      func(settings.Profile) error { return nil }, ProfileSaved: true}
+	if (&instructionsStep{env: env}).Applies() || (&styleStep{env: env}).Applies() {
+		t.Fatal("asked again for what is already yours everywhere")
 	}
 }

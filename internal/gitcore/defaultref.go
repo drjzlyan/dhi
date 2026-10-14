@@ -35,3 +35,35 @@ func DefaultBranchRefs(repo string) []string {
 	}
 	return out
 }
+
+// LooseDefaultRefs writes a loose ref file for each default branch that
+// exists only in packed-refs, so a sandbox that guards existing files
+// (bubblewrap binds read-only only what exists) can protect it. Git reads
+// loose and packed refs alike; the value is unchanged. Best effort.
+func LooseDefaultRefs(repo string) {
+	gitDir := filepath.Join(repo, ".git")
+	packed, err := os.ReadFile(filepath.Join(gitDir, "packed-refs"))
+	if err != nil {
+		return
+	}
+	for _, ref := range DefaultBranchRefs(repo) {
+		if strings.HasSuffix(ref, ".lock") {
+			continue
+		}
+		if _, err := os.Stat(ref); err == nil {
+			continue
+		}
+		rel, err := filepath.Rel(gitDir, ref)
+		if err != nil {
+			continue
+		}
+		name := filepath.ToSlash(rel)
+		for _, line := range strings.Split(string(packed), "\n") {
+			sha, r, ok := strings.Cut(strings.TrimSpace(line), " ")
+			if ok && r == name && len(sha) >= 40 {
+				_ = os.MkdirAll(filepath.Dir(ref), 0o755)
+				_ = os.WriteFile(ref, []byte(sha+"\n"), 0o644)
+			}
+		}
+	}
+}

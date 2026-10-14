@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/drjzlyan/dhi/internal/agentkit/clirun"
 	"github.com/drjzlyan/dhi/internal/workspace"
@@ -35,5 +36,40 @@ func TestCLIEnvPointsTempAtThePrivateAgentDir(t *testing.T) {
 	fi, err := os.Stat(want)
 	if err != nil || !fi.IsDir() || fi.Mode().Perm() != 0o700 {
 		t.Fatalf("private tmp dir: %v %v", fi, err)
+	}
+}
+
+func TestCleanTmpDropsOnlyStaleEntries(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, workspace.DirTmp, "anvil")
+	if err := os.MkdirAll(filepath.Join(dir, "old"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "old", "f"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "fresh"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	long := time.Now().Add(-48 * time.Hour)
+	_ = os.Chtimes(filepath.Join(dir, "old", "f"), long, long)
+	_ = os.Chtimes(filepath.Join(dir, "old"), long, long)
+	if n := CleanTmp(root, 24*time.Hour, time.Now()); n != 1 {
+		t.Fatalf("removed %d", n)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "fresh")); err != nil {
+		t.Fatal("a fresh entry was removed")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "old")); !os.IsNotExist(err) {
+		t.Fatal("the stale entry stayed")
+	}
+}
+
+func TestCLIEnvCarriesThePushGuard(t *testing.T) {
+	h := episodeHarness(t)
+	h.rt.cfg.PushGuard = "/ws/.dhi/hooks/dhi-pre-push"
+	env := strings.Join(h.rt.cliEnv(clirun.Claude, "anvil", ""), "\n")
+	if !strings.Contains(env, "=hook.dhi-default-branch.event\n") || !strings.Contains(env, "=/ws/.dhi/hooks/dhi-pre-push") {
+		t.Fatalf("env lacks the push guard:\n%s", env)
 	}
 }

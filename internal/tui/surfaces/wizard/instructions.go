@@ -23,8 +23,14 @@ type instructionsStep struct {
 func (*instructionsStep) ID() string    { return "instructions" }
 func (*instructionsStep) Title() string { return "instructions" }
 
+// Applies until you have instructions of your own: those already hold
+// in every workspace, so a new workspace does not ask again.
 func (s *instructionsStep) Applies() bool {
-	return s.env.Instructions != nil && s.env.SaveInstructions != nil
+	if s.env.Instructions == nil || s.env.SaveInstructions == nil {
+		return false
+	}
+	mine, _ := s.env.Instructions()
+	return len(mine) == 0
 }
 
 func (s *instructionsStep) Enter() tea.Cmd {

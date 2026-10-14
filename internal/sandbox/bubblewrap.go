@@ -48,6 +48,16 @@ func NewBubblewrapNetwork(bin string, rw, ro []string, allowNetwork bool) (*Bubb
 	return &Bubblewrap{bin: bin, rw: rw, ro: ro, allowNetwork: allowNetwork}, nil
 }
 
+// WithExtraReadOnly implements ReadOnlyExtender: extra read-only binds.
+func (b *Bubblewrap) WithExtraReadOnly(ro []string) (Sandbox, error) {
+	if len(ro) == 0 {
+		return b, nil
+	}
+	cp := *b
+	cp.ro = mergeRoots(b.ro, ro)
+	return &cp, nil
+}
+
 // WithExtraRoots implements RootExtender: a new Bubblewrap binding the
 // extra rw roots on top of the existing set.
 func (b *Bubblewrap) WithExtraRoots(rw []string) (Sandbox, error) {
@@ -134,7 +144,9 @@ func (b *Bubblewrap) Wrap(argv []string) ([]string, error) {
 		"--tmpfs", "/tmp",
 	)
 	for _, d := range bwrapSystemDirs {
-		out = append(out, "--ro-bind", d, d)
+		// -try: a dir the distro lacks (/lib64 on arm64 Debian) is
+		// skipped; a plain bind refused every spawn (live, M32).
+		out = append(out, "--ro-bind-try", d, d)
 	}
 	// ro first, rw on top: a writable child of a read-only root (the
 	// toolchain's caches inside the read-only toolchain) must stay
@@ -191,7 +203,9 @@ func (b *Bubblewrap) WrapNetwork(argv []string, allow bool) ([]string, error) {
 	out = append(out, b.bin, "--unshare-all", net, "--die-with-parent",
 		"--dev-bind", "/dev", "/dev", "--proc", "/proc", "--tmpfs", "/tmp")
 	for _, d := range bwrapSystemDirs {
-		out = append(out, "--ro-bind", d, d)
+		// -try: a dir the distro lacks (/lib64 on arm64 Debian) is
+		// skipped; a plain bind refused every spawn (live, M32).
+		out = append(out, "--ro-bind-try", d, d)
 	}
 	// ro first, rw on top: a writable child of a read-only root (the
 	// toolchain's caches inside the read-only toolchain) must stay

@@ -129,7 +129,7 @@ func TestMCPCapabilityDeclared(t *testing.T) {
 // TestCodexMCPArgs pins the inline `-c` override shape (TOML string).
 func TestCodexMCPArgs(t *testing.T) {
 	got := Codex.MCPArgs("", "http://127.0.0.1:5/mcp")
-	want := []string{"-c", `mcp_servers.dhi.url="http://127.0.0.1:5/mcp"`}
+	want := []string{"-c", `mcp_servers.dhi.url="http://127.0.0.1:5/mcp"`, "-c", "mcp_servers.dhi.tool_timeout_sec=3600.0"}
 	if strings.Join(got, "\x00") != strings.Join(want, "\x00") {
 		t.Fatalf("codex MCP args = %q, want %q", got, want)
 	}

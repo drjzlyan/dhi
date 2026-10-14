@@ -40,7 +40,16 @@
 - Review fixes: carry moves only files dirtied this turn (pre-dirty stay, agent told); stall
   watchdog re-arms while `Approvals.PendingFor(agent)`; `SaveChanged`/`DuplicateKeys` treat `scopes`
   as one table (`replaceTables`).
-- Known gaps (not fixed): remote main is unprotected (push is not blocked — use GitHub branch
+- Round 2 (all "not verified" items): session id from claude's init line survives relaunch;
+  `CleanTmp` at launch; `LooseDefaultRefs` for packed main; push guard (config-defined pre-push hook
+  via GIT_CONFIG_*, script in .dhi/hooks); exec grants (`exec:<dir>`, `ReadOnlyExtender`); codex
+  tool_timeout_sec; Seatbelt preference reads (codex would not start); bwrap `--ro-bind-try`
+  (arm64 Linux had no /lib64 → every spawn failed); wizard skips you/instructions once global;
+  dangling ~/.gitconfig named. Live: codex fix flow, push guard, signed skill install everywhere,
+  second workspace inherits skill/instruction/engine, Linux bwrap + full suite green in Docker.
+  NOTE: this machine's ~/.gitconfig is a dangling link to dotfiles/.gitconfig — never ran
+  `git config --global` writes here; the wizard's write failed safely.
+- Known gaps (superseded where round 2 fixed them): remote main is unprotected (push is not blocked — use GitHub branch
   protection); a spawn stopped for relaunch has no session id, so the continuation starts fresh
   (claude's system/init line carries session_id — capture it); Linux guards only existing ref
   files (packed-refs main is unprotected); `.dhi/tmp/<agent>` is never cleaned.

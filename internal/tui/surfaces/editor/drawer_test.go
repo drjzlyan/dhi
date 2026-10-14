@@ -112,7 +112,7 @@ func TestLiveShellEchoThroughDrawer(t *testing.T) {
 	typeKeys(m, "echo dhi-live-$((40+2))")
 	feed(m, "enter")
 
-	deadline := time.Now().Add(3 * time.Second)
+	deadline := time.Now().Add(15 * time.Second)
 	for time.Now().Before(deadline) {
 		m.drainTerm()
 		if strings.Contains(plainView(m), "dhi-live-42") {

@@ -3,11 +3,16 @@ package runtime
 import (
 	"context"
 	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
+	"github.com/drjzlyan/dhi/internal/workspace"
 )
 
 // relaunch is a turn-local request to continue the agent in a fresh run
@@ -219,4 +224,51 @@ func (r *Runtime) dirtyPaths(ctx context.Context, dir string) map[string]bool {
 func (r *Runtime) popChanges(ctx context.Context, dir string) error {
 	_, _, err := r.cfg.Git.Run(ctx, dir, "stash", "pop")
 	return err
+}
+
+// CleanTmp removes what agents left in <root>/.dhi/tmp that nothing has
+// touched for maxAge (F-086): the private temp dirs only ever grow.
+// Recent entries stay — another DHI on the same workspace may be using
+// them. It returns how many entries were removed.
+func CleanTmp(root string, maxAge time.Duration, now time.Time) int {
+	base := filepath.Join(root, workspace.DirTmp)
+	agents, err := os.ReadDir(base)
+	if err != nil {
+		return 0
+	}
+	n := 0
+	for _, a := range agents {
+		dir := filepath.Join(base, a.Name())
+		if !a.IsDir() {
+			continue
+		}
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, e := range entries {
+			p := filepath.Join(dir, e.Name())
+			if newestUnder(p).Before(now.Add(-maxAge)) {
+				if os.RemoveAll(p) == nil {
+					n++
+				}
+			}
+		}
+	}
+	return n
+}
+
+// newestUnder is the latest modification time at or below p.
+func newestUnder(p string) time.Time {
+	var newest time.Time
+	_ = filepath.WalkDir(p, func(_ string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if info, err := d.Info(); err == nil && info.ModTime().After(newest) {
+			newest = info.ModTime()
+		}
+		return nil
+	})
+	return newest
 }

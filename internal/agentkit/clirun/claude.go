@@ -144,6 +144,13 @@ func claudeLineEvents(ev map[string]any) []StreamEvent {
 		return claudeUserEvents(ev)
 	case "result":
 		return []StreamEvent{{Kind: EventFinal, Detail: reencode(ev)}}
+	case "system":
+		if sub, _ := ev["subtype"].(string); sub == "init" {
+			if id, _ := ev["session_id"].(string); id != "" {
+				return []StreamEvent{{Kind: EventSession, Session: id}}
+			}
+		}
+		return nil
 	default:
 		return nil // system/init and the like carry nothing to show
 	}

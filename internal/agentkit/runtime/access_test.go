@@ -16,11 +16,15 @@ import (
 // rootsSandbox records the roots a spawn's sandbox was grown by.
 type rootsSandbox struct {
 	sandbox.Noop
-	extra []string
+	extra, ro []string
 }
 
 func (s rootsSandbox) WithExtraRoots(rw []string) (sandbox.Sandbox, error) {
-	return rootsSandbox{extra: append(append([]string(nil), s.extra...), rw...)}, nil
+	return rootsSandbox{extra: append(append([]string(nil), s.extra...), rw...), ro: s.ro}, nil
+}
+
+func (s rootsSandbox) WithExtraReadOnly(ro []string) (sandbox.Sandbox, error) {
+	return rootsSandbox{extra: s.extra, ro: append(append([]string(nil), s.ro...), ro...)}, nil
 }
 
 func firstPending(t *testing.T, a *tools.Approvals) *tools.Approval {
@@ -117,4 +121,40 @@ func TestDenialOffersAccessAndContinues(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatal("no continuation after the grant")
+}
+
+// Live (M32): codex could not run Homebrew's git-receive-pack, and the
+// exec scope did not help — the sandbox's exec roots did not include it.
+// Asking with a program path grants its folder read+execute, never write.
+func TestPermissionRequestExecGrantsTheProgramsFolder(t *testing.T) {
+	h := episodeHarness(t)
+	trig := mustPost(t, h, bus.Message{Channel: "dm:scout", Author: bus.Human, Text: "push"})
+	dir := realPath(t.TempDir())
+	prog := filepath.Join(dir, "tool")
+	if err := os.WriteFile(prog, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	rl := &relaunch{}
+	done := make(chan string, 1)
+	go func() {
+		out, err := h.rt.accessSeam("scout", trig, rl)(context.Background(), "exec", prog, "push needs it")
+		if err != nil {
+			out = "ERR " + err.Error()
+		}
+		done <- out
+	}()
+	ap := firstPending(t, h.approvals)
+	if ap.Describe() != "running programs from "+dir {
+		t.Fatalf("card = %q", ap.Describe())
+	}
+	h.approvals.Decide(ap, "yes")
+	if out := <-done; rl.get() == "" {
+		t.Fatalf("result %q, no relaunch", out)
+	}
+	e, _ := h.rt.agentEntry("scout")
+	e.guard.Sandbox = rootsSandbox{}
+	sb := h.rt.spawnSandbox(e).(rootsSandbox)
+	if len(sb.ro) != 1 || sb.ro[0] != dir || len(sb.extra) != 0 {
+		t.Fatalf("roots rw=%v ro=%v", sb.extra, sb.ro)
+	}
 }

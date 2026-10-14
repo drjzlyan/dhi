@@ -1775,6 +1775,9 @@ func (m *Model) grantsView() []string {
 		if p, ok := strings.CutPrefix(g.Scope, tools.AccessWrite); ok {
 			what = "write " + p
 		}
+		if p, ok := strings.CutPrefix(g.Scope, tools.AccessExec); ok {
+			what = "run from " + p
+		}
 		where := map[tools.Layer]string{tools.LayerOnce: "this session", tools.LayerWorkspace: "this workspace", tools.LayerEverywhere: "every workspace"}[g.Layer]
 		line := padTo(g.Agent, 12) + padTo(what, 34)
 		out = append(out, "  "+theme.TextDim().Render(line)+theme.Hint().Render(where+" · since "+g.At.Local().Format("Jan 2")))

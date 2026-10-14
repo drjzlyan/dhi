@@ -31,6 +31,7 @@ const (
 	EventError    = "error"    // an error inside the stream
 	EventFinal    = "final"    // terminal line; Detail carries the raw JSON
 	EventUsage    = "usage"    // one model call's prompt size (Context); nothing to show
+	EventSession  = "session"  // the CLI's session id (Session), from its first line
 )
 
 // StreamEvent is one neutral transcript event from any CLI's stream.
@@ -42,6 +43,9 @@ type StreamEvent struct {
 	Denied string
 	// Context is an EventUsage's prompt size for that call.
 	Context int
+	// Session is an EventSession's id: known before the run ends, so a
+	// run DHI stops (relaunch) can still be resumed.
+	Session string
 }
 
 // Usage is what a finished run reports about itself. -1 tokens mean the

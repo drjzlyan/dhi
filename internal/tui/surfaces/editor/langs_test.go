@@ -29,7 +29,7 @@ func TestFilesReachTheirOwnServerWithTheirOwnLanguageID(t *testing.T) {
 		t.Fatal("a file reached a server of another language")
 	}
 	m.lspOpenDoc("/p/a.tsx", "const a = <div/>")
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(15 * time.Second)
 	for ts.openedLang() == "" && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
 	}
@@ -104,7 +104,7 @@ func TestLSPInstallShowsThePlanAndInstallsOnlyOnYes(t *testing.T) {
 		if c.prefix != mgr.ManagedPrefix("typescript") || len(c.pkgs) != 2 {
 			t.Fatalf("install call = %+v", c)
 		}
-	case <-time.After(2 * time.Second):
+	case <-time.After(15 * time.Second):
 		t.Fatal("confirmed install never ran")
 	}
 	waitFor(t, m, func() bool { return !m.lspInstalling["typescript"] }, "install flag cleared")

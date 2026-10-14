@@ -119,7 +119,11 @@ func CodexMCPArgs(_, endpoint string) []string {
 	if endpoint == "" {
 		return nil
 	}
-	return []string{"-c", fmt.Sprintf("mcp_servers.dhi.url=%q", endpoint)}
+	// tool_timeout_sec: DHI's tools may wait on the human (an approval, a
+	// masked secret); codex's 60s default gives up while the card is
+	// still open (the claude counterpart is WaitEnv).
+	return []string{"-c", fmt.Sprintf("mcp_servers.dhi.url=%q", endpoint),
+		"-c", "mcp_servers.dhi.tool_timeout_sec=3600.0"}
 }
 
 // codexItem is the union shape of one exec JSONL line.

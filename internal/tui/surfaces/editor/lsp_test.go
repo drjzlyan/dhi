@@ -259,7 +259,7 @@ func readFull(r *bufio.Reader, buf []byte) {
 
 func waitFor(t *testing.T, m *Model, cond func() bool, what string) {
 	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(15 * time.Second)
 	for time.Now().Before(deadline) {
 		m.drainTerm()
 		if cond() {

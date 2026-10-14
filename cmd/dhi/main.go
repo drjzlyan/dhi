@@ -741,6 +741,7 @@ func newSetupEnv(cwd string, ws *workspace.Workspace, userCfg, toolRoot string,
 	if c, err := settings.Load(userCfg, ""); err == nil {
 		env.Profile = c.Profile
 	}
+	env.ProfileSaved = settings.LayerHas(userCfg, "profile")
 	if userCfg != "" {
 		env.SaveProfile = func(p settings.Profile) error { return settings.SaveProfile(userCfg, p) }
 	}
@@ -1397,6 +1398,7 @@ func guardWorkspace(sb sandbox.Sandbox, ws *workspace.Workspace) sandbox.Sandbox
 	// F-086: the default branch moves only through DHI or you. An agent's
 	// own `git commit` on main fails, so work lands on a task branch.
 	for _, m := range ws.Members() {
+		gitcore.LooseDefaultRefs(m.Path) // bubblewrap guards only files that exist
 		guard = append(guard, gitcore.DefaultBranchRefs(m.Path)...)
 	}
 	guarded, err := g.WithGuarded(guard, reopen)
@@ -1490,6 +1492,9 @@ func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cl
 	memStore = memory.Open(ws)
 	// F-067: "allow always" survives a restart. A malformed grants file is
 	// named and ignored (every scope asks again) rather than trusted.
+	// F-086: agents' private temp dirs only grow; drop what nothing has
+	// used for a day.
+	agentkitRuntime.CleanTmp(ws.Root, 24*time.Hour, time.Now())
 	approvals := tools.NewApprovals()
 	if err := approvals.Persist(filepath.Join(ws.Root, workspace.DHIDir, "grants.json")); err != nil {
 		fmt.Fprintln(os.Stderr, "dhi:", err)
@@ -1506,6 +1511,7 @@ func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cl
 		Bus:       b,
 		Approvals: approvals,
 		Redact:    secretRedactor.Func(),
+		PushGuard: pushGuard(ws),
 		Secrets:   secretStore(),
 		// Host agent CLIs (F-013/ADR-0012/0013): DHI ships no model
 		// engine of its own; every rostered agent thinks through one of
@@ -1865,6 +1871,18 @@ func repairGate(ws *workspace.Workspace, git *gitcore.Runner) *repairgate.Model 
 func settingsUserPath() string {
 	p, err := settings.DefaultUserPath()
 	if err != nil {
+		return ""
+	}
+	return p
+}
+
+// pushGuard installs the pre-push hook that keeps agents off a remote's
+// default branch (F-086) under .dhi/hooks, where agents cannot write it.
+// "" when it cannot be written (the push then goes unguarded, as before).
+func pushGuard(ws *workspace.Workspace) string {
+	p := filepath.Join(ws.Root, workspace.DHIDir, "hooks", "dhi-pre-push")
+	if err := gitcore.WritePushGuard(p); err != nil {
+		fmt.Fprintln(os.Stderr, "dhi: push guard:", err)
 		return ""
 	}
 	return p

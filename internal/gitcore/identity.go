@@ -3,6 +3,9 @@ package gitcore
 import (
 	"context"
 	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -89,11 +92,34 @@ func SetIdentity(ctx context.Context, r *Runner, id Identity) error {
 		return err
 	}
 	id = Identity{Name: strings.TrimSpace(id.Name), Email: strings.TrimSpace(id.Email)}
-	if _, _, err := r.Run(ctx, "", "config", "--global", "user.name", id.Name); err != nil {
-		return err
+	for _, kv := range [][2]string{{"user.name", id.Name}, {"user.email", id.Email}} {
+		if _, _, err := r.Run(ctx, "", "config", "--global", kv[0], kv[1]); err != nil {
+			if why := danglingGlobalConfig(); why != "" {
+				return fmt.Errorf("gitcore: %s", why)
+			}
+			return err
+		}
 	}
-	_, _, err := r.Run(ctx, "", "config", "--global", "user.email", id.Email)
-	return err
+	return nil
+}
+
+// danglingGlobalConfig explains the global-config write failure git words
+// badly ("could not lock config file"): ~/.gitconfig is a link to a file
+// that does not exist (dotfiles moved or never checked out). Live, M32.
+func danglingGlobalConfig() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	p := filepath.Join(home, ".gitconfig")
+	target, err := os.Readlink(p)
+	if err != nil {
+		return ""
+	}
+	if _, err := os.Stat(p); err == nil {
+		return ""
+	}
+	return fmt.Sprintf("~/.gitconfig is a link to %s, which does not exist; restore that file (or remove the link), then try again", target)
 }
 
 // Suggestion is a candidate identity and where it was found (F-083).

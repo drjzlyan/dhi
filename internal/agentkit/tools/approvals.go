@@ -31,7 +31,7 @@ type Approval struct {
 // plain yes remembers it for the workspace — either is useless for one
 // call only.
 func (ap *Approval) IsAccess() bool {
-	return strings.HasPrefix(ap.Scope, AccessWrite) || ap.IsSecret()
+	return strings.HasPrefix(ap.Scope, AccessWrite) || strings.HasPrefix(ap.Scope, AccessExec) || ap.IsSecret()
 }
 
 // IsSecret reports a request to use a stored secret (F-089).
@@ -48,6 +48,9 @@ func (ap *Approval) SecretName() string {
 
 // AccessWrite prefixes a write-access scope: "write:" + absolute path.
 const AccessWrite = "write:"
+
+// AccessExec prefixes a run-programs-from scope: "exec:" + absolute dir.
+const AccessExec = "exec:"
 
 // AccessSecret prefixes a secret-use scope: "secret:" + NAME.
 const AccessSecret = "secret:"
@@ -282,6 +285,9 @@ const DecideHint = "y yes · o once · a always here · g everywhere · n no"
 func (ap *Approval) Describe() string {
 	if p, ok := strings.CutPrefix(ap.Scope, AccessWrite); ok {
 		return "write access to " + p
+	}
+	if p, ok := strings.CutPrefix(ap.Scope, AccessExec); ok {
+		return "running programs from " + p
 	}
 	if n := ap.SecretName(); n != "" {
 		if ap.Missing {

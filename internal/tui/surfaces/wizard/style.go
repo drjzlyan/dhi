@@ -24,7 +24,9 @@ func (*styleStep) Title() string { return "you" }
 
 // Applies when the profile can be saved; a re-run shows it again with
 // the saved choices, which is how it is changed from the palette.
-func (s *styleStep) Applies() bool { return s.env.SaveProfile != nil }
+// Applies until your profile is saved; it then holds for every workspace
+// and changes in Settings → CONFIG (F-090).
+func (s *styleStep) Applies() bool { return s.env.SaveProfile != nil && !s.env.ProfileSaved }
 
 var yesNo = []string{"no", "yes"}
 

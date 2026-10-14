@@ -211,18 +211,23 @@ func (m *Model) marketplaceView(w int) []string {
 		return []string{theme.TextDim().Render(
 			"(marketplace unavailable — not inside a workspace)")}
 	}
-	src, hasSrc := m.d.Registry.Source()
+	eff := m.d.Registry.Effective()
+	src, hasSrc := eff.Source()
+	yours := ""
+	if eff != m.d.Registry {
+		yours = "  · yours, every workspace"
+	}
 	var head string
-	if at, ok := m.d.Registry.FetchedAt(); ok {
+	if at, ok := eff.FetchedAt(); ok {
 		head = theme.Hint().Render("registry") + theme.TextDim().Render(
-			"  "+orDash(src)+"  · fetched "+humanAge(m.now(), at))
+			"  "+orDash(src)+"  · fetched "+humanAge(m.now(), at)+yours)
 	} else if hasSrc {
 		head = theme.Hint().Render("registry") + theme.TextDim().Render("  "+src+"  (not fetched)")
 	} else {
 		head = theme.TextDim().Render("(no registry — \"r\" to set a git URL or path)")
 	}
 	out := []string{head}
-	if keys, _ := m.d.Registry.TrustedKeys(); len(keys) > 0 {
+	if keys := m.d.Registry.AllTrustedKeys(); len(keys) > 0 {
 		out = append(out, theme.TextDim().Render(
 			"trust: "+itoa(len(keys))+" publisher key(s) pinned — signed index required (t pin · T clear)"))
 	} else {

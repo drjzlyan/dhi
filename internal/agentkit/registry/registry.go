@@ -181,6 +181,28 @@ func (r *Registry) FetchedAt() (time.Time, bool) {
 	return t, true
 }
 
+// Inherited reports that this workspace has no index of its own and
+// browses yours (F-091).
+func (r *Registry) Inherited() bool {
+	if r.parent == nil {
+		return false
+	}
+	if _, err := os.Stat(r.cachePath()); err == nil {
+		return false
+	}
+	_, err := os.Stat(r.parent.cachePath())
+	return err == nil
+}
+
+// Effective is the registry whose index this one serves: itself, or
+// yours when Inherited.
+func (r *Registry) Effective() *Registry {
+	if r.Inherited() {
+		return r.parent
+	}
+	return r
+}
+
 // index reads the cached index. A missing cache is a named error (run a
 // refresh first) — browsing never silently pretends to be empty. When a
 // publisher key is pinned, the cached index must carry a signature that

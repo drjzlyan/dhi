@@ -129,15 +129,20 @@ func TestUnknownMethodError(t *testing.T) {
 }
 
 func TestStdioTransport(t *testing.T) {
-	// awk keeps a stateful JSON-RPC responder tiny and dependency-free.
-	script := `{ match($0, /"id":[0-9]+/); id=substr($0, RSTART+5, RLENGTH-5);
-	if ($0 ~ /initialize/) print "{\"jsonrpc\":\"2.0\",\"id\":" id ",\"result\":{\"protocolVersion\":\"2024-11-05\",\"serverInfo\":{\"name\":\"fake\",\"version\":\"1\"}}}";
-	else if ($0 ~ /tools\/list/) print "{\"jsonrpc\":\"2.0\",\"id\":" id ",\"result\":{\"tools\":[{\"name\":\"lookup\",\"inputSchema\":{\"type\":\"object\"}}]}}";
-	else if ($0 ~ /tools\/call/) print "{\"jsonrpc\":\"2.0\",\"id\":" id ",\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"42\"}]}}";
-	fflush(); }`
+	// A sh read loop answers line by line on every platform (Debian's
+	// mawk buffers its input, so an awk responder never replied there).
+	script := `while IFS= read -r line; do
+	id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9][0-9]*\).*/\1/p')
+	[ -n "$id" ] || continue
+	case "$line" in
+	*'"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":"2024-11-05","serverInfo":{"name":"fake","version":"1"}}}\n' "$id";;
+	*tools/list*) printf '{"jsonrpc":"2.0","id":%s,"result":{"tools":[{"name":"lookup","inputSchema":{"type":"object"}}]}}\n' "$id";;
+	*tools/call*) printf '{"jsonrpc":"2.0","id":%s,"result":{"content":[{"type":"text","text":"42"}]}}\n' "$id";;
+	esac
+done`
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	s, err := DialStdio(context.Background(), nil, "awk", script)
+	s, err := DialStdio(ctx, nil, "sh", "-c", script)
 	if err != nil {
 		t.Fatalf("DialStdio: %v", err)
 	}

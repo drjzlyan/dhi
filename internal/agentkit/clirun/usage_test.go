@@ -21,3 +21,14 @@ func TestClaudeAssistantUsageIsOneCallsContext(t *testing.T) {
 		t.Fatalf("last context = %d, want 13005", last)
 	}
 }
+
+func TestClaudeInitCarriesTheSession(t *testing.T) {
+	stream := `{"type":"system","subtype":"init","session_id":"abc-123"}
+`
+	for ev := range claudeParseStream(strings.NewReader(stream)) {
+		if ev.Kind == EventSession && ev.Session == "abc-123" {
+			return
+		}
+	}
+	t.Fatal("no session event from the init line")
+}

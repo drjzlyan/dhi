@@ -38,6 +38,13 @@ type RootExtender interface {
 	WithExtraRoots(rw []string) (Sandbox, error)
 }
 
+// ReadOnlyExtender is implemented by adapters whose read-and-execute
+// roots can grow: a folder of programs the human let an agent run
+// (F-087 exec grants), never writable.
+type ReadOnlyExtender interface {
+	WithExtraReadOnly(ro []string) (Sandbox, error)
+}
+
 // Guarder is implemented by adapters that can deny writes to subtrees of
 // their rw roots (F-071 hardening: DHI's control files under .dhi/ are
 // written only by DHI itself, never by a wrapped agent or tool child).

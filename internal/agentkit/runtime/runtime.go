@@ -69,6 +69,10 @@ type Config struct {
 	// Secrets resolves the secrets agents request by name (F-089); nil
 	// = no secret_request tool.
 	Secrets SecretStore
+	// PushGuard is the pre-push hook script that refuses pushes to a
+	// remote's default branch; added to every agent CLI's git through
+	// GIT_CONFIG_* (F-086). "" = none.
+	PushGuard string
 	// Redact scrubs known secret values (F-088) from tool results, run
 	// records and transcripts; nil = none. The bus carries its own.
 	Redact func(string) string

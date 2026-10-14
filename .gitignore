@@ -33,3 +33,4 @@ __pycache__/
 .dhi/tools/usage.toml
 .dhi/proposals/
 .dhi/tmp/
+.dhi/hooks/

@@ -23,6 +23,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/standards"
 	"github.com/drjzlyan/dhi/internal/agentkit/trace"
 	"github.com/drjzlyan/dhi/internal/agentkit/workflow"
+	"github.com/drjzlyan/dhi/internal/gitcore"
 	"github.com/drjzlyan/dhi/internal/mcp"
 	"github.com/drjzlyan/dhi/internal/tasks"
 	"github.com/drjzlyan/dhi/internal/workspace"
@@ -403,6 +404,7 @@ func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Messag
 	var events []clirun.StreamEvent
 	var stamps []time.Time // when each event arrived (F-074 trace)
 	relaunched := false
+	sessionSeen := "" // from the CLI's first line, for a run DHI stops
 	var dog *time.Timer
 	if in.stall > 0 {
 		var self atomic.Pointer[time.Timer]
@@ -438,6 +440,9 @@ func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Messag
 		if ev.Kind == clirun.EventUsage {
 			run.Context = ev.Context // the last call's wins
 		}
+		if ev.Kind == clirun.EventSession {
+			sessionSeen = ev.Session
+		}
 		// F-086 (live): once the work moved (a worktree, a sandbox grant),
 		// this spawn's cwd and sandbox are stale, and an agent told to stop
 		// kept editing the shared checkout. End it; the turn continues in
@@ -458,6 +463,9 @@ func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Messag
 	case relaunched:
 		run.Status = tasks.RunOK
 		run.Summary = "(stopped: continuing in a fresh run — " + in.relaunch.get() + ")"
+		// Same thread and cwd (a grant) resume this session; a new
+		// worktree is a new episode and starts fresh anyway.
+		run.Session = sessionSeen
 	case stalled.Load():
 		run.Status = tasks.RunError
 		run.Error = fmt.Sprintf("stalled: no output for %s", in.stall)
@@ -1027,6 +1035,9 @@ func (r *Runtime) cliEnv(c *clirun.CLI, agentID, mcpConfig string) []string {
 		for _, k := range c.TempEnv {
 			env = setEnv(env, k+"="+dir)
 		}
+	}
+	if r.cfg.PushGuard != "" {
+		env = gitcore.PushGuardEnv(env, r.cfg.PushGuard)
 	}
 	for _, k := range c.WaitEnv {
 		env = setEnv(env, k+"="+strconv.Itoa(int(humanWait/time.Millisecond)))

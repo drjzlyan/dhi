@@ -92,19 +92,21 @@ func (r *Runtime) spawnSandbox(e *entry) sandbox.Sandbox {
 	if r.cfg.Approvals == nil {
 		return sb
 	}
-	roots := r.cfg.Approvals.Targets(e.m.ID)
-	if len(roots) == 0 {
-		return sb
+	if roots := r.cfg.Approvals.Targets(e.m.ID); len(roots) > 0 {
+		if re, ok := sb.(sandbox.RootExtender); ok {
+			if ext, err := re.WithExtraRoots(roots); err == nil {
+				sb = ext
+			}
+		}
 	}
-	re, ok := sb.(sandbox.RootExtender)
-	if !ok {
-		return sb
+	if ro := r.cfg.Approvals.ExecTargets(e.m.ID); len(ro) > 0 {
+		if re, ok := sb.(sandbox.ReadOnlyExtender); ok {
+			if ext, err := re.WithExtraReadOnly(ro); err == nil {
+				sb = ext
+			}
+		}
 	}
-	ext, err := re.WithExtraRoots(roots)
-	if err != nil {
-		return sb
-	}
-	return ext
+	return sb
 }
 
 // accessSeam backs permission_request (F-087). Write access parks an
@@ -136,7 +138,12 @@ func (r *Runtime) accessSeam(agentID string, trigger bus.Message, rl *relaunch) 
 			why := "write access to " + p + " was granted."
 			rl.set(why)
 			return why + " End this run now with one short line; DHI continues you with the access.", nil
-		case "network", "exec":
+		case "exec":
+			if filepath.IsAbs(strings.TrimSpace(target)) || strings.HasPrefix(strings.TrimSpace(target), "~") {
+				return r.askExecRoot(ctx, agentID, target, reason, rl)
+			}
+			fallthrough
+		case "network":
 			if err := r.cfg.Approvals.AskScope(ctx, agentID, kind, sandbox.OpExec, kind+" "+strings.TrimSpace(target), reason); err != nil {
 				return "", err
 			}
@@ -145,6 +152,30 @@ func (r *Runtime) accessSeam(agentID string, trigger bus.Message, rl *relaunch) 
 			return "", fmt.Errorf("kind must be write, network or exec")
 		}
 	}
+}
+
+// askExecRoot asks to run programs from the folder holding target (a
+// binary or a dir outside the sandbox's exec roots, e.g. a tool installed
+// with Homebrew). Read and execute only; applies from the next spawn.
+func (r *Runtime) askExecRoot(ctx context.Context, agentID, target, reason string, rl *relaunch) (string, error) {
+	p, err := r.accessTarget(target)
+	if err != nil {
+		return "", err
+	}
+	if fi, err := os.Stat(p); err == nil && !fi.IsDir() {
+		p = filepath.Dir(p)
+	}
+	for _, g := range r.cfg.Approvals.ExecTargets(agentID) {
+		if within(p, g) {
+			return "running programs from " + p + " is already granted; it applies from your next run", nil
+		}
+	}
+	if err := r.cfg.Approvals.AskScope(ctx, agentID, tools.AccessExec+p, sandbox.OpExec, p, reason); err != nil {
+		return "", err
+	}
+	why := "running programs from " + p + " was granted."
+	rl.set(why)
+	return why + " DHI continues you in a fresh run with it.", nil
 }
 
 func (r *Runtime) writeGranted(agentID, p string) bool {

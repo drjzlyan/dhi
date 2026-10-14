@@ -42,3 +42,28 @@ func TestStallWatchdogWaitsWhileTheAgentWaitsOnYou(t *testing.T) {
 	h.approvals.Resolve(h.approvals.List()[0].ID, false)
 	<-done
 }
+
+const initStub = `#!/bin/sh
+echo '{"type":"system","subtype":"init","session_id":"S-live"}'
+sleep 5
+echo '{"type":"result","subtype":"success","is_error":false,"result":"late","session_id":"S-live"}'
+`
+
+// A run DHI stops because the work moved still names its session, so a
+// grant's continuation (same thread, same cwd) resumes instead of
+// re-analysing from scratch (live run 1).
+func TestRelaunchedRunKeepsItsSession(t *testing.T) {
+	h := newHarnessScript(t, baseDoc(), initStub)
+	e, _ := h.rt.agentEntry("scout")
+	trig := mustPost(t, h, bus.Message{Channel: "#general", Author: bus.Human, Text: "@scout go"})
+	rl := &relaunch{}
+	rl.set("write access granted")
+	start := time.Now()
+	run, _ := h.rt.cliSpawnOnce(context.Background(), e, trig, spawnInput{prompt: "p", workdir: h.ws.Root, relaunch: rl})
+	if run.Status != tasks.RunOK || run.Session != "S-live" {
+		t.Fatalf("run = %s session %q", run.Status, run.Session)
+	}
+	if time.Since(start) > 4*time.Second {
+		t.Fatal("the stale spawn was not stopped")
+	}
+}

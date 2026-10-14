@@ -71,7 +71,7 @@ func (d Deps) accessTools() []tool {
 		info: mcp.ToolInfo{
 			Name: "permission_request",
 			Description: "Ask the human for access your sandbox denies, instead of giving up. " +
-				"Args: {\"kind\":\"write|network|exec\",\"target\":\"/abs/folder (write) or what it is for\",\"reason\":\"why the task needs it\"}. " +
+				"Args: {\"kind\":\"write|network|exec\",\"target\":\"/abs/folder (write), /abs/path/to/program (exec), or what it is for\",\"reason\":\"why the task needs it\"}. " +
 				"It waits for the answer. Write access takes effect in a fresh run: after it is granted, end your run with one short line and DHI continues you. " +
 				"A failed write that says \"Operation not permitted\" is the sandbox; ask for the folder.",
 			InputSchema: json.RawMessage(`{"type":"object","required":["kind","target","reason"],"properties":{"kind":{"type":"string","enum":["write","network","exec"]},"target":{"type":"string"},"reason":{"type":"string"}},"additionalProperties":false}`),

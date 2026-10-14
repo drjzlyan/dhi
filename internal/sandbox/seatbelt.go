@@ -98,6 +98,30 @@ func (s *Seatbelt) WithExtraRoots(rw []string) (Sandbox, error) {
 	return newSeatbelt(s.bin, merged, s.ro, s.allowNetwork, s.guard, s.reopen)
 }
 
+// WithExtraReadOnly implements ReadOnlyExtender.
+func (s *Seatbelt) WithExtraReadOnly(ro []string) (Sandbox, error) {
+	if len(ro) == 0 {
+		return s, nil
+	}
+	return newSeatbelt(s.bin, s.rw, mergeRoots(s.ro, ro), s.allowNetwork, s.guard, s.reopen)
+}
+
+// mergeRoots appends the new, non-empty roots not already present.
+func mergeRoots(have, add []string) []string {
+	seen := map[string]bool{}
+	out := append([]string(nil), have...)
+	for _, r := range have {
+		seen[r] = true
+	}
+	for _, r := range add {
+		if r != "" && !seen[r] {
+			seen[r] = true
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
 // WithGuarded implements Guarder: writes under guard are denied even
 // inside an rw root, except under reopen (SBPL: the last matching rule
 // wins — live-verified).
@@ -140,6 +164,12 @@ func seatbeltProfile(rw, ro []string, allowNetwork bool, guard, reopen []string)
 	b.WriteString("(allow process-fork)\n")
 	b.WriteString("(allow sysctl-read)\n")
 	b.WriteString("(allow mach-lookup)\n")
+	// Reading preferences, managed ones included, goes through cfprefsd's
+	// read-only shared memory; codex refuses to start without it ("Failed
+	// to synchronize managed preferences", live M32). Read-only: nothing
+	// is written.
+	b.WriteString("(allow user-preference-read)\n")
+	b.WriteString("(allow ipc-posix-shm-read*)\n")
 
 	subpaths := func(roots []string) string {
 		var sb strings.Builder
