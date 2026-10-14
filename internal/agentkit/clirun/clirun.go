@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
@@ -423,4 +424,21 @@ func safeTitle(workdir, fallback string) string {
 		return "dhi-" + strings.TrimPrefix(filepath.Base(workdir), ".")
 	}
 	return fallback
+}
+
+// xdgDir is the XDG base dir kind ("config", "data", "cache", "state")
+// joined with app: $XDG_<KIND>_HOME when set, else the spec default
+// under home (~/.config, ~/.local/share, ~/.cache, ~/.local/state). CLIs
+// that follow XDG write there; hard-coding ~/.config broke them under a
+// set XDG_CONFIG_HOME (live, M32). "" when home is unknown.
+func xdgDir(kind, app string) string {
+	if v := os.Getenv("XDG_" + strings.ToUpper(kind) + "_HOME"); v != "" && filepath.IsAbs(v) {
+		return filepath.Join(v, app)
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	def := map[string]string{"config": ".config", "data": ".local/share", "cache": ".cache", "state": ".local/state"}[kind]
+	return filepath.Join(home, filepath.FromSlash(def), app)
 }

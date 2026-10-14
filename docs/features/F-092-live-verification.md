@@ -152,3 +152,47 @@ fresh run with the path in its sandbox.
   live.
 - `git push --no-verify` bypasses the push guard; use GitHub branch
   protection.
+
+## Round 3: opencode, Cursor, Copilot and Antigravity, live
+
+The same DM ("can you analyse the current repository and fix it.") was
+sent to each CLI on its default model, in one scratch repo, macOS Seatbelt
+sandbox. Each now ends with the fix committed on its own task branch and
+`main` untouched. What each exposed:
+
+- **opencode 1.19.0:** failed at start, writing `$XDG_CONFIG_HOME/opencode`.
+  Adapters now declare state dirs through `xdgDir` (config, data, cache,
+  state follow `XDG_*`). Its tool failures showed only the tool name; they
+  now carry `state.error` / `output`, and feed the denial card.
+- **cursor-agent 2026.09.26:**
+  - "env: bash: Operation not permitted": it is a `#!/usr/bin/env bash`
+    script, and `PATH` found Homebrew's bash outside the exec roots. The
+    runtime now adds each script CLI's interpreter folder
+    (`interpreterDirs`) read+exec.
+  - It then hit `$XDG_CONFIG_HOME/cursor` (now a root).
+  - Its tool lines read "tool: ": the 2026 stream nests calls as
+    `{"<kind>ToolCall": {args, result}}`, now parsed, with failure reasons
+    and denials.
+  - DHI's per-turn `.cursor/mcp.json` leaked into a commit. In a linked
+    worktree the exclude went to `.git/worktrees/<name>/info/exclude`,
+    which git never reads; it now follows `commondir`. The line stays,
+    because it is shared and removing it would race other turns. The empty
+    `.cursor/` DHI created is removed.
+- **copilot 1.0.88:**
+  - Its state is `~/.copilot` (the adapter declared
+    `~/.config/github-copilot`); fixed, with XDG fallbacks.
+  - It then reported DHI's tools missing: the workspace `.mcp.json` is no
+    longer loaded. The endpoint now rides `--additional-mcp-config` for the
+    session only, so no file lands in the worktree.
+  - It asks before editing (its own style); with that approval it fixed,
+    committed, and DHI verified.
+- **antigravity (agy 1.2.13):**
+  - It said it had committed, but the fix was only staged. **DHI's
+    `git_commit` was losing every commit made in a task worktree:** go-git
+    opened the linked worktree without common-dir support, wrote the
+    branch ref into `.git/worktrees/<name>`, and reported success. It now
+    opens with `EnableDotGitCommonDir`; a real-git test pins it. This also
+    explains why opencode and Claude fell back to native `git commit`
+    earlier.
+  - Its text arrived as deltas, one chat line each (15 fragments in one
+    run); it is now coalesced into sentences (0 fragments on the rerun).

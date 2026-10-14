@@ -60,7 +60,11 @@ var Copilot = &CLI{
 		if err != nil {
 			return nil
 		}
-		return []string{filepath.Join(home, ".config", "github-copilot")}
+		// Copilot CLI keeps sessions, logs and config in ~/.copilot (live
+		// 1.0.88), or under XDG when that is set; the old github-copilot
+		// dir holds editor auth.
+		return []string{filepath.Join(home, ".copilot"), xdgDir("config", "copilot"),
+			xdgDir("state", "copilot"), xdgDir("cache", "copilot"), xdgDir("config", "github-copilot")}
 	},
 	BuildArgs: func(in RunInput) []string {
 		// No verified system-prompt flag: the system block rides ahead
@@ -83,20 +87,19 @@ var Copilot = &CLI{
 			// Containment: drop copilot's built-in GitHub MCP server so
 			// the agent's only non-native surface is DHI's endpoint.
 			args = append(args, "--disable-builtin-mcps")
+			args = append(args, copilotMCPArgs(in.MCPURL)...)
 		}
 		return args
 	},
 	ParseStream: copilotParseStream,
 	Finalize:    copilotFinalize,
 	Version:     copilotVersion,
-	// MCPOK: copilot loads a workspace .mcp.json (project-local); the
-	// runtime writes it into the worktree + git-excludes it;
-	// live-verified 2026-09-26 on 1.0.88.
-	MCPOK: true,
-	MCPConfigFile: func(endpoint string) string {
-		return fmt.Sprintf(`{"mcpServers":{"dhi":{"type":"http","url":%q}}}`, endpoint)
-	},
-	MCPProjectFile: ".mcp.json",
+	// MCPOK: DHI's endpoint rides inline (--additional-mcp-config, this
+	// session only). Live 1.0.88 (M32): the workspace .mcp.json the
+	// adapter used to write was no longer loaded — the agent reported
+	// DHI's tools missing — and nothing is left in the worktree now.
+	MCPOK:         true,
+	MCPConfigArgs: func(_, endpoint string) []string { return copilotMCPArgs(endpoint) },
 }
 
 // copilotItem is the union shape of one JSONL envelope line.
@@ -233,4 +236,13 @@ func copilotVersion(ctx context.Context, path string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("clirun/copilot: no version in %q", truncate(out, 60))
+}
+
+// copilotMCPArgs registers DHI's endpoint for this session only.
+func copilotMCPArgs(endpoint string) []string {
+	if endpoint == "" {
+		return nil
+	}
+	return []string{"--additional-mcp-config",
+		fmt.Sprintf(`{"mcpServers":{"dhi":{"type":"http","url":%q,"tools":["*"]}}}`, endpoint)}
 }

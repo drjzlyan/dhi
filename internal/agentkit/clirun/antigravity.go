@@ -56,7 +56,7 @@ var Antigravity = &CLI{
 		}
 		return []string{
 			filepath.Join(home, ".gemini", "antigravity-cli"),
-			filepath.Join(home, ".cache", "antigravity"),
+			xdgDir("cache", "antigravity"),
 		}
 	},
 	BuildArgs: func(in RunInput) []string {
@@ -194,6 +194,17 @@ func antigravityParseStream(r io.Reader) <-chan StreamEvent {
 	ch := make(chan StreamEvent)
 	go func() {
 		defer close(ch)
+		// Text arrives as small deltas ("ready for re", "view."); one chat
+		// line each flooded the thread (live M32). Buffer them and emit
+		// whole sentences or paragraphs; flush before anything else.
+		var text strings.Builder
+		flush := func() {
+			if t := strings.TrimSpace(text.String()); t != "" {
+				ch <- StreamEvent{Kind: EventProgress, Detail: truncate(t, 200)}
+			}
+			text.Reset()
+		}
+		defer flush()
 		for line := range lineStream(r) {
 			var it antigravityLine
 			if err := json.Unmarshal([]byte(line), &it); err != nil {
@@ -205,12 +216,15 @@ func antigravityParseStream(r io.Reader) <-chan StreamEvent {
 				su := it.StepUpdate
 				switch su.StepType {
 				case "agent_response":
-					if su.State == "ACTIVE" {
-						if t := strings.TrimSpace(su.TextDelta); t != "" {
-							ch <- StreamEvent{Kind: EventProgress, Detail: truncate(t, 200)}
+					if su.State == "ACTIVE" && su.TextDelta != "" {
+						text.WriteString(su.TextDelta)
+						if t := strings.TrimRight(text.String(), " "); strings.HasSuffix(t, "\n") ||
+							strings.HasSuffix(t, ".") || strings.HasSuffix(t, ":") || text.Len() > 400 {
+							flush()
 						}
 					}
 				case "tool":
+					flush()
 					if su.State == "ACTIVE" {
 						label := su.ToolName
 						if cmd := strings.TrimSpace(su.ToolInfo.Parameters.CommandLine); cmd != "" {
@@ -222,6 +236,7 @@ func antigravityParseStream(r io.Reader) <-chan StreamEvent {
 					}
 				}
 			case "result":
+				flush()
 				stop := antigravityStop{
 					Status: it.Result.Status, Response: it.Result.Response,
 					TokensIn: it.Result.Usage.InputTokens, TokensOut: it.Result.Usage.OutputTokens,

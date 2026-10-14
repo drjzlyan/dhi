@@ -52,7 +52,11 @@ func Open(path string) (*Repo, error) {
 	if path == "" {
 		return nil, fmt.Errorf("gitcore: empty path")
 	}
-	r, err := git.PlainOpen(path)
+	// EnableDotGitCommonDir: a task worktree is a linked worktree; without
+	// it go-git wrote refs into .git/worktrees/<name>, so a "successful"
+	// commit never moved the branch (live M32: DHI's git_commit lost every
+	// commit made in a task worktree).
+	r, err := git.PlainOpenWithOptions(path, &git.PlainOpenOptions{EnableDotGitCommonDir: true})
 	if err != nil {
 		return nil, fmt.Errorf("gitcore: open %s: %w", path, err)
 	}
@@ -64,7 +68,7 @@ func (rp *Repo) Path() string { return rp.path }
 
 // IsRepo reports whether dir contains a git repository.
 func IsRepo(dir string) bool {
-	_, err := git.PlainOpen(dir)
+	_, err := git.PlainOpenWithOptions(dir, &git.PlainOpenOptions{EnableDotGitCommonDir: true})
 	return err == nil
 }
 

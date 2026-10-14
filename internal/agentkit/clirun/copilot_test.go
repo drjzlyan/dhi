@@ -112,8 +112,14 @@ func TestCopilotLiveVerified(t *testing.T) {
 	if !containsStr(Copilot.EnvPass, "COPILOT_GITHUB_TOKEN") {
 		t.Fatalf("EnvPass must declare COPILOT_GITHUB_TOKEN: %v", Copilot.EnvPass)
 	}
-	if Copilot.MCPProjectFile != ".mcp.json" {
-		t.Fatalf("copilot MCP delivery must be a project file: %q", Copilot.MCPProjectFile)
+	// M32 live: the project .mcp.json stopped loading; the endpoint
+	// rides inline for the session and nothing lands in the worktree.
+	if Copilot.MCPProjectFile != "" {
+		t.Fatalf("copilot must not write a project MCP file: %q", Copilot.MCPProjectFile)
+	}
+	args := strings.Join(Copilot.BuildArgs(RunInput{Prompt: "p", MCPURL: "http://127.0.0.1:5/mcp"}), " ")
+	if !strings.Contains(args, `--additional-mcp-config {"mcpServers":{"dhi":{"type":"http","url":"http://127.0.0.1:5/mcp"`) {
+		t.Fatalf("argv lacks the inline MCP config: %s", args)
 	}
 }
 

@@ -57,7 +57,10 @@ var CursorAgent = &CLI{
 		if err != nil {
 			return nil
 		}
-		return []string{filepath.Join(home, ".cursor")}
+		// ~/.cursor plus the XDG dirs it writes (cli-config.json lives in
+		// the config one; live-verified 2026.09.26).
+		return []string{filepath.Join(home, ".cursor"), xdgDir("config", "cursor"),
+			xdgDir("data", "cursor"), xdgDir("cache", "cursor"), xdgDir("state", "cursor")}
 	},
 	BuildArgs: func(in RunInput) []string {
 		// No verified system-prompt flag: the system block rides ahead
@@ -115,7 +118,10 @@ type cursorItem struct {
 	Tool  string `json:"tool"`
 	Title string `json:"title"`
 	Error string `json:"error"`
-	Usage struct {
+	// ToolCall is the 2026 shape: {"<kind>ToolCall": {args, result}}
+	// (live-verified 2026.09.26; the flat tool/title fields went away).
+	ToolCall map[string]json.RawMessage `json:"tool_call"`
+	Usage    struct {
 		InputTokens  int `json:"inputTokens"`
 		OutputTokens int `json:"outputTokens"`
 	} `json:"usage"`
@@ -175,6 +181,10 @@ func cursorParseStream(r io.Reader) <-chan StreamEvent {
 					ch <- StreamEvent{Kind: EventProgress, Detail: truncate(text, 200)}
 				}
 			case "tool_call":
+				if ev, ok := cursorToolEvent(it); ok {
+					ch <- ev
+					continue
+				}
 				title := it.Title
 				if title == "" {
 					title = it.Tool
@@ -192,6 +202,62 @@ func cursorParseStream(r io.Reader) <-chan StreamEvent {
 		}
 	}()
 	return ch
+}
+
+// cursorToolCall is one nested tool call: its arguments and outcome.
+type cursorToolCall struct {
+	Args   map[string]any `json:"args"`
+	Result struct {
+		Error *struct {
+			ErrorMessage string `json:"errorMessage"`
+		} `json:"error"`
+		Failure *struct {
+			ExitCode int    `json:"exitCode"`
+			Stderr   string `json:"stderr"`
+			Output   string `json:"interleavedOutput"`
+		} `json:"failure"`
+	} `json:"result"`
+}
+
+// cursorToolEvent maps the nested tool_call shape: "started" is the
+// command line, "completed" reports a failure with its reason (and a
+// sandbox denial in it). false when the line is not that shape.
+func cursorToolEvent(it cursorItem) (StreamEvent, bool) {
+	for key, raw := range it.ToolCall {
+		kind, ok := strings.CutSuffix(key, "ToolCall")
+		if !ok {
+			continue
+		}
+		var tc cursorToolCall
+		if json.Unmarshal(raw, &tc) != nil {
+			return StreamEvent{}, false
+		}
+		title := kind
+		for _, k := range []string{"command", "path", "toolName", "name"} {
+			if v, _ := tc.Args[k].(string); v != "" {
+				title = kind + ": " + v
+				break
+			}
+		}
+		if it.Subtype != "completed" {
+			return StreamEvent{Kind: EventCommand, Detail: "tool " + truncate(title, 160)}, true
+		}
+		why := ""
+		if e := tc.Result.Error; e != nil {
+			why = e.ErrorMessage
+		} else if f := tc.Result.Failure; f != nil && f.ExitCode != 0 {
+			why = strings.TrimSpace(f.Stderr + "\n" + f.Output)
+			if why == "" {
+				why = fmt.Sprintf("exit %d", f.ExitCode)
+			}
+		}
+		if why == "" {
+			return StreamEvent{}, true // a success is already on screen as started
+		}
+		return StreamEvent{Kind: EventError, Detail: "tool " + truncate(title, 100) + " failed: " + truncate(why, 200),
+			Denied: DeniedPath(why)}, true
+	}
+	return StreamEvent{}, false
 }
 
 // cursorFinalize parses the terminal payload: a non-success result fails

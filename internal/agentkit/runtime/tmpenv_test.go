@@ -73,3 +73,45 @@ func TestCLIEnvCarriesThePushGuard(t *testing.T) {
 		t.Fatalf("env lacks the push guard:\n%s", env)
 	}
 }
+
+// Live (M32): cursor-agent is "#!/usr/bin/env bash" and env found
+// Homebrew's bash; its folder must join the exec roots.
+func TestInterpreterDirsResolvesEnvOnThePath(t *testing.T) {
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "bash"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	script := filepath.Join(t.TempDir(), "cli")
+	if err := os.WriteFile(script, []byte("#!/usr/bin/env bash\necho hi\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	got := interpreterDirs(script, bin+string(os.PathListSeparator)+"/bin")
+	if len(got) == 0 || got[0] != bin {
+		t.Fatalf("dirs = %v, want %s first", got, bin)
+	}
+	native := filepath.Join(t.TempDir(), "native")
+	_ = os.WriteFile(native, []byte{0xcf, 0xfa, 0xed, 0xfe}, 0o755)
+	if interpreterDirs(native, bin) != nil {
+		t.Fatal("a binary has no interpreter")
+	}
+}
+
+// Live (M32): in a linked worktree the exclude must reach the common
+// dir, the only info/exclude git reads.
+func TestExcludeFromGitInALinkedWorktree(t *testing.T) {
+	root := t.TempDir()
+	common := filepath.Join(root, "repo", ".git")
+	wtGit := filepath.Join(common, "worktrees", "wt")
+	if err := os.MkdirAll(wtGit, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_ = os.WriteFile(filepath.Join(wtGit, "commondir"), []byte("../..\n"), 0o644)
+	wt := filepath.Join(root, "wt")
+	_ = os.MkdirAll(wt, 0o755)
+	_ = os.WriteFile(filepath.Join(wt, ".git"), []byte("gitdir: "+wtGit+"\n"), 0o644)
+	excludeFromGit(wt, ".cursor/mcp.json")
+	b, err := os.ReadFile(filepath.Join(common, "info", "exclude"))
+	if err != nil || !strings.Contains(string(b), "/.cursor/mcp.json") {
+		t.Fatalf("common exclude = %q %v", b, err)
+	}
+}

@@ -49,6 +49,12 @@
   second workspace inherits skill/instruction/engine, Linux bwrap + full suite green in Docker.
   NOTE: this machine's ~/.gitconfig is a dangling link to dotfiles/.gitconfig — never ran
   `git config --global` writes here; the wizard's write failed safely.
+- Round 3 (all four other CLIs live): `xdgDir` state roots (opencode, cursor, copilot ~/.copilot,
+  antigravity cache); `interpreterDirs` for script CLIs (cursor's env bash); cursor nested
+  tool_call parsing; opencode tool error text; copilot inline `--additional-mcp-config` (project
+  .mcp.json no longer loaded); worktree excludes go to the common dir and stay; **gitcore.Open uses
+  EnableDotGitCommonDir — DHI's git_commit silently lost every commit in a task worktree**;
+  antigravity text deltas coalesced. All four: fix committed on a task branch, main untouched.
 - Known gaps (superseded where round 2 fixed them): remote main is unprotected (push is not blocked — use GitHub branch
   protection); a spawn stopped for relaunch has no session id, so the continuation starts fresh
   (claude's system/init line carries session_id — capture it); Linux guards only existing ref

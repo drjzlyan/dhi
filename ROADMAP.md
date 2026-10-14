@@ -1072,5 +1072,5 @@ Plan: `~/.claude/plans/for-tasks-that-needs-nested-kernighan.md`. Branch `m32` (
 - [x] P6 skill_suggest: registry-verified install, workspace or global (F-091)
 - [x] P7 Live verification of the yume-forge case and the rest (F-092): 6 live runs, 9 fixes
 - [x] Live: skill suggestion from a signed registry; global layer across two workspaces; codex; Linux (Docker, bwrap) — round 2 in F-092
-- [ ] Live: opencode/cursor/copilot/antigravity under the sandbox
+- [x] Live: opencode/cursor/copilot/antigravity under the sandbox (round 3 in F-092)
 

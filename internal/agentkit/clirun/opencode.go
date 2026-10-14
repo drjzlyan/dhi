@@ -29,8 +29,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
 	"strings"
 )
 
@@ -48,12 +46,11 @@ var OpenCode = &CLI{
 		"OPENCODE_CONFIG", "OPENCODE_SERVER_PASSWORD",
 		"OPENAI_API_KEY", "ANTHROPIC_API_KEY",
 	},
+	// opencode follows XDG: data (auth, sessions), config (it writes a
+	// .gitignore there at start), cache and state. Live-verified 1.19.0.
 	StateRoot: func() []string {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return nil
-		}
-		return []string{filepath.Join(home, ".local", "share", "opencode")}
+		return []string{xdgDir("data", "opencode"), xdgDir("config", "opencode"),
+			xdgDir("cache", "opencode"), xdgDir("state", "opencode")}
 	},
 	BuildArgs: func(in RunInput) []string {
 		args := []string{"run", "--format", "json", "--dir", in.Workdir, "--auto"}
@@ -107,6 +104,8 @@ type opencodeItem struct {
 			Metadata struct {
 				Exit int `json:"exit"`
 			} `json:"metadata"`
+			Error  string `json:"error"`  // status "error": why the tool failed
+			Output string `json:"output"` // a failed shell command's output
 		} `json:"state"`
 		Tokens struct {
 			Total  int `json:"total"`
@@ -169,8 +168,14 @@ func opencodeParseStream(r io.Reader) <-chan StreamEvent {
 					title = it.Part.Tool
 				}
 				if it.Part.State.Status == "error" || it.Part.State.Metadata.Exit != 0 {
-					ch <- StreamEvent{Kind: EventError, Detail: fmt.Sprintf(
-						"tool %s failed: %s", it.Part.Tool, truncate(title, 160))}
+					// The reason, not just the tool name: live, every DHI
+					// tool failure read "tool dhi_run failed: dhi_run".
+					why := strings.TrimSpace(it.Part.State.Error + "\n" + it.Part.State.Output)
+					detail := fmt.Sprintf("tool %s failed: %s", it.Part.Tool, truncate(title, 120))
+					if why != "" {
+						detail += " — " + truncate(why, 200)
+					}
+					ch <- StreamEvent{Kind: EventError, Detail: detail, Denied: DeniedPath(why)}
 					continue
 				}
 				ch <- StreamEvent{Kind: EventCommand, Detail: "tool: " + truncate(title, 160)}

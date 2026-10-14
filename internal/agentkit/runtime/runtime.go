@@ -11,6 +11,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -412,7 +413,7 @@ func (r *Runtime) extendSandboxForRoster(roster []*manifest.Agent) error {
 		return nil // noop and test adapters have no roots to grow
 	}
 	seen := map[string]bool{}
-	var extras []string
+	var extras, ro []string
 	add := func(p string) {
 		if p == "" || seen[p] {
 			return
@@ -440,17 +441,81 @@ func (r *Runtime) extendSandboxForRoster(roster []*manifest.Agent) error {
 		if resolved, err := filepath.EvalSymlinks(path); err == nil {
 			add(filepath.Dir(resolved))
 			add(filepath.Dir(filepath.Dir(resolved)))
+			// A script CLI needs its interpreter too (cursor-agent is
+			// "#!/usr/bin/env bash"; on PATH that was Homebrew's bash,
+			// outside the exec roots — every spawn died "env: bash:
+			// Operation not permitted", live M32).
+			for _, d := range interpreterDirs(resolved, envPath(r.cfg.CLIEnv)) {
+				ro = append(ro, d)
+			}
 		}
 	}
-	if len(extras) == 0 {
+	if len(extras) == 0 && len(ro) == 0 {
 		return nil
 	}
 	ext, err := re.WithExtraRoots(extras)
 	if err != nil {
 		return fmt.Errorf("runtime: sandbox roots for rostered CLIs: %w", err)
 	}
+	if roe, ok := ext.(sandbox.ReadOnlyExtender); ok && len(ro) > 0 {
+		if ext, err = roe.WithExtraReadOnly(ro); err != nil {
+			return fmt.Errorf("runtime: sandbox roots for CLI interpreters: %w", err)
+		}
+	}
 	r.cfg.Sandbox = ext
 	return nil
+}
+
+// interpreterDirs returns the folders holding a script's interpreter:
+// "#!/usr/bin/env NAME" resolves NAME on path (as the spawn will), and an
+// absolute "#!/x/y" names it directly. System dirs need nothing; others
+// (Homebrew) get the binary's dir and, through symlinks, its real one.
+func interpreterDirs(script, path string) []string {
+	f, err := os.Open(script)
+	if err != nil {
+		return nil
+	}
+	defer f.Close()
+	head := make([]byte, 256)
+	n, _ := f.Read(head)
+	line, _, _ := strings.Cut(string(head[:n]), "\n")
+	if !strings.HasPrefix(line, "#!") {
+		return nil
+	}
+	fields := strings.Fields(strings.TrimPrefix(line, "#!"))
+	if len(fields) == 0 {
+		return nil
+	}
+	interp := fields[0]
+	if filepath.Base(interp) == "env" && len(fields) > 1 {
+		name := fields[1]
+		interp = ""
+		for _, dir := range filepath.SplitList(path) {
+			cand := filepath.Join(dir, name)
+			if fi, err := os.Stat(cand); err == nil && !fi.IsDir() && fi.Mode()&0o111 != 0 {
+				interp = cand
+				break
+			}
+		}
+	}
+	if interp == "" || !filepath.IsAbs(interp) {
+		return nil
+	}
+	out := []string{filepath.Dir(interp)}
+	if real, err := filepath.EvalSymlinks(interp); err == nil && filepath.Dir(real) != out[0] {
+		out = append(out, filepath.Dir(real))
+	}
+	return out
+}
+
+// envPath is PATH from an env list (falls back to the process's).
+func envPath(env []string) string {
+	for i := len(env) - 1; i >= 0; i-- {
+		if v, ok := strings.CutPrefix(env[i], "PATH="); ok {
+			return v
+		}
+	}
+	return os.Getenv("PATH")
 }
 
 // engineName resolves an agent's effective CLI engine: the manifest's

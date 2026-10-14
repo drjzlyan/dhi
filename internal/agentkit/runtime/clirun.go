@@ -701,12 +701,17 @@ func (r *Runtime) serveToolsFor(e *entry, trigger bus.Message, tt turnTools) *se
 	if e.cli.MCPProjectFile != "" && e.cli.MCPConfigFile != nil {
 		dir := r.cliWorkdir(trigger)
 		path := filepath.Join(dir, e.cli.MCPProjectFile)
+		_, statErr := os.Stat(filepath.Dir(path))
+		madeDir := os.IsNotExist(statErr) // ours to remove again (live: an empty .cursor/ was left)
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err == nil {
 			if werr := os.WriteFile(path, []byte(e.cli.MCPConfigFile(endpoint)), 0o644); werr == nil {
 				unexclude := excludeFromGit(dir, e.cli.MCPProjectFile)
 				sess.configPath = path
 				sess.stop = func() {
 					_ = os.Remove(path)
+					if madeDir {
+						_ = os.Remove(filepath.Dir(path)) // only if still empty
+					}
 					unexclude()
 					stopAll()
 				}
@@ -1158,6 +1163,16 @@ func excludeFromGit(worktree, rel string) func() {
 			gd = filepath.Join(worktree, gd)
 		}
 		gitDir = gd
+		// A linked worktree's gitdir is .git/worktrees/<name>; git reads
+		// info/exclude only from the common dir (live M32: DHI's own
+		// git_commit swept .cursor/mcp.json into a task branch).
+		if b, err := os.ReadFile(filepath.Join(gitDir, "commondir")); err == nil {
+			common := strings.TrimSpace(string(b))
+			if !filepath.IsAbs(common) {
+				common = filepath.Join(gitDir, common)
+			}
+			gitDir = filepath.Clean(common)
+		}
 	}
 	ex := filepath.Join(gitDir, "info", "exclude")
 	pattern := "/" + filepath.ToSlash(rel)
@@ -1171,17 +1186,8 @@ func excludeFromGit(worktree, rel string) func() {
 	}
 	_, _ = f.WriteString(pattern + "\n")
 	_ = f.Close()
-	return func() {
-		cur, err := os.ReadFile(ex)
-		if err != nil {
-			return
-		}
-		var kept []string
-		for _, l := range strings.Split(string(cur), "\n") {
-			if strings.TrimSpace(l) != pattern {
-				kept = append(kept, l)
-			}
-		}
-		_ = os.WriteFile(ex, []byte(strings.Join(kept, "\n")), 0o644)
-	}
+	// The line stays: info/exclude is local and never committed, and it
+	// is shared by every worktree, so removing it when one turn ends
+	// would expose another turn's config mid-run.
+	return noop
 }

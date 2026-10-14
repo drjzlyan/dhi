@@ -373,7 +373,12 @@ func TestServeToolsProjectFileExcluded(t *testing.T) {
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Fatalf("project config survived stop: %v", err)
 	}
-	if ex2, _ := os.ReadFile(exclude); strings.Contains(string(ex2), "/.cursor/mcp.json") {
-		t.Fatalf("exclude line not cleaned:\n%s", ex2)
+	if _, err := os.Stat(filepath.Dir(path)); !os.IsNotExist(err) {
+		t.Fatalf("the .cursor dir DHI made survived stop: %v", err)
+	}
+	// The exclude line stays (M32): info/exclude is shared by every
+	// worktree, and another turn's config may still be on disk.
+	if ex2, _ := os.ReadFile(exclude); strings.Count(string(ex2), "/.cursor/mcp.json") != 1 {
+		t.Fatalf("exclude line should stay, once:\n%s", ex2)
 	}
 }
