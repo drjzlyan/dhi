@@ -162,7 +162,7 @@ func (m *Model) bufferView() string {
 	case m.renameMode:
 		cmd = theme.Brand().Render("rename: " + m.renameOld + " → " + string(m.renameInput) + "▌")
 	case cmd == "":
-		cmd = theme.Hint().Render("i insert · : cmd · esc tree · K/gr/ga lsp")
+		// The keymap lives on the shell status row (ADR-0040).
 	default:
 		cmd = theme.TabActive().Render(cmd)
 	}

@@ -204,7 +204,7 @@ func TestTaskCreatePRFlow(t *testing.T) {
 	if got.PRNumber != 21 || got.PRURL == "" {
 		t.Fatalf("card PR fields = %d %q", got.PRNumber, got.PRURL)
 	}
-	if out := ansi.Strip(m2.View()); !strings.Contains(out, "created for feat-1") {
+	if out := ansi.Strip(fullView(m2)); !strings.Contains(out, "created for feat-1") {
 		t.Errorf("flash missing:\n%s", out)
 	}
 }

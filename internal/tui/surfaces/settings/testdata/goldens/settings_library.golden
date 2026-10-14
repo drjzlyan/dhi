@@ -1,26 +1,26 @@
-  CONFIG        ╭─ › library ────────────────────────────────────────────────────────────╮
-  PROJECT       │  ROLES                                                                 │
-  AGENTS        │ ▌ backend            builtin Builds services, APIs and data layers wit │
-  BRAIN         │   designer           builtin Designs flows and interfaces: wireframes, │
-  PROPOSALS     │   devops             builtin Keeps build, CI and release healthy: pipe │
-▌ LIBRARY       │   fixer              builtin Fixes failing tasks end-to-end: reproduce │
-  TEAMS         │   frontend           builtin Builds user interfaces: components, state │
-  PACKS         │   fullstack          builtin Builds features end to end: UI, API and d │
-  STANDARDS     │   lead               builtin Leads a team: plans the work, assigns it, │
-  CONVENTIONS   │   planner            builtin Breaks goals into task cards with accepta │
-  WORKFLOWS     │   product-manager    builtin Owns the what and why: specs, acceptance  │
-  AUTOPILOTS    │   reviewer           builtin Reviews diffs and PRs: correctness, tests │
-  MARKETPLACE   │   scout              builtin Explores the codebase and reports finding │
-  SECRETS       │   scribe             builtin Keeps channels and tasks documented: summ │
-                │   tester             builtin Tests the work: writes and runs tests, re │
-                │  SKILLS                                                                │
-                │   code-review        builtin A repeatable pass over any diff — correct │
-                │   docs               builtin Writing docs that a newcomer can act on   │
-                │   incident-triage    builtin First response for a failing system — con │
-                │   test-writing       builtin How to add tests that fail honestly and p │
-                │  PERSONAS                                                              │
-                │   friendly           builtin Warm and upbeat, still to the point       │
-                │   mentor             builtin Patient teacher: explains the why and the │
-                │   meticulous         builtin Careful and exact: verifies before claimi │
-                │ n new • p persona • e edit • x delete • r run script • v card • [ ] s… │
-                ╰────────────────────────────────────────────────────────────────────────╯
+  CONFIG        ▏ library ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
+  PROJECT       ▏  ROLES                                                                  
+  AGENTS        ▏ ▌ backend            builtin Builds services, APIs and data layers wit  
+  BRAIN         ▏   designer           builtin Designs flows and interfaces: wireframes,  
+  PROPOSALS     ▏   devops             builtin Keeps build, CI and release healthy: pipe  
+▌ LIBRARY       ▏   fixer              builtin Fixes failing tasks end-to-end: reproduce  
+  TEAMS         ▏   frontend           builtin Builds user interfaces: components, state  
+  PACKS         ▏   fullstack          builtin Builds features end to end: UI, API and d  
+  STANDARDS     ▏   lead               builtin Leads a team: plans the work, assigns it,  
+  CONVENTIONS   ▏   planner            builtin Breaks goals into task cards with accepta  
+  WORKFLOWS     ▏   product-manager    builtin Owns the what and why: specs, acceptance   
+  AUTOPILOTS    ▏   reviewer           builtin Reviews diffs and PRs: correctness, tests  
+  MARKETPLACE   ▏   scout              builtin Explores the codebase and reports finding  
+  SECRETS       ▏   scribe             builtin Keeps channels and tasks documented: summ  
+                ▏   tester             builtin Tests the work: writes and runs tests, re  
+                ▏  SKILLS                                                                 
+                ▏   code-review        builtin A repeatable pass over any diff — correct  
+                ▏   docs               builtin Writing docs that a newcomer can act on    
+                ▏   incident-triage    builtin First response for a failing system — con  
+                ▏   test-writing       builtin How to add tests that fail honestly and p  
+                ▏  PERSONAS                                                               
+                ▏   friendly           builtin Warm and upbeat, still to the point        
+                ▏   mentor             builtin Patient teacher: explains the why and the  
+                ▏   meticulous         builtin Careful and exact: verifies before claimi  
+                ▏   pragmatic          builtin Direct and practical: the answer first, t  
+                ▏                                                                         

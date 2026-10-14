@@ -14,24 +14,50 @@ type StatusSegment struct {
 	Style lipgloss.Style // zero value renders plain
 }
 
-// StatusLine is the bottom information bar: mode + context on the left,
-// center info, key hints on the right.
+// StatusLine is the one row that owns every hint (ADR-0040): the view's
+// mode block, zone and attention on the left, then the flash, and on the
+// right the active surface's keymap followed by the global keys.
+//
+// Overflow never clips a hint mid-word: whole hints drop, globals first
+// (the first global — the palette — survives longest), then the
+// surface's hints from the least important end, and More ("? more")
+// takes their place so the dropped keys stay one keystroke away.
 type StatusLine struct {
 	Left    []StatusSegment
-	Center  string
-	Hints   []string
+	Flash   string   // pre-rendered outcome (✓ saved, ✗ failed); dropped last on the right
+	Hints   []string // the surface's keymap, most important first
+	Globals []string // shell keys, most important first
+	More    string   // shown when a surface hint was dropped ("" = never, e.g. while typing)
+	Center  string   // legacy middle segment; dropped first
 	Version string
 	Width   int
+
+	spans []hintSpan // the last View's clickable hints
+}
+
+// hintSpan is one rendered hint's columns, for click routing.
+type hintSpan struct {
+	from, to int
+	hint     string
 }
 
 // DefaultStatusLine returns the neutral base statusline for the given
-// surface name: the surface label on the left, the global keys on the
-// right. Contextual surfaces layer mode chips + zone + their own hints
-// on top (F-025 Part C).
+// surface name: the view's mode block on the left, the global keys on
+// the right.
 func DefaultStatusLine(surfaceName string) *StatusLine {
 	return &StatusLine{
-		Left:  []StatusSegment{{Text: " " + surfaceName, Style: theme.TextDim()}},
-		Hints: []string{"1-5 views", "tab next", "? help", "^c quit"},
+		Left:    []StatusSegment{ModeBlock(surfaceName)},
+		Globals: []string{"^p palette", "? help", "1-5 views", "tab next", "^c quit"},
+		More:    "? more",
+	}
+}
+
+// ModeBlock renders the view's name as a solid block in its hue — the
+// first thing on the status row, so a glance says where you are.
+func ModeBlock(name string) StatusSegment {
+	return StatusSegment{
+		Text:  " " + strings.ToUpper(name) + " ",
+		Style: theme.ModeBlock(),
 	}
 }
 
@@ -44,81 +70,148 @@ func ModeChip(text string) StatusSegment {
 	}
 }
 
-// View renders the statusline padded to Width cells when Width > 0.
-// Overflow rule (F-026 P1): the center segment is dropped first, then
-// hints are dropped from the start (quit survives), then left/right
-// ellipsis-clip — the line never exceeds the terminal width.
-func (s *StatusLine) View() string {
-	bar := theme.StatusBar()
+// renderKeys renders hints as keycap + muted label, two cells apart,
+// and reports each hint's column span (relative to the first cell).
+func renderKeys(hints []string) (string, []hintSpan) {
 	hint := theme.Hint()
+	var out string
+	var spans []hintSpan
+	for i, h := range hints {
+		if i > 0 {
+			out += "  "
+		}
+		from := runeWidth(out)
+		key, desc := h, ""
+		if j := strings.Index(h, " "); j > 0 {
+			key, desc = h[:j], h[j+1:]
+		}
+		out += theme.Keycap().Render(" " + key + " ")
+		if desc != "" {
+			out += hint.Render(" " + desc)
+		}
+		spans = append(spans, hintSpan{from: from, to: runeWidth(out), hint: h})
+	}
+	return out, spans
+}
 
+// View renders the statusline padded to Width cells when Width > 0.
+func (s *StatusLine) View() string {
 	var left string
 	for _, seg := range s.Left {
 		left += seg.Style.Render(seg.Text)
 	}
-	rightFor := func(hints []string) string {
-		var right string
-		for i, h := range hints {
-			if i > 0 {
-				right += hint.Render(theme.GlyphBullet)
-			}
-			// Keycap the key fragment; the description stays muted
-			// (F-026 P7 — keys read at a glance).
-			key, desc := h, ""
-			if i := strings.Index(h, " "); i > 0 {
-				key, desc = h[:i], h[i+1:]
-			}
-			right += theme.Keycap().Render(" " + key + " ")
-			if desc != "" {
-				right += hint.Render(" " + desc + " ")
-			}
-		}
-		return right
-	}
+	flash := s.Flash
 
-	hints := make([]string, len(s.Hints))
-	for i, h := range s.Hints {
-		hints[i] = DisplayHint(h) // name the key to press (F-058 remaps)
+	display := func(hs []string) []string {
+		out := make([]string, len(hs))
+		for i, h := range hs {
+			out[i] = DisplayHint(h) // name the key to press (F-058 remaps)
+		}
+		return out
 	}
-	right := rightFor(hints)
+	hints := display(s.Hints)
+	globals := display(s.Globals)
+	dropped := false
+
+	var spans []hintSpan
+	right := func() string {
+		all := append([]string{}, hints...)
+		if dropped && s.More != "" {
+			all = append(all, s.More)
+		}
+		for _, g := range globals {
+			if dropped && s.More != "" && strings.HasPrefix(g, "? ") {
+				continue // "? more" already offers help
+			}
+			all = append(all, g)
+		}
+		out, sp := renderKeys(all)
+		spans = sp
+		return out
+	}
 	center := s.Center
-	over := func() bool {
-		return runeWidth(left)+runeWidth(center)+runeWidth(right) > s.Width
+	width := func() int {
+		w := runeWidth(left) + runeWidth(center) + runeWidth(right()) + 2
+		if flash != "" {
+			w += runeWidth(flash) + 2
+		}
+		return w
 	}
-	if over() {
+	fits := func() bool { return s.Width <= 0 || width() <= s.Width }
+
+	if !fits() {
 		center = ""
 	}
-	for over() && len(hints) > 1 {
-		hints = hints[1:]
-		right = rightFor(hints)
+	for !fits() && len(globals) > 1 {
+		globals = globals[:len(globals)-1]
 	}
-	if over() {
-		center = ""
+	for !fits() && len(hints) > 0 {
+		hints = hints[:len(hints)-1]
+		dropped = true
+	}
+	for !fits() && len(globals) > 0 {
+		globals = globals[:len(globals)-1]
+	}
+	if !fits() && s.More != "" {
+		dropped = false
 		hints = nil
-		if w := runeWidth(left) + runeWidth(right); w > s.Width {
-			split := clamp(s.Width-runeWidth(right), 0, s.Width)
-			if split > 1 {
-				left = ClipEllipsis(left, split)
-			} else {
-				left = ""
+	}
+	if !fits() {
+		flash = ""
+	}
+	r := right()
+	if !fits() {
+		// Tiny terminals: the left side yields, clipped visibly.
+		r, spans = "", nil
+		left = ClipEllipsis(left, s.Width)
+	}
+
+	out := left
+	if flash != "" {
+		out += "  " + flash
+	}
+	if center != "" {
+		out += "  " + center
+	}
+	if s.Width <= 0 {
+		s.setSpans(spans, runeWidth(out)+2)
+		return out + "  " + r
+	}
+	gap := s.Width - runeWidth(out) - runeWidth(r) - 1
+	if gap < 1 {
+		gap = 1
+	}
+	out += strings.Repeat(" ", gap)
+	s.setSpans(spans, runeWidth(out))
+	out += r
+	return PaintRow(out, s.Width, theme.StatusBar()) // one background end to end (F-064)
+}
+
+// KeyAt maps a click at column x of the last View to the key of the
+// hint drawn there (F-055: the keymap is clickable): the first
+// alternative of the hint's key part ("s/S status" → "s"). False off a
+// hint, or before View ran.
+func (s *StatusLine) KeyAt(x int) (string, bool) {
+	for _, sp := range s.spans {
+		if x >= sp.from && x < sp.to {
+			rows := HintRows(sp.hint)
+			if len(rows) == 0 {
+				return "", false
 			}
-			if runeWidth(left)+runeWidth(right) > s.Width {
-				right = ClipEllipsis(right, s.Width-runeWidth(left))
+			k := strings.Fields(strings.ReplaceAll(rows[0][0], "/", " "))[0]
+			if k == "space" {
+				k = " "
 			}
+			return k, true
 		}
 	}
+	return "", false
+}
 
-	total := runeWidth(left) + runeWidth(center) + runeWidth(right)
-	gap := 0
-	if s.Width > total {
-		gap = s.Width - total
+// setSpans records the rendered hints' absolute columns.
+func (s *StatusLine) setSpans(spans []hintSpan, offset int) {
+	s.spans = s.spans[:0]
+	for _, sp := range spans {
+		s.spans = append(s.spans, hintSpan{from: sp.from + offset, to: sp.to + offset, hint: sp.hint})
 	}
-	lg := gap / 2
-	mid := strings.Repeat(" ", lg) + center
-
-	out := left + mid + strings.Repeat(" ", gap-lg) + right
-	if s.Width <= 0 {
-		return bar.Render(out)
-	}
-	return PaintRow(out, s.Width, bar) // one background end to end (F-064)
 }

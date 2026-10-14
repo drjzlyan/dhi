@@ -172,8 +172,8 @@ func (m *Model) chatBody(w, h int) string {
 	}
 	flat := tr.View()
 	if len(flat) == 0 {
-		flat = append(flat, theme.TextDim().Render(
-			"(no messages yet — i compose, @mention an invited agent)"))
+		flat = append(flat, kit.EmptyInline("No messages yet",
+			"Press i to compose, and @mention an invited agent.", w)...)
 	}
 
 	body := h - 5 // header, channel, composer hint, input line, blank

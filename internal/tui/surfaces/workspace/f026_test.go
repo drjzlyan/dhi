@@ -169,7 +169,7 @@ func TestTranscriptEmptyStateNamed(t *testing.T) {
 	m, _, _ := newSurfaceWithBus(t)
 	m.sec = secChannels
 	body := strings.Join(m.pane.transcriptRender(nil, 60, 20), "\n")
-	if !strings.Contains(ansi.Strip(body), "(no messages yet") {
+	if !strings.Contains(ansi.Strip(body), "No messages yet") {
 		t.Fatalf("named empty state missing: %q", body)
 	}
 }

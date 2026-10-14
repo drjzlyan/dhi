@@ -108,7 +108,7 @@ func TestTeamsCreateEditDeleteRoundTrip(t *testing.T) {
 	if len(o.Teams()) != 0 {
 		t.Fatalf("team not deleted: %+v", o.Teams())
 	}
-	if !strings.Contains(ansi.Strip(m.View()), "team platform deleted") {
+	if !strings.Contains(ansi.Strip(fullView(m)), "team platform deleted") {
 		t.Fatal("flash missing")
 	}
 }
@@ -215,8 +215,8 @@ func TestTeamsAddByRoleCreatesOneTeamPerLead(t *testing.T) {
 	if len(roster) != 5 {
 		t.Fatalf("%d agents", len(roster))
 	}
-	if !strings.Contains(ansi.Strip(m.View()), "added atlas") {
-		t.Fatalf("flash missing:\n%s", ansi.Strip(m.View()))
+	if !strings.Contains(ansi.Strip(fullView(m)), "added atlas") {
+		t.Fatalf("flash missing:\n%s", ansi.Strip(fullView(m)))
 	}
 }
 

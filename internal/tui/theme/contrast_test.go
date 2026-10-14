@@ -2,30 +2,8 @@ package theme
 
 import (
 	"image/color"
-	"math"
 	"testing"
 )
-
-// relLum is the WCAG 2.x relative luminance of c.
-func relLum(c color.Color) float64 {
-	r, g, b, _ := c.RGBA()
-	lin := func(v uint32) float64 {
-		f := float64(v) / 65535
-		if f <= 0.03928 {
-			return f / 12.92
-		}
-		return math.Pow((f+0.055)/1.055, 2.4)
-	}
-	return 0.2126*lin(r) + 0.7152*lin(g) + 0.0722*lin(b)
-}
-
-func ratio(a, b color.Color) float64 {
-	la, lb := relLum(a), relLum(b)
-	if la < lb {
-		la, lb = lb, la
-	}
-	return (la + 0.05) / (lb + 0.05)
-}
 
 // TestTextTokensMeetWCAGAA pins readability: every text-bearing token must
 // reach 4.5:1 on every surface it can sit on (the hint bar and selected
@@ -135,5 +113,23 @@ func TestPillsAreLegible(t *testing.T) {
 			}
 		}
 		Current = old
+	}
+}
+
+// TestModeBlockIsLegible: the status row's solid view block (ADR-0040)
+// keeps its label at AA on every view's hue in every theme.
+func TestModeBlockIsLegible(t *testing.T) {
+	defer SetSurface(surface)
+	for _, tk := range []Tokens{Dark(), Light(), HighContrast()} {
+		for _, id := range []string{"workspace", "editor", "ideator", "reviewer", "settings"} {
+			old := Current
+			Current = tk
+			SetSurface(id)
+			fill := ModeFill()
+			if got := ratio(OnFill(fill), fill); got < 4.5 {
+				t.Errorf("%s/%s: mode block text = %.2f:1, want >= 4.5", tk.Name, id, got)
+			}
+			Current = old
+		}
 	}
 }

@@ -72,3 +72,17 @@ func (e EmptyState) Lines(width, height int) []string {
 	}
 	return out
 }
+
+// EmptyInline is the small-pane empty state (F-093): a dim title line and
+// a muted explanation word-wrapped to width — never a parenthesised
+// sentence clipped at the pane edge.
+func EmptyInline(title, why string, width int) []string {
+	if width < 8 {
+		width = 8
+	}
+	out := []string{theme.TextDim().Render(ClipEllipsis(theme.GlyphSpark+" "+title, width))}
+	for _, l := range WrapWords(why, width) {
+		out = append(out, theme.TextMuted().Render(l))
+	}
+	return out
+}

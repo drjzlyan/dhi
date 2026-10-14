@@ -1468,19 +1468,22 @@ func (m *Model) sectionPane(w, h int) string {
 	case secSecrets:
 		content = m.secretsView(w - 4)
 	default:
-		content = m.configView(w-4, h-3)
+		content = m.configView(w-4, h-2)
 	}
-	inner := w - 4 // panel edges + horizontal padding
-	for len(content) < h-3 {
+	// The keymap and flash live on the shell's status row (ADR-0040).
+	for len(content) < h-2 {
 		content = append(content, "")
 	}
-	content = content[:h-3]
-	content = append(content, kit.HintBar(inner, m.statusFlash(), m.sectionHints()...))
+	content = content[:h-2]
 
 	p.SetContent(content...)
 	p.Width, p.Height = w, h
 	return p.View()
 }
+
+// Hints implements surfaces.HintProvider (ADR-0040): the outcome flash
+// and the focused section's keymap, for the shell's status row.
+func (m *Model) Hints() (string, []string) { return m.statusFlash(), m.sectionHints() }
 
 // statusFlash renders the flash on the chrome bar: failure names red.
 func (m *Model) statusFlash() string {

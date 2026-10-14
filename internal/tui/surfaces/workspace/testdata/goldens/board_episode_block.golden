@@ -1,7 +1,7 @@
 PLAN 1/4
  ✓ Write a failing test for the
    remainder
- ◐ Distribute the remainder one cent at
+ ● Distribute the remainder one cent at
    a time to the first parties
  ○ Open the PR
  ✗ Ask about rounding policy

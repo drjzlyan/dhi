@@ -130,38 +130,32 @@ func (m *Model) sectionCounts() [secCount]int {
 // mainPane wraps the active section in a full-height panel; dialogs
 // ride kit.Modal over a dimmed backdrop while the rail stays put.
 // modalLines renders busy/error rows itself, so the box carries only
-// title + lines. The last pane row is the chrome HintBar (F-025):
-// status/flash left, the section's keymap right.
+// title + lines. The keymap and flash live on the shell's status row
+// (ADR-0040, via Hints), so the whole pane body is content.
 func (m *Model) mainPane(w, h int) string {
 	// The first frame can arrive before any resize (0x0) and terminals
 	// can be tiny; render a minimal panel and let the shell clip it.
 	w, h = maxInt(w, 12), maxInt(h, 4)
 	p := kit.NewPanel(strings.ToLower(m.sec.label()), true)
 	inner := w - 4 // panel edges + horizontal padding
-	body := m.activeSectionFor(inner, h-3)
+	rows := h - 2
+	body := m.activeSectionFor(inner, rows)
 	content := strings.Split(body, "\n")
-	for len(content) < h-3 {
+	for len(content) < rows {
 		content = append(content, "")
 	}
-	content = content[:h-3]
+	content = content[:rows]
 	p.SetContent(content...)
-	p.SetFooter(kit.HintBar(inner, m.statusFlash(), m.sectionHints()...))
-	// The keymap row is clickable (F-055): a hint acts like its key.
-	m.hits.Add(0, h-3, inner, 1, func(dx, _ int) {
-		if k, ok := kit.HintKeyAt(inner, m.statusFlash(), dx, m.sectionHints()...); ok {
-			m.HandleKey(k)
-		}
-	})
 	p.Width, p.Height = w, h
 	// Per-pane scrollbar (F-025): REPOS windows by row (members lead the
 	// dependency lines) and owns offsets[secRepos]; paint the thumb when
 	// it overflows the body budget.
 	if m.sec == secRepos && m.replay == nil {
-		p.SetScroll(kit.NewScroller(m.reposRowCount(inner), h-3, m.offsets[secRepos]))
+		p.SetScroll(kit.NewScroller(m.reposRowCount(inner), rows, m.offsets[secRepos]))
 	}
 	if m.sec == secInbox && m.replay == nil {
 		total, off := m.inboxScroll(inner)
-		p.SetScroll(kit.NewScroller(total, h-3, off))
+		p.SetScroll(kit.NewScroller(total, rows, off))
 	}
 	pane := p.View()
 
@@ -214,6 +208,10 @@ func (m *Model) statusFlash() string {
 }
 
 // sectionHints is the active section's keymap for the chrome bar.
+// Hints implements surfaces.HintProvider (ADR-0040): the outcome flash
+// and the focused section's keymap, for the shell's status row.
+func (m *Model) Hints() (string, []string) { return m.statusFlash(), m.sectionHints() }
+
 func (m *Model) sectionHints() []string {
 	switch m.sec {
 	case secInbox:

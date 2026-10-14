@@ -166,12 +166,7 @@ func (m *Model) drawerView() string {
 	panel := kit.NewPanel("terminal"+termStrip(m), m.termFocus)
 	panel.SetContent(body...)
 	panel.Width = maxInt(m.width, 20)
-	panel.Height = h + 1 // the hint footer replaces the old line below
-	hints := []string{"ctrl+t blur/close", "alt+1..9 switch", "alt+n new tab", "ctrl+q quits DHI"}
-	if !m.termFocus {
-		hints = []string{"ctrl+t focus", "ctrl+t ctrl+t close"}
-	}
-	panel.SetFooter(kit.HintBar(panel.Width-4, "", hints...))
+	panel.Height = h + 1
 	return panel.View()
 }
 
@@ -182,7 +177,6 @@ func (m *Model) fullTermView() string {
 	panel := kit.NewPanel("terminal · full screen"+termStrip(m), m.termFocus)
 	panel.SetContent(m.termBody(cols, rows)...)
 	panel.Width, panel.Height = m.width, m.height
-	panel.SetFooter(kit.HintBar(m.width-4, "", "ctrl+t blur", "keys go to the program", "ctrl+q quits DHI"))
 	return panel.View()
 }
 

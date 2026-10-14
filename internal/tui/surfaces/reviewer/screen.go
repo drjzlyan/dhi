@@ -95,7 +95,6 @@ func (m *Model) screenFiles(w, h int) string {
 	if len(rows) > avail {
 		p.SetScroll(kit.NewScroller(len(rows), avail, start))
 	}
-	p.SetFooter(kit.HintBar(inner, "", "n/p file", "v viewed"))
 	return p.View()
 }
 
@@ -185,7 +184,6 @@ func (m *Model) screenConversation(w, h int) string {
 	p := kit.NewPanel("conversation", false)
 	p.Width, p.Height = w, h
 	p.SetContent(padLines(clipLines(out, body), body)...)
-	p.SetFooter(kit.HintBar(inner, "", "t threads", "S submit"))
 	return p.View()
 }
 

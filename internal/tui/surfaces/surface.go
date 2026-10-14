@@ -63,6 +63,15 @@ type InputCapturer interface {
 	CapturesInput() bool
 }
 
+// HintProvider (ADR-0040) is the one-home-for-hints seam: the surface
+// reports its current outcome flash (pre-rendered; "" = none) and its
+// keymap for the focused zone, most important first. The shell renders
+// both on the status row; overflow drops whole hints from the end.
+// Surfaces without it show only the global keys.
+type HintProvider interface {
+	Hints() (flash string, hints []string)
+}
+
 // CtrlCTaker is implemented by a surface that hosts a terminal: while it
 // reports true, ctrl+c goes to the running program instead of quitting
 // DHI (ctrl+q still quits).

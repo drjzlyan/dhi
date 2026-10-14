@@ -109,6 +109,10 @@ func (m *Model) railView(h int) string {
 	}).View()
 }
 
+// Hints implements surfaces.HintProvider (ADR-0040): the outcome flash
+// and the focused section's keymap, for the shell's status row.
+func (m *Model) Hints() (string, []string) { return m.statusFlash(), m.sectionHints() }
+
 func (m *Model) sectionCounts() [secCount]int {
 	var c [secCount]int
 	c[secReviews] = len(m.reviews())
@@ -123,38 +127,32 @@ func (m *Model) mainPane(w, h int) string {
 	w, h = maxInt(w, 12), maxInt(h, 4)
 	p := kit.NewPanel(strings.ToLower(m.sec.label()), true)
 	inner := w - 4
-	body := m.activeSectionFor(inner, h-3)
+	rows := h - 2 // the keymap lives on the shell status row (ADR-0040)
+	body := m.activeSectionFor(inner, rows)
 	content := strings.Split(body, "\n")
-	for len(content) < h-3 {
+	for len(content) < rows {
 		content = append(content, "")
 	}
-	content = content[:h-3]
+	content = content[:rows]
 	p.SetContent(content...)
-	p.SetFooter(kit.HintBar(inner, m.statusFlash(), m.sectionHints()...))
-	// The keymap row is clickable (F-055): a hint acts like its key.
-	m.hits.Add(0, h-3, inner, 1, func(dx, _ int) {
-		if k, ok := kit.HintKeyAt(inner, m.statusFlash(), dx, m.sectionHints()...); ok {
-			m.HandleKey(k)
-		}
-	})
 	p.Width, p.Height = w, h
 	// Per-pane scrollbar: the diff viewport is the one section with a
 	// real scroll window (F-025); the HintBar is a footer row, so the
 	// track spans exactly the diff rows.
 	if m.sec == secDiff && m.transcriptOpen {
 		if n := len(m.transcriptLines); n > 0 {
-			p.SetScroll(kit.NewScroller(n, h-3, m.transcriptScroll))
+			p.SetScroll(kit.NewScroller(n, rows, m.transcriptScroll))
 		}
 	} else if m.sec == secDiff && !m.threadOpen && len(m.diffRows()) > 0 {
 		segs, _ := m.diffSegmentsView(inner, m.viewedSet())
 		if len(segs) > 0 {
-			p.SetScroll(kit.NewScroller(len(segs), h-3, m.scroll))
+			p.SetScroll(kit.NewScroller(len(segs), rows, m.scroll))
 		}
 	} else if m.sec == secFiles && len(m.files) > 0 {
-		p.SetScroll(kit.NewScroller(len(m.files), h-3, m.offsets[secFiles]))
+		p.SetScroll(kit.NewScroller(len(m.files), rows, m.offsets[secFiles]))
 	} else if m.sec == secReviews {
 		total, off := m.reviewsScroll(inner)
-		p.SetScroll(kit.NewScroller(total, h-3, off))
+		p.SetScroll(kit.NewScroller(total, rows, off))
 	}
 	pane := p.View()
 	if m.composer != nil {

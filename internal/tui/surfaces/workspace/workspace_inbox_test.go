@@ -188,7 +188,7 @@ func TestInboxJumpMissingSeamDegrades(t *testing.T) {
 	if m.inboxHint != "approval jump: editor chat unavailable" {
 		t.Fatalf("degrade hint = %q", m.inboxHint)
 	}
-	out := ansi.Strip(m.View())
+	out := ansi.Strip(fullView(m))
 	if !strings.Contains(out, "editor chat unavailable") {
 		t.Fatalf("degrade hint not visible:\n%s", out)
 	}
@@ -515,7 +515,7 @@ func TestInboxPaneScrollWindow(t *testing.T) {
 		t.Fatalf("scroll metrics total=%d off=%d", total, off)
 	}
 
-	m.Resize(100, 6) // body budget 3 < items → overflow
+	m.Resize(100, 5) // body budget 3 < items → overflow
 	gotoInbox(m)
 	if !strings.Contains(m.View(), "█") {
 		t.Fatal("expected a right-edge scrollbar on INBOX")

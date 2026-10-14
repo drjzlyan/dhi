@@ -264,7 +264,6 @@ func (m *Model) gitPanelView() string {
 	panel.SetContent(body...)
 	panel.Width = maxInt(m.width, 20)
 	panel.Height = h
-	panel.SetFooter(kit.HintBar(panel.Width-4, "", "s stage", "S all", "u unstage", "c commit", "tab status/log", "esc blur"))
 	return panel.View()
 }
 

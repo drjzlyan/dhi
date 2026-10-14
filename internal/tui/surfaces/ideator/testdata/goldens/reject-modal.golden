@@ -1,30 +1,30 @@
-  SESSIONS         1╭─ › canvas ───────────────────────────────────────────────────────────────────╮
-  PARTICIPANTS      │ ideas  canvas · live preview · e edit in editor                              │
-▌ CANVAS           1│ ▌ design.md                                             ○ draft              │
-  TRANSCRIPT        │                                                                              │
-                    │                                                                              │
-                    │    v1                                                                        │
-                    │                                                                              │
-                    │                                                                              │
-                    │                                                                              │
-                    │                                                                              │
-                    │                                                                              │
-                    │                                                                              │
-                    │             ╭─ › reject artifact ──────────────────────────────╮             │
-                    │             │ routes back to the authoring agent               │             │
-                    │             │ ▌ notes   ▏                                      │             │
-                    │             │                                                  │             │
-                    │             │ notes post to the session channel · enter reject │             │
-                    │             ╰──────────────────────────────────────────────────╯             │
-                    │                                                                              │
-                    │                                                                              │
-                    │                                                                              │
-                    │                                                                              │
-                    │                                                                              │
-                    │                                                                              │
-                    │                                                                              │
-                    │                                                                              │
-                    │                                                                              │
-                    │                                                                              │
-                    │ j/k select • J/K scroll • s scan • v/a/r review • e edit • X export          │
-                    ╰──────────────────────────────────────────────────────────────────────────────╯
+  SESSIONS         1▏ canvas ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
+  PARTICIPANTS      ▏ ideas  canvas · live preview · e edit in editor                               
+▌ CANVAS           1▏ ▌ design.md                                             ○ draft               
+  TRANSCRIPT        ▏                                                                               
+                    ▏                                                                               
+                    ▏    v1                                                                         
+                    ▏                                                                               
+                    ▏                                                                               
+                    ▏                                                                               
+                    ▏                                                                               
+                    ▏                                                                               
+                    ▏                                                                               
+                    ▏             ╭─ reject artifact ────────────────────────────────╮              
+                    ▏             │ routes back to the authoring agent               │              
+                    ▏             │ ▌ notes   ▏                                      │              
+                    ▏             │                                                  │              
+                    ▏             │ notes post to the session channel · enter reject │              
+                    ▏             ╰──────────────────────────────────────────────────╯              
+                    ▏                                                                               
+                    ▏                                                                               
+                    ▏                                                                               
+                    ▏                                                                               
+                    ▏                                                                               
+                    ▏                                                                               
+                    ▏                                                                               
+                    ▏                                                                               
+                    ▏                                                                               
+                    ▏                                                                               
+                    ▏                                                                               
+                    ▏                                                                               

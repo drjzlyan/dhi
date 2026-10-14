@@ -20,16 +20,23 @@ const (
 	scrollThumbGlyph = "█"
 )
 
-// Panel is a titled, rounded box — the visual unit every surface is built
-// from. Focused panels carry the brand accent edge.
+// Panel is the visual unit every surface is built from. By default it
+// renders as a deck pane (F-093, ADR-0040): a header row — bold title and
+// a rule filling the row, a fading gradient in the view's hue when
+// focused — a thin divider down the left edge and one shaded block, no
+// corners, right wall or bottom wall. Boxed keeps the rounded frame for
+// the boot and repair gates. Both share one geometry (one row on top,
+// one column each side, one row at the bottom), so body budgets and
+// click origins do not depend on the style.
 //
 // Rendering is cell-counted rather than delegated to lipgloss borders so
 // widths stay exact under any content and golden snapshots stay stable.
 type Panel struct {
 	Title   string
 	Focused bool
-	Width   int // total width including edges; 0 = size to content
-	Height  int // total height including edges; 0 = size to content
+	Boxed   bool // rounded frame (gates); false = deck pane
+	Width   int  // total width including edges; 0 = size to content
+	Height  int  // total height including edges; 0 = size to content
 
 	content []string
 	footer  []string
@@ -103,6 +110,10 @@ func (p *Panel) View() string {
 		}
 	}
 
+	if !p.Boxed {
+		return p.deckView(width, budget, footerRows, body, sbOn, sbPos, sbTh)
+	}
+
 	var out []string
 	out = append(out, topEdge(width, p.Title, edge, titleSt))
 
@@ -136,12 +147,63 @@ func (p *Panel) View() string {
 	return strings.Join(out, "\n")
 }
 
+// deckView paints the borderless pane (ADR-0040). Every cell sits on the
+// panel shade, so the pane reads as one zone against its neighbours.
+func (p *Panel) deckView(width, budget, footerRows int, body []string, sbOn bool, sbPos, sbTh int) string {
+	pad := theme.Current.PadX
+	inner := width - pad*2 - 2
+	bg := theme.PanelBg()
+	div := theme.DeckDivider(p.Focused).Render(theme.GlyphDivider)
+	blank := bg.Render(" ")
+
+	out := make([]string, 0, budget+footerRows+2)
+	out = append(out, div+deckHeader(width-2, p.Title, p.Focused)+blank)
+	for y := 0; y < budget; y++ {
+		var row string
+		if y < len(body) {
+			row = clip(body[y], inner)
+		}
+		line := PaintRow(strings.Repeat(" ", pad)+row, inner+pad*2, bg)
+		right := blank
+		if sbOn {
+			if y >= sbPos && y < sbPos+sbTh {
+				right = PaintRow(theme.AccentDimText().Render(scrollThumbGlyph), 1, bg)
+			} else {
+				right = PaintRow(theme.RuleText().Render(scrollTrackGlyph), 1, bg)
+			}
+		}
+		out = append(out, div+line+right)
+	}
+	for y := 0; y < footerRows; y++ {
+		line := PaintRow(strings.Repeat(" ", pad)+clip(p.footer[y], inner), inner+pad*2, bg)
+		out = append(out, div+line+blank)
+	}
+	out = append(out, div+PaintRow("", width-1, bg))
+	return strings.Join(out, "\n")
+}
+
+// deckHeader renders a pane's header row in w cells: " title " then a
+// rule to the edge. Focused, the rule is a heavy line fading from the
+// view's hue into the panel shade; unfocused, a quiet thin rule.
+func deckHeader(w int, title string, focused bool) string {
+	bg := theme.PanelBg()
+	head := ""
+	if title != "" {
+		head = Restyle(theme.PanelTitle(focused).Background(theme.Current.BgPanel), " "+title+" ")
+	}
+	fill := w - runeWidth(ansi.Strip(head))
+	if fill < 0 {
+		return ClipEllipsis(PaintRow(head, w, bg), w)
+	}
+	return PaintRow(head+theme.DeckRule(fill, focused), w, bg)
+}
+
 func topEdge(width int, title string, edge, titleSt lipgloss.Style) string {
 	rb := lipgloss.RoundedBorder()
 	if title == "" {
 		return edge.Render(rb.TopLeft + strings.Repeat(rb.Top, width-2) + rb.TopRight)
 	}
-	head := " " + theme.GlyphChevron + " " + title + " "
+	head := " " + title + " "
 	tw := runeWidth(head)
 	// 2 corner cells + head + fill + TopRight must total exactly width —
 	// one short and the top-right corner sits inset from the body (F-024).
@@ -158,7 +220,7 @@ func minPanelWidth(title string) int {
 	if title == "" {
 		return 4
 	}
-	return runeWidth(" "+theme.GlyphChevron+" "+title+" ") + 5
+	return runeWidth(" "+title+" ") + 5
 }
 
 func maxRuneWidth(lines []string) int {

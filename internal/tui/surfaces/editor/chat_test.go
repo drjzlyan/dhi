@@ -105,8 +105,8 @@ func TestChatToggleTriState(t *testing.T) {
 	// focused: typing feeds the input
 	typeKeys(h.m, "hi")
 	h.m.HandleKey("esc")
-	if !strings.Contains(plainView(h.m), "focus input") {
-		t.Fatal("esc should blur, not close")
+	if v := plainView(h.m); !strings.Contains(v, "crew") || strings.Contains(v, "hi▌") {
+		t.Fatal("esc should blur (no cursor in the composer), not close")
 	}
 	golden.Snapshot(t, "editor_chat_blurred_120x30", plainView(h.m))
 	h.m.HandleKey("ctrl+a")

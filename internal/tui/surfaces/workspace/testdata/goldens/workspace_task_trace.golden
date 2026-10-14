@@ -1,34 +1,34 @@
-  INBOX                   ╭─ › board ────────────────────────────────────────────────────────────────────────╮
-▌ BOARD                  1│ TRACE  fix-login  Fix login race                                                 │
-  CHANNELS                │  all runs (3)   1 alice 00:00 timeout   2 alice 01:00 error   3 alice 02:00      │
-  REPOS                  2│ filter everything                                                                │
-                          │                                                                                  │
-                          │ 02:00:00 alice      ▶ run-replay-test started (attempt 1) · cli:claude · opus    │
-                          │ 02:00:00 alice      · inspecting the login flow                                  │
-                          │ 02:00:00 alice      ❯ git status                                                 │
-                          │ 02:00:00 alice      ❯ cd repos/alpha && go test ./...                            │
-                          │ 02:00:00 alice      ✗ compile error: undefined: x                                │
-                          │ 02:00:00 alice      · applying the fix                                           │
-                          │ 02:00:00 alice      ▸ done · 1.2s · 1.5k in / 0.4k out · $0.42                   │
-                          │ 02:00:01 alice      ■ run-replay-test ok in 1s · 100 in / 50 out tokens ·        │
-                          │                       $0.4200                                                    │
-                          │                                                                                  │
-                          │                                                                                  │
-                          │                                                                                  │
-                          │                                                                                  │
-                          │                                                                                  │
-                          │                                                                                  │
-                          │                                                                                  │
-                          │                                                                                  │
-                          │                                                                                  │
-                          │                                                                                  │
-                          │                                                                                  │
-                          │                                                                                  │
-                          │                                                                                  │
-                          │                                                                                  │
-                          │                                                                                  │
-                          │                                                                                  │
-                          │                                                                                  │
-                          │                                                                                  │
-                          │ esc close • j/k scroll • n/p run • f filter • / search • x export • g/G top/bot… │
-                          ╰──────────────────────────────────────────────────────────────────────────────────╯
+  INBOX                   ▏ board ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
+▌ BOARD                  1▏ TRACE  fix-login  Fix login race                                                  
+  CHANNELS                ▏  all runs (3)   1 alice 00:00 timeout   2 alice 01:00 error   3 alice 02:00       
+  REPOS                  2▏ filter everything                                                                 
+                          ▏                                                                                   
+                          ▏ 02:00:00 alice      ▶ run-replay-test started (attempt 1) · cli:claude · opus     
+                          ▏ 02:00:00 alice      · inspecting the login flow                                   
+                          ▏ 02:00:00 alice      ❯ git status                                                  
+                          ▏ 02:00:00 alice      ❯ cd repos/alpha && go test ./...                             
+                          ▏ 02:00:00 alice      ✗ compile error: undefined: x                                 
+                          ▏ 02:00:00 alice      · applying the fix                                            
+                          ▏ 02:00:00 alice      ▸ done · 1.2s · 1.5k in / 0.4k out · $0.42                    
+                          ▏ 02:00:01 alice      ■ run-replay-test ok in 1s · 100 in / 50 out tokens ·         
+                          ▏                       $0.4200                                                     
+                          ▏                                                                                   
+                          ▏                                                                                   
+                          ▏                                                                                   
+                          ▏                                                                                   
+                          ▏                                                                                   
+                          ▏                                                                                   
+                          ▏                                                                                   
+                          ▏                                                                                   
+                          ▏                                                                                   
+                          ▏                                                                                   
+                          ▏                                                                                   
+                          ▏                                                                                   
+                          ▏                                                                                   
+                          ▏                                                                                   
+                          ▏                                                                                   
+                          ▏                                                                                   
+                          ▏                                                                                   
+                          ▏                                                                                   
+                          ▏                                                                                   
+                          ▏                                                                                   

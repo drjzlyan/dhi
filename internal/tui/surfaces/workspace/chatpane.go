@@ -903,11 +903,9 @@ func (p *chatPane) composerBar(width int) string {
 func (p *chatPane) transcriptRender(history []bus.Message, width, body int) []string {
 	if len(history) == 0 {
 		if ch := p.channelName(); bus.IsDM(ch) {
-			return []string{theme.TextDim().Render(
-				"(no messages yet — press i to message " + bus.ChannelLabel(ch) + " directly)")}
+			return kit.EmptyInline("No messages yet", "Press i to message "+bus.ChannelLabel(ch)+" directly.", width)
 		}
-		return []string{theme.TextDim().Render(
-			"(no messages yet — press i and say hi, @mention an agent)")}
+		return kit.EmptyInline("No messages yet", "Press i to say hi, or @mention an agent to put it to work.", width)
 	}
 	if p.cursor >= len(history) {
 		p.cursor = maxInt(len(history)-1, 0)

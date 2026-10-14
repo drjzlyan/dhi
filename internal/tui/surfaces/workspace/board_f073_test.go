@@ -71,8 +71,7 @@ func TestCardPageShowsFormattedComments(t *testing.T) {
 	if m.card == nil {
 		t.Fatal("enter did not open the card page")
 	}
-	view := m.View()
-	plain := ansi.Strip(view)
+	plain := ansi.Strip(fullView(m))
 	for _, want := range []string{"Rate-limit the public API", "ASSIGNEE", "○ forge", "WORK", "COMMENTS (2)",
 		"b.tokens--", "• default 100/min", "ship it", "esc back"} {
 		if !strings.Contains(plain, want) {

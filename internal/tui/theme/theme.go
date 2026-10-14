@@ -8,6 +8,7 @@ package theme
 
 import (
 	"image/color"
+	"math"
 	"strings"
 	"time"
 
@@ -378,6 +379,57 @@ func StatusBar() lipgloss.Style {
 	return lipgloss.NewStyle().Background(Current.Bg).Foreground(Current.TextDim)
 }
 
+// ModeBlock styles the status row's view block (ADR-0040): the view's
+// hue as a solid fill with canvas-colored bold text.
+func ModeBlock() lipgloss.Style {
+	fill := ModeFill()
+	return lipgloss.NewStyle().Background(fill).Foreground(OnFill(fill)).Bold(true)
+}
+
+// ModeFill is the view's hue as a solid fill, deepened toward the text
+// color until its label reaches AA (light cyan alone is too pale).
+func ModeFill() color.Color {
+	fill := SurfaceAccent()
+	for i := 0; i < 10 && ratio(OnFill(fill), fill) < 4.5; i++ {
+		fill = Blend(fill, Current.Text, 0.12)
+	}
+	return fill
+}
+
+// OnFill picks the text color for a solid fill: the canvas or the body
+// text, whichever reads better on it.
+func OnFill(fill color.Color) color.Color {
+	if ratio(Current.Bg, fill) >= ratio(Current.Text, fill) {
+		return Current.Bg
+	}
+	return Current.Text
+}
+
+// relLum is the WCAG 2.x relative luminance of c.
+func relLum(c color.Color) float64 {
+	r, g, b, _ := c.RGBA()
+	lin := func(v uint32) float64 {
+		f := float64(v) / 65535
+		if f <= 0.03928 {
+			return f / 12.92
+		}
+		return math.Pow((f+0.055)/1.055, 2.4)
+	}
+	return 0.2126*lin(r) + 0.7152*lin(g) + 0.0722*lin(b)
+}
+
+// ratio is the WCAG contrast ratio between a and b.
+func ratio(a, b color.Color) float64 {
+	la, lb := relLum(a), relLum(b)
+	if la < lb {
+		la, lb = lb, la
+	}
+	return (la + 0.05) / (lb + 0.05)
+}
+
+// AttentionPill styles the status row's "◆ N waiting" segment.
+func AttentionPill() lipgloss.Style { return Pill(Current.Warning).Bold(true) }
+
 // Brand styles the DHI wordmark.
 func Brand() lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(Current.Accent).Bold(true)
@@ -461,6 +513,54 @@ func Rule(w int) string {
 		return ""
 	}
 	return RuleText().Render(strings.Repeat("─", w))
+}
+
+// DeckDivider styles a deck pane's left divider (ADR-0040): the view's
+// hue when the pane has focus, the quiet border otherwise, on the
+// panel shade.
+func DeckDivider(focused bool) lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(panelEdge(focused)).Background(Current.BgPanel)
+}
+
+// deckRuleSteps bounds the gradient's color changes: enough to read as a
+// fade, few enough to keep rows short.
+const deckRuleSteps = 12
+
+// DeckRule renders an n-cell pane header rule (ADR-0040). Focused, it is
+// a heavy line fading from the view's hue into the panel shade, so the
+// title end glows and the far end dissolves; unfocused, a thin quiet
+// rule. High contrast keeps a solid focus line.
+func DeckRule(n int, focused bool) string {
+	if n <= 0 {
+		return ""
+	}
+	if !focused {
+		return lipgloss.NewStyle().Foreground(Current.Rule).Background(Current.BgPanel).
+			Render(strings.Repeat("─", n))
+	}
+	from := SurfaceAccent()
+	if Current.Name == HighContrast().Name {
+		return lipgloss.NewStyle().Foreground(from).Background(Current.BgPanel).
+			Render(strings.Repeat("━", n))
+	}
+	to := Blend(Current.BgPanel, from, 0.18)
+	steps := deckRuleSteps
+	if n < steps {
+		steps = n
+	}
+	var b strings.Builder
+	done := 0
+	for i := 0; i < steps; i++ {
+		end := n * (i + 1) / steps
+		t := 0.0
+		if steps > 1 {
+			t = float64(i) / float64(steps-1)
+		}
+		b.WriteString(lipgloss.NewStyle().Foreground(Blend(from, to, t)).Background(Current.BgPanel).
+			Render(strings.Repeat("━", end-done)))
+		done = end
+	}
+	return b.String()
 }
 
 // SectionHeader styles an uppercase group label (CHANNELS, Appearance):
@@ -573,7 +673,7 @@ var (
 	GlyphDiamond = "◆" // approval pending
 	GlyphAt      = "@" // mention
 	GlyphBullet  = "•"
-	GlyphBusy    = "◐" // static activity indicator (reduced motion)
+	GlyphBusy    = "●" // static activity indicator (reduced motion); ◐ is missing from common fonts (F-093)
 	GlyphTodo    = "○" // a plan step not started (F-067)
 	// SparkBars are the eight levels of a sparkline, low to high (F-071).
 	SparkBars      = "▁▂▃▄▅▆▇█"
@@ -586,5 +686,6 @@ var (
 	GlyphFileExec  = "$" // tree: scripts and build files
 	GlyphDirOpen   = "▾" // tree: expanded folder
 	GlyphDirClosed = "▸" // tree: collapsed folder
+	GlyphDivider   = "▏" // deck pane left divider (ADR-0040)
 	GlyphSpark     = "◇" // agent activity / transcript agent author (F-026 P1e); Geometric Shapes, not Dingbats, so common terminal fonts have it
 )

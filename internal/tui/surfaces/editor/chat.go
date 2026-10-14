@@ -327,7 +327,7 @@ func (c *chatModel) view(h int) string {
 		}
 		name += " " + theme.DangerText().Render(marker)
 	}
-	head := name + theme.Hint().Render("  [/] switch · ^f apply · esc blur")
+	head := name
 
 	var lines []string
 	lines = append(lines, head, "")
@@ -352,12 +352,7 @@ func (c *chatModel) view(h int) string {
 		}
 	}
 
-	if c.focus {
-		lines = append(lines, "", theme.TabActive().Render("> "+string(c.input))+"▌")
-		lines = append(lines, theme.Hint().Render("⏎ send · @mention triggers agents · ^f apply"))
-	} else {
-		lines = append(lines, "", theme.Hint().Render("⏎ focus input to chat"))
-	}
+	lines = append(lines, "", kit.Composer(string(c.input), "message the crew — @mention to wake an agent", c.focus))
 	return strings.Join(lines, "\n")
 }
 
@@ -378,7 +373,7 @@ func (c *chatModel) transcript(maxRows int) []string {
 		history = history[n-chatTranscriptN:]
 	}
 	if len(history) == 0 {
-		return []string{theme.TextDim().Render("(no messages yet — say hi or @mention an agent)")}
+		return kit.EmptyInline("No messages yet", "Say hi, or @mention an agent to put it to work.", chatWidth-4)
 	}
 	tr := &kit.Transcript{
 		// The panel's inner width (edges + padding) — the transcript

@@ -52,6 +52,7 @@ type Gate interface {
 
 // App is the root Bubble Tea model.
 type App struct {
+	status   *kit.StatusLine // the last composed status row (click routing)
 	version  string
 	surfaces []surfaces.Surface
 	active   int
@@ -833,7 +834,8 @@ func (a *App) handleClick(x, y int) {
 		}
 		return
 	}
-	if y >= a.height-1 { // statusline: no action
+	if y >= a.height-1 { // statusline: its hints act like their keys
+		a.clickStatus(x)
 		return
 	}
 	if ch, ok := a.Active().(interface{ Click(x, y int) bool }); ok {
@@ -846,7 +848,8 @@ func (a *App) compose() string {
 	a.tabs.Right = a.activityChip()
 	bar := a.tabs.View()
 
-	statusLine := a.buildStatus().View()
+	a.status = a.buildStatus()
+	statusLine := a.status.View()
 
 	// The layout contract (F-054): whatever a surface or gate returns,
 	// the body is fitted to exactly the rows between the tab bar and the
@@ -882,12 +885,12 @@ func (a *App) compose() string {
 // Surfaces may expose their active zone + mode for the statusline
 // (F-025 Part C). Narrow interface assertions — the Surface contract
 // is untouched, and surfaces without them degrade to the neutral base
-// line. Keymaps are NOT repeated here: they live once, on the pane's
-// chrome HintBar.
+// line. Since ADR-0040 the keymap lives here too, once: surfaces hand it
+// over through surfaces.HintProvider.
 type statusContext interface{ StatusContext() (zone, mode string) }
 
-// buildStatus composes the statusline fresh every frame so mode and
-// zone changes render live without a surface switch.
+// buildStatus composes the statusline fresh every frame so mode, zone
+// and hint changes render live without a surface switch.
 func (a *App) buildStatus() *kit.StatusLine {
 	sl := kit.DefaultStatusLine(a.Active().Meta().Title)
 	// Hints are derived from the live state: the view count follows the
@@ -898,34 +901,60 @@ func (a *App) buildStatus() *kit.StatusLine {
 		quit = "^q quit" // ctrl+c belongs to the focused terminal
 	}
 	if a.activeCapturesInput() {
-		sl.Hints = []string{"^p palette", quit}
+		sl.Globals = []string{"^p palette", quit}
+		sl.More = ""
 	} else {
-		sl.Hints = []string{fmt.Sprintf("1-%d views", len(a.surfaces)), "tab next", "^p palette", "? help", quit}
+		sl.Globals = []string{"^p palette", "? help", fmt.Sprintf("1-%d views", len(a.surfaces)), "tab next", quit}
 	}
-	if sc, ok := a.Active().(statusContext); ok {
+	if !a.gateActive() {
+		if hp, ok := a.Active().(surfaces.HintProvider); ok {
+			sl.Flash, sl.Hints = hp.Hints()
+		}
+	}
+	if sc, ok := a.Active().(statusContext); ok && !a.gateActive() {
 		zone, mode := sc.StatusContext()
-		left := make([]kit.StatusSegment, 0, 3)
 		if mode != "" {
-			left = append(left, kit.ModeChip(mode))
+			sl.Left = append(sl.Left, kit.StatusSegment{Text: " "}, kit.ModeChip(mode))
 		}
-		base := make([]kit.StatusSegment, len(sl.Left))
-		copy(base, sl.Left)
 		if zone != "" {
-			base = append(base, kit.StatusSegment{
-				Text:  " " + theme.GlyphChevron + " " + zone,
-				Style: theme.TextDim(),
-			})
+			sl.Left = append(sl.Left, kit.StatusSegment{Text: " " + zone, Style: theme.TextDim()})
 		}
-		left = append(left, base...)
-		sl.Left = left
 	}
 	if n := a.attentionCount(); n > 0 {
-		sl.Left = append([]kit.StatusSegment{{
-			Text:  fmt.Sprintf(" !%d ", n),
-			Style: theme.DangerText(),
-		}}, sl.Left...)
+		sl.Left = append(sl.Left, kit.StatusSegment{Text: " "}, kit.StatusSegment{
+			Text:  fmt.Sprintf(" %s %d waiting ", theme.GlyphDiamond, n),
+			Style: theme.AttentionPill(),
+		})
 	}
-	sl.Center = ""
 	sl.Width = a.width
 	return sl
+}
+
+// clickStatus acts on a click at column x of the status row: a hint does
+// what its key does (F-055), routed like a key press.
+func (a *App) clickStatus(x int) {
+	if a.status == nil {
+		return
+	}
+	k, ok := a.status.KeyAt(x)
+	if !ok {
+		return
+	}
+	if strings.HasPrefix(k, "^") {
+		k = "ctrl+" + strings.TrimPrefix(k, "^")
+	}
+	switch k {
+	case "ctrl+p":
+		a.openPalette()
+		return
+	case "?":
+		a.showHelp = true
+		return
+	case "ctrl+c", "ctrl+q":
+		return // never quit from a stray click
+	}
+	if _, handled := a.handleGlobal(k, false); handled {
+		return
+	}
+	a.Active().HandleKey(k)
 }

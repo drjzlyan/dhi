@@ -1,26 +1,26 @@
-  CONFIG        ╭─ › autopilots ─────────────────────────────────────────────────────────╮
-  PROJECT       │   name                agent       schedule                    next-due │
-  AGENTS        │ ▌ Sweep               scout       daily 09:00                 09:00    │
-  BRAIN         │                                                                        │
-  PROPOSALS     │                                                                        │
-  LIBRARY       │                                                                        │
-  TEAMS         │                                                                        │
-  PACKS         │                                                                        │
-  STANDARDS     │                                                                        │
-  CONVENTIONS   │                                                                        │
-  WORKFLOWS     │                                                                        │
-▌ AUTOPILOTS    │                                                                        │
-  MARKETPLACE   │                                                                        │
-  SECRETS       │                                                                        │
-                │                                                                        │
-                │                                                                        │
-                │                                                                        │
-                │                                                                        │
-                │                                                                        │
-                │                                                                        │
-                │                                                                        │
-                │                                                                        │
-                │                                                                        │
-                │                                                                        │
-                │ n new • t rituals • e arm/pause • r run now • c task cards • o last r… │
-                ╰────────────────────────────────────────────────────────────────────────╯
+  CONFIG        ▏ autopilots ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
+  PROJECT       ▏   name                agent       schedule                    next-due  
+  AGENTS        ▏ ▌ Sweep               scout       daily 09:00                 09:00     
+  BRAIN         ▏                                                                         
+  PROPOSALS     ▏                                                                         
+  LIBRARY       ▏                                                                         
+  TEAMS         ▏                                                                         
+  PACKS         ▏                                                                         
+  STANDARDS     ▏                                                                         
+  CONVENTIONS   ▏                                                                         
+  WORKFLOWS     ▏                                                                         
+▌ AUTOPILOTS    ▏                                                                         
+  MARKETPLACE   ▏                                                                         
+  SECRETS       ▏                                                                         
+                ▏                                                                         
+                ▏                                                                         
+                ▏                                                                         
+                ▏                                                                         
+                ▏                                                                         
+                ▏                                                                         
+                ▏                                                                         
+                ▏                                                                         
+                ▏                                                                         
+                ▏                                                                         
+                ▏                                                                         
+                ▏                                                                         

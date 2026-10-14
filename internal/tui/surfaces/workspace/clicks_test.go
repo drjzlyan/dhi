@@ -66,18 +66,9 @@ func TestClicksSelectCardsAndSections(t *testing.T) {
 	}
 }
 
-// TestHintBarKeysAreClickable: clicking "n new" on the keymap row opens
-// the new-task dialog, exactly like pressing n.
-func TestHintBarKeysAreClickable(t *testing.T) {
-	m, ws := newSurface(t)
-	store, err := tasks.Open(ws)
-	if err != nil {
-		t.Fatal(err)
-	}
-	m.taskStore = store
-	m.sec = secBoard
-	x, y := findOnScreen(t, m.View(), "n new")
-	if !m.Click(x, y) || m.form.kind == fNone {
-		t.Fatalf("clicking the n hint did not open the new-task dialog (form=%v)", m.form.kind)
-	}
+// fullView is what the user sees of this surface: the pane plus the
+// flash and keymap the shell renders on its status row (ADR-0040).
+func fullView(m *Model) string {
+	flash, hints := m.Hints()
+	return m.View() + "\n" + flash + "\n" + strings.Join(hints, " • ")
 }

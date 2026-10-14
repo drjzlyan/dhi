@@ -70,7 +70,7 @@ func TestImportBareManifests(t *testing.T) {
 	})
 	submitSource(t, m, dir)
 
-	out := ansi.Strip(m.View())
+	out := ansi.Strip(fullView(m))
 	if !strings.Contains(out, "imported 2") {
 		t.Fatalf("summary missing:\n%s", out)
 	}
@@ -99,7 +99,7 @@ func TestImportSkipsDuplicatesNamed(t *testing.T) {
 	*reloads = 0
 	submitSource(t, m, dir)
 
-	out := ansi.Strip(m.View())
+	out := ansi.Strip(fullView(m))
 	if !strings.Contains(out, "imported 1") || !strings.Contains(out, "skipped 1") ||
 		!strings.Contains(out, "scout") {
 		t.Fatalf("named skip missing:\n%s", out)
@@ -117,8 +117,8 @@ func TestImportRefusesWholeBatchOnBadManifest(t *testing.T) {
 	})
 	submitSource(t, m, dir)
 
-	if !strings.Contains(ansi.Strip(m.View()), "junk.toml") {
-		t.Fatalf("bad file not named:\n%s", ansi.Strip(m.View()))
+	if !strings.Contains(ansi.Strip(fullView(m)), "junk.toml") {
+		t.Fatalf("bad file not named:\n%s", ansi.Strip(fullView(m)))
 	}
 	if roster, _ := org.LoadRoster(ws); len(roster) != 0 {
 		t.Fatalf("nothing must write on a refused batch: %+v", roster)
@@ -137,7 +137,7 @@ func TestImportPrefersPackWhenPresent(t *testing.T) {
 	})
 	submitSource(t, m, dir)
 
-	out := ansi.Strip(m.View())
+	out := ansi.Strip(fullView(m))
 	if !strings.Contains(out, "installed pack crew") {
 		t.Fatalf("pack flow not taken:\n%s", out)
 	}
@@ -165,8 +165,8 @@ func TestImportSubpathScopesAndEmptyDirNamed(t *testing.T) {
 	// A source with nothing importable names the reason.
 	empty := t.TempDir()
 	submitSource(t, m, empty)
-	if !strings.Contains(ansi.Strip(m.View()), "no pack.toml or agent manifests") {
-		t.Fatalf("empty source not named:\n%s", ansi.Strip(m.View()))
+	if !strings.Contains(ansi.Strip(fullView(m)), "no pack.toml or agent manifests") {
+		t.Fatalf("empty source not named:\n%s", ansi.Strip(fullView(m)))
 	}
 	if roster, _ := org.LoadRoster(ws); len(roster) != 1 {
 		t.Fatalf("empty source wrote: %+v", roster)
@@ -176,7 +176,7 @@ func TestImportSubpathScopesAndEmptyDirNamed(t *testing.T) {
 func TestImportUnknownSourceNamed(t *testing.T) {
 	m, _, _, _ := agentSurface(t)
 	submitSource(t, m, "/nonexistent/dhi-source-xyz")
-	if !strings.Contains(ansi.Strip(m.View()), "not a directory") {
-		t.Fatalf("bad source not named:\n%s", ansi.Strip(m.View()))
+	if !strings.Contains(ansi.Strip(fullView(m)), "not a directory") {
+		t.Fatalf("bad source not named:\n%s", ansi.Strip(fullView(m)))
 	}
 }

@@ -1,26 +1,26 @@
-  CONFIG        ╭─ › standards ──────────────────────────────────────────────────────────╮
-  PROJECT       │ ▌ workspace       1 rules                                              │
-  AGENTS        │   scout           0 rules -                                            │
-  BRAIN         │                                                                        │
-  PROPOSALS     │                                                                        │
-  LIBRARY       │                                                                        │
-  TEAMS         │                                                                        │
-  PACKS         │                                                                        │
-▌ STANDARDS     │                                                                        │
-  CONVENTIONS   │                                                                        │
-  WORKFLOWS     │                                                                        │
-  AUTOPILOTS    │                                                                        │
-  MARKETPLACE   │                                                                        │
-  SECRETS       │                                                                        │
-                │                                                                        │
-                │                                                                        │
-                │                                                                        │
-                │                                                                        │
-                │                                                                        │
-                │                                                                        │
-                │                                                                        │
-                │                                                                        │
-                │                                                                        │
-                │                                                                        │
-                │ u yours • w workspace • t team • g agent • v preview • [ ] sections •… │
-                ╰────────────────────────────────────────────────────────────────────────╯
+  CONFIG        ▏ standards ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
+  PROJECT       ▏ ▌ workspace       1 rules                                               
+  AGENTS        ▏   scout           0 rules -                                             
+  BRAIN         ▏                                                                         
+  PROPOSALS     ▏                                                                         
+  LIBRARY       ▏                                                                         
+  TEAMS         ▏                                                                         
+  PACKS         ▏                                                                         
+▌ STANDARDS     ▏                                                                         
+  CONVENTIONS   ▏                                                                         
+  WORKFLOWS     ▏                                                                         
+  AUTOPILOTS    ▏                                                                         
+  MARKETPLACE   ▏                                                                         
+  SECRETS       ▏                                                                         
+                ▏                                                                         
+                ▏                                                                         
+                ▏                                                                         
+                ▏                                                                         
+                ▏                                                                         
+                ▏                                                                         
+                ▏                                                                         
+                ▏                                                                         
+                ▏                                                                         
+                ▏                                                                         
+                ▏                                                                         
+                ▏                                                                         

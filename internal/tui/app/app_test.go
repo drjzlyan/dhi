@@ -75,13 +75,13 @@ func TestStatuslineAttentionSegment(t *testing.T) {
 	a := New("test", ws, &stubSurface{id: "editor", title: "Editor"})
 	a.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 
-	if got := a.compose(); !strings.Contains(got, "!3") {
-		t.Fatalf("statusline missing !3:\n%s", got)
+	if got := a.compose(); !strings.Contains(got, "3 waiting") {
+		t.Fatalf("statusline missing 3 waiting:\n%s", got)
 	}
 	// Resolving the items (count → 0) clears the segment the next frame.
 	ws.n = 0
-	if got := a.compose(); strings.Contains(got, "!3") {
-		t.Fatalf("statusline still shows !3 after resolve:\n%s", got)
+	if got := a.compose(); strings.Contains(got, "3 waiting") {
+		t.Fatalf("statusline still shows 3 waiting after resolve:\n%s", got)
 	}
 	// No raw theme colors leaked: the segment uses a style, not a literal.
 	ws.n = 1
@@ -839,5 +839,62 @@ func TestSpaceKeyIsDeliveredAsSpace(t *testing.T) {
 	a3.Update(tea.KeyPressMsg{Code: tea.KeySpace, Mod: tea.ModCtrl})
 	if got := st3[0].keys; len(got) != 1 || got[0] != "ctrl+space" {
 		t.Fatalf("chord = %q", got)
+	}
+}
+
+// hintStub reports a long keymap through surfaces.HintProvider.
+type hintStub struct {
+	stubSurface
+	hints []string
+}
+
+func (h *hintStub) Hints() (string, []string) { return "", h.hints }
+
+// TestStatusOwnsHintsAndDropsWhole (ADR-0040): the surface's keymap
+// renders on the status row; at a narrow width hints drop whole —
+// never clipped mid-word — and "? more" takes their place.
+func TestStatusOwnsHintsAndDropsWhole(t *testing.T) {
+	theme.SwapForTest(t, theme.Dark())
+	hs := &hintStub{stubSurface: stubSurface{id: "ws", title: "Workspace"},
+		hints: []string{"enter open", "a assign", "T take it", "r trace", "h/l lane", "n new", "s/S status", "m move", "/ filter"}}
+	a := New("test", hs, &stubSurface{id: "editor", title: "Editor"})
+	a.Update(tea.WindowSizeMsg{Width: 200, Height: 20})
+	row := ansi.Strip(a.status0())
+	for _, h := range []string{"open", "filter", "palette"} {
+		if !strings.Contains(row, h) {
+			t.Fatalf("wide status row missing %q:\n%s", h, row)
+		}
+	}
+	a.Update(tea.WindowSizeMsg{Width: 80, Height: 20})
+	row = ansi.Strip(a.status0())
+	if strings.Contains(row, "…") {
+		t.Fatalf("status row clipped a hint:\n%s", row)
+	}
+	if !strings.Contains(row, "more") || !strings.Contains(row, "open") {
+		t.Fatalf("narrow status row should keep the first hint and offer more:\n%s", row)
+	}
+	if strings.Contains(row, "filter") {
+		t.Fatalf("least important hint should drop first:\n%s", row)
+	}
+}
+
+// status0 composes a frame and returns its last row.
+func (a *App) status0() string {
+	rows := strings.Split(a.compose(), "\n")
+	return rows[len(rows)-1]
+}
+
+// TestStatusHintClickActsLikeKey (F-055 on the status row): clicking a
+// surface hint sends its key to the surface.
+func TestStatusHintClickActsLikeKey(t *testing.T) {
+	theme.SwapForTest(t, theme.Dark())
+	hs := &hintStub{stubSurface: stubSurface{id: "ws", title: "Workspace"}, hints: []string{"n new", "s/S status"}}
+	a := New("test", hs, &stubSurface{id: "editor", title: "Editor"})
+	a.Update(tea.WindowSizeMsg{Width: 120, Height: 20})
+	row := ansi.Strip(a.status0())
+	x := strings.Index(row, "status") - 2 // on the keycap
+	a.handleClick(len([]rune(row[:x])), 19)
+	if len(hs.keys) != 1 || hs.keys[0] != "s" {
+		t.Fatalf("click on the status hint sent %v, want [s]", hs.keys)
 	}
 }

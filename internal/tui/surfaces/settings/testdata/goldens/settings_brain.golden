@@ -1,26 +1,26 @@
-  CONFIG        ╭─ › brain ────────────────────────────────────────────────────────────────────────────────────────────╮
-  PROJECT       │ what your crew has learned · 4 lesson(s)  / to filter                                                │
-  AGENTS        │                                                                                                      │
-▌ BRAIN         │  YOUR PREFERENCES ────────────────────────────────────────────────────────────────────────────────   │
-  PROPOSALS     │ ▌ ● ▮▮▮▮▮ Keep pull requests small and focused                    ×0 · correction · 2d               │
-  LIBRARY       │                                                                                                      │
-  TEAMS         │  DEV ─────────────────────────────────────────────────────────────────────────────────────────────   │
-  PACKS         │   ◆ ▮▮▮▮▯ Run go test with -race in this repo                     ×6 · reflection · 2d  standard?    │
-  STANDARDS     │   ● ▮▮▮▯▯ Distribute the remainder one cent at a time             ×0 · reflection · 2d               │
-  CONVENTIONS   │   ✗ ▮▮▯▯▯ Use the legacy money package                            ×0 · agent · 2d                    │
-  WORKFLOWS     │                                                                                                      │
-  AUTOPILOTS    │                                                                                                      │
-  MARKETPLACE   │                                                                                                      │
-  SECRETS       │                                                                                                      │
-                │                                                                                                      │
-                │                                                                                                      │
-                │                                                                                                      │
-                │                                                                                                      │
-                │                                                                                                      │
-                │                                                                                                      │
-                │                                                                                                      │
-                │                                                                                                      │
-                │                                                                                                      │
-                │                                                                                                      │
-                │ p pin • x retire • s share • m memory • / filter • [ ] sections • ctrl+s write                       │
-                ╰──────────────────────────────────────────────────────────────────────────────────────────────────────╯
+  CONFIG        ▏ brain ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
+  PROJECT       ▏ what your crew has learned · 4 lesson(s)  / to filter                                                 
+  AGENTS        ▏                                                                                                       
+▌ BRAIN         ▏  YOUR PREFERENCES ────────────────────────────────────────────────────────────────────────────────    
+  PROPOSALS     ▏ ▌ ● ▮▮▮▮▮ Keep pull requests small and focused                    ×0 · correction · 2d                
+  LIBRARY       ▏                                                                                                       
+  TEAMS         ▏  DEV ─────────────────────────────────────────────────────────────────────────────────────────────    
+  PACKS         ▏   ◆ ▮▮▮▮▯ Run go test with -race in this repo                     ×6 · reflection · 2d  standard?     
+  STANDARDS     ▏   ● ▮▮▮▯▯ Distribute the remainder one cent at a time             ×0 · reflection · 2d                
+  CONVENTIONS   ▏   ✗ ▮▮▯▯▯ Use the legacy money package                            ×0 · agent · 2d                     
+  WORKFLOWS     ▏                                                                                                       
+  AUTOPILOTS    ▏                                                                                                       
+  MARKETPLACE   ▏                                                                                                       
+  SECRETS       ▏                                                                                                       
+                ▏                                                                                                       
+                ▏                                                                                                       
+                ▏                                                                                                       
+                ▏                                                                                                       
+                ▏                                                                                                       
+                ▏                                                                                                       
+                ▏                                                                                                       
+                ▏                                                                                                       
+                ▏                                                                                                       
+                ▏                                                                                                       
+                ▏                                                                                                       
+                ▏                                                                                                       

@@ -54,8 +54,12 @@ func (t *Tabs) ActiveID() string {
 	return ""
 }
 
-// brand is the fixed tab-bar prefix.
-const brand = " ◆ DHI "
+// brand is the fixed tab-bar prefix; tabSep sits between tabs (F-093:
+// tabs are pills, not a breadcrumb — no chevron).
+const (
+	brand  = " ◆ dhi  "
+	tabSep = " "
+)
 
 // labels returns each tab's text for the bar's width (F-054): full
 // labels when they fit, else the active tab keeps its name and the rest
@@ -88,28 +92,31 @@ func barWidth(labels []string) int {
 	for i, l := range labels {
 		w += runeWidth(" " + l + " ")
 		if i > 0 {
-			w += runeWidth(theme.GlyphChevron)
+			w += runeWidth(tabSep)
 		}
 	}
 	return w
 }
 
-// View renders "1 Home  2 Editor …" with the active tab highlighted and the
-// whole bar padded to Width cells.
+// View renders " ◆ dhi   1 Workspace   2 Editor …": the active tab is a
+// pill in the view's hue, the others show a muted number and a dim
+// label; the whole bar is padded to Width cells.
 func (t *Tabs) View() string {
-	active := theme.TabCurrent()
-	inactive := theme.TabInactive()
-
 	var parts []string
 	for i, label := range t.labels() {
-		st := inactive
 		if i == t.Active {
-			st = active
+			parts = append(parts, theme.TabCurrent().Render(" "+label+" "))
+			continue
 		}
-		parts = append(parts, st.Render(" "+label+" "))
+		num, rest, _ := strings.Cut(label, " ")
+		seg := theme.Hint().Render(" " + num)
+		if rest != "" {
+			seg += theme.TabInactive().Render(" " + rest)
+		}
+		parts = append(parts, seg+" ")
 	}
 
-	left := theme.Brand().Render(brand) + strings.Join(parts, theme.Hint().Render(theme.GlyphChevron))
+	left := theme.Brand().Render(brand) + strings.Join(parts, tabSep)
 	if t.Right != "" && t.Width > 0 {
 		lw, rw := runeWidth(ansi.Strip(left)), runeWidth(ansi.Strip(t.Right))
 		if lw+2+rw <= t.Width {
@@ -130,7 +137,7 @@ func (t *Tabs) Hit(x int) (i int, ok bool) {
 	}
 	start := runeWidth(brand)
 	for j, label := range t.labels() {
-		end := start + runeWidth(" "+label+" ") + runeWidth(theme.GlyphChevron)
+		end := start + runeWidth(" "+label+" ") + runeWidth(tabSep)
 		if x < end {
 			if x >= start {
 				return j, true

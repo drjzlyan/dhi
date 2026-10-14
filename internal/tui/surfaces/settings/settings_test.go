@@ -23,7 +23,7 @@ func newSurface(t *testing.T) (*Model, string) {
 func TestNavigateAndCycleTheme(t *testing.T) {
 	m, _ := newSurface(t)
 	m.cursor = rowTheme
-	if !strings.Contains(ansi.Strip(m.View()), "dark-futuristic") {
+	if !strings.Contains(ansi.Strip(fullView(m)), "dark-futuristic") {
 		t.Fatal("theme row missing initial value")
 	}
 
@@ -34,7 +34,7 @@ func TestNavigateAndCycleTheme(t *testing.T) {
 	if theme.Current.Name != theme.Light().Name {
 		t.Fatal("live theme did not switch")
 	}
-	if !strings.Contains(ansi.Strip(m.View()), "light-paper") {
+	if !strings.Contains(ansi.Strip(fullView(m)), "light-paper") {
 		t.Error("view not updated")
 	}
 
@@ -119,8 +119,8 @@ func TestNoSavePathIsSessionOnly(t *testing.T) {
 	m.Resize(60, 20)
 	m.cursor = rowTheme
 	feed(m, "enter")
-	if !strings.Contains(ansi.Strip(m.View()), "session-only") {
-		t.Errorf("flash missing:\n%s", ansi.Strip(m.View()))
+	if !strings.Contains(ansi.Strip(fullView(m)), "session-only") {
+		t.Errorf("flash missing:\n%s", ansi.Strip(fullView(m)))
 	}
 }
 
@@ -153,7 +153,7 @@ func TestScopesEditorCyclesAndPersists(t *testing.T) {
 	if err != nil || !strings.Contains(string(data), `write = "auto"`) {
 		t.Fatalf("config not persisted: %v\n%s", err, data)
 	}
-	if !strings.Contains(ansi.Strip(m.View()), "may write files") {
+	if !strings.Contains(ansi.Strip(fullView(m)), "may write files") {
 		t.Error("scope row not rendered")
 	}
 }
@@ -191,8 +191,8 @@ func TestCopyrightRowNeedsHolder(t *testing.T) {
 	m, _ := newSurface(t)
 	m.cursor = rowCopyright
 	feed(m, "enter")
-	if m.cfg.Conventions.Copyright.Enabled || m.dkind != dlgConfigValue || !strings.Contains(ansi.Strip(m.View()), "holder") {
-		t.Fatalf("enabled=%v; want the holder editor:\n%s", m.cfg.Conventions.Copyright.Enabled, ansi.Strip(m.View()))
+	if m.cfg.Conventions.Copyright.Enabled || m.dkind != dlgConfigValue || !strings.Contains(ansi.Strip(fullView(m)), "holder") {
+		t.Fatalf("enabled=%v; want the holder editor:\n%s", m.cfg.Conventions.Copyright.Enabled, ansi.Strip(fullView(m)))
 	}
 	for _, r := range "Acme Inc" {
 		m.HandleKey(string(r))
@@ -207,8 +207,8 @@ func TestTypedValuesAreCheckedAndSaved(t *testing.T) {
 	m, path := newSurface(t)
 	m.cursor = rowMaxTurns
 	feed(m, "e")
-	if m.dkind != dlgConfigValue || !strings.Contains(ansi.Strip(m.View()), "0 = the CLI's default") {
-		t.Fatalf("editor:\n%s", ansi.Strip(m.View()))
+	if m.dkind != dlgConfigValue || !strings.Contains(ansi.Strip(fullView(m)), "0 = the CLI's default") {
+		t.Fatalf("editor:\n%s", ansi.Strip(fullView(m)))
 	}
 	feed(m, "ctrl+a", "delete", "4", "2", "enter")
 	if m.cfg.Agents.MaxTurns != 42 || m.dlg != nil {
@@ -266,7 +266,7 @@ func TestKeysAndLanguagesAreEditable(t *testing.T) {
 	if lc := c.Editor.Languages["go"]; lc.Enabled == nil || *lc.Enabled {
 		t.Fatalf("go not switched off: %+v", c.Editor.Languages)
 	}
-	if v := ansi.Strip(m.View()); !strings.Contains(v, "of") {
+	if v := ansi.Strip(fullView(m)); !strings.Contains(v, "of") {
 		t.Fatalf("languages row:\n%s", v)
 	}
 }
@@ -277,7 +277,7 @@ func TestWorktreeRootRowCyclesPersistsAndSaysItNeedsARestart(t *testing.T) {
 	if got := m.cfg.Worktrees.Root; got != "" {
 		t.Fatalf("default root = %q", got)
 	}
-	if !strings.Contains(ansi.Strip(m.View()), "task worktrees folder") {
+	if !strings.Contains(ansi.Strip(fullView(m)), "task worktrees folder") {
 		t.Error("worktrees row not rendered")
 	}
 	feed(m, "l") // inside .dhi → next to the workspace
@@ -309,7 +309,7 @@ func TestWorktreeRootRowCyclesPersistsAndSaysItNeedsARestart(t *testing.T) {
 func TestAgentsAndBudgetRowsPersist(t *testing.T) {
 	m, path := newSurface(t)
 	m.cursor = rowTaskUSD
-	view := ansi.Strip(m.View())
+	view := ansi.Strip(fullView(m))
 	for _, want := range []string{"AGENTS & BUDGETS", "budget per task", "no limit"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("view missing %q", want)
@@ -325,7 +325,7 @@ func TestAgentsAndBudgetRowsPersist(t *testing.T) {
 	if !strings.Contains(m.flash, "next spawn") {
 		t.Fatalf("flash = %q", m.flash)
 	}
-	if !strings.Contains(ansi.Strip(m.View()), "2M") {
+	if !strings.Contains(ansi.Strip(fullView(m)), "2M") {
 		t.Fatal("token budget not rendered compactly")
 	}
 	back, err := settings.Load(path, "")
@@ -345,7 +345,7 @@ func TestAgentsAndBudgetRowsPersist(t *testing.T) {
 func TestReflectRowPersists(t *testing.T) {
 	m, path := newSurface(t)
 	m.cursor = rowReflect
-	if !strings.Contains(ansi.Strip(m.View()), "learn from turns") {
+	if !strings.Contains(ansi.Strip(fullView(m)), "learn from turns") {
 		t.Fatal("reflect row not rendered")
 	}
 	feed(m, "enter")
@@ -357,7 +357,7 @@ func TestReflectRowPersists(t *testing.T) {
 
 func TestYouRowsCycleAndPersist(t *testing.T) {
 	m, path := newSurface(t)
-	if v := ansi.Strip(m.View()); !strings.Contains(v, "YOU") || !strings.Contains(v, "you are a") {
+	if v := ansi.Strip(fullView(m)); !strings.Contains(v, "YOU") || !strings.Contains(v, "you are a") {
 		t.Fatalf("you group missing:\n%s", v)
 	}
 	m.cursor = rowRole
@@ -414,4 +414,11 @@ func TestEverySettingHasAPlaceInSettings(t *testing.T) {
 			t.Errorf("setting %s has no CONFIG row and no owner", k)
 		}
 	}
+}
+
+// fullView is what the user sees of this surface: the pane plus the
+// flash and keymap the shell renders on its status row (ADR-0040).
+func fullView(m *Model) string {
+	flash, hints := m.Hints()
+	return m.View() + "\n" + flash + "\n" + strings.Join(hints, " • ")
 }

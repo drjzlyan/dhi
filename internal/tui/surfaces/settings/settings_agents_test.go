@@ -76,7 +76,7 @@ func typeFields(m *Model, vals ...string) {
 
 func TestAgentsCreateViaForm(t *testing.T) {
 	m, ws, _, reloads := agentSurface(t)
-	out := ansi.Strip(m.View())
+	out := ansi.Strip(fullView(m))
 	if !strings.Contains(out, "(no agents") {
 		t.Fatalf("empty state missing:\n%s", out)
 	}
@@ -101,8 +101,8 @@ func TestAgentsCreateViaForm(t *testing.T) {
 	if *reloads != 1 {
 		t.Fatalf("reload seam called %d times, want 1", *reloads)
 	}
-	if !strings.Contains(ansi.Strip(m.View()), "agent scout saved") {
-		t.Fatalf("flash missing:\n%s", ansi.Strip(m.View()))
+	if !strings.Contains(ansi.Strip(fullView(m)), "agent scout saved") {
+		t.Fatalf("flash missing:\n%s", ansi.Strip(fullView(m)))
 	}
 }
 
@@ -119,8 +119,8 @@ func TestAgentsCreateValidationErrors(t *testing.T) {
 	}
 	// The error row renders (panel width may clip long lines — assert a
 	// short visible marker plus the state above).
-	if !strings.Contains(ansi.Strip(m.View()), "manifest") {
-		t.Fatalf("error not rendered:\n%s", ansi.Strip(m.View()))
+	if !strings.Contains(ansi.Strip(fullView(m)), "manifest") {
+		t.Fatalf("error not rendered:\n%s", ansi.Strip(fullView(m)))
 	}
 	if *reloads != 0 {
 		t.Fatal("failed form must not reload")
@@ -329,7 +329,7 @@ func TestAgentsGrantsListAndRevoke(t *testing.T) {
 		{Agent: "scout", Scope: "write", At: time.Date(2026, 10, 13, 9, 0, 0, 0, time.UTC)},
 	}}
 	m.d.Grants = fg
-	view := ansi.Strip(m.View())
+	view := ansi.Strip(fullView(m))
 	for _, want := range []string{"ALWAYS ALLOWED", "scout       git", "since Oct 13", "r revoke grants"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("view missing %q:\n%s", want, view)
@@ -339,7 +339,7 @@ func TestAgentsGrantsListAndRevoke(t *testing.T) {
 	if len(fg.gs) != 0 || !strings.Contains(m.flash, "revoked 2 grant(s)") {
 		t.Fatalf("grants = %+v flash = %q", fg.gs, m.flash)
 	}
-	view = ansi.Strip(m.View())
+	view = ansi.Strip(fullView(m))
 	if strings.Contains(view, "r revoke grants") || !strings.Contains(view, "none — answering an approval") {
 		t.Fatalf("after revoke:\n%s", view)
 	}

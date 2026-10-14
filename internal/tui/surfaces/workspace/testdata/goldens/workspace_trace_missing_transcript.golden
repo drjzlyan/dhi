@@ -1,34 +1,34 @@
-  INBOX                  1╭─ › board ────────────────────────────────────────────────────────────────────────╮
-▌ BOARD                  1│ TRACE  ghost  Gone                                                               │
-  CHANNELS                │  all runs (1)   1 alice 01:00 error                                              │
-  REPOS                  2│ filter everything  transcript missing: run-gone                                  │
-                          │                                                                                  │
-                          │ 01:00:00 alice      ▶ run-gone started (attempt 1) · cli:claude                  │
-                          │ 01:00:30 alice      ■ run-gone error in 30s · 0 in / 0 out tokens · exit 1       │
-                          │                                                                                  │
-                          │                                                                                  │
-                          │                                                                                  │
-                          │                                                                                  │
-                          │                                                                                  │
-                          │                                                                                  │
-                          │                                                                                  │
-                          │                                                                                  │
-                          │                                                                                  │
-                          │                                                                                  │
-                          │                                                                                  │
-                          │                                                                                  │
-                          │                                                                                  │
-                          │                                                                                  │
-                          │                                                                                  │
-                          │                                                                                  │
-                          │                                                                                  │
-                          │                                                                                  │
-                          │                                                                                  │
-                          │                                                                                  │
-                          │                                                                                  │
-                          │                                                                                  │
-                          │                                                                                  │
-                          │                                                                                  │
-                          │                                                                                  │
-                          │ esc close • j/k scroll • n/p run • f filter • / search • x export • g/G top/bot… │
-                          ╰──────────────────────────────────────────────────────────────────────────────────╯
+  INBOX                  1▏ board ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
+▌ BOARD                  1▏ TRACE  ghost  Gone                                                                
+  CHANNELS                ▏  all runs (1)   1 alice 01:00 error                                               
+  REPOS                  2▏ filter everything  transcript missing: run-gone                                   
+                          ▏                                                                                   
+                          ▏ 01:00:00 alice      ▶ run-gone started (attempt 1) · cli:claude                   
+                          ▏ 01:00:30 alice      ■ run-gone error in 30s · 0 in / 0 out tokens · exit 1        
+                          ▏                                                                                   
+                          ▏                                                                                   
+                          ▏                                                                                   
+                          ▏                                                                                   
+                          ▏                                                                                   
+                          ▏                                                                                   
+                          ▏                                                                                   
+                          ▏                                                                                   
+                          ▏                                                                                   
+                          ▏                                                                                   
+                          ▏                                                                                   
+                          ▏                                                                                   
+                          ▏                                                                                   
+                          ▏                                                                                   
+                          ▏                                                                                   
+                          ▏                                                                                   
+                          ▏                                                                                   
+                          ▏                                                                                   
+                          ▏                                                                                   
+                          ▏                                                                                   
+                          ▏                                                                                   
+                          ▏                                                                                   
+                          ▏                                                                                   
+                          ▏                                                                                   
+                          ▏                                                                                   
+                          ▏                                                                                   
+                          ▏                                                                                   

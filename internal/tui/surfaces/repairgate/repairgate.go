@@ -97,6 +97,7 @@ func (m *Model) View() string {
 		lines = append(lines, "", theme.Hint().Render("enter continue"))
 	}
 	p := kit.NewPanel("dhi "+m.version, false)
+	p.Boxed = true // gates keep their frame (ADR-0040)
 	p.SetContent(lines...)
 	p.Width = w
 	p.Height = min(len(lines)+2, max(m.height, 8))

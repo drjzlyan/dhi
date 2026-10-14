@@ -1,26 +1,26 @@
-  CONFIG        ╭─ › packs ──────────────────────────────────────────────────────────────╮
-  PROJECT       │ (no packs installed — "i" to install from a path or git URL)           │
-  AGENTS        │                                                                        │
-  BRAIN         │                                                                        │
-  PROPOSALS     │                                                                        │
-  LIBRARY       │                                                                        │
-  TEAMS         │                                                                        │
-▌ PACKS         │                                                                        │
-  STANDARDS     │                                                                        │
-  CONVENTIONS   │                                                                        │
-  WORKFLOWS     │                                                                        │
-  AUTOPILOTS    │                                                                        │
-  MARKETPLACE   │                                                                        │
-  SECRETS       │                                                                        │
-                │                                                                        │
-                │                                                                        │
-                │                                                                        │
-                │                                                                        │
-                │                                                                        │
-                │                                                                        │
-                │                                                                        │
-                │                                                                        │
-                │                                                                        │
-                │                                                                        │
-                │ i install • x uninstall • [ ] sections • ctrl+s write                  │
-                ╰────────────────────────────────────────────────────────────────────────╯
+  CONFIG        ▏ packs ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
+  PROJECT       ▏ (no packs installed — "i" to install from a path or git URL)            
+  AGENTS        ▏                                                                         
+  BRAIN         ▏                                                                         
+  PROPOSALS     ▏                                                                         
+  LIBRARY       ▏                                                                         
+  TEAMS         ▏                                                                         
+▌ PACKS         ▏                                                                         
+  STANDARDS     ▏                                                                         
+  CONVENTIONS   ▏                                                                         
+  WORKFLOWS     ▏                                                                         
+  AUTOPILOTS    ▏                                                                         
+  MARKETPLACE   ▏                                                                         
+  SECRETS       ▏                                                                         
+                ▏                                                                         
+                ▏                                                                         
+                ▏                                                                         
+                ▏                                                                         
+                ▏                                                                         
+                ▏                                                                         
+                ▏                                                                         
+                ▏                                                                         
+                ▏                                                                         
+                ▏                                                                         
+                ▏                                                                         
+                ▏                                                                         

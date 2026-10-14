@@ -285,6 +285,7 @@ func (m *Model) cardTextWidth() int { return m.cardWidth() - 6 }
 // card frames lines in a panel sized to its content, centered on screen.
 func (m *Model) card(lines []string) string {
 	p := kit.NewPanel("dhi "+m.version, false)
+	p.Boxed = true // gates keep their frame (ADR-0040)
 	p.SetContent(lines...)
 	p.Width = m.cardWidth()
 	p.Height = min(len(lines)+2, max(m.height, 8))

@@ -317,6 +317,34 @@ func (m *Model) StatusContext() (string, string) {
 	return "files", ""
 }
 
+// Hints implements surfaces.HintProvider (ADR-0040): the keymap of the
+// zone that owns the keys — the same switch StatusContext names — shown
+// once on the shell status row instead of inside the panes.
+func (m *Model) Hints() (string, []string) {
+	switch {
+	case m.reviewOpen && len(m.proposals) > 0:
+		return "", nil // the suggestion card names its own keys
+	case m.chat != nil && m.chat.open && m.chat.focus:
+		return "", []string{"⏎ send", "@ mention", "[ ] channel", "^f apply", "esc blur"}
+	case m.drawerOpen && m.termFocus:
+		return "", []string{"ctrl+t blur", "alt+1..9 tab", "alt+n new tab"}
+	case m.gitOpen && m.gitFocus:
+		return "", []string{"s stage", "S all", "u unstage", "c commit", "tab status/log", "esc blur"}
+	case m.mode != modeNav:
+		return "", nil // finder, search, symbols, tests: their prompts say it
+	case m.bufFocus && m.active() != nil:
+		if m.active().Mode() == textbuf.ModeInsert {
+			return "", []string{"esc normal"}
+		}
+		return "", []string{"i insert", ": cmd", "esc tree", "K hover", "gr refs", "ga actions"}
+	}
+	hints := []string{"⏎ open", "/ find", "s search"}
+	if m.drawerOpen && !m.termFocus {
+		hints = append(hints, "ctrl+t terminal")
+	}
+	return "", hints
+}
+
 // CapturesInput implements surfaces.InputCapturer. A focused buffer owns
 // every plain key (insert text, vim counts like 3dd, tab); so do the
 // terminal, chat composer, git panel and the file/search/symbol prompts.
@@ -1130,22 +1158,18 @@ func (m *Model) navView() string {
 		}
 	}
 	rail := kit.NewPanel("files", false)
-	hint := theme.Hint().Render(kit.ClipEllipsis("⏎ open · / find · s search", m.railW()-4))
-	if m.railW() < 32 {
-		hint = theme.Hint().Render("⏎ open · / find") // s search: see ? help
-	}
 	savedListH := m.list.Height
 	m.list.Width = maxInt(m.railW()-4, 8)
-	m.list.Height = bodyH - 4 // hint row, spacer, panel padding
+	m.list.Height = bodyH - 2 // panel header + foot; the keymap is on the status row (ADR-0040)
 	content := splitLines(m.list.View())
 	sb := m.list.Scroller() // capture with the live window height (F-025)
 	// The inset well runs the rail's full height (F-064): a shade that
 	// stopped at the last row made the empty rail read as another surface.
 	well := theme.InsetBg().Render(strings.Repeat(" ", m.list.Width))
-	for len(content) < bodyH-4 {
-		content = append(content, well) // push hints to the rail's foot
+	for len(content) < bodyH-2 {
+		content = append(content, well)
 	}
-	rail.SetContent(append(content, "", hint)...)
+	rail.SetContent(content...)
 	rail.Width = maxInt(m.railW(), 1)
 	rail.Height = bodyH
 	rail.SetScroll(sb)
@@ -1171,11 +1195,12 @@ func (m *Model) navView() string {
 			theme.Hint().Render("press enter on a file to edit"),
 		}, "\n")
 	default:
-		main = strings.Join([]string{
-			theme.Brand().Render("no file open"),
-			"",
-			theme.Hint().Render("⏎ open  ·  / find file  ·  s search"),
-		}, "\n")
+		main = strings.Join(kit.EmptyState{
+			Glyph:  theme.GlyphFileDoc,
+			Title:  "No file open",
+			Why:    "Pick a file in the tree, find one by name, or search the code.",
+			Action: "⏎ open  ·  / find  ·  s search",
+		}.Lines(maxInt(m.width-m.railW()-4, 20), maxInt(bodyH-2, 0)), "\n")
 	}
 
 	railW := m.railW()

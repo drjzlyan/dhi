@@ -1,26 +1,26 @@
-  CONFIG        ╭─ › teams ──────────────────────────────────────────────────────────────╮
-  PROJECT       │ (no teams — "a" adds employees by role, "n" creates an empty team)     │
-  AGENTS        │                                                                        │
-  BRAIN         │                                                                        │
-  PROPOSALS     │                                                                        │
-  LIBRARY       │                                                                        │
-▌ TEAMS         │                                                                        │
-  PACKS         │  ╭─ › add employees by role ───────────────────────╮                   │
-  STANDARDS     │  │ into       [new team(s)]                        │                   │
-  CONVENTIONS   │  │ leads      [2]                                  │                   │
-  WORKFLOWS     │  │ fullstack ▌[3]                                  │                   │
-  AUTOPILOTS    │  │ frontend   [0]                                  │                   │
-  MARKETPLACE   │  │ backend    [0]                                  │                   │
-  SECRETS       │  │ testers    [0]                                  │                   │
-                │  │ PMs        [0]                                  │                   │
-                │  │ designers  [0]                                  │                   │
-                │  │ devops     [0]                                  │                   │
-                │  │ tab field · ←/→ cycle · enter save · esc cancel │                   │
-                │  ╰─────────────────────────────────────────────────╯                   │
-                │                                                                        │
-                │                                                                        │
-                │                                                                        │
-                │                                                                        │
-                │                                                                        │
-                │ a add by role • n new • e edit • x delete • [ ] sections • ctrl+s wri… │
-                ╰────────────────────────────────────────────────────────────────────────╯
+  CONFIG        ▏ teams ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
+  PROJECT       ▏ (no teams — "a" adds employees by role, "n" creates an empty team)      
+  AGENTS        ▏                                                                         
+  BRAIN         ▏                                                                         
+  PROPOSALS     ▏                                                                         
+  LIBRARY       ▏                                                                         
+▌ TEAMS         ▏                                                                         
+  PACKS         ▏  ╭─ add employees by role ─────────────────────────╮                    
+  STANDARDS     ▏  │ into       [new team(s)]                        │                    
+  CONVENTIONS   ▏  │ leads      [2]                                  │                    
+  WORKFLOWS     ▏  │ fullstack ▌[3]                                  │                    
+  AUTOPILOTS    ▏  │ frontend   [0]                                  │                    
+  MARKETPLACE   ▏  │ backend    [0]                                  │                    
+  SECRETS       ▏  │ testers    [0]                                  │                    
+                ▏  │ PMs        [0]                                  │                    
+                ▏  │ designers  [0]                                  │                    
+                ▏  │ devops     [0]                                  │                    
+                ▏  │ tab field · ←/→ cycle · enter save · esc cancel │                    
+                ▏  ╰─────────────────────────────────────────────────╯                    
+                ▏                                                                         
+                ▏                                                                         
+                ▏                                                                         
+                ▏                                                                         
+                ▏                                                                         
+                ▏                                                                         
+                ▏                                                                         
