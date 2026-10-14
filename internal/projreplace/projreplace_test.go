@@ -91,7 +91,7 @@ func TestApplySkipsStaleAndReportsFailures(t *testing.T) {
 	if fs.files["/b.go"][0] != "edited since" {
 		t.Fatal("a stale line was clobbered")
 	}
-	if s := res.Summary(); !strings.Contains(s, "replaced 2 line(s) in 1 file(s)") || !strings.Contains(s, "1 skipped") {
+	if s := res.Summary(); !strings.Contains(s, "replaced 2 lines in 1 file") || !strings.Contains(s, "1 skipped") {
 		t.Fatalf("summary = %q", s)
 	}
 }

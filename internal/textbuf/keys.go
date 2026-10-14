@@ -492,7 +492,15 @@ func exSubstitute(e *Editor, cmd string) bool {
 		e.message = "pattern not found: " + pat
 		return true
 	}
-	e.message = itoa(replaced) + " line(s) changed (" + itoa(n) + " hits)"
+	lines := " lines changed ("
+	if replaced == 1 {
+		lines = " line changed ("
+	}
+	hits := " hits)"
+	if n == 1 {
+		hits = " hit)"
+	}
+	e.message = itoa(replaced) + lines + itoa(n) + hits
 	return true
 }
 

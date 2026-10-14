@@ -54,7 +54,7 @@ func TestPerfLinesGolden(t *testing.T) {
 	theme.SwapForTest(t, theme.Dark())
 	lines := perfLines(samplePerf())
 	golden.Snapshot(t, "agent_hq_perf", strings.Join(lines, "\n"))
-	if got := ansi.Strip(strings.Join(lines, "\n")); !strings.Contains(got, "3 task(s) shipped · 75% runs ok · 2/3 verified") {
+	if got := ansi.Strip(strings.Join(lines, "\n")); !strings.Contains(got, "3 tasks shipped · 75% runs ok · 2/3 verified") {
 		t.Fatalf("perf:\n%s", got)
 	}
 }

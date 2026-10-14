@@ -165,7 +165,7 @@ func TestBoardCardPriorityPrefix(t *testing.T) {
 	// meta line under it, then the slug.
 	plain := tasks.Task{Slug: "the-slug", Title: "The title", Assignee: "scout"}
 	lines := strings.Split(ansi.Strip(boardCard(plain, 40, false, false)), "\n")
-	if len(lines) != 2 || !strings.Contains(lines[0], "The title") ||
+	if len(lines) != boardCardH || !strings.Contains(lines[0], "The title") ||
 		!strings.HasPrefix(strings.TrimSpace(lines[1]), "○ scout") || !strings.Contains(lines[1], "the-slug") {
 		t.Fatalf("card = %q, want title then owner · slug", lines)
 	}

@@ -57,7 +57,7 @@ func TestBrainGolden(t *testing.T) {
 func TestBrainPinRetireShareFilter(t *testing.T) {
 	m, st := brainSurface(t)
 	view := ansi.Strip(m.View())
-	for _, want := range []string{"YOUR PREFERENCES", "DEV", "standard?", "×6 · reflection", "4 lesson(s)"} {
+	for _, want := range []string{"YOUR PREFERENCES", "DEV", "standard?", "×6 · reflection", "4 lessons"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("brain missing %q:\n%s", want, view)
 		}
@@ -91,7 +91,7 @@ func TestBrainPinRetireShareFilter(t *testing.T) {
 	// Filter narrows to matching lessons.
 	feed(m, "/", "r", "a", "c", "e", "enter")
 	view = ansi.Strip(m.View())
-	if !strings.Contains(view, "filter: race") || !strings.Contains(view, "1 lesson(s)") || strings.Contains(view, "Distribute") {
+	if !strings.Contains(view, "filter: race") || !strings.Contains(view, "1 lesson") || strings.Contains(view, "Distribute") {
 		t.Fatalf("filtered view:\n%s", view)
 	}
 }

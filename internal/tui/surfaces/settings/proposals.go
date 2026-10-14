@@ -7,6 +7,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/agentkit/forge"
 	"github.com/drjzlyan/dhi/internal/agentkit/skillprop"
+	"github.com/drjzlyan/dhi/internal/tui/kit"
 	"github.com/drjzlyan/dhi/internal/tui/theme"
 )
 
@@ -229,7 +230,7 @@ func (m *Model) propLine(it propItem, selected bool, w int) string {
 			trust = "signed"
 		}
 		return lead + theme.WarningText().Render(theme.GlyphDiamond) + " " + nameStyle.Render(padTo("skill "+p.Entry, 26)) +
-			theme.Chip().Render(trust) + " " + theme.Hint().Render(fmt.Sprintf("%d skill(s)%s · by %s · ", len(p.Skills), flag, p.Agent)) +
+			theme.Chip().Render(trust) + " " + theme.Hint().Render(fmt.Sprintf("%s%s · by %s · ", kit.Count(len(p.Skills), "skill"), flag, p.Agent)) +
 			theme.TextDim().Render(clip(p.Reason, max(w-66, 16)))
 	case "setting":
 		sp := it.set
@@ -244,7 +245,7 @@ func (m *Model) propLine(it propItem, selected bool, w int) string {
 	}
 	t := it.tool
 	return lead + theme.SuccessText().Render(theme.GlyphCheck) + " " + nameStyle.Render(padTo("custom__"+t.Name, 26)) +
-		theme.Chip().Render(t.Scope) + " " + theme.Hint().Render(fmt.Sprintf("v%d · %d call(s) · ", t.Version, it.calls)) +
+		theme.Chip().Render(t.Scope) + " " + theme.Hint().Render(fmt.Sprintf("v%d · %s · ", t.Version, kit.Count(it.calls, "call"))) +
 		theme.TextDim().Render(clip(t.Description, max(w-60, 16)))
 }
 

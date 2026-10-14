@@ -85,7 +85,7 @@ func (m *Model) marketplaceKey(key string) bool {
 		}
 		if keys, _ := m.d.Registry.TrustedKeys(); len(keys) > 0 {
 			m.openConfirmDialog("clear trusted keys",
-				"unpin all "+itoa(len(keys))+" publisher key(s)? future refreshes accept unsigned indexes",
+				"unpin all "+kit.Count(len(keys), "publisher key")+"? future refreshes accept unsigned indexes",
 				"", dlgRegistryUntrust)
 		} else {
 			m.flash = "no publisher keys pinned"
@@ -229,7 +229,7 @@ func (m *Model) marketplaceView(w int) []string {
 	out := []string{head}
 	if keys := m.d.Registry.AllTrustedKeys(); len(keys) > 0 {
 		out = append(out, theme.TextDim().Render(
-			"trust: "+itoa(len(keys))+" publisher key(s) pinned — signed index required (t pin · T clear)"))
+			"trust: "+kit.Count(len(keys), "publisher key")+" pinned — signed index required (t pin · T clear)"))
 	} else {
 		out = append(out, theme.TextDim().Render(
 			"trust: digest-only — t to pin a publisher key"))

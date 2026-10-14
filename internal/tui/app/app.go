@@ -240,7 +240,7 @@ func (a *App) handleEditorRequest(r EditorRequest) {
 	switch r.Op {
 	case "open", "reveal":
 		if !a.OpenInEditor(r.Paths) {
-			errStr = "editor could not open the requested path(s)"
+			errStr = "the editor could not open what was asked for"
 		}
 	case "apply":
 		errStr = a.applyInEditor(r.Path, r.Old, r.New, r.All)

@@ -64,7 +64,7 @@ func TestProjectReplaceFlow(t *testing.T) {
 		m.HandleKey(string(r))
 	}
 	v := plainView(m)
-	for _, want := range []string{"2 line(s) in 2 file(s)", "1 open buffer(s)", "+ package main_test"} {
+	for _, want := range []string{"2 lines in 2 files", "1 open buffer", "+ package main_test"} {
 		if !strings.Contains(v, want) {
 			t.Fatalf("preview missing %q:\n%s", want, v)
 		}
@@ -92,7 +92,7 @@ func TestProjectReplaceFlow(t *testing.T) {
 	if !buf.Undo() || buf.Line(0) != "package main" {
 		t.Fatal("the replace must be one undo step in the buffer")
 	}
-	if !strings.Contains(m.replaceNote, "replaced 2 line(s) in 2 file(s)") {
+	if !strings.Contains(m.replaceNote, "replaced 2 lines in 2 files") {
 		t.Fatalf("note = %q", m.replaceNote)
 	}
 }

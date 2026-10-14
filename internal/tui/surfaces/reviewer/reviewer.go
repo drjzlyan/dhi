@@ -335,7 +335,7 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 			if ev.err != "" {
 				m.opErr = ev.err
 			} else if ev.n > 0 && ev.id == m.openID {
-				m.closeFormWithFlash("+" + itoa(ev.n) + " remote comment(s)")
+				m.closeFormWithFlash("+" + kit.Count(ev.n, "remote comment"))
 				m.syncedAt = time.Now()
 			} else if ev.id == m.openID {
 				m.syncedAt = time.Now()

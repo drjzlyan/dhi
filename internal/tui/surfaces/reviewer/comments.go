@@ -295,11 +295,11 @@ func (m *Model) renderThreads(w, h int) string {
 	pending := r.PendingCount()
 	if pending > 0 {
 		out = append(out, theme.WarningText().Render(
-			strconv.Itoa(pending)+" pending draft(s) — send them as one review with S"))
+			kit.Count(pending, "pending draft")+" — send them as one review with S"))
 	}
 	if n := r.OpenSuggestions(); n > 0 {
 		out = append(out, theme.AccentText().Render(
-			strconv.Itoa(n)+" suggestion(s) from your team await your decision — they are not sent unless you accept them"))
+			kit.Count(n, "suggestion")+" from your team await your decision — they are not sent unless you accept them"))
 	}
 	for i, tr := range rows {
 		t := order[tr.thread]

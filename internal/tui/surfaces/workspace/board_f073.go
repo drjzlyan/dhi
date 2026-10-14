@@ -62,10 +62,15 @@ func cardBadges(tk tasks.Task) string {
 	return strings.Join(parts, " ")
 }
 
-// boardCard renders one lane row (two lines, F-064): the title with
-// mark/priority/working glyphs, then who owns it, its state badges and
-// the slug — the owner first, because "who is on this" is the question
-// a board answers.
+// boardCardH is the rows per card: a title that wraps to two lines,
+// then the owner row (F-093 — titles were cut to ~15 characters).
+const boardCardH = 3
+
+// boardCard renders one lane row (boardCardH lines): the title with
+// mark/priority/working glyphs, wrapped to two lines, then who owns it,
+// its state badges and the slug — the owner first, because "who is on
+// this" is the question a board answers. A one-line title moves the
+// owner row up and leaves the last row as air.
 func boardCard(tk tasks.Task, laneW int, marked, working bool) string {
 	title := tk.Title
 	if title == "" {
@@ -76,15 +81,26 @@ func boardCard(tk tasks.Task, laneW int, marked, working bool) string {
 		prefix, prefixW = boardMarkPrefix(tk.Priority, marked, working), 3
 	}
 	avail := laneW - prefixW - 1 // one cell of air before the next lane
-	top := prefix + kit.ClipEllipsis(title, maxInt(avail, 4))
+	lines := kit.WrapWords(title, maxInt(avail, 4))
+	if len(lines) == 0 {
+		lines = []string{""}
+	}
+	if len(lines) > 2 {
+		lines = []string{lines[0], kit.ClipEllipsis(strings.Join(lines[1:], " "), maxInt(avail, 4))}
+	}
+	indent := strings.Repeat(" ", prefixW)
+	top := prefix + kit.ClipEllipsis(lines[0], maxInt(avail, 4))
 
 	meta := assigneeChip(tk.Assignee, working)
 	if b := cardBadges(tk); b != "" {
 		meta += "  " + b
 	}
 	meta += theme.TextMuted().Render("  " + tk.Slug)
-	bottom := strings.Repeat(" ", prefixW) + kit.ClipEllipsis(meta, maxInt(avail, 4))
-	return top + "\n" + bottom
+	bottom := indent + kit.ClipEllipsis(meta, maxInt(avail, 4))
+	if len(lines) == 2 {
+		return top + "\n" + indent + kit.ClipEllipsis(lines[1], maxInt(avail, 4)) + "\n" + bottom
+	}
+	return top + "\n" + bottom + "\n"
 }
 
 // ---- card page ----

@@ -111,7 +111,7 @@ func TestChannelsComposerVisibleWhenBlurred(t *testing.T) {
 	m, _, _ := newSurfaceWithBus(t)
 	m.sec = secChannels
 	body := strings.Join(m.pane.render(84, 20), "\n")
-	if !strings.Contains(ansi.Strip(body), "(i to type)") {
+	if !strings.Contains(ansi.Strip(body), "› press i to write") {
 		t.Fatalf("blurred composer missing: %q", body)
 	}
 }
@@ -135,12 +135,12 @@ func TestChannelsTranscriptStamps(t *testing.T) {
 func TestBoardCardWidthProportional(t *testing.T) {
 	theme.SwapForTest(t, theme.Dark())
 	tk := tasks.Task{Slug: "x", Title: "a fairly long card title", Assignee: "scout"}
-	// F-064: two lines per card, each inside the lane's body (one cell
-	// of air before the next lane); kit.Columns pads them.
+	// F-093: boardCardH lines per card, each inside the lane's body (one
+	// cell of air before the next lane); kit.Columns pads them.
 	for _, laneW := range []int{8, 20, 40} {
 		lines := strings.Split(ansi.Strip(boardCard(tk, laneW, false, false)), "\n")
-		if len(lines) != 2 {
-			t.Fatalf("card lines = %d, want 2", len(lines))
+		if len(lines) != boardCardH {
+			t.Fatalf("card lines = %d, want %d", len(lines), boardCardH)
 		}
 		for _, l := range lines {
 			if ansi.Width(l) > laneW-1 {

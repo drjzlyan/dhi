@@ -138,10 +138,10 @@ func (m *Model) screenConversation(w, h int) string {
 	}
 	out = append(out, theme.SectionHeader().Render("REVIEW")+" "+kit.Pill(crop(state, inner-9), stateC))
 	if p := r.PendingCount(); p > 0 {
-		out = append(out, theme.WarningText().Render(fmt.Sprintf("● %d draft(s) · S sends one review", p)))
+		out = append(out, theme.WarningText().Render("● "+kit.Count(p, "draft")+" · S sends one review"))
 	}
 	if n := r.OpenSuggestions(); n > 0 {
-		out = append(out, theme.AccentText().Render(fmt.Sprintf("◇ %d suggestion(s) to decide", n)))
+		out = append(out, theme.AccentText().Render("◇ "+kit.Count(n, "suggestion")+" to decide"))
 	}
 	out = append(out, "")
 	path := ""

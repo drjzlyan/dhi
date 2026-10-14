@@ -117,7 +117,7 @@ func TestReviewRejectAndDefer(t *testing.T) {
 	if m.reviewOpen || m.ProposalCount() != 1 {
 		t.Fatalf("esc should defer, open=%v n=%d", m.reviewOpen, m.ProposalCount())
 	}
-	if out := ansi.Strip(m.View()); !strings.Contains(out, "1 suggestion(s)") {
+	if out := ansi.Strip(m.View()); !strings.Contains(out, "1 suggestion ·") {
 		t.Fatalf("title chip missing:\n%s", out)
 	}
 	m.HandleKey("ctrl+y")

@@ -6,7 +6,7 @@
   LIBRARY       ▏                                                                         
 ▌ TEAMS         ▏                                                                         
   PACKS         ▏  ╭─ add employees by role ─────────────────────────╮                    
-  STANDARDS     ▏  │ into       [new team(s)]                        │                    
+  STANDARDS     ▏  │ into       [a new team per lead]                │                    
   CONVENTIONS   ▏  │ leads      [2]                                  │                    
   WORKFLOWS     ▏  │ fullstack ▌[3]                                  │                    
   AUTOPILOTS    ▏  │ frontend   [0]                                  │                    

@@ -320,7 +320,7 @@ func (m *Model) boardBody(w, h int) string {
 		g = [4][]tasks.Task{}
 	} else if warn := m.taskStore.Warnings(); len(warn) > 0 {
 		out = append(out, theme.DangerText().Render(
-			fmt.Sprintf("%d malformed card(s) skipped", len(warn))))
+			kit.Count(len(warn), "malformed card")+" skipped"))
 	}
 	if line := m.boardFilterLine(); line != "" {
 		out = append(out, line)
@@ -361,7 +361,7 @@ func (m *Model) boardBody(w, h int) string {
 	}
 
 	cols := make([]kit.Column, 4)
-	board := &kit.Columns{Cols: cols, Active: m.boardActive, Width: w - detailW, Height: lanesH, CardH: 2}
+	board := &kit.Columns{Cols: cols, Active: m.boardActive, Width: w - detailW, Height: lanesH, CardH: boardCardH}
 	for i, st := range tasks.Statuses {
 		laneW := board.LaneWidth(i)
 		rows := make([]string, 0, len(g[i]))
@@ -812,21 +812,24 @@ func (m *Model) inboxGroups(w int) [][]string {
 		var g []string
 		first := true
 		for _, ln := range kit.WrapWords(row, wrapW) {
+			// Every row shares one prefix width (cursor or not) and
+			// continuation lines indent under the text, so the stamp
+			// column and wrapped text stay aligned (F-093).
 			if first {
-				prefix := strings.Repeat(" ", gl)
+				prefix := strings.Repeat(" ", gl+1)
 				if i == c {
 					prefix = theme.GlyphCursor + " "
 				}
 				text := glyph + " " + ln
 				line := prefix + style.Render(text)
 				if stampW > 0 {
-					pad := (lines + 2) - len([]rune(text)) - stampW
+					pad := (lines + 1) - ansi.Width(text) - stampW
 					line += strings.Repeat(" ", maxInt(pad, 2)) + stamp
 				}
 				g = append(g, line)
 				first = false
 			} else {
-				g = append(g, strings.Repeat(" ", gl+1)+style.Render(ln))
+				g = append(g, strings.Repeat(" ", gl+1+ansi.Width(glyph)+1)+style.Render(ln))
 			}
 		}
 		groups[i] = g

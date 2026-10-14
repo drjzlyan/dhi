@@ -138,8 +138,8 @@ func (m *Model) chatBody(w, h int) string {
 	}
 	holder := sess.CurrentSpeaker()
 	head := theme.Hint().Render("transcript") +
-		theme.TextDim().Render(fmt.Sprintf("   mode %s · floor %s · %d turn(s)   i compose",
-			sess.Mode, floorName(holder), len(sess.Turns)))
+		theme.TextDim().Render(fmt.Sprintf("   mode %s · floor %s · %s",
+			sess.Mode, floorName(holder), kit.Count(len(sess.Turns), "turn")))
 	out := []string{head}
 	if m.bus == nil {
 		out = append(out, kit.Notice{Kind: kit.NoticeWarning, What: "No message bus",
@@ -189,12 +189,6 @@ func (m *Model) chatBody(w, h int) string {
 		out = append(out, "  "+fl)
 	}
 	out = append(out, "")
-	if m.chatFocus {
-		out = append(out, theme.TabActive().Render("> "+string(m.chatInput))+"▏")
-		out = append(out, theme.Hint().Render(
-			"⏎ send · @mention triggers agents · esc blur"))
-	} else {
-		out = append(out, theme.Hint().Render("i compose"))
-	}
+	out = append(out, "  "+kit.Composer(string(m.chatInput), "press i to compose — @mention an invited agent", m.chatFocus))
 	return strings.Join(out, "\n")
 }

@@ -92,7 +92,11 @@ func (r *Rail) renderRow(i int) string {
 	if row.Glyph != "" {
 		label = row.Glyph + " " + label
 	}
-	tail := row.Count + row.Badge
+	count := row.Count
+	if count == "0" {
+		count = "" // an empty section says so by having no count (F-093)
+	}
+	tail := count + row.Badge
 	tailW := runeWidth(ansi.Strip(tail))
 	plain := padTo(marker+label, r.Width-tailW) + tail
 	if i == r.Active {

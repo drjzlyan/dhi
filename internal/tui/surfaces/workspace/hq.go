@@ -75,7 +75,7 @@ func perfLines(p Perf) []string {
 		rate = fmt.Sprintf("%d%%", p.RunsOK*100/p.Runs)
 	}
 	out = append(out, fmt.Sprintf("%s shipped · %s runs ok · %s verified",
-		theme.SuccessText().Render(fmt.Sprintf("%d task(s)", p.TasksDone)), rate,
+		theme.SuccessText().Render(kit.Count(p.TasksDone, "task")), rate,
 		fmt.Sprintf("%d/%d", p.Verified, p.Episodes)))
 	perTask := ""
 	if p.TasksDone > 0 && p.SpendWeek > 0 {
@@ -83,12 +83,12 @@ func perfLines(p Perf) []string {
 	}
 	out = append(out, theme.AccentText().Render(kit.Sparkline(p.Spend7[:]))+" "+
 		theme.TextDim().Render("7d "+fmtCost(p.SpendWeek))+perTask)
-	growth := fmt.Sprintf("%d lesson(s)", p.Lessons)
+	growth := kit.Count(p.Lessons, "lesson")
 	if p.Pinned > 0 {
 		growth += fmt.Sprintf(" (%d pinned)", p.Pinned)
 	}
 	if p.Tools > 0 {
-		growth += fmt.Sprintf(" · %d tool(s) forged", p.Tools)
+		growth += " · " + kit.Count(p.Tools, "tool") + " forged"
 	}
 	return append(out, theme.TextDim().Render(growth))
 }

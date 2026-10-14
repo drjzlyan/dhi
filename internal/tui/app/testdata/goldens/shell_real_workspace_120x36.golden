@@ -1,18 +1,18 @@
  ◆ dhi   1 Workspace   2 Editor   3 Settings                                                                            
   INBOX                   ▏ board ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
 ▌ BOARD                  3▏  ● backlog  3          ● active  0           ● in-review  0        ● done  0                
-  CHANNELS                ▏    Audit log for adm…  —                     —                     —                        
-  REPOS                  1▏    unassigned  audit…                                                                       
+  CHANNELS                ▏    Audit log for       —                     —                     —                        
+  REPOS                  1▏    admin actions                                                                            
+                          ▏    unassigned  audit…                                                                       
                           ▏ ─────────────────────                                                                       
-                          ▏    CSV export for re…                                                                       
+                          ▏    CSV export for                                                                           
+                          ▏    reports                                                                                  
                           ▏    unassigned  csv-e…                                                                       
                           ▏ ─────────────────────                                                                       
-                          ▏    Fix login timeout…                                                                       
+                          ▏    Fix login timeout                                                                        
+                          ▏    on slow networks                                                                         
                           ▏    unassigned  login…                                                                       
                           ▏ ─────────────────────                                                                       
-                          ▏                                                                                             
-                          ▏                                                                                             
-                          ▏                                                                                             
                           ▏                                                                                             
                           ▏                                                                                             
                           ▏                                                                                             

@@ -336,7 +336,7 @@ func TestAgentsGrantsListAndRevoke(t *testing.T) {
 		}
 	}
 	feed(m, "r")
-	if len(fg.gs) != 0 || !strings.Contains(m.flash, "revoked 2 grant(s)") {
+	if len(fg.gs) != 0 || !strings.Contains(m.flash, "revoked 2 grants") {
 		t.Fatalf("grants = %+v flash = %q", fg.gs, m.flash)
 	}
 	view = ansi.Strip(fullView(m))

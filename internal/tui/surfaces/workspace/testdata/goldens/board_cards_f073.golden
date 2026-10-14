@@ -1,17 +1,22 @@
   ●A
    ● forge  a
+
 ---
    B
    ○ forge  b
+
 ---
    C
    you  c
+
 ---
    D
    unassigned  d
+
 ---
    E
    ○ sage  ✓ #12 ↳1  e
+
 ---
   ●A
    ● forge  a

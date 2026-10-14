@@ -136,12 +136,20 @@ func Apply(changes []Change, files Files) Result {
 
 // Summary is the one-line outcome for a flash.
 func (r Result) Summary() string {
-	s := fmt.Sprintf("replaced %d line(s) in %d file(s)", r.Lines, r.Files)
+	s := "replaced " + count(r.Lines, "line") + " in " + count(r.Files, "file")
 	if n := len(r.Stale); n > 0 {
 		s += fmt.Sprintf(" · %d skipped (changed since the search)", n)
 	}
 	if n := len(r.Errs); n > 0 {
-		s += fmt.Sprintf(" · %d file(s) failed: %v", n, r.Errs[0])
+		s += fmt.Sprintf(" · %s failed: %v", count(n, "file"), r.Errs[0])
 	}
 	return s
+}
+
+// count renders "1 file" / "2 files" for the user-facing summary.
+func count(n int, noun string) string {
+	if n == 1 {
+		return "1 " + noun
+	}
+	return fmt.Sprintf("%d %ss", n, noun)
 }

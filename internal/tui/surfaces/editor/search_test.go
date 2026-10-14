@@ -94,7 +94,7 @@ func TestSearchFlow(t *testing.T) {
 	m.Update(searchDoneMsg{})
 
 	v := plainView(m)
-	for _, want := range []string{"alpha/src/main.go:3", "beta/README.md:1", "2 hit(s)", "needle here"} {
+	for _, want := range []string{"alpha/src/main.go:3", "beta/README.md:1", "2 hits", "needle here"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("results missing %q:\n%s", want, v)
 		}

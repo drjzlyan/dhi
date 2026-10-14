@@ -282,7 +282,7 @@ func (s *integrationsStep) View(w, f int) []string {
 			path = s.env.CredentialsPath
 		}
 		out = append(out, "", theme.TextStyle().Render("DHI will:"), "",
-			"  "+fmt.Sprintf("store %d credential(s) in %s", len(e.Credentials()), theme.AccentText().Render(path)),
+			"  "+fmt.Sprintf("store %s in %s", kit.Count(len(e.Credentials()), "credential"), theme.AccentText().Render(path)),
 			"  "+dim("(owner-only file, readable plain text — like ~/.aws/credentials)"),
 			"  "+fmt.Sprintf("add %s to this workspace (no secrets in it, safe to commit)", theme.AccentText().Render(".dhi/mcp/"+e.Slug+".toml")),
 			"  "+fmt.Sprintf("give %s access, each call still asks you first", s.who.Values()[0]),

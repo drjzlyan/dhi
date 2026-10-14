@@ -234,7 +234,7 @@ func (m *Model) autopilotsView() []string {
 	out := []string{}
 	if w := m.d.Autopilots.Warnings(); len(w) > 0 {
 		out = append(out, theme.DangerText().Render(
-			fmt.Sprintf("%d malformed card(s) skipped", len(w))))
+			kit.Count(len(w), "malformed card")+" skipped"))
 	}
 	if len(rows) == 0 {
 		out = append(out, theme.TextDim().Render(
@@ -340,6 +340,6 @@ func (m *Model) addRituals() {
 	case n == 0:
 		m.flash = "every ritual is already here"
 	default:
-		m.flash = fmt.Sprintf("added %d ritual(s), paused — e arms the ones you want", n)
+		m.flash = "added " + kit.Count(n, "ritual") + ", paused — e arms the ones you want"
 	}
 }

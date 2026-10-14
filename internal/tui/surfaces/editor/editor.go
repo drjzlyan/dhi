@@ -1665,7 +1665,7 @@ func (m *Model) resultsBlock() string {
 	case len(m.hits) == 0:
 		return head + "\n\n" + theme.TextDim().Render("no matches")
 	}
-	count := theme.Hint().Render(itoa(len(m.hits)) + " hit(s)" + searchStateSuffix(m.searching))
+	count := theme.Hint().Render(kit.Count(len(m.hits), "hit") + searchStateSuffix(m.searching))
 	lines := append([]string{head + "  " + count, ""}, splitLines(m.hitList.View())...)
 	lines = append(lines, "", theme.Hint().Render("⏎ jump · r replace · esc back"))
 	return strings.Join(lines, "\n")

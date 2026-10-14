@@ -879,10 +879,7 @@ func (p *chatPane) pinnedCount() int {
 // composerRow is always rendered (F-026 P3): focused it owns the caret;
 // blurred it stays as the quiet typing affordance instead of vanishing.
 func (p *chatPane) composerRow() string {
-	if p.focus {
-		return theme.TabActive().Render("> "+string(p.input)) + "▌"
-	}
-	return theme.TextMuted().Render("> " + string(p.input) + "  (i to type)")
+	return kit.Composer(string(p.input), "press i to write — @mention an agent to wake it", p.focus)
 }
 
 // composerBar paints the composer as an input bar across width (F-064):

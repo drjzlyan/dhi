@@ -182,7 +182,7 @@ func TestThreadsViewLabelsSuggestionsAndCountsThem(t *testing.T) {
 	openThreadsFor(m, "main.go")
 	out := ansi.Strip(m.renderThreads(110, 30))
 	for _, want := range []string{"rev suggests (warn)", "println does not belong",
-		"suggestion(s) from your team await your decision", "y accept"} {
+		"suggestions from your team await your decision", "y accept"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("threads view lacks %q:\n%s", want, out)
 		}

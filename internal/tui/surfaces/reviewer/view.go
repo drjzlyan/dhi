@@ -269,7 +269,7 @@ func (m *Model) reviewsBody(w, h int) string {
 	}
 	if warns := m.svc.Store().Warnings(); len(warns) > 0 {
 		out = append(out, theme.DangerText().Render(
-			fmt.Sprintf("%d malformed card(s) skipped", len(warns))))
+			kit.Count(len(warns), "malformed card")+" skipped"))
 	}
 	if len(rows) == 0 {
 		out = append(out, kit.EmptyState{

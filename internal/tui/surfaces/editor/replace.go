@@ -102,8 +102,8 @@ func (m *Model) replaceBlock(w int) string {
 				}
 			}
 		}
-		lines = append(lines, theme.Hint().Render(itoa(len(r.plan))+" line(s) in "+itoa(len(files))+" file(s) — "+
-			itoa(open)+" open buffer(s) change in place (undo with u), "+itoa(len(files)-open)+" written to disk"), "")
+		lines = append(lines, theme.Hint().Render(kit.Count(len(r.plan), "line")+" in "+kit.Count(len(files), "file")+" — "+
+			kit.Count(open, "open buffer")+" change in place (undo with u), "+itoa(len(files)-open)+" written to disk"), "")
 		for _, c := range r.plan {
 			label := c.Path
 			if vp, err := m.ws.VPathFor(c.Path); err == nil {

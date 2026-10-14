@@ -52,7 +52,7 @@ func TestProposalsGolden(t *testing.T) {
 func TestProposalsApproveViewArchive(t *testing.T) {
 	m, st := proposalsSurface(t)
 	view := ansi.Strip(m.View())
-	for _, want := range []string{"PENDING", "race_test", "FORGED TOOLS", "custom__check_all", "0 call(s)"} {
+	for _, want := range []string{"PENDING", "race_test", "FORGED TOOLS", "custom__check_all", "0 calls"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("view missing %q:\n%s", want, view)
 		}

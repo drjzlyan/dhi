@@ -215,7 +215,7 @@ func TestAutopilotsAddRituals(t *testing.T) {
 	}
 	m.sec = secAutopilots
 	feed(m, "t")
-	if !strings.Contains(m.flash, "added 2 ritual(s), paused") {
+	if !strings.Contains(m.flash, "added 2 rituals, paused") {
 		t.Fatalf("flash = %q", m.flash)
 	}
 	for _, slug := range []string{"standup-core", "review-scout"} {

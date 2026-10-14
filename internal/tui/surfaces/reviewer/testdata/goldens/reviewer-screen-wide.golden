@@ -1,6 +1,6 @@
 ▏ files ───────────────────── ▏ diff ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ▏ conversation ────────────────────── 
 ▏ api-branch-master           ▏ ▌◦ main.go  +2 -1                                                     ▏ REVIEW  pending                     
-▏ ━━━━━━━━━━━━ 0/1 viewed     ▏     ⋯ 2 unchanged lines  ·  e to expand                               ▏ ● 1 draft(s) · S sends one review   
+▏ ━━━━━━━━━━━━ 0/1 viewed     ▏     ⋯ 2 unchanged lines  ·  e to expand                               ▏ ● 1 draft · S sends one review      
 ▏                             ▏  @@ -3,3 +3,3 @@                                                      ▏                                     
 ▏ ▌   ◦ main.go        +2 -1  ▏      3     3   line3                                                  ▏ ON THIS FILE                        
 ▏                             ▏      4       - line4                                                  ▏ main.go                             

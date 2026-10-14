@@ -1502,7 +1502,7 @@ func (m *Model) submitForm() {
 			}
 		}
 		m.clearBoardMarks()
-		m.form = formState{kind: fNone, flash: "moved " + itoa(len(slugs)) + " card(s) to " + string(next)}
+		m.form = formState{kind: fNone, flash: "moved " + kit.Count(len(slugs), "card") + " to " + string(next)}
 	case fSecret:
 		m.submitSecret()
 	case fSnooze:

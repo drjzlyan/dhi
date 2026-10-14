@@ -40,7 +40,7 @@ func TestClicksSelectCardsAndSections(t *testing.T) {
 	for _, width := range []int{110, 70} {
 		m.Resize(width, 30)
 		m.boardActive, m.boardCur = 0, [4]int{}
-		x, y := findOnScreen(t, m.View(), "Title gamma")
+		x, y := findOnScreen(t, m.View(), "gamma-task")
 		if !m.Click(x, y) {
 			t.Fatalf("width %d: click on a card was not handled", width)
 		}

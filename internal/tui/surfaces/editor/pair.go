@@ -243,7 +243,7 @@ func (m *Model) pairChip(path string) string {
 	if n == 0 {
 		return ""
 	}
-	return "  " + theme.AccentText().Render(fmt.Sprintf("◆ %d suggestion(s) · ctrl+y", n))
+	return "  " + theme.AccentText().Render("◆ "+kit.Count(n, "suggestion")+" · ctrl+y")
 }
 
 // pairCommand handles the :pair, :unpair and :ask ex commands. It returns

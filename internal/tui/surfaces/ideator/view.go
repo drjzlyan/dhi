@@ -220,7 +220,7 @@ func (m *Model) sessionsBody(w, h int) string {
 	var out []string
 	if warn := m.store.Warnings(); len(warn) > 0 {
 		out = append(out, theme.DangerText().Render(
-			fmt.Sprintf("%d malformed card(s) skipped", len(warn))))
+			kit.Count(len(warn), "malformed card")+" skipped"))
 	}
 	rows := m.sessionRows()
 	c := m.cursors[secSessions]
@@ -276,9 +276,9 @@ func (m *Model) sessionsBody(w, h int) string {
 		} else {
 			detail += " · floor you"
 		}
-		detail += fmt.Sprintf(" · %d agent(s)", len(s.Agents))
+		detail += " · " + kit.Count(len(s.Agents), "agent")
 		if n := len(m.store.Breakouts(s.ID)); n > 0 {
-			detail += fmt.Sprintf(" · %d breakout(s)", n)
+			detail += " · " + kit.Count(n, "breakout")
 		}
 		meta := indent + "  " + theme.TextMuted().Render(crop(detail, maxInt(w-8, 12)))
 		if active {

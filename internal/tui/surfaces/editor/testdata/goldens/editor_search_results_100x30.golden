@@ -1,5 +1,5 @@
 ▏ files ─────────────────── ▏ results ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
-▏ ▌ ▸ alpha/                ▏ results for "main"  2 hit(s)                                          
+▏ ▌ ▸ alpha/                ▏ results for "main"  2 hits                                            
 ▏   ▸ beta/                 ▏                                                                       
 ▏                           ▏ ▌ alpha/src/main.go:3  func main() {                                  
 ▏                           ▏   alpha/app.go:7  // main entrypoint                                  

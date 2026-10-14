@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/drjzlyan/dhi/internal/agentkit/lessons"
+	"github.com/drjzlyan/dhi/internal/tui/kit"
 	"github.com/drjzlyan/dhi/internal/tui/theme"
 )
 
@@ -239,7 +240,7 @@ func (m *Model) brainView(w int) []string {
 		}
 		filter = theme.TextStyle().Render("filter: "+m.brainFilter) + theme.AccentText().Render(cursor)
 	}
-	out := []string{theme.TextDim().Render(fmt.Sprintf("what your crew has learned · %d lesson(s)", m.brainCount())) + "  " + filter, ""}
+	out := []string{theme.TextDim().Render("what your crew has learned · "+kit.Count(m.brainCount(), "lesson")) + "  " + filter, ""}
 	if len(rows) == 0 {
 		if m.brainFilter != "" {
 			return append(out, theme.Hint().Render("  nothing matches"))

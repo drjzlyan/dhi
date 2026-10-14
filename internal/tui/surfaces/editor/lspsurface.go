@@ -9,6 +9,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/langserver"
 	"github.com/drjzlyan/dhi/internal/lsp"
 	"github.com/drjzlyan/dhi/internal/textbuf"
+	"github.com/drjzlyan/dhi/internal/tui/kit"
 	"github.com/drjzlyan/dhi/internal/tui/theme"
 )
 
@@ -401,7 +402,7 @@ func (m *Model) applyWorkspaceEdit(edit *lsp.WorkspaceEdit) {
 	}
 	if skipped > 0 {
 		if e := m.active(); e != nil {
-			e.SetMessage(fmt.Sprintf("lsp: %d file(s) not open — edits skipped", skipped))
+			e.SetMessage("lsp: " + kit.Count(skipped, "file") + " not open — edits skipped")
 		}
 	}
 	m.lspSync()
@@ -583,7 +584,7 @@ func (m *Model) LSPCall(_ context.Context, op, abs string, line, col int, arg st
 			return "(no edits)", nil
 		}
 		m.applyWorkspaceEdit(edit)
-		return fmt.Sprintf("renamed across %d file(s)", len(edit.Files)), nil
+		return "renamed across " + kit.Count(len(edit.Files), "file"), nil
 	case "code_action":
 		rng := lsp.Range{Start: lsp.Position{Line: line, Character: col}, End: lsp.Position{Line: line, Character: col}}
 		actions, err := c.CodeAction(abs, rng, nil)

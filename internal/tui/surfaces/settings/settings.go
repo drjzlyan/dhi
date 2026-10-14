@@ -1338,7 +1338,7 @@ func scanManifests(dir string) ([]*manifest.Agent, error) {
 		return nil, err
 	}
 	if len(errs) > 0 {
-		return nil, fmt.Errorf("invalid manifest(s): %s", strings.Join(errs, "; "))
+		return nil, fmt.Errorf("invalid manifests: %s", strings.Join(errs, "; "))
 	}
 	return out, nil
 }
@@ -1827,7 +1827,7 @@ func (m *Model) revokeGrants(agent string) {
 		m.flash = agent + " has no remembered grants"
 		return
 	}
-	m.flash = fmt.Sprintf("revoked %d grant(s) — %s asks again from its next action", n, agent)
+	m.flash = fmt.Sprintf("revoked %s — %s asks again from its next action", kit.Count(n, "grant"), agent)
 }
 
 // formView renders the agent modal body: label/value rows with the

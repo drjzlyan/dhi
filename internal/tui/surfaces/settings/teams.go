@@ -133,7 +133,7 @@ func (m *Model) submitTeam() {
 }
 
 // newTeams is the compose form's "leads start new teams" choice (F-079).
-const newTeams = "new team(s)"
+const newTeams = "a new team per lead"
 
 var countChoices = []string{"0", "1", "2", "3", "4", "5", "6", "7", "8", "9"}
 
