@@ -10,6 +10,7 @@ import (
 
 	"github.com/drjzlyan/dhi/internal/ansi"
 	"github.com/drjzlyan/dhi/internal/testutil/golden"
+	"github.com/drjzlyan/dhi/internal/tui/kit"
 	"github.com/drjzlyan/dhi/internal/tui/surfaces"
 	"github.com/drjzlyan/dhi/internal/tui/surfaces/placeholder"
 	"github.com/drjzlyan/dhi/internal/tui/surfaces/workspace"
@@ -921,5 +922,41 @@ func TestStatusSurfaceHintBeatsGlobalKey(t *testing.T) {
 	a.handleClick(x, 19)
 	if !a.showHelp {
 		t.Fatal("clicking ? help did not open help")
+	}
+}
+
+// toastStub raises one toast when armed.
+type toastStub struct {
+	stubSurface
+	pending *kit.Toast
+}
+
+func (s *toastStub) TakeToast() (kit.Toast, bool) {
+	if s.pending == nil {
+		return kit.Toast{}, false
+	}
+	t := *s.pending
+	s.pending = nil
+	return t, true
+}
+
+// TestToastFloatsTopRightAndExpires (F-093): a raised toast shows
+// top-right over the body, and its expiry tick clears it; under reduced
+// motion it appears whole at once.
+func TestToastFloatsTopRightAndExpires(t *testing.T) {
+	theme.SwapForTest(t, theme.Dark())
+	theme.MotionForTest(t, false)
+	ts := &toastStub{stubSurface: stubSurface{id: "ws", title: "Workspace"}}
+	a := New("test", ts, &stubSurface{id: "editor", title: "Editor"})
+	a.Update(tea.WindowSizeMsg{Width: 100, Height: 20})
+	ts.pending = &kit.Toast{Title: "ship-docs shipped", Detail: "3 runs"}
+	a.Update(keyPress("j"))
+	rows := strings.Split(ansi.Strip(a.compose()), "\n")
+	if !strings.Contains(rows[2], "✓ ship-docs shipped") || !strings.HasSuffix(strings.TrimRight(rows[2], " "), "3 runs") {
+		t.Fatalf("toast not top-right on row 2:\n%s", strings.Join(rows[:4], "\n"))
+	}
+	a.Update(toastExpireMsg{seq: a.toastSeq})
+	if strings.Contains(ansi.Strip(a.compose()), "shipped") {
+		t.Fatal("toast still showing after expiry")
 	}
 }

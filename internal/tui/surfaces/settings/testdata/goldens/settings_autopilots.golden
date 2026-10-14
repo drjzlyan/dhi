@@ -1,22 +1,22 @@
-  CONFIG        ▏ autopilots ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
-  PROJECT       ▏   name                agent       schedule                    next-due  
-  AGENTS        ▏ ▌ Sweep               scout       daily 09:00                 09:00     
+  general ───── ▏ autopilots ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
+  CONFIG        ▏   name                agent       schedule                    next-due  
+  PROJECT       ▏ ▌ Sweep               scout       daily 09:00                 09:00     
+  agents ────── ▏                                                                         
+  AGENTS        ▏                                                                         
   BRAIN         ▏                                                                         
   PROPOSALS     ▏                                                                         
   LIBRARY       ▏                                                                         
+  team ──────── ▏                                                                         
   TEAMS         ▏                                                                         
   PACKS         ▏                                                                         
   STANDARDS     ▏                                                                         
   CONVENTIONS   ▏                                                                         
+  automation ── ▏                                                                         
   WORKFLOWS     ▏                                                                         
 ▌ AUTOPILOTS    ▏                                                                         
+  extend ────── ▏                                                                         
   MARKETPLACE   ▏                                                                         
   SECRETS       ▏                                                                         
-                ▏                                                                         
-                ▏                                                                         
-                ▏                                                                         
-                ▏                                                                         
-                ▏                                                                         
                 ▏                                                                         
                 ▏                                                                         
                 ▏                                                                         

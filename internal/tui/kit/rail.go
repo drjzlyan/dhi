@@ -13,6 +13,7 @@ type RailRow struct {
 	Label string
 	Count string // right-aligned; "" = none
 	Badge string // pre-rendered suffix (e.g. unread dot); width-aware
+	Group string // a heading drawn above this row when it starts a new group (F-093)
 }
 
 // Rail is the nav sidebar primitive (F-025 Part B): inset-shade rows,
@@ -49,9 +50,14 @@ func (r *Rail) View() string {
 		lines = append(lines, theme.RailMuted().Render(
 			padTo(" "+strings.ToUpper(r.Title), r.Width)))
 	}
+	disp := r.display()
 	start, end := r.window()
 	for i := start; i < end; i++ {
-		lines = append(lines, r.renderRow(i))
+		if d := disp[i]; d < 0 {
+			lines = append(lines, r.renderGroup(-d-1))
+		} else {
+			lines = append(lines, r.renderRow(d))
+		}
 	}
 	for len(lines) < h-boolInt(r.Foot != "") {
 		lines = append(lines, theme.RailMuted().Render(strings.Repeat(" ", r.Width)))
@@ -76,9 +82,37 @@ func (r *Rail) RowAt(y int) (int, bool) {
 	}
 	start, end := r.window()
 	if i := start + y; i < end {
-		return i, true
+		if d := r.display()[i]; d >= 0 {
+			return d, true
+		}
 	}
-	return -1, false
+	return -1, false // a group heading, or past the last row
+}
+
+// display lists what each rail line shows: a row index, or -(row+1) for
+// the group heading drawn above that row. Without groups it is just the
+// rows, so ungrouped rails behave exactly as before.
+func (r *Rail) display() []int {
+	out := make([]int, 0, len(r.Rows))
+	prev := ""
+	for i, row := range r.Rows {
+		if row.Group != "" && row.Group != prev {
+			out = append(out, -(i + 1))
+		}
+		prev = row.Group
+		out = append(out, i)
+	}
+	return out
+}
+
+// renderGroup draws the heading above row i as a labelled divider:
+// "  agents ───" in the quiet rule color, so it organises without
+// competing with the rows.
+func (r *Rail) renderGroup(i int) string {
+	label := "  " + strings.ToLower(r.Rows[i].Group) + " "
+	fill := max(r.Width-ansi.Width(label)-1, 0)
+	return theme.RailMuted().Render(label) +
+		theme.RailMuted().Foreground(theme.Current.Rule).Render(strings.Repeat("─", fill)+" ")
 }
 
 // renderRow renders row i (marker, optional glyph, label + tail).
@@ -108,7 +142,7 @@ func (r *Rail) renderRow(i int) string {
 // rowsAvail is the row budget inside Height: title + foot excluded.
 func (r *Rail) rowsAvail() int {
 	if r.Height <= 0 {
-		return len(r.Rows)
+		return len(r.display())
 	}
 	n := r.Height - boolInt(r.Title != "") - boolInt(r.Foot != "")
 	return clamp(n, 0, r.Height)
@@ -116,12 +150,13 @@ func (r *Rail) rowsAvail() int {
 
 func (r *Rail) window() (start, end int) {
 	n := r.rowsAvail()
-	if n <= 0 || len(r.Rows) <= n {
-		return 0, len(r.Rows)
+	total := len(r.display())
+	if n <= 0 || total <= n {
+		return 0, total
 	}
 	end = r.offset + n
-	if end > len(r.Rows) {
-		end = len(r.Rows)
+	if end > total {
+		end = total
 	}
 	return r.offset, end
 }
@@ -129,13 +164,24 @@ func (r *Rail) window() (start, end int) {
 // ensureActive scrolls the window so the highlighted row is visible.
 func (r *Rail) ensureActive() {
 	n := r.rowsAvail()
-	if n <= 0 || len(r.Rows) <= n {
+	disp := r.display()
+	if n <= 0 || len(disp) <= n {
 		r.offset = 0
 		return
 	}
-	i := clamp(r.Active, 0, len(r.Rows)-1)
-	if i < r.offset {
-		r.offset = i
+	active := clamp(r.Active, 0, len(r.Rows)-1)
+	i := 0
+	for j, d := range disp {
+		if d == active {
+			i = j
+		}
+	}
+	top := i
+	if i > 0 && disp[i-1] < 0 {
+		top = i - 1 // keep the active row's heading in view with it
+	}
+	if top < r.offset {
+		r.offset = top
 	}
 	if i >= r.offset+n {
 		r.offset = i - n + 1
@@ -146,7 +192,7 @@ func (r *Rail) ensureActive() {
 // overflow the budget; it rides the foot row.
 func (r *Rail) cue() string {
 	n := r.rowsAvail()
-	s := Scroller{Total: len(r.Rows), Height: n, offset: r.offset}
+	s := Scroller{Total: len(r.display()), Height: n, offset: r.offset}
 	return s.Indicator()
 }
 

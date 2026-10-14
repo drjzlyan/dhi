@@ -68,6 +68,13 @@ func inboxPreview(it inbox.Item, w int) []string {
 	return out // its keys ride the status row (inboxActionHint, ADR-0040)
 }
 
+// approvalButtons are the decisions an approval preview offers as
+// clickable buttons — the same keys the row answers to (F-087).
+var approvalButtons = []kit.Button{
+	{Key: "y", Label: "yes"}, {Key: "o", Label: "once"}, {Key: "a", Label: "always here"},
+	{Key: "g", Label: "everywhere"}, {Key: "n", Label: "no"},
+}
+
 // inboxActionHint names what enter does for the selected item, as the
 // first status-row hint of INBOX.
 func inboxActionHint(it inbox.Item) string {

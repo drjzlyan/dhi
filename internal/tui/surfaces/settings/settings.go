@@ -1426,10 +1426,26 @@ func (m *Model) View() string {
 	return view
 }
 
+// group is the rail heading a section sits under (F-093): sections are
+// ordered so each group is contiguous.
+func (s sectionID) group() string {
+	switch {
+	case s <= secProject:
+		return "General"
+	case s <= secLibrary:
+		return "Agents"
+	case s <= secConventions:
+		return "Team"
+	case s <= secAutopilots:
+		return "Automation"
+	}
+	return "Extend"
+}
+
 func (m *Model) railRows() []kit.RailRow {
 	rows := make([]kit.RailRow, 0, secCount)
 	for s := sectionID(0); s < secCount; s++ {
-		rows = append(rows, kit.RailRow{Label: s.label()})
+		rows = append(rows, kit.RailRow{Label: s.label(), Group: s.group()})
 	}
 	return rows
 }

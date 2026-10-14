@@ -46,7 +46,12 @@ type row struct {
 	label  string
 	detail string
 	status status
+	stage  int // tool rows: install stages done, 0..toolStages (F-093 per-tool bar)
 }
+
+// toolStages are the install steps a tool row walks through; its mini
+// bar fills one step at a time (the toolchain reports stages, not bytes).
+const toolStages = 5
 
 // Model is the bootstrap surface state.
 type Model struct {
@@ -210,22 +215,30 @@ func (m *Model) applyEvent(ev toolchain.Event) {
 		}
 		m.setRow("plan", "plan", detail, statusOK)
 	case toolchain.EventDownloadStart:
-		m.setRow("tool/"+ev.Tool, ev.Tool+" download", "", statusActive)
+		m.setTool(ev.Tool, "downloading", 0, statusActive)
 	case toolchain.EventDownloadDone:
-		m.setRow("tool/"+ev.Tool, ev.Tool+" verify", "sha256 ok", statusActive)
+		m.setTool(ev.Tool, "verifying", 1, statusActive)
 	case toolchain.EventVerified:
-		m.setRow("tool/"+ev.Tool, ev.Tool+" extract", "sha256 ok", statusActive)
+		m.setTool(ev.Tool, "extracting · sha256 ok", 2, statusActive)
 	case toolchain.EventExtracted:
-		m.setRow("tool/"+ev.Tool, ev.Tool+" activate", "extracted", statusActive)
+		m.setTool(ev.Tool, "activating", 3, statusActive)
 	case toolchain.EventActivated:
-		m.setRow("tool/"+ev.Tool, ev.Tool, "activated", statusActive)
+		m.setTool(ev.Tool, "activated", 4, statusActive)
 	case toolchain.EventToolDone:
 		m.done++
-		m.setRow("tool/"+ev.Tool, ev.Tool, "installed", statusOK)
+		m.setTool(ev.Tool, "installed", toolStages, statusOK)
 	case toolchain.EventDone:
 		if r, ok := m.rows["plan"]; ok && strings.Contains(ev.Detail, "up to date") {
 			r.detail = "up to date"
 		}
+	}
+}
+
+// setTool advances a tool's row: its stage only moves forward.
+func (m *Model) setTool(tool, detail string, stage int, st status) {
+	m.setRow("tool/"+tool, tool, detail, st)
+	if r := m.rows["tool/"+tool]; stage > r.stage {
+		r.stage = stage
 	}
 }
 
@@ -273,7 +286,7 @@ func (m *Model) View() string {
 
 	for _, key := range m.order {
 		r := m.rows[key]
-		body = append(body, stageLine(r, m.spinnerFrame))
+		body = append(body, stageLine(r, m.spinnerFrame, strings.HasPrefix(key, "tool/")))
 	}
 	if m.phase == phaseFailed {
 		detail := m.errText
@@ -306,7 +319,7 @@ func (m *Model) progressLine() string {
 		theme.TextDim().Render(fmt.Sprintf("  %d/%d tools", min(m.done, m.planned), m.planned))
 }
 
-func stageLine(r *row, frame int) string {
+func stageLine(r *row, frame int, tool bool) string {
 	var glyph, label, detail string
 	label = theme.TabActive().Render(r.label)
 	detail = theme.TextDim().Render(r.detail)
@@ -322,6 +335,11 @@ func stageLine(r *row, frame int) string {
 		glyph = theme.TextDim().Render("·")
 	}
 	line := "  " + glyph + "  " + label
+	if tool {
+		// Tools line up: name, a stage bar, what it is doing now.
+		line = "  " + glyph + "  " + theme.TabActive().Render(fmt.Sprintf("%-8s", r.label)) + " " +
+			kit.ProgressBar{Width: 12, Fraction: float64(r.stage) / toolStages}.View()
+	}
 	if r.detail != "" {
 		line += "  " + detail
 	}

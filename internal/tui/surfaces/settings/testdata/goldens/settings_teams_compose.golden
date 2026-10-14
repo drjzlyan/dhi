@@ -1,22 +1,22 @@
-  CONFIG        ▏ teams ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
-  PROJECT       ▏ (no teams — "a" adds employees by role, "n" creates an empty team)      
+  general ───── ▏ teams ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
+  CONFIG        ▏ (no teams — "a" adds employees by role, "n" creates an empty team)      
+  PROJECT       ▏                                                                         
+  agents ────── ▏                                                                         
   AGENTS        ▏                                                                         
   BRAIN         ▏                                                                         
   PROPOSALS     ▏                                                                         
-  LIBRARY       ▏                                                                         
-▌ TEAMS         ▏                                                                         
-  PACKS         ▏  ╭─ add employees by role ─────────────────────────╮                    
-  STANDARDS     ▏  │ into       [a new team per lead]                │                    
-  CONVENTIONS   ▏  │ leads      [2]                                  │                    
-  WORKFLOWS     ▏  │ fullstack ▌[3]                                  │                    
-  AUTOPILOTS    ▏  │ frontend   [0]                                  │                    
-  MARKETPLACE   ▏  │ backend    [0]                                  │                    
-  SECRETS       ▏  │ testers    [0]                                  │                    
-                ▏  │ PMs        [0]                                  │                    
-                ▏  │ designers  [0]                                  │                    
-                ▏  │ devops     [0]                                  │                    
-                ▏  │ tab field · ←/→ cycle · enter save · esc cancel │                    
-                ▏  ╰─────────────────────────────────────────────────╯                    
+  LIBRARY       ▏  ╭─ add employees by role ─────────────────────────╮                    
+  team ──────── ▏  │ into       [a new team per lead]                │                    
+▌ TEAMS         ▏  │ leads      [2]                                  │                    
+  PACKS         ▏  │ fullstack ▌[3]                                  │                    
+  STANDARDS     ▏  │ frontend   [0]                                  │                    
+  CONVENTIONS   ▏  │ backend    [0]                                  │                    
+  automation ── ▏  │ testers    [0]                                  │                    
+  WORKFLOWS     ▏  │ PMs        [0]                                  │                    
+  AUTOPILOTS    ▏  │ designers  [0]                                  │                    
+  extend ────── ▏  │ devops     [0]                                  │                    
+  MARKETPLACE   ▏  │ tab field · ←/→ cycle · enter save · esc cancel │                    
+  SECRETS       ▏  ╰─────────────────────────────────────────────────╯                    
                 ▏                                                                         
                 ▏                                                                         
                 ▏                                                                         

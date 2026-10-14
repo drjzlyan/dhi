@@ -10,6 +10,7 @@ import (
 	"charm.land/bubbletea/v2"
 
 	"github.com/drjzlyan/dhi/internal/agentkit/starter"
+	"github.com/drjzlyan/dhi/internal/ansi"
 	"github.com/drjzlyan/dhi/internal/tui/kit"
 	"github.com/drjzlyan/dhi/internal/tui/theme"
 )
@@ -207,11 +208,15 @@ func (s *teamStep) View(w, f int) []string {
 	}
 	out = append(out, "")
 	lines := formLines(s.form)
-	if !s.isCustom() {
-		// The count rows are hidden unless custom is chosen.
-		lines = append(lines[:fieldCounts:fieldCounts], lines[fieldCounts+len(starter.Slots):]...)
+	// The count rows are hidden unless custom is chosen; custom shows
+	// them as a role grid with −/+ steppers (F-093) instead of one
+	// "[n]" toggle per row.
+	rest := append([]string{}, lines[fieldCounts+len(starter.Slots):]...)
+	out = append(out, lines[:fieldCounts]...)
+	if s.isCustom() {
+		out = append(out, s.roleGrid(w)...)
 	}
-	out = append(out, lines...)
+	out = append(out, rest...)
 	if len(s.engines) == 0 {
 		out = append(out, "", warn("No coding CLI found on your PATH."),
 			dim("Employees will wait until you install one and pick it in Settings."))
@@ -238,6 +243,50 @@ func (s *teamStep) View(w, f int) []string {
 	}
 	if tpl.Lead == "you" {
 		out = append(out, dim("  you lead this team"))
+	}
+	return out
+}
+
+// roleGrid renders the role counts as cells, two per row when wide:
+// "leads  − 1 +". The focused cell carries the cursor and the view's
+// hue; zero counts stay muted so the chosen roles stand out. ←/→ (the
+// form's cycle keys) step the focused count.
+func (s *teamStep) roleGrid(w int) []string {
+	const cellW = 26
+	cols := 1
+	if w >= cellW*2+2 {
+		cols = 2
+	}
+	vals := s.form.Values()
+	cur := s.form.Cur()
+	var out []string
+	row := ""
+	for i := range starter.Slots {
+		f := fieldCounts + i
+		label := s.form.Fields[f].Label
+		v := vals[f]
+		mark := " "
+		lab := dim(fmt.Sprintf("%-10s", label))
+		num := theme.TextMuted().Render(fmt.Sprintf("%2s", v))
+		if v != "0" {
+			num = theme.TextStyle().Bold(true).Render(fmt.Sprintf("%2s", v))
+		}
+		step := func(g string) string { return theme.TextMuted().Render(g) }
+		if f == cur {
+			mark = theme.GlyphCursor
+			lab = theme.RailActive().Render(fmt.Sprintf("%-10s", label))
+			step = func(g string) string { return theme.AccentText().Render(g) }
+		}
+		cell := lab + mark + step("−") + " " + num + " " + step("+")
+		cell += strings.Repeat(" ", max(cellW-ansi.Width(cell), 0))
+		row += cell
+		if (i+1)%cols == 0 {
+			out = append(out, strings.TrimRight(row, " "))
+			row = ""
+		}
+	}
+	if row != "" {
+		out = append(out, row)
 	}
 	return out
 }

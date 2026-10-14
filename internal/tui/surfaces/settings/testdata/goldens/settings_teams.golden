@@ -1,22 +1,22 @@
-  CONFIG        ▏ teams ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
-  PROJECT       ▏ ▌ platform        lead: scout       1 members                           
+  general ───── ▏ teams ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
+  CONFIG        ▏ ▌ platform        lead: scout       1 members                           
+  PROJECT       ▏                                                                         
+  agents ────── ▏                                                                         
   AGENTS        ▏                                                                         
   BRAIN         ▏                                                                         
   PROPOSALS     ▏                                                                         
   LIBRARY       ▏                                                                         
+  team ──────── ▏                                                                         
 ▌ TEAMS         ▏                                                                         
   PACKS         ▏                                                                         
   STANDARDS     ▏                                                                         
   CONVENTIONS   ▏                                                                         
+  automation ── ▏                                                                         
   WORKFLOWS     ▏                                                                         
   AUTOPILOTS    ▏                                                                         
+  extend ────── ▏                                                                         
   MARKETPLACE   ▏                                                                         
   SECRETS       ▏                                                                         
-                ▏                                                                         
-                ▏                                                                         
-                ▏                                                                         
-                ▏                                                                         
-                ▏                                                                         
                 ▏                                                                         
                 ▏                                                                         
                 ▏                                                                         

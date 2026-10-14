@@ -1,22 +1,22 @@
-  CONFIG        ▏ project ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
-▌ PROJECT       ▏ What the project is and how you work. Every employee reads this on      
-  AGENTS        ▏ every task.                                                             
-  BRAIN         ▏                                                                         
-  PROPOSALS     ▏ Project       shop                                                      
-  LIBRARY       ▏ What it is    —                                                         
-  TEAMS         ▏ Goals         —                                                         
-  PACKS         ▏  ╭─ edit project brief ────────────────────────────╮                    
-  STANDARDS     ▏  │ name       shop▌                                │                    
-  CONVENTIONS   ▏  │ summary                                         │                    
-  WORKFLOWS     ▏  │ goals                                           │                    
-  AUTOPILOTS    ▏  │ users                                           │                    
-  MARKETPLACE   ▏  │ stack                                           │                    
-  SECRETS       ▏  │ process    a\nb                                 │                    
-                ▏  │ review                                          │                    
-                ▏  │ testing                                         │                    
-                ▏  │ never do                                        │                    
-                ▏  │ tab field · ←/→ cycle · enter save · esc cancel │                    
-                ▏  ╰─────────────────────────────────────────────────╯                    
+  general ───── ▏ project ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
+  CONFIG        ▏ What the project is and how you work. Every employee reads this on      
+▌ PROJECT       ▏ every task.                                                             
+  agents ────── ▏                                                                         
+  AGENTS        ▏ Project       shop                                                      
+  BRAIN         ▏ What it is    —                                                         
+  PROPOSALS     ▏ Goals         —                                                         
+  LIBRARY       ▏  ╭─ edit project brief ────────────────────────────╮                    
+  team ──────── ▏  │ name       shop▌                                │                    
+  TEAMS         ▏  │ summary                                         │                    
+  PACKS         ▏  │ goals                                           │                    
+  STANDARDS     ▏  │ users                                           │                    
+  CONVENTIONS   ▏  │ stack                                           │                    
+  automation ── ▏  │ process    a\nb                                 │                    
+  WORKFLOWS     ▏  │ review                                          │                    
+  AUTOPILOTS    ▏  │ testing                                         │                    
+  extend ────── ▏  │ never do                                        │                    
+  MARKETPLACE   ▏  │ tab field · ←/→ cycle · enter save · esc cancel │                    
+  SECRETS       ▏  ╰─────────────────────────────────────────────────╯                    
                 ▏                                                                         
                 ▏                                                                         
                 ▏                                                                         

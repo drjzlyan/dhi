@@ -447,6 +447,13 @@ func ratio(a, b color.Color) float64 {
 	return (la + 0.05) / (lb + 0.05)
 }
 
+// ButtonKey styles a pane button's key cap: the view's hue as a solid
+// fill, so actions read as pressable (F-093).
+func ButtonKey() lipgloss.Style {
+	fill := ModeFill()
+	return lipgloss.NewStyle().Background(fill).Foreground(OnFill(fill)).Bold(true)
+}
+
 // AttentionPill styles the status row's "◆ N waiting" segment.
 func AttentionPill() lipgloss.Style { return Pill(Current.Warning).Bold(true) }
 

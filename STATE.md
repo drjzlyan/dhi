@@ -22,7 +22,13 @@
     `●` and must never be a frame (bootstrap reduced-motion test).
   - Light theme: BorderFocused is too pale for text, so use `theme.SurfaceText()` for hue-colored
     text and `ModeFill()` for solid fills.
-- Deferred (see ROADMAP M33): ship toast, wizard role grid, boot-gate progress, settings rail groups.
+- P8: shell `toaster` seam (`TakeToast`) polled after every Update; `kit.Toast`, `kit.OverlayAt`,
+  `kit.Buttons`, `RailRow.Group` (Rail windows over display lines; headings never clickable).
+  Workspace `noticeShipped` diffs card statuses (first look records only). Inbox approval buttons
+  hit-mapped at `w+2`; `m.inboxPreviewOn` decides whether decision keys go to the status row.
+- Status-row spans carry `global`: surface hints go straight to the surface (`tab` in the git panel
+  must not switch views).
+- Branch pushed to origin as `m33-ux` (no PR opened).
 
 ### Session 56 (M32: agents that can ask, branch `m32`)
 

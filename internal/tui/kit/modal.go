@@ -147,6 +147,12 @@ func (m *Modal) View() string {
 // borders and neighbouring content survive. The result is exactly
 // width×height rows of width cells.
 func Overlay(backdrop []string, box string, width, height int) string {
+	return OverlayAt(backdrop, box, width, height, -1, -1)
+}
+
+// OverlayAt splices box into backdrop like Overlay, at column col and row
+// row0; a negative coordinate centers on that axis (toasts sit top-right).
+func OverlayAt(backdrop []string, box string, width, height, atCol, atRow int) string {
 	lines := make([]string, 0, height)
 	for y := 0; y < height; y++ {
 		row := ""
@@ -171,7 +177,13 @@ func Overlay(backdrop []string, box string, width, height int) string {
 		bw = width
 	}
 	col := (width - bw) / 2
+	if atCol >= 0 {
+		col = min(atCol, max(width-bw, 0))
+	}
 	row0 := (height - len(boxLines)) / 2
+	if atRow >= 0 {
+		row0 = atRow
+	}
 	if row0 < 0 {
 		row0 = 0
 	}

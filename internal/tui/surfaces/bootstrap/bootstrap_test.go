@@ -125,7 +125,7 @@ func TestFailureMarksActiveRows(t *testing.T) {
 	if !strings.Contains(v, "bootstrap failed") {
 		t.Errorf("failure headline missing:\n%s", v)
 	}
-	if !strings.Contains(v, theme.GlyphCross) || !strings.Contains(v, "rg download") {
+	if !strings.Contains(v, theme.GlyphCross) || !strings.Contains(v, "downloading") {
 		t.Errorf("failed row glyph missing:\n%s", v)
 	}
 	if !strings.Contains(v, "sha256 mismatch") {
@@ -267,5 +267,27 @@ func TestOverallProgressBarTracksTools(t *testing.T) {
 	m.Update(installDoneMsg{})
 	if v := plain(m); barCells(v) != 36 {
 		t.Fatalf("finished install must fill the bar:\n%s", v)
+	}
+}
+
+// TestToolRowsShowStageBars (F-093): each tool row carries a bar that
+// fills by install stage, and a finished tool's bar is full.
+func TestToolRowsShowStageBars(t *testing.T) {
+	theme.MotionForTest(t, false)
+	m := newTestModel()
+	feed(m,
+		toolchain.Event{Kind: toolchain.EventResolved, Detail: "2 actions", Count: 2},
+		toolchain.Event{Kind: toolchain.EventDownloadStart, Tool: "rg"},
+		toolchain.Event{Kind: toolchain.EventDownloadDone, Tool: "rg"},
+		toolchain.Event{Kind: toolchain.EventDownloadStart, Tool: "go"},
+		toolchain.Event{Kind: toolchain.EventToolDone, Tool: "go"},
+	)
+	m.width, m.height = 100, 30
+	if m.rows["tool/rg"].stage != 1 || m.rows["tool/go"].stage != toolStages {
+		t.Fatalf("stages rg=%d go=%d", m.rows["tool/rg"].stage, m.rows["tool/go"].stage)
+	}
+	v := plain(m)
+	if !strings.Contains(v, "rg") || !strings.Contains(v, "verifying") || !strings.Contains(v, "installed") {
+		t.Fatalf("tool rows missing:\n%s", v)
 	}
 }

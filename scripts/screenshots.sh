@@ -112,6 +112,8 @@ echo "capturing…"
 { [ -z "$WANT" ] || [ "$WANT" = inbox ]; } && shot inbox 150x40 '['
 { [ -z "$WANT" ] || [ "$WANT" = help ]; } && shot help 150x40 '?'
 { [ -z "$WANT" ] || [ "$WANT" = narrow ]; } && shot narrow 72x30
+# The ship toast: move the in-review card to done (review shots only).
+[ "$WANT" = ship ] && shot ship 150x40 l l s
 # First-run screens: only with DHI_SHOT_FIRSTRUN=1 (no warmup).
 [ "$WANT" = gate ] && shot gate 120x36
 [ "$WANT" = wizard ] && shot wizard 120x36 Enter

@@ -1,22 +1,22 @@
-  CONFIG        ▏ project ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
-▌ PROJECT       ▏ What the project is and how you work. Every employee reads this on      
-  AGENTS        ▏ every task.                                                             
-  BRAIN         ▏                                                                         
-  PROPOSALS     ▏ Project       shop                                                      
-  LIBRARY       ▏ What it is    —                                                         
-  TEAMS         ▏ Goals         —                                                         
-  PACKS         ▏ Who it's for  —                                                         
-  STANDARDS     ▏ Stack         Go                                                        
-  CONVENTIONS   ▏ How we work   Work from task cards: one branch per card, small focused  
-  WORKFLOWS     ▏               commits, open a pull request, address review, merge when  
-  AUTOPILOTS    ▏               checks pass.                                              
-  MARKETPLACE   ▏ Reviews       Every change goes through a pull request the user         
-  SECRETS       ▏               reviews before it merges.                                 
-                ▏ Testing       Run before saying done: go test ./... (in repo)           
-                ▏ Never         —                                                         
-                ▏                                                                         
-                ▏                                                                         
-                ▏                                                                         
+  general ───── ▏ project ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
+  CONFIG        ▏ What the project is and how you work. Every employee reads this on      
+▌ PROJECT       ▏ every task.                                                             
+  agents ────── ▏                                                                         
+  AGENTS        ▏ Project       shop                                                      
+  BRAIN         ▏ What it is    —                                                         
+  PROPOSALS     ▏ Goals         —                                                         
+  LIBRARY       ▏ Who it's for  —                                                         
+  team ──────── ▏ Stack         Go                                                        
+  TEAMS         ▏ How we work   Work from task cards: one branch per card, small focused  
+  PACKS         ▏               commits, open a pull request, address review, merge when  
+  STANDARDS     ▏               checks pass.                                              
+  CONVENTIONS   ▏ Reviews       Every change goes through a pull request the user         
+  automation ── ▏               reviews before it merges.                                 
+  WORKFLOWS     ▏ Testing       Run before saying done: go test ./... (in repo)           
+  AUTOPILOTS    ▏ Never         —                                                         
+  extend ────── ▏                                                                         
+  MARKETPLACE   ▏                                                                         
+  SECRETS       ▏                                                                         
                 ▏                                                                         
                 ▏                                                                         
                 ▏                                                                         

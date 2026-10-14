@@ -220,6 +220,10 @@ func (m *Model) sectionHints() []string {
 			c := m.cursors[secInbox]
 			clampCursor(&c, len(items))
 			act = inboxActionHint(items[c])
+			if items[c].Kind == inbox.Approval && !m.inboxPreviewOn {
+				// No preview pane, so no decision buttons: offer the keys.
+				return []string{"y yes", "n no", "o once", "a always here", act, "z snooze"}
+			}
 		}
 		return []string{act, "z snooze", "u unsnooze"}
 	case secBoard:
@@ -742,8 +746,21 @@ func (m *Model) inboxBody(w, h int) string {
 		y += len(groups[i])
 	}
 	out = append(out, rows...)
+	m.inboxPreviewOn = previewW > 0
 	if previewW > 0 {
-		out = sideBySide(out, inboxPreview(items[*c], previewW-2), w, previewW, h)
+		right := inboxPreview(items[*c], previewW-2)
+		if items[*c].Kind == inbox.Approval && m.approvals != nil {
+			// The decisions as buttons (F-093): clicking one answers the
+			// request exactly like its key.
+			lines, spans := kit.Buttons(approvalButtons, previewW-3)
+			top := len(right) + 1
+			right = append(append(right, ""), lines...)
+			for _, sp := range spans {
+				key := sp.Key
+				m.hits.Add(w+2+sp.From, top+sp.Line, sp.To-sp.From, 1, func(int, int) { m.inboxKey(key) })
+			}
+		}
+		out = sideBySide(out, right, w, previewW, h)
 	}
 	return strings.Join(out, "\n")
 }

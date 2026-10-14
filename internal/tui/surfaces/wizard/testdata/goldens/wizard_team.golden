@@ -6,6 +6,8 @@
 
 
 
+
+
           ╭─ dhi setup ──────────────────────────────────────────────────────────────────╮
           │ ✓ welcome ── ✓ identity ── ✓ conventions ── ● team ── ○ done                 │
           │                                                                              │
@@ -15,14 +17,10 @@
           │                                                                              │
           │ team      ▌[custom]                                                          │
           │ engine     [claude]                                                          │
-          │ leads      [1]                                                               │
-          │ fullstack  [2]                                                               │
-          │ frontend   [0]                                                               │
-          │ backend    [0]                                                               │
-          │ testers    [1]                                                               │
-          │ PMs        [0]                                                               │
-          │ designers  [0]                                                               │
-          │ devops     [0]                                                               │
+          │ leads      −  1 +         fullstack  −  2 +                                  │
+          │ frontend   −  0 +         backend    −  0 +                                  │
+          │ testers    −  1 +         PMs        −  0 +                                  │
+          │ designers  −  0 +         devops     −  0 +                                  │
           │ coding CLIs found: claude, opencode — ←/→ picks the default engine           │
           │                                                                              │
           │ 1 team · 4 employees                                                         │

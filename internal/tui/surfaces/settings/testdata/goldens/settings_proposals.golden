@@ -1,22 +1,22 @@
-  CONFIG        ▏ proposals ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
-  PROJECT       ▏ what agents asked you to approve · nothing they propose is active until you say y                     
-  AGENTS        ▏                                                                                                       
-  BRAIN         ▏  PENDING ─────────────────────────────────────────────────────────────────────────────────────────    
-▌ PROPOSALS     ▏ ▌ ◆ race_test         exec recipe · v1 · by dev · Run one package's tests with -race                  
-  LIBRARY       ▏                                                                                                       
-  TEAMS         ▏  FORGED TOOLS ────────────────────────────────────────────────────────────────────────────────────    
-  PACKS         ▏   ✓ custom__check_all         exec v1 · 0 calls · Vet and race-test every package                     
+  general ───── ▏ proposals ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
+  CONFIG        ▏ what agents asked you to approve · nothing they propose is active until you say y                     
+  PROJECT       ▏                                                                                                       
+  agents ────── ▏  PENDING ─────────────────────────────────────────────────────────────────────────────────────────    
+  AGENTS        ▏ ▌ ◆ race_test         exec recipe · v1 · by dev · Run one package's tests with -race                  
+  BRAIN         ▏                                                                                                       
+▌ PROPOSALS     ▏  FORGED TOOLS ────────────────────────────────────────────────────────────────────────────────────    
+  LIBRARY       ▏   ✓ custom__check_all         exec v1 · 0 calls · Vet and race-test every package                     
+  team ──────── ▏                                                                                                       
+  TEAMS         ▏                                                                                                       
+  PACKS         ▏                                                                                                       
   STANDARDS     ▏                                                                                                       
   CONVENTIONS   ▏                                                                                                       
+  automation ── ▏                                                                                                       
   WORKFLOWS     ▏                                                                                                       
   AUTOPILOTS    ▏                                                                                                       
+  extend ────── ▏                                                                                                       
   MARKETPLACE   ▏                                                                                                       
   SECRETS       ▏                                                                                                       
-                ▏                                                                                                       
-                ▏                                                                                                       
-                ▏                                                                                                       
-                ▏                                                                                                       
-                ▏                                                                                                       
                 ▏                                                                                                       
                 ▏                                                                                                       
                 ▏                                                                                                       

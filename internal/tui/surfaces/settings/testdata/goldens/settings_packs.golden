@@ -1,22 +1,22 @@
-  CONFIG        ▏ packs ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
-  PROJECT       ▏ (no packs installed — "i" to install from a path or git URL)            
+  general ───── ▏ packs ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
+  CONFIG        ▏ (no packs installed — "i" to install from a path or git URL)            
+  PROJECT       ▏                                                                         
+  agents ────── ▏                                                                         
   AGENTS        ▏                                                                         
   BRAIN         ▏                                                                         
   PROPOSALS     ▏                                                                         
   LIBRARY       ▏                                                                         
+  team ──────── ▏                                                                         
   TEAMS         ▏                                                                         
 ▌ PACKS         ▏                                                                         
   STANDARDS     ▏                                                                         
   CONVENTIONS   ▏                                                                         
+  automation ── ▏                                                                         
   WORKFLOWS     ▏                                                                         
   AUTOPILOTS    ▏                                                                         
+  extend ────── ▏                                                                         
   MARKETPLACE   ▏                                                                         
   SECRETS       ▏                                                                         
-                ▏                                                                         
-                ▏                                                                         
-                ▏                                                                         
-                ▏                                                                         
-                ▏                                                                         
                 ▏                                                                         
                 ▏                                                                         
                 ▏                                                                         

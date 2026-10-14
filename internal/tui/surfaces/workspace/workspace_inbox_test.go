@@ -535,3 +535,31 @@ func TestInboxWidePreviewGolden(t *testing.T) {
 		t.Fatalf("preview did not follow the cursor:\n%s", ansi.Strip(m.View()))
 	}
 }
+
+// TestInboxApprovalButtonsAnswer (F-093): the wide preview offers the
+// decisions as buttons; clicking "no" answers the request like n, and
+// the status row then does not repeat the decision keys.
+func TestInboxApprovalButtonsAnswer(t *testing.T) {
+	m, _ := newSurface(t)
+	seedInbox(t, m)
+	gotoInbox(m)
+	m.Resize(176, 24)
+	view := m.View()
+	if _, hints := m.Hints(); strings.Contains(strings.Join(hints, " "), "y yes") {
+		t.Fatalf("decision keys repeated on the status row: %v", hints)
+	}
+	x, y := findOnScreen(t, view, " n  no")
+	if !m.Click(x+1, y) {
+		t.Fatal("click on the no button was not handled")
+	}
+	if n := len(m.approvals.List()); n != 0 {
+		t.Fatalf("approval still pending after clicking no (%d left); hint %q", n, m.inboxHint)
+	}
+	// Narrow: no preview, so the keys move to the status row.
+	seedInbox(t, m)
+	m.Resize(100, 24)
+	_ = m.View()
+	if _, hints := m.Hints(); !strings.Contains(strings.Join(hints, " "), "y yes") {
+		t.Fatalf("narrow inbox lost the decision keys: %v", hints)
+	}
+}

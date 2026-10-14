@@ -5,7 +5,9 @@ import "testing"
 func TestRailClickJumpsToSectionButNotThroughDialogs(t *testing.T) {
 	m, _ := newSurface(t)
 	m.Resize(110, 30)
-	if !m.Click(3, int(secTeams)) {
+	// Rows sit under group headings (F-093): TEAMS is the first row of
+	// the third group, so three headings precede it.
+	if !m.Click(3, int(secTeams)+3) {
 		t.Fatal("a click on a rail row should be handled")
 	}
 	if m.sec != secTeams {
@@ -14,11 +16,14 @@ func TestRailClickJumpsToSectionButNotThroughDialogs(t *testing.T) {
 	if m.Click(60, 2) {
 		t.Fatal("a click in the pane is not a rail click")
 	}
-	if m.Click(3, int(secCount)+2) {
+	if m.Click(3, 0) {
+		t.Fatal("a click on a group heading selects nothing")
+	}
+	if m.Click(3, int(secCount)+5+2) {
 		t.Fatal("a click below the last row hits nothing")
 	}
 	m.form.open = true
-	if m.Click(3, int(secAgents)) || m.sec != secTeams {
+	if m.Click(3, int(secAgents)+2) || m.sec != secTeams {
 		t.Fatal("an open form must swallow rail clicks")
 	}
 }

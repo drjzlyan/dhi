@@ -52,11 +52,15 @@ type Gate interface {
 
 // App is the root Bubble Tea model.
 type App struct {
-	status   *kit.StatusLine // the last composed status row (click routing)
-	version  string
-	surfaces []surfaces.Surface
-	active   int
-	tabs     *kit.Tabs
+	status *kit.StatusLine // the last composed status row (click routing)
+
+	toast      *kit.Toast // the floating announcement, nil = none (F-093)
+	toastFrame int        // slide-in progress, 1..toastFrames
+	toastSeq   int        // newest toast; stale ticks are ignored
+	version    string
+	surfaces   []surfaces.Surface
+	active     int
+	tabs       *kit.Tabs
 
 	gate      Gate
 	gateRan   bool
@@ -311,7 +315,13 @@ func (a *App) lspInEditor(r EditorRequest) (string, error) {
 // Update routes messages: gate → global keys → surface keys; broadcast
 // resizes.
 func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if tc, ok := a.toastMsg(msg); ok {
+		return a, tc
+	}
 	m, cmd := a.update(msg)
+	if tc := a.pollToasts(); tc != nil {
+		cmd = tea.Batch(cmd, tc)
+	}
 	if ac := a.activityCmd(); ac != nil {
 		if cmd == nil {
 			return m, ac
@@ -866,6 +876,9 @@ func (a *App) compose() string {
 	out := bar + "\n" + body + "\n" + statusLine
 	if a.coach != nil {
 		out = bar + "\n" + body + "\n" + kit.Fit(a.coachView(), a.width, coachHeight) + "\n" + statusLine
+	}
+	if !a.gateActive() {
+		out = a.overlayToast(out)
 	}
 	if a.welcome && !a.gateActive() {
 		out = kit.Overlay(strings.Split(out, "\n"), a.welcomeView(), a.width, a.height)

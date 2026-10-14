@@ -1084,4 +1084,5 @@ Plan: `~/.claude/plans/unified-jingling-treasure.md`. Branch `m33-ux` (from `mai
 - [x] P3 Board cards wrap titles, aligned inbox, shared composer, `kit.Count` plurals, no zero counts, `EmptyInline`
 - [x] P4 First run: wizard card + connected stepper, font-safe pulse, aligned form fields, SETUP status row for gates, splash keycaps
 - [x] P5–P6 Rail/help in the view's hue (AA-tested), 256-color shade ladder test
-- [ ] Deferred: ship toast/celebration, wizard team role grid, boot-gate per-tool progress, settings rail group headers, inbox context-pane action keycaps
+- [x] Review fixes: status clicks routed by owner (surface vs shell), no in-pane hint copies, service plurals, honest 256-color test
+- [x] P8 Delight + the rest: ship toast (shell toaster seam, slide-in, reduced-motion golden), inbox approval buttons (clickable), wizard role grid with −/+, per-tool stage bars on the install screen, grouped Settings rail

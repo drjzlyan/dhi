@@ -1,6 +1,6 @@
 # F-093 — Command deck: a bold UI/UX refresh
 
-Status: done (M33; deferred items listed below) · Decision record: ADR-0040 · Builds on: F-025, F-026, F-041, F-064
+Status: done (M33) · Decision record: ADR-0040 · Builds on: F-025, F-026, F-041, F-064
 
 ## Why
 
@@ -70,16 +70,23 @@ refresh across every surface, in the "command deck" direction. Colored captures 
 - [x] Time and meta columns stay aligned when a row wraps.
 - [x] New tokens and glyphs work in Dark, Light and High contrast. `contrast_test` passes. Glyphs are
       font-safe (no `◐`, `⎇`).
-- [ ] Every animation is gated on `theme.Motion` and has a reduced-motion golden.
+- [x] Every animation is gated on `theme.Motion` and has a reduced-motion golden.
 - [x] `AssertBgIntegrity` passes on new primitives and surfaces.
 - [x] The F-041 typing-safety tests stay green.
 - [x] Nothing new in config files: any knob is a Settings row.
 - [x] Colored after-captures (3 themes, 80×24 and 120×36) are reviewed against the baseline.
 
-Not done: no new animations shipped, so the reduced-motion item does not apply yet. The spinner
-pulse already has its reduced-motion path. Deferred: the ship toast/celebration, the wizard team
-role grid, boot-gate per-tool progress, settings rail group headers, and inbox context-pane action
-keycaps.
+### Delight and the rest (P8)
+
+- **Ship toast.** When a card reaches done by any path, the workspace raises a `kit.Toast`. The
+  shell floats it top-right, slides it in, and clears it after 4 seconds. Reduced motion shows it
+  whole. Launching DHI never celebrates cards that were already done.
+- **Inbox approval buttons.** The wide preview offers y/o/a/g/n as clickable buttons. When the pane
+  is too narrow for the preview, the keys move to the status row instead.
+- **Wizard team step.** The role counts are a grid with −/+ steppers.
+- **Install screen.** Each tool row shows a bar that fills by install stage.
+- **Settings rail.** Sections sit under group headings (`kit.RailRow.Group`). Headings are not
+  clickable, and scrolling keeps a row's heading in view.
 
 ## Tooling
 

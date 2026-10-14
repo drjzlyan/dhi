@@ -137,6 +137,9 @@ type Model struct {
 	sessions        *ideation.Store           // pending proposals → inbox (F-033)
 	openIdeator     func(proposalID int) bool // ideator jump (F-033 inbox)
 	inboxHint       string                    // last jump degrade hint (visible, never silent)
+	lastStatus      map[string]tasks.Status   // card statuses at the last look (ship toast, F-093)
+	toast           *kit.Toast                // raised, not yet taken by the shell
+	inboxPreviewOn  bool                      // last inbox frame docked the preview (decision buttons shown)
 	snoozeTarget    inbox.Item                // item parked by the fSnooze form
 	secrets         SecretSaver               // F-089: where a typed secret goes
 	secretAsk       *tools.Approval           // the request the fSecret form answers
