@@ -1010,7 +1010,7 @@ func (p *chatPane) contextLines(width, height int) []string {
 			blank(),
 			blank(),
 			inset(theme.TextMuted().Render(" " + theme.GlyphSpark + " no thread open")),
-			inset(theme.TextMuted().Render("   threads and profiles open here")),
+			inset(theme.TextMuted().Render("   threads open here")),
 		}
 		for len(out) < height {
 			out = append(out, blank())
