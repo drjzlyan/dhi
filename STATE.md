@@ -16,6 +16,8 @@
   identity check is running.
 - Gotcha: `Persist` still writes the full state to both files. `Scoped` filters on read, so the
   user file can hold workspace step ids that are ignored.
+- Released: committed as c21da1c on main, CI green, tagged **v0.4.1** (Latest, 2026-10-14);
+  Homebrew tap updated by hand ("dhi 0.4.1").
 - The `.dhi/` changes that were in the tree at session start (dev.toml → atlas/forge/quill/sage,
   conventions.toml, etc.) are the user's own and were left alone.
 
