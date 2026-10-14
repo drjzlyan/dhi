@@ -28,7 +28,8 @@
   hit-mapped at `w+2`; `m.inboxPreviewOn` decides whether decision keys go to the status row.
 - Status-row spans carry `global`: surface hints go straight to the surface (`tab` in the git panel
   must not switch views).
-- Branch pushed to origin as `m33-ux` (no PR opened).
+- Released: `m33-ux` fast-forwarded onto main (with M31–M32), lint fixes for M32's findings, CI
+  green, tagged **v0.4.0** (Latest, 2026-10-14); Homebrew tap updated by hand ("dhi 0.4.0").
 
 ### Session 56 (M32: agents that can ask, branch `m32`)
 
