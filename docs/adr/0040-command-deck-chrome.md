@@ -43,5 +43,8 @@ The user asked for a bold refresh and chose the "command deck" direction.
   that pane instead, and `?` help still lists every key, grouped.
 - Clicks on hints move from pane footers to the status bar row. The shell maps a status-bar click to
   the key and hands it to the surface.
+- On 256-color terminals the dark canvas and panel shades collapse to one color (tested). Panel
+  and inset (pane vs rail) and every zone vs the selection stay distinct. Panes therefore keep the
+  `▏` divider and the header rule as their boundary, not shade alone.
 - Goldens change across every surface. Each phase regenerates them deliberately and reviews the
   diff.

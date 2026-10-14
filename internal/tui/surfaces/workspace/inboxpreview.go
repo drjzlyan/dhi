@@ -65,14 +65,19 @@ func inboxPreview(it inbox.Item, w int) []string {
 			out = append(out, theme.TextStyle().Render(l))
 		}
 	}
-	act := "enter jump"
+	return out // its keys ride the status row (inboxActionHint, ADR-0040)
+}
+
+// inboxActionHint names what enter does for the selected item, as the
+// first status-row hint of INBOX.
+func inboxActionHint(it inbox.Item) string {
 	switch it.Kind {
 	case inbox.Approval:
-		act = "enter review the request"
+		return "enter review the request"
 	case inbox.RunFailed:
-		act = "enter open the run replay"
+		return "enter open the run replay"
 	case inbox.AgentMessage:
-		act = "enter open the thread"
+		return "enter open the thread"
 	}
-	return append(out, "", theme.Hint().Render(act+" · z snooze"))
+	return "enter/o jump"
 }

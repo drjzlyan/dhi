@@ -898,3 +898,28 @@ func TestStatusHintClickActsLikeKey(t *testing.T) {
 		t.Fatalf("click on the status hint sent %v, want [s]", hs.keys)
 	}
 }
+
+// TestStatusSurfaceHintBeatsGlobalKey (ADR-0040): a surface hint whose
+// key is also a shell key ("tab rail") goes to the surface on click —
+// it must not switch views.
+func TestStatusSurfaceHintBeatsGlobalKey(t *testing.T) {
+	theme.SwapForTest(t, theme.Dark())
+	hs := &hintStub{stubSurface: stubSurface{id: "ws", title: "Workspace"}, hints: []string{"tab rail"}}
+	a := New("test", hs, &stubSurface{id: "editor", title: "Editor"})
+	a.Update(tea.WindowSizeMsg{Width: 120, Height: 20})
+	row := ansi.Strip(a.status0())
+	x := len([]rune(row[:strings.Index(row, "rail")])) - 2
+	a.handleClick(x, 19)
+	if a.active != 0 {
+		t.Fatalf("clicking a surface's tab hint switched views (active=%d)", a.active)
+	}
+	if len(hs.keys) != 1 || hs.keys[0] != "tab" {
+		t.Fatalf("surface got %v, want [tab]", hs.keys)
+	}
+	// "? more"/help is a shell key: it opens help.
+	x = len([]rune(row[:strings.Index(row, "help")])) - 2
+	a.handleClick(x, 19)
+	if !a.showHelp {
+		t.Fatal("clicking ? help did not open help")
+	}
+}

@@ -941,30 +941,32 @@ func (a *App) buildStatus() *kit.StatusLine {
 }
 
 // clickStatus acts on a click at column x of the status row: a hint does
-// what its key does (F-055), routed like a key press.
+// what its key does (F-055). A surface hint goes straight to the surface
+// — a surface key like "tab" in the git panel must not become the shell's
+// view switch — and only shell hints take the global path.
 func (a *App) clickStatus(x int) {
 	if a.status == nil {
 		return
 	}
-	k, ok := a.status.KeyAt(x)
+	k, global, ok := a.status.KeyAt(x)
 	if !ok {
 		return
 	}
 	if strings.HasPrefix(k, "^") {
 		k = "ctrl+" + strings.TrimPrefix(k, "^")
 	}
+	if !global {
+		a.Active().HandleKey(k)
+		return
+	}
 	switch k {
 	case "ctrl+p":
 		a.openPalette()
-		return
 	case "?":
-		a.showHelp = true
-		return
+		a.openHelp()
 	case "ctrl+c", "ctrl+q":
-		return // never quit from a stray click
+		// never quit from a stray click
+	default:
+		a.handleGlobal(k, false)
 	}
-	if _, handled := a.handleGlobal(k, false); handled {
-		return
-	}
-	a.Active().HandleKey(k)
 }

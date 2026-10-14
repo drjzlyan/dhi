@@ -325,7 +325,7 @@ func (m *Model) Hints() (string, []string) {
 	case m.reviewOpen && len(m.proposals) > 0:
 		return "", nil // the suggestion card names its own keys
 	case m.chat != nil && m.chat.open && m.chat.focus:
-		return "", []string{"⏎ send", "@ mention", "[ ] channel", "^f apply", "esc blur"}
+		return "", []string{"enter send", "@ mention", "[ ] channel", "^f apply", "esc blur"}
 	case m.drawerOpen && m.termFocus:
 		return "", []string{"ctrl+t blur", "alt+1..9 tab", "alt+n new tab"}
 	case m.gitOpen && m.gitFocus:
@@ -338,7 +338,7 @@ func (m *Model) Hints() (string, []string) {
 		}
 		return "", []string{"i insert", ": cmd", "esc tree", "K hover", "gr refs", "ga actions"}
 	}
-	hints := []string{"⏎ open", "/ find", "s search"}
+	hints := []string{"enter open", "/ find", "s search"}
 	if m.drawerOpen && !m.termFocus {
 		hints = append(hints, "ctrl+t terminal")
 	}

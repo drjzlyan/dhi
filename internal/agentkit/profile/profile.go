@@ -163,7 +163,7 @@ func (p *Profile) Summary() string {
 	}
 	tools := "no tools"
 	if n := len(p.Manifest.Tools); n > 0 {
-		tools = fmt.Sprintf("%d tool(s)", n)
+		tools = plural(n, "tool")
 	}
 	return fmt.Sprintf("%s · %s · %s", p.Manifest.Name, p.Manifest.Model, tools)
 }
@@ -183,4 +183,12 @@ func (p *Profile) TaskLine() string {
 		extra = " [" + strings.Join(members, ",") + "]"
 	}
 	return fmt.Sprintf("%s (%s)%s", t.Slug, t.Status, extra)
+}
+
+// plural renders "1 tool" / "2 tools" for user-facing text (F-093).
+func plural(n int, noun string) string {
+	if n == 1 {
+		return "1 " + noun
+	}
+	return fmt.Sprintf("%d %ss", n, noun)
 }

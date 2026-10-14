@@ -51,11 +51,11 @@ func TestViewProgressesThroughEvents(t *testing.T) {
 
 	feed(m,
 		toolchain.Event{Kind: toolchain.EventManifestFetched, Detail: "http://127.0.0.1/manifest.json"},
-		toolchain.Event{Kind: toolchain.EventResolved, Detail: "2 action(s)"},
+		toolchain.Event{Kind: toolchain.EventResolved, Detail: "2 actions"},
 	)
 	v = plain(m)
 	if !strings.Contains(v, rowText(theme.GlyphCheck, "registry manifest")) ||
-		!strings.Contains(v, "2 action(s)") {
+		!strings.Contains(v, "2 actions") {
 		t.Errorf("registry/plan rows not rendered:\n%s", v)
 	}
 
@@ -103,7 +103,7 @@ func TestUpToDatePath(t *testing.T) {
 	m := newTestModel()
 	feed(m,
 		toolchain.Event{Kind: toolchain.EventManifestFetched},
-		toolchain.Event{Kind: toolchain.EventResolved, Detail: "0 action(s)"},
+		toolchain.Event{Kind: toolchain.EventResolved, Detail: "0 actions"},
 		toolchain.Event{Kind: toolchain.EventDone, Detail: "up to date"},
 	)
 	m.Update(installDoneMsg{})
@@ -244,7 +244,7 @@ func TestOverallProgressBarTracksTools(t *testing.T) {
 		t.Fatal("no bar before the plan is known")
 	}
 
-	feed(m, toolchain.Event{Kind: toolchain.EventResolved, Detail: "4 action(s)", Count: 4})
+	feed(m, toolchain.Event{Kind: toolchain.EventResolved, Detail: "4 actions", Count: 4})
 	if v := plain(m); !strings.Contains(v, "0/4 tools") || barCells(v) != 0 {
 		t.Fatalf("empty bar expected:\n%s", v)
 	}

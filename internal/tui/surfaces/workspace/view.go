@@ -215,7 +215,13 @@ func (m *Model) Hints() (string, []string) { return m.statusFlash(), m.sectionHi
 func (m *Model) sectionHints() []string {
 	switch m.sec {
 	case secInbox:
-		return []string{"enter/o jump", "z snooze", "u unsnooze"}
+		act := "enter/o jump"
+		if items := m.inboxItems(); len(items) > 0 {
+			c := m.cursors[secInbox]
+			clampCursor(&c, len(items))
+			act = inboxActionHint(items[c])
+		}
+		return []string{act, "z snooze", "u unsnooze"}
 	case secBoard:
 		if m.replay != nil {
 			return []string{"esc close", "j/k scroll", "g/G top/bottom"}

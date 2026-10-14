@@ -35,10 +35,19 @@ type StatusLine struct {
 	spans []hintSpan // the last View's clickable hints
 }
 
-// hintSpan is one rendered hint's columns, for click routing.
+// hintSpan is one rendered hint's columns, for click routing: the
+// logical hint (before F-058 display remaps) and whether it is a shell
+// key or the surface's own.
 type hintSpan struct {
 	from, to int
 	hint     string
+	global   bool
+}
+
+// keyEntry is one hint queued for rendering.
+type keyEntry struct {
+	hint   string // logical; rendered through DisplayHint
+	global bool
 }
 
 // DefaultStatusLine returns the neutral base statusline for the given
@@ -72,11 +81,12 @@ func ModeChip(text string) StatusSegment {
 
 // renderKeys renders hints as keycap + muted label, two cells apart,
 // and reports each hint's column span (relative to the first cell).
-func renderKeys(hints []string) (string, []hintSpan) {
+func renderKeys(entries []keyEntry) (string, []hintSpan) {
 	hint := theme.Hint()
 	var out string
 	var spans []hintSpan
-	for i, h := range hints {
+	for i, e := range entries {
+		h := DisplayHint(e.hint) // name the key to press (F-058 remaps)
 		if i > 0 {
 			out += "  "
 		}
@@ -89,7 +99,7 @@ func renderKeys(hints []string) (string, []hintSpan) {
 		if desc != "" {
 			out += hint.Render(" " + desc)
 		}
-		spans = append(spans, hintSpan{from: from, to: runeWidth(out), hint: h})
+		spans = append(spans, hintSpan{from: from, to: runeWidth(out), hint: e.hint, global: e.global})
 	}
 	return out, spans
 }
@@ -102,28 +112,24 @@ func (s *StatusLine) View() string {
 	}
 	flash := s.Flash
 
-	display := func(hs []string) []string {
-		out := make([]string, len(hs))
-		for i, h := range hs {
-			out[i] = DisplayHint(h) // name the key to press (F-058 remaps)
-		}
-		return out
-	}
-	hints := display(s.Hints)
-	globals := display(s.Globals)
+	hints := append([]string{}, s.Hints...)
+	globals := append([]string{}, s.Globals...)
 	dropped := false
 
 	var spans []hintSpan
 	right := func() string {
-		all := append([]string{}, hints...)
+		all := make([]keyEntry, 0, len(hints)+len(globals)+1)
+		for _, h := range hints {
+			all = append(all, keyEntry{hint: h})
+		}
 		if dropped && s.More != "" {
-			all = append(all, s.More)
+			all = append(all, keyEntry{hint: s.More, global: true})
 		}
 		for _, g := range globals {
 			if dropped && s.More != "" && strings.HasPrefix(g, "? ") {
 				continue // "? more" already offers help
 			}
-			all = append(all, g)
+			all = append(all, keyEntry{hint: g, global: true})
 		}
 		out, sp := renderKeys(all)
 		spans = sp
@@ -187,31 +193,32 @@ func (s *StatusLine) View() string {
 	return PaintRow(out, s.Width, theme.StatusBar()) // one background end to end (F-064)
 }
 
-// KeyAt maps a click at column x of the last View to the key of the
-// hint drawn there (F-055: the keymap is clickable): the first
-// alternative of the hint's key part ("s/S status" → "s"). False off a
-// hint, or before View ran.
-func (s *StatusLine) KeyAt(x int) (string, bool) {
+// KeyAt maps a click at column x of the last View to the logical key of
+// the hint drawn there (F-055: the keymap is clickable): the first
+// alternative of the hint's key part ("s/S status" → "s"), and whether
+// it is a shell key (global) or the surface's. False off a hint, or
+// before View ran.
+func (s *StatusLine) KeyAt(x int) (key string, global, ok bool) {
 	for _, sp := range s.spans {
 		if x >= sp.from && x < sp.to {
 			rows := HintRows(sp.hint)
 			if len(rows) == 0 {
-				return "", false
+				return "", false, false
 			}
 			k := strings.Fields(strings.ReplaceAll(rows[0][0], "/", " "))[0]
 			if k == "space" {
 				k = " "
 			}
-			return k, true
+			return k, sp.global, true
 		}
 	}
-	return "", false
+	return "", false, false
 }
 
 // setSpans records the rendered hints' absolute columns.
 func (s *StatusLine) setSpans(spans []hintSpan, offset int) {
 	s.spans = s.spans[:0]
 	for _, sp := range spans {
-		s.spans = append(s.spans, hintSpan{from: sp.from + offset, to: sp.to + offset, hint: sp.hint})
+		s.spans = append(s.spans, hintSpan{from: sp.from + offset, to: sp.to + offset, hint: sp.hint, global: sp.global})
 	}
 }

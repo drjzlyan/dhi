@@ -186,7 +186,7 @@ func (m *Manager) install(ctx context.Context, mf *Manifest, names []string) err
 	if err != nil {
 		return err
 	}
-	m.emit(Event{Kind: EventResolved, Detail: fmt.Sprintf("%d action(s)", len(plan)), Count: len(plan)})
+	m.emit(Event{Kind: EventResolved, Detail: plural(len(plan), "action"), Count: len(plan)})
 
 	stagingBase := filepath.Join(m.root, "staging")
 	if err := os.MkdirAll(stagingBase, 0o755); err != nil {
@@ -325,4 +325,12 @@ func (m *Manager) linkShims(name string, tool Tool, versionDir, binDir string) e
 		}
 	}
 	return nil
+}
+
+// plural renders "1 tool" / "2 tools" for user-facing text (F-093).
+func plural(n int, noun string) string {
+	if n == 1 {
+		return "1 " + noun
+	}
+	return fmt.Sprintf("%d %ss", n, noun)
 }

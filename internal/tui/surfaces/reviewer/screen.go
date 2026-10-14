@@ -138,7 +138,7 @@ func (m *Model) screenConversation(w, h int) string {
 	}
 	out = append(out, theme.SectionHeader().Render("REVIEW")+" "+kit.Pill(crop(state, inner-9), stateC))
 	if p := r.PendingCount(); p > 0 {
-		out = append(out, theme.WarningText().Render("● "+kit.Count(p, "draft")+" · S sends one review"))
+		out = append(out, theme.WarningText().Render("● "+kit.Count(p, "draft")+", sent together as one review"))
 	}
 	if n := r.OpenSuggestions(); n > 0 {
 		out = append(out, theme.AccentText().Render("◇ "+kit.Count(n, "suggestion")+" to decide"))
@@ -151,7 +151,7 @@ func (m *Model) screenConversation(w, h int) string {
 	out = append(out, theme.SectionHeader().Render("ON THIS FILE"), theme.TextDim().Render(crop(path, inner)))
 	rows, order := flatThreads(r, path)
 	if len(rows) == 0 {
-		out = append(out, theme.TextDim().Render("no discussion on this file"), theme.Hint().Render("c comments on the line"))
+		out = append(out, theme.TextDim().Render("no discussion on this file"))
 	}
 	for _, tr := range rows {
 		t := order[tr.thread]

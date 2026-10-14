@@ -153,14 +153,16 @@ func TestRailActiveIsLegible(t *testing.T) {
 	}
 }
 
-// TestShadeLadderSurvives256Colors: on 256-color terminals the deck's
-// zones are told apart by shade alone (ADR-0040), so the canvas, panel
-// and selection steps must stay distinct after downsampling. (Inset and
-// header are allowed to merge with a neighbour; they carry rules too.)
+// TestShadeLadderSurvives256Colors: after a 256-color downsample the
+// rail (inset) and the pane (panel) stay distinct, and the selection
+// stays visible on every zone. The dark canvas and panel DO collapse
+// there; that boundary is carried by rows (tab bar, status row) and the
+// pane's divider and header rule, not by shade (ADR-0040).
 func TestShadeLadderSurvives256Colors(t *testing.T) {
 	for _, tk := range []Tokens{Dark(), Light()} {
 		conv := func(c color.Color) color.Color { return colorprofile.ANSI256.Convert(c) }
-		pairs := [][2]color.Color{{tk.Bg, tk.BgSelection}, {tk.BgPanel, tk.BgSelection}, {tk.BgInset, tk.BgSelection}}
+		pairs := [][2]color.Color{{tk.Bg, tk.BgSelection}, {tk.BgPanel, tk.BgSelection}, {tk.BgInset, tk.BgSelection},
+			{tk.BgPanel, tk.BgInset}}
 		for i, p := range pairs {
 			a, b := conv(p[0]), conv(p[1])
 			ar, ag, ab, _ := a.RGBA()

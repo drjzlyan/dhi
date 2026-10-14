@@ -159,7 +159,7 @@ func Open(ws *workspace.Workspace) (*Bus, error) {
 				// A corrupt line is quarantined, never a lost channel
 				// (F-078): the rest of the history stays readable.
 				if n, rerr := jsonl.Repair[Message](p); rerr == nil && n > 0 {
-					b.repaired = append(b.repaired, fmt.Sprintf("%s: %d corrupt line(s) moved to %s.corrupt", p, n, filepath.Base(p)))
+					b.repaired = append(b.repaired, fmt.Sprintf("%s: %s moved to %s.corrupt", p, plural(n, "corrupt line"), filepath.Base(p)))
 				}
 			}
 			b.mu.Lock()
@@ -379,4 +379,12 @@ func ThreadOf(m Message) int64 {
 		return m.Thread
 	}
 	return m.ID
+}
+
+// plural renders "1 tool" / "2 tools" for user-facing text (F-093).
+func plural(n int, noun string) string {
+	if n == 1 {
+		return "1 " + noun
+	}
+	return fmt.Sprintf("%d %ss", n, noun)
 }
