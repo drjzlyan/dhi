@@ -65,9 +65,9 @@ func TestAccessTargetRefusesGuardedAndBroadPaths(t *testing.T) {
 // grows the next spawn's sandbox and asks the turn to continue.
 func TestPermissionRequestGrantsWriteAtTheNextSpawn(t *testing.T) {
 	h := episodeHarness(t)
-	trig := mustPost(t, h, bus.Message{Channel: "dm:scout", Author: bus.Human, Text: "export the data"})
+	_ = mustPost(t, h, bus.Message{Channel: "dm:scout", Author: bus.Human, Text: "export the data"})
 	rl := &relaunch{}
-	ask := h.rt.accessSeam("scout", trig, rl)
+	ask := h.rt.accessSeam("scout", rl)
 	target := realPath(t.TempDir())
 	done := make(chan string, 1)
 	go func() {
@@ -128,7 +128,7 @@ func TestDenialOffersAccessAndContinues(t *testing.T) {
 // Asking with a program path grants its folder read+execute, never write.
 func TestPermissionRequestExecGrantsTheProgramsFolder(t *testing.T) {
 	h := episodeHarness(t)
-	trig := mustPost(t, h, bus.Message{Channel: "dm:scout", Author: bus.Human, Text: "push"})
+	_ = mustPost(t, h, bus.Message{Channel: "dm:scout", Author: bus.Human, Text: "push"})
 	dir := realPath(t.TempDir())
 	prog := filepath.Join(dir, "tool")
 	if err := os.WriteFile(prog, []byte("#!/bin/sh\n"), 0o755); err != nil {
@@ -137,7 +137,7 @@ func TestPermissionRequestExecGrantsTheProgramsFolder(t *testing.T) {
 	rl := &relaunch{}
 	done := make(chan string, 1)
 	go func() {
-		out, err := h.rt.accessSeam("scout", trig, rl)(context.Background(), "exec", prog, "push needs it")
+		out, err := h.rt.accessSeam("scout", rl)(context.Background(), "exec", prog, "push needs it")
 		if err != nil {
 			out = "ERR " + err.Error()
 		}

@@ -105,7 +105,9 @@ func (r *Runtime) workBranchSeam(agentID string, trigger bus.Message, rl *relaun
 		if len(t.ChangeSets) == 0 {
 			if err := r.cfg.Provision(slug, member); err != nil {
 				if stashed {
-					r.popChanges(ctx, r.memberPath(member))
+					// Best effort: the worktree failed, so put the stashed
+					// changes back where they were; that error is secondary.
+					_ = r.popChanges(ctx, r.memberPath(member))
 				}
 				return "", fmt.Errorf("could not create the worktree: %w", err)
 			}

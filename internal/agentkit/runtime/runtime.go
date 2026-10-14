@@ -445,9 +445,7 @@ func (r *Runtime) extendSandboxForRoster(roster []*manifest.Agent) error {
 			// "#!/usr/bin/env bash"; on PATH that was Homebrew's bash,
 			// outside the exec roots — every spawn died "env: bash:
 			// Operation not permitted", live M32).
-			for _, d := range interpreterDirs(resolved, envPath(r.cfg.CLIEnv)) {
-				ro = append(ro, d)
-			}
+			ro = append(ro, interpreterDirs(resolved, envPath(r.cfg.CLIEnv))...)
 		}
 	}
 	if len(extras) == 0 && len(ro) == 0 {
@@ -475,7 +473,7 @@ func interpreterDirs(script, path string) []string {
 	if err != nil {
 		return nil
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }() // read-only: nothing to flush
 	head := make([]byte, 256)
 	n, _ := f.Read(head)
 	line, _, _ := strings.Cut(string(head[:n]), "\n")

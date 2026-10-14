@@ -113,7 +113,7 @@ func (r *Runtime) spawnSandbox(e *entry) sandbox.Sandbox {
 // approval card for the path; once granted, the turn continues in a
 // fresh run with the path in its sandbox. Network and exec reuse the
 // capability scopes (checked per call, so they apply at once).
-func (r *Runtime) accessSeam(agentID string, trigger bus.Message, rl *relaunch) func(ctx context.Context, kind, target, reason string) (string, error) {
+func (r *Runtime) accessSeam(agentID string, rl *relaunch) func(ctx context.Context, kind, target, reason string) (string, error) {
 	if r.cfg.Approvals == nil {
 		return nil
 	}

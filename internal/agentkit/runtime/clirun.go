@@ -76,7 +76,7 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message, tl
 	rl := &relaunch{}
 	serve := r.serveToolsFor(e, trigger, turnTools{
 		workBranch:  r.workBranchSeam(e.m.ID, trigger, rl),
-		access:      r.accessSeam(e.m.ID, trigger, rl),
+		access:      r.accessSeam(e.m.ID, rl),
 		envelope:    r.envelopeFor(task, hasTask, workdir, tune),
 		task:        task.Slug,
 		plan:        r.planSeam(e.m.ID, ep.Key),

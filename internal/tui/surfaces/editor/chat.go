@@ -268,7 +268,7 @@ func (c *chatModel) handleKey(key string, apply func(string)) bool {
 		}
 		// A secret still to be typed is answered in the workspace chat
 		// or inbox, which have the masked field (F-089); n still denies.
-		if ap := list[0]; !(ap.IsSecret() && ap.Missing && key != "n") {
+		if ap := list[0]; !ap.IsSecret() || !ap.Missing || key == "n" {
 			c.apprs.Decide(ap, tools.DecideKeys[key])
 		}
 		return true
