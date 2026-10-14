@@ -116,3 +116,25 @@ func TestInitWorkspaceLoadsAndIgnoresRuntimeState(t *testing.T) {
 		t.Fatal("second init must refuse")
 	}
 }
+
+func TestScopedKeepsWorkspaceStepsToTheirWorkspace(t *testing.T) {
+	at := time.Now()
+	var user, other State
+	user.Finished = true
+	user.Mark("identity", at)
+	user.Mark("project", at) // answered in another workspace
+	user.MarkSkipped("team", at)
+	user.Mark("tutorial:tour", at)
+	other.Mark("integrations", at)
+
+	got := Scoped(user, State{})
+	if !got.Finished || !got.Has("identity") || !got.Has("tutorial:tour") {
+		t.Fatalf("your steps lost: %+v", got)
+	}
+	if got.Settled("project") || got.Settled("team") {
+		t.Fatalf("another workspace's answers leaked: %+v", got)
+	}
+	if got := Scoped(user, other); !got.Has("integrations") || got.Has("project") {
+		t.Fatalf("this workspace's steps must come from its own state: %+v", got)
+	}
+}

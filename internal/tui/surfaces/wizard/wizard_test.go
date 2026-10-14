@@ -1429,3 +1429,205 @@ func TestCatchUpSkipSetupSettlesEveryStep(t *testing.T) {
 		t.Fatalf("skip setup left steps to nag about: %+v", last)
 	}
 }
+
+// ---- member picker and skips that must not leak ----
+
+func mkRepos(t *testing.T, root string, names ...string) {
+	t.Helper()
+	for _, n := range names {
+		if err := os.MkdirAll(filepath.Join(root, n, ".git"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestWorkspacePickerAddsOnlyChosenRepos(t *testing.T) {
+	f := newFixture(t, false)
+	mkRepos(t, f.root, "api", "docs", "web")
+	var got []setup.MemberSpec
+	f.env.InitWorkspace = func(root string, ms []setup.MemberSpec) ([]setup.MemberSpec, error) {
+		got = ms
+		return setup.InitWorkspace(root, ms)
+	}
+	m := f.wizard()
+	key(m, "enter") // → workspace
+	v := plain(m)
+	if !strings.Contains(v, "Found 3 repos") || !strings.Contains(v, "None selected · enter adds all 3") {
+		t.Fatalf("picker expected, nothing preselected:\n%s", v)
+	}
+	if _, hints := m.Hints(); strings.Join(hints[:3], ",") != "space select,a all,l later" {
+		t.Fatalf("picker keys missing from the status row: %v", hints)
+	}
+	key(m, "space", "down", "down", "space", "enter") // api, web
+	if len(got) != 2 || got[0].Name != "api" || got[1].Name != "web" {
+		t.Fatalf("members = %+v, want api and web", got)
+	}
+	ws, err := os.ReadFile(filepath.Join(f.root, ".dhi", "workspace.toml"))
+	if err != nil || strings.Contains(string(ws), "docs") {
+		t.Fatalf("docs joined unasked:\n%s", ws)
+	}
+}
+
+func TestWorkspacePickerSelectAllAndKeepsPicksAcrossBack(t *testing.T) {
+	f := newFixture(t, false)
+	mkRepos(t, f.root, "api", "web")
+	m := f.wizard()
+	key(m, "enter", "down", "space") // web
+	key(m, "ctrl+b", "enter")        // welcome and back again
+	if !strings.Contains(plain(m), "1 of 2 selected") {
+		t.Fatalf("picks lost on back:\n%s", plain(m))
+	}
+	key(m, "a")
+	if !strings.Contains(plain(m), "2 of 2 selected") {
+		t.Fatalf("a must select all:\n%s", plain(m))
+	}
+	key(m, "a")
+	if !strings.Contains(plain(m), "None selected") {
+		t.Fatalf("a again must clear:\n%s", plain(m))
+	}
+}
+
+func TestWorkspaceSingleCandidateNeedsNoPicking(t *testing.T) {
+	f := newFixture(t, false)
+	mkRepos(t, f.root, "web")
+	m := f.wizard()
+	key(m, "enter")
+	if strings.Contains(plain(m), "selected") {
+		t.Fatalf("one repo: nothing to choose:\n%s", plain(m))
+	}
+	key(m, "enter")
+	if f.env.Root != f.root {
+		t.Fatal("single repo not created")
+	}
+}
+
+func TestGoldenWorkspacePicker(t *testing.T) {
+	f := newFixture(t, false)
+	mkRepos(t, f.root, "api", "web")
+	f.env.CWD = "/work/acme" // the temp dir differs per run
+	f.env.Discover = func(string) []setup.MemberSpec { return setup.DiscoverMembers(f.root) }
+	m := f.wizard()
+	key(m, "enter", "space")
+	golden.Snapshot(t, "wizard_workspace_picker", plain(m))
+}
+
+// Skipping setup in a bare directory must not settle the steps that only
+// run in a workspace: once one exists, catch-up still offers them.
+func TestSkipSetupWithoutWorkspaceLeavesWorkspaceStepsOwed(t *testing.T) {
+	f := newTeamFixture(t)
+	f.env.Root = ""
+	f.env.DetectBrief = func() brief.Brief { return brief.Brief{Name: "x"} }
+	f.env.SaveBrief = func(brief.Brief) error { return nil }
+	f.env.HasBrief = func() bool { return false }
+	m := f.wizard()
+	key(m, "ctrl+x")
+	last := f.persisted[len(f.persisted)-1]
+	for _, id := range []string{"project", "team"} {
+		if last.Settled(id) {
+			t.Fatalf("%s settled without ever being offered: %+v", id, last)
+		}
+	}
+	f.env.Root = f.root // the workspace appears later
+	var ids []string
+	for _, s := range CatchUpSteps(f.env, "9.9.9", last) {
+		ids = append(ids, s.ID())
+	}
+	if strings.Join(ids, ",") != "project,team,done" {
+		t.Fatalf("catch-up = %v, want project, team", ids)
+	}
+}
+
+func TestDoneStepNamesSkippedSteps(t *testing.T) {
+	f := newFixture(t, false)
+	m := f.wizard()
+	key(m, "enter", "esc", "esc") // welcome, skip workspace, skip identity
+	key(m, "enter")               // conventions
+	v := plain(m)
+	if !strings.Contains(v, "skipped: workspace, identity") || !strings.Contains(v, "no workspace yet") {
+		t.Fatalf("done must name what was skipped:\n%s", v)
+	}
+	key(m, "ctrl+b", "ctrl+b", "enter") // back to identity, apply it
+	key(m, "enter")
+	if v := plain(m); !strings.Contains(v, "skipped: workspace") || strings.Contains(v, "identity —") {
+		t.Fatalf("an applied step left the skipped list:\n%s", v)
+	}
+}
+
+func TestIdentityCheckCanBeSkipped(t *testing.T) {
+	f := newFixture(t, true)
+	m := f.wizard()
+	key(m, "enter") // → identity
+	step := m.steps[m.idx].(*identityStep)
+	step.phase = idChecking // git still answering
+	m.HandleKey("esc")
+	if m.steps[m.idx].ID() != "conventions" {
+		t.Fatalf("esc while checking must skip; step = %s", m.steps[m.idx].ID())
+	}
+	m.Update(identityMsg{id: gitcore.Identity{Name: "late"}}) // the late answer is ignored
+	if m.steps[m.idx].ID() != "conventions" || f.env.WhoName == "late" {
+		t.Fatal("a late identity answer disturbed the next step")
+	}
+}
+
+func TestWorkspacePickerWindowsALongList(t *testing.T) {
+	f := newFixture(t, false)
+	var names []string
+	for i := 0; i < 30; i++ {
+		names = append(names, "repo"+string(rune('a'+i/10))+string(rune('0'+i%10)))
+	}
+	mkRepos(t, f.root, names...)
+	m := f.wizard()
+	m.Resize(100, 34)
+	key(m, "enter")
+	for i := 0; i < 29; i++ {
+		key(m, "down")
+	}
+	key(m, "space")
+	v := plain(m)
+	for _, want := range []string{"✓ welcome", "Found 30 repos", "↑ 20 more", "▌ ✓ repoc9", "1 of 30 selected", "╰"} {
+		if !strings.Contains(v, want) {
+			t.Fatalf("long list lacks %q:\n%s", want, v)
+		}
+	}
+	if strings.Contains(v, "repoa0") {
+		t.Fatalf("rows outside the window rendered:\n%s", v)
+	}
+}
+
+// No choice made: the default (every repo found) is used.
+func TestWorkspacePickerEnterWithNoneTakesAll(t *testing.T) {
+	f := newFixture(t, false)
+	mkRepos(t, f.root, "api", "web")
+	var got []setup.MemberSpec
+	f.env.InitWorkspace = func(root string, ms []setup.MemberSpec) ([]setup.MemberSpec, error) {
+		got = ms
+		return setup.InitWorkspace(root, ms)
+	}
+	m := f.wizard()
+	key(m, "enter", "enter")
+	if len(got) != 2 || f.env.Root != f.root {
+		t.Fatalf("members = %+v root=%q, want every repo", got, f.env.Root)
+	}
+}
+
+// "Later" means later: nothing is created and no default is applied.
+func TestWorkspacePickerLaterCreatesNothing(t *testing.T) {
+	f := newFixture(t, false)
+	mkRepos(t, f.root, "api", "web")
+	called := false
+	f.env.InitWorkspace = func(string, []setup.MemberSpec) ([]setup.MemberSpec, error) {
+		called = true
+		return nil, nil
+	}
+	m := f.wizard()
+	key(m, "enter", "space", "l")
+	if called || f.env.Root != "" || f.env.Changed {
+		t.Fatalf("later created a workspace (called=%v root=%q)", called, f.env.Root)
+	}
+	if m.steps[m.idx].ID() != "identity" || !m.skipped["workspace"] {
+		t.Fatalf("later must move on without the workspace; step=%s", m.steps[m.idx].ID())
+	}
+	if _, err := os.Stat(filepath.Join(f.root, ".dhi")); !os.IsNotExist(err) {
+		t.Fatal(".dhi written although the user chose later")
+	}
+}

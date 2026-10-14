@@ -84,10 +84,20 @@ func (s *welcomeStep) View(w, f int) []string {
 
 type workspaceStep struct {
 	base
-	env     *Env
+	env *Env
+	// members are discovered once per directory, so going back and
+	// forth keeps what was picked.
 	members []setup.MemberSpec
+	picked  []bool
+	from    string
+	cur     int
+	scroll  kit.Scroller
 	err     string
 }
+
+// pickerRows caps the repo list so a directory full of repos still fits
+// the card; the window follows the cursor.
+const pickerRows = 10
 
 func (*workspaceStep) ID() string    { return "workspace" }
 func (*workspaceStep) Title() string { return "workspace" }
@@ -97,11 +107,88 @@ func (s *workspaceStep) Applies() bool { return s.env.Root == "" }
 
 func (s *workspaceStep) Enter() tea.Cmd {
 	s.err = ""
-	s.members = nil
+	if s.members != nil && s.from == s.env.CWD {
+		return nil
+	}
+	s.members, s.picked, s.cur, s.from = nil, nil, 0, s.env.CWD
 	if s.env.Discover != nil {
 		s.members = s.env.Discover(s.env.CWD)
 	}
+	s.picked = make([]bool, len(s.members))
+	s.scroll = kit.NewScroller(len(s.members), pickerRows, 0)
+	if !s.choosing() {
+		for i := range s.picked { // nothing to choose: the one candidate
+			s.picked[i] = true
+		}
+	}
 	return nil
+}
+
+// choosing reports several repos were found: the user picks which join.
+// Enter with nothing picked takes the default (every repo found); "later"
+// creates nothing, so no default is used behind the user's back.
+func (s *workspaceStep) choosing() bool { return len(s.members) > 1 }
+
+// Keys are the picker's own keys for the status row.
+func (s *workspaceStep) Keys() []string {
+	if !s.choosing() {
+		return nil
+	}
+	return []string{"space select", "a all", "l later"}
+}
+
+func (s *workspaceStep) HandleKey(key string) Action {
+	if !s.choosing() {
+		return s.base.HandleKey(key)
+	}
+	switch key {
+	case "j", "down":
+		if s.cur < len(s.members)-1 {
+			s.cur++
+		}
+		s.scroll.EnsureVisible(s.cur)
+	case "k", "up":
+		if s.cur > 0 {
+			s.cur--
+		}
+		s.scroll.EnsureVisible(s.cur)
+	case "space", " ", "x":
+		s.picked[s.cur] = !s.picked[s.cur]
+		s.err = ""
+	case "a":
+		all := s.count() < len(s.members)
+		for i := range s.picked {
+			s.picked[i] = all
+		}
+		s.err = ""
+	case "enter":
+		return Next // nothing picked: Apply takes the default, every repo
+	case "l":
+		return Skip // the user will choose later: create nothing now
+	case "esc":
+		return Skip
+	}
+	return Stay
+}
+
+func (s *workspaceStep) count() int {
+	n := 0
+	for _, p := range s.picked {
+		if p {
+			n++
+		}
+	}
+	return n
+}
+
+func (s *workspaceStep) selected() []setup.MemberSpec {
+	var out []setup.MemberSpec
+	for i, m := range s.members {
+		if s.picked[i] {
+			out = append(out, m)
+		}
+	}
+	return out
 }
 
 func (s *workspaceStep) View(w, f int) []string {
@@ -109,10 +196,45 @@ func (s *workspaceStep) View(w, f int) []string {
 		theme.TextStyle().Render("No DHI workspace here yet."),
 		dim(s.env.CWD),
 		"",
-		theme.TextStyle().Render("Create one with these members:"),
 	}
-	for _, m := range s.members {
-		out = append(out, "  "+theme.AccentText().Render(m.Name)+dim("  →  "+m.Path))
+	if s.choosing() {
+		out = append(out, theme.TextStyle().Render(fmt.Sprintf(
+			"Found %d repos. Which should join the workspace?", len(s.members))))
+		start, end := s.scroll.Window()
+		if start > 0 {
+			out = append(out, dim(fmt.Sprintf("    ↑ %d more", start)))
+		}
+		for i := start; i < end; i++ {
+			m := s.members[i]
+			mark := dim(theme.GlyphTodo)
+			if s.picked[i] {
+				mark = theme.SuccessText().Render(theme.GlyphCheck)
+			}
+			cursor := " "
+			name := theme.TextStyle().Render(m.Name)
+			if i == s.cur {
+				cursor = theme.AccentText().Render(theme.GlyphCursor)
+				name = theme.AccentText().Render(m.Name)
+			}
+			out = append(out, cursor+" "+mark+" "+name+dim("  →  "+m.Path))
+		}
+		if end < len(s.members) {
+			out = append(out, dim(fmt.Sprintf("    ↓ %d more", len(s.members)-end)))
+		}
+		out = append(out, "")
+		note := fmt.Sprintf("%d of %d selected · enter adds your selection.", s.count(), len(s.members))
+		if s.count() == 0 {
+			note = fmt.Sprintf("None selected · enter adds all %d.", len(s.members))
+		}
+		note += " Press l to choose later: nothing is created until you do (ctrl+p → Run setup wizard)."
+		for _, l := range kit.WrapWords(note, w) {
+			out = append(out, dim(l))
+		}
+	} else {
+		out = append(out, theme.TextStyle().Render("Create one with these members:"))
+		for _, m := range s.members {
+			out = append(out, "  "+theme.AccentText().Render(m.Name)+dim("  →  "+m.Path))
+		}
 	}
 	out = append(out, "",
 		dim("Writes .dhi/workspace.toml and a .dhi/.gitignore that keeps chat,"),
@@ -128,7 +250,11 @@ func (s *workspaceStep) Apply() error {
 		s.err = "workspace creation is unavailable in this build"
 		return fmt.Errorf("%s", s.err)
 	}
-	members, err := s.env.InitWorkspace(s.env.CWD, s.members)
+	chosen := s.selected()
+	if len(chosen) == 0 {
+		chosen = s.members // no choice made: the default is every repo found
+	}
+	members, err := s.env.InitWorkspace(s.env.CWD, chosen)
 	if err != nil {
 		s.err = err.Error()
 		return err
@@ -229,6 +355,9 @@ func (s *identityStep) collect(id gitcore.Identity) {
 func (s *identityStep) HandleKey(key string) Action {
 	switch s.phase {
 	case idChecking:
+		if key == "esc" { // a slow git must not hold the wizard hostage
+			return Skip
+		}
 		return Stay
 	case idFound:
 		if key == "e" {
@@ -538,6 +667,12 @@ func (s *doneStep) View(w, f int) []string {
 	}
 	for _, a := range s.env.Applied {
 		out = append(out, ok(a))
+	}
+	if len(s.env.Skipped) > 0 {
+		out = append(out, dim("skipped: "+strings.Join(s.env.Skipped, ", ")+" — re-run setup to pick them up"))
+		if s.env.Root == "" {
+			out = append(out, dim("no workspace yet: the brief, team and integrations wait for one"))
+		}
 	}
 	out = append(out, "")
 	verb := "start"

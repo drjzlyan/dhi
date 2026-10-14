@@ -11,13 +11,14 @@
 
 
 
-
           ╭─ dhi setup ──────────────────────────────────────────────────────────────────╮
           │ ✓ welcome ── – workspace ── ✓ identity ── ✓ conventions ── ● done            │
           │                                                                              │
           │ ◇ You're set up.                                                             │
           │                                                                              │
           │ Nothing needed changing.                                                     │
+          │ skipped: workspace — re-run setup to pick them up                            │
+          │ no workspace yet: the brief, team and integrations wait for one              │
           │                                                                              │
           │ Press enter to start.                                                        │
           │ Re-run any time: ctrl+p → Run setup wizard · lessons: ctrl+p → Tutorial.     │

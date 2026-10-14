@@ -126,7 +126,7 @@ func (s *integrationsStep) HandleKey(key string) Action {
 		if s.cur > 0 {
 			s.cur--
 		}
-	case "s", " ":
+	case "s", "space", " ":
 		if ok && row.Entry.Unavailable == "" {
 			s.msg, s.err = "", ""
 			s.phase = intInfo

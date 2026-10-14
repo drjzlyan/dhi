@@ -692,20 +692,18 @@ func shouldAutoRunSetup(ws *workspace.Workspace) bool {
 	return setup.ShouldAutoRun(in)
 }
 
-// loadSetupState reads the progress the wizard resumes from: the
-// workspace's when it has one, else the user's.
+// loadSetupState reads the progress the wizard resumes from: your steps
+// from the user state, the workspace's own steps from its state only, so
+// a step answered (or skipped) in one workspace is still owed in another.
 func loadSetupState(ws *workspace.Workspace) setup.State {
-	if ws != nil {
-		if st, err := setup.LoadState(setup.WorkspaceStatePath(ws.Root)); err == nil && (st.Finished || len(st.Steps) > 0) {
-			return st
-		}
-	}
+	var user, here setup.State
 	if p, err := setup.UserStatePath(); err == nil {
-		if st, err := setup.LoadState(p); err == nil {
-			return st
-		}
+		user, _ = setup.LoadState(p)
 	}
-	return setup.State{}
+	if ws != nil {
+		here, _ = setup.LoadState(setup.WorkspaceStatePath(ws.Root))
+	}
+	return setup.Scoped(user, here)
 }
 
 // newSetupEnv wires the wizard to real services. Funcs stay nil when the

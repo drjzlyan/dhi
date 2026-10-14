@@ -1,5 +1,24 @@
 # STATE — current position
 
+### Session 58 (onboarding hardening, F-094, on `main`, uncommitted)
+
+- User asked that skipped setup steps never break onboarding, and that the workspace step let them
+  pick member repos instead of adding all of them.
+- Workspace step: when it finds more than one repo it shows a picker with nothing selected (space/x
+  toggles, a selects all, l chooses later). Follow-up from the user: enter with nothing selected
+  takes the default (every repo); `l` skips the step and creates nothing, because a workspace
+  cannot load with zero members. The step keys reach the status row through an optional `Keys()`
+  on a step, merged in `Model.keys()`. The list shows 10 rows at a time (`kit.Scroller`). Checked
+  live in tmux with 30 repos and a sandboxed HOME.
+- Skips: ctrl+x settles only steps that `Applies()`. `setup.Scoped(user, ws)` and `WorkspaceSteps`
+  make `loadSetupState` take workspace, project, team and integrations from the workspace's own
+  setup.json only. Team is in `catchUpIDs`. The done step lists `Env.Skipped`. Esc works while the
+  identity check is running.
+- Gotcha: `Persist` still writes the full state to both files. `Scoped` filters on read, so the
+  user file can hold workspace step ids that are ignored.
+- The `.dhi/` changes that were in the tree at session start (dev.toml → atlas/forge/quill/sage,
+  conventions.toml, etc.) are the user's own and were left alone.
+
 ### Session 57 (M33: command deck UI refresh, branch `m33-ux`)
 
 - User asked for a bold UX/UI pass; chose "bold refresh", all surfaces, the "command deck"

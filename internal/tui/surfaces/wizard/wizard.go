@@ -136,6 +136,21 @@ type Env struct {
 	// Results, filled by steps.
 	Changed bool     // something launch-time services read was modified
 	Applied []string // one human line per applied change, for the summary
+	Skipped []string // titles of the steps skipped this run, for the summary
+}
+
+// noteSkipped records (skip) or clears (applied) a step for the summary.
+func (e *Env) noteSkipped(title string, skip bool) {
+	out := e.Skipped[:0:0]
+	for _, t := range e.Skipped {
+		if t != title {
+			out = append(out, t)
+		}
+	}
+	if skip {
+		out = append(out, title)
+	}
+	e.Skipped = out
 }
 
 func (e *Env) now() time.Time {
@@ -178,10 +193,11 @@ func New(env *Env, state setup.State, steps ...Step) *Model {
 	return m
 }
 
-// catchUpIDs are steps added after people first ran setup (M31). A
-// finished setup offers each once, while it applies and was never
-// applied or skipped (F-085).
-var catchUpIDs = map[string]bool{"project": true, "you": true, "instructions": true}
+// catchUpIDs are steps a finished setup can still owe: ones added after
+// people first ran setup (M31), and the team, which waits on a workspace
+// that may only appear later. Each is offered once, while it applies and
+// was never applied or skipped (F-085).
+var catchUpIDs = map[string]bool{"project": true, "you": true, "instructions": true, "team": true}
 
 // CatchUpSteps returns the steps a finished setup still owes the user,
 // with the closing step; nil when there are none.
@@ -302,9 +318,11 @@ func (m *Model) HandleKey(key string) bool {
 		return true
 	case "ctrl+x":
 		// Skipping setup skips every step still ahead, so a catch-up
-		// run never comes back for them (F-085).
+		// run never comes back for them (F-085). Only steps that could run
+		// now count: one waiting on a workspace (project, team) stays owed
+		// and is offered once there is one.
 		for i := m.idx; i < len(m.steps); i++ {
-			if id := m.steps[i].ID(); id != "done" && !m.state.Has(id) {
+			if id := m.steps[i].ID(); id != "done" && !m.state.Has(id) && m.steps[i].Applies() {
 				m.state.MarkSkipped(id, m.env.now())
 			}
 		}
@@ -329,6 +347,7 @@ func (m *Model) act(a Action) {
 			return // the step shows its own error and stays open
 		}
 		m.markApplied(m.cur().ID())
+		m.env.noteSkipped(m.cur().Title(), false)
 		m.advance(false)
 	case Skip:
 		m.advance(true)
@@ -343,6 +362,7 @@ func (m *Model) act(a Action) {
 func (m *Model) advance(skip bool) {
 	if skip {
 		m.skipped[m.cur().ID()] = true
+		m.env.noteSkipped(m.cur().Title(), true)
 		m.state.MarkSkipped(m.cur().ID(), m.env.now())
 		m.persist()
 	}
@@ -427,7 +447,14 @@ func (m *Model) Hints() (string, []string) {
 }
 
 func (m *Model) keys() []string {
-	parts := []string{"enter continue", "esc skip step"}
+	var parts []string
+	if m.finished || m.idx >= len(m.steps) {
+		return nil
+	}
+	if k, ok := m.cur().(interface{ Keys() []string }); ok {
+		parts = k.Keys() // the step's own keys first
+	}
+	parts = append(parts, "enter continue", "esc skip step")
 	if m.prevApplicable(m.idx-1) >= 0 {
 		parts = append(parts, "^b back")
 	}

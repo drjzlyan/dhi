@@ -55,6 +55,37 @@ func (s *State) Mark(id string, at time.Time) {
 // Has reports whether a step was applied before.
 func (s State) Has(id string) bool { _, ok := s.Steps[id]; return ok }
 
+// WorkspaceSteps are the steps whose answer belongs to one workspace:
+// applying or skipping them elsewhere says nothing about this one.
+var WorkspaceSteps = map[string]bool{"workspace": true, "project": true, "team": true, "integrations": true}
+
+// Scoped is the progress that holds in a workspace: your steps from the
+// user state, the workspace's steps from its own state only. Finished
+// holds when either finished, so a finished user is never re-onboarded.
+func Scoped(user, ws State) State {
+	out := State{Finished: user.Finished || ws.Finished}
+	pick := func(src map[string]string, workspace bool, mark func(string, string)) {
+		for id, at := range src {
+			if WorkspaceSteps[id] == workspace {
+				mark(id, at)
+			}
+		}
+	}
+	add := func(dst *map[string]string) func(string, string) {
+		return func(id, at string) {
+			if *dst == nil {
+				*dst = map[string]string{}
+			}
+			(*dst)[id] = at
+		}
+	}
+	pick(user.Steps, false, add(&out.Steps))
+	pick(user.Skipped, false, add(&out.Skipped))
+	pick(ws.Steps, true, add(&out.Steps))
+	pick(ws.Skipped, true, add(&out.Skipped))
+	return out
+}
+
 // LoadState reads a state file; a missing file is the zero State.
 func LoadState(path string) (State, error) {
 	var s State

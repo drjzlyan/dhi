@@ -1086,3 +1086,7 @@ Plan: `~/.claude/plans/unified-jingling-treasure.md`. Branch `m33-ux` (from `mai
 - [x] P5–P6 Rail/help in the view's hue (AA-tested), 256-color shade ladder test
 - [x] Review fixes: status clicks routed by owner (surface vs shell), no in-pane hint copies, service plurals, honest 256-color test
 - [x] P8 Delight + the rest: ship toast (shell toaster seam, slide-in, reduced-motion golden), inbox approval buttons (clickable), wizard role grid with −/+, per-tool stage bars on the install screen, grouped Settings rail
+
+## Onboarding hardening (session 58)
+
+- [x] F-094: workspace member picker (nothing preselected), skips no longer leak into later steps or other workspaces, team in catch-up, done step lists skips

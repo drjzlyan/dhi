@@ -1,0 +1,28 @@
+
+
+
+
+
+
+
+
+
+
+
+          ╭─ dhi setup ──────────────────────────────────────────────────────────────────╮
+          │ ✓ welcome ── ● workspace ── ○ identity ── ○ conventions ── ○ done            │
+          │                                                                              │
+          │ No DHI workspace here yet.                                                   │
+          │ /work/acme                                                                   │
+          │                                                                              │
+          │ Found 2 repos. Which should join the workspace?                              │
+          │ ▌ ✓ api  →  api                                                              │
+          │   ○ web  →  web                                                              │
+          │                                                                              │
+          │ 1 of 2 selected · enter adds your selection. Press l to choose later:        │
+          │ nothing is created until you do (ctrl+p → Run setup wizard).                 │
+          │                                                                              │
+          │ Writes .dhi/workspace.toml and a .dhi/.gitignore that keeps chat,            │
+          │ memory and task state out of version control.                                │
+          │                                                                              │
+          ╰──────────────────────────────────────────────────────────────────────────────╯
