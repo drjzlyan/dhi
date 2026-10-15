@@ -52,7 +52,7 @@ jobs:
       - name: Build verified artifact (GPG check inside script)
         run: scripts/build-hermetic-git.sh "${{ needs.resolve.outputs.version }}"
 
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         with:
           name: hermetic-git-${{ matrix.os }}
           path: |
@@ -66,7 +66,7 @@ jobs:
     permissions:
       contents: write # create the release and upload assets
     steps:
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           pattern: hermetic-git-*
           merge-multiple: true
@@ -110,7 +110,7 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           pattern: hermetic-git-*
           merge-multiple: true
