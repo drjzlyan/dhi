@@ -270,7 +270,7 @@ func TestTurnsContinueAcrossReload(t *testing.T) {
 	got := waitReply(t, replies)
 	// The stub echoes the full rendered prompt back, so the reply must
 	// begin with the mention-stripped trigger and weave in history.
-	if !strings.HasPrefix(got.Text, "two\n\nEarlier in this thread:\n- you (the human): @scout one") {
+	if !strings.HasPrefix(got.Text, "<request>\ntwo\n</request>\n\n<history>\nEarlier in this thread:\n- you (the human): @scout one") {
 		t.Fatalf("post-reload reply = %+v", got)
 	}
 }

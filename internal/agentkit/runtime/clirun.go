@@ -879,10 +879,13 @@ func (r *Runtime) cliPromptAt(ctx context.Context, e *entry, trigger bus.Message
 	for _, m := range r.cfg.WS.Members() {
 		members = append(members, m.Name)
 	}
-	grounding := "\n\nFiles are addressed as <member>/<rel-path>. Members: " + strings.Join(members, ", ")
-	grounding += "\nThe reserved workspace dotdir is addressed as .dhi/<rel-path>; ideation artifacts belong under .dhi/sessions/<session>/<file>."
-	grounding += "\nBefore changing code outside a task worktree, call work_branch: DHI makes the card, branch and worktree and continues you there. The default branch is locked: a commit to it fails."
-	grounding += "\nIf the sandbox blocks you (\"Operation not permitted\"), call permission_request for exactly what you need; do not give up or work around it."
+	// Operating rules (F-099): numbered, each with its reason, so the
+	// agent can weigh an edge case instead of pattern-matching a ban.
+	grounding := "\n\n1. Address files as <member>/<rel-path>. Members: " + strings.Join(members, ", ") +
+		". DHI's tools resolve paths this way; a bare path is ambiguous across repos."
+	grounding += "\n2. Address the reserved workspace dotdir as .dhi/<rel-path>; ideation artifacts belong under .dhi/sessions/<session>/<file>, where the human's views look for them."
+	grounding += "\n3. Before changing code outside a task worktree, call work_branch: DHI makes the card, branch and worktree and continues you there. The default branch is locked, so a commit to it fails — and the human reviews work per branch."
+	grounding += "\n4. If the sandbox blocks you (\"Operation not permitted\"), call permission_request for exactly what you need. Do not give up or work around it: the human decides access, and a workaround hides what you needed."
 	grounding += r.secretsLine(e.m.ID)
 	// Stable sections first (they cache), volatile after (F-065); each
 	// carries its priority for the prompt budget (F-078).
@@ -892,7 +895,8 @@ func (r *Runtime) cliPromptAt(ctx context.Context, e *entry, trigger bus.Message
 	if pb := r.projectBlock(); pb != "" {
 		sys = append(sys, section{name: "project", text: "\n\n" + pb, prio: 1, floor: 800})
 	}
-	sys = append(sys, section{name: "grounding", text: grounding + "\n\n" + r.tuning().Principal.Voice(), prio: 0})
+	sys = append(sys, section{name: "grounding", text: grounding, prio: 0},
+		section{name: "voice", text: "\n\n" + r.tuning().Principal.Voice(), prio: 0})
 	if r.cfg.Standards {
 		sys = append(sys, section{name: "standards", text: "\n\n" + standards.Resolve(r.cfg.WS.Root, e.m.ID, r.teamLookup()), prio: 2, floor: 600})
 	}
@@ -941,8 +945,11 @@ func (r *Runtime) cliPromptAt(ctx context.Context, e *entry, trigger bus.Message
 	// One budget for both halves: the system part is fitted in what the
 	// prompt part leaves, the prompt part in what the system part leaves.
 	budget := int(float64(r.tuning().memoryTuning().PromptTokens*runesPerToken) * compactionFactor[min(max(level, 0), len(compactionFactor)-1)])
-	all := fitSections(append(append([]section{}, sys...), pr...), budget)
-	return joinSections(all[len(sys):]), joinSections(all[:len(sys)])
+	all := append(append([]section{}, sys...), pr...)
+	// Tags wrap the fitted sections (F-099): their room comes off the
+	// budget first, so the fit stays honest.
+	all = fitSections(all, budget-tagOverhead(all))
+	return joinTagged(all[len(sys):]), joinTagged(all[:len(sys)])
 }
 
 // memoryBlock renders the agent's persistent context (M14 P1): the

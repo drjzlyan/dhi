@@ -95,3 +95,78 @@ func joinSections(secs []section) string {
 	}
 	return b.String()
 }
+
+// sectionTags names the tag a section is wrapped in when it differs from
+// the section's own name (F-099). Tags make each block a distinct input
+// the model can refer to; sections sharing a tag (the history head and
+// its messages) join inside one.
+var sectionTags = map[string]string{
+	"grounding":    "operating_rules",
+	"trigger":      "request",
+	"history-head": "history",
+	"forge":        "your_tools",
+	"compacted":    "note",
+	"voice":        "who_you_work_for",
+}
+
+func tagOf(name string) string {
+	if t, ok := sectionTags[name]; ok {
+		return t
+	}
+	return strings.ReplaceAll(name, "-", "_")
+}
+
+// joinTagged joins fitted sections, each wrapped in its tag. Tags are
+// added after fitSections, never inside trimmable text, so a trimmed
+// section keeps both tags; empty sections get none. Order is the
+// sections' order, so the stable prefix the prompt cache keys on stays
+// stable. A lone section (a bare request with no task or history) stays
+// untagged: one block needs no labels.
+func joinTagged(secs []section) string {
+	tags := map[string]bool{}
+	for _, s := range secs {
+		if strings.TrimSpace(s.text) != "" {
+			tags[tagOf(s.name)] = true
+		}
+	}
+	if len(tags) <= 1 {
+		return strings.TrimSpace(joinSections(secs))
+	}
+	var b strings.Builder
+	open := ""
+	for _, s := range secs {
+		text := strings.Trim(s.text, "\n")
+		if strings.TrimSpace(text) == "" {
+			continue
+		}
+		tag := tagOf(s.name)
+		switch {
+		case tag == open:
+			b.WriteString("\n")
+		default:
+			if open != "" {
+				b.WriteString("\n</" + open + ">\n\n")
+			}
+			b.WriteString("<" + tag + ">\n")
+			open = tag
+		}
+		b.WriteString(text)
+	}
+	if open != "" {
+		b.WriteString("\n</" + open + ">")
+	}
+	return b.String()
+}
+
+// tagOverhead is the runes joinTagged adds around secs at most, so the
+// budget fit can leave room for them.
+func tagOverhead(secs []section) int {
+	n := 0
+	for _, s := range secs {
+		if strings.TrimSpace(s.text) != "" {
+			t := tagOf(s.name)
+			n += 2*runeLen(t) + 9 // <t>\n … \n</t>\n\n
+		}
+	}
+	return n
+}
