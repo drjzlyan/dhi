@@ -99,7 +99,7 @@ func barWidth(labels []string) int {
 }
 
 // View renders " ◆ dhi   1 Workspace   2 Editor …": the active tab is a
-// pill in the view's hue, the others show a muted number and a dim
+// pill in the focus hue, the others show a muted number and a dim
 // label; the whole bar is padded to Width cells.
 func (t *Tabs) View() string {
 	var parts []string

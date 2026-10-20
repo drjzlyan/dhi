@@ -30,7 +30,7 @@ func TestPrecedenceUserOverDefaultsWorkspaceOverUser(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Theme != "light-paper" {
+	if cfg.Theme != "dhi-dawn" { // the retired name loads as its successor (ADR-0041)
 		t.Errorf("user theme lost: %+v", cfg)
 	}
 	if cfg.Editor.TabWidth != 2 {
@@ -91,7 +91,7 @@ func TestRoundTripAndSanitize(t *testing.T) {
 	p := filepath.Join(dir, "config.toml")
 
 	cfg := Defaults()
-	cfg.Theme, cfg.ThemeSet = "light-paper", true
+	cfg.Theme, cfg.ThemeSet = "dhi-dawn", true
 	cfg.Editor.TabWidth = 2
 	cfg.Terminal.Scrollback = 250
 	if err := cfg.Save(p); err != nil {

@@ -57,7 +57,7 @@ func TestSaveProfileKeepsOtherKeys(t *testing.T) {
 		t.Fatal(err)
 	}
 	c, err := Load(path, "")
-	if err != nil || c.Theme != "light-paper" || c.Profile.Role != "founder" || !c.Profile.Writing.Emoji || c.Profile.Reading.Format != "bullets" {
+	if err != nil || c.Theme != "dhi-dawn" || c.Profile.Role != "founder" || !c.Profile.Writing.Emoji || c.Profile.Reading.Format != "bullets" {
 		t.Fatalf("loaded %+v / %v", c.Profile, err)
 	}
 	if err := SaveProfile(path, Profile{Writing: ProfileWriting{Tone: "snarky"}}); err == nil {

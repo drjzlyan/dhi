@@ -34,6 +34,8 @@ type Tokens struct {
 	BgHeader     color.Color
 	BgRowAlt     color.Color
 	BgCursorLine color.Color
+	BgInput      color.Color // input fields: a well inside the panel (F-096)
+	BgCard       color.Color // cards: one quiet step off the panel (F-096)
 	BgAdd        color.Color // diff added-line wash (F-026 P6)
 	BgDel        color.Color // diff deleted-line wash (F-026 P6)
 	// BgAddStrong / BgDelStrong mark the words that changed inside a
@@ -46,9 +48,9 @@ type Tokens struct {
 	Text          color.Color // primary text
 	TextDim       color.Color // secondary text
 	TextMuted     color.Color // hints, disabled elements
-	Accent        color.Color // primary brand accent (cyan)
-	AccentDim     color.Color // quieter accent for secondary emphasis
-	Accent2       color.Color // secondary brand accent (violet)
+	Accent        color.Color // brand primary (saffron, ADR-0041)
+	AccentDim     color.Color // quieter primary for secondary emphasis
+	Accent2       color.Color // brand secondary (indigo)
 	Accent3       color.Color // teal: file kinds, author colors, chips (F-064)
 	Accent4       color.Color // rose: file kinds, author colors, chips (F-064)
 	Info          color.Color // neutral-blue semantic (informational rows)
@@ -62,43 +64,48 @@ type Tokens struct {
 	HeightState int // statusline height
 }
 
-// Dark is the default DHI theme: near-black canvas with a cyan-to-violet
-// futuristic accent ramp.
+// Dark is the default DHI theme, "dhi-dusk" (ADR-0041): a saffron lamp
+// on indigo ink. Accent is the brand primary (saffron), Accent2 the
+// secondary (indigo), Accent3/Accent4 the tertiaries (teal, lotus).
+// Semantic colors keep their conventional hues, held apart from the
+// brand hues (TestBrandAndSemanticsAreDistinct).
 func Dark() Tokens {
 	c := lipgloss.Color
 	return Tokens{
-		Name: "dark-futuristic",
+		Name: "dhi-dusk",
 
-		Bg:           c("#0B0E14"),
-		BgPanel:      c("#10141B"),
-		BgElevated:   c("#151B26"),
-		BgInset:      c("#07090D"),
-		BgChrome:     c("#1C2430"),
-		BgSelection:  c("#1B2739"),
-		BgHeader:     c("#161D29"),
-		BgRowAlt:     c("#131821"),
-		BgCursorLine: c("#171E2A"),
-		BgAdd:        c("#0D2B22"),
-		BgDel:        c("#2B1215"),
-		BgAddStrong:  c("#124131"),
-		BgDelStrong:  c("#4E2225"),
-		Border:       c("#232C3B"),
-		Rule:         c("#1E2633"),
-		// BorderFocused is a brighter cyan than Accent so a focused
-		// edge reads as attention, not brand emphasis (F-026 P1).
-		BorderFocused: c("#67E8F9"),
-		Text:          c("#E6EDF3"),
-		TextDim:       c("#9AA7B8"),
-		TextMuted:     c("#8391A5"), // WCAG AA (4.5:1) on every surface incl. the hint bar
-		Accent:        c("#22D3EE"),
-		AccentDim:     c("#1083A3"),
-		Accent2:       c("#A78BFA"),
+		Bg:           c("#0D0E16"),
+		BgPanel:      c("#11131D"),
+		BgElevated:   c("#171A27"),
+		BgInset:      c("#08090F"),
+		BgChrome:     c("#1D2030"),
+		BgSelection:  c("#232842"),
+		BgHeader:     c("#181B29"),
+		BgRowAlt:     c("#141622"),
+		BgCursorLine: c("#191C2B"),
+		BgInput:      c("#1A1D2C"),
+		BgCard:       c("#151826"),
+		BgAdd:        c("#0F2A20"),
+		BgDel:        c("#2D1419"),
+		BgAddStrong:  c("#164231"),
+		BgDelStrong:  c("#4F2229"),
+		Border:       c("#272B3D"),
+		Rule:         c("#202334"),
+		// BorderFocused is a lighter saffron than Accent so a focused
+		// edge reads as attention, not brand emphasis.
+		BorderFocused: c("#FFB86E"),
+		Text:          c("#ECEAF4"),
+		TextDim:       c("#A9ACC2"),
+		TextMuted:     c("#8D92AB"), // WCAG AA (4.5:1) on every surface incl. the hint bar
+		Accent:        c("#FF9F43"),
+		AccentDim:     c("#B9773A"),
+		Accent2:       c("#A3A4FF"),
 		Accent3:       c("#2DD4BF"),
-		Accent4:       c("#F472B6"),
-		Info:          c("#60A5FA"),
-		Success:       c("#34D399"),
-		Warning:       c("#FBBF24"),
-		Danger:        c("#F87171"),
+		Accent4:       c("#E879F9"),
+		Info:          c("#6CB6FF"),
+		Success:       c("#7EE081"),
+		Warning:       c("#F5D547"),
+		Danger:        c("#FF7B7B"),
 
 		PadX:        1,
 		HeightTab:   1,
@@ -106,41 +113,43 @@ func Dark() Tokens {
 	}
 }
 
-// Light is the daylight alternative: warm paper canvas with the same
-// cyan-to-violet accents darkened for contrast.
+// Light is "dhi-dawn": warm paper with the dusk hues deepened for
+// contrast.
 func Light() Tokens {
 	c := lipgloss.Color
 	return Tokens{
-		Name: "light-paper",
+		Name: "dhi-dawn",
 
-		Bg:            c("#F5F2EA"),
-		BgPanel:       c("#FBF9F3"),
+		Bg:            c("#F7F4EC"),
+		BgPanel:       c("#FCFAF5"),
 		BgElevated:    c("#FFFFFF"),
-		BgInset:       c("#EDE9DE"),
-		BgChrome:      c("#E6E0D0"),
-		BgSelection:   c("#DCEFEF"),
-		BgHeader:      c("#F0ECE1"),
-		BgRowAlt:      c("#F6F3EB"),
-		BgCursorLine:  c("#F2EEE4"),
-		BgAdd:         c("#D9EBDD"),
-		BgDel:         c("#F6DFDF"),
-		BgAddStrong:   c("#AED3C1"),
-		BgDelStrong:   c("#ECBEBE"),
-		Border:        c("#D8D2C4"),
-		Rule:          c("#E4DED1"),
-		BorderFocused: c("#0891B2"),
-		Text:          c("#1F2937"),
-		TextDim:       c("#4B5563"),
-		TextMuted:     c("#5C6472"), // WCAG AA on every surface incl. the hint bar
-		Accent:        c("#0D6B84"),
-		AccentDim:     c("#4A879A"),
-		Accent2:       c("#6D28D9"),
+		BgInset:       c("#EFEBE0"),
+		BgChrome:      c("#E8E2D3"),
+		BgSelection:   c("#E4E3F7"),
+		BgHeader:      c("#F2EEE4"),
+		BgRowAlt:      c("#F8F5EE"),
+		BgCursorLine:  c("#F3EFE6"),
+		BgInput:       c("#EEEADF"),
+		BgCard:        c("#F9F6EF"),
+		BgAdd:         c("#DCEEDC"),
+		BgDel:         c("#F7E0DF"),
+		BgAddStrong:   c("#B2D8B9"),
+		BgDelStrong:   c("#EDBFBF"),
+		Border:        c("#D9D3C5"),
+		Rule:          c("#E6E0D3"),
+		BorderFocused: c("#C25E00"),
+		Text:          c("#1E1F2B"),
+		TextDim:       c("#4A4D5E"),
+		TextMuted:     c("#5D6072"), // WCAG AA on every surface incl. the hint bar
+		Accent:        c("#9A4800"),
+		AccentDim:     c("#A86A33"),
+		Accent2:       c("#4B44C9"),
 		Accent3:       c("#0B6B63"),
-		Accent4:       c("#A3154F"),
-		Info:          c("#1D4ED8"),
-		Success:       c("#047152"),
-		Warning:       c("#A14A08"),
-		Danger:        c("#B91C1C"),
+		Accent4:       c("#A0178F"),
+		Info:          c("#1D5BB8"),
+		Success:       c("#2F6E12"),
+		Warning:       c("#7A5A00"),
+		Danger:        c("#B42020"),
 
 		PadX:        1,
 		HeightTab:   1,
@@ -149,7 +158,7 @@ func Light() Tokens {
 }
 
 // HighContrast is the accessibility theme: true-black canvas, white text
-// and saturated accents, every text token at or above 6:1 on every
+// and saturated dusk hues, every text token at or above 6:1 on every
 // surface and borders that read against the background.
 func HighContrast() Tokens {
 	c := lipgloss.Color
@@ -161,29 +170,31 @@ func HighContrast() Tokens {
 		BgElevated:    c("#0A0A0A"),
 		BgInset:       c("#000000"),
 		BgChrome:      c("#1A1A1A"),
-		BgSelection:   c("#1F3A5F"),
+		BgSelection:   c("#26264A"),
 		BgHeader:      c("#121212"),
 		BgRowAlt:      c("#0A0A0A"),
 		BgCursorLine:  c("#161616"),
+		BgInput:       c("#101010"),
+		BgCard:        c("#0A0A0A"),
 		BgAdd:         c("#003D1F"),
 		BgDel:         c("#4A0F0F"),
 		BgAddStrong:   c("#09502B"),
 		BgDelStrong:   c("#652121"),
-		Border:        c("#7C8AA0"),
-		Rule:          c("#4B5563"),
-		BorderFocused: c("#00E5FF"),
+		Border:        c("#8A8FA8"),
+		Rule:          c("#4B5060"),
+		BorderFocused: c("#FFB000"),
 		Text:          c("#FFFFFF"),
-		TextDim:       c("#E0E6ED"),
-		TextMuted:     c("#C2CAD6"),
-		Accent:        c("#00E5FF"),
-		AccentDim:     c("#4DD0E1"),
-		Accent2:       c("#C4B5FD"),
+		TextDim:       c("#E4E4EE"),
+		TextMuted:     c("#C6C8D6"),
+		Accent:        c("#FFB000"),
+		AccentDim:     c("#E8A050"),
+		Accent2:       c("#B8B9FF"),
 		Accent3:       c("#5EEAD4"),
-		Accent4:       c("#F9A8D4"),
-		Info:          c("#7DB7FF"),
-		Success:       c("#4ADE80"),
-		Warning:       c("#FFD54A"),
-		Danger:        c("#FF8A8A"),
+		Accent4:       c("#F5A8FF"),
+		Info:          c("#8CC8FF"),
+		Success:       c("#9CF29E"),
+		Warning:       c("#FFE45C"),
+		Danger:        c("#FF9494"),
 
 		PadX:        1,
 		HeightTab:   1,
@@ -318,45 +329,26 @@ func panelEdge(focused bool) color.Color {
 // surface is the active view's id; the shell sets it on every switch.
 var surface string
 
-// SetSurface records the active view for its identity accent (F-055).
+// SetSurface records the active view. Colors no longer depend on it
+// (ADR-0041: one identity in every view); it remains so the shell can
+// tell which view is live.
 func SetSurface(id string) { surface = id }
 
-// SurfaceAccent is the active view's identity color, used on its focused
-// panel edges and its tab, so a glance tells where you are: Workspace
-// keeps the brand cyan, Editor violet, Ideator amber, Reviewer green,
-// Settings neutral. High contrast keeps one focus color for clarity.
-func SurfaceAccent() color.Color {
+// SurfaceAccent is the focus color: focused pane edges and rules, the
+// active tab and the mode block. It is the same in every view
+// (ADR-0041); where you are is told by the tab and the mode label.
+func SurfaceAccent() color.Color { return Current.BorderFocused }
+
+// SurfaceText is the focus color as text: the brand primary, which reads
+// on selections where the paler focus edge would not.
+func SurfaceText() color.Color {
 	if Current.Name == HighContrast().Name {
 		return Current.BorderFocused
 	}
-	switch surface {
-	case "editor":
-		return Current.Accent2
-	case "ideator":
-		return Current.Warning
-	case "reviewer":
-		return Current.Success
-	case "settings":
-		return Current.TextDim
-	}
-	return Current.BorderFocused
+	return Current.Accent
 }
 
-// SurfaceText is the view's hue as a text color: SurfaceAccent, except
-// that the brand view uses Accent (BorderFocused is an edge color, too
-// pale for text on light selections).
-func SurfaceText() color.Color {
-	if Current.Name != HighContrast().Name {
-		switch surface {
-		case "editor", "ideator", "reviewer", "settings":
-			return SurfaceAccent()
-		}
-		return Current.Accent
-	}
-	return SurfaceAccent()
-}
-
-// RailActive styles a rail's highlighted row in the view's hue (F-093),
+// RailActive styles a rail's highlighted row in the focus hue (F-093),
 // so the rail, tab and mode block agree on where you are.
 func RailActive() lipgloss.Style {
 	return lipgloss.NewStyle().Background(Current.BgSelection).Foreground(SurfaceText()).Bold(true)
@@ -364,7 +356,7 @@ func RailActive() lipgloss.Style {
 
 // TabCurrent styles the active view's tab in its identity accent.
 func TabCurrent() lipgloss.Style {
-	return Pill(SurfaceAccent()).Bold(true) // tinted in the view's own hue (F-064)
+	return Pill(SurfaceText()).Bold(true) // the focus hue as text on its tint (ADR-0041)
 }
 
 // PanelTitle styles panel titles rendered onto top borders.
@@ -406,14 +398,17 @@ func ModeBlock() lipgloss.Style {
 	return lipgloss.NewStyle().Background(fill).Foreground(OnFill(fill)).Bold(true)
 }
 
-// ModeFill is the view's hue as a solid fill, deepened toward the text
-// color until its label reaches AA (light cyan alone is too pale).
-func ModeFill() color.Color {
-	fill := SurfaceAccent()
-	for i := 0; i < 10 && ratio(OnFill(fill), fill) < 4.5; i++ {
-		fill = Blend(fill, Current.Text, 0.12)
+// ModeFill is the focus hue as a solid fill, deepened toward the text
+// color until its label reaches AA (a pale hue alone is too faint).
+func ModeFill() color.Color { return SolidFill(SurfaceAccent()) }
+
+// SolidFill deepens c toward the text color until a label on it reaches
+// AA, so any hue can carry a solid control (buttons, mode block).
+func SolidFill(c color.Color) color.Color {
+	for i := 0; i < 10 && ratio(OnFill(c), c) < 4.5; i++ {
+		c = Blend(c, Current.Text, 0.12)
 	}
-	return fill
+	return c
 }
 
 // OnFill picks the text color for a solid fill: the canvas or the body
@@ -447,7 +442,7 @@ func ratio(a, b color.Color) float64 {
 	return (la + 0.05) / (lb + 0.05)
 }
 
-// ButtonKey styles a pane button's key cap: the view's hue as a solid
+// ButtonKey styles a pane button's key cap: the focus hue as a solid
 // fill, so actions read as pressable (F-093).
 func ButtonKey() lipgloss.Style {
 	fill := ModeFill()
@@ -490,7 +485,7 @@ func InfoText() lipgloss.Style    { return lipgloss.NewStyle().Foreground(Curren
 func AccentDimText() lipgloss.Style { return lipgloss.NewStyle().Foreground(Current.AccentDim) }
 
 // AccentText / Accent2Bold style primary token emphasis (syntax
-// functions on the accent, keywords bold violet — F-026 P4).
+// functions on the accent, keywords bold indigo — F-026 P4).
 func AccentText() lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(Current.Accent).Bold(true)
 }
@@ -508,7 +503,7 @@ func TextStyle() lipgloss.Style { return lipgloss.NewStyle().Foreground(Current.
 // TextMuted styles hints, disabled and placeholder text.
 func TextMuted() lipgloss.Style { return lipgloss.NewStyle().Foreground(Current.TextMuted) }
 
-// DialogEdge / DialogTitle style modal boxes (violet edge = dialog
+// DialogEdge / DialogTitle style modal boxes (indigo edge = dialog
 // identity, distinct from focused panes).
 func DialogEdge() lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(Current.Accent2)
@@ -554,7 +549,7 @@ func DeckDivider(focused bool) lipgloss.Style {
 const deckRuleSteps = 12
 
 // DeckRule renders an n-cell pane header rule (ADR-0040). Focused, it is
-// a heavy line fading from the view's hue into the panel shade, so the
+// a heavy line fading from the focus hue into the panel shade, so the
 // title end glows and the far end dissolves; unfocused, a thin quiet
 // rule. High contrast keeps a solid focus line.
 func DeckRule(n int, focused bool) string {
@@ -685,6 +680,142 @@ func colG(c color.Color) float64 { _, g, _, _ := c.RGBA(); return f32(g) }
 func colB(c color.Color) float64 { _, _, b, _ := c.RGBA(); return f32(b) }
 
 func f32(v uint32) float64 { return float64(v>>8) / 255 }
+
+// ---------------------------------------------------------------------------
+// Component roles (ADR-0041, F-096). Each kind of control owns its colors
+// and reads them here, so a control looks the same in every view.
+// ---------------------------------------------------------------------------
+
+// ButtonVariant picks a button's role.
+type ButtonVariant int
+
+const (
+	ButtonPrimary   ButtonVariant = iota // the one action a view suggests: saffron fill
+	ButtonSecondary                      // other actions: indigo fill
+	ButtonDanger                         // destructive actions: red fill
+	ButtonGhost                          // low-emphasis actions: text on the input well
+)
+
+// ButtonFill is the solid fill of a variant (ghost buttons sit on the
+// input well).
+func ButtonFill(v ButtonVariant) color.Color {
+	switch v {
+	case ButtonSecondary:
+		return SolidFill(Current.Accent2)
+	case ButtonDanger:
+		return SolidFill(Current.Danger)
+	case ButtonGhost:
+		return Current.BgInput
+	}
+	return SolidFill(Current.Accent)
+}
+
+// Button styles a button face. Focused buttons are bold and, for ghost
+// buttons, take the focus color; disabled buttons drop to muted text on
+// the input well whatever their variant.
+func Button(v ButtonVariant, focused, disabled bool) lipgloss.Style {
+	if disabled {
+		return lipgloss.NewStyle().Background(Current.BgInput).Foreground(Current.TextMuted)
+	}
+	fill := ButtonFill(v)
+	st := lipgloss.NewStyle().Background(fill).Bold(focused)
+	if v == ButtonGhost {
+		fg := Current.TextDim
+		if focused {
+			fg = SurfaceText()
+		}
+		return st.Foreground(fg)
+	}
+	return st.Foreground(OnFill(fill))
+}
+
+// ButtonKeyOn styles the key shown inside a button face: the face's own
+// colors, underlined so the key reads as the shortcut.
+func ButtonKeyOn(v ButtonVariant, focused, disabled bool) lipgloss.Style {
+	return Button(v, focused, disabled).Underline(!disabled).Bold(true)
+}
+
+// Input styles an input field's text on its well.
+func Input() lipgloss.Style {
+	return lipgloss.NewStyle().Background(Current.BgInput).Foreground(Current.Text)
+}
+
+// Placeholder styles an empty input's hint on the well.
+func Placeholder() lipgloss.Style {
+	return lipgloss.NewStyle().Background(Current.BgInput).Foreground(Current.TextMuted)
+}
+
+// InputEdge styles an input's left edge: the focus color when focused,
+// the quiet border otherwise, on the well.
+func InputEdge(focused bool) lipgloss.Style {
+	fg := Current.Border
+	if focused {
+		fg = Current.BorderFocused
+	}
+	return lipgloss.NewStyle().Foreground(fg).Background(Current.BgInput)
+}
+
+// CardBg paints a card body.
+func CardBg() lipgloss.Style { return lipgloss.NewStyle().Background(Current.BgCard) }
+
+// CardStripe styles a card's left stripe: the focus color when the card
+// is selected, the secondary otherwise.
+func CardStripe(selected bool) lipgloss.Style {
+	fg := Current.Accent2
+	if selected {
+		fg = Current.BorderFocused
+	}
+	return lipgloss.NewStyle().Foreground(fg).Background(Current.BgCard)
+}
+
+// CardTitle styles a card's title row.
+func CardTitle(selected bool) lipgloss.Style {
+	st := lipgloss.NewStyle().Background(Current.BgCard).Foreground(Current.Text).Bold(true)
+	if selected {
+		st = st.Foreground(SurfaceText())
+	}
+	return st
+}
+
+// CardText styles a card's body text.
+func CardText() lipgloss.Style {
+	return lipgloss.NewStyle().Background(Current.BgCard).Foreground(Current.TextDim)
+}
+
+// BadgeKind is a status badge's meaning.
+type BadgeKind int
+
+const (
+	BadgeNeutral BadgeKind = iota
+	BadgeOK
+	BadgeWarn
+	BadgeError
+	BadgeInfo
+	BadgeBusy
+)
+
+// BadgeColor is a badge kind's hue.
+func BadgeColor(k BadgeKind) color.Color {
+	switch k {
+	case BadgeOK:
+		return Current.Success
+	case BadgeWarn:
+		return Current.Warning
+	case BadgeError:
+		return Current.Danger
+	case BadgeInfo:
+		return Current.Info
+	case BadgeBusy:
+		return Current.Accent2
+	}
+	return Current.TextDim
+}
+
+// Badge styles a status badge: its hue on a tint of it.
+func Badge(k BadgeKind) lipgloss.Style { return Pill(BadgeColor(k)) }
+
+// Link styles navigable text (file paths, mentions, "open" actions).
+func Link() lipgloss.Style { return lipgloss.NewStyle().Foreground(Current.Accent2) }
 
 // ---------------------------------------------------------------------------
 // Glyphs. Nerd Font glyphs degrade gracefully to boxes on plain fonts;

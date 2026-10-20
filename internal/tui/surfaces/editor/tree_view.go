@@ -73,7 +73,7 @@ func (m *Model) memberRoot(member string) string {
 }
 
 // gitLetter styles a status letter: added/untracked green, modified
-// amber, deleted red, anything else (renames, conflicts) violet.
+// amber, deleted red, anything else (renames, conflicts) indigo.
 func gitLetter(b byte) string {
 	var c = theme.Current.Accent2
 	switch b {

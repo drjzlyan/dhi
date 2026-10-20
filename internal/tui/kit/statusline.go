@@ -75,7 +75,7 @@ func ModeBlock(name string) StatusSegment {
 func ModeChip(text string) StatusSegment {
 	return StatusSegment{
 		Text:  " " + strings.ToUpper(text) + " ",
-		Style: theme.Pill(theme.SurfaceAccent()).Bold(true), // the view's hue (F-064)
+		Style: theme.Pill(theme.SurfaceAccent()).Bold(true), // the focus hue (F-064)
 	}
 }
 

@@ -182,6 +182,6 @@ func keycap(k string, w int) string {
 		k += strings.Repeat(" ", pad)
 	}
 	// The box is on the elevated shade, where a keycap fill would vanish:
-	// keys read in the view's hue instead (F-093).
+	// keys read in the focus hue instead (F-093).
 	return lipgloss.NewStyle().Foreground(theme.SurfaceText()).Bold(true).Render(k)
 }

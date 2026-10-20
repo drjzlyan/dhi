@@ -23,7 +23,7 @@ func newSurface(t *testing.T) (*Model, string) {
 func TestNavigateAndCycleTheme(t *testing.T) {
 	m, _ := newSurface(t)
 	m.cursor = rowTheme
-	if !strings.Contains(ansi.Strip(fullView(m)), "dark-futuristic") {
+	if !strings.Contains(ansi.Strip(fullView(m)), "dhi-dusk") {
 		t.Fatal("theme row missing initial value")
 	}
 
@@ -34,7 +34,7 @@ func TestNavigateAndCycleTheme(t *testing.T) {
 	if theme.Current.Name != theme.Light().Name {
 		t.Fatal("live theme did not switch")
 	}
-	if !strings.Contains(ansi.Strip(fullView(m)), "light-paper") {
+	if !strings.Contains(ansi.Strip(fullView(m)), "dhi-dawn") {
 		t.Error("view not updated")
 	}
 

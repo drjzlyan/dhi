@@ -22,7 +22,7 @@ const (
 
 // Panel is the visual unit every surface is built from. By default it
 // renders as a deck pane (F-093, ADR-0040): a header row — bold title and
-// a rule filling the row, a fading gradient in the view's hue when
+// a rule filling the row, a fading gradient in the focus hue when
 // focused — a thin divider down the left edge and one shaded block, no
 // corners, right wall or bottom wall. Boxed keeps the rounded frame for
 // the boot and repair gates. Both share one geometry (one row on top,

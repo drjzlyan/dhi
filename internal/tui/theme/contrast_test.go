@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/charmbracelet/colorprofile"
+	"github.com/lucasb-eyer/go-colorful"
 )
 
 // TestTextTokensMeetWCAGAA pins readability: every text-bearing token must
@@ -171,5 +172,69 @@ func TestShadeLadderSurvives256Colors(t *testing.T) {
 				t.Errorf("%s: pair %d collapses to one color in 256-color mode", tk.Name, i)
 			}
 		}
+	}
+}
+
+// minBrandDelta is the least CIEDE2000 distance (×100) between any two
+// of the brand and semantic hues: far enough that saffron never reads
+// as Warning and a status never reads as the brand (ADR-0041).
+const minBrandDelta = 15.0
+
+func TestBrandAndSemanticsAreDistinct(t *testing.T) {
+	for _, tk := range []Tokens{Dark(), Light(), HighContrast()} {
+		hues := []struct {
+			n string
+			c color.Color
+		}{{"Primary", tk.Accent}, {"Secondary", tk.Accent2}, {"Success", tk.Success},
+			{"Warning", tk.Warning}, {"Danger", tk.Danger}}
+		for i := range hues {
+			for j := i + 1; j < len(hues); j++ {
+				a, _ := colorful.MakeColor(hues[i].c)
+				b, _ := colorful.MakeColor(hues[j].c)
+				if d := a.DistanceCIEDE2000(b) * 100; d < minBrandDelta {
+					t.Errorf("%s: %s and %s are too close (ΔE00 %.1f, want >= %.0f)",
+						tk.Name, hues[i].n, hues[j].n, d, minBrandDelta)
+				}
+			}
+		}
+	}
+}
+
+// TestComponentRolesAreLegible: every control's text reads at AA on its
+// own surface in every theme (F-096).
+func TestComponentRolesAreLegible(t *testing.T) {
+	for _, tk := range []Tokens{Dark(), Light(), HighContrast()} {
+		old := Current
+		Current = tk
+		check := func(name string, fg, bg color.Color) {
+			if got := ratio(fg, bg); got < 4.5 {
+				t.Errorf("%s: %s = %.2f:1, want >= 4.5", tk.Name, name, got)
+			}
+		}
+		for _, v := range []ButtonVariant{ButtonPrimary, ButtonSecondary, ButtonDanger, ButtonGhost} {
+			st := Button(v, false, false)
+			check("button "+itoa(int(v)), st.GetForeground(), st.GetBackground())
+			fst := Button(v, true, false)
+			check("focused button "+itoa(int(v)), fst.GetForeground(), fst.GetBackground())
+		}
+		check("disabled button", Button(ButtonPrimary, false, true).GetForeground(), tk.BgInput)
+		check("input text", tk.Text, tk.BgInput)
+		check("placeholder", tk.TextMuted, tk.BgInput)
+		check("card title", tk.Text, tk.BgCard)
+		check("card selected title", SurfaceText(), tk.BgCard)
+		check("card text", tk.TextDim, tk.BgCard)
+		check("link", tk.Accent2, tk.BgPanel)
+		for _, k := range []BadgeKind{BadgeNeutral, BadgeOK, BadgeWarn, BadgeError, BadgeInfo, BadgeBusy} {
+			st := Badge(k)
+			check("badge "+itoa(int(k)), st.GetForeground(), st.GetBackground())
+		}
+		tab := TabCurrent()
+		check("active tab", tab.GetForeground(), tab.GetBackground())
+		// The input and card wells must be told apart from the panel
+		// (UI boundary, 1.1:1 is the shade ladder's own step).
+		if ratio(tk.BgInput, tk.BgPanel) < 1.08 && tk.Name != HighContrast().Name {
+			t.Errorf("%s: input well does not stand off the panel", tk.Name)
+		}
+		Current = old
 	}
 }

@@ -89,7 +89,7 @@ func TestMotionDefaultsOn(t *testing.T) {
 // styles through theme helpers.
 func TestNoRawColorsOutsideTheme(t *testing.T) {
 	raw := regexp.MustCompile(`lipgloss\.Color\(`)
-	roots := []string{"../kit", "../app", "../surfaces"}
+	roots := []string{"../kit", "../app", "../surfaces", "../branding"}
 	var offenders []string
 	for _, root := range roots {
 		err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
@@ -117,22 +117,19 @@ func TestNoRawColorsOutsideTheme(t *testing.T) {
 	}
 }
 
-func TestSurfaceAccentsIdentifyViews(t *testing.T) {
-	SwapForTest(t, Dark())
+// TestOneIdentityInEveryView: colors no longer change with the view
+// (ADR-0041); the tab and mode label say where you are.
+func TestOneIdentityInEveryView(t *testing.T) {
 	t.Cleanup(func() { SetSurface("") })
-	seen := map[string]string{}
-	for _, id := range []string{"workspace", "editor", "ideator", "reviewer", "settings"} {
-		SetSurface(id)
-		r, g, b, _ := SurfaceAccent().RGBA()
-		key := fmt.Sprint(r, g, b)
-		if other, dup := seen[key]; dup {
-			t.Errorf("%s and %s share an accent", id, other)
+	for _, tk := range []Tokens{Dark(), Light(), HighContrast()} {
+		SwapForTest(t, tk)
+		SetSurface("workspace")
+		want := hex(SurfaceAccent()) + hex(SurfaceText()) + hex(ModeFill())
+		for _, id := range []string{"editor", "ideator", "reviewer", "settings"} {
+			SetSurface(id)
+			if got := hex(SurfaceAccent()) + hex(SurfaceText()) + hex(ModeFill()); got != want {
+				t.Errorf("%s/%s: colors differ from workspace (%s vs %s)", tk.Name, id, got, want)
+			}
 		}
-		seen[key] = id
-	}
-	Current = HighContrast()
-	SetSurface("editor")
-	if SurfaceAccent() != Current.BorderFocused {
-		t.Error("high contrast must keep one focus color")
 	}
 }

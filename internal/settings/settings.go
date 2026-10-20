@@ -601,7 +601,7 @@ func (f fileLayer) mergeInto(dst *Config) {
 		dst.Schema = f.Schema
 	}
 	if f.Theme != "" {
-		dst.Theme = strings.TrimSpace(f.Theme)
+		dst.Theme = CanonicalTheme(strings.TrimSpace(f.Theme))
 		dst.ThemeSet = true
 	}
 	if f.ReducedMotion != nil {
@@ -713,6 +713,22 @@ var themeRegistry = map[string]func() theme.Tokens{
 // (default first), for pickers and error messages.
 func ThemeNames() []string {
 	return []string{theme.Dark().Name, theme.Light().Name, theme.HighContrast().Name}
+}
+
+// themeAliases maps retired theme names to their successors (ADR-0041),
+// so configs written before the DHI identity still load.
+var themeAliases = map[string]string{
+	"dark-futuristic": theme.Dark().Name,
+	"light-paper":     theme.Light().Name,
+}
+
+// CanonicalTheme returns the current name for a theme name, resolving
+// retired aliases; other names pass through unchanged.
+func CanonicalTheme(name string) string {
+	if to, ok := themeAliases[name]; ok {
+		return to
+	}
+	return name
 }
 
 func themeExists(name string) bool {

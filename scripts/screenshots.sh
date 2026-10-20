@@ -13,7 +13,7 @@
 #   scripts/screenshots.sh board      # one shot by name
 #
 # Review variants (F-093) — never overwrite the README assets by accident:
-#   DHI_SHOT_THEME=light-paper|high-contrast|dark-futuristic  theme to capture
+#   DHI_SHOT_THEME=dhi-dawn|high-contrast|dhi-dusk            theme to capture
 #   DHI_SHOT_SIZE=120x36                                     override every size
 #   DHI_SHOT_OUT=/some/dir                                   where PNGs land
 #   DHI_SHOT_FIRSTRUN=1                                      keep the repair gate + wizard
@@ -30,9 +30,9 @@ trap 'tmux -L "$SOCK" kill-server 2>/dev/null || true; rm -rf "$WORK"' EXIT
 mkdir -p "$OUT" "$WORK/home" "$WORK/cfg/dhi"
 # freeze ignores SGR 39/49 (default fg/bg): spell them as the theme's text
 # and canvas colors.
-FG="230;237;243" BG="11;14;20" CANVAS="#0B0E14"
+FG="236;234;244" BG="13;14;22" CANVAS="#0D0E16"
 case "$THEME" in
-light-paper) FG="31;41;55" BG="245;242;234" CANVAS="#F5F2EA" ;;
+dhi-dawn | light-paper) FG="30;31;43" BG="247;244;236" CANVAS="#F7F4EC" ;;
 high-contrast) FG="255;255;255" BG="0;0;0" CANVAS="#000000" ;;
 esac
 if [ -n "$THEME" ]; then

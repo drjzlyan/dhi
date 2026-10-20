@@ -250,7 +250,7 @@ func (m *Model) renderDiff(w, h int, viewed map[string]bool) string {
 	return strings.Join(out, "\n")
 }
 
-// hunkHeader styles the @@ range (violet) apart from the function
+// hunkHeader styles the @@ range (indigo) apart from the function
 // context (muted) so hunks scan (F-026 P6).
 func (m *Model) hunkHeader(text string, w int) string {
 	if i := strings.Index(text[3:], "@@ "); i >= 0 {

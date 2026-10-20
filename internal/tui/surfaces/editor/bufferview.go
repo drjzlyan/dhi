@@ -39,7 +39,7 @@ func bufferTitle(e *textbuf.Editor) string {
 }
 
 // modePill colors the editing mode (F-064): normal in the editor's
-// violet, insert green, visual amber, command blue.
+// indigo, insert green, visual amber, command blue.
 func modePill(md textbuf.Mode) string {
 	c := theme.Current.Accent2
 	switch md {
