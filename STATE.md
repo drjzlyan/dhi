@@ -48,7 +48,8 @@
   - `alt+N` was checked live with tmux M-2 from a focused buffer. macOS Terminal and iTerm2 only
     send it as alt with "Option as Meta" (otherwise ¡™£…); ctrl+p → Go to always works. Help says so.
   - Bubble Tea resets the OSC 10/11 colors on exit, so `v.ForegroundColor` is safe.
-- Branch `m34-ux` is complete: verify, lint and goldens are green. Not pushed, no PR, no release.
+- Released: `m34-ux` fast-forwarded onto main (d854384), CI green, tagged **v0.5.0** (Latest,
+  2026-10-20). Homebrew tap updated by hand ("dhi 0.5.0"; formula sha256s checked against checksums.txt).
 
 ### Session 59 (M31 live checks, on `main`)
 
