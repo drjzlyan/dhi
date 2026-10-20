@@ -43,6 +43,7 @@ func (a *App) helpSections() []helpSection {
 	secs := []helpSection{{title: "DHI — global keys", rows: [][2]string{
 		{fmt.Sprintf("1-%d", len(a.surfaces)), "jump between views"},
 		{"tab / shift+tab", "cycle views"},
+		{fmt.Sprintf("alt+1-%d", len(a.surfaces)), "jump between views while typing (macOS: Option as Meta)"},
 		{"ctrl+p", "command palette (search every action)"},
 		{"?", "toggle this help"},
 		{"ctrl+c", "quit DHI"},

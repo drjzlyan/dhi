@@ -45,6 +45,9 @@
   - record.sh runs vhs in $WORK, so DHI_REC_OUT is made absolute.
   - `DHI_REC_KEEP=1` keeps the work dir, including the per-flow .txt captures.
   - In zsh, `set -- $spec` does not split, so pass shot arguments explicitly.
+  - `alt+N` was checked live with tmux M-2 from a focused buffer. macOS Terminal and iTerm2 only
+    send it as alt with "Option as Meta" (otherwise ¡™£…); ctrl+p → Go to always works. Help says so.
+  - Bubble Tea resets the OSC 10/11 colors on exit, so `v.ForegroundColor` is safe.
 - Branch `m34-ux` is complete: verify, lint and goldens are green. Not pushed, no PR, no release.
 
 ### Session 59 (M31 live checks, on `main`)
