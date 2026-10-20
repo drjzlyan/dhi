@@ -143,6 +143,8 @@ type Checklist struct {
 	Items  []ChecklistItem
 	Cursor int
 	Focus  bool // draw the cursor row (the list has keyboard focus)
+	// ActionKey is the key shown on the cursor row ("⏎" when empty).
+	ActionKey string
 }
 
 // Done counts finished items (skipped ones are not done).
@@ -195,11 +197,15 @@ func (c Checklist) View(w int) []string {
 		}
 		action := ""
 		if sel {
+			k := c.ActionKey
+			if k == "" {
+				k = "⏎"
+			}
 			switch it.State {
 			case ItemPending:
-				action = "  ⏎ start"
+				action = "  " + k + " start"
 			default:
-				action = "  ⏎ redo"
+				action = "  " + k + " redo"
 			}
 		}
 		room := w - 2 - runeWidth(title) - runeWidth(action)

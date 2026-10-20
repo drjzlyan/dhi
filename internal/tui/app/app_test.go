@@ -606,71 +606,13 @@ func TestStatuslineHintsFollowTypingState(t *testing.T) {
 	}
 	cs.typing = true
 	got := stripAll(a.compose())
-	if strings.Contains(got, "views") || strings.Contains(got, "help") || !strings.Contains(got, "palette") {
-		t.Fatalf("typing statusline must drop view/help hints:\n%s", got)
+	if strings.Contains(got, " 1-2 views") || strings.Contains(got, "help") || !strings.Contains(got, "palette") ||
+		!strings.Contains(got, "alt+1-2") {
+		t.Fatalf("typing statusline must drop digit/help hints and offer alt+N:\n%s", got)
 	}
 }
 
 func stripAll(s string) string { return ansi.Strip(s) }
-
-func TestWelcomeShowsOnceAndOwnsTheKeyboard(t *testing.T) {
-	theme.SwapForTest(t, theme.Dark())
-	a, stubs := newTestApp(t)
-	dismissed := 0
-	a.SetWelcome(func() { dismissed++ })
-
-	view := stripAll(a.compose())
-	for _, want := range []string{"Welcome to DHI", "Home · Editor · Trees", "ctrl+p", "press enter to begin"} {
-		if !strings.Contains(view, want) {
-			t.Errorf("welcome missing %q", want)
-		}
-	}
-	// Digits, ?, tab and arbitrary keys must not reach the app or surfaces.
-	for _, k := range []string{"2", "?", "tab", "j", "ctrl+p"} {
-		a.Update(keyPress(k))
-	}
-	if a.active != 0 || a.showHelp || a.palette != nil || len(stubs[0].keys) != 0 || dismissed != 0 {
-		t.Fatalf("welcome leaked keys: active=%d help=%v palette=%v keys=%v dismissed=%d",
-			a.active, a.showHelp, a.palette != nil, stubs[0].keys, dismissed)
-	}
-	a.Update(keyPress("enter"))
-	if a.welcome || dismissed != 1 {
-		t.Fatalf("enter should dismiss once: welcome=%v dismissed=%d", a.welcome, dismissed)
-	}
-	if strings.Contains(stripAll(a.compose()), "Welcome to DHI") {
-		t.Fatal("card still drawn after dismiss")
-	}
-	a.Update(keyPress("enter")) // a later enter is an ordinary key
-	if dismissed != 1 {
-		t.Fatal("dismiss callback must run exactly once")
-	}
-	a.Update(keyPress("2"))
-	if a.active != 1 {
-		t.Fatal("global keys work again after the card")
-	}
-}
-
-func TestWelcomeQuitsAndDismissesOnClickAndWaitsForTheGate(t *testing.T) {
-	theme.SwapForTest(t, theme.Dark())
-	a, _ := newTestApp(t)
-	a.SetWelcome(nil)
-	if _, cmd := a.Update(keyPress("ctrl+c")); cmd == nil {
-		t.Fatal("ctrl+c must quit even over the card")
-	}
-	a.quitting = false
-	a.Update(tea.MouseClickMsg{X: 3, Y: 3, Button: tea.MouseLeft})
-	if a.welcome {
-		t.Fatal("a click dismisses the card (nil callback is fine)")
-	}
-
-	// While a boot gate owns the screen the card is held back.
-	b, _ := newTestApp(t)
-	b.SetGate(&stubGate{})
-	b.SetWelcome(nil)
-	if strings.Contains(stripAll(b.compose()), "Welcome to DHI") {
-		t.Fatal("welcome must wait for the gate to release")
-	}
-}
 
 func TestActivityChipShowsWhileAgentsWorkAndAnimates(t *testing.T) {
 	theme.SwapForTest(t, theme.Dark())

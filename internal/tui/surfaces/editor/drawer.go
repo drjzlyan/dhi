@@ -116,6 +116,10 @@ func (m *Model) TakesCtrlC() bool {
 	return m.drawerOpen && m.termFocus && t != nil && !t.exited
 }
 
+// TakesAltDigits implements surfaces.AltDigitTaker: a focused terminal
+// keeps alt+1..9 for its own tabs.
+func (m *Model) TakesAltDigits() bool { return m.drawerOpen && m.termFocus }
+
 // fullScreenTerm reports a focused drawer whose program is full-screen:
 // the terminal then takes the whole body (vim needs more than 10 rows).
 func (m *Model) fullScreenTerm() bool {

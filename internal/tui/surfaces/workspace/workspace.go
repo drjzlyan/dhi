@@ -1628,3 +1628,16 @@ func (m *Model) wsRoot() string {
 	}
 	return m.ws.Root
 }
+
+// OpenNewTask shows the board with the new-task dialog open (the Editor
+// start page's "New task", F-097); false without a task store.
+func (m *Model) OpenNewTask() bool {
+	if m.taskStore == nil {
+		return false
+	}
+	m.sec = secBoard
+	m.form = openForm(fTaskNew, "",
+		textField("slug  ", ""), textField("title ", ""),
+		textField("assign ", ""), textField("team  ", ""))
+	return true
+}

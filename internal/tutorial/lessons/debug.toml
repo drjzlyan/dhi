@@ -4,7 +4,7 @@ description = "Set a breakpoint, run, step and inspect — all inside the editor
 
 [[step]]
 title = "Open the Editor"
-body = "Press 2 and open a Go file."
+body = "Press 1 and open a Go file."
 await = "view:editor"
 
 [[step]]

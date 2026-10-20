@@ -4,7 +4,7 @@ description = "Hand work to employees: tasks, channels and mentions."
 
 [[step]]
 title = "Open the Workspace"
-body = "Press 1. This is where work and conversations live."
+body = "Press 2. This is where work and conversations live."
 await = "view:workspace"
 
 [[step]]

@@ -4,7 +4,7 @@ description = "Modal editing, saving, and pairing with an employee."
 
 [[step]]
 title = "Open the Editor"
-body = "Press 2."
+body = "Press 1 (alt+1 works from anywhere)."
 await = "view:editor"
 
 [[step]]

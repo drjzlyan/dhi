@@ -4,13 +4,13 @@ description = "The map of DHI: views, the command palette and help. About two mi
 
 [[step]]
 title = "Switch views"
-body = "DHI is a set of views: Workspace, Editor, Ideator, Reviewer, Settings. Press 2 to open the Editor."
-await = "view:editor"
+body = "DHI opens in the Editor. It is one of five views: Editor, Workspace, Ideator, Reviewer, Settings. Press 2 to open the Workspace."
+await = "view:workspace"
 
 [[step]]
 title = "Come back"
-body = "Press 1 to return to the Workspace — your inbox, task board, channels and repos."
-await = "view:workspace"
+body = "The Workspace holds your inbox, task board, channels and repos. Press 1 to return to the Editor. While you type in a file, alt+1..5 switch views instead."
+await = "view:editor"
 
 [[step]]
 title = "Search every action"
@@ -24,7 +24,7 @@ await = "help"
 
 [[step]]
 title = "Sections inside a view"
-body = "Close help with ? again. In the Workspace, [ and ] move between INBOX · BOARD · CHANNELS · REPOS. Try them, then continue."
+body = "Close help with ? again. In the Workspace (2), [ and ] move between INBOX · BOARD · CHANNELS · REPOS. Try them, then continue."
 
 [[step]]
 title = "That's the map"

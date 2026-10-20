@@ -93,8 +93,8 @@ func build(t *testing.T, ws *workspace.Workspace) []surfaces.Surface {
 	t.Helper()
 	cfgPath := filepath.Join(t.TempDir(), "config.toml")
 	return []surfaces.Surface{
+		editor.New("test", ws), // view 1 (ADR-0041), as in main
 		workspaceview.New("test", ws, workspaceview.Deps{}),
-		editor.New("test", ws),
 		ideator.New("test", ws, ideator.Deps{}),
 		reviewer.New("test", ws, reviewer.Deps{}),
 		settingsview.New(settings.Defaults(), cfgPath, settingsview.Deps{WS: ws}),
@@ -191,7 +191,6 @@ func TestShellScreensFitTheTerminal(t *testing.T) {
 	for _, sz := range [][2]int{{40, 12}, {60, 20}, {80, 24}, {120, 35}, {200, 50}} {
 		w, h := sz[0], sz[1]
 		a := app.New("test", build(t, ws)...)
-		a.SetWelcome(nil)
 		a.Update(tea.WindowSizeMsg{Width: w, Height: h})
 		screen := func(name string) {
 			t.Helper()
@@ -206,11 +205,7 @@ func TestShellScreensFitTheTerminal(t *testing.T) {
 				}
 			}
 		}
-		if !strings.Contains(ansi.Strip(a.View().Content), "Welcome to DHI") {
-			t.Fatalf("welcome card missing at %dx%d", w, h)
-		}
-		screen("welcome")
-		a.Update(key("esc"))
+		screen("first screen")
 		for v := 1; v <= 5; v++ {
 			a.Update(key(fmt.Sprint(v)))
 			screen(fmt.Sprintf("view %d", v))
@@ -228,5 +223,23 @@ func TestShellScreensFitTheTerminal(t *testing.T) {
 			screen(fmt.Sprintf("view %d palette", v))
 			a.Update(key("esc"))
 		}
+	}
+}
+
+// TestOpensOnTheEditor pins ADR-0041 with the production order: DHI
+// opens on the Editor's start page, and 2 reaches the Workspace from it.
+func TestOpensOnTheEditor(t *testing.T) {
+	theme.SwapForTest(t, theme.Dark())
+	a := app.New("test", build(t, fixtureWS(t))...)
+	a.Update(tea.WindowSizeMsg{Width: 120, Height: 35})
+	if id := a.Active().Meta().ID; id != "editor" {
+		t.Fatalf("first view = %s, want editor", id)
+	}
+	if !strings.Contains(ansi.Strip(a.View().Content), "Find a file") {
+		t.Fatal("the editor must open on its start page")
+	}
+	a.Update(key("2"))
+	if id := a.Active().Meta().ID; id != "workspace" {
+		t.Fatalf("2 from the start page = %s, want workspace", id)
 	}
 }

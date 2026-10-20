@@ -79,6 +79,13 @@ type CtrlCTaker interface {
 	TakesCtrlC() bool
 }
 
+// AltDigitTaker is implemented by a surface that uses alt+1..9 itself
+// (the editor's terminal tabs): while it reports true those keys go to
+// the surface instead of switching views (ADR-0041).
+type AltDigitTaker interface {
+	TakesAltDigits() bool
+}
+
 // CmdSource lets a surface start async work from a key: HandleKey cannot
 // return a tea.Cmd, so the surface queues one and the shell drains it
 // right after the key (nil = nothing queued). Without it, work started

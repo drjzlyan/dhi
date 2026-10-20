@@ -1,4 +1,4 @@
-▏ files ─────────────────── ▏ editor ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
+▏ files ─────────────────── ▏ start ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
 ▏ ▌ ▸ alpha/                ▏                                                                       
 ▏   ▸ beta/                 ▏                                                                       
 ▏                           ▏                                                                       
@@ -6,16 +6,16 @@
 ▏                           ▏                                                                       
 ▏                           ▏                                                                       
 ▏                           ▏                                                                       
-▏                           ▏                                   ≡                                   
-▏                           ▏                              No file open                             
-▏                           ▏                                                                       
-▏                           ▏        Pick a file in the tree, find one by name, or search the       
-▏                           ▏                                 code.                                 
-▏                           ▏                                                                       
-▏                           ▏                     ⏎ open  ·  / find  ·  s search                    
 ▏                           ▏                                                                       
 ▏                           ▏                                                                       
 ▏                           ▏                                                                       
+▏                           ▏                                                                       
+▏                           ▏                ◆ dhi  ·  001                                          
+▏                           ▏                the agentic workspace IDE                              
+▏                           ▏                                                                       
+▏                           ▏                 / Find a file    ^t Terminal                          
+▏                           ▏                                                                       
+▏                           ▏                ? help  ·  ^p palette  ·  alt+1-5 views                
 ▏                           ▏                                                                       
 ▏                           ▏                                                                       
 ▏                           ▏                                                                       

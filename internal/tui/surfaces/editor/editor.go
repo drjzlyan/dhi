@@ -124,6 +124,11 @@ func WithIdentity(fn gitcore.IdentityFunc) Option {
 
 // Model is the Editor surface.
 type Model struct {
+	// start wires the start page (F-097); startZones are its click spans
+	// from the last render, startOX/OY where the page sat on screen.
+	start            StartDeps
+	startZones       []startZone
+	startOX, startOY int
 	// worktrees are task worktrees the human took (F-073), shown as extra
 	// tree roots after the members.
 	worktrees []memberRef
@@ -341,6 +346,14 @@ func (m *Model) Hints() (string, []string) {
 	hints := []string{"enter open", "/ find", "s search"}
 	if m.drawerOpen && !m.termFocus {
 		hints = append(hints, "ctrl+t terminal")
+	}
+	if m.startVisible() {
+		if _, next := m.pendingSteps(); next != "" && m.start.RunStep != nil {
+			hints = append([]string{"c continue setup"}, hints...)
+		}
+		if m.start.StartTour != nil {
+			hints = append(hints, "t tour")
+		}
 	}
 	return "", hints
 }
@@ -693,7 +706,7 @@ func (m *Model) TakeCmd() tea.Cmd {
 // HandleKey implements surface key routing.
 func (m *Model) HandleKey(key string) bool {
 	if m.ws == nil {
-		return false
+		return m.startVisible() && m.startKey(key)
 	}
 
 	if m.reviewOpen && len(m.proposals) > 0 {
@@ -954,6 +967,9 @@ var termSpecialKeys = map[string]string{
 }
 
 func (m *Model) handleNavKey(key string) bool {
+	if m.startVisible() && m.startKey(key) {
+		return true
+	}
 	switch key {
 	case "/":
 		m.openFind()
@@ -1092,6 +1108,9 @@ func (m *Model) refreshRows() {
 
 func (m *Model) View() string {
 	if m.ws == nil {
+		if m.startVisible() {
+			return m.noWorkspaceStart()
+		}
 		return branding.NoWorkspace(m.width, m.height, m.version)
 	}
 	if m.fullScreenTerm() { // vim/htop/less in the terminal take the body
@@ -1123,6 +1142,9 @@ func (m *Model) View() string {
 // selected (and the tree focused); clicking the selected row again opens
 // the file or toggles the folder, like enter.
 func (m *Model) Click(x, y int) bool {
+	if m.startVisible() && !m.reviewOpen && (m.ws == nil || x >= m.railW()) {
+		return m.startClick(x-m.startOX, y-m.startOY)
+	}
 	if m.ws == nil || m.mode != modeNav || m.reviewOpen {
 		return false
 	}
@@ -1195,12 +1217,12 @@ func (m *Model) navView() string {
 			theme.Hint().Render("press enter on a file to edit"),
 		}, "\n")
 	default:
-		main = strings.Join(kit.EmptyState{
-			Glyph:  theme.GlyphFileDoc,
-			Title:  "No file open",
-			Why:    "Pick a file in the tree, find one by name, or search the code.",
-			Action: "⏎ open  ·  / find  ·  s search",
-		}.Lines(maxInt(m.width-m.railW()-4, 20), maxInt(bodyH-2, 0)), "\n")
+		title = "start"
+		pageW := m.width - m.railW() - 4
+		if m.chat != nil && m.chat.open {
+			pageW -= chatWidth
+		}
+		main = strings.Join(m.startPage(maxInt(pageW, 20)), "\n")
 	}
 
 	railW := m.railW()
@@ -1217,6 +1239,12 @@ func (m *Model) navView() string {
 	}
 	mainW = maxInt(mainW, 10)
 	centered := kit.Center(main, maxInt(mainW-2, 10), maxInt(bodyH-2, 3))
+	if m.startVisible() {
+		// The page's zones are page-relative: record where Center put it
+		// (inside the pane: one divider column, one header row).
+		top, left := m.centerOffsets(splitLines(main), maxInt(mainW-2, 10), maxInt(bodyH-2, 3))
+		m.startOX, m.startOY = railW+1+left, 1+top
+	}
 	if m.mode == modeResults || m.active() != nil {
 		centered = main // lists and buffers are left-aligned
 	}

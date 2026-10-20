@@ -403,7 +403,22 @@ func runTUI() (relaunch bool) {
 	if unreadStore != nil {
 		edOpts = append(edOpts, editor.WithUnread(unreadStore))
 	}
+	// The start page's actions that live outside the editor (F-097).
+	edOpts = append(edOpts, editor.WithStart(editor.StartDeps{
+		StartTour: func() {
+			if appRef != nil {
+				appRef.StartLesson("tour")
+			}
+		},
+		NewTask: func() {
+			if appRef != nil {
+				appRef.OpenNewTask()
+			}
+		},
+	}))
+	// The Editor is view 1 (ADR-0041): DHI opens where you write code.
 	a := app.New(version.Version,
+		editor.New(version.Version, ws, edOpts...),
 		wsview.New(version.Version, ws, wsview.Deps{
 			Episodes:     openEpisodes(ws), // F-067 card pane: plan, verify, spend
 			WorktreeHint: worktreeHint(decision.Worktrees),
@@ -467,7 +482,6 @@ func runTUI() (relaunch bool) {
 				return appRef.SelectProposal(id)
 			},
 		}),
-		editor.New(version.Version, ws, edOpts...),
 		ideator.New(version.Version, ws, ideator.Deps{
 			Store: sessionStore,
 			Bus:   messageBus,
@@ -554,19 +568,6 @@ func runTUI() (relaunch bool) {
 		a.SetBackgroundHook(cfg.FollowBackground)
 	}
 	autoWizard := decision.Block == "" && shouldAutoRunSetup(ws)
-
-	// First run in this workspace: show the welcome card once (F-041). The
-	// marker is per-workspace runtime state, gitignored like unread.json.
-	// The wizard replaces it for first-time users; a workspace the wizard
-	// has onboarded never shows it.
-	if ws != nil && !autoWizard {
-		marker := filepath.Join(ws.Root, ".dhi", "welcome.seen")
-		_, seenErr := os.Stat(marker)
-		_, setupErr := os.Stat(setup.WorkspaceStatePath(ws.Root))
-		if os.IsNotExist(seenErr) && os.IsNotExist(setupErr) {
-			a.SetWelcome(func() { _ = os.WriteFile(marker, []byte("seen\n"), 0o644) })
-		}
-	}
 
 	// Gates, in strict order: a block never releases; missing pieces
 	// offer the confirmation-gated install; first-run (no lockfile)

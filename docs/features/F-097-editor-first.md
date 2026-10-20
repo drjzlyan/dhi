@@ -1,6 +1,6 @@
 # F-097 — Editor first, with a start page
 
-Status: planned (M34 P3) · ADR-0041
+Status: done (session 60, M34 P3) · ADR-0041
 
 ## Why
 The user wants the Editor as the first screen. Before this, the app opened on the Workspace, and the
@@ -18,8 +18,8 @@ Editor with no file open showed only "No file open".
 - The tour and editor lessons are renumbered; the tour starts in the Editor.
 
 ## Acceptance
-- [ ] With the production registry, the app opens on `editor`.
-- [ ] From the start page, `2` selects Workspace. With a buffer focused, `2` stays in the buffer and
+- [x] With the production registry, the app opens on `editor`.
+- [x] From the start page, `2` selects Workspace. With a buffer focused, `2` stays in the buffer and
       `alt+2` selects Workspace. With the terminal focused, `alt+2` switches terminal tab.
-- [ ] Start page golden at 120 columns; narrow terminals fall back to the tree.
-- [ ] Lessons pass `tutorial_test.go`; layoutcontract mirrors the new order.
+- [x] Start page golden at 120 columns; narrow terminals fall back to the tree.
+- [x] Lessons pass `tutorial_test.go`; layoutcontract mirrors the new order.

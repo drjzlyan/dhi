@@ -1,4 +1,4 @@
-▏ files ───────────────────────── ▏ editor ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ▏ crew ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
+▏ files ───────────────────────── ▏ start ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ▏ crew ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
 ▏ ▌ ▸ alpha/                      ▏                                       ▏ #general                                    
 ▏   ▸ beta/                       ▏                                       ▏                                             
 ▏                                 ▏                                       ▏ ◇ No messages yet                           
@@ -7,15 +7,15 @@
 ▏                                 ▏                                       ▏                                             
 ▏                                 ▏                                       ▏ › ▌message the crew — @mention to wake an   
 ▏                                 ▏                                       ▏                                             
-▏                                 ▏                                    N  ▏                                             
-▏                                 ▏                                       ▏                                             
-▏                                 ▏              Pick a file in the tree  ▏                                             
 ▏                                 ▏                                       ▏                                             
 ▏                                 ▏                                       ▏                                             
-▏                                 ▏                           ⏎ open  ·   ▏                                             
+▏                                 ▏  ◆ dhi  ·  001                        ▏                                             
+▏                                 ▏  the agentic workspace IDE            ▏                                             
 ▏                                 ▏                                       ▏                                             
+▏                                 ▏   / Find a file    ^t Terminal        ▏                                             
+▏                                 ▏   ^a Ask an agent                     ▏                                             
 ▏                                 ▏                                       ▏                                             
-▏                                 ▏                                       ▏                                             
+▏                                 ▏  ? help  ·  ^p palette  ·  alt+1-5 v  ▏                                             
 ▏                                 ▏                                       ▏                                             
 ▏                                 ▏                                       ▏                                             
 ▏                                 ▏                                       ▏                                             

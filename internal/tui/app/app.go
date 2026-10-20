@@ -62,9 +62,10 @@ type App struct {
 	active     int
 	tabs       *kit.Tabs
 
-	gate      Gate
-	gateRan   bool
-	setupGate func() Gate // palette "Run setup wizard" (F-043)
+	gate       Gate
+	gateRan    bool
+	queuedGate Gate        // started after the current input (QueueGate)
+	setupGate  func() Gate // palette "Run setup wizard" (F-043)
 
 	coach     *coach // running tutorial lesson (F-048); nil = none
 	tutorials []tutorial.Tutorial
@@ -76,11 +77,6 @@ type App struct {
 	showHelp      bool
 	help          helpState
 	quitting      bool
-
-	// welcome is the one-time first-run card (F-041); nil once dismissed.
-	// onWelcomeDismiss records that it was seen.
-	welcome          bool
-	onWelcomeDismiss func()
 
 	// activity reports in-flight agent turns for the presence chip;
 	// nil hides the chip. spin advances the spinner frame; armed marks a
@@ -124,13 +120,6 @@ func New(version string, regs ...surfaces.Surface) *App {
 
 // Active returns the focused surface.
 func (a *App) Active() surfaces.Surface { return a.surfaces[a.active] }
-
-// SetWelcome arms the one-time welcome card, shown after any boot gate
-// has released. onDismiss runs once when the user closes it (the caller
-// persists "seen"). Call before Init.
-func (a *App) SetWelcome(onDismiss func()) {
-	a.welcome, a.onWelcomeDismiss = true, onDismiss
-}
 
 // SetActivity installs the agent-activity source behind the tab-bar
 // presence chip ("⠹ 2 agents working"). Call before Init.
@@ -388,16 +377,6 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if a.coachActive() && a.coachKey(key) {
 			return a, nil
 		}
-		if a.welcome {
-			switch key {
-			case "ctrl+c", "ctrl+q":
-				a.quitting = true
-				return a, tea.Quit
-			case "enter", "esc", " ", "q":
-				a.dismissWelcome()
-			}
-			return a, nil // the card owns the keyboard until dismissed
-		}
 		if a.palette != nil {
 			return a, a.paletteKey(key)
 		}
@@ -507,6 +486,15 @@ func (a *App) activeCapturesInput() bool {
 	return ok && c.CapturesInput()
 }
 
+// altDigit parses "alt+1".."alt+9".
+func altDigit(key string) (int, bool) {
+	d, ok := strings.CutPrefix(key, "alt+")
+	if !ok || len(d) != 1 || d[0] < '1' || d[0] > '9' {
+		return 0, false
+	}
+	return int(d[0] - '0'), true
+}
+
 func (a *App) handleGlobal(key string, capturing bool) (tea.Cmd, bool) {
 	// A focused terminal owns ctrl+c (it interrupts the running program,
 	// F-061); ctrl+q always quits DHI.
@@ -519,6 +507,14 @@ func (a *App) handleGlobal(key string, capturing bool) (tea.Cmd, bool) {
 	case "ctrl+c", "ctrl+q":
 		a.quitting = true
 		return tea.Quit, true
+	}
+	// alt+1..9 switch views from anywhere, even mid-typing in a buffer,
+	// unless the surface uses them itself (ADR-0041).
+	if n, ok := altDigit(key); ok && n <= len(a.surfaces) {
+		if t, takes := a.Active().(surfaces.AltDigitTaker); !takes || !t.TakesAltDigits() {
+			a.selectSurface(n - 1)
+			return a.transitionCmd(), true
+		}
 	}
 	if capturing {
 		return nil, false // typing: digits, "?" and tab belong to the surface
@@ -541,39 +537,6 @@ func (a *App) handleGlobal(key string, capturing bool) (tea.Cmd, bool) {
 		}
 	}
 	return nil, false
-}
-
-func (a *App) dismissWelcome() {
-	if !a.welcome {
-		return
-	}
-	a.welcome = false
-	if a.onWelcomeDismiss != nil {
-		a.onWelcomeDismiss()
-	}
-}
-
-// welcomeView is the first-run card: the five things worth knowing.
-func (a *App) welcomeView() string {
-	titles := make([]string, len(a.surfaces))
-	for i, s := range a.surfaces {
-		titles[i] = s.Meta().Title
-	}
-	rows := [][2]string{
-		{fmt.Sprintf("1-%d", len(a.surfaces)), strings.Join(titles, " · ")},
-		{"ctrl+p", "command palette — search every action"},
-		{"?", "keyboard help for where you are"},
-		{"[  ]", "switch sections inside a view"},
-		{"@name", "mention an agent in any channel to hand it work"},
-	}
-	lines := []string{theme.Brand().Render("Welcome to DHI"),
-		theme.TextDim().Render("Your virtual office — agents work beside you."), ""}
-	for _, r := range rows {
-		lines = append(lines, "  "+keycap(r[0], 8)+"  "+theme.TextDim().Render(r[1]))
-	}
-	lines = append(lines, "", theme.Hint().Render("press enter to begin"))
-	m := kit.Modal{Title: "welcome", Lines: lines, Width: min(74, a.width-2)}
-	return m.View()
 }
 
 // paletteKey routes a key to the open palette; a pick runs its command.
@@ -733,6 +696,33 @@ func (a *App) FocusEditorChat() bool {
 	return false
 }
 
+// OpenNewTask jumps to the Workspace with its new-task dialog open.
+func (a *App) OpenNewTask() bool {
+	for i, s := range a.surfaces {
+		if f, ok := s.(interface{ OpenNewTask() bool }); ok && f.OpenNewTask() {
+			a.selectSurface(i)
+			return true
+		}
+	}
+	return false
+}
+
+// QueueGate starts g after the current input is handled: surfaces start
+// a gate from a key or click (the start page's setup steps, F-098), and
+// HandleKey cannot return the gate's Init command.
+func (a *App) QueueGate(g Gate) { a.queuedGate = g }
+
+// StartLesson begins the named tutorial; false when it is unknown.
+func (a *App) StartLesson(slug string) bool {
+	for _, t := range a.tutorials {
+		if t.Slug == slug {
+			a.StartTutorial(t)
+			return true
+		}
+	}
+	return false
+}
+
 // SelectReviewer jumps the reviewer surface to one review card (the
 // F-016 in-review jump). Returns false when unknown or unavailable.
 func (a *App) SelectReviewer(id string) bool {
@@ -816,20 +806,21 @@ func (a *App) View() tea.View {
 // handling input (surfaces.CmdSource): a key or a click may start async
 // work, but HandleKey and Click cannot return commands.
 func (a *App) drainSurfaceCmd() tea.Cmd {
+	var cmd tea.Cmd
 	if cs, ok := a.Active().(surfaces.CmdSource); ok {
-		return cs.TakeCmd()
+		cmd = cs.TakeCmd()
 	}
-	return nil
+	if g := a.queuedGate; g != nil {
+		a.queuedGate = nil
+		cmd = tea.Batch(cmd, a.StartGate(g))
+	}
+	return cmd
 }
 
 // handleClick routes body-local clicks: the help overlay closes on any
 // click, row 0 hits the tab bar, else the active surface decides via
 // its Click seam (nil-safe — surfaces without mouse behavior ignore it).
 func (a *App) handleClick(x, y int) {
-	if a.welcome {
-		a.dismissWelcome()
-		return
-	}
 	if a.palette != nil {
 		a.palette = nil // a click outside dismisses the palette
 		return
@@ -880,9 +871,7 @@ func (a *App) compose() string {
 	if !a.gateActive() {
 		out = a.overlayToast(out)
 	}
-	if a.welcome && !a.gateActive() {
-		out = kit.Overlay(strings.Split(out, "\n"), a.welcomeView(), a.width, a.height)
-	} else if a.palette != nil {
+	if a.palette != nil {
 		box := a.palette.View(min(70, max(a.width-4, 40)))
 		out = kit.Overlay(strings.Split(out, "\n"), box, a.width, a.height)
 	} else if a.showHelp {
@@ -915,6 +904,9 @@ func (a *App) buildStatus() *kit.StatusLine {
 	}
 	if a.activeCapturesInput() {
 		sl.Globals = []string{"^p palette", quit}
+		if t, ok := a.Active().(surfaces.AltDigitTaker); !ok || !t.TakesAltDigits() {
+			sl.Globals = []string{"^p palette", fmt.Sprintf("alt+1-%d views", len(a.surfaces)), quit}
+		}
 		sl.More = ""
 	} else {
 		sl.Globals = []string{"^p palette", "? help", fmt.Sprintf("1-%d views", len(a.surfaces)), "tab next", quit}
