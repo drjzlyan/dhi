@@ -1,7 +1,7 @@
 # Settings: switch the theme live, toggle motion, type a value — rendered by scripts/record.sh ({{OUT}}, {{WORK}} are filled in).
-Output {{OUT}}/settings.gif
-Output {{OUT}}/settings.mp4
-Output {{WORK}}/settings.txt
+Output "{{OUT}}/settings.gif"
+Output "{{OUT}}/settings.mp4"
+Output "{{WORK}}/settings.txt"
 
 Set Shell bash
 Set FontSize 15

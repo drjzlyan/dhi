@@ -1901,6 +1901,9 @@ func settingLabel(key string) string {
 const settingNameW = 28
 
 func settingRow(selected bool, name, value string) string {
+	// Plain values take the theme's text color, never the terminal's
+	// default: dhi-dawn on a dark terminal would leave them unreadable.
+	value = kit.Restyle(theme.TextStyle(), value)
 	if selected {
 		return theme.GlyphCursor + " " + theme.TabActive().Render(name) +
 			strings.TrimPrefix(leader(name, settingNameW), name) + value

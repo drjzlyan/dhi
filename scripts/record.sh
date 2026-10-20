@@ -29,9 +29,10 @@ OUT=${DHI_REC_OUT:-"$ROOT/docs/assets/recordings"}
 MAX_MB=${DHI_REC_MAX_MB:-6}
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/dhi-rec.XXXXXX")
 SOCK=dhi-rec-$$
-trap 'tmux -L "$SOCK" kill-server 2>/dev/null || true; rm -rf "$WORK"' EXIT
+trap 'tmux -L "$SOCK" kill-server 2>/dev/null || true; [ -n "${DHI_REC_KEEP:-}" ] || rm -rf "$WORK"' EXIT
 DATA=${XDG_DATA_HOME:-$HOME/.local/share}
 mkdir -p "$OUT" "$WORK/bin" "$WORK/tapes"
+OUT=$(cd "$OUT" && pwd) # vhs runs in $WORK: outputs need an absolute path
 
 echo "building dhi and seeding the demo projects…"
 (cd "$ROOT" && go build -o "$WORK/bin/dhi" ./cmd/dhi)
@@ -85,7 +86,7 @@ for tape in "$ROOT"/scripts/tapes/*.tape; do
 	name=$(basename "$tape" .tape)
 	[ -z "$WANT" ] || [ "$WANT" = "$name" ] || continue
 	sed -e "s|{{OUT}}|$OUT|g" -e "s|{{WORK}}|$WORK|g" "$tape" >"$WORK/tapes/$name.tape"
-	echo "recording $name…"
+	echo "recording ${name}…"
 	(cd "$WORK" && vhs "tapes/$name.tape" >/dev/null)
 	size=$(wc -c <"$OUT/$name.gif" | tr -d ' ')
 	mb=$((size / 1048576))

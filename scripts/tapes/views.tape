@@ -1,7 +1,7 @@
 # Every view: Editor, Workspace board and channels, Ideator, Reviewer — rendered by scripts/record.sh ({{OUT}}, {{WORK}} are filled in).
-Output {{OUT}}/views.gif
-Output {{OUT}}/views.mp4
-Output {{WORK}}/views.txt
+Output "{{OUT}}/views.gif"
+Output "{{OUT}}/views.mp4"
+Output "{{WORK}}/views.txt"
 
 Set Shell bash
 Set FontSize 15
@@ -30,23 +30,27 @@ Down
 Sleep 600ms
 Enter
 Sleep 3s
-# alt+2: the Workspace board; ] walks its sections.
-Alt+2
+# esc leaves the buffer; 2: the Workspace board; ] walks its sections.
+Escape
+Type "2"
 Sleep 3s
 Type "]"
 Sleep 3s
 Type "["
 Type "["
 Sleep 3s
-# alt+3: the Ideator; alt+4: the Reviewer with a diff.
-Alt+3
+# 3: the Ideator; 4: the Reviewer with a diff.
+Escape
+Type "3"
 Sleep 3s
-Alt+4
+Escape
+Type "4"
 Sleep 1.5s
 Enter
 Sleep 1s
 Enter
 Sleep 3.5s
 # Back to the Editor.
-Alt+1
+Escape
+Type "1"
 Sleep 2.5s

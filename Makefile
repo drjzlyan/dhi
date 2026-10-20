@@ -1,6 +1,6 @@
 BINARY := dhi
 
-.PHONY: build run test verify goldens lint eval clean
+.PHONY: build run test verify goldens lint eval record clean
 
 build:
 	go build -o bin/$(BINARY) ./cmd/dhi
@@ -26,6 +26,10 @@ lint:
 # through DHI; spends real tokens. DHI_EVAL_CLI / _MODEL / _TASK / _REPEAT / _OUT.
 eval:
 	DHI_EVAL=1 go test -count=1 -v -timeout 90m -run TestLive ./internal/evals
+
+# README recordings of real flows (F-100): needs VHS (brew install vhs).
+record:
+	scripts/record.sh
 
 clean:
 	rm -rf bin/

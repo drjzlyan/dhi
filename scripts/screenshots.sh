@@ -16,12 +16,12 @@
 #   DHI_SHOT_THEME=dhi-dawn|high-contrast|dhi-dusk            theme to capture
 #   DHI_SHOT_SIZE=120x36                                     override every size
 #   DHI_SHOT_OUT=/some/dir                                   where PNGs land
-#   DHI_SHOT_FIRSTRUN=1                                      keep the repair gate + wizard
+#   DHI_SHOT_FIRSTRUN=1                                      keep the repair gate (first-run shots)
 set -eu
 
 FREEZE=github.com/charmbracelet/freeze@v0.2.2
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-OUT=${DHI_SHOT_OUT:-"$ROOT/docs/assets"}
+OUT=${DHI_SHOT_OUT:-"${TMPDIR:-/tmp}/dhi-shots"} # README uses recordings (F-100)
 THEME=${DHI_SHOT_THEME:-}
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/dhi-shots.XXXXXX")
 SOCK=dhi-shots-$$
@@ -83,15 +83,13 @@ shot() {
 }
 
 # A fresh demo workspace gets one-time repairs on its first launch (the
-# repair gate) and a sandbox HOME gets the setup wizard: launch once,
-# accept the repairs and skip setup so every shot shows the app.
+# repair gate): launch once,
+# accept the repairs so every shot shows the app (setup no longer gates).
 warmup() {
 	tmux -L "$SOCK" -f "$WORK/tmux.conf" new-session -d -s s -x 120 -y 36 \
 		"cd '$WORK/acme' && TERM=xterm-256color HOME='$WORK/home' XDG_CONFIG_HOME='$WORK/cfg' XDG_DATA_HOME='$DATA' '$WORK/dhi'"
 	sleep 3
 	tmux -L "$SOCK" send-keys -t s Enter
-	sleep 1
-	tmux -L "$SOCK" send-keys -t s C-x
 	sleep 1
 	tmux -L "$SOCK" kill-server 2>/dev/null || true
 }
@@ -100,22 +98,22 @@ WANT=${1:-}
 [ -n "${DHI_SHOT_FIRSTRUN:-}" ] || warmup
 
 echo "capturing…"
-{ [ -z "$WANT" ] || [ "$WANT" = board ]; } && shot board 150x40
-{ [ -z "$WANT" ] || [ "$WANT" = channels ]; } && shot channels 150x40 ']'
+{ [ -z "$WANT" ] || [ "$WANT" = board ]; } && shot board 150x40 2
+{ [ -z "$WANT" ] || [ "$WANT" = channels ]; } && shot channels 150x40 2 ']'
 { [ -z "$WANT" ] || [ "$WANT" = review ]; } && shot review 150x40 4 Enter Enter
-{ [ -z "$WANT" ] || [ "$WANT" = editor ]; } && shot editor 150x40 2 Enter j j j Enter Escape j Enter C-w v
-{ [ -z "$WANT" ] || [ "$WANT" = replace ]; } && shot replace 150x40 2 s C-r f u n c ' ' '(' '\' w + ')' Enter r f u n c ' ' '$' '{' 1 '}' V 2
-{ [ -z "$WANT" ] || [ "$WANT" = terminal ]; } && shot terminal 150x40 2 Enter j j j Enter C-t g i t ' ' l o g ' ' - - o n e l i n e ' ' - 5 Enter
+{ [ -z "$WANT" ] || [ "$WANT" = editor ]; } && shot editor 150x40 1 Enter j j j Enter Escape j Enter C-w v
+{ [ -z "$WANT" ] || [ "$WANT" = replace ]; } && shot replace 150x40 1 s C-r f u n c ' ' '(' '\' w + ')' Enter r f u n c ' ' '$' '{' 1 '}' V 2
+{ [ -z "$WANT" ] || [ "$WANT" = terminal ]; } && shot terminal 150x40 1 Enter j j j Enter C-t g i t ' ' l o g ' ' - - o n e l i n e ' ' - 5 Enter
 { [ -z "$WANT" ] || [ "$WANT" = ideator ]; } && shot ideator 150x40 3
 { [ -z "$WANT" ] || [ "$WANT" = settings ]; } && shot settings 150x40 5
-{ [ -z "$WANT" ] || [ "$WANT" = dialog ]; } && shot dialog 150x40 n c s v - e x p o r t Tab E x p o r t ' ' r e p o r t s ' ' a s ' ' C S V
-{ [ -z "$WANT" ] || [ "$WANT" = inbox ]; } && shot inbox 150x40 '['
-{ [ -z "$WANT" ] || [ "$WANT" = help ]; } && shot help 150x40 '?'
-{ [ -z "$WANT" ] || [ "$WANT" = narrow ]; } && shot narrow 72x30
+{ [ -z "$WANT" ] || [ "$WANT" = dialog ]; } && shot dialog 150x40 2 n c s v - e x p o r t Tab E x p o r t ' ' r e p o r t s ' ' a s ' ' C S V
+{ [ -z "$WANT" ] || [ "$WANT" = inbox ]; } && shot inbox 150x40 2 '['
+{ [ -z "$WANT" ] || [ "$WANT" = help ]; } && shot help 150x40 2 '?'
+{ [ -z "$WANT" ] || [ "$WANT" = narrow ]; } && shot narrow 72x30 2
 # The ship toast: move the in-review card to done (review shots only).
-[ "$WANT" = ship ] && shot ship 150x40 l l s
+[ "$WANT" = ship ] && shot ship 150x40 2 l l s
 # First-run screens: only with DHI_SHOT_FIRSTRUN=1 (no warmup).
 [ "$WANT" = gate ] && shot gate 120x36
-[ "$WANT" = wizard ] && shot wizard 120x36 Enter
-[ "$WANT" = team ] && shot team 120x36 Enter Enter Enter Enter Enter
+[ "$WANT" = start ] && shot start 120x36
+[ "$WANT" = checklist ] && shot checklist 120x36 c
 echo "done"

@@ -422,3 +422,12 @@ func fullView(m *Model) string {
 	flash, hints := m.Hints()
 	return m.View() + "\n" + flash + "\n" + strings.Join(hints, " • ")
 }
+
+// Plain values carry the theme's text color (dhi-dawn on a dark terminal
+// left them in the terminal's light default, unreadable on paper).
+func TestSettingValuesUseTheThemeTextColor(t *testing.T) {
+	theme.SwapForTest(t, theme.Light())
+	if row := settingRow(false, "you are a", "developer"); !strings.Contains(row, "38;2;30;31;43m") {
+		t.Fatalf("value not painted in the theme's text color: %q", row)
+	}
+}

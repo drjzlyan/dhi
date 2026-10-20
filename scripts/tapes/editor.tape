@@ -1,7 +1,7 @@
 # The Editor: files, a split, typing, search and the terminal — rendered by scripts/record.sh ({{OUT}}, {{WORK}} are filled in).
-Output {{OUT}}/editor.gif
-Output {{OUT}}/editor.mp4
-Output {{WORK}}/editor.txt
+Output "{{OUT}}/editor.gif"
+Output "{{OUT}}/editor.mp4"
+Output "{{WORK}}/editor.txt"
 
 Set Shell bash
 Set FontSize 15

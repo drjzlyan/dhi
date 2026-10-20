@@ -1,7 +1,7 @@
 # Onboarding a fresh project: the Editor start page and its setup checklist — rendered by scripts/record.sh ({{OUT}}, {{WORK}} are filled in).
-Output {{OUT}}/onboarding.gif
-Output {{OUT}}/onboarding.mp4
-Output {{WORK}}/onboarding.txt
+Output "{{OUT}}/onboarding.gif"
+Output "{{OUT}}/onboarding.mp4"
+Output "{{WORK}}/onboarding.txt"
 
 Set Shell bash
 Set FontSize 15

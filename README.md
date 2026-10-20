@@ -12,7 +12,7 @@ a board, channels, an editor, a review screen, all in one terminal window.
 [![Go](https://img.shields.io/github/go-mod/go-version/drjzlyan/dhi)](go.mod)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-<img src="docs/assets/review.png" alt="DHI's review screen: changed files, a syntax-highlighted diff, and the review conversation side by side" width="100%">
+<img src="docs/assets/recordings/onboarding.gif" alt="First launch in a fresh project: DHI opens on the Editor's start page, creates a workspace from two repos, then works through a setup checklist — project brief, git identity, house rules, commit style and a team — one step at a time" width="100%">
 
 </div>
 
@@ -40,19 +40,22 @@ already work in:
 
 ## A look around
 
-| Board and agents | Channels |
-|---|---|
-| <img src="docs/assets/board.png" alt="Kanban board with two-line cards per lane and the selected task's details"> | <img src="docs/assets/channels.png" alt="The #general channel with each agent in its own color"> |
-| **Inbox: what needs you** | **Dialogs stay in their box** |
-| <img src="docs/assets/inbox.png" alt="The inbox with a task ready for review and its preview"> | <img src="docs/assets/dialog.png" alt="The new-task dialog over the board"> |
-| **Editor: file tree and split panes** | **A real terminal, one tab per repo** |
-| <img src="docs/assets/editor.png" alt="A file tree with guides and branch chips beside two files in split panes"> | <img src="docs/assets/terminal.png" alt="The terminal drawer running git log under the editor"> |
-| **Project-wide regex replace, previewed** | **Ideator: round-table sessions** |
-| <img src="docs/assets/replace.png" alt="Preview of a regex replace across files"> | <img src="docs/assets/ideator.png" alt="An ideation session card with its mode, moderator and crew"> |
-| **Settings, grouped** | **Help that follows you** |
-| <img src="docs/assets/settings.png" alt="Settings grouped into appearance, editor, scopes and conventions"> | <img src="docs/assets/help.png" alt="Searchable keyboard help over the board"> |
-| **Narrow terminals get the full UI** | |
-| <img src="docs/assets/narrow.png" alt="The workspace at 72 columns"> | |
+Recorded from the real app with [VHS](https://github.com/charmbracelet/vhs) (`make record`).
+
+**Every view.** The Editor opens first. Then the Workspace board and inbox, and the Reviewer's diff.
+
+<img src="docs/assets/recordings/views.gif" alt="A tour of DHI's views: a file open in the Editor, the Workspace board with cards in each lane, the inbox, and the Reviewer listing changed files on a feature branch" width="100%">
+
+**The Editor.** Vim-style editing, split panes, find-a-file and a real terminal, one tab per repo.
+
+<img src="docs/assets/recordings/editor.gif" alt="Editing main.go in insert mode, splitting the pane, opening the README with find-a-file, and running git log in the terminal drawer" width="100%">
+
+**Settings, live.** The theme changes as you cycle it; values save for this workspace or everywhere.
+
+<img src="docs/assets/recordings/settings.gif" alt="Settings: cycling the theme from dhi-dusk through dhi-dawn and high contrast, turning on reduced motion, and typing a new tab width" width="100%">
+
+MP4 versions: [onboarding](docs/assets/recordings/onboarding.mp4) · [views](docs/assets/recordings/views.mp4) ·
+[editor](docs/assets/recordings/editor.mp4) · [settings](docs/assets/recordings/settings.mp4).
 
 ## Install
 

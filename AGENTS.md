@@ -41,4 +41,5 @@ make test            # all tests
 make verify          # fmt check + vet + build + race tests
 DHI_UPDATE_GOLDENS=1 make test   # regenerate snapshots
 go run ./cmd/dhi     # launch IDE locally
+make record          # README recordings (VHS); scripts/record.sh <flow> for one
 ```
