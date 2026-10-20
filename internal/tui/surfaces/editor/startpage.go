@@ -198,12 +198,11 @@ func (m *Model) startClick(x, y int) bool {
 // the hero, then the checklist whose first item creates one.
 func (m *Model) noWorkspaceStart() string {
 	page := m.startPage(m.width - 4)
-	lines := page
 	hero := []string{}
 	if m.width >= 40 && m.height >= len(page)+8 {
 		hero = append(strings.Split(branding.HeroBlock(m.version), "\n"), "")
 	}
-	lines = append(hero, page...)
+	lines := append(hero, page...)
 	top, left := m.centerOffsets(lines, m.width, m.height)
 	m.startOX, m.startOY = left, top+len(hero)
 	return kit.Center(strings.Join(lines, "\n"), m.width, m.height)

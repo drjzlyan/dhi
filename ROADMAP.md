@@ -1104,6 +1104,6 @@ Plan: `~/.claude/plans/hidden-cooking-dove.md`. Branch `m34-ux`, one commit per 
 - [x] P3 Editor is view 1, start page, alt+N view switch, welcome card retired (F-097)
 - [x] P4 Setup checklist: no wizard gate, per-step runs, `setup N/M` pill (F-098)
 - [x] P5 Interactive steps: why + estimate, list editors, live previews, cards (F-098)
-- [ ] P6 Tagged prompt sections, operating rules, finish contract (eval-gated), `● N working` (F-099)
-- [ ] P7 Live tmux runs, themes × widths, docs
-- [ ] P8 VHS recordings of real flows replace README screenshots (F-100)
+- [x] P6 Tagged prompt sections, operating rules, finish contract (eval-gated), `● N working` (F-099)
+- [x] P7 Live tmux runs, themes × widths, docs
+- [x] P8 VHS recordings of real flows replace README screenshots (F-100)

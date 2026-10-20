@@ -33,19 +33,19 @@
     does not add a pill.
   - Status-row clicks and palette commands must drain `queuedGate` (`takeQueuedGate`).
   - Goldens are ANSI-stripped, so palette changes don't touch them; glyph and text changes do.
-- Done since: P5 (07d93bd), P6a tags + numbered rules (579e4ac), P6b approval consequences + busy
-  badge (4779cc2). Finish contract is on branch `m34-finish` (cff82fc), NOT merged: merge only if
-  its live eval doesn't regress. Eval baseline (main, scratchpad eval-base.jsonl): 8/8 ok, DHI arm
-  $2.01 total. The tags eval (579e4ac, eval-tags.jsonl) was running when the session hit the usage
-  limit. Rerun it if the file is missing: `DHI_EVAL=1 DHI_EVAL_OUT=… go test -run TestLive
-  ./internal/evals` in a worktree. Then run the same for m34-finish, compare, and record the numbers in F-099.
-- P8 scaffolding committed but never run: scripts/record.sh, scripts/tapes/*.tape, `demo -fresh`.
-  VHS is installed. Next: run `scripts/record.sh onboarding` with DHI_REC_OUT set to a temp dir and
-  check the .txt captures. The settings tape's `j` count to the theme row is a guess. Then replace
-  the README PNG grid with the GIFs and add `make record`. P7 live checks are still open.
-  Clean up the scratchpad worktrees (`git worktree prune`).
-- Old next: P5 (interactive steps; the workspace picker copy still says "ctrl+p → Run setup wizard").
-  Then P6: take the `make eval` baseline from 3a5e55b in a worktree before touching `clirun.go`, and
+- Done since: P5 (07d93bd); P6 tags + numbered rules (579e4ac), approval consequences + busy badge
+  (4779cc2), finish contract merged after the live evals (F-099 has the table: 8/8 each, cost within
+  noise); P7 live checks (dawn 72×30, high contrast 120×36, every shot); P8 recordings in
+  docs/assets/recordings plus `make record`. The README PNGs are gone.
+- Found live and fixed: plain text took the terminal's default fg (unreadable with dhi-dawn on a
+  dark terminal). The shell now sets OSC 10 and restyles every line with theme Text
+  (`App.View`); settings rows also restyle their values.
+- Gotchas:
+  - VHS: quote `Output` paths; there is no `Alt+<digit>`, so tapes use esc + digit.
+  - record.sh runs vhs in $WORK, so DHI_REC_OUT is made absolute.
+  - `DHI_REC_KEEP=1` keeps the work dir, including the per-flow .txt captures.
+  - In zsh, `set -- $spec` does not split, so pass shot arguments explicitly.
+- Branch `m34-ux` is complete: verify, lint and goldens are green. Not pushed, no PR, no release.
   subtract tag overhead from the budget. P7 live checks. P8 VHS: use a demo identity, check that no
   real name or CLI list leaks, and copy screenshots.sh's neutral rc files and XDG_DATA_HOME.
 

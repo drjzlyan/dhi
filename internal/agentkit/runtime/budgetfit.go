@@ -140,10 +140,9 @@ func joinTagged(secs []section) string {
 			continue
 		}
 		tag := tagOf(s.name)
-		switch {
-		case tag == open:
+		if tag == open {
 			b.WriteString("\n")
-		default:
+		} else {
 			if open != "" {
 				b.WriteString("\n</" + open + ">\n\n")
 			}
