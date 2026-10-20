@@ -6,15 +6,15 @@
   BRAIN         ▏                                                                         
   PROPOSALS     ▏                                                                         
   LIBRARY       ▏  ╭─ add employees by role ─────────────────────────╮                    
-  team ──────── ▏  │ into       [a new team per lead]                │                    
-▌ TEAMS         ▏  │ leads      [2]                                  │                    
-  PACKS         ▏  │ fullstack ▌[3]                                  │                    
-  STANDARDS     ▏  │ frontend   [0]                                  │                    
-  CONVENTIONS   ▏  │ backend    [0]                                  │                    
-  automation ── ▏  │ testers    [0]                                  │                    
-  WORKFLOWS     ▏  │ PMs        [0]                                  │                    
-  AUTOPILOTS    ▏  │ designers  [0]                                  │                    
-  extend ────── ▏  │ devops     [0]                                  │                    
+  team ──────── ▏  │ into      ▎‹a new team per lead›                │                    
+▌ TEAMS         ▏  │ leads     ▎‹2›                                  │                    
+  PACKS         ▏  │ fullstack ▎‹3›                                  │                    
+  STANDARDS     ▏  │ frontend  ▎‹0›                                  │                    
+  CONVENTIONS   ▏  │ backend   ▎‹0›                                  │                    
+  automation ── ▏  │ testers   ▎‹0›                                  │                    
+  WORKFLOWS     ▏  │ PMs       ▎‹0›                                  │                    
+  AUTOPILOTS    ▏  │ designers ▎‹0›                                  │                    
+  extend ────── ▏  │ devops    ▎‹0›                                  │                    
   MARKETPLACE   ▏  │ tab field · ←/→ cycle · enter save · esc cancel │                    
   SECRETS       ▏  ╰─────────────────────────────────────────────────╯                    
                 ▏                                                                         

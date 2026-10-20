@@ -1099,8 +1099,8 @@ Plan: `~/.claude/plans/unified-jingling-treasure.md`. Branch `m33-ux` (from `mai
 
 Plan: `~/.claude/plans/hidden-cooking-dove.md`. Branch `m34-ux`, one commit per phase. ADR-0041, F-095–F-100.
 
-- [ ] P1 Brand identity (dhi-dusk / dhi-dawn / high-contrast), component roles, same colors in every view (F-095)
-- [ ] P2 kit components: Button, Input, Toggle/Checkbox/Radio, Badge, Card, Checklist; Form/Modal migrate (F-096)
+- [x] P1 Brand identity (dhi-dusk / dhi-dawn / high-contrast), component roles, same colors in every view (F-095)
+- [x] P2 kit components: Button, Input, Toggle/Checkbox/Radio, Badge, Card, Checklist; Form/Modal migrate (F-096)
 - [ ] P3 Editor is view 1, start page, alt+N view switch, welcome card retired (F-097)
 - [ ] P4 Setup checklist: no wizard gate, per-step runs, `setup N/M` pill (F-098)
 - [ ] P5 Interactive steps: why + estimate, list editors, live previews, cards (F-098)

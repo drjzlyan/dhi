@@ -13,12 +13,12 @@
           │ How should your team's work look?                                            │
           │ ←/→ cycles · leave co-author and copyright empty to keep them off.           │
           │                                                                              │
-          │ commits   ▌[conventional]                                                    │
-          │ branch     [task/{slug}]                                                     │
-          │ co-author                                                                    │
-          │ copyright                                                                    │
-          │ license                                                                      │
-          │ template   [detected]                                                        │
+          │ commits   ▎‹conventional›                                                    │
+          │ branch    ▎‹task/{slug}›                                                     │
+          │ co-author ▎                                                                  │
+          │ copyright ▎                                                                  │
+          │ license   ▎                                                                  │
+          │ template  ▎‹detected›                                                        │
           │                                                                              │
           │ ✓ learned from your repo                                                     │
           │   5 of 5 recent commits use Conventional Commits                             │

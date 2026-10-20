@@ -69,10 +69,13 @@ func inboxPreview(it inbox.Item, w int) []string {
 }
 
 // approvalButtons are the decisions an approval preview offers as
-// clickable buttons — the same keys the row answers to (F-087).
+// clickable buttons — the same keys the row answers to (F-087). Yes is
+// the primary action, the wider grants secondary, no the danger one
+// (F-096).
 var approvalButtons = []kit.Button{
-	{Key: "y", Label: "yes"}, {Key: "o", Label: "once"}, {Key: "a", Label: "always here"},
-	{Key: "g", Label: "everywhere"}, {Key: "n", Label: "no"},
+	{Key: "y", Label: "yes", Focused: true}, {Key: "o", Label: "once", Variant: theme.ButtonSecondary},
+	{Key: "a", Label: "always here", Variant: theme.ButtonSecondary},
+	{Key: "g", Label: "everywhere", Variant: theme.ButtonSecondary}, {Key: "n", Label: "no", Variant: theme.ButtonDanger},
 }
 
 // inboxActionHint names what enter does for the selected item, as the

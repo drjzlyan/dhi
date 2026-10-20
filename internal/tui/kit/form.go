@@ -275,42 +275,24 @@ func (f *Form) cycleCur(dir int) {
 	fl.sel = (fl.sel + dir + len(fl.Toggle)) % len(fl.Toggle)
 }
 
-// View renders the form body lines (without the modal box): label,
-// value rows with the active-field cursor, then the hint line.
-// Focus is visible: only the active field renders on the accent
-// style; inactive fields are dim (F-026 P1d).
-func (f *Form) View() []string {
-	hint := theme.Hint().Render("tab field · ←/→ cycle · enter save · esc cancel")
-	if f.Busy {
-		return []string{theme.WarningText().Render(theme.GlyphBusy + " working…"), hint}
+// formMinWell is the narrowest input well View draws when it has no
+// width to fill, so a short value still reads as a field.
+const formMinWell = 28
+
+// View renders the form body lines (without the modal box): label, an
+// input well per field with the cursor in the active one, then the hint
+// line. Focus is visible: the active field's edge takes the focus color
+// (F-096); every row stays one row high so dialog geometry is unchanged.
+func (f *Form) View() []string { return f.rows(f.naturalWidth(), 0) }
+
+// naturalWidth is the row width View uses: the label column plus a well
+// that holds the longest value (never narrower than formMinWell).
+func (f *Form) naturalWidth() int {
+	well := formMinWell
+	for _, fl := range f.Fields {
+		well = max(well, runeWidth(fl.masked().Value)+3)
 	}
-	out := make([]string, 0, len(f.Fields)*2+2)
-	for i, fl := range f.Fields {
-		label := theme.TextDim().Render(padTo(fl.Label, 10))
-		mark := " "
-		if i == f.cur {
-			mark = theme.GlyphCursor
-		}
-		var val string
-		active := i == f.cur
-		if len(fl.Toggle) > 0 {
-			val = mark + "[" + fl.Toggle[fl.sel] + "]"
-		} else if active {
-			val = " " + fl.masked().CursorValue() // same column as inactive values
-		} else {
-			val = " " + fl.masked().Value
-		}
-		if active {
-			out = append(out, label+theme.TabActive().Render(val))
-		} else {
-			out = append(out, label+theme.TextDim().Render(val))
-		}
-	}
-	if f.Err != "" {
-		out = append(out, theme.DangerText().Render(theme.GlyphCross+" "+f.Err))
-	}
-	out = append(out, hint)
-	return out
+	return 10 + well
 }
 
 // ViewWidth renders the form like View but fits every row in w cells:
@@ -320,45 +302,46 @@ func (f *Form) ViewWidth(w int) []string {
 	if w <= 0 || f.Busy {
 		return f.View()
 	}
+	return f.rows(min(w, f.naturalWidth()), w)
+}
+
+// rows draws the fields w cells wide; clipW > 0 clips the hint and error
+// lines to it (they are not bound by the well width).
+func (f *Form) rows(w, clipW int) []string {
+	const hintText = "tab field · ←/→ cycle · enter save · esc cancel"
+	hint := hintText
+	if clipW > 0 {
+		hint = ClipEllipsis(hintText, clipW)
+	}
+	if f.Busy {
+		return []string{theme.WarningText().Render(theme.GlyphBusy + " working…"), theme.Hint().Render(hint)}
+	}
 	const labelW = 10
-	avail := max(w-labelW-1, 8)
+	well := max(w-labelW, 8)
 	out := make([]string, 0, len(f.Fields)+2)
 	for i, fl := range f.Fields {
-		label := theme.TextDim().Render(padTo(fl.Label, labelW))
 		active := i == f.cur
-		mark := " "
+		labelSt := theme.TextDim()
 		if active {
-			mark = theme.GlyphCursor
+			labelSt = theme.TextStyle()
 		}
-		var val string
-		switch {
-		case len(fl.Toggle) > 0:
-			val = ClipEllipsis(mark+"["+fl.Toggle[fl.sel]+"]", avail)
-		case !active:
-			val = ClipEllipsis(" "+fl.masked().Value, avail)
-		default:
-			rs, cur := []rune(fl.masked().Value), fl.Cur()
-			start := 0
-			if cur >= avail-2 {
-				start = cur - avail + 3
-			}
-			end := min(len(rs), start+avail-2)
-			val = string(rs[start:cur]) + theme.GlyphCursor + string(rs[cur:max(cur, end)])
-			if start > 0 {
-				val = "…" + val
-			} else {
-				val = " " + val // same column as inactive values (F-093)
-			}
-			val = ClipEllipsis(val, avail)
+		label := labelSt.Render(padTo(fl.Label, labelW))
+		if len(fl.Toggle) > 0 {
+			out = append(out, label+theme.InputEdge(active).Render(theme.GlyphGutterBar)+Toggle(fl.Toggle[fl.sel], active))
+			continue
 		}
+		cur := -1
 		if active {
-			out = append(out, label+theme.TabActive().Render(val))
-		} else {
-			out = append(out, label+theme.TextDim().Render(val))
+			cur = fl.Cur()
 		}
+		out = append(out, label+inputRow(fl.masked().Value, "", cur, active, well))
 	}
 	if f.Err != "" {
-		out = append(out, theme.DangerText().Render(ClipEllipsis(theme.GlyphCross+" "+f.Err, w)))
+		errLine := theme.GlyphCross + " " + f.Err
+		if clipW > 0 {
+			errLine = ClipEllipsis(errLine, clipW)
+		}
+		out = append(out, theme.DangerText().Render(errLine))
 	}
-	return append(out, theme.Hint().Render(ClipEllipsis("tab field · ←/→ cycle · enter save · esc cancel", w)))
+	return append(out, theme.Hint().Render(hint))
 }

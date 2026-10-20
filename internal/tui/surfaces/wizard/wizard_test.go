@@ -599,7 +599,7 @@ func TestDefaultEngineFollowsPreferenceNotAlphabet(t *testing.T) {
 		return map[string]string{"antigravity": "1", "codex": "1", "claude": "1", "zed-agent": "1"}
 	}
 	m := f.toTeam(t)
-	if v := plain(m); !strings.Contains(v, "[claude]") ||
+	if v := plain(m); !strings.Contains(v, "‹claude›") ||
 		!strings.Contains(v, "coding CLIs found: claude, codex, antigravity, zed-agent") {
 		t.Fatalf("default engine must be claude, in preference order:\n%s", v)
 	}
@@ -1182,7 +1182,7 @@ func TestTeamStepStartsFromTheEngineTheCLIStepChose(t *testing.T) {
 	if m.steps[m.idx].ID() != "team" || f.env.Engine != "cli:codex" {
 		t.Fatalf("step=%s engine=%q", m.steps[m.idx].ID(), f.env.Engine)
 	}
-	if !strings.Contains(plain(m), "[codex]") {
+	if !strings.Contains(plain(m), "‹codex›") {
 		t.Fatalf("team step must preselect the engine already chosen:\n%s", plain(m))
 	}
 }
@@ -1307,7 +1307,7 @@ func TestConventionsStepPreselectsWhatWasLearned(t *testing.T) {
 	m := f.wizard()
 	key(m, "enter", "enter") // welcome, identity
 	v := plain(m)
-	if !strings.Contains(v, "learned from your repo") || !strings.Contains(v, "[conventional]") || !strings.Contains(v, "[detected]") {
+	if !strings.Contains(v, "learned from your repo") || !strings.Contains(v, "‹conventional›") || !strings.Contains(v, "‹detected›") {
 		t.Fatalf("detection not shown:\n%s", v)
 	}
 	golden.Snapshot(t, "wizard_conventions_learned", v)
@@ -1326,7 +1326,7 @@ func TestConventionsStepTemplateSyncsTheFields(t *testing.T) {
 	}
 	key(m, "right", "right", "right") // current → default → feature → ticket
 	v := plain(m)
-	if !strings.Contains(v, "[ticket]") || !strings.Contains(v, "{ticket}/{slug}") {
+	if !strings.Contains(v, "‹ticket›") || !strings.Contains(v, "{ticket}/{slug}") {
 		t.Fatalf("template did not sync the fields:\n%s", v)
 	}
 	key(m, "enter")

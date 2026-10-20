@@ -62,58 +62,59 @@ func main() {
 		txt("Muted hint", t.TextMuted) + theme.Link().Background(t.BgPanel).Render("api/main.go"))
 
 	head("buttons")
-	btn := func(v theme.ButtonVariant, key, label string, focused, disabled bool) string {
-		return theme.ButtonKeyOn(v, focused, disabled).Render(" "+key) +
-			theme.Button(v, focused, disabled).Render(" "+label+" ") + bg.Render("  ")
+	bl, _ := kit.Buttons([]kit.Button{{Key: "⏎", Label: "Continue", Focused: true},
+		{Key: "e", Label: "Edit", Variant: theme.ButtonSecondary}, {Key: "s", Label: "Skip", Variant: theme.ButtonGhost},
+		{Key: "d", Label: "Delete", Variant: theme.ButtonDanger}, {Key: "i", Label: "Install", Disabled: true}}, w-2)
+	for _, l := range bl {
+		add(bg.Render(" ") + l)
 	}
-	add(bg.Render(" ") + btn(theme.ButtonPrimary, "⏎", "Continue", true, false) +
-		btn(theme.ButtonSecondary, "e", "Edit", false, false) +
-		btn(theme.ButtonGhost, "s", "Skip", false, false) +
-		btn(theme.ButtonDanger, "d", "Delete", false, false) +
-		btn(theme.ButtonPrimary, "i", "Install", false, true))
 
-	head("inputs")
-	input := func(label, value string, focused bool) string {
-		lab := theme.TextDim().Background(t.BgPanel).Render(fmt.Sprintf(" %-10s", label))
-		edge := theme.InputEdge(focused).Render("▎")
-		body := theme.Input().Render(" " + value)
-		if value == "" {
-			body = theme.Placeholder().Render(" you@example.com")
+	head("inputs and controls")
+	who := kit.NewInput("Ada Lovelace", "")
+	who.Focused = true
+	email := kit.Input{Placeholder: "you@example.com", Help: "Used as the author of every commit you make."}
+	label := func(s string) string { return theme.TextDim().Background(t.BgPanel).Render(fmt.Sprintf(" %-10s", s)) }
+	add(label("name") + who.View(40)[0])
+	for i, l := range email.View(40) {
+		lab := label("")
+		if i == 0 {
+			lab = label("email")
 		}
-		pad := theme.Input().Render(strings.Repeat(" ", 36-lipgloss.Width(body)))
-		return lab + edge + body + pad
+		add(lab + l)
 	}
-	add(input("name", "Ada Lovelace", true))
-	add(input("email", "", false))
+	add(bg.Render(" ") + kit.Checkbox("Co-author trailer", true, false) + bg.Render("   ") +
+		kit.Checkbox("Copyright header", false, false) + bg.Render("   ") + kit.Radio("squad", true, true) +
+		bg.Render("  ") + kit.Radio("solo", false, false) + bg.Render("   ") + kit.Toggle("conventional", true))
+	add(bg.Render(" ") + kit.Badge(theme.BadgeOK, "installed") + bg.Render(" ") + kit.Badge(theme.BadgeWarn, "update") +
+		bg.Render(" ") + kit.Badge(theme.BadgeError, "missing") + bg.Render(" ") + kit.Badge(theme.BadgeInfo, "optional") +
+		bg.Render(" ") + kit.Badge(theme.BadgeBusy, "working") + bg.Render(" ") + kit.Badge(theme.BadgeNeutral, "later") +
+		bg.Render(" ") + theme.AttentionPill().Render(" ◆ 2 waiting "))
 
-	head("toggles and badges")
-	add(bg.Render(" ") + theme.SuccessText().Background(t.BgPanel).Render("✓") +
-		theme.TextStyle().Background(t.BgPanel).Render(" Co-author trailer   ") +
-		theme.TextMuted().Background(t.BgPanel).Render("○") +
-		theme.TextStyle().Background(t.BgPanel).Render(" Copyright header   ") +
-		theme.AccentText().Background(t.BgPanel).Render("●") +
-		theme.TextStyle().Background(t.BgPanel).Render(" squad  ") +
-		theme.TextMuted().Background(t.BgPanel).Render("○") +
-		theme.TextStyle().Background(t.BgPanel).Render(" solo"))
-	badge := func(k theme.BadgeKind, s string) string { return theme.Badge(k).Render(" "+s+" ") + bg.Render(" ") }
-	add(bg.Render(" ") + badge(theme.BadgeOK, "✓ installed") + badge(theme.BadgeWarn, "! update") +
-		badge(theme.BadgeError, "✗ missing") + badge(theme.BadgeInfo, "i optional") +
-		badge(theme.BadgeBusy, "● working") + badge(theme.BadgeNeutral, "· later") +
-		theme.AttentionPill().Render(" ◆ 2 waiting "))
-
-	head("cards")
-	card := func(selected bool, title, body string) {
-		cw := 44
-		stripe := theme.CardStripe(selected).Render("▌")
-		fill := func(s string, st lipgloss.Style) string {
-			return st.Render(s + strings.Repeat(" ", max(0, cw-lipgloss.Width(s))))
+	head("cards and checklist")
+	c1, _ := kit.Card{Title: "Git identity", Body: "Commits are signed with this name and email.", Selected: true,
+		Buttons: []kit.Button{{Key: "⏎", Label: "Use it", Focused: true}, {Key: "e", Label: "Change", Variant: theme.ButtonGhost}}}.View(46)
+	c2, _ := kit.Card{Title: "Coding CLI", Body: "claude 2.1 found · codex not installed", Badge: "ready", BadgeKind: theme.BadgeOK}.View(46)
+	for i := 0; i < max(len(c1), len(c2)); i++ {
+		l, r := "", ""
+		if i < len(c1) {
+			l = c1[i]
+		} else {
+			l = bg.Render(strings.Repeat(" ", 46))
 		}
-		add(bg.Render(" ") + stripe + fill(" "+title, theme.CardTitle(selected)))
-		add(bg.Render(" ") + stripe + fill(" "+body, theme.CardText()))
+		if i < len(c2) {
+			r = c2[i]
+		}
+		add(bg.Render(" ") + l + bg.Render("  ") + r)
 	}
-	card(true, "Git identity", "Commits are signed with this name and email.")
 	add("")
-	card(false, "Coding CLI", "claude 2.1 found · codex not installed")
+	for _, l := range (kit.Checklist{Focus: true, Cursor: 1, Items: []kit.ChecklistItem{
+		{Title: "Git identity", Why: "sign your commits", State: kit.ItemDone},
+		{Title: "Create a workspace", Why: "group the repos you work on"},
+		{Title: "Pick a team", Why: "agents that take tasks"},
+		{Title: "Integrations", Why: "connect GitHub", State: kit.ItemSkipped},
+	}}).View(70) {
+		add(bg.Render(" ") + l)
+	}
 
 	head("tabs and status")
 	tabs := theme.Brand().Render(" ◆ dhi ") + theme.TabCurrent().Render(" 1 Editor ") +

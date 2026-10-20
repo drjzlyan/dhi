@@ -548,7 +548,7 @@ func TestInboxApprovalButtonsAnswer(t *testing.T) {
 	if _, hints := m.Hints(); strings.Contains(strings.Join(hints, " "), "y yes") {
 		t.Fatalf("decision keys repeated on the status row: %v", hints)
 	}
-	x, y := findOnScreen(t, view, " n  no")
+	x, y := findOnScreen(t, view, " n no ")
 	if !m.Click(x+1, y) {
 		t.Fatal("click on the no button was not handled")
 	}

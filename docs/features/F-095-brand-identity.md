@@ -1,6 +1,6 @@
 # F-095 — One DHI brand identity with component roles
 
-Status: in progress (session 60, M34 P1) · ADR-0041
+Status: done (session 60, M34 P1) · ADR-0041
 
 ## Why
 The cyan/violet palette gave each view its own hue, and two views borrowed semantic colors for it
@@ -19,12 +19,12 @@ every view, where each kind of component has its own color.
   fade-in.
 
 ## Acceptance
-- [ ] Contrast: every text role ≥ 4.5:1 on the surfaces it sits on; button/tab foregrounds on their
+- [x] Contrast: every text role ≥ 4.5:1 on the surfaces it sits on; button/tab foregrounds on their
       fills; input text and placeholder on InputBg (`contrast_test.go`).
-- [ ] Distinctness: {Primary, Secondary, Success, Warning, Danger} pairwise ΔE above the test's
+- [x] Distinctness: {Primary, Secondary, Success, Warning, Danger} pairwise ΔE above the test's
       threshold, in each theme.
-- [ ] 256-color shade ladder still distinct.
-- [ ] No raw `lipgloss.Color(` in kit, app, surfaces or branding.
-- [ ] Old theme names load; the Settings row shows the new name.
-- [ ] Every view's focus color is the same (replaces `TestSurfaceAccentsIdentifyViews`).
-- [ ] Palette/component preview reviewed by the user (checkpoint).
+- [x] 256-color shade ladder still distinct.
+- [x] No raw `lipgloss.Color(` in kit, app, surfaces or branding.
+- [x] Old theme names load; the Settings row shows the new name.
+- [x] Every view's focus color is the same (replaces `TestSurfaceAccentsIdentifyViews`).
+- [x] Palette/component preview reviewed by the user (checkpoint).

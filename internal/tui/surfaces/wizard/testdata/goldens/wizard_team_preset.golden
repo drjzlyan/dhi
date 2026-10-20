@@ -15,8 +15,8 @@
           │ Pick how many of each role you want, or a ready-made team. Change it any     │
           │ time in Settings → TEAMS.                                                    │
           │                                                                              │
-          │ team      ▌[squad]                                                           │
-          │ engine     [claude]                                                          │
+          │ team      ▎‹squad›                                                           │
+          │ engine    ▎‹claude›                                                          │
           │ coding CLIs found: claude, opencode — ←/→ picks the default engine           │
           │                                                                              │
           │ Squad                                                                        │
