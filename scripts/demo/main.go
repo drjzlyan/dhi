@@ -5,6 +5,7 @@
 // DHI's own stores, so the TUI shows real data, not mock-ups.
 //
 //	go run ./scripts/demo <dir>
+//	go run ./scripts/demo -fresh <dir>   # repos only: onboarding starts from zero
 //
 // The hermetic git from the DHI toolchain makes the commits and the
 // review worktree; run `dhi` once first so the toolchain is installed.
@@ -32,17 +33,24 @@ import (
 )
 
 func main() {
-	if len(os.Args) != 2 {
-		fmt.Fprintln(os.Stderr, "usage: go run ./scripts/demo <dir>")
+	args := os.Args[1:]
+	fresh := len(args) == 2 && args[0] == "-fresh"
+	if fresh {
+		args = args[1:]
+	}
+	if len(args) != 1 {
+		fmt.Fprintln(os.Stderr, "usage: go run ./scripts/demo [-fresh] <dir>")
 		os.Exit(2)
 	}
-	if err := seed(os.Args[1]); err != nil {
+	if err := seed(args[0], fresh); err != nil {
 		fmt.Fprintln(os.Stderr, "demo:", err)
 		os.Exit(1)
 	}
 }
 
-func seed(root string) error {
+// seed builds the demo under root; fresh stops after the member repos
+// (no workspace, no .dhi/), for recording onboarding from zero (F-100).
+func seed(root string, fresh bool) error {
 	ctx := context.Background()
 	if _, err := os.Stat(root); err == nil {
 		return fmt.Errorf("%s exists; pick a fresh directory", root)
@@ -104,6 +112,10 @@ func seed(root string) error {
 		if err := run(api, args...); err != nil {
 			return err
 		}
+	}
+
+	if fresh {
+		return nil
 	}
 
 	// The workspace and its setup state (so the wizard does not auto-run).
