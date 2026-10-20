@@ -273,6 +273,7 @@ func (b *Buffer) Undo() bool {
 	snap := b.undo[len(b.undo)-1]
 	b.undo = b.undo[:len(b.undo)-1]
 	b.redo = append(b.redo, snapshot{lines: append([]string(nil), b.lines...), cursor: b.cursor, dirty: b.dirty})
+	b.seq++ // the text changed: render caches keyed on seq must re-lex
 	b.lines = snap.lines
 	b.cursor = snap.cursor
 	b.dirty = snap.dirty
@@ -288,6 +289,7 @@ func (b *Buffer) Redo() bool {
 	snap := b.redo[len(b.redo)-1]
 	b.redo = b.redo[:len(b.redo)-1]
 	b.undo = append(b.undo, snapshot{lines: append([]string(nil), b.lines...), cursor: b.cursor, dirty: b.dirty})
+	b.seq++
 	b.lines = snap.lines
 	b.cursor = snap.cursor
 	b.dirty = snap.dirty

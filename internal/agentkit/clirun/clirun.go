@@ -22,6 +22,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -283,21 +284,30 @@ func (r *Registry) Names() []string {
 // ("" = not detected). A probe that fails or times out counts as not
 // detected — the doctor row names it, nothing is guessed (ADR-0011).
 func (r *Registry) Detect() map[string]string {
-	out := map[string]string{}
-	for _, c := range r.All() {
+	// Each CLI answers --version on its own; asking them all at once makes
+	// detection as slow as the slowest one, not their sum (~2.5s live).
+	all := r.All()
+	vers := make([]string, len(all))
+	var wg sync.WaitGroup
+	for i, c := range all {
 		path, err := r.look(c.Bin)
 		if err != nil {
-			out[c.Name] = ""
 			continue
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		v, verr := c.Version(ctx, path)
-		cancel()
-		if verr != nil {
-			out[c.Name] = ""
-			continue
-		}
-		out[c.Name] = v
+		wg.Add(1)
+		go func(i int, c *CLI, path string) {
+			defer wg.Done()
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			if v, err := c.Version(ctx, path); err == nil {
+				vers[i] = v
+			}
+		}(i, c, path)
+	}
+	wg.Wait()
+	out := make(map[string]string, len(all))
+	for i, c := range all {
+		out[c.Name] = vers[i]
 	}
 	return out
 }

@@ -1518,7 +1518,7 @@ func (m *Model) sectionHints() []string {
 	var sec []string
 	switch m.sec {
 	case secConfig:
-		sec = []string{"enter/l change", "h back", "e type a value", m.scopeHint()}
+		sec = []string{"enter change", "h/l cycle", "e type a value", m.scopeHint()}
 	case secAgents:
 		sec = []string{"n new", "e edit", "a archive", "x delete", "v profile"}
 		if m.selectedHasGrants() {

@@ -221,7 +221,9 @@ func (s *teamStep) View(w, f int) []string {
 		out = append(out, "", warn("No coding CLI found on your PATH."),
 			dim("Employees will wait until you install one and pick it in Settings."))
 	} else {
-		out = append(out, dim("coding CLIs found: "+strings.Join(s.engines, ", ")+" — ←/→ picks the default engine"))
+		for _, l := range kit.WrapWords("coding CLIs found: "+strings.Join(s.engines, ", ")+" — ←/→ picks the default engine", w) {
+			out = append(out, dim(l)) // many CLIs wrap instead of clipping
+		}
 	}
 	if s.isCustom() {
 		return append(out, s.customPreview()...)

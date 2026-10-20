@@ -1,5 +1,27 @@
 # STATE — current position
 
+### Session 59 (M31 live checks, on `main`)
+
+- Closed the last M31 item, both checks run live in tmux. Identity write: a sandboxed HOME with no
+  `.gitconfig` got the confirmed name and email. Lead interview: Settings → PROJECT → `i` → atlas
+  in #atlas-team → three `project_update` proposals → `y` wrote each field. Real Claude CLI with
+  the user's HOME; only DHI's config (XDG_CONFIG_HOME) was sandboxed. Details in F-080/F-083 "Live".
+- Fixed from the live runs:
+  - `textbuf.Undo/Redo` now bump `seq`. The syntax highlighter and git gutter cache on it, so the
+    editor kept showing the pre-undo lines; the buffer itself was correct.
+  - The PROPOSALS dialog wraps long values (`SettingProposal.lines(w)`, `displayText()`).
+  - Proposal mentions trim the rationale's own period (`sentence`).
+  - The Settings CONFIG hint "h back" is now "h/l cycle": `h` steps the value back, it does not go
+    back to the rail. Sections switch with `[`/`]`.
+  - `clirun.Registry.Detect` runs the version checks in parallel (about 2.5s before). The setup
+    env caches the result for the CLI and team steps and drops the cache after an install.
+  - The team step wraps the "coding CLIs found" line.
+- Gotchas found driving the UI: `1`–`5` don't switch views from the editor (normal mode keeps
+  them), so use ctrl+p → "Go to Workspace". In the chat pane, `tab` toggles rail focus only when
+  the pane is wide enough, otherwise the shell cycles views; `,`/`.` switch channels.
+- "◆ N waiting" counts unread @mentions too, so it stays after proposals are approved until the
+  channel is read. That is the intended behaviour, not a bug.
+
 ### Session 58 (onboarding hardening, F-094, on `main`, uncommitted)
 
 - User asked that skipped setup steps never break onboarding, and that the workspace step let them

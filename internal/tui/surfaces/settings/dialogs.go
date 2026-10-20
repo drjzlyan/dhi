@@ -78,10 +78,17 @@ func (m *Model) openDisplayDialog(title string, lines []string) {
 	// Display dialogs scroll: profiles and last-run dumps overflow any
 	// fixed height (F-026 P6 — silent 24-line truncation dies).
 	m.dlg = &kit.Modal{Title: title, Lines: lines, Scrollable: true,
-		Height: minInt(m.height-6, 30), Width: maxInt(m.width/2, 46)}
+		Height: minInt(m.height-6, 30), Width: m.displayWidth()}
 	m.dkind = dlgDisplay
 	m.dtarget = ""
 }
+
+// displayWidth is a display dialog's box width.
+func (m *Model) displayWidth() int { return maxInt(m.width/2, 46) }
+
+// displayText is the text width inside a display dialog: the box less its
+// edges, padding and the scroll track.
+func (m *Model) displayText() int { return m.displayWidth() - 2*theme.Current.PadX - 3 }
 
 func minInt(a, b int) int {
 	if a < b {

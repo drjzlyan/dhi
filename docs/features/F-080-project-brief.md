@@ -51,3 +51,21 @@ it in chat, and nothing carried it to every employee.
 - [x] Settings PROJECT: draft, edit, malformed named, interview posts to the lead; goldens
 - [x] project_update proposes without touching the brief; PROPOSALS applies one field
 - [x] doctor project/brief
+
+## Live (session 59)
+Run in tmux with a sandboxed DHI config, real Claude CLI, and a two-file Go
+repo. Settings → PROJECT → `i` posted the request to #atlas-team. Atlas read
+the brief and the repo, then asked four grounded questions. Atlas also spotted
+that the branch was `master` while the tooling expects `main`, and that the
+module path looked like a placeholder. The user answered all four in one
+message. Atlas called `project_update` three times and summarised the changes.
+PROPOSALS showed each change, and `y` wrote only that field to
+`project.toml`.
+
+Fixed along the way:
+- **Proposal dialog clipped long text.** The proposed text ended in "…", so
+  the user could not read all of what they were approving. It now wraps to
+  the dialog width (`SettingProposal.lines(w)`).
+- **Double period in the mention.** The agent's rationale ended with a
+  period and the template added another (`… go install.. Review`). The
+  rationale's own period is now trimmed.

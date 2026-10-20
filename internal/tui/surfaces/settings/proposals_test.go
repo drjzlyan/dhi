@@ -146,3 +146,22 @@ func TestProjectProposalUpdatesTheBrief(t *testing.T) {
 		t.Fatalf("brief %+v flash %q", b, m.flash)
 	}
 }
+
+// A long proposal wraps in the dialog: you read every word you approve
+// (live, session 59: the interview's goals were cut off with "…").
+func TestProjectProposalDialogWrapsLongText(t *testing.T) {
+	m, _ := proposalsSurface(t)
+	ws := m.d.WS.Root
+	m.d.SetProps = setprop.Open(ws)
+	long := "v1 accepts many files and directories as arguments and prints a word count for each file plus a grand total, skipping fenced code blocks, front matter and link URLs; the last word is ZEBRA"
+	if _, err := m.d.SetProps.Propose(setprop.Proposal{Key: "project.goals", Value: long,
+		Layer: setprop.LayerProject, Agent: "atlas", Rationale: "interview answers 2 and 3"}); err != nil {
+		t.Fatal(err)
+	}
+	m.propCur = 0
+	feed(m, "v")
+	v := ansi.Strip(m.View())
+	if !strings.Contains(v, "ZEBRA") || strings.Contains(v, "grand total…") {
+		t.Fatalf("long proposal clipped:\n%s", v)
+	}
+}

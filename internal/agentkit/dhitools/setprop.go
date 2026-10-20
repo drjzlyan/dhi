@@ -65,8 +65,8 @@ func (d Deps) settingTools() []tool {
 			if d.Bus != nil && d.Channel != "" {
 				_, _ = d.Bus.Post(bus.Message{
 					Channel: d.Channel, Thread: d.Thread, Author: d.Agent.ID,
-					Text: fmt.Sprintf("@%s I propose `%s`: %s → %s (%s layer) — %s. Review it in Settings → PROPOSALS",
-						bus.Human, p.Key, orNone(p.Old), p.Value, p.Layer, p.Rationale),
+					Text: fmt.Sprintf("@%s I propose `%s`: %s → %s (%s layer) — %s. Review it in Settings → PROPOSALS.",
+						bus.Human, p.Key, orNone(p.Old), p.Value, p.Layer, sentence(p.Rationale)),
 				})
 			}
 			return fmt.Sprintf("proposed %s = %s; it applies only if the human approves", p.Key, p.Value), nil
@@ -128,11 +128,17 @@ func (d Deps) projectTools() []tool {
 			if d.Bus != nil && d.Channel != "" {
 				_, _ = d.Bus.Post(bus.Message{
 					Channel: d.Channel, Thread: d.Thread, Author: d.Agent.ID,
-					Text: fmt.Sprintf("@%s I propose updating the project brief's %s — %s. Review it in Settings → PROPOSALS",
-						bus.Human, strings.TrimPrefix(p.Key, "project."), p.Rationale),
+					Text: fmt.Sprintf("@%s I propose updating the project brief's %s — %s. Review it in Settings → PROPOSALS.",
+						bus.Human, strings.TrimPrefix(p.Key, "project."), sentence(p.Rationale)),
 				})
 			}
 			return fmt.Sprintf("proposed %s; it applies only if the human approves", p.Key), nil
 		},
 	}}
+}
+
+// sentence trims a rationale's own closing period, so the mention that
+// adds one never reads "..". Live, session 59.
+func sentence(s string) string {
+	return strings.TrimRight(strings.TrimSpace(s), ".")
 }

@@ -762,11 +762,20 @@ func newSetupEnv(cwd string, ws *workspace.Workspace, userCfg, toolRoot string,
 		}
 		return len(roster)
 	}
-	env.DetectCLIs = clirun.NewRegistry(cliLook).Detect
+	// Detection asks every CLI for its version (seconds, live): the CLI and
+	// team steps share one answer per run, refreshed after an install.
+	var detected map[string]string
+	detect := func() map[string]string {
+		if detected == nil {
+			detected = clirun.NewRegistry(cliLook).Detect()
+		}
+		return detected
+	}
+	env.DetectCLIs = detect
 	env.CLIPrefix = func(name string) string { return clirun.ManagedDir(toolRoot, name) }
 	env.CLIStatus = func() []wizard.CLIRow {
 		reg := clirun.NewRegistry(cliLook)
-		detected := reg.Detect()
+		detected := detect()
 		var rows []wizard.CLIRow
 		for _, c := range reg.All() {
 			row := wizard.CLIRow{Name: c.Name, Version: detected[c.Name], Tested: c.Tested}
@@ -786,6 +795,7 @@ func newSetupEnv(cwd string, ws *workspace.Workspace, userCfg, toolRoot string,
 				return fmt.Errorf("%s is not installed by DHI (guided manual install)", name)
 			}
 			_, err := mgr.NPMInstall(ctx, clirun.ManagedDir(toolRoot, name), plan.Package)
+			detected = nil // the next look sees what was installed
 			return err
 		}
 	}

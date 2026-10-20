@@ -29,3 +29,11 @@ machine usually knows both. There was no way to change it later inside DHI.
 - [x] SuggestIdentity order, dedupe, bots; BestSuggestion sources
 - [x] Wizard: suggested prefill + candidates (golden); found → e → change
 - [x] Settings row: unavailable, unset → suggested → confirm → set → refreshed; bad email refused
+
+## Live (session 59)
+Run with a sandboxed HOME that had no `.gitconfig` and the git author/committer
+env vars unset. The wizard opened the form with the name suggested from the
+computer account and an empty email. It showed the exact
+`git config --global` commands and wrote nothing until enter. Afterwards
+`~/.gitconfig` held the name and email, and `git var GIT_AUTHOR_IDENT` used
+them.

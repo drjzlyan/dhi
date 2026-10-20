@@ -86,7 +86,7 @@ func (m *Model) proposalsKey(key string) bool {
 			return true
 		}
 		if it.kind == "setting" {
-			m.openDisplayDialog("proposed setting — "+it.set.Key, it.set.lines())
+			m.openDisplayDialog("proposed setting — "+it.set.Key, it.set.lines(m.displayText()))
 		} else {
 			m.openDisplayDialog(fmt.Sprintf("%s v%d", it.tool.Name, it.tool.Version), toolLines(it.tool))
 		}

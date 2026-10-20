@@ -7,6 +7,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/brief"
 	"github.com/drjzlyan/dhi/internal/agentkit/setprop"
 	dhisettings "github.com/drjzlyan/dhi/internal/settings"
+	"github.com/drjzlyan/dhi/internal/tui/kit"
 )
 
 // SettingProposal is an agent's proposed settings change (F-070) as the
@@ -15,30 +16,34 @@ type SettingProposal struct {
 	ID, Key, Old, New, Agent, Rationale, Layer string
 }
 
-func (sp SettingProposal) lines() []string {
+// lines renders the proposal for a dialog whose body is w columns wide:
+// long values wrap rather than clip, so what you approve is all on screen.
+func (sp SettingProposal) lines(w int) []string {
 	old := sp.Old
 	if old == "" {
 		old = "(unset)"
 	}
+	wrap := func(indent, text string) []string {
+		var out []string
+		for _, l := range kit.WrapWords(text, w-len(indent)) {
+			out = append(out, indent+l)
+		}
+		return out
+	}
 	if sp.Layer == setprop.LayerProject {
 		out := []string{"project brief · " + strings.TrimPrefix(sp.Key, "project."), "  now:"}
-		for _, l := range strings.Split(old, "\n") {
-			out = append(out, "    "+l)
-		}
+		out = append(out, wrap("    ", old)...)
 		out = append(out, "  proposed:")
-		for _, l := range strings.Split(sp.New, "\n") {
-			out = append(out, "    "+l)
-		}
-		return append(out, "  proposed by "+sp.Agent, "", "why: "+orDash(sp.Rationale), "",
-			"y replaces this one field of the brief; nothing else changes.")
+		out = append(out, wrap("    ", sp.New)...)
+		out = append(out, "  proposed by "+sp.Agent, "")
+		out = append(out, wrap("", "why: "+orDash(sp.Rationale))...)
+		return append(out, "", "y replaces this one field of the brief; nothing else changes.")
 	}
-	return []string{
-		sp.Key,
-		fmt.Sprintf("  %s → %s", old, sp.New),
-		fmt.Sprintf("  layer: %s config · proposed by %s", sp.Layer, sp.Agent),
-		"", "why: " + orDash(sp.Rationale), "",
-		"y applies exactly this one key; nothing else in the file changes.",
-	}
+	out := []string{sp.Key}
+	out = append(out, wrap("  ", old+" → "+sp.New)...)
+	out = append(out, fmt.Sprintf("  layer: %s config · proposed by %s", sp.Layer, sp.Agent), "")
+	out = append(out, wrap("", "why: "+orDash(sp.Rationale))...)
+	return append(out, "", "y applies exactly this one key; nothing else in the file changes.")
 }
 
 // pendingSettings lists the agents' pending settings proposals.

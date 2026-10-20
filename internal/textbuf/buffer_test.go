@@ -184,3 +184,28 @@ func TestApplyEditShapes(t *testing.T) {
 		t.Fatalf("grouped undo: %q", b.Text())
 	}
 }
+
+// Undo and redo change the text, so they must move Seq: the editor's
+// syntax and gutter caches key on it, and a stale Seq kept showing the
+// pre-undo lines (live, session 59).
+func TestUndoRedoBumpSeq(t *testing.T) {
+	b := New("module x\n\ngo 1.22\n")
+	b.BeginUndoGroup()
+	b.InsertString("typed\n")
+	b.EndUndoGroup()
+	edited := b.Seq()
+	if !b.Undo() {
+		t.Fatal("nothing to undo")
+	}
+	if b.Seq() == edited {
+		t.Fatal("undo left Seq unchanged")
+	}
+	if got := b.Text(); got != "module x\n\ngo 1.22\n" {
+		t.Fatalf("undo text = %q", got)
+	}
+	undone := b.Seq()
+	b.Redo()
+	if b.Seq() == undone {
+		t.Fatal("redo left Seq unchanged")
+	}
+}

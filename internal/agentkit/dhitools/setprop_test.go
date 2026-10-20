@@ -49,7 +49,7 @@ func TestProjectUpdateProposesABriefField(t *testing.T) {
 	store := setprop.Open(f.ws.Root)
 	_ = brief.Save(f.ws.Root, brief.Brief{Process: "old way"})
 	h := Deps{Agent: m, WS: f.ws, Bus: f.bus, Channel: "#general", SetProps: store}.Handler()
-	out, isErr := call(h, t, "project_update", `{"field":"process","text":"trunk-based","rationale":"interview"}`)
+	out, isErr := call(h, t, "project_update", `{"field":"process","text":"trunk-based","rationale":"interview answer 4."}`)
 	if isErr || !strings.Contains(out, "proposed project.process") {
 		t.Fatalf("propose = %q", out)
 	}
@@ -60,7 +60,7 @@ func TestProjectUpdateProposesABriefField(t *testing.T) {
 	if b, _, _ := brief.Load(f.ws.Root); b.Process != "old way" {
 		t.Fatal("the brief changed before the human approved")
 	}
-	if hist := f.bus.History("#general", 0); len(hist) != 1 || !strings.Contains(hist[0].Text, "project brief's process") {
+	if hist := f.bus.History("#general", 0); len(hist) != 1 || !strings.Contains(hist[0].Text, "project brief's process — interview answer 4. Review") {
 		t.Fatalf("mention = %+v", hist)
 	}
 	if out, isErr := call(h, t, "project_update", `{"field":"budget","text":"x","rationale":"r"}`); !isErr {

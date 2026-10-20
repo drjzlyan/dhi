@@ -1058,7 +1058,7 @@ Plan: `~/.claude/plans/what-are-the-planned-partitioned-prism.md`. Branch `m31`,
 - [x] P5 Git identity: suggest, confirm, change (F-083)
 - [x] P6 Settings parity: every setting editable in place, none needs a file (F-084)
 - [x] P7 Self-healing: named repairs at launch, setup catch-up (F-085, ADR-0038)
-- [ ] Live: the lead interview end to end; identity write on a machine without one
+- [x] Live: the lead interview end to end; identity write on a machine without one (session 59)
 
 ## M32 — Agents that can ask: permissions, secrets, skills, a global layer (session 56)
 
@@ -1090,3 +1090,7 @@ Plan: `~/.claude/plans/unified-jingling-treasure.md`. Branch `m33-ux` (from `mai
 ## Onboarding hardening (session 58)
 
 - [x] F-094: workspace member picker (nothing preselected), skips no longer leak into later steps or other workspaces, team in catch-up, done step lists skips
+
+## M31 live checks (session 59)
+
+- [x] Live-run fixes (session 59): undo/redo refresh the editor's syntax and gutter caches; proposal dialog wraps long text; no ".." in proposal mentions; Settings hint "h/l cycle"; CLI detection is parallel and cached per setup run; team step wraps the CLI list
