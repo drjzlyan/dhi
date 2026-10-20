@@ -66,10 +66,10 @@ type App struct {
 	gateRan    bool
 	queuedGate Gate        // started after the current input (QueueGate)
 	setupGate  func() Gate // palette "Run setup wizard" (F-043)
-	// setupProgress/setupNext back the setup pill and palette entry.
-	setupProgress func() (done, total int)
-	setupNext     func()
-	queuedToast   *kit.Toast // raised by Toast, shown by pollToasts
+	// setupItems/setupRun back the setup pill and palette entries.
+	setupItems  func() []kit.ChecklistItem
+	setupRun    func(id string)
+	queuedToast *kit.Toast // raised by Toast, shown by pollToasts
 
 	coach     *coach // running tutorial lesson (F-048); nil = none
 	tutorials []tutorial.Tutorial
@@ -586,6 +586,12 @@ func (a *App) openPalette() {
 	if _, _, ok := a.setupPending(); ok {
 		add("Setup", "Continue setup", "", func() tea.Cmd { a.setupNext(); return a.takeQueuedGate() })
 	}
+	if a.setupItems != nil && a.setupRun != nil {
+		for _, it := range a.setupItems() {
+			id := it.ID
+			add("Setup", "Set up: "+it.Title, "", func() tea.Cmd { a.setupRun(id); return a.takeQueuedGate() })
+		}
+	}
 	if a.setupGate != nil {
 		add("Setup", "Run setup wizard", "", func() tea.Cmd { return a.StartGate(a.setupGate()) })
 	}
@@ -714,11 +720,12 @@ func (a *App) OpenNewTask() bool {
 	return false
 }
 
-// SetSetup wires the setup checklist (F-098): progress feeds the
-// "setup N/M" status pill (shown while steps are pending), next runs the
-// first pending step — from a pill click or the palette.
-func (a *App) SetSetup(progress func() (done, total int), next func()) {
-	a.setupProgress, a.setupNext = progress, next
+// SetSetup wires the setup checklist (F-098): items feed the "setup N/M"
+// status pill (shown while steps are pending) and one palette entry per
+// step, so every step — skipped and done ones too — is a keystroke away;
+// run opens one step by id.
+func (a *App) SetSetup(items func() []kit.ChecklistItem, run func(id string)) {
+	a.setupItems, a.setupRun = items, run
 }
 
 // Toast shows t now, as if a surface had raised it.
@@ -842,11 +849,29 @@ func (a *App) takeQueuedGate() tea.Cmd {
 
 // setupPending reports the checklist progress while steps are pending.
 func (a *App) setupPending() (done, total int, ok bool) {
-	if a.setupProgress == nil || a.setupNext == nil {
+	if a.setupItems == nil || a.setupRun == nil {
 		return 0, 0, false
 	}
-	done, total = a.setupProgress()
-	return done, total, done < total
+	items := a.setupItems()
+	for _, it := range items {
+		if it.State != kit.ItemPending {
+			done++
+		}
+	}
+	return done, len(items), done < len(items)
+}
+
+// setupNext opens the first pending step.
+func (a *App) setupNext() {
+	if a.setupItems == nil || a.setupRun == nil {
+		return
+	}
+	for _, it := range a.setupItems() {
+		if it.State == kit.ItemPending {
+			a.setupRun(it.ID)
+			return
+		}
+	}
 }
 
 // handleClick routes body-local clicks: the help overlay closes on any
@@ -1008,9 +1033,7 @@ func (a *App) clickStatus(x int) {
 	}
 	switch k {
 	case "setup":
-		if a.setupNext != nil {
-			a.setupNext()
-		}
+		a.setupNext()
 	case "ctrl+p":
 		a.openPalette()
 	case "?":

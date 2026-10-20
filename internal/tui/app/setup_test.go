@@ -10,18 +10,43 @@ import (
 	"github.com/drjzlyan/dhi/internal/tui/theme"
 )
 
-// setupApp wires a checklist with done of total settled; next records
-// presses and queues stubGate as the step's dialog.
+// setupApp wires a checklist with done of total settled; running a step
+// records it and queues stubGate as the step's dialog.
 func setupApp(t *testing.T, done, total int) (*App, *int) {
 	t.Helper()
 	theme.SwapForTest(t, theme.Dark())
 	a, _ := newTestApp(t)
+	items := make([]kit.ChecklistItem, total)
+	for i := range items {
+		items[i] = kit.ChecklistItem{ID: string(rune('a' + i)), Title: "Step " + string(rune('A'+i))}
+		if i < done {
+			items[i].State = kit.ItemDone
+		}
+	}
 	nexts := 0
-	a.SetSetup(func() (int, int) { return done, total }, func() {
+	a.SetSetup(func() []kit.ChecklistItem { return items }, func(string) {
 		nexts++
 		a.QueueGate(&stubGate{})
 	})
 	return a, &nexts
+}
+
+// Every step, done ones included, has its own palette entry: the
+// keyboard reaches what the start page only offers by click.
+func TestPaletteOffersEveryStep(t *testing.T) {
+	a, nexts := setupApp(t, 1, 2)
+	a.Update(keyPress("ctrl+p"))
+	v := stripAll(a.compose())
+	if !strings.Contains(v, "Set up: Step A") || !strings.Contains(v, "Set up: Step B") {
+		t.Fatalf("palette lacks per-step entries:\n%s", v)
+	}
+	for _, r := range "step a" {
+		a.Update(keyPress(string(r)))
+	}
+	a.Update(keyPress("enter"))
+	if *nexts != 1 || !a.gateActive() {
+		t.Fatalf("redo a done step from the palette: next=%d gate=%v", *nexts, a.gateActive())
+	}
 }
 
 // F-098: while steps are pending the status row shows "setup N/M"; a

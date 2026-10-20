@@ -105,8 +105,10 @@ func (m *Model) startPage(w int) []string {
 	}
 
 	items, next := m.pendingSteps()
-	if next != "" {
-		cl := kit.Checklist{Items: items, Focus: true, ActionKey: "c"}
+	// Outside a workspace the card always shows: its workspace row is the
+	// only way in, even after everything was skipped.
+	if next != "" || (m.ws == nil && len(items) > 0) {
+		cl := kit.Checklist{Items: items, Focus: next != "", ActionKey: "c"}
 		for i, it := range items {
 			if it.ID == next {
 				cl.Cursor = i

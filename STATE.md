@@ -1,5 +1,43 @@
 # STATE — current position
 
+### Session 60 (M34: one identity, Editor first, setup as a checklist, branch `m34-ux`)
+
+- User asked for real UI components with brand colors, the Editor as the first screen, and more
+  interactive onboarding. Their decisions: one new DHI identity, kept the same in every view; Editor + a guided
+  checklist (no wizard gate); full phased milestone; README recordings via VHS
+  (`brew install vhs`, the user installs it). Plan `~/.claude/plans/hidden-cooking-dove.md`; ADR-0041; F-095–F-100.
+  Session-59 work committed on main first (3a5e55b, the eval baseline for P6).
+- P1 (F-095): palette dhi-dusk/dhi-dawn/high-contrast (saffron primary, indigo secondary,
+  teal/lotus); retired names load via `settings.CanonicalTheme`. `SurfaceAccent/Text` return the
+  focus color in every view. Component roles: `theme.Button(variant…)`, `SolidFill`, `Input`,
+  `InputEdge`, `Placeholder`, `CardStripe/Title/Text`, `Badge(kind)`, `Link`; tokens `BgInput`,
+  `BgCard`. ΔE00 test keeps brand and semantic hues apart. `go run ./scripts/palette <theme>` is a
+  component gallery (pipe through freeze for a PNG).
+- P2 (F-096): `kit.Button` (variant/focused/disabled, same width as before), `kit.Input`,
+  `Checkbox/Radio/Toggle` (`‹choice›`), `kit.Badge`, `kit.Card`, `kit.Checklist`. Form rows are input
+  wells: the `▎` edge replaces the old leading space, so geometry is unchanged.
+- P3 (F-097): registry order Editor, Workspace, … Editor start page (`editor.WithStart`); welcome card
+  removed. `alt+1..9` switch views from anywhere. `surfaces.AltDigitTaker` lets a focused
+  terminal keep them. App: `OpenNewTask`, `StartLesson`, `QueueGate` (a gate started from a key or
+  click; drained in `drainSurfaceCmd`), `Toast`.
+- P4 (F-098): `wizard.Checklist` (per-step records; finished-but-unrecorded steps count as SKIPPED,
+  never done, except catch-up steps that apply). `wizard.Single` runs one step; it never sets
+  Finished, and relaunches on `env.Changed` (a CLI install sets it too). No auto-run or catch-up
+  gate. `setup.ShouldAutoRun` removed. main caches the checklist and refreshes it after each
+  step. `app.SetSetup(items, run)`: "setup N/M" pill (`StatusSegment.Drop/Key`), "Continue setup",
+  and one "Set up: <title>" palette entry per step.
+- Gotchas:
+  - Live runs with a sandboxed HOME need the real `XDG_DATA_HOME`, or launch offers the 1.1 GB
+    toolchain download.
+  - Agent activity already shows in the tab bar on every view (`activityChip`). P6 restyles it; it
+    does not add a pill.
+  - Status-row clicks and palette commands must drain `queuedGate` (`takeQueuedGate`).
+  - Goldens are ANSI-stripped, so palette changes don't touch them; glyph and text changes do.
+- Next: P5 (interactive steps; the workspace picker copy still says "ctrl+p → Run setup wizard").
+  Then P6: take the `make eval` baseline from 3a5e55b in a worktree before touching `clirun.go`, and
+  subtract tag overhead from the budget. P7 live checks. P8 VHS: use a demo identity, check that no
+  real name or CLI list leaks, and copy screenshots.sh's neutral rc files and XDG_DATA_HOME.
+
 ### Session 59 (M31 live checks, on `main`)
 
 - Closed the last M31 item, both checks run live in tmux. Identity write: a sandboxed HOME with no

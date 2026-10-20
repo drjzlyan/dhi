@@ -107,6 +107,11 @@ func TestStartPageWithoutAWorkspace(t *testing.T) {
 	if !m.Click(x, y) || len(spy.ran) != 1 {
 		t.Fatalf("click must start the workspace step: %v", spy.ran)
 	}
+	// Skipped everything: the workspace row still shows — the only way in.
+	spy.items[0].State = kit.ItemSkipped
+	if !strings.Contains(plainView(m), "Create a workspace") {
+		t.Fatal("outside a workspace the card never hides")
+	}
 }
 
 // locate returns the screen cell of the first occurrence of s.

@@ -22,9 +22,10 @@ var checklistCopy = map[string]struct{ title, why string }{
 // Checklist lists the setup steps for the start page and status pill
 // (F-098), from per-step records — never from Finished alone. A step is
 // listed while it applies, or once it was done or skipped. Migration: a
-// setup finished before the checklist existed counts every step done,
-// except the catch-up steps that still apply (today's catch-up rule), so
-// people who already onboarded are not nagged.
+// finished setup with no record of a step never ran it (a run records
+// every step it showed), so the step counts as skipped — settled, no
+// nag, reopenable — except the catch-up steps that still apply (today's
+// catch-up rule). It is never shown as done.
 func Checklist(env *Env, version string, st setup.State) []kit.ChecklistItem {
 	var out []kit.ChecklistItem
 	for _, s := range DefaultSteps(env, version) {
@@ -41,13 +42,13 @@ func Checklist(env *Env, version string, st setup.State) []kit.ChecklistItem {
 		case skipped:
 			state = kit.ItemSkipped
 		case st.Finished && !catchUpIDs[id]:
-			state = kit.ItemDone
+			state = kit.ItemSkipped
 		}
 		if state == kit.ItemPending && !s.Applies() {
 			continue
 		}
 		if state != kit.ItemPending && !st.Settled(id) && !s.Applies() {
-			continue // migrated as done, but no longer relevant here
+			continue // migrated, and no longer relevant here
 		}
 		out = append(out, kit.ChecklistItem{ID: id, Title: c.title, Why: c.why, State: state})
 	}

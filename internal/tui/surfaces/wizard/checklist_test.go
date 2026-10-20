@@ -34,11 +34,14 @@ func TestChecklistStates(t *testing.T) {
 		t.Fatalf("records: %s", got)
 	}
 
-	// Finished before the checklist, no records: every step counts as
-	// done; only catch-up steps that still apply would show as pending.
+	// Finished, no records: those steps never ran, so they are settled
+	// as skipped (never claimed done); catch-up steps that apply stay
+	// pending. A returning user in a new workspace is the common case.
 	h := newFixture(t, true)
 	h.env.SaveProfile = func(settings.Profile) error { return nil } // "you" applies: a catch-up step
-	if got := states(Checklist(h.env, "9.9.9", setup.State{Finished: true})); got != "✓identity ○you ✓conventions" {
+	h.env.IntegrationRows = func() []IntegrationRow { return nil }
+	h.env.SetupIntegration = func(string, map[string]string, string) ([]string, error) { return nil, nil }
+	if got := states(Checklist(h.env, "9.9.9", setup.State{Finished: true})); got != "–identity ○you –conventions –integrations" {
 		t.Fatalf("migrated: %s", got)
 	}
 }

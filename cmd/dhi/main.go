@@ -614,21 +614,7 @@ func runTUI() (relaunch bool) {
 		wizards = append(wizards, w)
 		appRef.QueueGate(w)
 	}
-	a.SetSetup(func() (done, total int) {
-		for _, it := range checklist {
-			if it.State != kit.ItemPending {
-				done++
-			}
-		}
-		return done, len(checklist)
-	}, func() {
-		for _, it := range checklist {
-			if it.State == kit.ItemPending {
-				runStep(it.ID)
-				return
-			}
-		}
-	})
+	a.SetSetup(func() []kit.ChecklistItem { return checklist }, runStep)
 
 	// Gates, in strict order: a block never releases; missing pieces
 	// offer the confirmation-gated install; first-run (no lockfile)
