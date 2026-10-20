@@ -403,8 +403,17 @@ func runTUI() (relaunch bool) {
 	if unreadStore != nil {
 		edOpts = append(edOpts, editor.WithUnread(unreadStore))
 	}
-	// The start page's actions that live outside the editor (F-097).
+	// The start page's actions that live outside the editor (F-097). The
+	// setup checklist (F-098) is bound after the wizard wiring below.
+	var checklist []kit.ChecklistItem
+	var runStep func(id string)
 	edOpts = append(edOpts, editor.WithStart(editor.StartDeps{
+		Checklist: func() []kit.ChecklistItem { return checklist },
+		RunStep: func(id string) {
+			if runStep != nil {
+				runStep(id)
+			}
+		},
 		StartTour: func() {
 			if appRef != nil {
 				appRef.StartLesson("tour")
@@ -567,7 +576,59 @@ func runTUI() (relaunch bool) {
 		// get the light theme) instead of forcing dark on everyone.
 		a.SetBackgroundHook(cfg.FollowBackground)
 	}
-	autoWizard := decision.Block == "" && shouldAutoRunSetup(ws)
+	// Setup is a checklist, not a gate (ADR-0041, F-098): the start page
+	// and the status pill list the steps that apply; each runs on its own.
+	// Applies can be costly (CLI detection), so the list is computed at
+	// launch and after each step, never per frame.
+	refreshChecklist := func() {
+		if decision.Block != "" {
+			checklist = nil
+			return
+		}
+		env := newSetupEnv(cwd, ws, userCfg, toolRoot, cfg.Conventions, cfg.Engine, identityFn, cliLook,
+			func() { startLesson("tour") })
+		checklist = wizard.Checklist(env, version.Version, loadSetupState(ws))
+	}
+	refreshChecklist()
+	runStep = func(id string) {
+		if decision.Block != "" || appRef == nil {
+			return
+		}
+		env := newSetupEnv(cwd, ws, userCfg, toolRoot, cfg.Conventions, cfg.Engine, identityFn, cliLook,
+			func() { startLesson("tour") })
+		before := pendingCount(checklist)
+		w := wizard.Single(env, version.Version, loadSetupState(ws), id, func() {
+			refreshChecklist()
+			if before > 0 && pendingCount(checklist) == 0 {
+				appRef.Toast(kit.Toast{Kind: kit.ToastSuccess, Title: "You're set up", Detail: "redo any step from the start page"})
+			}
+		})
+		if w == nil {
+			// Done, and its step no longer applies here (the workspace
+			// exists): say so instead of ignoring the click.
+			refreshChecklist()
+			appRef.Toast(kit.Toast{Kind: kit.ToastInfo, Title: wizard.ChecklistTitle(id) + " is already set up",
+				Detail: "change it in Settings (5)"})
+			return
+		}
+		wizards = append(wizards, w)
+		appRef.QueueGate(w)
+	}
+	a.SetSetup(func() (done, total int) {
+		for _, it := range checklist {
+			if it.State != kit.ItemPending {
+				done++
+			}
+		}
+		return done, len(checklist)
+	}, func() {
+		for _, it := range checklist {
+			if it.State == kit.ItemPending {
+				runStep(it.ID)
+				return
+			}
+		}
+	})
 
 	// Gates, in strict order: a block never releases; missing pieces
 	// offer the confirmation-gated install; first-run (no lockfile)
@@ -606,20 +667,6 @@ func runTUI() (relaunch bool) {
 	if decision.Block == "" && ws != nil {
 		if g := repairGate(ws, gitRunner); g != nil {
 			gates = append(gates, g)
-		}
-	}
-	if autoWizard {
-		gates = append(gates, newWizard())
-	} else if decision.Block == "" {
-		// A finished setup still owes steps added since (F-085): offer each once.
-		env := newSetupEnv(cwd, ws, userCfg, toolRoot, cfg.Conventions, cfg.Engine, identityFn, cliLook,
-			func() { startLesson("tour") })
-		if st := loadSetupState(ws); st.Finished {
-			if steps := wizard.CatchUpSteps(env, version.Version, st); steps != nil {
-				w := wizard.New(env, st, steps...)
-				wizards = append(wizards, w)
-				gates = append(gates, w)
-			}
 		}
 	}
 	toolsAtLaunch := toolsFingerprint(toolRoot)
@@ -676,21 +723,15 @@ func toolsFingerprint(root string) string {
 	return b.String()
 }
 
-// shouldAutoRunSetup applies the launch policy for the setup wizard.
-func shouldAutoRunSetup(ws *workspace.Workspace) bool {
-	in := setup.AutoRunInput{HasWorkspace: ws != nil}
-	if p, err := setup.UserStatePath(); err == nil {
-		if st, err := setup.LoadState(p); err == nil {
-			in.UserFinished = st.Finished
+// pendingCount counts checklist items still to do.
+func pendingCount(items []kit.ChecklistItem) int {
+	n := 0
+	for _, it := range items {
+		if it.State == kit.ItemPending {
+			n++
 		}
 	}
-	if ws != nil {
-		_, err := os.Stat(setup.WorkspaceStatePath(ws.Root))
-		in.WorkspaceSetup = err == nil
-		_, err = os.Stat(filepath.Join(ws.Root, ".dhi", "welcome.seen"))
-		in.WelcomeSeen = err == nil
-	}
-	return setup.ShouldAutoRun(in)
+	return n
 }
 
 // loadSetupState reads the progress the wizard resumes from: your steps

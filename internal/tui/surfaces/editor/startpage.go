@@ -63,14 +63,16 @@ func (m *Model) startPage(w int) []string {
 	w = min(w, startMaxW)
 	m.startZones = m.startZones[:0]
 	var out []string
-	name := "this folder"
+	name := ""
 	if m.ws != nil {
 		name = filepath.Base(m.ws.Root)
 	}
-	out = append(out,
-		theme.Brand().Render("◆ dhi")+theme.TextDim().Render("  ·  "+name),
-		theme.TextMuted().Render(branding.Tagline()),
-		"")
+	if m.ws != nil { // outside a workspace the hero above says it
+		out = append(out,
+			theme.Brand().Render("◆ dhi")+theme.TextDim().Render("  ·  "+name),
+			theme.TextMuted().Render(branding.Tagline()),
+			"")
+	}
 
 	var bs []kit.Button
 	if m.ws != nil {
@@ -110,8 +112,7 @@ func (m *Model) startPage(w int) []string {
 				cl.Cursor = i
 			}
 		}
-		out = append(out, theme.SectionHeader().Render("GET SET UP")+
-			theme.TextMuted().Render("  "+strconv.Itoa(cl.Done())+" of "+strconv.Itoa(len(items))+" done · about a minute each"))
+		out = append(out, theme.SectionHeader().Render("GET SET UP")+theme.TextMuted().Render("  "+progressLine(cl)))
 		for i, row := range cl.View(w) {
 			m.startZones = append(m.startZones, startZone{line: len(out), from: 0, to: w, key: "step:" + items[i].ID})
 			out = append(out, row)
@@ -128,6 +129,26 @@ func (m *Model) startPage(w int) []string {
 	}
 	out = append(out, theme.Hint().Render(kit.ClipEllipsis(strings.Join(tips, "  ·  "), w)))
 	return out
+}
+
+// progressLine says where setup stands: "1 done · 1 skipped · 7 to go",
+// each part only when it is non-zero, and "about a minute each" while
+// nothing has been done yet.
+func progressLine(cl kit.Checklist) string {
+	done, settled := cl.Done(), cl.Settled()
+	skipped, left := settled-done, len(cl.Items)-settled
+	var parts []string
+	if done > 0 {
+		parts = append(parts, strconv.Itoa(done)+" done")
+	}
+	if skipped > 0 {
+		parts = append(parts, strconv.Itoa(skipped)+" skipped")
+	}
+	parts = append(parts, strconv.Itoa(left)+" to go")
+	if settled == 0 {
+		parts = append(parts, "about a minute each")
+	}
+	return strings.Join(parts, " · ")
 }
 
 // startKey handles the start page's own keys; false leaves the key to

@@ -31,27 +31,6 @@ func TestStateRoundTripAndMissing(t *testing.T) {
 	}
 }
 
-func TestShouldAutoRun(t *testing.T) {
-	cases := []struct {
-		name string
-		in   AutoRunInput
-		want bool
-	}{
-		{"bare dir, first time", AutoRunInput{}, true},
-		{"bare dir, finished before", AutoRunInput{UserFinished: true}, false},
-		{"fresh clone of a team workspace", AutoRunInput{HasWorkspace: true}, true},
-		{"existing workspace, welcome seen (this repo)", AutoRunInput{HasWorkspace: true, WelcomeSeen: true}, false},
-		{"workspace already onboarded", AutoRunInput{HasWorkspace: true, WorkspaceSetup: true}, false},
-		{"returning user in a new clone", AutoRunInput{HasWorkspace: true, UserFinished: true}, false},
-		{"palette forces it", AutoRunInput{HasWorkspace: true, UserFinished: true, WelcomeSeen: true, ForcedByCommand: true}, true},
-	}
-	for _, c := range cases {
-		if got := ShouldAutoRun(c.in); got != c.want {
-			t.Errorf("%s: got %v want %v", c.name, got, c.want)
-		}
-	}
-}
-
 func mkGit(t *testing.T, dir string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Join(dir, ".git"), 0o755); err != nil {

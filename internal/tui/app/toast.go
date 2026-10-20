@@ -30,7 +30,8 @@ type toastExpireMsg struct{ seq int }
 // pollToasts takes the newest toast any surface raised and arms its
 // slide-in and expiry ticks.
 func (a *App) pollToasts() tea.Cmd {
-	var got *kit.Toast
+	got := a.queuedToast
+	a.queuedToast = nil
 	for _, s := range a.surfaces {
 		if t, ok := s.(toaster); ok {
 			if tt, ok := t.TakeToast(); ok {

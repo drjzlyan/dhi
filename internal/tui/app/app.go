@@ -66,6 +66,10 @@ type App struct {
 	gateRan    bool
 	queuedGate Gate        // started after the current input (QueueGate)
 	setupGate  func() Gate // palette "Run setup wizard" (F-043)
+	// setupProgress/setupNext back the setup pill and palette entry.
+	setupProgress func() (done, total int)
+	setupNext     func()
+	queuedToast   *kit.Toast // raised by Toast, shown by pollToasts
 
 	coach     *coach // running tutorial lesson (F-048); nil = none
 	tutorials []tutorial.Tutorial
@@ -579,6 +583,9 @@ func (a *App) openPalette() {
 			add(c.Group, c.Title, c.Hint, c.Run)
 		}
 	}
+	if _, _, ok := a.setupPending(); ok {
+		add("Setup", "Continue setup", "", func() tea.Cmd { a.setupNext(); return a.takeQueuedGate() })
+	}
 	if a.setupGate != nil {
 		add("Setup", "Run setup wizard", "", func() tea.Cmd { return a.StartGate(a.setupGate()) })
 	}
@@ -707,6 +714,16 @@ func (a *App) OpenNewTask() bool {
 	return false
 }
 
+// SetSetup wires the setup checklist (F-098): progress feeds the
+// "setup N/M" status pill (shown while steps are pending), next runs the
+// first pending step — from a pill click or the palette.
+func (a *App) SetSetup(progress func() (done, total int), next func()) {
+	a.setupProgress, a.setupNext = progress, next
+}
+
+// Toast shows t now, as if a surface had raised it.
+func (a *App) Toast(t kit.Toast) { a.queuedToast = &t }
+
 // QueueGate starts g after the current input is handled: surfaces start
 // a gate from a key or click (the start page's setup steps, F-098), and
 // HandleKey cannot return the gate's Init command.
@@ -810,11 +827,26 @@ func (a *App) drainSurfaceCmd() tea.Cmd {
 	if cs, ok := a.Active().(surfaces.CmdSource); ok {
 		cmd = cs.TakeCmd()
 	}
-	if g := a.queuedGate; g != nil {
-		a.queuedGate = nil
-		cmd = tea.Batch(cmd, a.StartGate(g))
+	return tea.Batch(cmd, a.takeQueuedGate())
+}
+
+// takeQueuedGate starts the gate QueueGate left, if any.
+func (a *App) takeQueuedGate() tea.Cmd {
+	g := a.queuedGate
+	if g == nil {
+		return nil
 	}
-	return cmd
+	a.queuedGate = nil
+	return a.StartGate(g)
+}
+
+// setupPending reports the checklist progress while steps are pending.
+func (a *App) setupPending() (done, total int, ok bool) {
+	if a.setupProgress == nil || a.setupNext == nil {
+		return 0, 0, false
+	}
+	done, total = a.setupProgress()
+	return done, total, done < total
 }
 
 // handleClick routes body-local clicks: the help overlay closes on any
@@ -941,6 +973,16 @@ func (a *App) buildStatus() *kit.StatusLine {
 			Style: theme.AttentionPill(),
 		})
 	}
+	// Setup progress (F-098): yields to every hint before it drops, and
+	// a click continues with the next step.
+	if done, total, ok := a.setupPending(); ok {
+		sl.Left = append(sl.Left, kit.StatusSegment{Text: " ", Drop: 1}, kit.StatusSegment{
+			Text:  fmt.Sprintf(" setup %d/%d ", done, total),
+			Style: theme.Badge(theme.BadgeBusy).Bold(true),
+			Drop:  1,
+			Key:   "setup",
+		})
+	}
 	sl.Width = a.width
 	return sl
 }
@@ -965,6 +1007,10 @@ func (a *App) clickStatus(x int) {
 		return
 	}
 	switch k {
+	case "setup":
+		if a.setupNext != nil {
+			a.setupNext()
+		}
 	case "ctrl+p":
 		a.openPalette()
 	case "?":

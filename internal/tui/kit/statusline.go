@@ -12,6 +12,11 @@ import (
 type StatusSegment struct {
 	Text  string
 	Style lipgloss.Style // zero value renders plain
+	// Drop orders the left side's overflow (ADR-0041): 0 never drops;
+	// once every hint is gone, the highest Drop goes first. Key makes the
+	// segment clickable: KeyAt reports it as a shell key.
+	Drop int
+	Key  string
 }
 
 // StatusLine is the one row that owns every hint (ADR-0040): the view's
@@ -42,6 +47,7 @@ type hintSpan struct {
 	from, to int
 	hint     string
 	global   bool
+	segment  bool // a clickable left segment: hint is its Key verbatim
 }
 
 // keyEntry is one hint queued for rendering.
@@ -106,10 +112,20 @@ func renderKeys(entries []keyEntry) (string, []hintSpan) {
 
 // View renders the statusline padded to Width cells when Width > 0.
 func (s *StatusLine) View() string {
+	segs := append([]StatusSegment{}, s.Left...)
 	var left string
-	for _, seg := range s.Left {
-		left += seg.Style.Render(seg.Text)
+	var leftSpans []hintSpan
+	render := func() {
+		left, leftSpans = "", leftSpans[:0]
+		for _, seg := range segs {
+			from := runeWidth(left)
+			left += seg.Style.Render(seg.Text)
+			if seg.Key != "" {
+				leftSpans = append(leftSpans, hintSpan{from: from, to: runeWidth(left), hint: seg.Key, global: true, segment: true})
+			}
+		}
 	}
+	render()
 	flash := s.Flash
 
 	hints := append([]string{}, s.Hints...)
@@ -165,6 +181,19 @@ func (s *StatusLine) View() string {
 	if !fits() {
 		flash = ""
 	}
+	for !fits() {
+		at, worst := -1, 0
+		for i, seg := range segs {
+			if seg.Drop > worst {
+				at, worst = i, seg.Drop
+			}
+		}
+		if at < 0 {
+			break
+		}
+		segs = append(segs[:at], segs[at+1:]...)
+		render()
+	}
 	r := right()
 	if !fits() {
 		// Tiny terminals: the left side yields, clipped visibly.
@@ -181,6 +210,7 @@ func (s *StatusLine) View() string {
 	}
 	if s.Width <= 0 {
 		s.setSpans(spans, runeWidth(out)+2)
+		s.spans = append(s.spans, leftSpans...)
 		return out + "  " + r
 	}
 	gap := s.Width - runeWidth(out) - runeWidth(r) - 1
@@ -189,6 +219,9 @@ func (s *StatusLine) View() string {
 	}
 	out += strings.Repeat(" ", gap)
 	s.setSpans(spans, runeWidth(out))
+	if runeWidth(left) <= s.Width {
+		s.spans = append(s.spans, leftSpans...)
+	}
 	out += r
 	return PaintRow(out, s.Width, theme.StatusBar()) // one background end to end (F-064)
 }
@@ -200,6 +233,9 @@ func (s *StatusLine) View() string {
 // before View ran.
 func (s *StatusLine) KeyAt(x int) (key string, global, ok bool) {
 	for _, sp := range s.spans {
+		if x >= sp.from && x < sp.to && sp.segment {
+			return sp.hint, true, true
+		}
 		if x >= sp.from && x < sp.to {
 			rows := HintRows(sp.hint)
 			if len(rows) == 0 {

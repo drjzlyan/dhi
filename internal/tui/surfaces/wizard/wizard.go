@@ -181,6 +181,11 @@ type Model struct {
 	finished      bool
 	relaunch      bool
 	pending       tea.Cmd
+
+	// single runs one step from the checklist (Single): it records only
+	// that step and never marks setup finished. onDone runs on close.
+	single bool
+	onDone func()
 }
 
 // New builds the wizard over the given steps (in order) with prior state.
@@ -314,9 +319,15 @@ func (m *Model) HandleKey(key string) bool {
 	}
 	switch key {
 	case "ctrl+b":
-		m.act(Back)
+		if !m.single {
+			m.act(Back)
+		}
 		return true
 	case "ctrl+x":
+		if m.single { // one step: skipping setup is skipping this step
+			m.act(Skip)
+			return true
+		}
 		// Skipping setup skips every step still ahead, so a catch-up
 		// run never comes back for them (F-085). Only steps that could run
 		// now count: one waiting on a workspace (project, team) stays owed
@@ -366,6 +377,10 @@ func (m *Model) advance(skip bool) {
 		m.state.MarkSkipped(m.cur().ID(), m.env.now())
 		m.persist()
 	}
+	if m.single {
+		m.close()
+		return
+	}
 	n := m.firstApplicable(m.idx + 1)
 	if n >= len(m.steps) {
 		m.finish()
@@ -411,6 +426,20 @@ func (m *Model) finish() {
 	m.finished = true
 }
 
+// close ends a single-step run: the step is already recorded; a change
+// launch-time services read relaunches, anything else hands back.
+func (m *Model) close() {
+	if m.env.Changed {
+		m.relaunch = true
+		m.pending = tea.Quit
+		return
+	}
+	m.finished = true
+	if m.onDone != nil {
+		m.onDone()
+	}
+}
+
 // View renders header (brand + stepper), the active step, and the key line.
 func (m *Model) View() string {
 	if m.finished || m.idx >= len(m.steps) {
@@ -429,8 +458,16 @@ func (m *Model) View() string {
 	// One card (F-093): the stepper heads it, the step fills it; the
 	// keys live on the shell status row (Hints).
 	lines := []string{kit.Stepper(m.stepItems(), w, m.frame), ""}
+	title := "dhi setup"
+	if m.single {
+		// One step: no stepper, the task's own title and why head it.
+		id := m.cur().ID()
+		lines = []string{theme.AccentText().Render(ChecklistTitle(id)) +
+			theme.TextMuted().Render("  "+checklistCopy[id].why), ""}
+		title = "set up"
+	}
 	lines = append(lines, body...)
-	card := kit.NewPanel("dhi setup", true)
+	card := kit.NewPanel(title, true)
 	card.Boxed = true
 	card.Width = w + 4
 	card.SetContent(append(lines, "")...)
@@ -453,6 +490,9 @@ func (m *Model) keys() []string {
 	}
 	if k, ok := m.cur().(interface{ Keys() []string }); ok {
 		parts = k.Keys() // the step's own keys first
+	}
+	if m.single {
+		return append(parts, "enter save", "esc skip")
 	}
 	parts = append(parts, "enter continue", "esc skip step")
 	if m.prevApplicable(m.idx-1) >= 0 {

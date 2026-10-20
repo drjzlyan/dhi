@@ -1,5 +1,6 @@
 // Package setup holds the non-UI logic of the first-run wizard (F-043):
-// persisted progress, the auto-run policy, and workspace initialisation.
+// persisted progress and workspace initialisation. Since ADR-0041 setup
+// never auto-runs; the start page's checklist offers each step.
 // It imports no tui package; the wizard surface injects it.
 package setup
 
@@ -136,32 +137,6 @@ func UserStatePath() (string, error) {
 // WorkspaceStatePath is <root>/.dhi/setup.json (gitignored).
 func WorkspaceStatePath(root string) string {
 	return filepath.Join(root, workspace.DHIDir, StateFile)
-}
-
-// AutoRunInput is what the launch policy looks at.
-type AutoRunInput struct {
-	HasWorkspace    bool
-	UserFinished    bool // the user-scope wizard completed once before
-	WorkspaceSetup  bool // .dhi/setup.json exists
-	WelcomeSeen     bool // .dhi/welcome.seen exists (pre-wizard workspaces)
-	ForcedByCommand bool // the palette asked for it
-}
-
-// ShouldAutoRun decides whether launch shows the wizard. It never pushes
-// an established workspace through it: only a first-time user (nothing
-// finished before) in either a bare directory or a workspace nobody has
-// onboarded into. Everyone else reaches it from the palette.
-func ShouldAutoRun(in AutoRunInput) bool {
-	if in.ForcedByCommand {
-		return true
-	}
-	if in.UserFinished {
-		return false
-	}
-	if !in.HasWorkspace {
-		return true
-	}
-	return !in.WorkspaceSetup && !in.WelcomeSeen
 }
 
 // MemberSpec is a proposed workspace member.

@@ -1,6 +1,6 @@
 # F-098 — Setup as a guided checklist, with interactive steps
 
-Status: planned (M34 P4–P5) · ADR-0041
+Status: in progress (session 60) — P4 done, P5 next · ADR-0041
 
 ## Why
 First run was an eleven-step wizard gate in front of the app. Several steps were text walls or raw
@@ -30,8 +30,13 @@ dim lines at the bottom.
   - result: "what to try next" cards
 
 ## Acceptance
-- [ ] Table test for `setup.Checklist`, covering the migration rule.
-- [ ] Running a single step leaves the other items pending; `Finished` is never set.
-- [ ] First launch with no setup lands in the Editor, with no wizard gate.
+- [x] Table test for `wizard.Checklist` (it needs each step's Applies), covering the migration rule.
+- [x] Running a single step leaves the other items pending; `Finished` is never set.
+- [x] First launch with no setup lands in the Editor, with no wizard gate.
 - [ ] F-094's skip, back and esc semantics are kept (existing tests pass).
 - [ ] Goldens for each upgraded step.
+
+## Live (session 60)
+Fresh folder with two repos, sandboxed HOME/XDG_CONFIG, tmux 120×36: the start page lists 6 steps
+outside a workspace; `c` opens "Create a workspace" as a dialog with the repo picker; enter creates
+it and relaunches into the Editor start page at 1/9; `c` → project, esc skips it (`–`, pill 2/9).
