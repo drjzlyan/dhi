@@ -1,6 +1,7 @@
 package app
 
 import (
+	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
@@ -51,5 +52,21 @@ func TestAltDigitStaysWithASurfaceThatUsesIt(t *testing.T) {
 	}
 	if len(term.keys) == 0 || term.keys[len(term.keys)-1] != "alt+2" {
 		t.Fatalf("alt+2 did not reach the surface: %v", term.keys)
+	}
+}
+
+// Plain text takes the theme's text color, not the terminal default
+// (F-095): every rendered line opens with it.
+func TestViewPaintsPlainTextInTheThemeColor(t *testing.T) {
+	a, _ := newTestApp(t)
+	theme.SwapForTest(t, theme.Light()) // after newTestApp, which installs dark
+	v := a.View()
+	if v.ForegroundColor != theme.Light().Text {
+		t.Fatal("the view must set the terminal foreground to the theme text")
+	}
+	for i, l := range strings.Split(v.Content, "\n") {
+		if !strings.Contains(l, "38;2;30;31;43m") {
+			t.Fatalf("line %d lacks the theme text color: %q", i, l)
+		}
 	}
 }

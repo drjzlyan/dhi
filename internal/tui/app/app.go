@@ -816,9 +816,19 @@ func (a *App) bodyHeight() int {
 
 // View composes tab bar + active surface + optional help overlay + statusline.
 func (a *App) View() tea.View {
-	v := tea.NewView(a.compose())
+	// Text with no color of its own takes the theme's, never the
+	// terminal's default: dhi-dawn on a dark terminal would otherwise
+	// leave plain text light on paper (F-095). The view color covers
+	// terminals that honour OSC 10; restyling each line covers the rest.
+	lines := strings.Split(a.compose(), "\n")
+	base := theme.TextStyle()
+	for i, l := range lines {
+		lines[i] = kit.Restyle(base, l)
+	}
+	v := tea.NewView(strings.Join(lines, "\n"))
 	v.AltScreen = true
 	v.BackgroundColor = theme.Current.Bg
+	v.ForegroundColor = theme.Current.Text
 	// Click + wheel events reach the shell as MouseClickMsg/MouseWheelMsg
 	// (F-026 P2); the shell routes them to the tab bar and the active
 	// surface via narrow seams.
