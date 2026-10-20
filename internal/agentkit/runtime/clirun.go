@@ -886,6 +886,7 @@ func (r *Runtime) cliPromptAt(ctx context.Context, e *entry, trigger bus.Message
 	grounding += "\n2. Address the reserved workspace dotdir as .dhi/<rel-path>; ideation artifacts belong under .dhi/sessions/<session>/<file>, where the human's views look for them."
 	grounding += "\n3. Before changing code outside a task worktree, call work_branch: DHI makes the card, branch and worktree and continues you there. The default branch is locked, so a commit to it fails — and the human reviews work per branch."
 	grounding += "\n4. If the sandbox blocks you (\"Operation not permitted\"), call permission_request for exactly what you need. Do not give up or work around it: the human decides access, and a workaround hides what you needed."
+	grounding += "\n5. Finish by saying what changed, how you checked it (the command you ran and what it showed), and what is still open or blocked. The human decides what to review from that, so an unchecked change must say it is unchecked."
 	grounding += r.secretsLine(e.m.ID)
 	// Stable sections first (they cache), volatile after (F-065); each
 	// carries its priority for the prompt budget (F-078).
