@@ -148,7 +148,7 @@ func (a *App) activityChip() string {
 	} else {
 		noun = "1 " + noun
 	}
-	return theme.SuccessText().Render(glyph + " " + noun)
+	return theme.Badge(theme.BadgeBusy).Render(" " + glyph + " " + noun + " ") // a busy badge (F-096)
 }
 
 // activityCmd arms the spinner tick chain when agents are working and

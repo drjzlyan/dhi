@@ -759,6 +759,7 @@ func (m *Model) inboxBody(w, h int) string {
 				key := sp.Key
 				m.hits.Add(w+2+sp.From, top+sp.Line, sp.To-sp.From, 1, func(int, int) { m.inboxKey(key) })
 			}
+			right = append(right, approvalConsequences(previewW-2)...)
 		}
 		out = sideBySide(out, right, w, previewW, h)
 	}

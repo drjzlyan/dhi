@@ -8,10 +8,10 @@
                           ▏                                                                                           y yes    o once    a always here    g everywhere          
                           ▏                                                                                           n no                                                      
                           ▏                                                                                                                                                     
-                          ▏                                                                                                                                                     
-                          ▏                                                                                                                                                     
-                          ▏                                                                                                                                                     
-                          ▏                                                                                                                                                     
+                          ▏                                                                                          once        allow until DHI restarts                       
+                          ▏                                                                                          always here allow and remember in this workspace           
+                          ▏                                                                                          everywhere  allow and remember in every workspace          
+                          ▏                                                                                          no          deny; the agent is told and carries on         
                           ▏                                                                                                                                                     
                           ▏                                                                                                                                                     
                           ▏                                                                                                                                                     

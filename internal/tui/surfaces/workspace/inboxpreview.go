@@ -91,3 +91,20 @@ func inboxActionHint(it inbox.Item) string {
 	}
 	return "enter/o jump"
 }
+
+// approvalConsequences says what each decision does before you press it
+// (F-099): an agent's request is answered once, so the cost of each
+// choice is spelled out next to the buttons, not left to the label.
+func approvalConsequences(w int) []string {
+	rows := [][2]string{
+		{"once", "allow until DHI restarts"},
+		{"always here", "allow and remember in this workspace"},
+		{"everywhere", "allow and remember in every workspace"},
+		{"no", "deny; the agent is told and carries on"},
+	}
+	out := []string{""}
+	for _, r := range rows {
+		out = append(out, kit.ClipEllipsis(theme.TextDim().Render(fmt.Sprintf("%-12s", r[0]))+theme.TextMuted().Render(r[1]), w))
+	}
+	return out
+}
