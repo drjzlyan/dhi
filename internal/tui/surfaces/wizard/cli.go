@@ -211,20 +211,40 @@ func (s *cliStep) Update(msg tea.Msg) tea.Cmd {
 	return nil
 }
 
+// status is a row's state as a badge (F-098): the glyph carries the
+// meaning, the hue repeats it.
 func (s *cliStep) status(r CLIRow) string {
 	switch {
 	case r.Version == "":
-		if r.Plan.Method == clirun.MethodNPM && s.env.InstallCLI != nil {
-			return dim("not installed · i installs it")
-		}
-		return dim("not installed · i shows how")
+		return kit.Badge(theme.BadgeNeutral, "not installed")
 	case r.Verdict == clirun.VerdictExact:
-		return ok("ready")
+		return kit.Badge(theme.BadgeOK, "ready")
 	case r.Verdict == clirun.VerdictDrift:
-		return ok("ready") + " " + warn("("+clirun.Relation(r.Tested, r.Version)+" verified "+r.Tested+")")
+		return kit.Badge(theme.BadgeWarn, "ready · "+clirun.Relation(r.Tested, r.Version)+" verified "+r.Tested)
 	default:
-		return bad(r.Why)
+		return kit.Badge(theme.BadgeError, r.Why)
 	}
+}
+
+// Keys names the step's own keys for the status row, by phase.
+func (s *cliStep) Keys() []string {
+	switch s.phase {
+	case cliConfirm:
+		return []string{"y install", "n cancel"}
+	case cliInstalling:
+		return nil
+	case cliManualInfo:
+		return []string{"r check again", "esc back"}
+	}
+	keys := []string{"↑/↓ select"}
+	if row, ok := s.selected(); ok && row.Version == "" {
+		if row.Plan.Method == clirun.MethodNPM && s.env.InstallCLI != nil {
+			keys = append(keys, "i install")
+		} else {
+			keys = append(keys, "i how to install")
+		}
+	}
+	return append(keys, "r re-check")
 }
 
 func (s *cliStep) View(w, f int) []string {
@@ -235,11 +255,11 @@ func (s *cliStep) View(w, f int) []string {
 	for i, r := range s.rows {
 		mark, name := "  ", theme.TextStyle().Render(fmt.Sprintf("%-13s", r.Name))
 		if i == s.cur {
-			mark = theme.GlyphCursor + " "
-			name = theme.TabActive().Render(fmt.Sprintf("%-13s", r.Name))
+			mark = theme.AccentText().Render(theme.GlyphCursor) + " "
+			name = theme.AccentText().Render(fmt.Sprintf("%-13s", r.Name))
 		}
 		ver := dim(fmt.Sprintf("%-11s", orDash(r.Version)))
-		out = append(out, mark+name+ver+s.status(r))
+		out = append(out, kit.ClipEllipsis(mark+name+ver+s.status(r), w))
 	}
 	readyAny := false
 	for _, r := range s.rows {
@@ -258,8 +278,10 @@ func (s *cliStep) View(w, f int) []string {
 	case cliConfirm:
 		out = append(out, "", theme.TextStyle().Render("DHI will run, with its own npm (no sudo, nothing global):"), "",
 			"  "+theme.AccentText().Render("npm install --prefix "+s.prefixOf(row.Name)+" "+row.Plan.Package), "",
-			dim("Installs into DHI's folder only. Source: "+orDash(row.Plan.Docs)),
-			dim("enter / y to install · esc / n to cancel"))
+			dim("Installs into DHI's folder only. Source: "+orDash(row.Plan.Docs)))
+		bl, _ := kit.Buttons([]kit.Button{{Key: "y", Label: "Install", Focused: true},
+			{Key: "n", Label: "Cancel", Variant: theme.ButtonGhost}}, w)
+		out = append(append(out, ""), bl...)
 	case cliInstalling:
 		out = append(out, "", kit.SpinnerGlyph(f)+" "+dim("installing "+row.Plan.Package+" with DHI's npm — this can take a minute…"))
 	case cliManualInfo:
@@ -273,12 +295,14 @@ func (s *cliStep) View(w, f int) []string {
 		if row.Plan.Note != "" {
 			out = append(out, "", dim(row.Plan.Note))
 		}
-		out = append(out, "", dim("then press r to check again · esc to go back"))
+		out = append(out, "", dim("Then press r to check again."))
 	default:
 		if hasRow && row.Plan.Auth != "" {
-			out = append(out, "", dim("sign in: "+row.Plan.Auth))
+			out = append(out, "")
+			for _, l := range kit.WrapWords("sign in: "+row.Plan.Auth, w) {
+				out = append(out, dim(l))
+			}
 		}
-		out = append(out, "", dim("↑/↓ select · i install · r re-check · enter continue"))
 	}
 	if s.msg != "" {
 		out = append(out, "", ok(s.msg))

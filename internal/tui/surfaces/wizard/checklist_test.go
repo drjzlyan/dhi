@@ -6,6 +6,7 @@ import (
 
 	"github.com/drjzlyan/dhi/internal/settings"
 	"github.com/drjzlyan/dhi/internal/setup"
+	"github.com/drjzlyan/dhi/internal/testutil/golden"
 	"github.com/drjzlyan/dhi/internal/tui/kit"
 )
 
@@ -105,4 +106,18 @@ func TestSingleWorkspaceStepRelaunches(t *testing.T) {
 	if last := f.persisted[len(f.persisted)-1]; last.Finished || !last.Has("workspace") {
 		t.Fatalf("persisted %+v", last)
 	}
+}
+
+func TestGoldenSingleStepDialogs(t *testing.T) {
+	f := newFixture(t, true)
+	f.env.Instructions = func() ([]string, []string) { return nil, nil }
+	f.env.SaveInstructions = func([]string, bool) error { return nil }
+	m := Single(f.env, "9.9.9", setup.State{}, "instructions", nil)
+	m.Resize(100, 34)
+	run(m, m.Init())
+	key(m, " ", "j", "a")
+	for _, r := range "Use British English" {
+		key(m, string(r))
+	}
+	golden.Snapshot(t, "wizard_single_instructions", plain(m))
 }

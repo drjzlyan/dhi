@@ -203,17 +203,37 @@ func (s *integrationsStep) apply(row IntegrationRow) {
 	s.refresh()
 }
 
+// status is a row's state as a badge (F-098).
 func (s *integrationsStep) status(r IntegrationRow) string {
 	switch {
 	case r.Entry.Unavailable != "":
-		return dim("not available yet")
+		return kit.Badge(theme.BadgeNeutral, "not available yet")
 	case r.State.Ready():
-		return ok("connected")
+		return kit.Badge(theme.BadgeOK, "connected")
 	case r.State.Installed:
-		return warn("needs credentials: " + strings.Join(r.State.Missing, ", "))
+		return kit.Badge(theme.BadgeWarn, "needs "+strings.Join(r.State.Missing, ", "))
 	default:
-		return dim("not connected · s sets it up")
+		return kit.Badge(theme.BadgeNeutral, "not connected")
 	}
+}
+
+// Keys names the step's own keys for the status row, by phase.
+func (s *integrationsStep) Keys() []string {
+	switch s.phase {
+	case intInfo:
+		return []string{"esc back"}
+	case intFields:
+		return []string{"tab next field", "esc back"}
+	case intWho:
+		return []string{"←/→ choose", "esc back"}
+	case intConfirm:
+		return []string{"y connect", "esc back"}
+	}
+	keys := []string{"↑/↓ select"}
+	if r, ok := s.selected(); ok && r.Entry.Unavailable == "" {
+		keys = append(keys, "s set up")
+	}
+	return keys
 }
 
 func trustLabel(t catalog.Trust) string {
@@ -230,15 +250,15 @@ func trustLabel(t catalog.Trust) string {
 func (s *integrationsStep) View(w, f int) []string {
 	out := []string{
 		theme.TextStyle().Render("Connect the tools your employees work in"),
-		dim("Optional — you can do this later from the wizard (ctrl+p → Run setup wizard)."), "",
+		dim("Optional — it stays on the start page's checklist for later."), "",
 	}
 	for i, r := range s.rows {
 		mark, name := "  ", theme.TextStyle().Render(fmt.Sprintf("%-20s", r.Entry.Name))
 		if i == s.cur {
-			mark = theme.GlyphCursor + " "
-			name = theme.TabActive().Render(fmt.Sprintf("%-20s", r.Entry.Name))
+			mark = theme.AccentText().Render(theme.GlyphCursor) + " "
+			name = theme.AccentText().Render(fmt.Sprintf("%-20s", r.Entry.Name))
 		}
-		out = append(out, mark+name+s.status(r))
+		out = append(out, kit.ClipEllipsis(mark+name+s.status(r), w))
 	}
 	row, hasRow := s.selected()
 	if !hasRow {
@@ -261,8 +281,7 @@ func (s *integrationsStep) View(w, f int) []string {
 				out = append(out, "  "+dim(prefix+l))
 			}
 		}
-		out = append(out, "", dim("create it here: ")+theme.AccentText().Render(e.TokenURL),
-			dim("enter continue · esc back"))
+		out = append(out, "", dim("create it here: ")+theme.Link().Render(e.TokenURL))
 	case intFields:
 		out = append(out, "", theme.AccentText().Render(e.Name)+dim(" — enter the details (hidden as you type)"), "")
 		out = append(out, formLines(s.form)...)
@@ -271,11 +290,9 @@ func (s *integrationsStep) View(w, f int) []string {
 				out = append(out, dim(fmt.Sprintf("  %s: %s", in.Label, in.Help)))
 			}
 		}
-		out = append(out, dim("tab next field · enter continue · esc back"))
 	case intWho:
 		out = append(out, "", theme.AccentText().Render(e.Name), "")
 		out = append(out, formLines(s.who)...)
-		out = append(out, dim("←/→ choose · enter continue · esc back"))
 	case intConfirm:
 		path := "your credentials file"
 		if s.env.CredentialsPath != "" {
@@ -285,8 +302,10 @@ func (s *integrationsStep) View(w, f int) []string {
 			"  "+fmt.Sprintf("store %s in %s", kit.Count(len(e.Credentials()), "credential"), theme.AccentText().Render(path)),
 			"  "+dim("(owner-only file, readable plain text — like ~/.aws/credentials)"),
 			"  "+fmt.Sprintf("add %s to this workspace (no secrets in it, safe to commit)", theme.AccentText().Render(".dhi/mcp/"+e.Slug+".toml")),
-			"  "+fmt.Sprintf("give %s access, each call still asks you first", s.who.Values()[0]),
-			"", dim("enter / y to connect · esc back"))
+			"  "+fmt.Sprintf("give %s access, each call still asks you first", s.who.Values()[0]), "")
+		bl, _ := kit.Buttons([]kit.Button{{Key: "y", Label: "Connect", Focused: true},
+			{Key: "esc", Label: "Back", Variant: theme.ButtonGhost}}, w)
+		out = append(out, bl...)
 	default:
 		if e.Unavailable != "" {
 			out = append(out, "")
@@ -296,7 +315,6 @@ func (s *integrationsStep) View(w, f int) []string {
 		} else {
 			out = append(out, "", dim(e.Description), trustLabel(e.Trust))
 		}
-		out = append(out, "", dim("↑/↓ select · s set up · enter continue"))
 	}
 	if s.msg != "" {
 		out = append(out, "", ok(s.msg))

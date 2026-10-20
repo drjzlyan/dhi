@@ -106,3 +106,21 @@ func TestGoldenComponents(t *testing.T) {
 	}}.View(60)...)
 	golden.Snapshot(t, "components", strings.Join(out, "\n"))
 }
+
+func TestMultilineInputSoftWraps(t *testing.T) {
+	theme.SwapForTest(t, theme.Dark())
+	in := NewInput(strings.Repeat("x", 25), "")
+	in.Multiline, in.Focused = true, true
+	rows := in.View(13) // 10 cells of text per row
+	if len(rows) != 3 {
+		t.Fatalf("25 runes at 10 per row = 3 rows, got %d: %q", len(rows), rows)
+	}
+	if !strings.Contains(ansi.Strip(rows[2]), "xxxxx"+theme.GlyphCursor) {
+		t.Fatalf("cursor must end the last row: %q", ansi.Strip(rows[2]))
+	}
+	full := NewInput(strings.Repeat("y", 10), "")
+	full.Multiline, full.Focused = true, true
+	if r := full.View(13); len(r) != 2 || !strings.Contains(ansi.Strip(r[1]), theme.GlyphCursor) {
+		t.Fatalf("cursor after a full row gets its own row: %q", r)
+	}
+}

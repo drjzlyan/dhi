@@ -10,18 +10,18 @@
 
 
 
+
           ╭─ dhi setup ──────────────────────────────────────────────────────────────────╮
           │ ✓ welcome ── ✓ identity ── ✓ conventions ── ● coding CLI ── ○ done           │
           │                                                                              │
           │ Coding CLIs — the engines your employees think with                          │
           │ DHI drives the CLI you already use; install one here if you have none.       │
           │                                                                              │
-          │ ▌ claude       2.1.285    ✓ ready (newer than verified 2.1.177)              │
-          │   codex        —          not installed · i installs it                      │
-          │   cursor-agent —          not installed · i shows how                        │
+          │ ▌ claude       2.1.285     ! ready · newer than verified 2.1.177             │
+          │   codex        —           · not installed                                   │
+          │   cursor-agent —           · not installed                                   │
           │                                                                              │
-          │ sign in: run `claude` and follow the browser prompts (or set ANTHROPIC_API_K │
-          │                                                                              │
-          │ ↑/↓ select · i install · r re-check · enter continue                         │
+          │ sign in: run `claude` and follow the browser prompts (or set                 │
+          │ ANTHROPIC_API_KEY)                                                           │
           │                                                                              │
           ╰──────────────────────────────────────────────────────────────────────────────╯

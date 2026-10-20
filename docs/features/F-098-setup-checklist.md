@@ -1,6 +1,6 @@
 # F-098 — Setup as a guided checklist, with interactive steps
 
-Status: in progress (session 60) — P4 done, P5 next · ADR-0041
+Status: done (session 60, M34 P4–P5) · ADR-0041
 
 ## Why
 First run was an eleven-step wizard gate in front of the app. Several steps were text walls or raw
@@ -26,15 +26,15 @@ dim lines at the bottom.
   - instructions: a list editor with suggested rules
   - conventions: a live preview of the branch, commit and trailer
   - cli and integrations: cards with badges and buttons
-  - team: roster cards
+  - team: unchanged (its −/+ role grid and roster preview already show the team)
   - result: "what to try next" cards
 
 ## Acceptance
 - [x] Table test for `wizard.Checklist` (it needs each step's Applies), covering the migration rule.
 - [x] Running a single step leaves the other items pending; `Finished` is never set.
 - [x] First launch with no setup lands in the Editor, with no wizard gate.
-- [ ] F-094's skip, back and esc semantics are kept (existing tests pass).
-- [ ] Goldens for each upgraded step.
+- [x] F-094's skip, back and esc semantics are kept (existing tests pass).
+- [x] Goldens for each upgraded step (welcome, project, conventions, cli, integrations, done, single instructions).
 
 ## Live (session 60)
 Fresh folder with two repos, sandboxed HOME/XDG_CONFIG, tmux 120×36: the start page lists 6 steps

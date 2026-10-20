@@ -8,12 +8,11 @@
 
 
 
-
           ╭─ dhi setup ──────────────────────────────────────────────────────────────────╮
           │ ✓ welcome ── – workspace ── ✓ identity ── ● conventions ── ○ done            │
           │                                                                              │
           │ How should your team's work look?                                            │
-          │ ←/→ cycles · leave co-author and copyright empty to keep them off.           │
+          │ Leave co-author and copyright empty to keep them off.                        │
           │                                                                              │
           │ commits   ▎‹free›                                                            │
           │ branch    ▎‹task/{slug}›                                                     │
@@ -21,9 +20,11 @@
           │ copyright ▎                                                                  │
           │ license   ▎                                                                  │
           │ template  ▎‹current›                                                         │
+          │ How commit subjects read: free text, conventional (fix(api): …) or a ticket  │
+          │ id first.                                                                    │
           │                                                                              │
-          │ template: a ready-made naming scheme (branches, commit subjects, PR text).   │
-          │ co-author: "Name <email>", added to commits as a Co-Authored-By trailer.     │
-          │ copyright: the holder named in new-file headers; license is an SPDX id (MIT) │
+          │ PREVIEW                                                                      │
+          │ branch   task/fix-login                                                      │
+          │ commit   Fix login timeout on slow networks                                  │
           │                                                                              │
           ╰──────────────────────────────────────────────────────────────────────────────╯

@@ -5,8 +5,6 @@
 
 
 
-
-
           ╭─ dhi setup ──────────────────────────────────────────────────────────────────╮
           │ ● welcome ── ○ workspace ── ○ identity ── ○ conventions ── ○ done            │
           │                                                                              │
@@ -25,6 +23,10 @@
           │ We'll draft a brief of your project, check your git identity, learn          │
           │ how you write and how your team names its work, and hire your team.          │
           │ Everything starts on a default read from your repo: press enter to           │
-          │ keep it, skip any step, and change it later in Settings (ctrl+p).            │
+          │ keep it, skip any step, and change it later in Settings (5).                 │
+          │                                                                              │
+          │ ▌ Editor                  ▌ Agents                  ▌ Review                 │
+          │ ▌ Write code with an      ▌ A team that takes       ▌ Every change is a      │
+          │ ▌ agent beside you.       ▌ tasks and asks first.   ▌ diff you approve.      │
           │                                                                              │
           ╰──────────────────────────────────────────────────────────────────────────────╯

@@ -7,16 +7,16 @@ import (
 
 // checklistCopy is how each step reads on the start page's checklist
 // (F-098): a task-shaped title and what doing it gives you.
-var checklistCopy = map[string]struct{ title, why string }{
-	"workspace":    {"Create a workspace", "group the repos you work on"},
-	"project":      {"Describe the project", "a brief every agent reads first"},
-	"identity":     {"Git identity", "who your commits are from"},
-	"you":          {"How you like to work", "agents write the way you read"},
-	"instructions": {"House rules", "what every agent always does"},
-	"conventions":  {"Branch and commit style", "names agents follow"},
-	"cli":          {"Coding agent", "the CLI that does the work"},
-	"team":         {"Pick a team", "agents that take your tasks"},
-	"integrations": {"Connect services", "GitHub, Linear and more"},
+var checklistCopy = map[string]struct{ title, why, est string }{
+	"workspace":    {"Create a workspace", "group the repos you work on", "10s"},
+	"project":      {"Describe the project", "a brief every agent reads first", "1 min"},
+	"identity":     {"Git identity", "who your commits are from", "10s"},
+	"you":          {"How you like to work", "agents write the way you read", "30s"},
+	"instructions": {"House rules", "what every agent always does", "30s"},
+	"conventions":  {"Branch and commit style", "names agents follow", "20s"},
+	"cli":          {"Coding agent", "the CLI that does the work", "1 min"},
+	"team":         {"Pick a team", "agents that take your tasks", "30s"},
+	"integrations": {"Connect services", "GitHub, Linear and more", "2 min"},
 }
 
 // Checklist lists the setup steps for the start page and status pill

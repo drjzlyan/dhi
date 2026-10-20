@@ -462,8 +462,9 @@ func (m *Model) View() string {
 	if m.single {
 		// One step: no stepper, the task's own title and why head it.
 		id := m.cur().ID()
-		lines = []string{theme.AccentText().Render(ChecklistTitle(id)) +
-			theme.TextMuted().Render("  "+checklistCopy[id].why), ""}
+		c := checklistCopy[id]
+		lines = []string{theme.AccentText().Render(c.title) +
+			theme.TextMuted().Render("  "+c.why+" · about "+c.est), ""}
 		title = "set up"
 	}
 	lines = append(lines, body...)

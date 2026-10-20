@@ -129,7 +129,7 @@ func TestFullFlowCreatesWorkspaceAndRelaunches(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(f.root, ".dhi", "workspace.toml")); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(plain(m), "git identity found") {
+	if v := plain(m); !strings.Contains(v, "✓ found") || !strings.Contains(v, "Ada <ada@example.com>") {
 		t.Fatalf("expected identity found:\n%s", plain(m))
 	}
 	key(m, "enter")          // identity → conventions
@@ -671,9 +671,8 @@ func TestCLIStepListsStatusAndSignInHint(t *testing.T) {
 	f := newCLIFixture(t)
 	m := f.toCLI(t)
 	v := plain(m)
-	for _, want := range []string{"claude", "2.1.285", "ready", "newer than verified 2.1.177",
-		"codex", "not installed · i installs it", "cursor-agent", "not installed · i shows how",
-		"sign in: run `claude`"} {
+	for _, want := range []string{"claude", "2.1.285", "! ready", "newer than verified 2.1.177",
+		"codex", "· not installed", "cursor-agent", "sign in: run `claude`"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("cli step lacks %q:\n%s", want, v)
 		}
@@ -681,6 +680,10 @@ func TestCLIStepListsStatusAndSignInHint(t *testing.T) {
 	key(m, "j")
 	if !strings.Contains(plain(m), "sign in: run `codex`") {
 		t.Fatalf("hint did not follow the cursor:\n%s", plain(m))
+	}
+	// The install key names what it does for the selected row (F-098).
+	if _, h := m.Hints(); !strings.Contains(strings.Join(h, ","), "i install") {
+		t.Fatalf("codex row: hints %v", h)
 	}
 }
 
@@ -697,8 +700,8 @@ func TestCLIInstallShowsTheExactCommandAndCancelDoesNothing(t *testing.T) {
 		t.Fatal("installed before confirmation")
 	}
 	key(m, "esc")
-	if len(f.installs) != 0 || !strings.Contains(plain(m), "↑/↓ select") {
-		t.Fatalf("cancel must return to the list without installing:\n%s", plain(m))
+	if _, h := m.Hints(); len(f.installs) != 0 || !strings.Contains(strings.Join(h, ","), "↑/↓ select") {
+		t.Fatalf("cancel must return to the list without installing: %v\n%s", h, plain(m))
 	}
 }
 
@@ -878,7 +881,7 @@ func TestIntegrationsListShowsEveryEntryAndTeamsIsUnavailable(t *testing.T) {
 	f := newIntFixture(t)
 	m := f.toIntegrations(t)
 	v := plain(m)
-	for _, want := range []string{"Jira + Confluence", "GitHub", "Linear", "Notion", "Slack", "Microsoft Teams", "not connected · s sets it up"} {
+	for _, want := range []string{"Jira + Confluence", "GitHub", "Linear", "Notion", "Slack", "Microsoft Teams", "· not connected"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("list lacks %q:\n%s", want, v)
 		}
@@ -1054,7 +1057,7 @@ func TestDoneStepOffersTheTourOnlyWhenWired(t *testing.T) {
 	f := newFixture(t, true)
 	m := f.wizard()
 	key(m, "enter", "enter", "enter") // → done
-	if v := plain(m); strings.Contains(v, "Press t") {
+	if v := plain(m); strings.Contains(v, "tour first") {
 		t.Fatalf("tour offered with no hook:\n%s", v)
 	}
 	key(m, "t") // ignored without a hook: the done step takes enter only
@@ -1066,7 +1069,7 @@ func TestDoneStepOffersTheTourOnlyWhenWired(t *testing.T) {
 	g.env.StartTour = func() {}
 	m2 := g.wizard()
 	key(m2, "enter", "enter", "enter")
-	if v := plain(m2); !strings.Contains(v, "Press t for a 2-minute guided tour first.") {
+	if v := plain(m2); !strings.Contains(v, " t 2-minute tour first ") {
 		t.Fatalf("tour offer missing:\n%s", v)
 	}
 }
@@ -1231,8 +1234,15 @@ func TestProjectStepEditsAndKeepsNewlines(t *testing.T) {
 	for i := 0; i < 8; i++ { // → never do
 		key(m, "tab")
 	}
-	for _, r := range `prod\ndrop tables` {
+	for _, r := range "prod" {
 		key(m, string(r))
+	}
+	key(m, "ctrl+j") // a real line break, not a typed \n
+	for _, r := range "drop tables" {
+		key(m, string(r))
+	}
+	if v := plain(m); !strings.Contains(v, "prod  +1 more") || !strings.Contains(v, "Hard lines") {
+		t.Fatalf("list must summarise the lines and the field explain itself:\n%s", v)
 	}
 	key(m, "enter")
 	if got := (*saved)[0].Dont; got != "prod\ndrop tables" {
@@ -1366,7 +1376,7 @@ func TestIdentityFoundCanBeChanged(t *testing.T) {
 	f := newFixture(t, true)
 	m := f.wizard()
 	key(m, "enter")
-	if v := plain(m); !strings.Contains(v, "e changes it") {
+	if v := plain(m); !strings.Contains(v, " e Change ") {
 		t.Fatalf("no change hint:\n%s", v)
 	}
 	key(m, "e")

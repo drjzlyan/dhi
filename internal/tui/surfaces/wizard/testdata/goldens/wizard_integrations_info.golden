@@ -3,18 +3,19 @@
 
 
 
+
           ╭─ dhi setup ──────────────────────────────────────────────────────────────────╮
           │ ✓ welcome ── ✓ identity ── ✓ conventions ── ● integrations ── ○ done         │
           │                                                                              │
           │ Connect the tools your employees work in                                     │
-          │ Optional — you can do this later from the wizard (ctrl+p → Run setup wizard) │
+          │ Optional — it stays on the start page's checklist for later.                 │
           │                                                                              │
-          │ ▌ Jira + Confluence   not connected · s sets it up                           │
-          │   GitHub              not connected · s sets it up                           │
-          │   Linear              not connected · s sets it up                           │
-          │   Notion              ✓ connected                                            │
-          │   Slack               not connected · s sets it up                           │
-          │   Microsoft Teams     not available yet                                      │
+          │ ▌ Jira + Confluence    · not connected                                       │
+          │   GitHub               · not connected                                       │
+          │   Linear               · not connected                                       │
+          │   Notion               ✓ connected                                           │
+          │   Slack                · not connected                                       │
+          │   Microsoft Teams      · not available yet                                   │
           │                                                                              │
           │ Jira + Confluence — Search and update Jira issues, read and write Confluence │
           │                                                                              │
@@ -29,6 +30,5 @@
           │      edit the card for that.                                                 │
           │                                                                              │
           │ create it here: https://id.atlassian.com/manage-profile/security/api-tokens  │
-          │ enter continue · esc back                                                    │
           │                                                                              │
           ╰──────────────────────────────────────────────────────────────────────────────╯

@@ -6,12 +6,11 @@
 
 
 
-
           ╭─ dhi setup ──────────────────────────────────────────────────────────────────╮
           │ ✓ welcome ── ✓ identity ── ● conventions ── ○ done                           │
           │                                                                              │
           │ How should your team's work look?                                            │
-          │ ←/→ cycles · leave co-author and copyright empty to keep them off.           │
+          │ Leave co-author and copyright empty to keep them off.                        │
           │                                                                              │
           │ commits   ▎‹conventional›                                                    │
           │ branch    ▎‹task/{slug}›                                                     │
@@ -19,12 +18,14 @@
           │ copyright ▎                                                                  │
           │ license   ▎                                                                  │
           │ template  ▎‹detected›                                                        │
+          │ How commit subjects read: free text, conventional (fix(api): …) or a ticket  │
+          │ id first.                                                                    │
           │                                                                              │
-          │ ✓ learned from your repo                                                     │
+          │ PREVIEW                                                                      │
+          │ branch   task/fix-login                                                      │
+          │ commit   fix(api): login timeout on slow networks                            │
+          │                                                                              │
+          │  ✓ learned from your repo                                                    │
           │   5 of 5 recent commits use Conventional Commits                             │
-          │                                                                              │
-          │ template: a ready-made naming scheme (branches, commit subjects, PR text).   │
-          │ co-author: "Name <email>", added to commits as a Co-Authored-By trailer.     │
-          │ copyright: the holder named in new-file headers; license is an SPDX id (MIT) │
           │                                                                              │
           ╰──────────────────────────────────────────────────────────────────────────────╯

@@ -7,8 +7,9 @@ import (
 	"github.com/drjzlyan/dhi/internal/settings"
 )
 
-// F-090: instructions save for every workspace by default, split on ;
-// and an empty form saves nothing.
+// F-090/F-098: instructions are a list — suggestions to tick, your own
+// to add — saved for every workspace by default; nothing ticked saves
+// nothing.
 func TestInstructionsStepSavesForEveryWorkspace(t *testing.T) {
 	var got []string
 	var everywhere bool
@@ -23,22 +24,44 @@ func TestInstructionsStepSavesForEveryWorkspace(t *testing.T) {
 		t.Fatal("step hidden")
 	}
 	s.Enter()
-	for _, r := range "write tests first; British English" {
+	if err := s.Apply(); err != nil || got != nil {
+		t.Fatalf("suggestions start unticked; saved %v", got)
+	}
+	s.HandleKey(" ") // tick the first suggestion
+	s.HandleKey("a")
+	if !s.CapturesText() {
+		t.Fatal("typing a rule must capture text")
+	}
+	for _, r := range "British English" {
 		s.HandleKey(string(r))
+	}
+	s.HandleKey("enter")
+	if s.CapturesText() {
+		t.Fatal("enter adds the rule and leaves typing")
 	}
 	if err := s.Apply(); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Join(got, "|") != "write tests first|British English" || !everywhere {
+	if strings.Join(got, "|") != suggestedRules[0]+"|British English" || !everywhere {
 		t.Fatalf("saved %v everywhere=%v", got, everywhere)
 	}
+	// Your own rule can be deleted; a suggestion cannot.
+	s.HandleKey("d")
+	s.HandleKey("s") // this workspace
 	got = nil
-	s.Enter()
-	for range "write tests first; British English" {
-		s.HandleKey("backspace")
+	if err := s.Apply(); err != nil || strings.Join(got, "|") != suggestedRules[0] || everywhere {
+		t.Fatalf("after delete + scope: saved %v everywhere=%v", got, everywhere)
 	}
-	if err := s.Apply(); err != nil || got != nil {
-		t.Fatalf("empty form saved %v", got)
+}
+
+func TestInstructionsKeepExistingRulesTicked(t *testing.T) {
+	env := &Env{Root: "/ws",
+		Instructions:     func() ([]string, []string) { return nil, []string{"say the test command"} },
+		SaveInstructions: func([]string, bool) error { return nil }}
+	s := &instructionsStep{env: env}
+	s.Enter()
+	if l := s.lines(); len(l) != 1 || l[0] != "say the test command" || s.scope != 1 {
+		t.Fatalf("lines %v scope %d", l, s.scope)
 	}
 }
 

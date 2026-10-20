@@ -41,6 +41,16 @@ func ok(s string) string   { return theme.SuccessText().Render(theme.GlyphCheck 
 func warn(s string) string { return theme.WarningText().Render(s) }
 func bad(s string) string  { return theme.DangerText().Render(theme.GlyphCross + " " + s) }
 
+// clipLeft keeps the end of s within w cells ("…/acme"): for paths the
+// last part is the one that says where you are.
+func clipLeft(s string, w int) string {
+	rs := []rune(s)
+	if len(rs) <= w || w < 2 {
+		return s
+	}
+	return "…" + string(rs[len(rs)-w+1:])
+}
+
 // formLines renders a kit.Form without its own hint (the wizard has one).
 func formLines(f *kit.Form) []string {
 	l := f.View()
@@ -64,7 +74,7 @@ var welcomeLines = []string{
 	"We'll draft a brief of your project, check your git identity, learn",
 	"how you write and how your team names its work, and hire your team.",
 	"Everything starts on a default read from your repo: press enter to",
-	"keep it, skip any step, and change it later in Settings (ctrl+p).",
+	"keep it, skip any step, and change it later in Settings (5).",
 }
 
 func (s *welcomeStep) View(w, f int) []string {
@@ -76,6 +86,48 @@ func (s *welcomeStep) View(w, f int) []string {
 	text := kit.Typewriter(strings.Join(welcomeLines, "\n"), f*10)
 	for _, l := range strings.Split(text, "\n") {
 		out = append(out, theme.TextStyle().Render(l))
+	}
+	// The three things DHI is (F-098): a picture of the product before
+	// any question is asked.
+	return append(append(out, ""), cardRow(w,
+		kit.Card{Title: "Editor", Body: "Write code with an agent beside you."},
+		kit.Card{Title: "Agents", Body: "A team that takes tasks and asks first."},
+		kit.Card{Title: "Review", Body: "Every change is a diff you approve."})...)
+}
+
+// cardRow lays cards side by side when they fit, else stacks them with a
+// blank row between.
+func cardRow(w int, cards ...kit.Card) []string {
+	if w < 22*len(cards) {
+		var out []string
+		for i, c := range cards {
+			if i > 0 {
+				out = append(out, "")
+			}
+			rows, _ := c.View(w)
+			out = append(out, rows...)
+		}
+		return out
+	}
+	cw := (w - 2*(len(cards)-1)) / len(cards)
+	cols := make([][]string, len(cards))
+	h := 0
+	for i, c := range cards {
+		cols[i], _ = c.View(cw)
+		h = max(h, len(cols[i]))
+	}
+	out := make([]string, h)
+	for r := 0; r < h; r++ {
+		for i, col := range cols {
+			if i > 0 {
+				out[r] += "  "
+			}
+			if r < len(col) {
+				out[r] += col[r]
+			} else {
+				out[r] += theme.CardBg().Render(strings.Repeat(" ", cw))
+			}
+		}
 	}
 	return out
 }
@@ -194,7 +246,7 @@ func (s *workspaceStep) selected() []setup.MemberSpec {
 func (s *workspaceStep) View(w, f int) []string {
 	out := []string{
 		theme.TextStyle().Render("No DHI workspace here yet."),
-		dim(s.env.CWD),
+		dim(clipLeft(s.env.CWD, w)),
 		"",
 	}
 	if s.choosing() {
@@ -206,17 +258,11 @@ func (s *workspaceStep) View(w, f int) []string {
 		}
 		for i := start; i < end; i++ {
 			m := s.members[i]
-			mark := dim(theme.GlyphTodo)
-			if s.picked[i] {
-				mark = theme.SuccessText().Render(theme.GlyphCheck)
-			}
 			cursor := " "
-			name := theme.TextStyle().Render(m.Name)
 			if i == s.cur {
 				cursor = theme.AccentText().Render(theme.GlyphCursor)
-				name = theme.AccentText().Render(m.Name)
 			}
-			out = append(out, cursor+" "+mark+" "+name+dim("  →  "+m.Path))
+			out = append(out, cursor+" "+kit.Checkbox(m.Name, s.picked[i], i == s.cur)+dim("  →  "+m.Path))
 		}
 		if end < len(s.members) {
 			out = append(out, dim(fmt.Sprintf("    ↓ %d more", len(s.members)-end)))
@@ -226,7 +272,7 @@ func (s *workspaceStep) View(w, f int) []string {
 		if s.count() == 0 {
 			note = fmt.Sprintf("None selected · enter adds all %d.", len(s.members))
 		}
-		note += " Press l to choose later: nothing is created until you do (ctrl+p → Run setup wizard)."
+		note += " Press l to choose later: nothing is created, and the step waits on the start page's checklist."
 		for _, l := range kit.WrapWords(note, w) {
 			out = append(out, dim(l))
 		}
@@ -425,13 +471,14 @@ func (s *identityStep) View(w, f int) []string {
 	case idChecking:
 		return []string{kit.SpinnerGlyph(f) + " " + dim("reading your git identity…")}
 	case idFound:
-		out = []string{
-			ok("git identity found"),
-			"  " + theme.TextStyle().Render(s.found.Name) + dim(" <"+s.found.Email+">"),
-			"",
-			dim("Commits made by you and your agents carry this author."),
-			dim("enter uses it · e changes it"),
-		}
+		card, _ := kit.Card{
+			Title: s.found.Name + " <" + s.found.Email + ">", Selected: true,
+			Body:  "Commits made by you and your agents carry this author.",
+			Badge: "found", BadgeKind: theme.BadgeOK,
+			Buttons: []kit.Button{{Key: "⏎", Label: "Use it", Focused: true},
+				{Key: "e", Label: "Change", Variant: theme.ButtonGhost}},
+		}.View(w)
+		out = card
 	case idCollect:
 		head := "Commits need an author. Who are you?"
 		if s.found.Name != "" {
@@ -453,7 +500,9 @@ func (s *identityStep) View(w, f int) []string {
 		for _, c := range gitcore.IdentityCommands(s.want) {
 			out = append(out, "  "+theme.AccentText().Render(c))
 		}
-		out = append(out, "", dim("enter / y to run · esc / n to edit"))
+		bl, _ := kit.Buttons([]kit.Button{{Key: "⏎", Label: "Run them", Focused: true},
+			{Key: "esc", Label: "Edit", Variant: theme.ButtonGhost}}, w)
+		out = append(append(out, ""), bl...)
 	case idUnavailable:
 		out = []string{
 			warn("Git isn't installed in DHI's toolchain yet."),
@@ -589,6 +638,9 @@ func (s *conventionsStep) HandleKey(key string) Action {
 
 func (s *conventionsStep) CapturesText() bool { return true }
 
+// Keys names the step's own keys for the status row.
+func (s *conventionsStep) Keys() []string { return []string{"tab field", "←/→ cycle"} }
+
 // next derives the Config the form describes from the current one.
 func (s *conventionsStep) next() conventions.Config {
 	v := s.form.Values()
@@ -631,22 +683,59 @@ func (s *conventionsStep) Apply() error {
 	return nil
 }
 
+// conventionsHelp explains the focused field only (F-098): one line
+// where you look, not three at the bottom.
+var conventionsHelp = []string{
+	"How commit subjects read: free text, conventional (fix(api): …) or a ticket id first.",
+	"The branch each task's work happens on. {slug} is the task, {user} you.",
+	"\"Name <email>\" added to commits as a Co-Authored-By trailer. Empty = off.",
+	"The holder named in new-file headers. Empty = no headers.",
+	"An SPDX id for those headers, e.g. MIT or Apache-2.0.",
+	"A ready-made naming scheme: branches, commit subjects and PR text together.",
+}
+
+// preview shows what the current answers produce, live as they change.
+func (s *conventionsStep) preview() []string {
+	c := s.next()
+	branch, err := conventions.ExpandBranch(c.Branch.Task, map[string]string{
+		"slug": "fix-login", "user": "ada", "date": "2026-10-20", "id": "42", "ticket": "ABC-123"})
+	if err != nil {
+		branch = "(" + err.Error() + ")"
+	}
+	subject := map[string]string{
+		conventions.FormatFree:         "Fix login timeout on slow networks",
+		conventions.FormatConventional: "fix(api): login timeout on slow networks",
+		conventions.FormatTicket:       "ABC-123 Fix login timeout on slow networks",
+	}[c.Commit.Format]
+	out := []string{dim("branch   ") + theme.AccentText().Render(branch),
+		dim("commit   ") + theme.TextStyle().Render(subject)}
+	if c.Commit.CoAuthorEnabled {
+		out = append(out, dim("         ")+dim("Co-Authored-By: "+c.Commit.CoAuthor))
+	}
+	return out
+}
+
 func (s *conventionsStep) View(w, f int) []string {
 	out := []string{
 		theme.TextStyle().Render("How should your team's work look?"),
-		dim("←/→ cycles · leave co-author and copyright empty to keep them off."), "",
+		dim("Leave co-author and copyright empty to keep them off."), "",
 	}
 	out = append(out, formLines(s.form)...)
+	if i := s.form.Cur(); i < len(conventionsHelp) {
+		for _, l := range kit.WrapWords(conventionsHelp[i], w) {
+			out = append(out, theme.TextMuted().Render(l))
+		}
+	}
+	out = append(out, "", theme.SectionHeader().Render("PREVIEW"))
+	for _, l := range s.preview() {
+		out = append(out, kit.ClipEllipsis(l, w))
+	}
 	if len(s.evidence) > 0 {
-		out = append(out, "", ok("learned from your repo"))
+		out = append(out, "", kit.Badge(theme.BadgeOK, "learned from your repo"))
 		for _, e := range s.evidence {
 			out = append(out, dim("  "+e))
 		}
 	}
-	out = append(out, "",
-		dim("template: a ready-made naming scheme (branches, commit subjects, PR text)."),
-		dim("co-author: \"Name <email>\", added to commits as a Co-Authored-By trailer."),
-		dim("copyright: the holder named in new-file headers; license is an SPDX id (MIT)."))
 	return out
 }
 
@@ -669,22 +758,27 @@ func (s *doneStep) View(w, f int) []string {
 		out = append(out, ok(a))
 	}
 	if len(s.env.Skipped) > 0 {
-		out = append(out, dim("skipped: "+strings.Join(s.env.Skipped, ", ")+" — re-run setup to pick them up"))
+		out = append(out, dim("skipped: "+strings.Join(s.env.Skipped, ", ")+" — they wait on the start page's checklist"))
 		if s.env.Root == "" {
 			out = append(out, dim("no workspace yet: the brief, team and integrations wait for one"))
 		}
 	}
+	out = append(out, "", theme.SectionHeader().Render("TRY NEXT"))
+	out = append(out, cardRow(w,
+		kit.Card{Title: "Open a file", Body: "/ finds one by name, s searches code."},
+		kit.Card{Title: "Ask an agent", Body: "ctrl+a in the Editor, or @mention one."},
+		kit.Card{Title: "Hand over a task", Body: "n on the board (2) makes one."})...)
 	out = append(out, "")
-	verb := "start"
+	verb := "Start"
 	if s.env.Changed {
-		verb = "restart DHI and start"
+		verb = "Restart DHI"
 	}
-	out = append(out, theme.TextStyle().Render("Press enter to "+verb+"."))
+	bs := []kit.Button{{Key: "⏎", Label: verb, Focused: true}}
 	if s.env.StartTour != nil || s.env.QueueTour != nil {
-		out = append(out, theme.AccentText().Render("Press t")+theme.TextStyle().Render(" for a 2-minute guided tour first."))
+		bs = append(bs, kit.Button{Key: "t", Label: "2-minute tour first", Variant: theme.ButtonSecondary})
 	}
-	out = append(out, dim("Re-run any time: ctrl+p → Run setup wizard · lessons: ctrl+p → Tutorial."))
-	return out
+	bl, _ := kit.Buttons(bs, w)
+	return append(out, bl...)
 }
 
 // HandleKey: enter finishes; t finishes and asks for the tour.

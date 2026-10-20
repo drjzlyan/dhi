@@ -130,7 +130,11 @@ func (in Input) View(w int) []string {
 			if in.Focused && cur >= 0 && cur <= n {
 				c = cur
 			}
-			out = append(out, inputRow(l, "", c, in.Focused, w))
+			if in.Multiline {
+				out = append(out, wrapRows(l, c, in.Focused, w)...)
+			} else {
+				out = append(out, inputRow(l, "", c, in.Focused, w))
+			}
 			cur -= n + 1
 		}
 	}
@@ -173,4 +177,28 @@ func inputRow(text, placeholder string, cur int, focused bool, w int) string {
 	body = ClipEllipsis(body, avail)
 	return theme.InputEdge(focused).Render(theme.GlyphGutterBar) +
 		theme.Input().Render(" "+body+strings.Repeat(" ", max(avail-runeWidth(body), 0)))
+}
+
+// wrapRows soft-wraps one line of a multi-line input into well rows of
+// w cells (character wrap keeps the cursor exact); c >= 0 is the cursor's
+// rune index in the line.
+func wrapRows(line string, c int, focused bool, w int) []string {
+	cw := max(w-3, 1) // edge, padding, room for the cursor block
+	rs := []rune(line)
+	var out []string
+	for start := 0; ; start += cw {
+		end := min(start+cw, len(rs))
+		rc := -1
+		if c >= start && (c < end || (c == end && end-start < cw)) {
+			rc = c - start
+		}
+		out = append(out, inputRow(string(rs[start:end]), "", rc, focused, w))
+		if end >= len(rs) && (c != len(rs) || end-start < cw || len(rs) == 0) {
+			return out
+		}
+		if end >= len(rs) {
+			// The cursor sits after a full last row: give it its own row.
+			return append(out, inputRow("", "", 0, focused, w))
+		}
+	}
 }
