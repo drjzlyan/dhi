@@ -46,8 +46,6 @@
   - `DHI_REC_KEEP=1` keeps the work dir, including the per-flow .txt captures.
   - In zsh, `set -- $spec` does not split, so pass shot arguments explicitly.
 - Branch `m34-ux` is complete: verify, lint and goldens are green. Not pushed, no PR, no release.
-  subtract tag overhead from the budget. P7 live checks. P8 VHS: use a demo identity, check that no
-  real name or CLI list leaks, and copy screenshots.sh's neutral rc files and XDG_DATA_HOME.
 
 ### Session 59 (M31 live checks, on `main`)
 
