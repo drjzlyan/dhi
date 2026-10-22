@@ -1578,10 +1578,13 @@ func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cl
 		// identity resolver (git_commit), the shared ideation store
 		// (ideation_*), and the allowlisted command runner (`run`). A nil
 		// seam makes its tool refuse by name — never a host fallback.
-		Git:             gitRunner,
-		Identity:        identityFn,
-		Sessions:        sessionStore,
-		MCPServers:      mcpStore,
+		Git:        gitRunner,
+		Identity:   identityFn,
+		Sessions:   sessionStore,
+		MCPServers: mcpStore,
+		MCPLoad: func() *mcpserver.Store { // ADR-0043: servers added in Settings reach the next run
+			return mcpserver.OpenWith(ws.Root, ws.Members())
+		},
 		Run:             runRunner,
 		Editor:          editor,
 		WorkspaceScopes: workspaceScopes,

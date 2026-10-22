@@ -111,7 +111,7 @@ type skillRow struct {
 func (m *Model) skillRows() []skillRow {
 	lib := m.libStore()
 	if lib == nil {
-		return nil
+		lib = library.Open(nil) // no workspace: built-ins and yours still list
 	}
 	roster, _ := m.roster()
 	pol := m.allBotsPolicy()
@@ -152,11 +152,17 @@ func (m *Model) skillsView(w int) []string {
 	}
 	st := &m.extState
 	st.skillCur = min(st.skillCur, len(rows)-1)
-	for i, r := range rows {
-		mark, name := "  ", theme.TextStyle().Render(padTo(r.k.Slug, 22))
+	from, to := window(len(rows), st.skillCur, m.listRows(4))
+	if from > 0 {
+		out = append(out, theme.TextMuted().Render(fmt.Sprintf("  ↑ %d more", from)))
+	}
+	for i := from; i < to; i++ {
+		r := rows[i]
+		label := padTo(kit.ClipEllipsis(r.k.Slug, 23), 24)
+		mark, name := "  ", theme.TextStyle().Render(label)
 		if i == st.skillCur {
 			mark = theme.AccentText().Render(theme.GlyphCursor) + " "
-			name = theme.AccentText().Render(padTo(r.k.Slug, 22))
+			name = theme.AccentText().Render(label)
 		}
 		who := theme.TextMuted().Render("no bots")
 		switch {
@@ -168,10 +174,11 @@ func (m *Model) skillsView(w int) []string {
 		line := mark + name + theme.TextMuted().Render(padTo(sourceLabel(r.source), 17)) + who
 		out = append(out, kit.ClipEllipsis(line, w))
 		if i == st.skillCur {
-			for _, l := range kit.WrapWords(r.k.Description, w-4) {
-				out = append(out, "    "+theme.Hint().Render(l))
-			}
+			out = append(out, "    "+theme.Hint().Render(kit.ClipEllipsis(r.k.Description, w-4)))
 		}
+	}
+	if to < len(rows) {
+		out = append(out, theme.TextMuted().Render(fmt.Sprintf("  ↓ %d more", len(rows)-to)))
 	}
 	if lib := m.libStore(); lib != nil {
 		for _, warn := range lib.Warnings() {
@@ -300,7 +307,7 @@ func (m *Model) submitSkillAuthor() {
 		return
 	}
 	m.closeDialog()
-	m.lib = nil
+	m.reloadLib()
 	m.openAssign(assign.Item{Kind: assign.KindSkill, Name: k.Name, Description: k.Description}, nil)
 }
 
@@ -437,7 +444,7 @@ func (m *Model) submitInstallConfirm() {
 	b.Close()
 	st.bundle = nil
 	m.closeDialog()
-	m.lib = nil
+	m.reloadLib()
 	var items []assign.Item
 	for _, c := range b.Skills {
 		for _, n := range res.Skills {
@@ -479,11 +486,14 @@ func (m *Model) integrationsView(w int) []string {
 	st.intCur = min(st.intCur, len(servers)-1)
 	roster, _ := m.roster()
 	pol := m.allBotsPolicy()
-	for i, s := range servers {
-		mark, name := "  ", theme.TextStyle().Render(padTo(s.Slug, 20))
+	from, to := window(len(servers), st.intCur, m.listRows(3))
+	for i := from; i < to; i++ {
+		s := servers[i]
+		label := padTo(kit.ClipEllipsis(s.Slug, 19), 20)
+		mark, name := "  ", theme.TextStyle().Render(label)
 		if i == st.intCur {
 			mark = theme.AccentText().Render(theme.GlyphCursor) + " "
-			name = theme.AccentText().Render(padTo(s.Slug, 20))
+			name = theme.AccentText().Render(label)
 		}
 		state := ""
 		if e := m.ext(); e != nil && e.Status != nil {
@@ -782,7 +792,7 @@ func (m *Model) removeExtension(kind, target string) {
 		return
 	}
 	m.closeDialog()
-	m.lib = nil
+	m.reloadLib()
 	m.afterCrewWrite(nil, "removed "+name, "")
 }
 
@@ -872,3 +882,19 @@ func (m *Model) signInInstalled(names []string) {
 	}
 	e.SignInNow(servers)
 }
+
+// listRows is how many list rows fit under a section's header lines.
+func (m *Model) listRows(chrome int) int { return max(m.height-2-chrome-2, 3) }
+
+// window is the [from, to) slice of n rows that keeps cur visible in rows.
+func window(n, cur, rows int) (int, int) {
+	if n <= rows {
+		return 0, n
+	}
+	rows = max(rows-2, 1) // room for the "more" lines
+	from := min(max(cur-rows/2, 0), n-rows)
+	return from, from + rows
+}
+
+// reloadLib drops the library snapshot so the next read sees an install.
+func (m *Model) reloadLib() { m.lib, m.d.Library = nil, nil }

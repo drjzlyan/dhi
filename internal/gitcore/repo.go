@@ -380,10 +380,10 @@ func Clone(ctx context.Context, url, dst string) (*Repo, error) {
 	return &Repo{path: dst, r: r}, nil
 }
 
-// CloneAt clones url into dst and checks out ref (a commit sha, a branch
+// CloneAt clones url at ref into dst and checks it out (a commit sha, a branch
 // or a tag; "" keeps the default branch). It returns the commit checked
 // out, which installs record so an update is a visible change.
-func CloneAt(ctx context.Context, url, dst, ref string) (string, error) {
+func CloneAt(ctx context.Context, url, ref, dst string) (string, error) {
 	if strings.TrimSpace(url) == "" {
 		return "", fmt.Errorf("gitcore: clone: empty url")
 	}

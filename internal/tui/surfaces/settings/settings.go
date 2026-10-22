@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -1521,10 +1522,13 @@ func (m *Model) statusFlash() string {
 	if m.flash == "" {
 		return ""
 	}
+	// A long flash (a URL, an error) is clipped: the status row drops a
+	// segment that does not fit, and an empty row says nothing.
+	flash := kit.ClipEllipsis(m.flash, max(m.width-20, 60))
 	if strings.HasPrefix(m.flash, "failed") {
-		return theme.ChromeStatus(theme.Current.Danger).Render(m.flash)
+		return theme.ChromeStatus(theme.Current.Danger).Render(flash)
 	}
-	return theme.ChromeStatus(theme.Current.Success).Render(m.flash)
+	return theme.ChromeStatus(theme.Current.Success).Render(flash)
 }
 
 // sectionHints is the per-section keymap for the HintBar.
@@ -1957,8 +1961,8 @@ func itoa(n int) string {
 }
 
 func padTo(s string, w int) string {
-	for len(s) < w {
-		s += " "
+	if n := utf8.RuneCountInString(s); n < w {
+		s += strings.Repeat(" ", w-n)
 	}
 	return s
 }

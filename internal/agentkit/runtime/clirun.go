@@ -631,10 +631,14 @@ func (r *Runtime) serveToolsFor(e *entry, trigger bus.Message, tt turnTools) *se
 	// Third-party MCP servers (F-034 part C): dialed under the sandbox,
 	// allowlist-gated, network deny-by-default.
 	var bridge *mcpbridge.Bridge
-	if wantBridge && r.cfg.MCPServers != nil {
+	servers := r.cfg.MCPServers
+	if r.cfg.MCPLoad != nil {
+		servers = r.cfg.MCPLoad() // re-read each run: a server added in Settings is live at once
+	}
+	if wantBridge && servers != nil {
 		dialCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		bridge = mcpbridge.New(dialCtx, mcpbridge.Deps{
-			Servers:    r.cfg.MCPServers,
+			Servers:    servers,
 			Agent:      e.m,
 			Sandbox:    r.cfg.Sandbox,
 			Approvals:  r.cfg.Approvals,

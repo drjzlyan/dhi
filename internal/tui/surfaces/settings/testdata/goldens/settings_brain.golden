@@ -5,7 +5,7 @@
   agents ────── ▏ ▌ ● ▮▮▮▮▮ Keep pull requests small and focused                    ×0 · correction · 2d                
   AGENTS        ▏                                                                                                       
 ▌ BRAIN         ▏  DEV ─────────────────────────────────────────────────────────────────────────────────────────────    
-  PROPOSALS     ▏   ◆ ▮▮▮▮▯ Run go test with -race in this repo                     ×6 · reflection · 2d  standard?     
+  PROPOSALS     ▏   ◆ ▮▮▮▮▯ Run go test with -race in this repo                     ×6 · reflection · 2d     standard?  
   LIBRARY       ▏   ● ▮▮▮▯▯ Distribute the remainder one cent at a time             ×0 · reflection · 2d                
   team ──────── ▏   ✗ ▮▮▯▯▯ Use the legacy money package                            ×0 · agent · 2d                     
   TEAMS         ▏                                                                                                       

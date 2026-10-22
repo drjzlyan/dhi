@@ -1,11 +1,11 @@
   general ───── ▏ skills ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
   CONFIG        ▏ Agent Skills (SKILL.md) your bots can use · i install from GitHub, a g  
   PROJECT       ▏                                                                         
-  SETUP         ▏ ▌ code-review           built in         no bots                        
-  agents ────── ▏     A repeatable pass over any diff, correctness first and style last.  
-  AGENTS        ▏     Use when reviewing a pull request, a patch or your own change       
-  BRAIN         ▏     before handing it over.                                             
-  PROPOSALS     ▏   docs                  built in         no bots                        
+  SETUP         ▏ ▌ code-review             built in         no bots                      
+  agents ────── ▏     A repeatable pass over any diff, correctness first and style last…  
+  AGENTS        ▏   docs                    built in         no bots                      
+  BRAIN         ▏   incident-triage         built in         no bots                      
+  PROPOSALS     ▏   review-kit              this workspace   no bots                      
            ╭─ give review-kit to… ────────────────────────────────────────────╮           
   team ────│ which bots should use the skill review-kit?                      │           
   TEAMS    │                                                                  │           

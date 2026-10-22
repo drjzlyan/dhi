@@ -19,7 +19,7 @@ func (m *Model) setupView(w int) []string {
 		return append(out, theme.TextDim().Render("(no setup steps apply here)"))
 	}
 	m.setupCur = min(m.setupCur, len(items)-1)
-	cl := kit.Checklist{Items: items, Cursor: m.setupCur, Focus: true, ActionKey: "⏎ re-run"}
+	cl := kit.Checklist{Items: items, Cursor: m.setupCur, Focus: true}
 	out = append(out, cl.View(w)...)
 	return append(out, "", theme.Hint().Render("R resets every step's record (your settings stay) and starts the setup again"))
 }

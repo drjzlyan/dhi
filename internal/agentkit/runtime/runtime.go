@@ -135,6 +135,8 @@ type Config struct {
 	// allowlist names an mcp__<server>__<tool> and its network scope
 	// permits the call.
 	MCPServers *mcpserver.Store
+	// MCPLoad, when set, re-reads the server files for each run.
+	MCPLoad func() *mcpserver.Store
 	// MCPAuth authorizes http MCP servers that need a sign-in (F-106);
 	// nil dials them with their configured headers only.
 	MCPAuth func(ctx context.Context, srv mcpserver.Server, base *http.Client) (*http.Client, error)
