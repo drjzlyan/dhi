@@ -57,6 +57,14 @@ func IdentityCommands(id Identity) []string {
 	}
 }
 
+// LocalIdentityCommands are the commands SetLocalIdentity runs in each repo.
+func LocalIdentityCommands(id Identity) []string {
+	return []string{
+		"git config user.name " + shellQuote(id.Name),
+		"git config user.email " + shellQuote(id.Email),
+	}
+}
+
 func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
@@ -216,4 +224,21 @@ func topAuthor(ctx context.Context, r *Runner, dir string) (Identity, bool) {
 		}
 	}
 	return best, best != Identity{}
+}
+
+// SetLocalIdentity writes user.name/user.email into one repo's own config
+// (dir/.git/config), so the identity applies there only — the choice for a
+// user who keeps their global config untouched (F-112). Callers confirm
+// with the user first.
+func SetLocalIdentity(ctx context.Context, r *Runner, dir string, id Identity) error {
+	if err := ValidateIdentity(id); err != nil {
+		return err
+	}
+	id = Identity{Name: strings.TrimSpace(id.Name), Email: strings.TrimSpace(id.Email)}
+	for _, kv := range [][2]string{{"user.name", id.Name}, {"user.email", id.Email}} {
+		if _, _, err := r.Run(ctx, dir, "config", "--local", kv[0], kv[1]); err != nil {
+			return err
+		}
+	}
+	return nil
 }

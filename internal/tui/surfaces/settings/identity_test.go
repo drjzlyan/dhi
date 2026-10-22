@@ -42,6 +42,27 @@ func TestIdentityRowSuggestsConfirmsAndSets(t *testing.T) {
 	}
 }
 
+func TestIdentityCanBeKeptToTheWorkspace(t *testing.T) {
+	m, _ := newSurface(t)
+	var global, local []gitcore.Identity
+	m.d.Identity = func(context.Context) (gitcore.Identity, error) { return gitcore.Identity{}, gitcore.ErrIdentityUnset }
+	m.d.SetIdentity = func(_ context.Context, id gitcore.Identity) error { global = append(global, id); return nil }
+	m.d.SetIdentityLocal = func(_ context.Context, id gitcore.Identity) error { local = append(local, id); return nil }
+	m.d.SuggestIdentity = func(context.Context) []gitcore.Suggestion {
+		return []gitcore.Suggestion{{Identity: gitcore.Identity{Name: "Ada", Email: "ada@x.io"}, Source: "x"}}
+	}
+	m.ident = nil
+	m.cursor = rowIdentity
+	feed(m, "enter", "enter")
+	if v := ansi.Strip(m.View()); !strings.Contains(v, "w this workspace only") {
+		t.Fatalf("confirm:\n%s", v)
+	}
+	feed(m, "w")
+	if len(local) != 1 || len(global) != 0 || !strings.Contains(m.flash, "this workspace's repos only") {
+		t.Fatalf("local=%v global=%v flash=%q", local, global, m.flash)
+	}
+}
+
 func TestIdentityFormRefusesBadEmail(t *testing.T) {
 	m, _ := newSurface(t)
 	m.d.Identity = func(context.Context) (gitcore.Identity, error) {

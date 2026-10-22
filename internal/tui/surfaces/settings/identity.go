@@ -68,24 +68,36 @@ func (m *Model) submitIdentity() {
 		return
 	}
 	m.wantID = want
-	lines := []string{"DHI will run:", ""}
+	lines := []string{"For all your repos, DHI writes ~/.gitconfig:", ""}
 	for _, c := range gitcore.IdentityCommands(want) {
 		lines = append(lines, "  "+theme.AccentText().Render(c))
 	}
-	lines = append(lines, "", theme.Hint().Render("enter run · esc cancel"))
+	hint := "enter all my repos · esc cancel"
+	if m.d.SetIdentityLocal != nil {
+		lines = append(lines, "", "Or keep it to this workspace (each repo's .git/config, repos added later too):")
+		for _, c := range gitcore.LocalIdentityCommands(want) {
+			lines = append(lines, "  "+theme.AccentText().Render(c))
+		}
+		hint = "enter all my repos · w this workspace only · esc cancel"
+	}
+	lines = append(lines, "", theme.Hint().Render(hint))
 	m.dform = nil
 	m.dlg = &kit.Modal{Title: "set git identity", Lines: lines}
 	m.dkind = dlgIdentityConfirm
 }
 
-func (m *Model) applyIdentity() {
+func (m *Model) applyIdentity(local bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if err := m.d.SetIdentity(ctx, m.wantID); err != nil {
-		m.dlg.Lines = append(m.dlg.Lines[:2], theme.DangerText().Render(err.Error()))
+	set, where := m.d.SetIdentity, "saved to ~/.gitconfig"
+	if local {
+		set, where = m.d.SetIdentityLocal, "saved to this workspace's repos only"
+	}
+	if err := set(ctx, m.wantID); err != nil {
+		m.dlg.Lines = append(m.dlg.Lines, theme.DangerText().Render(err.Error()))
 		return
 	}
 	m.ident, m.identOK = &m.wantID, true
 	m.closeDialog()
-	m.flash = "git identity set — your commits and your employees' carry " + m.wantID.Name
+	m.flash = "git identity " + where + " — your commits and your employees' carry " + m.wantID.Name
 }

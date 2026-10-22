@@ -64,6 +64,9 @@ type Env struct {
 
 	Identity    func(ctx context.Context) (gitcore.Identity, error) // nil: git unavailable
 	SetIdentity func(ctx context.Context, id gitcore.Identity) error
+	// SetIdentityLocal keeps the identity to this workspace's repos
+	// instead (each member's .git/config, F-112); nil hides the choice.
+	SetIdentityLocal func(ctx context.Context, id gitcore.Identity) error
 	// SuggestIdentity finds candidates when none is set (F-083): the
 	// repo's config and history, GitHub, the computer account.
 	SuggestIdentity func(ctx context.Context) []gitcore.Suggestion

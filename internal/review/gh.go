@@ -28,7 +28,6 @@ type PRMeta struct {
 // visible message when unavailable. Tests fake it.
 type GH interface {
 	Available() bool
-	AuthToken(ctx context.Context) (string, error)
 	PR(ctx context.Context, repo, number string) (PRMeta, error)
 	Diff(ctx context.Context, repo, number string) (string, error)
 	PostComment(ctx context.Context, repo, number, body string) error
@@ -276,19 +275,6 @@ func (g *GHCLI) Login(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("review: gh api user: %w", err)
 	}
 	return strings.TrimSpace(out), nil
-}
-
-// AuthToken returns gh's stored OAuth token (push credentials).
-func (g *GHCLI) AuthToken(ctx context.Context) (string, error) {
-	out, err := g.run(ctx, "auth", "token")
-	if err != nil {
-		return "", fmt.Errorf("review: gh auth token: %w", err)
-	}
-	tok := strings.TrimSpace(out)
-	if tok == "" {
-		return "", fmt.Errorf("review: gh auth token: empty")
-	}
-	return tok, nil
 }
 
 // CreatePR opens a pull request and returns its metadata.

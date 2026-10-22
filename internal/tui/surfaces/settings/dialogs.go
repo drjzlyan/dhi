@@ -124,6 +124,10 @@ func (m *Model) dialogKey(key string) {
 	switch key {
 	case "enter":
 		m.submitConfirmDialog()
+	case "w":
+		if m.dkind == dlgIdentityConfirm && m.d.SetIdentityLocal != nil {
+			m.applyIdentity(true)
+		}
 	case "esc", "n", "q":
 		m.closeDialog()
 	}
@@ -195,7 +199,7 @@ func (m *Model) submitConfirmDialog() {
 	case dlgConvLearn:
 		m.saveLearned()
 	case dlgIdentityConfirm:
-		m.applyIdentity()
+		m.applyIdentity(false)
 	case dlgTeamDelete:
 		if err := m.d.Org.DeleteTeam(target); err != nil {
 			m.dlg.Lines = append(m.dlg.Lines[:2], theme.DangerText().Render(err.Error()))

@@ -199,7 +199,32 @@ func TestIdentityIsWrittenOnlyAfterConfirmation(t *testing.T) {
 	if len(f.setCalls) != 1 || f.setCalls[0] != (gitcore.Identity{Name: "Grace Hopper", Email: "grace@navy.mil"}) {
 		t.Fatalf("calls = %+v", f.setCalls)
 	}
-	if !strings.Contains(strings.Join(f.env.Applied, "|"), "git identity set") {
+	if !strings.Contains(strings.Join(f.env.Applied, "|"), "saved to your global git config (~/.gitconfig)") {
+		t.Fatalf("applied = %v", f.env.Applied)
+	}
+}
+
+// w keeps the identity to this workspace's repos; ~/.gitconfig is not written.
+func TestIdentityCanBeKeptToTheWorkspace(t *testing.T) {
+	f := newFixture(t, true)
+	f.env.Root = f.root
+	f.env.Identity = func(context.Context) (gitcore.Identity, error) { return gitcore.Identity{}, gitcore.ErrIdentityUnset }
+	var local []gitcore.Identity
+	f.env.SetIdentityLocal = func(_ context.Context, id gitcore.Identity) error { local = append(local, id); return nil }
+	m := f.wizard()
+	key(m, "enter")
+	typeText(m, "Grace Hopper")
+	key(m, "tab")
+	typeText(m, "grace@navy.mil")
+	key(m, "enter")
+	if v := plain(m); !strings.Contains(v, "git config user.name 'Grace Hopper'") || !strings.Contains(v, "This workspace only") {
+		t.Fatalf("workspace choice not shown:\n%s", v)
+	}
+	key(m, "w")
+	if len(local) != 1 || len(f.setCalls) != 0 {
+		t.Fatalf("local=%v global=%v", local, f.setCalls)
+	}
+	if !strings.Contains(strings.Join(f.env.Applied, "|"), "this workspace's repos only") {
 		t.Fatalf("applied = %v", f.env.Applied)
 	}
 }

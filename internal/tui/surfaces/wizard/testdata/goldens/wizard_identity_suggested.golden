@@ -15,7 +15,7 @@
           │ ✓ welcome ── ● identity ── ○ conventions ── ○ done                           │
           │                                                                              │
           │ Commits need an author. Who are you?                                         │
-          │ Saved to your global git config — nothing else changes.                      │
+          │ Next you choose where it is saved: all your repos, or only this workspace's. │
           │                                                                              │
           │ name      ▎ Ada L▌                                                           │
           │ email     ▎ ada@home.org                                                     │

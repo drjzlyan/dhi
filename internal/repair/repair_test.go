@@ -175,3 +175,30 @@ func TestLegacyToolchainAsksBeforeDeleting(t *testing.T) {
 		}
 	}
 }
+
+// A member added after the user kept their identity to the workspace gets
+// it too; a repo with its own [user] is left alone.
+func TestLocalIdentityReachesNewMembers(t *testing.T) {
+	in := fixture(t)
+	var set []string
+	in.LocalIdentity = &setup.Identity{Name: "Ada", Email: "ada@x.io"}
+	in.SetLocalIdentity = func(dir string) error { set = append(set, dir); return nil }
+	ms := in.WS.Members()
+	if len(ms) == 0 {
+		t.Skip("fixture has no members")
+	}
+	os.MkdirAll(filepath.Join(ms[0].Path, ".git"), 0o755)
+	os.WriteFile(filepath.Join(ms[0].Path, ".git", "config"), []byte("[core]\n\tbare = false\n"), 0o644)
+	r, ok := byID(Find(in), "local-identity/"+ms[0].Name)
+	if !ok || !r.Safe || !strings.Contains(r.What, "Ada") {
+		t.Fatalf("repair = %+v", r)
+	}
+	_ = r.Apply()
+	if len(set) != 1 || set[0] != ms[0].Path {
+		t.Fatalf("set = %v", set)
+	}
+	os.WriteFile(filepath.Join(ms[0].Path, ".git", "config"), []byte("[user]\n\tname = Ada\n"), 0o644)
+	if _, ok := byID(Find(in), "local-identity/"+ms[0].Name); ok {
+		t.Fatal("a repo with an identity must be left alone")
+	}
+}

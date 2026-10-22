@@ -45,6 +45,11 @@ type Input struct {
 	// LegacyToolchain is the toolchain folder DHI kept before ADR-0044;
 	// "" skips the repair that offers to delete it.
 	LegacyToolchain string
+	// LocalIdentity is the git identity the user kept to this workspace
+	// (F-112); SetLocalIdentity writes it into one member repo. Either
+	// nil skips the repair that gives members added later the same.
+	LocalIdentity    *setup.Identity
+	SetLocalIdentity func(dir string) error
 }
 
 // Find lists the repairs that apply now, safe ones first.
@@ -77,6 +82,7 @@ func Find(in Input) []Repair {
 	if r, ok := legacyToolchain(in.LegacyToolchain); ok {
 		out = append(out, r)
 	}
+	out = append(out, localIdentity(in)...)
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Safe && !out[j].Safe })
 	return out
 }
@@ -373,4 +379,28 @@ func dirSize(dir string) int64 {
 		return nil
 	})
 	return n
+}
+
+// localIdentity gives a member added after the user kept their git
+// identity to this workspace the same identity (F-112). Safe: the user
+// already chose it for every repo here; the notice names the repo.
+func localIdentity(in Input) []Repair {
+	if in.LocalIdentity == nil || in.SetLocalIdentity == nil {
+		return nil
+	}
+	var out []Repair
+	for _, m := range in.WS.Members() {
+		cfg, err := os.ReadFile(filepath.Join(m.Path, ".git", "config"))
+		if err != nil || strings.Contains(string(cfg), "[user]") {
+			continue // not a plain repo (or unreadable), or it has its own identity
+		}
+		dir := m.Path
+		out = append(out, Repair{
+			ID:    "local-identity/" + m.Name,
+			What:  "set this workspace's git identity (" + in.LocalIdentity.Name + ") in " + m.Name + "/.git/config",
+			Safe:  true,
+			Apply: func() error { return in.SetLocalIdentity(dir) },
+		})
+	}
+	return out
 }

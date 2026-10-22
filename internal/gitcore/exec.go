@@ -54,6 +54,16 @@ func BackgroundEnv(env []string) []string {
 	return append(out, "GIT_TERMINAL_PROMPT=0")
 }
 
+// networkTimeout bounds a clone, fetch or push (large repos, slow links).
+const networkTimeout = 15 * time.Minute
+
+// WithTimeout returns a copy of r with another per-call timeout.
+func (r *Runner) WithTimeout(d time.Duration) *Runner {
+	c := *r
+	c.timeout = d
+	return &c
+}
+
 // Run executes one git invocation inside dir ("" = inherit), returning
 // stdout and stderr. A non-zero exit, launch failure, or timeout becomes
 // an error carrying stderr for context.
@@ -63,6 +73,7 @@ func (r *Runner) Run(ctx context.Context, dir string, args ...string) (string, s
 	cmd := exec.CommandContext(ctx, r.bin, args...)
 	cmd.Dir = dir
 	cmd.Env = r.env
+	detach(cmd)
 	// A killed shell leaves grandchildren holding our pipes; WaitDelay
 	// forces Wait to return promptly once the context is done.
 	cmd.WaitDelay = 500 * time.Millisecond

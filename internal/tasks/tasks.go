@@ -1081,7 +1081,7 @@ func (s *Store) PushBranch(slug string) error {
 			continue
 		}
 		refspec := "refs/heads/" + cs.Branch + ":refs/heads/" + cs.Branch
-		if err := repo.Push(context.Background(), "", refspec, nil); err != nil {
+		if err := repo.Push(context.Background(), "", refspec); err != nil {
 			failures = append(failures, cs.Member+": "+err.Error())
 		}
 	}

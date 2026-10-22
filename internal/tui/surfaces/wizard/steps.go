@@ -335,6 +335,7 @@ type identityMsg struct {
 }
 
 type identityStep struct {
+	local bool // keep the identity to this workspace's repos (F-112)
 	base
 	env   *Env
 	phase identityPhase
@@ -431,7 +432,13 @@ func (s *identityStep) HandleKey(key string) Action {
 	case idConfirm:
 		switch key {
 		case "enter", "y":
+			s.local = false
 			return Next
+		case "w":
+			if s.env.SetIdentityLocal != nil && s.env.Root != "" {
+				s.local = true
+				return Next
+			}
 		case "esc", "n":
 			s.phase = idCollect
 		}
@@ -456,12 +463,16 @@ func (s *identityStep) Apply() error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if err := s.env.SetIdentity(ctx, s.want); err != nil {
+	set, where := s.env.SetIdentity, "your global git config (~/.gitconfig)"
+	if s.local {
+		set, where = s.env.SetIdentityLocal, "this workspace's repos only"
+	}
+	if err := set(ctx, s.want); err != nil {
 		s.err = err.Error()
 		return err
 	}
 	s.env.WhoName = s.want.Name
-	s.env.Applied = append(s.env.Applied, "git identity set to "+s.want.Name+" <"+s.want.Email+">")
+	s.env.Applied = append(s.env.Applied, "git identity "+s.want.Name+" <"+s.want.Email+"> saved to "+where)
 	return nil
 }
 
@@ -486,7 +497,7 @@ func (s *identityStep) View(w, f int) []string {
 		}
 		out = append([]string{
 			theme.TextStyle().Render(head),
-			dim("Saved to your global git config — nothing else changes."), "",
+			dim("Next you choose where it is saved: all your repos, or only this workspace's."), "",
 		}, formLines(s.form)...)
 		if s.best.Source != "" {
 			out = append(out, "", ok("suggested — "+s.best.Source))
@@ -496,12 +507,20 @@ func (s *identityStep) View(w, f int) []string {
 			}
 		}
 	case idConfirm:
-		out = []string{theme.TextStyle().Render("DHI will run:"), ""}
+		out = []string{theme.TextStyle().Render("For all your repos, DHI writes ~/.gitconfig:"), ""}
 		for _, c := range gitcore.IdentityCommands(s.want) {
 			out = append(out, "  "+theme.AccentText().Render(c))
 		}
-		bl, _ := kit.Buttons([]kit.Button{{Key: "⏎", Label: "Run them", Focused: true},
-			{Key: "esc", Label: "Edit", Variant: theme.ButtonGhost}}, w)
+		buttons := []kit.Button{{Key: "⏎", Label: "All my repos", Focused: true}}
+		if s.env.SetIdentityLocal != nil && s.env.Root != "" {
+			out = append(out, "", dim("Or keep it to this workspace: each repo's .git/config gets it (repos added later too):"))
+			for _, c := range gitcore.LocalIdentityCommands(s.want) {
+				out = append(out, "  "+theme.AccentText().Render(c))
+			}
+			buttons = append(buttons, kit.Button{Key: "w", Label: "This workspace only", Variant: theme.ButtonGhost})
+		}
+		buttons = append(buttons, kit.Button{Key: "esc", Label: "Edit", Variant: theme.ButtonGhost})
+		bl, _ := kit.Buttons(buttons, w)
 		out = append(append(out, ""), bl...)
 	case idUnavailable:
 		out = []string{

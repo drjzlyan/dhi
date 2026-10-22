@@ -11,13 +11,13 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	git "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
-	"github.com/go-git/go-git/v5/plumbing/transport"
 )
 
 // FileStatus is one changed path. X is the index (staged) code, Y the
@@ -306,18 +306,46 @@ func (rp *Repo) IsDirty() bool {
 	return false
 }
 
+// network is the git that reaches remotes: the user's CLI, so their ssh
+// config, ssh-agent, credential helpers (gh auth git-credential included)
+// and insteadOf rules apply exactly as in their terminal (F-112). cmd/dhi
+// sets it at launch; unset (tests with local remotes) uses go-git.
+var (
+	netMu   sync.RWMutex
+	network *Runner
+)
+
+// SetNetwork routes clone, fetch and push through r (nil: go-git).
+func SetNetwork(r *Runner) {
+	netMu.Lock()
+	defer netMu.Unlock()
+	if r != nil {
+		r = r.WithTimeout(networkTimeout)
+	}
+	network = r
+}
+
+func netRunner() *Runner {
+	netMu.RLock()
+	defer netMu.RUnlock()
+	return network
+}
+
 // Push updates remote with the given refspec (e.g.
-// "refs/heads/feature:refs/heads/feature"). Network runs in-process via
-// go-git (ADR-0008/0009). auth may be nil for local/anonymous remotes;
-// HTTPS origins typically need BasicAuth minted from `gh auth token`.
-func (rp *Repo) Push(ctx context.Context, remote, refspec string, auth transport.AuthMethod) error {
+// "refs/heads/feature:refs/heads/feature") with the user's git.
+func (rp *Repo) Push(ctx context.Context, remote, refspec string) error {
 	if remote == "" {
 		remote = "origin"
+	}
+	if r := netRunner(); r != nil {
+		if _, _, err := r.Run(ctx, rp.path, "push", remote, refspec); err != nil {
+			return fmt.Errorf("gitcore: push %s %s: %w", remote, refspec, err)
+		}
+		return nil
 	}
 	err := rp.r.PushContext(ctx, &git.PushOptions{
 		RemoteName: remote,
 		RefSpecs:   []config.RefSpec{config.RefSpec(refspec)},
-		Auth:       auth,
 	})
 	if err != nil && err != git.NoErrAlreadyUpToDate {
 		return fmt.Errorf("gitcore: push %s %s: %w", remote, refspec, err)
@@ -326,12 +354,22 @@ func (rp *Repo) Push(ctx context.Context, remote, refspec string, auth transport
 }
 
 // Fetch pulls objects for refspec (e.g. "+refs/pull/7/head:refs/dhi/pr/7")
-// from the named remote and returns the local ref's resolved hash. Network
-// transports run in-process via go-git (ADR-0008/0009); failures surface
-// visibly instead of prompting for credentials.
+// from the named remote and returns the local ref's resolved hash.
+// Failures surface visibly instead of prompting for credentials.
 func (rp *Repo) Fetch(ctx context.Context, remote, refspec string) (string, error) {
 	if remote == "" {
 		remote = "origin"
+	}
+	local := refspec[strings.Index(refspec, ":")+1:]
+	if r := netRunner(); r != nil {
+		if _, _, err := r.Run(ctx, rp.path, "fetch", "--no-tags", remote, refspec); err != nil {
+			return "", fmt.Errorf("gitcore: fetch %s %s: %w", remote, refspec, err)
+		}
+		out, _, err := r.Run(ctx, rp.path, "rev-parse", "--verify", local)
+		if err != nil {
+			return "", fmt.Errorf("gitcore: fetched ref %s missing: %w", local, err)
+		}
+		return strings.TrimSpace(out), nil
 	}
 	err := rp.r.FetchContext(ctx, &git.FetchOptions{
 		RemoteName: remote,
@@ -341,7 +379,6 @@ func (rp *Repo) Fetch(ctx context.Context, remote, refspec string) (string, erro
 	if err != nil && err != git.NoErrAlreadyUpToDate {
 		return "", fmt.Errorf("gitcore: fetch %s %s: %w", remote, refspec, err)
 	}
-	local := refspec[strings.Index(refspec, ":")+1:]
 	ref, err := rp.r.Reference(plumbing.ReferenceName(local), true)
 	if err != nil {
 		return "", fmt.Errorf("gitcore: fetched ref %s missing: %w", local, err)
@@ -361,19 +398,20 @@ func (rp *Repo) RemoteURL(remote string) string {
 	return rs.Config().URLs[0]
 }
 
-// Clone clones url (https or a local path) into dst and returns the
-// opened repository. Network transports run in-process via go-git
-// (ADR-0008/0009): public HTTPS repos work anonymously; credential
-// prompts are never attempted — private repos surface an auth error
-// visibly instead of hanging.
+// Clone clones url (ssh, https or a local path) into dst with the user's
+// git and returns the opened repository. Credential prompts are never
+// attempted — a missing key or login surfaces as an error instead.
 func Clone(ctx context.Context, url, dst string) (*Repo, error) {
 	if strings.TrimSpace(url) == "" {
 		return nil, fmt.Errorf("gitcore: clone: empty url")
 	}
-	r, err := git.PlainCloneContext(ctx, dst, false, &git.CloneOptions{
-		URL:      url,
-		Progress: nil,
-	})
+	if r := netRunner(); r != nil {
+		if _, _, err := r.Run(ctx, "", "clone", "--", url, dst); err != nil {
+			return nil, fmt.Errorf("gitcore: clone %s: %w", url, err)
+		}
+		return Open(dst)
+	}
+	r, err := git.PlainCloneContext(ctx, dst, false, &git.CloneOptions{URL: url})
 	if err != nil {
 		return nil, fmt.Errorf("gitcore: clone %s: %w", url, err)
 	}
@@ -386,6 +424,9 @@ func Clone(ctx context.Context, url, dst string) (*Repo, error) {
 func CloneAt(ctx context.Context, url, ref, dst string) (string, error) {
 	if strings.TrimSpace(url) == "" {
 		return "", fmt.Errorf("gitcore: clone: empty url")
+	}
+	if r := netRunner(); r != nil {
+		return cloneAtCLI(ctx, r, url, ref, dst)
 	}
 	opts := &git.CloneOptions{URL: url}
 	if ref == "" {
@@ -447,4 +488,28 @@ func (rp *Repo) HeadContent(rel string) (content string, ok bool, err error) {
 		return "", false, fmt.Errorf("gitcore: read %s at head: %w", rel, err)
 	}
 	return s, true, nil
+}
+
+// cloneAtCLI is CloneAt with the user's git.
+func cloneAtCLI(ctx context.Context, r *Runner, url, ref, dst string) (string, error) {
+	args := []string{"clone"}
+	if ref == "" {
+		args = append(args, "--depth", "1") // the default branch's tip is all an install needs
+	}
+	if _, _, err := r.Run(ctx, "", append(args, "--", url, dst)...); err != nil {
+		return "", fmt.Errorf("gitcore: clone %s: %w", url, err)
+	}
+	if ref != "" {
+		if _, _, err := r.Run(ctx, dst, "checkout", "--force", "--detach", ref); err != nil {
+			// A branch that is not local yet resolves on the remote.
+			if _, _, err2 := r.Run(ctx, dst, "checkout", "--force", "--detach", "origin/"+ref); err2 != nil {
+				return "", fmt.Errorf("gitcore: %s has no %q: %w", url, ref, err)
+			}
+		}
+	}
+	out, _, err := r.Run(ctx, dst, "rev-parse", "HEAD")
+	if err != nil {
+		return "", fmt.Errorf("gitcore: head: %w", err)
+	}
+	return strings.TrimSpace(out), nil
 }

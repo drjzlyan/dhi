@@ -212,6 +212,9 @@ func runTUI() (relaunch bool) {
 	// The user's git backs the served git_diff tool (M15 P1); without git
 	// it is nil and the tool refuses by name.
 	gitRunner = userGit()
+	// Clone, fetch and push go through the user's git: their ssh keys,
+	// agent, credential helpers and insteadOf rules (F-112).
+	gitcore.SetNetwork(gitRunner)
 	runRunner = execRunner{env: runTmpEnv(agentEnv, ws), timeout: 5 * time.Minute, sandbox: guardWorkspace(decision.Sandbox, ws)}
 	edOpts = append(edOpts, editor.WithSearcher(rgSearcher))
 
@@ -343,6 +346,7 @@ func runTUI() (relaunch bool) {
 			// the user's git, like the wizard.
 			settingsDeps.Identity = identityFn
 			settingsDeps.SetIdentity = setUserIdentity
+			settingsDeps.SetIdentityLocal = setWorkspaceIdentity(ws.Root)
 			settingsDeps.SuggestIdentity = func(ctx context.Context) []gitcore.Suggestion {
 				return suggestIdentity(ctx, userGit(), memberDirs(ws))
 			}
@@ -710,6 +714,12 @@ func newSetupEnv(cwd string, ws *workspace.Workspace, userCfg string,
 		env.Root = ws.Root
 	}
 	env.SetIdentity = setUserIdentity
+	env.SetIdentityLocal = func(ctx context.Context, id gitcore.Identity) error {
+		if env.Root == "" {
+			return fmt.Errorf("no workspace yet")
+		}
+		return setWorkspaceIdentity(env.Root)(ctx, id)
+	}
 	env.SuggestIdentity = func(ctx context.Context) []gitcore.Suggestion {
 		dirs := []string{cwd}
 		if env.Root != "" {
@@ -927,18 +937,12 @@ func openReviewService(ws *workspace.Workspace, conv func() conventions.Config, 
 	gh := review.NewGHCLI(ghBin)
 	svc := review.NewService(ws, st, nil, gh)
 	svc.SetPRBodyFunc(prBody)
-	svc.SetTokenFn(func(ctx context.Context) (string, error) {
-		return gh.AuthToken(ctx)
-	})
 	runner := userGit()
 	if runner == nil {
 		return svc // no git: diffs degrade visibly
 	}
 	svc = review.NewService(ws, st, runner, gh)
 	svc.SetPRBodyFunc(prBody)
-	svc.SetTokenFn(func(ctx context.Context) (string, error) {
-		return gh.AuthToken(ctx)
-	})
 	st.SetWorktreeSeam(
 		func(id, member, startpoint string) (string, error) {
 			mem, ok := ws.Member(member)
@@ -1713,6 +1717,15 @@ func repairGate(ws *workspace.Workspace, git *gitcore.Runner) *repairgate.Model 
 	}
 	if st, err := credstore.Open(); err == nil {
 		in.Creds = st
+	}
+	if st, err := setup.LoadState(setup.WorkspaceStatePath(ws.Root)); err == nil && st.LocalIdentity != nil && git != nil {
+		id := gitcore.Identity{Name: st.LocalIdentity.Name, Email: st.LocalIdentity.Email}
+		in.LocalIdentity = st.LocalIdentity
+		in.SetLocalIdentity = func(dir string) error {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			return gitcore.SetLocalIdentity(ctx, git, dir, id)
+		}
 	}
 	if git != nil {
 		in.Ignored = func(rel string) bool {

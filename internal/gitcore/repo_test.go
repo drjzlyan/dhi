@@ -238,7 +238,7 @@ func TestPushRoundTripToBare(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := sr.Push(context.Background(), "",
-		"refs/heads/master:refs/heads/master", nil); err != nil {
+		"refs/heads/master:refs/heads/master"); err != nil {
 		t.Fatalf("push: %v", err)
 	}
 

@@ -1,6 +1,6 @@
 # F-112 — Git as the user has it
 
-Status: planned (M36 P4) · ADR-0044 · amends F-083
+Status: done (M36 P4) · ADR-0044 · amends F-083
 
 ## Behaviour
 - DHI's git is the user's git with their environment: config, includeIf, hooks, ssh, credential
@@ -9,9 +9,20 @@ Status: planned (M36 P4) · ADR-0044 · amends F-083
 - Identity: read from the user's config. Missing → a card: set it globally (default; the flash names
   ~/.gitconfig) or only in this workspace's repos (each member's `.git/config`, remembered for new
   members).
-- No silent writes into repos: no `.git/info/exclude` appends; per-turn MCP files live in `.dhi/tmp`.
+- Writes into repos stay inside the workspace (the boundary, ADR-0044) and are local-only: see Notes.
 
 ## Acceptance
-- [ ] Runner env has no GIT_CONFIG_GLOBAL/NOSYSTEM.
-- [ ] Push to an SSH-style and a file:// remote through the CLI.
-- [ ] Identity global vs workspace-only writes.
+- [x] Runner env has no GIT_CONFIG_GLOBAL/NOSYSTEM (only `GIT_TERMINAL_PROMPT=0` is added).
+- [x] Clone, push, fetch and CloneAt through the CLI, honouring the user's config (an `insteadOf`
+      rule in the test; go-git would ignore it).
+- [x] Identity global vs workspace-only writes (wizard and Settings: enter / w).
+
+## Notes
+- git runs in its own session (no controlling terminal): ssh cannot draw a passphrase prompt over
+  the TUI; a key not in the agent fails visibly (or uses SSH_ASKPASS).
+- DHI no longer reads `gh auth token` for pushes; the user's credential helper or ssh key is used.
+- Workspace-only identity is remembered in the workspace's setup state; a safe repair gives members
+  added later the same identity.
+- Kept, deliberately (planned to go): the loose copy of a packed default-branch ref (same value, so
+  bubblewrap can guard it) and the one cursor line in `.git/info/exclude`. Both are local-only,
+  never committed, and inside the workspace's own repos.

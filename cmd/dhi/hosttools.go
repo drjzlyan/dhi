@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 
@@ -11,7 +12,9 @@ import (
 	"github.com/drjzlyan/dhi/internal/gitcore"
 	"github.com/drjzlyan/dhi/internal/hostenv"
 	"github.com/drjzlyan/dhi/internal/hosttools"
+	"github.com/drjzlyan/dhi/internal/setup"
 	"github.com/drjzlyan/dhi/internal/tui/surfaces/editor"
+	"github.com/drjzlyan/dhi/internal/workspace"
 )
 
 // hostLook resolves a program the way the user's shell would, plus the
@@ -129,4 +132,29 @@ func setUserIdentity(ctx context.Context, id gitcore.Identity) error {
 		return errors.New("git is not installed")
 	}
 	return gitcore.SetIdentity(ctx, r, id)
+}
+
+// setWorkspaceIdentity keeps the identity to root's member repos (each
+// one's .git/config) and remembers it, so members added later get it from
+// a repair (F-112). ~/.gitconfig is untouched.
+func setWorkspaceIdentity(root string) func(ctx context.Context, id gitcore.Identity) error {
+	return func(ctx context.Context, id gitcore.Identity) error {
+		r := userGit()
+		if r == nil {
+			return errors.New("git is not installed")
+		}
+		w, err := workspace.Load(root)
+		if err != nil {
+			return err
+		}
+		for _, m := range w.Members() {
+			if err := gitcore.SetLocalIdentity(ctx, r, m.Path, id); err != nil {
+				return fmt.Errorf("%s: %w", m.Name, err)
+			}
+		}
+		p := setup.WorkspaceStatePath(root)
+		st, _ := setup.LoadState(p)
+		st.LocalIdentity = &setup.Identity{Name: id.Name, Email: id.Email}
+		return setup.SaveState(p, st)
+	}
 }
