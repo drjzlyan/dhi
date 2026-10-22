@@ -130,3 +130,26 @@ func TestRailRowAtMapsClicksToRows(t *testing.T) {
 		t.Errorf("scrolled rail: top row = %d,%v want 6", i, ok)
 	}
 }
+
+// F-102: the query edits like every field — rune-safe backspace, ctrl+w,
+// paste — and ctrl+k stays "up" (it is not a kill here).
+func TestPaletteQueryEditing(t *testing.T) {
+	p := testPalette()
+	typeInto(p, "run té")
+	p.HandleKey("backspace")
+	if p.Query() != "run t" {
+		t.Fatalf("backspace after é: %q", p.Query())
+	}
+	p.HandleKey("ctrl+w")
+	if p.Query() != "run " {
+		t.Fatalf("ctrl+w: %q", p.Query())
+	}
+	p.HandleKey("paste:tests\n")
+	if p.Query() != "run tests" {
+		t.Fatalf("paste: %q", p.Query())
+	}
+	p.HandleKey("ctrl+k")
+	if p.Query() != "run tests" {
+		t.Fatal("ctrl+k must move up, not kill the query")
+	}
+}

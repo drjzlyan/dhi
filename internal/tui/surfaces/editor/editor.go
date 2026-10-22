@@ -734,7 +734,7 @@ func (m *Model) HandleKey(key string) bool {
 		m.ToggleGitPanel()
 		return true
 	}
-	if key == "ctrl+a" && m.chat != nil {
+	if key == "ctrl+a" && m.chat != nil && !(m.chat.open && m.chat.focus) { // typing: line start
 		m.chat.Toggle()
 		return true
 	}
@@ -831,6 +831,9 @@ func (m *Model) HandleKey(key string) bool {
 				case "a":
 					m.requestCodeActions()
 					return true
+				case "g": // gg: first line (F-102)
+					e.Key("gg")
+					return true
 				default:
 					return true // unknown g-sequence swallowed
 				}
@@ -859,6 +862,7 @@ func (m *Model) HandleKey(key string) bool {
 		}
 
 		was := e.Mode()
+		e.SetPageSize(m.height - 4) // ctrl+d/u and pgup/pgdown step by the visible rows
 		e.Key(key)
 		if e.Mode() == textbuf.ModeInsert && was != textbuf.ModeInsert {
 			m.act(tutorial.EvEditorInsert)
@@ -1418,16 +1422,12 @@ func (m *Model) handleFindKey(key string) bool {
 		return true
 	case "enter":
 		return m.pickResult()
-	case "backspace":
-		if len(m.query) > 0 {
-			m.query = m.query[:len(m.query)-1]
+	}
+	if q, ok := kit.EditRunes(m.query, key); ok {
+		if string(q) != string(m.query) {
+			m.query = q
 			m.applyQuery()
 		}
-		return true
-	}
-	if r := []rune(key); len(r) == 1 && r[0] >= 32 {
-		m.query = append(m.query, r[0])
-		m.applyQuery()
 		return true
 	}
 	return m.findList.HandleKey(key)
@@ -1576,17 +1576,10 @@ func (m *Model) handleSearchKey(key string) bool {
 			return true
 		}
 		return true
-	case "backspace":
-		if len(m.searchQuery) > 0 {
-			m.searchQuery = m.searchQuery[:len(m.searchQuery)-1]
-		}
-		return true
 	}
-	if r := []rune(key); len(r) == 1 && r[0] >= 32 {
-		m.searchQuery = append(m.searchQuery, r[0])
-		return true
-	}
-	return false
+	var ok bool
+	m.searchQuery, ok = kit.EditRunes(m.searchQuery, key)
+	return ok
 }
 
 func (m *Model) startSearch(q string) {

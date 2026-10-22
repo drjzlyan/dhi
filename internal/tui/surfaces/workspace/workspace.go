@@ -847,14 +847,8 @@ func (m *Model) boardKey(key string) bool {
 			m.boardFilter = ""
 		case "enter":
 			m.boardFilterEdit = false
-		case "backspace":
-			if len(m.boardFilter) > 0 {
-				m.boardFilter = m.boardFilter[:len(m.boardFilter)-1]
-			}
 		default:
-			if r := []rune(key); len(r) == 1 && r[0] >= 32 {
-				m.boardFilter += key
-			}
+			m.boardFilter, _ = kit.EditQuery(m.boardFilter, key)
 		}
 		return true
 	}

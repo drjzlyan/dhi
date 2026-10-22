@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"github.com/drjzlyan/dhi/internal/tui/kit"
 	"strings"
 	"testing"
 
@@ -44,7 +45,7 @@ func TestChannelDepthKeys(t *testing.T) {
 	if !p.focus || p.editID != msg.ID {
 		t.Fatalf("e: focus=%v editID=%d", p.focus, p.editID)
 	}
-	p.input = []rune("hello edited")
+	p.input = kit.NewInput("hello edited", "")
 	p.handleKey("enter")
 	if txt, _ := cm.EditedText("#general", msg.ID); txt != "hello edited" {
 		t.Fatalf("edit = %q", txt)

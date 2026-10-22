@@ -86,15 +86,9 @@ func (m *Model) handleSymbolKey(key string) bool {
 		if p.cur > 0 {
 			p.cur--
 		}
-	case "backspace":
-		if len(p.query) > 0 {
-			p.query = p.query[:len(p.query)-1]
-			p.cur = 0
-		}
 	default:
-		if r := []rune(key); len(r) == 1 && r[0] >= 32 {
-			p.query = append(p.query, r[0])
-			p.cur = 0
+		if q, ok := kit.EditQuery(string(p.query), key); ok {
+			p.query, p.cur = []rune(q), 0
 		}
 	}
 	return true

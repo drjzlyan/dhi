@@ -72,16 +72,8 @@ func (a *App) helpKey(key string) {
 			h.filtering, h.filter = false, ""
 		case "enter":
 			h.filtering = false
-		case "backspace":
-			if r := []rune(h.filter); len(r) > 0 {
-				h.filter = string(r[:len(r)-1])
-			}
-		case "space":
-			h.filter += " "
 		default:
-			if len([]rune(key)) == 1 {
-				h.filter += key
-			}
+			h.filter, _ = kit.EditQuery(h.filter, key)
 		}
 		h.scroll = 0
 		return

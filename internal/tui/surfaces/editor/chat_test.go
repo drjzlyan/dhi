@@ -124,7 +124,7 @@ func TestChatSendPostsToBus(t *testing.T) {
 	if len(msgs) < 1 || msgs[0].Text != "@scout please look" || msgs[0].Author != bus.Human {
 		t.Fatalf("history = %+v", msgs)
 	}
-	if got := string(h.m.chat.input); got != "" {
+	if got := h.m.chat.input.Value; got != "" {
 		t.Errorf("input not cleared: %q", got)
 	}
 }

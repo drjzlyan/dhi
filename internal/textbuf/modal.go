@@ -46,7 +46,11 @@ type Editor struct {
 	saveNote    string
 	lastSel     *Selected // selection captured when ":" left visual mode
 
-	cmdline    []rune // content after ':'
+	cmdline    []rune // content after ':', '/' or '?'
+	cmdPrefix  rune   // ':' (ex command), '/' or '?' (search)
+	lastSearch string // the last search, repeated by n/N
+	lastDir    int    // 1 after "/", -1 after "?"
+	page       int    // lines on one screen (SetPageSize)
 	message    string // transient status message ("", "3 fewer lines", errors)
 	register   string
 	registerLW bool // register holds linewise text
@@ -122,7 +126,11 @@ func (e *Editor) TakeReloaded() bool {
 // CommandLine renders the status/command line area.
 func (e *Editor) CommandLine() string {
 	if e.mode == ModeCommand {
-		return ":" + string(e.cmdline)
+		p := e.cmdPrefix
+		if p == 0 {
+			p = ':'
+		}
+		return string(p) + string(e.cmdline)
 	}
 	if e.message != "" {
 		return e.message

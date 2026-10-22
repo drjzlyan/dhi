@@ -136,17 +136,10 @@ func (m *Model) composerKey(key string) bool {
 			m.invite(threadID, txt)
 		}
 		return true
-	case "backspace":
-		if len(c.runes) > 0 {
-			c.runes = c.runes[:len(c.runes)-1]
-		}
-		return true
 	}
-	if r := []rune(key); len(r) == 1 && r[0] >= 32 {
-		c.runes = append(c.runes, r[0])
-		return true
-	}
-	return false
+	var ok bool
+	c.runes, ok = kit.EditRunes(c.runes, key)
+	return ok
 }
 
 func busHuman() string { return review.Human }

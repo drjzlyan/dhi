@@ -83,7 +83,7 @@ type Model struct {
 	form formState
 
 	chatFocus  bool
-	chatInput  []rune
+	chatInput  kit.Input
 	chatScroll int
 
 	storeCancel func()

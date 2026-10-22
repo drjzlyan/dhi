@@ -78,14 +78,8 @@ func (p *chatPane) railSearchKey(key string) {
 			p.railCur--
 		}
 		return
-	case "backspace":
-		if r := []rune(p.railQuery); len(r) > 0 {
-			p.railQuery = string(r[:len(r)-1])
-		}
 	default:
-		if r := []rune(key); len(r) == 1 && r[0] >= 32 {
-			p.railQuery += key
-		}
+		p.railQuery, _ = kit.EditQuery(p.railQuery, key)
 	}
 	p.railCur = 0
 }
@@ -262,14 +256,8 @@ func (p *chatPane) switcherKey(key string) {
 			s.cur--
 		}
 		return
-	case "backspace":
-		if r := []rune(s.query); len(r) > 0 {
-			s.query = string(r[:len(r)-1])
-		}
 	default:
-		if r := []rune(key); len(r) == 1 && r[0] >= 32 {
-			s.query += key
-		}
+		s.query, _ = kit.EditQuery(s.query, key)
 	}
 	s.cur = 0
 }

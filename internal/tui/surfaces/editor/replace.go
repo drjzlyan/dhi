@@ -57,18 +57,11 @@ func (m *Model) handleReplaceKey(key string) bool {
 		m.startSearch(m.lastQueryText) // what remains, if anything
 		m.replaceNote = res.Summary()
 		return true
-	case "backspace":
-		if len(r.input) > 0 {
-			r.input = r.input[:len(r.input)-1]
-		}
-	case "space":
-		r.input = append(r.input, ' ')
 	default:
-		rs := []rune(key)
-		if len(rs) != 1 || rs[0] < 32 {
+		var ok bool
+		if r.input, ok = kit.EditRunes(r.input, key); !ok {
 			return true // the prompt owns the keyboard
 		}
-		r.input = append(r.input, rs[0])
 	}
 	m.replanReplace()
 	return true

@@ -44,7 +44,7 @@ type chatModel struct {
 	focus    bool
 	channels []string // "#general", "dm:<id>", …
 	active   int
-	input    []rune
+	input    kit.Input
 }
 
 func newChat(rt *runtime.Runtime) *chatModel {
@@ -241,16 +241,33 @@ func (c *chatModel) handleKey(key string, apply func(string)) bool {
 	case "esc":
 		c.focus = false
 		return true
+	case "[", "]":
+		if c.input.Value != "" { // mid-message they are text (F-102)
+			return c.input.HandleKey(key)
+		}
+		c.stepChannel(key)
+		return true
+	}
+	return c.composerKey(key, apply)
+}
+
+// stepChannel moves to the previous ("[") or next channel.
+func (c *chatModel) stepChannel(key string) {
+	switch key {
 	case "[":
 		c.active = (c.active - 1 + len(c.channels)) % len(c.channels)
 		c.resubscribe()
 		c.markChannelRead()
-		return true
 	case "]":
 		c.active = (c.active + 1) % len(c.channels)
 		c.resubscribe()
 		c.markChannelRead()
-		return true
+	}
+}
+
+// composerKey handles the focused composer's keys after channel steps.
+func (c *chatModel) composerKey(key string, apply func(string)) bool {
+	switch key {
 	case "ctrl+f":
 		if apply != nil {
 			if block := c.lastSuggestion(); block != "" {
@@ -262,9 +279,8 @@ func (c *chatModel) handleKey(key string, apply func(string)) bool {
 		// Approval answers only when one is pending (tools.DecideKeys);
 		// otherwise these are ordinary composer letters.
 		list := c.apprs.List()
-		if len(list) == 0 {
-			c.input = append(c.input, []rune(key)...)
-			return true
+		if len(list) == 0 || c.input.Value != "" { // mid-message: text
+			return c.input.HandleKey(key)
 		}
 		// A secret still to be typed is answered in the workspace chat
 		// or inbox, which have the masked field (F-089); n still denies.
@@ -273,28 +289,19 @@ func (c *chatModel) handleKey(key string, apply func(string)) bool {
 		}
 		return true
 	case "enter":
-		text := strings.TrimSpace(string(c.input))
+		text := strings.TrimSpace(c.input.Value)
 		if text != "" {
 			// Dispatch the post (F-036 follow-up): without Handle the
 			// sidebar only wrote to the bus and no agent ever answered.
 			if posted, err := c.bus.Post(bus.Message{Channel: c.channelName(), Author: bus.Human, Text: text}); err == nil && c.rt != nil {
 				c.rt.Handle(context.Background(), posted)
 			}
-			c.input = nil
+			c.input = kit.Input{}
 			c.markChannelRead() // posting reads the channel (F-017)
 		}
 		return true
-	case "backspace":
-		if len(c.input) > 0 {
-			c.input = c.input[:len(c.input)-1]
-		}
-		return true
 	}
-	if r := []rune(key); len(r) == 1 && r[0] >= 32 {
-		c.input = append(c.input, r[0])
-		return true
-	}
-	return false
+	return c.input.HandleKey(key)
 }
 
 // lastSuggestion extracts the final fenced code block from the latest
@@ -352,7 +359,7 @@ func (c *chatModel) view(h int) string {
 		}
 	}
 
-	lines = append(lines, "", kit.Composer(string(c.input), "message the crew — @mention to wake an agent", c.focus))
+	lines = append(lines, "", kit.Composer(c.input, "message the crew — @mention to wake an agent", c.focus))
 	return strings.Join(lines, "\n")
 }
 

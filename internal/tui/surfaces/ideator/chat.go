@@ -64,23 +64,14 @@ func (m *Model) chatComposerKey(key string) bool {
 		m.chatFocus = false
 		return true
 	case "enter":
-		text := strings.TrimSpace(string(m.chatInput))
+		text := strings.TrimSpace(m.chatInput.Value)
 		if text != "" {
 			m.chatPost(text)
-			m.chatInput = nil
-		}
-		return true
-	case "backspace":
-		if len(m.chatInput) > 0 {
-			m.chatInput = m.chatInput[:len(m.chatInput)-1]
+			m.chatInput = kit.Input{}
 		}
 		return true
 	}
-	if r := []rune(key); len(r) == 1 && r[0] >= 32 {
-		m.chatInput = append(m.chatInput, r[0])
-		return true
-	}
-	return false
+	return m.chatInput.HandleKey(key)
 }
 
 // chatPost persists the human's message, records the floor hand-off and
@@ -189,6 +180,6 @@ func (m *Model) chatBody(w, h int) string {
 		out = append(out, "  "+fl)
 	}
 	out = append(out, "")
-	out = append(out, "  "+kit.Composer(string(m.chatInput), "press i to compose — @mention an invited agent", m.chatFocus))
+	out = append(out, "  "+kit.Composer(m.chatInput, "press i to compose — @mention an invited agent", m.chatFocus))
 	return strings.Join(out, "\n")
 }

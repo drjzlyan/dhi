@@ -92,14 +92,8 @@ func (m *Model) traceKey(key string) bool {
 			tp.searching, tp.query = false, ""
 		case "enter":
 			tp.searching = false
-		case "backspace":
-			if r := []rune(tp.query); len(r) > 0 {
-				tp.query = string(r[:len(r)-1])
-			}
 		default:
-			if r := []rune(key); len(r) == 1 && r[0] >= 32 {
-				tp.query += key
-			}
+			tp.query, _ = kit.EditQuery(tp.query, key)
 		}
 		tp.scroll = 0
 		return true

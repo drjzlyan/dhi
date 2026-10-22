@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/drjzlyan/dhi/internal/ideation"
+	"github.com/drjzlyan/dhi/internal/tui/kit"
 )
 
 // modalKind enumerates overlay states.
@@ -122,18 +123,11 @@ func (m *Model) formKey(key string) bool {
 			}
 			return true
 		}
-	case "backspace":
-		buf := &f.fields[f.cur].runes
-		if len(*buf) > 0 {
-			*buf = (*buf)[:len(*buf)-1]
-		}
-		return true
 	}
 	if f.fields[f.cur].toggle == nil {
-		if r := []rune(key); len(r) == 1 && r[0] >= 32 {
-			f.fields[f.cur].runes = append(f.fields[f.cur].runes, r[0])
-			return true
-		}
+		var ok bool
+		f.fields[f.cur].runes, ok = kit.EditRunes(f.fields[f.cur].runes, key)
+		return ok
 	}
 	return false
 }

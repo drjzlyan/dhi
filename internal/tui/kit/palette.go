@@ -95,16 +95,9 @@ func (p *Palette) HandleKey(key string) (picked *PaletteItem, closed bool) {
 		if p.cur > 0 {
 			p.cur--
 		}
-	case "backspace":
-		if len(p.query) > 0 {
-			p.query = p.query[:len(p.query)-1]
-			p.cur = 0
-			p.refilter()
-		}
 	default:
-		if r := []rune(key); len(r) == 1 && r[0] >= 32 {
-			p.query = append(p.query, r[0])
-			p.cur = 0
+		if q, ok := EditQuery(string(p.query), key); ok && q != string(p.query) {
+			p.query, p.cur = []rune(q), 0
 			p.refilter()
 		}
 	}

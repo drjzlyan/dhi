@@ -66,7 +66,7 @@ type chatPane struct {
 	focus    bool   // composer focused
 	flash    string // post-failure notice for the chrome bar (F-026 P3)
 	note     string // what an answered ask did (F-087): news, not a failure
-	input    []rune
+	input    kit.Input
 	cursor   int   // selected message index (blurred navigation)
 	threadID int64 // 0 = channel view; else thread filter
 
@@ -383,14 +383,8 @@ func (p *chatPane) handleKey(key string) bool {
 			p.search = ""
 		case "enter":
 			p.searching = false
-		case "backspace":
-			if len(p.search) > 0 {
-				p.search = p.search[:len(p.search)-1]
-			}
 		default:
-			if r := []rune(key); len(r) == 1 && r[0] >= 32 {
-				p.search += key
-			}
+			p.search, _ = kit.EditQuery(p.search, key)
 		}
 		p.cursor = 0
 		return true
@@ -547,7 +541,7 @@ func (p *chatPane) handleKey(key string) bool {
 			m := history[p.cursor]
 			if m.Author == bus.Human {
 				p.editID = m.ID
-				p.input = []rune(p.displayText(m))
+				p.input = kit.NewInput(p.displayText(m), "")
 				p.focus = true
 			} else {
 				p.flash = "only your own messages can be edited"
@@ -590,11 +584,11 @@ func (p *chatPane) composerKey(key string) bool {
 		p.focus = false
 		if p.editID != 0 {
 			p.editID = 0
-			p.input = nil
+			p.input = kit.Input{}
 		}
 		return true
 	case "enter":
-		text := strings.TrimSpace(string(p.input))
+		text := strings.TrimSpace(p.input.Value)
 		if p.editID != 0 {
 			if text != "" && p.meta != nil {
 				if err := p.meta.Edit(p.channelName(), p.editID, text); err != nil {
@@ -602,26 +596,17 @@ func (p *chatPane) composerKey(key string) bool {
 				}
 			}
 			p.editID = 0
-			p.input = nil
+			p.input = kit.Input{}
 			p.focus = false
 			return true
 		}
 		if text != "" {
 			p.post(text)
-			p.input = nil
-		}
-		return true
-	case "backspace":
-		if len(p.input) > 0 {
-			p.input = p.input[:len(p.input)-1]
+			p.input = kit.Input{}
 		}
 		return true
 	}
-	if r := []rune(key); len(r) == 1 && r[0] >= 32 {
-		p.input = append(p.input, r[0])
-		return true
-	}
-	return false
+	return p.input.HandleKey(key)
 }
 
 // post persists the message and hands it to the turn handler so
@@ -879,7 +864,7 @@ func (p *chatPane) pinnedCount() int {
 // composerRow is always rendered (F-026 P3): focused it owns the caret;
 // blurred it stays as the quiet typing affordance instead of vanishing.
 func (p *chatPane) composerRow() string {
-	return kit.Composer(string(p.input), "press i to write — @mention an agent to wake it", p.focus)
+	return kit.Composer(p.input, "press i to write — @mention an agent to wake it", p.focus)
 }
 
 // composerBar paints the composer as an input bar across width (F-064):

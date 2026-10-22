@@ -257,16 +257,8 @@ func (m *Model) handleRenameKey(key string) bool {
 		}
 		m.dispatchRename(newName)
 		return true
-	case "backspace":
-		if len(m.renameInput) > 0 {
-			m.renameInput = m.renameInput[:len(m.renameInput)-1]
-		}
-		return true
 	}
-	if runes := []rune(key); len(runes) == 1 && runes[0] >= ' ' {
-		m.renameInput = append(m.renameInput, runes...)
-		return true
-	}
+	m.renameInput, _ = kit.EditRunes(m.renameInput, key)
 	return true // swallow everything else while composing
 }
 

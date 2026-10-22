@@ -97,16 +97,8 @@ func (m *Model) brainKey(key string) bool {
 		switch key {
 		case "esc", "enter":
 			m.brainTyping = false
-		case "backspace":
-			if r := []rune(m.brainFilter); len(r) > 0 {
-				m.brainFilter = string(r[:len(r)-1])
-			}
 		default:
-			if len([]rune(key)) == 1 {
-				m.brainFilter += key
-			} else if key == "space" {
-				m.brainFilter += " "
-			}
+			m.brainFilter, _ = kit.EditQuery(m.brainFilter, key)
 		}
 		m.brainCur = min(m.brainCur, max(m.brainCount()-1, 0))
 		return true

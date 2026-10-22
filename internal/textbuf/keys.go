@@ -189,8 +189,10 @@ func normalMotion(key string) (motion, bool) {
 		return motWordBack, true
 	case "e":
 		return motWordEnd, true
-	case "G":
+	case "G", "ctrl+end":
 		return motEOF, true
+	case "gg", "ctrl+home":
+		return motBOF, true
 	}
 	return 0, false
 }
@@ -288,6 +290,7 @@ func (e *Editor) normalAction(key string, count int) bool {
 	case ":":
 		e.mode = ModeCommand
 		e.cmdline = nil
+		e.cmdPrefix = ':'
 	case "J":
 		n := maxInt(count-1, 1) // 3J joins 3 lines
 		for i := 0; i < n && e.buf.Cursor().Line < e.buf.LineCount()-1; i++ {
@@ -304,8 +307,32 @@ func (e *Editor) normalAction(key string, count int) bool {
 			e.buf.cursor.Col = col
 			e.buf.dirty = true
 		}
-	case "n", "N", "/", "?", "*":
-		e.message = "search arrives with a later chunk"
+	case "/":
+		e.startSearch(1)
+	case "?":
+		e.startSearch(-1)
+	case "n", "N":
+		dir := e.lastDir
+		if dir == 0 {
+			dir = 1
+		}
+		if key == "N" {
+			dir = -dir
+		}
+		e.searchNext(dir)
+	case "*":
+		if w := e.wordUnderCursor(); w != "" {
+			e.runSearch(w, 1)
+		}
+	case "ctrl+d", "ctrl+u", "pgdown", "pgup":
+		n := maxInt(e.page, 2)
+		if key == "ctrl+d" || key == "ctrl+u" {
+			n /= 2
+		}
+		if key == "ctrl+u" || key == "pgup" {
+			n = -n
+		}
+		e.scroll(n)
 	case "zz", "Z":
 		// accept and ignore viewport niceties in MVP
 	default:
@@ -397,15 +424,32 @@ func (e *Editor) keyCommand(key string) {
 		e.mode = ModeNormal
 		e.cmdline = nil
 	case "enter":
-		e.execCommand(string(e.cmdline))
+		line := string(e.cmdline)
 		e.cmdline = nil
+		switch e.cmdPrefix {
+		case '/':
+			e.runSearch(line, 1)
+		case '?':
+			e.runSearch(line, -1)
+		default:
+			e.execCommand(line)
+		}
+		e.cmdPrefix = ':'
 	case "backspace":
 		if len(e.cmdline) > 0 {
 			e.cmdline = e.cmdline[:len(e.cmdline)-1]
 		} else {
 			e.mode = ModeNormal
 		}
+	case "ctrl+u":
+		e.cmdline = nil
+	case "ctrl+w", "alt+backspace":
+		e.cmdline = []rune(dropWordBack(string(e.cmdline)))
 	default:
+		if text, ok := strings.CutPrefix(key, "paste:"); ok {
+			e.cmdline = append(e.cmdline, []rune(strings.ReplaceAll(strings.TrimRight(text, "\n"), "\n", " "))...)
+			return
+		}
 		if r := []rune(key); len(r) == 1 && r[0] >= 32 {
 			e.cmdline = append(e.cmdline, r...)
 		}

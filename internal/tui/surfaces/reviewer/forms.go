@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/drjzlyan/dhi/internal/review"
+	"github.com/drjzlyan/dhi/internal/tui/kit"
 )
 
 // prCreateTimeout bounds the push+gh PR creation round-trip.
@@ -130,18 +131,11 @@ func (m *Model) formKey(key string) bool {
 			f.fields[f.cur].cycle(1)
 			return true
 		}
-	case "backspace":
-		buf := &f.fields[f.cur].runes
-		if len(*buf) > 0 {
-			*buf = (*buf)[:len(*buf)-1]
-		}
-		return true
 	}
 	if f.fields[f.cur].toggle == nil {
-		if r := []rune(key); len(r) == 1 && r[0] >= 32 {
-			f.fields[f.cur].runes = append(f.fields[f.cur].runes, r[0])
-			return true
-		}
+		var ok bool
+		f.fields[f.cur].runes, ok = kit.EditRunes(f.fields[f.cur].runes, key)
+		return ok
 	}
 	return false
 }

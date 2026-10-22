@@ -107,8 +107,8 @@ func TestComposerPostsThroughBusAndRuntime(t *testing.T) {
 	if !p.composerKey("enter") {
 		t.Fatal("enter rejected")
 	}
-	if len(p.input) != 0 {
-		t.Fatalf("input not cleared: %q", string(p.input))
+	if p.input.Value != "" {
+		t.Fatalf("input not cleared: %q", p.input.Value)
 	}
 	hist := p.bus.History("#general", 0)
 	if len(hist) != 1 || hist[0].Text != "@alice ship it" || hist[0].Author != bus.Human {
@@ -255,5 +255,23 @@ func TestRenderBoundsAndThreadHeader(t *testing.T) {
 		if w := len([]rune(ansi.Strip(l))); w > 70+2 { // marker prefix tolerance
 			t.Fatalf("row %d exceeds width: %d", i, w)
 		}
+	}
+}
+
+// F-102: the composer has a real cursor: move back a word, insert, and
+// delete words, all rune-safe.
+func TestComposerEditsMidLine(t *testing.T) {
+	p, _, _, _ := newPaneFixture(t)
+	p.focus = true
+	for _, k := range []string{"s", "h", "i", "p", " ", "i", "t", "alt+left", "n", "o", "w", " "} {
+		p.composerKey(k)
+	}
+	if p.input.Value != "ship now it" {
+		t.Fatalf("insert mid-line: %q", p.input.Value)
+	}
+	p.composerKey("end")
+	p.composerKey("ctrl+w")
+	if p.input.Value != "ship now " {
+		t.Fatalf("ctrl+w: %q", p.input.Value)
 	}
 }

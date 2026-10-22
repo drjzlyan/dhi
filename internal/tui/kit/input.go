@@ -24,6 +24,7 @@ type Input struct {
 	Secret      bool
 	Multiline   bool
 	cur         int // rune index into Value
+	undo, redo  []inputSnap
 }
 
 // NewInput builds an input pre-filled with value, cursor at the end.
@@ -37,63 +38,64 @@ func (in Input) Cursor() int { return min(max(in.cur, 0), utf8.RuneCountInString
 // SetValue replaces the value and moves the cursor to its end.
 func (in *Input) SetValue(v string) { in.Value, in.cur = v, utf8.RuneCountInString(v) }
 
-// HandleKey edits the value; it reports whether the key was an edit or
-// cursor move (other keys are left for the caller: enter, tab, esc).
+// HandleKey edits the value through EditText (F-102); ctrl+z undoes and
+// ctrl+shift+z redoes. It reports whether the key was an edit or cursor
+// move (other keys are left for the caller: enter, tab, esc).
 func (in *Input) HandleKey(key string) bool {
-	rs := []rune(in.Value)
-	cur := in.Cursor()
 	switch key {
-	case "left":
-		in.cur = max(cur-1, 0)
-	case "right":
-		in.cur = min(cur+1, len(rs))
-	case "home", "ctrl+a":
-		in.cur = lineStart(rs, cur)
-	case "end", "ctrl+e":
-		in.cur = lineEnd(rs, cur)
-	case "backspace":
-		if cur > 0 {
-			in.Value, in.cur = string(append(rs[:cur-1:cur-1], rs[cur:]...)), cur-1
-		}
-	case "delete", "ctrl+d":
-		if cur < len(rs) {
-			in.Value = string(append(rs[:cur:cur], rs[cur+1:]...))
-		}
-	case "ctrl+j":
-		if !in.Multiline {
-			return false
-		}
-		in.insert([]rune{'\n'})
-	default:
-		if text, ok := strings.CutPrefix(key, "paste:"); ok {
-			if !in.Multiline {
-				text = strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", " "), "\n", " ")
-			}
-			in.insert([]rune(text))
-			return true
-		}
-		r := []rune(key)
-		if len(r) != 1 || r[0] < 32 {
-			return false
-		}
-		in.insert(r)
+	case "ctrl+z":
+		in.restore(&in.undo, &in.redo)
+		return true
+	case "ctrl+shift+z":
+		in.restore(&in.redo, &in.undo)
+		return true
 	}
+	before := inputSnap{in.Value, in.Cursor()}
+	v, cur, ok := EditText(in.Value, in.Cursor(), key, in.Multiline)
+	if !ok {
+		return false
+	}
+	if v != in.Value {
+		in.undo = append(in.undo, before)
+		if len(in.undo) > maxUndo {
+			in.undo = in.undo[1:]
+		}
+		in.redo = nil
+	}
+	in.Value, in.cur = v, cur
 	return true
 }
 
-func (in *Input) insert(add []rune) {
-	rs := []rune(in.Value)
-	cur := in.Cursor()
-	out := make([]rune, 0, len(rs)+len(add))
-	out = append(out, rs[:cur]...)
-	for _, r := range add {
-		if r >= 32 || r == '\n' {
-			out = append(out, r)
-		}
+// Paste inserts text at the cursor as one undoable edit.
+func (in *Input) Paste(text string) { in.HandleKey("paste:" + text) }
+
+// WithCursor renders the value with glyph at the cursor, for callers that
+// draw their own row (composers, filters, the palette query).
+func (in Input) WithCursor(glyph string) string { return CursorText(in.Value, in.Cursor(), glyph) }
+
+// Clear empties the value (an undoable edit).
+func (in *Input) Clear() {
+	if in.Value != "" {
+		in.undo = append(in.undo, inputSnap{in.Value, in.Cursor()})
 	}
-	n := len(out) - cur
-	out = append(out, rs[cur:]...)
-	in.Value, in.cur = string(out), cur+n
+	in.Value, in.cur = "", 0
+}
+
+const maxUndo = 200
+
+type inputSnap struct {
+	value string
+	cur   int
+}
+
+func (in *Input) restore(from, to *[]inputSnap) {
+	if len(*from) == 0 {
+		return
+	}
+	s := (*from)[len(*from)-1]
+	*from = (*from)[:len(*from)-1]
+	*to = append(*to, inputSnap{in.Value, in.Cursor()})
+	in.Value, in.cur = s.value, s.cur
 }
 
 func lineStart(rs []rune, cur int) int {

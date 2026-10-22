@@ -177,94 +177,17 @@ func (f *Form) HandleKey(key string) FormAction {
 			f.cur = (f.cur - 1 + len(f.Fields)) % len(f.Fields)
 		}
 		return FormNone
-	case "backspace":
-		fl := &f.Fields[f.cur]
-		if len(fl.Toggle) == 0 && fl.cur > 0 {
-			fl.Value = f.deleteRuneAt(fl.Value, fl.cur-1)
-			fl.cur--
-		}
-		return FormNone
-	case "delete", "ctrl+d":
-		fl := &f.Fields[f.cur]
-		if len(fl.Toggle) == 0 && fl.cur < utf8.RuneCountInString(fl.Value) {
-			fl.Value = f.deleteRuneAt(fl.Value, fl.cur)
-		}
-		return FormNone
-	case "home", "ctrl+a":
-		if len(f.Fields[f.cur].Toggle) == 0 {
-			f.Fields[f.cur].cur = 0
-		}
-		return FormNone
-	case "end", "ctrl+e":
-		fl := &f.Fields[f.cur]
-		if len(fl.Toggle) == 0 {
-			fl.cur = utf8.RuneCountInString(fl.Value)
-		}
-		return FormNone
-	case "left":
+	case "left", "right":
 		if len(f.Fields[f.cur].Toggle) > 0 {
-			f.cycleCur(-1)
+			f.cycleCur(map[string]int{"left": -1, "right": 1}[key])
 			return FormNone
 		}
-		if f.Fields[f.cur].cur > 0 {
-			f.Fields[f.cur].cur--
-		}
-		return FormNone
-	case "right":
-		if len(f.Fields[f.cur].Toggle) > 0 {
-			f.cycleCur(1)
-			return FormNone
-		}
-		if f.Fields[f.cur].cur < utf8.RuneCountInString(f.Fields[f.cur].Value) {
-			f.Fields[f.cur].cur++
-		}
-		return FormNone
 	}
-	fl := &f.Fields[f.cur]
-	if len(fl.Toggle) == 0 {
-		if text, ok := strings.CutPrefix(key, "paste:"); ok {
-			f.insertRunes(fl, []rune(text))
-			return FormNone
-		}
-		if r := []rune(key); len(r) == 1 && r[0] >= 32 {
-			f.insertRunes(fl, r)
-		}
+	// Text fields edit like every other DHI field (F-102).
+	if fl := &f.Fields[f.cur]; len(fl.Toggle) == 0 {
+		fl.Value, fl.cur, _ = EditText(fl.Value, fl.Cur(), key, false)
 	}
 	return FormNone
-}
-
-// insertRunes inserts rs at the field's cursor and advances it.
-func (f *Form) insertRunes(fl *Field, rs []rune) {
-	rs = f.filterPrintable(rs)
-	if len(rs) == 0 {
-		return
-	}
-	rvalue := []rune(fl.Value)
-	out := make([]rune, 0, len(rvalue)+len(rs))
-	out = append(out, rvalue[:fl.cur]...)
-	out = append(out, rs...)
-	out = append(out, rvalue[fl.cur:]...)
-	fl.Value = string(out)
-	fl.cur += len(rs)
-}
-
-func (f *Form) filterPrintable(rs []rune) []rune {
-	out := rs[:0]
-	for _, r := range rs {
-		if r >= 32 {
-			out = append(out, r)
-		}
-	}
-	return out
-}
-
-// deleteRuneAt removes the rune at rune index i from s.
-func (f *Form) deleteRuneAt(s string, i int) string {
-	rs := []rune(s)
-	if i < 0 || i >= len(rs) {
-		return s
-	}
-	return string(append(rs[:i:i], rs[i+1:]...))
 }
 
 func (f *Form) cycleCur(dir int) {

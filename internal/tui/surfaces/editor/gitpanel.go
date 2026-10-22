@@ -170,16 +170,8 @@ func (m *Model) handleCommitInput(key string) bool {
 		}
 		m.refreshGitData()
 		return true
-	case "backspace":
-		if len(m.gitInput) > 0 {
-			m.gitInput = m.gitInput[:len(m.gitInput)-1]
-		}
-		return true
 	}
-	if r := []rune(key); len(r) == 1 && r[0] >= 32 {
-		m.gitInput = append(m.gitInput, r...)
-		return true
-	}
+	m.gitInput, _ = kit.EditRunes(m.gitInput, key)
 	return true
 }
 
