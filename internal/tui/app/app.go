@@ -67,9 +67,10 @@ type App struct {
 	queuedGate Gate        // started after the current input (QueueGate)
 	setupGate  func() Gate // palette "Run setup wizard" (F-043)
 	// setupItems/setupRun back the setup pill and palette entries.
-	setupItems  func() []kit.ChecklistItem
-	setupRun    func(id string)
-	queuedToast *kit.Toast // raised by Toast, shown by pollToasts
+	setupItems      func() []kit.ChecklistItem
+	setupRun        func(id string)
+	queuedToast     *kit.Toast // raised by Toast, shown by pollToasts
+	optionExplained bool       // the Option-key toast was shown (F-101)
 
 	coach     *coach // running tutorial lesson (F-048); nil = none
 	tutorials []tutorial.Tutorial
@@ -352,12 +353,12 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case tea.KeyPressMsg:
-		key := keyString(msg)
-		// F-058 remaps: chords always; plain keys only while nothing is
-		// taking text (a remapped "x" must still type an x); never inside
-		// a setup gate, which has its own fields.
-		if !a.gateActive() && (strings.Contains(key, "+") || !a.activeCapturesInput()) {
-			key = kit.LogicalKey(key)
+		// F-101: one spelling per key whatever the terminal sent (Option
+		// characters, ESC b/f). A gate is all fields, so it is "typing".
+		key, option := kit.NormalizeKey(keyString(msg),
+			a.gateActive() || a.palette != nil || a.showHelp || a.activeCapturesInput(), a.activeRawKeys())
+		if option {
+			a.explainOptionKey()
 		}
 		if a.gateActive() {
 			switch key {
@@ -392,6 +393,13 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			a.helpKey(key) // the overlay is modal while open
 			return a, nil
+		}
+		// F-058 remaps: chords always; plain keys only while nothing is
+		// taking text (a remapped "x" must still type an x). Applied
+		// after the gate, coach, palette and help, whose keys are fixed:
+		// a remap of ctrl+k must not stop ctrl+k moving up the palette.
+		if strings.Contains(key, "+") || !a.activeCapturesInput() {
+			key = kit.LogicalKey(key)
 		}
 		if key == "ctrl+p" {
 			a.openPalette()
@@ -488,6 +496,24 @@ func (a *App) SetSetupGate(f func() Gate) { a.setupGate = f }
 func (a *App) activeCapturesInput() bool {
 	c, ok := a.Active().(surfaces.InputCapturer)
 	return ok && c.CapturesInput()
+}
+
+// activeRawKeys reports a focused terminal: its program receives keys
+// exactly as pressed (readline needs ESC b, vim needs ¡ as typed).
+func (a *App) activeRawKeys() bool {
+	t, ok := a.Active().(surfaces.AltDigitTaker)
+	return ok && t.TakesAltDigits()
+}
+
+// explainOptionKey tells the user once per session why Option+digit
+// worked as a view switch but types characters elsewhere (F-101).
+func (a *App) explainOptionKey() {
+	if a.optionExplained {
+		return
+	}
+	a.optionExplained = true
+	a.Toast(kit.Toast{Kind: kit.ToastInfo, Title: "Option keys work as alt here",
+		Detail: "For Option in text and the terminal, turn on Option as Meta (? → Keyboard)"})
 }
 
 // altDigit parses "alt+1".."alt+9".
@@ -972,7 +998,7 @@ func (a *App) buildStatus() *kit.StatusLine {
 	if a.activeCapturesInput() {
 		sl.Globals = []string{"^p palette", quit}
 		if t, ok := a.Active().(surfaces.AltDigitTaker); !ok || !t.TakesAltDigits() {
-			sl.Globals = []string{"^p palette", fmt.Sprintf("alt+1-%d views", len(a.surfaces)), quit}
+			sl.Globals = []string{"^p palette", kit.AltLabel(fmt.Sprintf("alt+1-%d views", len(a.surfaces))), quit}
 		}
 		sl.More = ""
 	} else {

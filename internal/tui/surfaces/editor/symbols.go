@@ -82,7 +82,7 @@ func (m *Model) handleSymbolKey(key string) bool {
 		if p.cur < len(items)-1 {
 			p.cur++
 		}
-	case "up", "ctrl+p":
+	case "up", "ctrl+k":
 		if p.cur > 0 {
 			p.cur--
 		}

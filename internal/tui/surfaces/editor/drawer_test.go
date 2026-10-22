@@ -173,11 +173,28 @@ func TestTermKeyEncoding(t *testing.T) {
 	cases := map[string]string{
 		"ctrl+a": "\x01", "ctrl+z": "\x1a", "ctrl+[": "\x1b", "alt+b": "\x1bb",
 		"pgdown": "\x1b[6~", "delete": "\x1b[3~", "f5": "\x1b[15~", "home": "\x1b[H",
-		"shift+tab": "\x1b[Z", "x": "x", "alt+left": "\x1b\x1b[D",
+		"shift+tab": "\x1b[Z", "x": "x", "alt+left": "\x1b[1;3D",
 	}
 	for k, want := range cases {
 		if got, ok := termKeyBytes(k); !ok || string(got) != want {
 			t.Errorf("%s → %q, want %q", k, got, want)
 		}
+	}
+}
+
+// TestFocusedTerminalKeepsReadlineKeys (F-101): ctrl+a, ctrl+j and
+// ctrl+y reach the program; ctrl+t (the way out) stays the editor's.
+func TestFocusedTerminalKeepsReadlineKeys(t *testing.T) {
+	m := newEditor(t)
+	feed(m, "ctrl+t")
+	for _, k := range []string{"ctrl+a", "ctrl+j", "ctrl+y"} {
+		feed(m, k)
+		if !m.drawerOpen || !m.termFocus || m.gitOpen {
+			t.Fatalf("%s did not stay with the terminal (git=%v)", k, m.gitOpen)
+		}
+	}
+	feed(m, "ctrl+t")
+	if m.termFocus {
+		t.Fatal("ctrl+t must still blur the terminal")
 	}
 }

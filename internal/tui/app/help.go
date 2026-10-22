@@ -43,11 +43,18 @@ func (a *App) helpSections() []helpSection {
 	secs := []helpSection{{title: "DHI — global keys", rows: [][2]string{
 		{fmt.Sprintf("1-%d", len(a.surfaces)), "jump between views"},
 		{"tab / shift+tab", "cycle views"},
-		{fmt.Sprintf("alt+1-%d", len(a.surfaces)), "jump between views while typing (macOS: Option as Meta)"},
+		{kit.AltLabel(fmt.Sprintf("alt+1-%d", len(a.surfaces))), "jump between views while typing"},
 		{"ctrl+p", "command palette (search every action)"},
 		{"?", "toggle this help"},
 		{"ctrl+c", "quit DHI"},
 	}}}
+	secs = append(secs, helpSection{title: "Keyboard — Mac and PC", rows: [][2]string{
+		{"Option as Meta", "makes Option work as alt everywhere. Terminal.app: Settings → Profiles → Keyboard → Use Option as Meta key. iTerm2: Profiles → Keys → Left Option key: Esc+. Ghostty: macos-option-as-alt = true"},
+		{"without it", "Option+1..9 still switch views (outside text); in text they type ¡™£…"},
+		{"alt+←/→", "move by word in text fields (Option+←/→ on a Mac)"},
+		{"fn+←/→ ↑/↓", "home/end and page up/down on Mac laptops"},
+		{"ctrl+←/→", "taken by macOS Spaces unless turned off in System Settings → Keyboard → Shortcuts"},
+	}})
 	if hp, ok := a.Active().(helpProvider); ok {
 		if rows := kit.DedupeHelpRows(hp.HelpSections()); len(rows) > 0 {
 			secs = append(secs, helpSection{title: a.Active().Meta().Title + " — here", rows: rows})

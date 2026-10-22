@@ -1112,7 +1112,7 @@ Plan: `~/.claude/plans/hidden-cooking-dove.md`. Branch `m34-ux`, one commit per 
 
 Plan: `~/.claude/plans/all-the-keys-should-playful-hanrahan.md`. Branch `m35`, one commit per phase. ADR-0042, ADR-0043, F-101–F-108.
 
-- [ ] P1 Keys on every keyboard: Option characters, word motion, terminal keeps its keys, remaps after overlays (F-101)
+- [x] P1 Keys on every keyboard: Option characters, word motion, terminal keeps its keys, remaps after overlays (F-101)
 - [ ] P2 One line editor for every field; buffer search and insert-mode editing (F-102)
 - [ ] P3 Paste everywhere (secret field included), copy to the system clipboard, select mode (F-103)
 - [ ] P4 Secret gaps: workspace lookup for MCP, grant-gated MCP env, setting vs secret, label (F-104)

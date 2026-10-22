@@ -332,7 +332,7 @@ func (m *Model) Hints() (string, []string) {
 	case m.chat != nil && m.chat.open && m.chat.focus:
 		return "", []string{"enter send", "@ mention", "[ ] channel", "^f apply", "esc blur"}
 	case m.drawerOpen && m.termFocus:
-		return "", []string{"ctrl+t blur", "alt+1..9 tab", "alt+n new tab"}
+		return "", []string{"ctrl+t blur", kit.AltLabel("alt+1..9 tab"), kit.AltLabel("alt+n new tab")}
 	case m.gitOpen && m.gitFocus:
 		return "", []string{"s stage", "S all", "u unstage", "c commit", "tab status/log", "esc blur"}
 	case m.mode != modeNav:
@@ -426,7 +426,7 @@ func (m *Model) HelpSections() [][2]string {
 	case m.drawerOpen && m.termFocus:
 		out = append(out,
 			[2]string{"ctrl+t", "blur/close the drawer"},
-			[2]string{"alt+1..9", "switch terminal tab"})
+			[2]string{kit.AltLabel("alt+1..9"), "switch terminal tab"})
 	case m.gitOpen && m.gitFocus:
 		out = append(out,
 			[2]string{"s/S/u", "stage · unstage"},
@@ -712,6 +712,12 @@ func (m *Model) HandleKey(key string) bool {
 	if m.reviewOpen && len(m.proposals) > 0 {
 		return m.handleReviewKey(key)
 	}
+	// A focused terminal keeps every key its program uses (readline's
+	// ctrl+a/ctrl+y/ctrl+j, ctrl+d for EOF); ctrl+t is the one way out,
+	// so it stays the drawer toggle (F-101).
+	if m.drawerOpen && m.termFocus && key != "ctrl+t" {
+		return m.handleTermKey(key)
+	}
 	if key == "ctrl+d" && m.dbg != nil && m.dbg.st.Stopped {
 		m.mode = modeDebug
 		return true
@@ -736,9 +742,6 @@ func (m *Model) HandleKey(key string) bool {
 		if handled := m.chat.handleKey(key, m.applySuggestion); handled {
 			return true
 		}
-	}
-	if m.drawerOpen && m.termFocus {
-		return m.handleTermKey(key)
 	}
 	if m.gitOpen && m.gitFocus {
 		return m.handleGitKey(key)
@@ -960,6 +963,8 @@ var termSpecialKeys = map[string]string{
 	"up": "\x1b[A", "down": "\x1b[B", "right": "\x1b[C", "left": "\x1b[D",
 	"home": "\x1b[H", "end": "\x1b[F", "pgup": "\x1b[5~", "pgdown": "\x1b[6~",
 	"insert": "\x1b[2~", "delete": "\x1b[3~",
+	"alt+up": "\x1b[1;3A", "alt+down": "\x1b[1;3B", "alt+right": "\x1b[1;3C", "alt+left": "\x1b[1;3D",
+	"shift+up": "\x1b[1;2A", "shift+down": "\x1b[1;2B", "shift+right": "\x1b[1;2C", "shift+left": "\x1b[1;2D",
 	"ctrl+up": "\x1b[1;5A", "ctrl+down": "\x1b[1;5B", "ctrl+right": "\x1b[1;5C", "ctrl+left": "\x1b[1;5D",
 	"f1": "\x1bOP", "f2": "\x1bOQ", "f3": "\x1bOR", "f4": "\x1bOS",
 	"f5": "\x1b[15~", "f6": "\x1b[17~", "f7": "\x1b[18~", "f8": "\x1b[19~",

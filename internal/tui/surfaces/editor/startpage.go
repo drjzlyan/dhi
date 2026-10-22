@@ -127,7 +127,7 @@ func (m *Model) startPage(w int) []string {
 		tips = append(tips, "t take the tour")
 	}
 	if m.ws != nil {
-		tips = append(tips, "alt+1-5 views")
+		tips = append(tips, kit.AltLabel("alt+1-5 views"))
 	}
 	out = append(out, theme.Hint().Render(kit.ClipEllipsis(strings.Join(tips, "  ·  "), w)))
 	return out

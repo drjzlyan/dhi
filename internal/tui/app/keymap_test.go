@@ -69,3 +69,22 @@ func TestCtrlCGoesToAFocusedTerminal(t *testing.T) {
 		t.Fatal("without a focused terminal ctrl+c quits")
 	}
 }
+
+// TestRemapsNeverReachThePalette: with ctrl+k remapped to ctrl+p (the
+// F-058 example), ctrl+k inside the open palette still moves up instead
+// of closing it.
+func TestRemapsNeverReachThePalette(t *testing.T) {
+	t.Cleanup(func() { kit.SetKeyMap(nil) })
+	kit.SetKeyMap(map[string]string{"ctrl+k": "ctrl+p"})
+	s := &typingSurface{stubSurface: stubSurface{id: "ws", title: "WS", consumeKeys: true}}
+	a := New("test", s)
+	a.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	a.Update(tea.KeyPressMsg{Code: 'k', Mod: tea.ModCtrl})
+	if a.palette == nil {
+		t.Fatal("ctrl+k must open the palette")
+	}
+	a.Update(tea.KeyPressMsg{Code: 'k', Mod: tea.ModCtrl})
+	if a.palette == nil {
+		t.Fatal("ctrl+k inside the palette closed it: the remap reached the palette")
+	}
+}

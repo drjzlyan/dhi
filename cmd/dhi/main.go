@@ -163,7 +163,8 @@ func runTUI() (relaunch bool) {
 		os.Exit(1)
 	}
 	cfg.Apply()
-	kit.SetKeyMap(cfg.Keys) // [keys] remaps (F-058): the shell translates, the chrome shows them
+	kit.SetKeyMap(cfg.Keys)                // [keys] remaps (F-058): the shell translates, the chrome shows them
+	kit.MacKeys = runtime.GOOS == "darwin" // hints spell alt as ⌥ (F-101)
 	// Conventions are re-read when their files change, so Settings edits and
 	// hand edits of .dhi/conventions.toml govern branch names, commits, PRs and
 	// the agents' prompts without a restart (F-052).

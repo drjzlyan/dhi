@@ -73,7 +73,7 @@ func (p *chatPane) railSearchKey(key string) {
 			p.railCur++
 		}
 		return
-	case "up", "ctrl+p":
+	case "up", "ctrl+k":
 		if p.railCur > 0 {
 			p.railCur--
 		}
@@ -257,7 +257,7 @@ func (p *chatPane) switcherKey(key string) {
 			s.cur++
 		}
 		return
-	case "up", "ctrl+p", "shift+tab":
+	case "up", "ctrl+k", "shift+tab":
 		if s.cur > 0 {
 			s.cur--
 		}

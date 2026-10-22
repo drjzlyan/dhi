@@ -70,3 +70,32 @@ func TestViewPaintsPlainTextInTheThemeColor(t *testing.T) {
 		}
 	}
 }
+
+// F-101: macOS without "Option as Meta" sends Option+2 as "™". Outside
+// text it switches views (and explains itself once); while typing it is
+// a character; a focused terminal gets it unchanged.
+func TestOptionCharacterSwitchesViewsOutsideText(t *testing.T) {
+	theme.SwapForTest(t, theme.Dark())
+	ed := &altTaker{capturingSurface: capturingSurface{stubSurface: stubSurface{id: "editor", title: "Editor", consumeKeys: true}}}
+	a := New("t", ed, &stubSurface{id: "workspace", title: "Workspace"})
+	a.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+
+	ed.typing = true
+	a.Update(tea.KeyPressMsg{Code: '™', Text: "™"})
+	if a.active != 0 || ed.keys[len(ed.keys)-1] != "™" {
+		t.Fatalf("while typing ™ must be text: active=%d keys=%v", a.active, ed.keys)
+	}
+	ed.typing, ed.takes = true, true
+	a.Update(tea.KeyPressMsg{Code: '™', Text: "™"})
+	if a.active != 0 || ed.keys[len(ed.keys)-1] != "™" {
+		t.Fatal("a focused terminal gets ™ as typed")
+	}
+	ed.typing, ed.takes = false, false
+	a.Update(tea.KeyPressMsg{Code: '™', Text: "™"})
+	if a.Active().Meta().ID != "workspace" {
+		t.Fatal("™ outside text must act as alt+2")
+	}
+	if !a.optionExplained || a.toast == nil {
+		t.Fatal("the first Option key must explain Option as Meta")
+	}
+}
