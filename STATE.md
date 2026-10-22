@@ -9,7 +9,7 @@
   credentials never reach agents (DHI pushes on approval); package caches writable, everything else
   asks. ADR-0044 supersedes ADR-0005/0009/0036 and the install parts of 0011/0027/0029. Plan
   `~/.claude/plans/all-the-keys-should-playful-hanrahan.md`; F-109–F-114. Commits on `m36`: P0
-  b43ce1c, P1 a9c743b, P2 086fc5d, P3 b4a7ea3, P4 0b717d9, P5 8921b16, P6 (this). Not pushed.
+  b43ce1c, P1 a9c743b, P2 086fc5d, P3 b4a7ea3, P4 0b717d9, P5 8921b16, P6 148d3b3, review fixes (this). Not pushed.
 - Environment (F-109): `internal/hostenv` runs `$SHELL -ilc` once (3 s, own session, group kill),
   `hostenv.Apply()` at the top of main; palette "Reload shell environment".
 - Tools (F-110): `internal/hosttools` = tool table, per-manager recipes (brew/apt/dnf/pacman/zypper,
@@ -34,9 +34,16 @@
 - Doctor/setup/docs (F-114): host/environment, installers, git/rg/gh, other tools, old toolchain,
   git/access (identity origin, helpers, ssh-agent key count); setup "tools" step (catch-up while a
   core tool is missing); README "What DHI changes on your machine"; AGENTS.md rule 5.
+- After review: ~/.cargo and ~/.gradle writable (credentials fenced for writes too), ~/.rustup and
+  Xcode/CLT exec roots — sandboxed cargo test and gradle build pass live; loose default-ref copies
+  only under bubblewrap.
 - Gotchas: seatbelt matches canonical paths (a workspace under /tmp needs /private/tmp); a
   workspace in a symlinked dir would hit the same (pre-existing). Write/exec grants do not reach
   `run` yet (they reach the CLI's sandbox).
+- Deviations for the user: the cursor `.git/info/exclude` line and (bubblewrap only) loose
+  default-ref copies are still written without a card; a missing bwrap fails each spawn with the
+  install command instead of a paused queue; the Settings tools view is the setup "tools" step.
+  Agents' CLI env is captured at launch: "Reload shell environment" reaches agents after a restart.
 - Not done / open: Linux live checks (Docker daemon not running here): bwrap install card, a
   ~/.bashrc denial card, cache writes. Real agent `git_push` against an SSH remote not run live.
 

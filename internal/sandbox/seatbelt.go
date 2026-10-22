@@ -207,8 +207,9 @@ func seatbeltProfile(rw, ro []string, allowNetwork bool, guard, reopen []string)
 			b.WriteString(`(allow file-write* (regex #"^` + regexp.QuoteMeta(d) + `/[^/]+/"))` + "\n")
 		}
 	}
-	// Exec: registered trees + system dirs.
-	b.WriteString("(allow process-exec*" + subpaths(rw) + subpaths(ro) + subpaths(seatbeltSystemDirs) + ")\n")
+	// Exec: registered trees + system dirs + the developer tools /usr/bin/cc
+	// and friends hand off to (a Rust or cgo link runs Xcode's clang).
+	b.WriteString("(allow process-exec*" + subpaths(rw) + subpaths(ro) + subpaths(seatbeltSystemDirs) + subpaths(developerDirs()) + ")\n")
 
 	// Host CLIs (claude et al) read the world as the user — bun/node
 	// runtimes touch system fonts, timezone data, cert stores, and the
@@ -221,12 +222,26 @@ func seatbeltProfile(rw, ro []string, allowNetwork bool, guard, reopen []string)
 	// admitted trees (F-025/ADR-0012: the CLI runs as the user, the
 	// sandbox guards path/process escape).
 	b.WriteString("(allow file-read*)\n")
+	// Credentials are neither read nor written, even inside a writable
+	// tool home (~/.cargo/credentials.toml).
 	for _, d := range CredentialPaths() {
 		if d != "" {
-			b.WriteString(`(deny file-read* (subpath ` + sbplQuote(d) + `))` + "\n")
+			b.WriteString(`(deny file-read* file-write* (subpath ` + sbplQuote(d) + `))` + "\n")
 		}
 	}
 	return b.String(), nil
+}
+
+// developerDirs are Apple's developer tools: the active one xcode-select
+// points at, and the Command Line Tools. Read and execute only.
+func developerDirs() []string {
+	var out []string
+	for _, d := range []string{"/var/db/xcode_select_link", "/Library/Developer/CommandLineTools"} {
+		if r, err := filepath.EvalSymlinks(d); err == nil {
+			out = append(out, r)
+		}
+	}
+	return out
 }
 
 // seatbeltDeviceWrites admits writes to the harmless device nodes only.
@@ -259,6 +274,8 @@ func CredentialPaths() []string {
 		filepath.Join(home, ".git-credentials"),
 		filepath.Join(home, ".docker", "config.json"),
 		filepath.Join(home, ".cargo", "credentials.toml"),
+		filepath.Join(home, ".cargo", "credentials"),
+		filepath.Join(home, ".gradle", "gradle.properties"),
 		filepath.Join(home, ".local", "share", "keyrings"),
 		filepath.Join(cfg, "gh"),
 		filepath.Join(cfg, "dhi", "credentials.toml"),

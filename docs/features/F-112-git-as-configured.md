@@ -23,6 +23,7 @@ Status: done (M36 P4) · ADR-0044 · amends F-083
 - DHI no longer reads `gh auth token` for pushes; the user's credential helper or ssh key is used.
 - Workspace-only identity is remembered in the workspace's setup state; a safe repair gives members
   added later the same identity.
-- Kept, deliberately (planned to go): the loose copy of a packed default-branch ref (same value, so
-  bubblewrap can guard it) and the one cursor line in `.git/info/exclude`. Both are local-only,
-  never committed, and inside the workspace's own repos.
+- Deviation from the plan, for the user to decide: the loose copy of a packed default-branch ref is
+  still written, but only under bubblewrap (which guards only existing files; seatbelt denies by
+  path, so macOS writes nothing). The one cursor line in `.git/info/exclude` is still appended
+  without a card. Both are local-only, never committed, inside the workspace's repos.

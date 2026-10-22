@@ -16,7 +16,7 @@ func TestSeatbeltDeniesReadingDHISecrets(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, f := range []string{"credentials.toml", "grants.json"} {
-		want := `(deny file-read* (subpath ` + sbplQuote(filepath.Join(cfg, "dhi", f)) + `))`
+		want := `(deny file-read* file-write* (subpath ` + sbplQuote(filepath.Join(cfg, "dhi", f)) + `))`
 		if !strings.Contains(p, want) {
 			t.Fatalf("profile lacks %s", want)
 		}

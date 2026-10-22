@@ -24,9 +24,11 @@ func PackageCaches(home, goos string, getenv func(string) string) []string {
 		filepath.Join(home, ".npm"),
 		filepath.Join(home, ".cache"),
 		filepath.Join(home, "go", "pkg", "mod"),
-		filepath.Join(home, ".cargo", "registry"),
-		filepath.Join(home, ".cargo", "git"),
-		filepath.Join(home, ".gradle", "caches"),
+		// cargo locks files in CARGO_HOME itself and Gradle keeps its
+		// daemon beside the caches, so their homes are writable; the
+		// credential files in them stay fenced (CredentialPaths).
+		filepath.Join(home, ".cargo"),
+		filepath.Join(home, ".gradle"),
 		filepath.Join(home, ".m2", "repository"),
 		filepath.Join(home, ".bun", "install", "cache"),
 		filepath.Join(home, ".local", "share", "pnpm", "store"),
@@ -35,7 +37,7 @@ func PackageCaches(home, goos string, getenv func(string) string) []string {
 		cand = append(cand, filepath.Join(home, "Library", "Caches"))
 	}
 	if getenv != nil {
-		for _, k := range []string{"GOMODCACHE", "GOCACHE", "npm_config_cache", "UV_CACHE_DIR", "PIP_CACHE_DIR"} {
+		for _, k := range []string{"GOMODCACHE", "GOCACHE", "npm_config_cache", "UV_CACHE_DIR", "PIP_CACHE_DIR", "CARGO_HOME", "GRADLE_USER_HOME"} {
 			if v := getenv(k); filepath.IsAbs(v) {
 				cand = append(cand, v)
 			}
@@ -53,6 +55,25 @@ func PackageCaches(home, goos string, getenv func(string) string) []string {
 		}
 		seen[r] = true
 		out = append(out, r)
+	}
+	return out
+}
+
+// ToolHomes are toolchain homes a PATH entry runs from without being on
+// PATH itself: rustup's proxies in ~/.cargo/bin exec the real cargo under
+// ~/.rustup. Read and execute only.
+func ToolHomes(home string, getenv func(string) string) []string {
+	cand := []string{filepath.Join(home, ".rustup")}
+	if getenv != nil {
+		if v := getenv("RUSTUP_HOME"); filepath.IsAbs(v) {
+			cand = append(cand, v)
+		}
+	}
+	var out []string
+	for _, c := range cand {
+		if r, err := filepath.EvalSymlinks(c); err == nil {
+			out = append(out, r)
+		}
 	}
 	return out
 }

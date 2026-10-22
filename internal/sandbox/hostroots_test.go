@@ -72,3 +72,22 @@ func TestMissingBwrapIsNamedAtSpawnNotAtBoot(t *testing.T) {
 		t.Fatalf("after install = %v %v", argv, err)
 	}
 }
+
+func TestToolHomesAndFencedCredentialWrites(t *testing.T) {
+	home := t.TempDir()
+	if r, err := filepath.EvalSymlinks(home); err == nil {
+		home = r
+	}
+	os.MkdirAll(filepath.Join(home, ".rustup"), 0o755)
+	if got := ToolHomes(home, nil); len(got) != 1 || got[0] != filepath.Join(home, ".rustup") {
+		t.Fatalf("tool homes = %v", got)
+	}
+	t.Setenv("HOME", home)
+	p, err := seatbeltProfile([]string{filepath.Join(home, ".cargo")}, nil, true, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(p, `(deny file-read* file-write* (subpath "`+filepath.Join(home, ".cargo", "credentials.toml")+`"))`) {
+		t.Fatal("a writable ~/.cargo must still fence its credentials")
+	}
+}

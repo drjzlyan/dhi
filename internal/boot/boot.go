@@ -131,7 +131,7 @@ func Audit(in Input) Decision {
 	if ws != nil {
 		rw = append(rw, sandbox.PackageCaches(home, in.GOOS, in.Getenv)...)
 	}
-	ro := sandbox.ExecRoots(in.PATH, home)
+	ro := append(sandbox.ExecRoots(in.PATH, home), sandbox.ToolHomes(home, in.Getenv)...)
 	for _, r := range in.ReadOnly {
 		if resolved, err := filepath.EvalSymlinks(r); err == nil {
 			ro = append(ro, resolved)

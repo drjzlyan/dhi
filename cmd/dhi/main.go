@@ -1325,8 +1325,13 @@ func guardWorkspace(sb sandbox.Sandbox, ws *workspace.Workspace) sandbox.Sandbox
 	guard := []string{dhi}
 	// F-086: the default branch moves only through DHI or you. An agent's
 	// own `git commit` on main fails, so work lands on a task branch.
+	_, bwrap := sb.(*sandbox.Bubblewrap)
 	for _, m := range ws.Members() {
-		gitcore.LooseDefaultRefs(m.Path) // bubblewrap guards only files that exist
+		if bwrap {
+			// bubblewrap guards only files that exist; seatbelt denies by
+			// path, so on macOS nothing is written into the repo.
+			gitcore.LooseDefaultRefs(m.Path)
+		}
 		guard = append(guard, gitcore.DefaultBranchRefs(m.Path)...)
 	}
 	guarded, err := g.WithGuarded(guard, reopen)
