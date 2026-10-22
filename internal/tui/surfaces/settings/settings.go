@@ -1546,7 +1546,7 @@ func (m *Model) sectionHints() []string {
 	case secAutopilots:
 		sec = []string{"n new", "t rituals", "e arm/pause", "r run now", "c task cards", "o last run", "x remove"}
 	case secIntegrations:
-		sec = []string{"+ add", "enter sign in", "g give to bots", "a new bot with it", "d sign out", "x remove", "v config", "R refresh plugins"}
+		sec = []string{"+ add", "enter sign in", "p paste sign-in address", "g give to bots", "a new bot with it", "d sign out", "x remove", "v config", "R refresh plugins"}
 	case secSecrets:
 		sec = []string{"a add", "e replace value", "x delete"}
 	}

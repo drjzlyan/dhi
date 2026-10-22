@@ -2,21 +2,32 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
+
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/drjzlyan/dhi/internal/agentkit/assign"
 	"github.com/drjzlyan/dhi/internal/agentkit/dhitools"
 	"github.com/drjzlyan/dhi/internal/agentkit/install"
 	"github.com/drjzlyan/dhi/internal/agentkit/library"
+	"github.com/drjzlyan/dhi/internal/agentkit/mcpbridge"
 	"github.com/drjzlyan/dhi/internal/agentkit/mcpserver"
 	agentkitOrg "github.com/drjzlyan/dhi/internal/agentkit/org"
 	"github.com/drjzlyan/dhi/internal/agentkit/skillprop"
 	"github.com/drjzlyan/dhi/internal/gitcore"
+	"github.com/drjzlyan/dhi/internal/mcp"
+	"github.com/drjzlyan/dhi/internal/toolchain"
+	"github.com/drjzlyan/dhi/internal/tui/app"
+	"github.com/drjzlyan/dhi/internal/tui/kit"
 	settingsview "github.com/drjzlyan/dhi/internal/tui/surfaces/settings"
 	"github.com/drjzlyan/dhi/internal/tui/surfaces/wizard"
 	"github.com/drjzlyan/dhi/internal/version"
@@ -75,6 +86,18 @@ func newExtensions(root string) *settingsview.Extensions {
 	return &settingsview.Extensions{
 		Fetch: gitcore.CloneAt, HTTP: extHTTP, Tmp: os.TempDir(), Cache: extCache(),
 		Workspace: workspaceScope(root), User: userScope(),
+		Status: serverStatus(root),
+		Login: func(ctx context.Context, srv mcpserver.Server) error {
+			return mcpOAuth.Login(ctx, srv.URL, clientConfig(srv))
+		},
+		Logout: func(srv mcpserver.Server) error {
+			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+			defer cancel()
+			return mcpOAuth.Logout(ctx, srv.URL)
+		},
+		PasteSignIn: func(srv mcpserver.Server, addr string) error { return mcpOAuth.PasteRedirect(srv.URL, addr) },
+		Signing:     func(srv mcpserver.Server) bool { _, ok := mcpOAuth.Pending(srv.URL); return ok },
+		SignInNow:   signInNow,
 	}
 }
 
@@ -166,7 +189,12 @@ func setupIntegration(ctx context.Context, root, plugin, who string) (string, er
 	for _, n := range res.Servers {
 		items = append(items, assign.Item{Kind: assign.KindServer, Name: n, Description: entry.Description, Category: entry.Category})
 	}
-	return giveTo(root, sc, items, who)
+	note, err := giveTo(root, sc, items, who)
+	if err != nil {
+		return "", err
+	}
+	signInNow(b.Servers) // the browser opens for the vendor's own login
+	return note, nil
 }
 
 // giveTo assigns items per the setup choice and names the outcome.
@@ -271,5 +299,153 @@ func skillSuggest(root string) func(ctx context.Context, agent, entry, reason st
 			what += ", ships a script"
 		}
 		return what, nil
+	}
+}
+
+// ---- sign-in to MCP servers (F-106) ----
+
+// credTokens keeps OAuth tokens in the credentials file as secrets: never
+// in .dhi, and redacted wherever DHI writes output.
+type credTokens struct{}
+
+func tokenName(key string) string {
+	sum := sha256.Sum256([]byte(key))
+	return "MCP_OAUTH_" + strings.ToUpper(hex.EncodeToString(sum[:8]))
+}
+
+func (credTokens) Get(key string) (mcp.Token, bool) {
+	if credStore == nil {
+		return mcp.Token{}, false
+	}
+	v, ok := credStore.LookupIn("", tokenName(key))
+	if !ok {
+		return mcp.Token{}, false
+	}
+	var t mcp.Token
+	if json.Unmarshal([]byte(v), &t) != nil {
+		return mcp.Token{}, false
+	}
+	return t, true
+}
+
+func (credTokens) Put(key string, t mcp.Token) error {
+	if credStore == nil {
+		return fmt.Errorf("no credentials file to keep the sign-in in")
+	}
+	b, err := json.Marshal(t)
+	if err != nil {
+		return err
+	}
+	return credStore.Set(map[string]string{tokenName(key): string(b)})
+}
+
+func (credTokens) Delete(key string) error {
+	if credStore == nil {
+		return nil
+	}
+	return credStore.Delete(tokenName(key))
+}
+
+// uiSend reaches the running UI from background work (set once the
+// program exists).
+var uiSend func(tea.Msg)
+
+var mcpOAuth = &mcp.OAuth{
+	Store: credTokens{}, HTTP: extHTTP, ClientName: "DHI",
+	Open: toolchain.OpenURL,
+	Show: func(host, u string) {
+		_ = toolchain.CopyToClipboard(u) // the fallback when no browser opens
+		if uiSend != nil {
+			uiSend(app.ToastMsg{Kind: kit.ToastInfo, Title: "Sign in to " + host,
+				Detail: "finish in your browser (the address is copied); over SSH: INTEGRATIONS → p"})
+		}
+	},
+}
+
+// noAuthNeeded remembers servers that answered without asking for a
+// sign-in, so a dial does not probe every time.
+var noAuthNeeded sync.Map
+
+// mcpAuth authorizes an http server for a run: configured headers win;
+// otherwise a stored sign-in, or — first use — a browser sign-in starts
+// and the run is told the server is waiting for it.
+func mcpAuth(ctx context.Context, srv mcpserver.Server, base *http.Client) (*http.Client, error) {
+	for k := range srv.Headers {
+		if strings.EqualFold(k, "Authorization") {
+			return base, nil // the config carries its own credential
+		}
+	}
+	if _, ok := noAuthNeeded.Load(srv.URL); ok {
+		return base, nil
+	}
+	cfg := mcp.ClientConfig{}
+	if srv.OAuth != nil {
+		cfg = mcp.ClientConfig{ClientID: srv.OAuth.ClientID, CallbackPort: srv.OAuth.CallbackPort}
+	}
+	c, err := mcpOAuth.Client(ctx, srv.URL, cfg, base, false)
+	if err == nil {
+		return c, nil
+	}
+	need, perr := mcpOAuth.NeedsSignIn(ctx, srv.URL)
+	if perr == nil && !need {
+		noAuthNeeded.Store(srv.URL, true)
+		return base, nil
+	}
+	return mcpOAuth.Client(ctx, srv.URL, cfg, base, true) // starts the sign-in, names it
+}
+
+func clientConfig(srv mcpserver.Server) mcp.ClientConfig {
+	if srv.OAuth == nil {
+		return mcp.ClientConfig{}
+	}
+	return mcp.ClientConfig{ClientID: srv.OAuth.ClientID, CallbackPort: srv.OAuth.CallbackPort}
+}
+
+// serverStatus is INTEGRATIONS' sign-in column.
+func serverStatus(root string) func(srv mcpserver.Server) string {
+	lookup := mcpbridge.LookupFor(root)
+	return func(srv mcpserver.Server) string {
+		for _, v := range srv.Vars() {
+			if _, ok := lookup(v); !ok {
+				return "needs " + v
+			}
+		}
+		if srv.Transport != mcpserver.HTTP {
+			return "ready"
+		}
+		if _, ok := mcpOAuth.Pending(srv.URL); ok {
+			return "signing in…"
+		}
+		if mcpOAuth.SignedIn(srv.URL) {
+			return "signed in"
+		}
+		for k := range srv.Headers {
+			if strings.EqualFold(k, "Authorization") {
+				return "ready"
+			}
+		}
+		if _, ok := noAuthNeeded.Load(srv.URL); ok {
+			return "ready"
+		}
+		return "sign in on first use"
+	}
+}
+
+// signInNow starts a browser sign-in for each http server that needs one
+// (right after an install), without blocking.
+func signInNow(servers []mcpserver.Server) {
+	for _, s := range servers {
+		if s.Transport != mcpserver.HTTP {
+			continue
+		}
+		srv := s
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+			defer cancel()
+			if need, err := mcpOAuth.NeedsSignIn(ctx, srv.URL); err != nil || !need {
+				return
+			}
+			_ = mcpOAuth.Login(ctx, srv.URL, clientConfig(srv))
+		}()
 	}
 }

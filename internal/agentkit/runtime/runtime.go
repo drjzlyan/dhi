@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/drjzlyan/dhi/internal/agentkit/assign"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -134,6 +135,9 @@ type Config struct {
 	// allowlist names an mcp__<server>__<tool> and its network scope
 	// permits the call.
 	MCPServers *mcpserver.Store
+	// MCPAuth authorizes http MCP servers that need a sign-in (F-106);
+	// nil dials them with their configured headers only.
+	MCPAuth func(ctx context.Context, srv mcpserver.Server, base *http.Client) (*http.Client, error)
 	// AllBots is the "give it to every bot" policy (F-107), read when an
 	// agent's entry is built; nil = none.
 	AllBots func() assign.Policy

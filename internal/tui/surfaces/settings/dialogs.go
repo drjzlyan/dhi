@@ -53,6 +53,7 @@ const (
 	dlgServerURL
 	dlgServerSnippet
 	dlgServerRemove
+	dlgSignInPaste
 	dlgDisplay // read-only: profile, standards preview, last-run info
 )
 
@@ -164,6 +165,8 @@ func (m *Model) submitDialog() {
 		m.submitServerURL()
 	case dlgServerSnippet:
 		m.submitServerSnippet()
+	case dlgSignInPaste:
+		m.submitSignInPaste()
 	case dlgStdLayer:
 		m.submitStdLayer()
 	case dlgStdPreview:

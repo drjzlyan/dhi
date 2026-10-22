@@ -642,6 +642,7 @@ func (r *Runtime) serveToolsFor(e *entry, trigger bus.Message, tt turnTools) *se
 			PathPrefix: r.cfg.ToolBin,
 			HomeDir:    r.cfg.MCPHome,
 			Workspace:  r.wsRoot(),
+			Auth:       r.cfg.MCPAuth,
 		})
 		cancel()
 		if len(bridge.Tools()) > 0 {

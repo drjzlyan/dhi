@@ -38,6 +38,12 @@ type Extensions struct {
 	Login func(ctx context.Context, srv mcpserver.Server) error
 	// Logout forgets a server's tokens (F-106); nil hides d.
 	Logout func(srv mcpserver.Server) error
+	// Signing reports a sign-in waiting in the browser; PasteSignIn
+	// finishes it with the address the browser ended on (SSH).
+	Signing     func(srv mcpserver.Server) bool
+	PasteSignIn func(srv mcpserver.Server, addr string) error
+	// SignInNow opens the sign-in for newly added servers that need one.
+	SignInNow func(servers []mcpserver.Server)
 }
 
 const (
@@ -448,6 +454,7 @@ func (m *Model) submitInstallConfirm() {
 		items = append(items, assign.Item{Kind: assign.KindServer, Name: n, Description: desc})
 	}
 	m.flash = fmt.Sprintf("installed %s", strings.Join(append(res.Skills, res.Servers...), ", "))
+	m.signInInstalled(res.Servers)
 	if len(items) > 0 {
 		m.openAssign(items[0], items[1:])
 	}
@@ -549,6 +556,14 @@ func (m *Model) integrationsKey(key string) bool {
 				default:
 				}
 			}()
+		}
+	case "p":
+		if sel != nil && e != nil && e.Signing != nil && e.Signing(*sel) {
+			m.openFormDialog("finish signing in to "+sel.Slug, dlgSignInPaste, sel.Slug,
+				kit.NewTextField("address", ""))
+			m.dlgExtra = []string{theme.Hint().Render("paste the address your browser ended on after you approved")}
+		} else if sel != nil {
+			m.flash = "no sign-in is waiting for " + sel.Slug
 		}
 	case "d":
 		if sel != nil && e != nil && e.Logout != nil {
@@ -706,6 +721,7 @@ func (m *Model) submitServerURL() {
 		return
 	}
 	m.closeDialog()
+	m.signInInstalled([]string{name})
 	m.openAssign(assign.Item{Kind: assign.KindServer, Name: name}, nil)
 }
 
@@ -726,6 +742,11 @@ func (m *Model) submitServerSnippet() {
 		items = append(items, assign.Item{Kind: assign.KindServer, Name: s.Slug})
 	}
 	m.closeDialog()
+	var names []string
+	for _, s := range servers {
+		names = append(names, s.Slug)
+	}
+	m.signInInstalled(names)
 	m.openAssign(items[0], items[1:])
 }
 
@@ -820,4 +841,34 @@ func (m *Model) openAgentWith(field, value string) {
 		idx = 5
 	}
 	m.form.f.Fields[idx] = kit.NewTextField(m.form.f.Fields[idx].Label, value)
+}
+
+func (m *Model) submitSignInPaste() {
+	for _, srv := range m.servers() {
+		if srv.Slug == m.dtarget {
+			if err := m.ext().PasteSignIn(srv, m.dform.Values()[0]); err != nil {
+				m.dform.SetError(err.Error())
+				return
+			}
+		}
+	}
+	m.closeDialog()
+	m.flash = "finishing the sign-in…"
+}
+
+// signInInstalled opens the browser sign-in for servers just added.
+func (m *Model) signInInstalled(names []string) {
+	e := m.ext()
+	if e == nil || e.SignInNow == nil || len(names) == 0 {
+		return
+	}
+	var servers []mcpserver.Server
+	for _, s := range m.servers() {
+		for _, n := range names {
+			if s.Slug == n {
+				servers = append(servers, s)
+			}
+		}
+	}
+	e.SignInNow(servers)
 }

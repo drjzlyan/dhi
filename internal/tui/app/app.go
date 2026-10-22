@@ -426,6 +426,10 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.PasteMsg:
 		return a, a.paste(msg.Content)
 
+	case ToastMsg:
+		a.Toast(kit.Toast(msg))
+		return a, nil
+
 	case kit.CopiedMsg:
 		t := kit.Toast{Kind: kit.ToastSuccess, Title: "Copied", Detail: kit.Count(msg.Chars, "character")}
 		if msg.Err != nil {
@@ -818,6 +822,10 @@ func (a *App) OpenNewTask() bool {
 func (a *App) SetSetup(items func() []kit.ChecklistItem, run func(id string)) {
 	a.setupItems, a.setupRun = items, run
 }
+
+// ToastMsg raises a toast from outside the UI loop (program.Send): a
+// sign-in waiting in the browser, a background install (F-106).
+type ToastMsg kit.Toast
 
 // Toast shows t now, as if a surface had raised it.
 func (a *App) Toast(t kit.Toast) { a.queuedToast = &t }

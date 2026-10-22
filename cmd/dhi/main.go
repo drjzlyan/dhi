@@ -673,6 +673,7 @@ func runTUI() (relaunch bool) {
 
 	p := tea.NewProgram(a)
 	editorBridge.prog = p
+	uiSend = p.Send // background sign-ins and installs raise toasts (F-106)
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintln(os.Stderr, "dhi:", err)
 		os.Exit(1)
@@ -1553,6 +1554,7 @@ func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cl
 		SkillSearch:  skillSearch,
 		SkillSuggest: skillSuggest(ws.Root),
 		AllBots:      allBots(ws.Root), // F-107: given to every bot, new ones too
+		MCPAuth:      mcpAuth,          // F-106: sign in with the vendor's own login
 		// F-067: a task turn without a worktree gets one on the convention
 		// branch before the agent starts, so the work lands where DHI can
 		// verify it and open the PR.

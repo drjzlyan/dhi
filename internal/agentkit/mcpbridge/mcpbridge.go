@@ -230,7 +230,7 @@ func (b *Bridge) dialDefault(ctx context.Context, srv mcpserver.Server) (mcp.Cal
 		for k, v := range srv.Headers {
 			val, err := mcpserver.Expand(v, b.lookup())
 			if err != nil {
-				return nil, fmt.Errorf("header %s: %w (set it in Settings → SECRETS)", k, err)
+				return nil, fmt.Errorf("header %s: %w (call secret_request for it, or the human sets it in Settings → SECRETS)", k, err)
 			}
 			headers[k] = val
 		}
@@ -314,7 +314,7 @@ func (b *Bridge) stdioEnv(srv mcpserver.Server) ([]string, error) {
 	for _, name := range keys {
 		val, err := mcpserver.Expand(srv.Env[name], lookup)
 		if err != nil {
-			return nil, fmt.Errorf("env %s: %w (set it in Settings → SECRETS)", name, err)
+			return nil, fmt.Errorf("env %s: %w (call secret_request for it, or the human sets it in Settings → SECRETS)", name, err)
 		}
 		env = append(env, name+"="+val)
 	}
