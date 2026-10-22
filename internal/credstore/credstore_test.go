@@ -106,3 +106,36 @@ func TestDefaultPathFollowsXDG(t *testing.T) {
 		t.Fatalf("path = %q", p)
 	}
 }
+
+// F-104: settings resolve like credentials but are never handed to the
+// redactor; workspace secrets key by name+scope and label by name.
+func TestSettingsAreResolvedButNotRedacted(t *testing.T) {
+	s := &Store{Path: filepath.Join(t.TempDir(), File)}
+	if err := s.Set(map[string]string{"JIRA_URL": "https://acme.atlassian.net", "JIRA_API_TOKEN": "tok-secret-1"}); err != nil {
+		t.Fatal(err)
+	}
+	moved, err := s.ReclassifySettings("JIRA_URL", "ABSENT")
+	if err != nil || len(moved) != 1 || moved[0] != "JIRA_URL" {
+		t.Fatalf("moved %v, %v", moved, err)
+	}
+	if v, ok := s.LookupIn("/ws", "JIRA_URL"); !ok || v != "https://acme.atlassian.net" {
+		t.Fatal("a setting must still resolve")
+	}
+	vals := s.Values()
+	if _, ok := vals["JIRA_URL"]; ok {
+		t.Fatal("a setting must never reach the redactor")
+	}
+	if vals["JIRA_API_TOKEN"] != "tok-secret-1" {
+		t.Fatal("secrets still redact")
+	}
+	if err := s.SetIn("/ws/a", "KEY", "aaaaaaa"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetIn("/ws/b", "KEY", "bbbbbbb"); err != nil {
+		t.Fatal(err)
+	}
+	vals = s.Values()
+	if vals["KEY"+ScopeSep+"/ws/a"] != "aaaaaaa" || vals["KEY"+ScopeSep+"/ws/b"] != "bbbbbbb" {
+		t.Fatalf("two workspaces' values of one name must both redact: %v", vals)
+	}
+}

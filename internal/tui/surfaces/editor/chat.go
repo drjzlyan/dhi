@@ -45,7 +45,18 @@ type chatModel struct {
 	channels []string // "#general", "dm:<id>", …
 	active   int
 	input    kit.Input
+
+	// A secret request answered here opens a masked form (F-104): the
+	// value goes straight to secrets, never the bus or the agent.
+	secrets    SecretSaver
+	root       string // workspace root for "this workspace" secrets
+	secretForm *kit.Form
+	secretAsk  *tools.Approval
+	secretAns  string
+	note       string // the last secret outcome, shown under approvals
 }
+
+var secretScopes = []string{"this workspace", "every workspace"}
 
 func newChat(rt *runtime.Runtime) *chatModel {
 	c := &chatModel{
@@ -237,6 +248,9 @@ func (c *chatModel) handleKey(key string, apply func(string)) bool {
 		}
 		return false
 	}
+	if c.secretForm != nil {
+		return c.secretKey(key)
+	}
 	switch key {
 	case "esc":
 		c.focus = false
@@ -282,11 +296,12 @@ func (c *chatModel) composerKey(key string, apply func(string)) bool {
 		if len(list) == 0 || c.input.Value != "" { // mid-message: text
 			return c.input.HandleKey(key)
 		}
-		// A secret still to be typed is answered in the workspace chat
-		// or inbox, which have the masked field (F-089); n still denies.
-		if ap := list[0]; !ap.IsSecret() || !ap.Missing || key == "n" {
-			c.apprs.Decide(ap, tools.DecideKeys[key])
+		ap, choice := list[0], tools.DecideKeys[key]
+		if ap.IsSecret() && ap.Missing && key != "n" {
+			c.openSecretForm(ap, choice)
+			return true
 		}
+		c.apprs.Decide(ap, choice)
 		return true
 	case "enter":
 		text := strings.TrimSpace(c.input.Value)
@@ -359,6 +374,14 @@ func (c *chatModel) view(h int) string {
 		}
 	}
 
+	if c.note != "" {
+		lines = append(lines, theme.TextDim().Render(c.note))
+	}
+	if c.secretForm != nil {
+		lines = append(lines, "", theme.SectionHeader().Render(c.secretForm.Title))
+		lines = append(lines, c.secretForm.ViewWidth(chatWidth-4)...)
+		return strings.Join(lines, "\n")
+	}
 	lines = append(lines, "", kit.Composer(c.input, "message the crew — @mention to wake an agent", c.focus))
 	return strings.Join(lines, "\n")
 }
@@ -403,4 +426,54 @@ func (c *chatModel) transcript(maxRows int) []string {
 		out = out[over:]
 	}
 	return out
+}
+
+// openSecretForm asks for a secret an agent requested whose value is not
+// stored yet (F-089/F-104), masked.
+func (c *chatModel) openSecretForm(ap *tools.Approval, choice string) {
+	if c.secrets == nil {
+		c.note = "secrets can't be stored here (no user config dir)"
+		return
+	}
+	at := 0
+	if choice == "everywhere" {
+		at = 1
+	}
+	c.secretAsk, c.secretAns = ap, choice
+	c.secretForm = kit.NewForm("type "+ap.SecretName()+" (masked)",
+		kit.NewSecretField(ap.SecretName()),
+		kit.NewToggleField("save for", secretScopes, at))
+}
+
+// secretKey drives the masked form: enter saves then answers, esc drops
+// it (the request stays pending).
+func (c *chatModel) secretKey(key string) bool {
+	switch c.secretForm.HandleKey(key) {
+	case kit.FormCancel:
+		c.secretForm, c.secretAsk = nil, nil
+	case kit.FormSubmit:
+		vals := c.secretForm.Values()
+		value := strings.TrimSpace(vals[0])
+		if value == "" {
+			c.secretForm.SetError("type the value, or esc")
+			return true
+		}
+		ap := c.secretAsk
+		if _, ok := c.apprs.Get(ap.ID); !ok {
+			c.secretForm.SetError("the request is gone (the agent stopped waiting)")
+			return true
+		}
+		root := c.root
+		if vals[1] == secretScopes[1] {
+			root = ""
+		}
+		if err := c.secrets.SetIn(root, ap.SecretName(), value); err != nil {
+			c.secretForm.SetError(err.Error())
+			return true
+		}
+		c.apprs.Decide(ap, c.secretAns)
+		c.note = "saved " + ap.SecretName() + " for " + vals[1] + "; " + ap.Agent + " can use it"
+		c.secretForm, c.secretAsk = nil, nil
+	}
+	return true
 }

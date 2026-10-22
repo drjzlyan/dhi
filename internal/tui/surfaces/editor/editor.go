@@ -106,6 +106,24 @@ func WithChat(rt *runtime.Runtime) Option {
 	return func(m *Model) { m.chat = newChat(rt) }
 }
 
+// SecretSaver stores a secret an agent asked for (F-089); the editor's
+// crew chat collects it masked, like the workspace chat (F-104).
+type SecretSaver interface {
+	SetIn(root, name, value string) error
+}
+
+// WithSecrets lets the crew chat answer secret requests.
+func WithSecrets(s SecretSaver) Option {
+	return func(m *Model) {
+		if m.chat != nil && s != nil {
+			m.chat.secrets = s
+			if m.ws != nil {
+				m.chat.root = m.ws.Root
+			}
+		}
+	}
+}
+
 // WithUnread shares the F-017 read-mark store with the chat sidebar so
 // both surfaces see one read state (rail markers clear in lockstep).
 func WithUnread(us *unread.Store) Option {

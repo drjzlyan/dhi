@@ -301,6 +301,9 @@ func runTUI() (relaunch bool) {
 				// done, whoever moved them.
 				go agentRT.WatchTasks(context.Background())
 				edOpts = append(edOpts, editor.WithChat(agentRT))
+				if sv := secretSaver(); sv != nil {
+					edOpts = append(edOpts, editor.WithSecrets(sv)) // F-104: answer secret asks here too
+				}
 			}
 		}
 	}
@@ -1882,6 +1885,9 @@ func repairGate(ws *workspace.Workspace, git *gitcore.Runner) *repairgate.Model 
 	in := repair.Input{WS: ws, Library: library.Open(ws), UserConfig: settingsUserPath()}
 	if o, err := agentkitOrg.Load(ws.Root); err == nil {
 		in.Org = o
+	}
+	if st, err := credstore.Open(); err == nil {
+		in.Creds = st
 	}
 	if git != nil {
 		in.Ignored = func(rel string) bool {

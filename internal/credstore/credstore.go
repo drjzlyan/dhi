@@ -27,6 +27,10 @@ type document struct {
 	// Workspaces holds secrets saved for one workspace only (F-089),
 	// keyed by its absolute root. They live here, never under .dhi/.
 	Workspaces map[string]scoped `toml:"workspaces,omitempty"`
+	// Settings are plain values a server needs that are not secrets (a
+	// site URL, a username): resolved like credentials, never redacted
+	// (F-104).
+	Settings map[string]string `toml:"settings,omitempty"`
 }
 
 type scoped struct {
@@ -85,6 +89,7 @@ func (s *Store) load() (document, error) {
 		d.Credentials = back.Credentials
 	}
 	d.Workspaces = back.Workspaces
+	d.Settings = back.Settings
 	return d, nil
 }
 
@@ -107,8 +112,67 @@ func (s *Store) LookupIn(root, name string) (string, bool) {
 	if v := d.Workspaces[root].Credentials[name]; v != "" {
 		return v, true
 	}
-	v, ok := d.Credentials[name]
+	if v := d.Credentials[name]; v != "" {
+		return v, true
+	}
+	v, ok := d.Settings[name]
 	return v, ok && v != ""
+}
+
+// SetSetting stores plain (non-secret) values: resolved like secrets,
+// never redacted.
+func (s *Store) SetSetting(values map[string]string) error {
+	if s.Path == "" {
+		return fmt.Errorf("credstore: no credentials file path")
+	}
+	for n := range values {
+		if !nameRe.MatchString(n) {
+			return fmt.Errorf("credstore: %q is not a variable name", n)
+		}
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	d, err := s.load()
+	if err != nil {
+		return err
+	}
+	if d.Settings == nil {
+		d.Settings = map[string]string{}
+	}
+	for n, v := range values {
+		d.Settings[n] = v
+		delete(d.Credentials, n) // one name, one kind
+	}
+	return s.write(d)
+}
+
+// ReclassifySettings moves the named global credentials into Settings,
+// so their values stop being redacted (the F-104 repair). It reports the
+// names it moved.
+func (s *Store) ReclassifySettings(names ...string) ([]string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	d, err := s.load()
+	if err != nil {
+		return nil, err
+	}
+	var moved []string
+	for _, n := range names {
+		v, ok := d.Credentials[n]
+		if !ok {
+			continue
+		}
+		if d.Settings == nil {
+			d.Settings = map[string]string{}
+		}
+		d.Settings[n] = v
+		delete(d.Credentials, n)
+		moved = append(moved, n)
+	}
+	if len(moved) == 0 {
+		return nil, nil
+	}
+	return moved, s.write(d)
 }
 
 // SetIn stores one secret for the workspace at root ("" = every
@@ -222,6 +286,9 @@ func (s *Store) Names() ([]string, error) {
 	return out, nil
 }
 
+// ScopeSep separates a secret's name from its workspace in Values keys.
+const ScopeSep = "\x00"
+
 // Values returns every stored value by name, for redaction only (F-088):
 // the redactor must know a value to keep it out of what DHI writes.
 // Nothing else reads values in bulk.
@@ -236,11 +303,12 @@ func (s *Store) Values() map[string]string {
 	for n, v := range d.Credentials {
 		out[n] = v
 	}
-	// Workspace secrets too, under a distinct key: a value is redacted
-	// wherever it appears, whichever workspace saved it.
+	// Workspace secrets too: a value is redacted wherever it appears,
+	// whichever workspace saved it. The key keeps two workspaces' values
+	// of one name apart; the label is the name alone (ScopeSep).
 	for root, sc := range d.Workspaces {
 		for n, v := range sc.Credentials {
-			out[n+"@"+filepath.Base(root)] = v
+			out[n+ScopeSep+root] = v
 		}
 	}
 	return out

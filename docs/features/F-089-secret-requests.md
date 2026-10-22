@@ -51,4 +51,4 @@ Status: done (M32 P4) · ADR-0039
 - [x] chat/inbox: yes opens the masked form; the value never renders; saved for the workspace; granted
 - [x] SECRETS: add masked, list names only
 - [x] doctor names token-like env vars without values
-- [ ] live: an agent asks for TEST_TOKEN, `run` uses it, transcript/bus/trace show ‹secret:TEST_TOKEN› (M32 P7)
+- [x] live: an agent asks for a secret, `run` uses it, transcript/bus/trace show ‹secret:NAME› (M32 P7; run in F-092 with STRIPE_TEST_KEY. The `@yf` label suffix it showed is gone since F-104)

@@ -67,7 +67,11 @@ type Deps struct {
 	Approvals *tools.Approvals
 	Scopes    scopes.Set
 	Dial      Dialer // nil = DialDefault
-	Lookup    Lookup // nil = DefaultLookup
+	Lookup    Lookup // nil = LookupFor(Workspace)
+	// Workspace is the root whose own secrets come before the global
+	// ones (F-104): a secret saved "for this workspace" reaches its
+	// servers.
+	Workspace string
 	// PathPrefix directories go first on a stdio server's PATH — DHI's
 	// tool shims, so `uvx`/`npx` are the pinned hermetic ones (ADR-0028).
 	PathPrefix []string
@@ -225,7 +229,7 @@ func (b *Bridge) dialDefault(ctx context.Context, srv mcpserver.Server) (mcp.Cal
 		if srv.AuthEnv != "" {
 			lookup := b.deps.Lookup
 			if lookup == nil {
-				lookup = DefaultLookup
+				lookup = LookupFor(b.deps.Workspace)
 			}
 			token, ok := lookup(srv.AuthEnv)
 			if !ok {
@@ -279,7 +283,7 @@ func (b *Bridge) stdioEnv(srv mcpserver.Server) ([]string, error) {
 	}
 	lookup := b.deps.Lookup
 	if lookup == nil {
-		lookup = DefaultLookup
+		lookup = LookupFor(b.deps.Workspace)
 	}
 	if home := b.deps.HomeDir; home != "" {
 		tmp := filepath.Join(home, "tmp")
@@ -312,15 +316,24 @@ func DialWith(ctx context.Context, srv mcpserver.Server, d Deps) (mcp.Caller, er
 	return b.dialDefault(ctx, srv)
 }
 
-// DefaultLookup resolves a credential from the environment, then the
-// user-level credentials file, then (on macOS) the login keychain. Values
-// never come from .dhi/ (ADR-0028).
-func DefaultLookup(name string) (string, bool) {
+// DefaultLookup resolves a credential outside any workspace: the
+// environment, the user-level credentials file, then (on macOS) the login
+// keychain. Values never come from .dhi/ (ADR-0028).
+func DefaultLookup(name string) (string, bool) { return LookupFor("")(name) }
+
+// LookupFor resolves credentials for the workspace at root: the
+// environment, then that workspace's own secrets and the global ones
+// (F-104), then the keychain.
+func LookupFor(root string) Lookup {
+	return func(name string) (string, bool) { return lookupIn(root, name) }
+}
+
+func lookupIn(root, name string) (string, bool) {
 	if v, ok := os.LookupEnv(name); ok && v != "" {
 		return v, true
 	}
 	if st, err := credstore.Open(); err == nil {
-		if v, ok := st.Lookup(name); ok {
+		if v, ok := st.LookupIn(root, name); ok {
 			return v, true
 		}
 	}

@@ -641,6 +641,7 @@ func (r *Runtime) serveToolsFor(e *entry, trigger bus.Message, tt turnTools) *se
 			Scopes:     r.agentScopes(e.m),
 			PathPrefix: r.cfg.ToolBin,
 			HomeDir:    r.cfg.MCPHome,
+			Workspace:  r.wsRoot(),
 		})
 		cancel()
 		if len(bridge.Tools()) > 0 {

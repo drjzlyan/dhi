@@ -91,7 +91,8 @@ func build(values map[string]string) *strings.Replacer {
 	})
 	pairs := make([]string, 0, len(all)*2)
 	for _, e := range all {
-		pairs = append(pairs, e.value, Mark(e.name))
+		name, _, _ := strings.Cut(e.name, "\x00") // NAME\x00<workspace>: label by name only
+		pairs = append(pairs, e.value, Mark(name))
 	}
 	return strings.NewReplacer(pairs...)
 }

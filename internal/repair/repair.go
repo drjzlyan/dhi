@@ -16,6 +16,7 @@ import (
 
 	"github.com/drjzlyan/dhi/internal/agentkit/library"
 	"github.com/drjzlyan/dhi/internal/agentkit/org"
+	"github.com/drjzlyan/dhi/internal/credstore"
 	"github.com/drjzlyan/dhi/internal/settings"
 	"github.com/drjzlyan/dhi/internal/setup"
 	"github.com/drjzlyan/dhi/internal/workspace"
@@ -39,6 +40,8 @@ type Input struct {
 	Ignored func(rel string) bool
 	// UserConfig is your config.toml; "" skips the config-copies repair.
 	UserConfig string
+	// Creds is the credentials file; nil skips the credential-kind repair.
+	Creds *credstore.Store
 }
 
 // Find lists the repairs that apply now, safe ones first.
@@ -58,6 +61,9 @@ func Find(in Input) []Repair {
 	}
 	if in.Org != nil {
 		out = append(out, danglingTeams(in)...)
+	}
+	if r, ok := credentialKinds(in); ok {
+		out = append(out, r)
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Safe && !out[j].Safe })
 	return out
@@ -285,5 +291,42 @@ func configCopies(in Input) (Repair, bool) {
 		What:  fmt.Sprintf("this workspace's config repeats %d of your settings (%s); DHI removes the copies so your own settings apply here", len(dup), strings.Join(dup, ", ")),
 		Safe:  true,
 		Apply: func() error { return settings.RemoveKeys(wsCfg, dup) },
+	}, true
+}
+
+// plainSettings are values the old integrations catalog stored as
+// credentials although they are not secret: site URLs, a login name, a
+// team id. Redacting them hid ordinary output (F-104).
+var plainSettings = []string{"JIRA_URL", "CONFLUENCE_URL", "JIRA_USERNAME", "CONFLUENCE_USERNAME", "SLACK_TEAM_ID"}
+
+// credentialKinds moves those values to the credentials file's settings,
+// so they are still resolved but no longer redacted.
+func credentialKinds(in Input) (Repair, bool) {
+	if in.Creds == nil {
+		return Repair{}, false
+	}
+	names, err := in.Creds.Names()
+	if err != nil {
+		return Repair{}, false
+	}
+	var found []string
+	for _, n := range names {
+		for _, p := range plainSettings {
+			if n == p {
+				found = append(found, n)
+			}
+		}
+	}
+	if len(found) == 0 {
+		return Repair{}, false
+	}
+	return Repair{
+		ID:   "credential-kinds",
+		What: "Keep " + strings.Join(found, ", ") + " as plain settings: they are not secrets, so DHI stops hiding them in output",
+		Safe: true,
+		Apply: func() error {
+			_, err := in.Creds.ReclassifySettings(found...)
+			return err
+		},
 	}, true
 }

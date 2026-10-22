@@ -94,3 +94,12 @@ func (r *Runtime) skillSuggest(agentID string) func(ctx context.Context, entry, 
 		return r.cfg.SkillSuggest(ctx, agentID, entry, reason)
 	}
 }
+
+// wsRoot is the workspace root ("" without one), whose own secrets come
+// before the global ones.
+func (r *Runtime) wsRoot() string {
+	if r.cfg.WS == nil {
+		return ""
+	}
+	return r.cfg.WS.Root
+}

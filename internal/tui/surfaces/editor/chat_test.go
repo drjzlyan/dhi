@@ -293,3 +293,47 @@ func TestChatGrantAlways(t *testing.T) {
 // asyncTimeout bounds test waits for async chat outcomes; generous so
 // -race + a loaded full-suite run never trips it.
 const asyncTimeout = 30 * time.Second
+
+type savedSecrets map[string]string
+
+func (s savedSecrets) SetIn(root, name, value string) error {
+	s[root+"|"+name] = value
+	return nil
+}
+
+// F-104: a secret an agent asks for can be typed (or pasted) right in the
+// editor's crew chat, masked; it goes to the store, then the ask is
+// granted.
+func TestChatCollectsAMissingSecretMasked(t *testing.T) {
+	h := newChatEditor(t, "ok")
+	saved := savedSecrets{}
+	h.m.chat.secrets, h.m.chat.root = saved, h.ws.Root
+	done := make(chan error, 1)
+	go func() {
+		done <- h.apprs.AskSecret(context.Background(), "scout", "DEPLOY_TOKEN", "deploy", true)
+	}()
+	h.openFocused()
+	deadline := time.After(asyncTimeout)
+	for len(h.apprs.List()) == 0 {
+		select {
+		case <-h.apprs.Changes():
+		case <-deadline:
+			t.Fatal("no ask")
+		}
+	}
+	h.m.HandleKey("y")
+	if h.m.chat.secretForm == nil {
+		t.Fatal("y on a missing secret must open the masked form")
+	}
+	h.m.HandleKey("paste:dt_SENTINEL_42\n")
+	if strings.Contains(plainView(h.m), "dt_SENTINEL") {
+		t.Fatal("the secret is visible")
+	}
+	h.m.HandleKey("enter")
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if saved[h.ws.Root+"|DEPLOY_TOKEN"] != "dt_SENTINEL_42" {
+		t.Fatalf("saved = %v", saved)
+	}
+}

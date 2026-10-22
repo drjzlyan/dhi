@@ -35,3 +35,13 @@ func TestNilRedactsNothing(t *testing.T) {
 		t.Fatal("nil redactor changed text")
 	}
 }
+
+// F-104: a workspace secret's label is its name alone (no folder name).
+func TestWorkspaceSecretLabelIsTheNameOnly(t *testing.T) {
+	r := New(func() map[string]string {
+		return map[string]string{"KEY\x00/Users/me/secret-project": "abcdef123"}
+	}, nil)
+	if got := r.String("x abcdef123 y"); got != "x ‹secret:KEY› y" {
+		t.Fatalf("got %q", got)
+	}
+}
