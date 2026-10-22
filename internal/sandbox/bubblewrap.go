@@ -1,6 +1,7 @@
 package sandbox
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -19,6 +20,7 @@ type Bubblewrap struct {
 	allowNetwork bool
 	guard        []string // read-only binds over rw subtrees (Guarded)
 	reopen       []string // writable binds inside a guard
+	missing      bool     // bwrap was not installed at launch: look it up per spawn
 }
 
 // bwrapSystemDirs are re-bound read-only so linked binaries, loaders,
@@ -80,7 +82,7 @@ func (b *Bubblewrap) WithExtraRoots(rw []string) (Sandbox, error) {
 	if err != nil {
 		return nil, err
 	}
-	nb.guard, nb.reopen = b.guard, b.reopen
+	nb.guard, nb.reopen, nb.missing = b.guard, b.reopen, b.missing
 	return nb, nil
 }
 
@@ -132,12 +134,16 @@ func (b *Bubblewrap) Wrap(argv []string) ([]string, error) {
 	if len(argv) == 0 {
 		return nil, fmt.Errorf("sandbox: empty argv")
 	}
+	bin, err := b.resolveBin()
+	if err != nil {
+		return nil, err
+	}
 	net := "--share-net"
 	if !b.allowNetwork {
 		net = "--unshare-net"
 	}
 	out := make([]string, 0, len(argv)+len(b.rw)*2+len(b.ro)*2+len(bwrapSystemDirs)*2+8)
-	out = append(out, b.bin,
+	out = append(out, bin,
 		"--unshare-all", net, "--die-with-parent",
 		"--dev-bind", "/dev", "/dev",
 		"--proc", "/proc",
@@ -148,9 +154,9 @@ func (b *Bubblewrap) Wrap(argv []string) ([]string, error) {
 		// skipped; a plain bind refused every spawn (live, M32).
 		out = append(out, "--ro-bind-try", d, d)
 	}
-	// ro first, rw on top: a writable child of a read-only root (the
-	// toolchain's caches inside the read-only toolchain) must stay
-	// writable, and a later bind shadows an earlier one at the same place.
+	// ro first, rw on top: a writable child of a read-only root (a
+	// package cache inside a tool's prefix) must stay writable, and a
+	// later bind shadows an earlier one at the same place.
 	for _, r := range b.ro {
 		out = append(out, "--ro-bind", r, r)
 	}
@@ -192,24 +198,46 @@ func (b *Bubblewrap) credentialMasks() []string {
 	return out
 }
 
+// ErrHelperMissing says the platform's sandbox helper (bwrap) is not
+// installed. Boot does not block on it (ADR-0044): the IDE works, and
+// agent spawns fail with the install command until it is present.
+var ErrHelperMissing = errors.New("the sandbox helper is not installed")
+
+// resolveBin finds bwrap at spawn time when it was missing at launch, so
+// installing it unblocks agents without a restart.
+func (b *Bubblewrap) resolveBin() (string, error) {
+	if !b.missing {
+		return b.bin, nil
+	}
+	p, err := systemLookPath(b.bin)
+	if err != nil {
+		return "", fmt.Errorf("agents run inside bubblewrap, which is not installed: %w — install it with your package manager (sudo apt-get install bubblewrap; in the editor, :install bwrap)", ErrHelperMissing)
+	}
+	return p, nil
+}
+
 // WrapNetwork implements NetworkPolicy: it binds with the requested
 // network posture for one invocation.
 func (b *Bubblewrap) WrapNetwork(argv []string, allow bool) ([]string, error) {
+	bin, err := b.resolveBin()
+	if err != nil {
+		return nil, err
+	}
 	net := "--share-net"
 	if !allow {
 		net = "--unshare-net"
 	}
 	out := make([]string, 0, len(argv)+len(b.rw)*2+len(b.ro)*2+len(bwrapSystemDirs)*2+8)
-	out = append(out, b.bin, "--unshare-all", net, "--die-with-parent",
+	out = append(out, bin, "--unshare-all", net, "--die-with-parent",
 		"--dev-bind", "/dev", "/dev", "--proc", "/proc", "--tmpfs", "/tmp")
 	for _, d := range bwrapSystemDirs {
 		// -try: a dir the distro lacks (/lib64 on arm64 Debian) is
 		// skipped; a plain bind refused every spawn (live, M32).
 		out = append(out, "--ro-bind-try", d, d)
 	}
-	// ro first, rw on top: a writable child of a read-only root (the
-	// toolchain's caches inside the read-only toolchain) must stay
-	// writable, and a later bind shadows an earlier one at the same place.
+	// ro first, rw on top: a writable child of a read-only root (a
+	// package cache inside a tool's prefix) must stay writable, and a
+	// later bind shadows an earlier one at the same place.
 	for _, r := range b.ro {
 		out = append(out, "--ro-bind", r, r)
 	}

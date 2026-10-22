@@ -50,8 +50,9 @@ func TestPlainDirectoryBootsEmptyState(t *testing.T) {
 	}
 }
 
-func TestMissingSandboxHelperBlocksBoot(t *testing.T) {
-	d := Audit(Input{CWD: t.TempDir(), GOOS: "darwin", LookPath: lookMiss})
+// sandbox-exec is part of macOS: missing, the system is broken — block.
+func TestMissingSandboxExecBlocksBoot(t *testing.T) {
+	d := Audit(Input{CWD: mkWorkspace(t, wsCfg), GOOS: "darwin", LookPath: lookMiss})
 	if d.Block == "" || !strings.Contains(d.Block, "sandbox-exec") {
 		t.Fatalf("block = %q", d.Block)
 	}
@@ -79,8 +80,46 @@ func TestSandboxOffIsExplicitOptOutNotFallback(t *testing.T) {
 	}
 }
 
+// A missing bwrap never blocks the IDE (ADR-0044): it warns, and agents
+// name the install at each spawn.
+func TestMissingBwrapDoesNotBlock(t *testing.T) {
+	d := Audit(Input{CWD: mkWorkspace(t, wsCfg), GOOS: "linux", LookPath: lookMiss})
+	if d.Block != "" || d.Sandbox == nil {
+		t.Fatalf("block=%q sandbox=%v", d.Block, d.Sandbox)
+	}
+	if len(d.Warnings) != 1 || !strings.Contains(d.Warnings[0], "bubblewrap") {
+		t.Fatalf("warnings = %v", d.Warnings)
+	}
+}
+
+// Package caches are writable and PATH prefixes readable+executable.
+func TestCachesAndPathAreInTheBoundary(t *testing.T) {
+	home := t.TempDir()
+	if r, err := filepath.EvalSymlinks(home); err == nil {
+		home = r
+	}
+	os.MkdirAll(filepath.Join(home, ".npm"), 0o755)
+	brew := filepath.Join(t.TempDir(), "brew", "bin")
+	os.MkdirAll(brew, 0o755)
+	brew, _ = filepath.EvalSymlinks(brew)
+	d := Audit(Input{CWD: mkWorkspace(t, wsCfg), Home: home, PATH: brew, GOOS: "darwin", LookPath: lookHit})
+	p := d.Sandbox.(interface{ Profile() string }).Profile()
+	var write string
+	for _, line := range strings.Split(p, "\n") {
+		if strings.HasPrefix(line, "(allow file-write*") && strings.Contains(line, "(subpath") {
+			write = line
+		}
+	}
+	if !strings.Contains(write, filepath.Join(home, ".npm")) {
+		t.Fatalf("~/.npm not writable:\n%s", write)
+	}
+	if strings.Contains(write, filepath.Dir(brew)) || !strings.Contains(p, `(subpath "`+filepath.Dir(brew)+`")`) {
+		t.Fatalf("PATH prefix must be readable/executable, not writable:\n%s", p)
+	}
+}
+
 func TestUnsupportedPlatformBlocks(t *testing.T) {
-	d := Audit(Input{CWD: t.TempDir(), GOOS: "plan9", LookPath: lookHit})
+	d := Audit(Input{CWD: mkWorkspace(t, wsCfg), GOOS: "plan9", LookPath: lookHit})
 	if d.Block == "" || !strings.Contains(d.Block, "plan9") {
 		t.Fatalf("block = %q", d.Block)
 	}

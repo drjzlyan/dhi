@@ -230,3 +230,17 @@ func openGoWithManager(t *testing.T, mgr *lsp.Manager, opts ...Option) *Model {
 	}
 	return m
 }
+
+func TestInstallCommandRaisesTheCard(t *testing.T) {
+	tools := &fakeTools{marker: filepath.Join(t.TempDir(), "installed")}
+	m := openGoWithManager(t, lsp.NewManager(nil, nil), WithHostTools(tools))
+	m.ExecEx(m.active(), "install bwrap")
+	if m.toolCard == nil || m.toolCard.Tool != "bwrap" {
+		t.Fatalf("card = %+v", m.toolCard)
+	}
+	m.HandleKey("n")
+	m.ExecEx(m.active(), "install")
+	if !strings.Contains(m.active().Message(), "name a tool") {
+		t.Fatalf("msg = %q", m.active().Message())
+	}
+}

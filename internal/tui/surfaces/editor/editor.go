@@ -1405,6 +1405,10 @@ func (m *Model) ExecEx(requester *textbuf.Editor, cmd string) bool {
 		requester.SetMessage(msg)
 		return true
 	}
+	if msg, ok := m.installCommand(cmd); ok {
+		requester.SetMessage(msg)
+		return true
+	}
 	if msg, ok := m.fmtCommand(cmd); ok {
 		requester.SetMessage(msg)
 		if strings.TrimSpace(cmd) == "fmt" && msg == "formatted" {

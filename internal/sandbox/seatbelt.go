@@ -256,6 +256,11 @@ func CredentialPaths() []string {
 		filepath.Join(home, ".config", "gcloud"),
 		filepath.Join(home, ".azure"),
 		filepath.Join(home, ".netrc"),
+		filepath.Join(home, ".git-credentials"),
+		filepath.Join(home, ".docker", "config.json"),
+		filepath.Join(home, ".cargo", "credentials.toml"),
+		filepath.Join(home, ".local", "share", "keyrings"),
+		filepath.Join(cfg, "gh"),
 		filepath.Join(cfg, "dhi", "credentials.toml"),
 		filepath.Join(cfg, "dhi", "grants.json"),
 	}

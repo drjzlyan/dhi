@@ -7,6 +7,7 @@
 package boot
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 
@@ -24,6 +25,12 @@ type Input struct {
 	Home     string // home directory for `~` in worktrees.root ("" = the process's)
 	GOOS     string
 	LookPath func(string) (string, error)
+	// PATH is the user's resolved PATH (F-109): its folders are read+exec
+	// roots for agents, so they run the user's own tools (F-113).
+	PATH string
+	// Getenv reads the user's environment (moved package caches); nil
+	// uses none.
+	Getenv func(string) string
 	// ReadOnly are extra trees sandboxed children may read and execute
 	// but never write: your skills for every workspace (F-091), whose
 	// scripts skill_run starts. Missing dirs are skipped.
@@ -114,7 +121,17 @@ func Audit(in Input) Decision {
 			rw = append(rw, base)
 		}
 	}
-	var ro []string
+	// The boundary's defaults (F-113): the standard package caches are
+	// writable, so builds and dependency installs need no card; the
+	// user's PATH folders are readable and executable.
+	home := in.Home
+	if home == "" {
+		home, _ = os.UserHomeDir()
+	}
+	if ws != nil {
+		rw = append(rw, sandbox.PackageCaches(home, in.GOOS, in.Getenv)...)
+	}
+	ro := sandbox.ExecRoots(in.PATH, home)
 	for _, r := range in.ReadOnly {
 		if resolved, err := filepath.EvalSymlinks(r); err == nil {
 			ro = append(ro, resolved)
@@ -127,19 +144,17 @@ func Audit(in Input) Decision {
 			"os sandbox disabled by config (explicit opt-out; path-jail + policy still apply)")
 	default:
 		if len(rw) == 0 {
-			// Nothing to confine yet (no workspace, no prefix) — the
-			// strict requirement is still on the helper's presence.
-			if err := sandbox.Require(in.GOOS, in.LookPath); err != nil {
-				d.Block = err.Error()
-				d.Fixes = []string{
-					"install the OS sandbox helper (sandbox-exec on macOS is built in; bwrap on Linux)",
-					"or set security.sandbox = \"off\" in settings to opt out explicitly",
-				}
-				return d
-			}
+			// Nothing to confine yet (no workspace): agents do not run.
 			break
 		}
 		sb, err := sandbox.Select(in.GOOS, in.LookPath, cfg.Security.Sandbox, rw, ro)
+		if errors.Is(err, sandbox.ErrHelperMissing) && sb != nil {
+			// The IDE never blocks on it (ADR-0044): agents name the
+			// install at each spawn until it is present.
+			d.Sandbox = sb
+			d.Warnings = append(d.Warnings, "agents need bubblewrap to run inside a boundary — install it (in the editor, :install bwrap); agent turns wait until it is present")
+			break
+		}
 		if err != nil {
 			d.Block = err.Error()
 			d.Fixes = []string{

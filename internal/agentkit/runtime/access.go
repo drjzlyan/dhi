@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
+	"github.com/drjzlyan/dhi/internal/agentkit/clirun"
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
 	"github.com/drjzlyan/dhi/internal/credstore"
 	"github.com/drjzlyan/dhi/internal/sandbox"
@@ -187,19 +188,37 @@ func (r *Runtime) writeGranted(agentID, p string) bool {
 	return false
 }
 
-// offerAccess turns a sandbox write denial seen in a run into the same
-// approval card (F-087), so the human can unblock an agent that never
-// thought to ask. One card per agent and path at a time; a grant wakes
-// the agent in the thread to retry.
+// offerAccess turns a sandbox denial seen in a run into the same
+// approval card (F-087, F-113): a write card for a path, or — when the
+// denial names a program — a card to run programs from its folder. One
+// card per agent and target at a time; a grant wakes the agent in the
+// thread to retry.
 func (r *Runtime) offerAccess(agentID string, trigger bus.Message, denied string) {
 	if r.cfg.Approvals == nil {
 		return
 	}
 	p, err := r.accessTarget(denied)
-	if err != nil || r.writeGranted(agentID, p) {
+	if err != nil {
 		return
 	}
-	key := agentID + "|" + p
+	scope, op, what, done := tools.AccessWrite+p, sandbox.OpWrite, "write", "write access to "+p
+	granted := func() bool { return r.writeGranted(agentID, p) }
+	if clirun.IsProgram(p) {
+		p = filepath.Dir(p)
+		scope, op, what, done = tools.AccessExec+p, sandbox.OpExec, "run programs from", "running programs from "+p
+		granted = func() bool {
+			for _, g := range r.cfg.Approvals.ExecTargets(agentID) {
+				if within(p, g) {
+					return true
+				}
+			}
+			return false
+		}
+	}
+	if granted() {
+		return
+	}
+	key := agentID + "|" + scope
 	r.offerMu.Lock()
 	if r.offering == nil {
 		r.offering = map[string]bool{}
@@ -218,11 +237,11 @@ func (r *Runtime) offerAccess(agentID string, trigger bus.Message, denied string
 			delete(r.offering, key)
 			r.offerMu.Unlock()
 		}()
-		err := r.cfg.Approvals.AskScope(context.Background(), agentID, tools.AccessWrite+p, sandbox.OpWrite, p,
-			"the sandbox blocked "+agentID+" from writing here")
-		if err == nil && r.writeGranted(agentID, p) {
+		err := r.cfg.Approvals.AskScope(context.Background(), agentID, scope, op, p,
+			"the sandbox blocked "+agentID+" — it needs to "+what+" "+p)
+		if err == nil && granted() {
 			r.continueTurn(context.Background(), agentID, trigger,
-				"write access to "+p+" was granted; retry what the sandbox blocked")
+				done+" was granted; retry what the sandbox blocked")
 		}
 	}()
 }

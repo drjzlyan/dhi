@@ -52,7 +52,7 @@ func (editorTools) Refresh() { reloadEnv() }
 func (editorTools) Plan(tool string) editor.ToolPlan {
 	t, ok := hosttools.Get(tool)
 	if !ok {
-		return editor.ToolPlan{Tool: tool, Purpose: "this feature"}
+		return editor.ToolPlan{Tool: tool}
 	}
 	p := editor.ToolPlan{Tool: t.Name, Purpose: t.Purpose, Doc: t.Doc}
 	if in, ok := hosttools.Recipe(t); ok {

@@ -134,6 +134,8 @@ func runTUI() (relaunch bool) {
 		UserCfg:  userCfg,
 		GOOS:     runtime.GOOS,
 		LookPath: exec.LookPath,
+		PATH:     hostenv.Get("PATH"),
+		Getenv:   hostenv.Get,
 		// Skills agents read (ADR-0043): yours, other tools' and the
 		// built-ins written out for them.
 		ReadOnly: nonEmpty(library.UserSkillsDir, library.AgentsSkillsDir, library.BuiltinSkillsDir),
@@ -1230,19 +1232,18 @@ func (r execRunner) Run(ctx context.Context, dir string, argv []string, allowNet
 func (r execRunner) RunEnv(ctx context.Context, dir string, argv []string, allowNetwork bool, extra []string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, r.timeout)
 	defer cancel()
-	// F-030 P2: DHI-served children are network-denied by default via the
-	// OS sandbox; a Noop/absent adapter cannot deny, so we refuse rather
-	// than silently leak (network is a declared scope).
-	if !allowNetwork {
-		np, ok := r.sandbox.(sandbox.NetworkPolicy)
-		if !ok {
-			return "", fmt.Errorf("run: network denied by scope but no OS sandbox can enforce it")
-		}
-		wrapped, werr := np.WrapNetwork(argv, false)
+	// Every run is inside the OS sandbox (F-113): writes stay in the
+	// workspace and the package caches whether or not network is allowed.
+	// Network is a declared scope (F-030 P2); a Noop adapter (the user's
+	// explicit opt-out) cannot deny it, so a denied run refuses.
+	if np, ok := r.sandbox.(sandbox.NetworkPolicy); ok {
+		wrapped, werr := np.WrapNetwork(argv, allowNetwork)
 		if werr != nil {
 			return "", werr
 		}
 		argv = wrapped
+	} else if !allowNetwork {
+		return "", fmt.Errorf("run: network denied by scope but no OS sandbox can enforce it")
 	}
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	cmd.Dir = dir

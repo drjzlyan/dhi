@@ -25,6 +25,23 @@ type EnvRunner interface {
 	RunEnv(ctx context.Context, dir string, argv []string, allowNetwork bool, extra []string) (string, error)
 }
 
+// networkAllowed reports whether a command may reach the network: the
+// agent's network scope is auto, or it asks and the human granted it
+// (permission_request "network", F-113).
+func (d Deps) networkAllowed() bool {
+	set := d.Scopes
+	if set == nil {
+		set = scopes.Default()
+	}
+	switch set.EffectFor(scopes.Network) {
+	case scopes.Auto:
+		return true
+	case scopes.Ask:
+		return d.Approvals != nil && d.Agent != nil && d.Approvals.Granted(d.Agent.ID, string(scopes.Network))
+	}
+	return false
+}
+
 // runWith runs argv with the agent's granted secrets in its environment.
 func (d Deps) runWith(ctx context.Context, argv []string, allowNet bool) (string, error) {
 	var extra []string
@@ -105,11 +122,7 @@ func (d Deps) miscTools() []tool {
 				if strings.TrimSpace(d.Workdir) == "" {
 					return "", fmt.Errorf("no working directory for this turn")
 				}
-				set := d.Scopes
-				if set == nil {
-					set = scopes.Default()
-				}
-				allowNet := set.EffectFor(scopes.Network) == scopes.Auto
+				allowNet := d.networkAllowed()
 				argv := dec.(runPlan).argv
 				out, err := d.runWith(ctx, argv, allowNet)
 				if d.OnRun != nil {
@@ -199,11 +212,7 @@ func (d Deps) miscTools() []tool {
 				if err != nil {
 					return "", err
 				}
-				set := d.Scopes
-				if set == nil {
-					set = scopes.Default()
-				}
-				allowNet := set.EffectFor(scopes.Network) == scopes.Auto
+				allowNet := d.networkAllowed()
 				argv := append([]string{script}, plan.argv[2:]...)
 				out, err := d.runWith(ctx, argv, allowNet)
 				if err != nil {

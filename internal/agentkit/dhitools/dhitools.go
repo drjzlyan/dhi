@@ -217,6 +217,9 @@ type tool struct {
 	info  mcp.ToolInfo
 	parse func(raw json.RawMessage) (any, error)
 	exec  func(ctx context.Context, decoded any) (string, error)
+	// describe names what the approval card asks for ("push task/x to
+	// origin (url)"); nil shows "tool <name>".
+	describe func(decoded any) string
 }
 
 // servedSlugs is the F-028 IDE-tools surface. The runtime turns serving
@@ -224,7 +227,7 @@ type tool struct {
 // from the same list (one source of truth).
 var servedSlugs = []string{
 	"read", "write", "patch", "list", "glob",
-	"git_status", "git_log", "git_branch", "git_diff", "git_commit",
+	"git_status", "git_log", "git_branch", "git_diff", "git_commit", "git_push",
 	"ideation_list", "ideation_read", "session_read",
 	"artifact_create", "artifact_edit", "propose_session",
 	"run", "ask_human", "skill_run",
@@ -364,8 +367,12 @@ func (h *handler) CallTool(ctx context.Context, name string, raw json.RawMessage
 			// The human's y/n: blocks until resolved or ctx ends — the
 			// TUI answers through the same queue as every other gated op
 			// (F-028 Part A). A denial keeps its named reason.
+			target := "tool " + name
+			if t.describe != nil {
+				target = t.describe(decoded)
+			}
 			if err := h.deps.Approvals.AskScope(ctx, h.deps.Agent.ID, string(sc), sandbox.OpExec,
-				"tool "+name, "agent-requested DHI tool ("+string(sc)+")"); err != nil {
+				target, "agent-requested DHI tool ("+string(sc)+")"); err != nil {
 				return err.Error(), true, nil
 			}
 		}

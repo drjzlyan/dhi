@@ -1130,5 +1130,5 @@ Plan: `~/.claude/plans/all-the-keys-should-playful-hanrahan.md`. Branch `m36`, o
 - [x] P2 Host tools and package-manager installs (F-110)
 - [x] P3 Remove the hermetic toolchain (F-111)
 - [x] P4 Git as the user has it (F-112)
-- [ ] P5 The approval boundary for agents (F-113)
+- [x] P5 The approval boundary for agents (F-113)
 - [ ] P6 Doctor, onboarding, docs (F-114)

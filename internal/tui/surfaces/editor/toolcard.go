@@ -182,3 +182,26 @@ func (m *Model) applyToolInstalled(msg teaMsg) {
 		m.lspOpenDoc(e.Path(), e.Buffer().Text()) // a fresh server starts for the open file
 	}
 }
+
+// installCommand handles :install <tool> — the install card for any host
+// tool DHI knows (bwrap for agents, gh for pull requests, a debugger).
+func (m *Model) installCommand(cmd string) (string, bool) {
+	f := strings.Fields(cmd)
+	if len(f) == 0 || f[0] != "install" {
+		return "", false
+	}
+	if len(f) != 2 {
+		return "install: name a tool, e.g. :install rg", true
+	}
+	if m.tools == nil {
+		return "install: unavailable here", true
+	}
+	if p, ok := m.tools.Find(f[1]); ok {
+		return f[1] + " is already installed (" + p + ")", true
+	}
+	if p := m.tools.Plan(f[1]); p.Purpose == "" || (len(p.Argv) == 0 && p.Doc == "") {
+		return "install: DHI does not know " + f[1], true
+	}
+	m.askInstall(f[1])
+	return "", true
+}

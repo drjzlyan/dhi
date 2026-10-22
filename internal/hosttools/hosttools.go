@@ -209,12 +209,9 @@ func npmPrefixWritable() bool {
 		if _, err := os.Stat(dir); err != nil {
 			dir = strings.TrimSpace(string(out))
 		}
-		f, err := os.CreateTemp(dir, ".dhi-write-check-*")
-		if err != nil {
+		if !writable(dir) {
 			return
 		}
-		_ = f.Close()
-		_ = os.Remove(f.Name())
 		npmOK = true
 	})
 	return npmOK

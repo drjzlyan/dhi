@@ -158,3 +158,29 @@ func TestPermissionRequestExecGrantsTheProgramsFolder(t *testing.T) {
 		t.Fatalf("roots rw=%v ro=%v", sb.extra, sb.ro)
 	}
 }
+
+// A denial that names a program asks to run programs from its folder.
+func TestExecDenialOffersTheProgramsFolder(t *testing.T) {
+	h := episodeHarness(t)
+	trig := mustPost(t, h, bus.Message{Channel: "#general", Author: bus.Human, Text: "@scout build"})
+	dir := realPath(t.TempDir())
+	tool := filepath.Join(dir, "tool")
+	os.WriteFile(tool, []byte("#!/bin/sh\n"), 0o755)
+	h.rt.offerAccess("scout", trig, tool)
+	ap := firstPending(t, h.approvals)
+	if ap.Target != dir || !strings.Contains(ap.Reason, "run programs from") {
+		t.Fatalf("card = %+v", ap)
+	}
+	h.approvals.ResolveFor(ap.ID, tools.LayerOnce)
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		for _, m := range h.bus.History("#general", trig.ID) {
+			if strings.HasPrefix(m.Text, "@scout continue: running programs from "+dir) {
+				h.rt.WaitBackground()
+				return
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("no continuation after the grant")
+}

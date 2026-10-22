@@ -239,7 +239,63 @@ func (d Deps) gitTools() []tool {
 				return "committed " + hash[:min(7, len(hash))], nil
 			},
 		},
+		{
+			info: mcp.ToolInfo{
+				Name: "git_push",
+				Description: "Ask the human to push a branch of this repo to its remote. DHI pushes with the user's own git (their ssh keys and logins, which you never see) after they approve the card. " +
+					"Args: {\"branch\": \"(default: the current branch)\", \"remote\": \"(default: origin)\"}. Refuses the default branch.",
+				InputSchema: json.RawMessage(`{"type":"object","properties":{"branch":{"type":"string"},"remote":{"type":"string"}},"additionalProperties":false}`),
+			},
+			parse: func(raw json.RawMessage) (any, error) {
+				var a pushPlan
+				if err := args(raw, &a); err != nil {
+					return nil, err
+				}
+				repo, err := open()
+				if err != nil {
+					return nil, err
+				}
+				if a.Branch == "" {
+					if a.Branch, err = repo.CurrentBranch(); err != nil || a.Branch == "" {
+						return nil, fmt.Errorf("no current branch to push (detached HEAD): name one")
+					}
+				}
+				if a.Remote == "" {
+					a.Remote = "origin"
+				}
+				if d.isDefaultBranch(context.Background(), a.Branch) {
+					return nil, fmt.Errorf("refusing to push %s, the default branch: it moves only through a reviewed PR (pr_open)", a.Branch)
+				}
+				if a.url = repo.RemoteURL(a.Remote); a.url == "" {
+					return nil, fmt.Errorf("this repo has no remote %q", a.Remote)
+				}
+				return a, nil
+			},
+			describe: func(dec any) string {
+				a := dec.(pushPlan)
+				return "push " + a.Branch + " to " + a.Remote + " (" + a.url + ")"
+			},
+			exec: func(ctx context.Context, dec any) (string, error) {
+				a := dec.(pushPlan)
+				repo, err := open()
+				if err != nil {
+					return "", err
+				}
+				spec := "refs/heads/" + a.Branch + ":refs/heads/" + a.Branch
+				if err := repo.Push(ctx, a.Remote, spec); err != nil {
+					return "", err
+				}
+				return "pushed " + a.Branch + " to " + a.Remote + " (" + a.url + ")", nil
+			},
+		},
 	}
+}
+
+// pushPlan is a validated git_push.
+type pushPlan struct {
+	Branch string `json:"branch"`
+	Remote string `json:"remote"`
+	url    string
 }
 
 // isDefaultBranch reports whether branch is the repo's default: the

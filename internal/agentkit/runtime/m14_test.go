@@ -248,8 +248,8 @@ func TestServeToolsConfigForMCPAdapter(t *testing.T) {
 func TestNoServedToolsNoSession(t *testing.T) {
 	h := newHarness(t, baseDoc())
 	// Narrow the allowlist to a non-served builtin (the fs + git
-	// tools are served as of M15 P1; git_push is not).
-	h.rt.agents["scout"].m.Tools = []string{"git_push"}
+	// tools are served as of M15 P1; search is not).
+	h.rt.agents["scout"].m.Tools = []string{"search"}
 	if s := h.rt.serveTools(h.rt.agents["scout"], bus.Message{Channel: "#general"}); s != nil {
 		s.stop()
 		t.Fatal("started a tool session with no served slug in the allowlist")
