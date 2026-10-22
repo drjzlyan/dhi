@@ -1,5 +1,61 @@
 # STATE — current position
 
+### Session 61 (M35: every keyboard, paste & copy, standard skills + MCP, sign-in, re-runnable setup, branch `m35`)
+
+- User asked: every key working on Mac and PC keyboards, copy/paste and basic editing, whether secret
+  input reaches the environment without entering the model's context, official Atlassian/Slack/Zoom
+  integrations with login only (no OAuth apps), skills in the widely used standard (no DHI formats),
+  DHI deciding which bots get a skill or MCP server (or all bots), no DHI packs, and re-runnable
+  onboarding. Plan `~/.claude/plans/all-the-keys-should-playful-hanrahan.md`; ADR-0042, ADR-0043;
+  F-101–F-108. Commits on `m35`: P0 0204d1f, P1 b2b69f6, P2 d46e187, P3 48d7959, P4 55e0d30,
+  P5+P7 ed321f4, P6 3a6a9e1, P8 9334901, live fixes ee48c0f. Not pushed, no PR, not released.
+- Keys (F-101): `kit.NormalizeKey` at the shell chokepoint maps US Option characters (`¡™£…`) to
+  alt+digit outside text, ESC b/f to alt+←/→; a focused terminal gets raw keys and keeps readline's
+  ctrl+a/j/y; remaps never reach the palette/help; ⌥ in hints on darwin (`kit.MacKeys`).
+- Editing (F-102): `kit.EditText` is the one editing core (word motion, ctrl+w/u/k, alt+backspace,
+  rune-safe, paste). Composers and forms have a cursor and undo; filters/prompts use
+  `EditQuery`/`EditRunes`. Buffer: `/ ? n N *`, `gg`, ctrl+d/u, pgup/pgdown, insert-mode line keys.
+- Paste/copy (F-103): `tea.PasteMsg` → one `paste:` key to whatever has focus, never a binding.
+  `kit.Copy` = OSC 52 + `toolchain.CopyToClipboard` (pbcopy/wl-copy/xclip, ADR-0042). Copy: yank,
+  `Y` on chat messages and traces, palette Copy file path, terminal OSC 52. Select mode turns mouse
+  capture off. Buffer click-to-cursor not done.
+- Secrets (F-104): the flow already kept values out of the model; fixed MCP lookups to go
+  workspace-first, plain values into `[settings]` (repair `credential-kinds`), label `‹secret:NAME›`,
+  editor chat collects a missing secret masked. Rule: assigning a server grants its declared vars.
+- Standards (F-105, ADR-0043): skills are SKILL.md folders (`internal/agentkit/skills`, lenient per
+  the agentskills.io client guide), discovered from builtin (materialized to the cache), yours,
+  `~/.agents/skills`, members' `.agents/.claude/skills`, `.dhi/skills`. Prompts carry an
+  `<available_skills>` catalog; `skill_activate` and `skill_run {skill, script}` for assigned skills.
+  MCP: `mcpServers` JSON (`.dhi/mcp.json`, `<config>/dhi/mcp.json`, members' `.mcp.json`).
+  `internal/agentkit/install`: Preview → Apply, plugins and marketplaces in the vendor format,
+  `installed.toml` lock, scripts non-executable until allowed. Packs, registry, signing,
+  marketplace and catalog deleted; repairs migrate old cards/skills and swap the community
+  Atlassian/Slack servers for the official ones.
+- Sign-in (F-106): `internal/mcp/oauth.go` (RFC 9728/8414/7591, PKCE, loopback, paste-back, refresh,
+  revoke). Tokens are secrets `MCP_OAUTH_<hash>`. Discovery checked live for Atlassian, Slack,
+  Linear, Notion. Zoom's official plugin takes a token via `${VAR}` (no login path exists).
+- Assign (F-107): `internal/agentkit/assign` recommends by role/topic with reasons; all-bots is a
+  policy in `installed.toml` merged at run time (`runtime.Config.AllBots`).
+- Setup (F-108): Settings → SETUP, re-runs prefilled (`CanRerun`, `LoadBrief`), esc on a re-run keeps
+  ✓, start page keeps "c change a step".
+- Live (tmux, sandboxed XDG_CONFIG_HOME/HOME): Option+5 bytes switch views; bracketed paste into the
+  install dialog; local install with gated scripts; official marketplace (315 plugins); Slack plugin
+  preview (10 skills + mcp.slack.com). Found and fixed: CloneAt argument order (every git install
+  failed), stale library snapshot after install, list overflow/scrolling, a long flash blanking the
+  status row, MCP servers read once at launch.
+- Not done / open:
+  - Real sign-ins need the user's accounts (Atlassian, Slack); not run. Installing from Settings
+    opens the browser at once.
+  - F-099 evals not rerun: the fixtures have no skills, so the catalog change does not alter their
+    prompts; a skill-activation eval fixture is still to write.
+  - Manual Terminal.app/iTerm2 checks (Option on/off, cmd+v, select mode) are the user's.
+  - Wizard stepper click, buffer click-to-cursor.
+- Gotchas:
+  - `gitcore.CloneAt(ctx, url, ref, dst)` — same order as `install.Fetcher`.
+  - Settings caches the library; call `m.reloadLib()` after any skill write.
+  - A live run with the real HOME lists every skill in `~/.agents/skills` (the user has ~200).
+  - `padTo` now counts runes; goldens with `·`/`…` shifted by alignment only.
+
 ### Session 60 (M34: one identity, Editor first, setup as a checklist, branch `m34-ux`)
 
 - User asked for real UI components with brand colors, the Editor as the first screen, and more

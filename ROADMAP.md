@@ -1120,4 +1120,4 @@ Plan: `~/.claude/plans/all-the-keys-should-playful-hanrahan.md`. Branch `m35`, o
 - [x] P6 Login-only MCP OAuth like Claude Code; Settings → INTEGRATIONS (F-106)
 - [x] P7 Assign to recommended bots / all bots (F-107)
 - [x] P8 Re-runnable onboarding (F-108)
-- [ ] P9 Docs, live checks, STATE
+- [x] P9 Docs, live checks, STATE (open: real sign-ins, skill eval fixture, manual Mac terminal checks)

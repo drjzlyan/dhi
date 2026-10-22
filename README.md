@@ -128,9 +128,11 @@ cd your-project && dhi
    - your git identity;
    - team conventions (commit format, branch names, co-author);
    - which coding agent to use;
-   - a starter team.
+   - a starter team;
+   - the tools your bots work in (Atlassian, Slack, Zoom, Linear, Notion, GitHub).
 
-   Skip anything; re-run it any time from `ctrl+p` → *Run setup wizard*.
+   Skip anything. Change any step later from the start page or
+   Settings → SETUP; each step opens with what you have now.
 3. **Learn by doing.** `ctrl+p` → *Tutorial* runs short lessons under the
    live UI; each step waits for you to do the real action.
 
@@ -139,11 +141,28 @@ Agents run on the coding CLI you already use: **Claude Code**, **Codex**,
 DHI detects it, installs most of them for you after asking, and keeps every
 agent inside the workspace's tools, scopes and approvals.
 
+## Skills and integrations
+
+DHI uses the formats every coding agent reads, so nothing is DHI-only:
+
+- **Skills** are [Agent Skills](https://agentskills.io) (`<name>/SKILL.md`). Install one from a
+  GitHub URL, `owner/repo`, any git URL or a folder in Settings → SKILLS; skills you already have
+  in `~/.agents/skills` or a repo's `.claude/skills` show up too.
+- **MCP servers** use the standard `mcpServers` JSON (`.dhi/mcp.json`). Add the vendors' official
+  plugins from Settings → INTEGRATIONS, a server by URL, or paste a config snippet.
+- **Sign in, nothing else.** For servers that use OAuth (Atlassian, Slack, Linear, Notion, …) DHI
+  opens the vendor's login page the first time a bot needs it. No app to register, no API key.
+- **Who gets what.** Every install ends by choosing the bots: DHI recommends the ones whose role
+  fits (and says why), or give it to all bots, including ones you add later.
+- Installs pin the commit and show every script and command first; scripts stay off until you allow
+  them.
+
 ## Keys
 
 | Key | Does |
 |---|---|
-| `1`–`5`, `tab` | switch views: Workspace · Editor · Ideator · Reviewer · Settings |
+| `1`–`5`, `tab` | switch views: Editor · Workspace · Ideator · Reviewer · Settings |
+| `alt+1`–`5` (`⌥1`–`5`) | switch views from anywhere, even while typing |
 | `[` `]` | switch sections inside a view |
 | `ctrl+p` | command palette: search every action |
 | `?` | help for where you are; `/` searches it |
@@ -151,7 +170,14 @@ agent inside the workspace's tools, scopes and approvals.
 | `s`, `ctrl+r` | search the workspace; toggle regex |
 | `ctrl+w v` | split the editor |
 | `ctrl+t` | terminal drawer — vim, htop and friends run full screen |
+| `cmd+v` / `ctrl+shift+v` | paste into the focused field, buffer or terminal (secret fields stay masked) |
+| `y` (buffer), `Y` (chat, trace) | copy to the system clipboard |
+| `alt+←/→`, `ctrl+w`, `ctrl+u` | move by word, delete a word, clear to the start, in any text field |
 | `ctrl+c` | quit |
+
+On a Mac, turn on **Option as Meta** in your terminal for every `alt` key (Terminal.app: Settings →
+Profiles → Keyboard; iTerm2: Profiles → Keys → Left Option key: Esc+). Without it, `⌥1`–`⌥5` still
+switch views. To select text with the mouse, `ctrl+p` → *Select text with the mouse*.
 
 Remap any key in `config.toml` (`[keys] "ctrl+k" = "ctrl+p"`); hints and help follow your keys.
 `dhi version` prints the build; `dhi doctor` diagnoses an install.

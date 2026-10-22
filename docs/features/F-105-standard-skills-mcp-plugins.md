@@ -1,6 +1,6 @@
 # F-105 — Standard skills, MCP servers and plugins (packs removed)
 
-Status: done (session 61, M35 P5); eval gate and live install in P9 · ADR-0043 · supersedes F-008, F-034, F-062, F-091 (registry parts)
+Status: done (session 61, M35 P5); live install checked in P9; eval gate open (fixtures carry no skills) · ADR-0043 · supersedes F-008, F-034, F-062, F-091 (registry parts)
 
 ## Why
 DHI had its own skill file format, its own pack/registry/marketplace and a hardcoded integrations
@@ -31,7 +31,7 @@ catalog with community packages. The user wants widely used standards only: Agen
 - [x] plugin.json and marketplace.json parse; install from local git fixtures.
 - [x] Each repair; `skill_run` refuses unassigned skills.
 - [x] Prompt has `<available_skills>` only when skills are assigned.
-- [ ] F-099 evals within noise of the M34 baseline.
+- [ ] F-099 evals within noise of the M34 baseline — not run: no fixture assigns a skill, so prompts are unchanged; a skill-activation fixture is still to write.
 
 ## Notes (session 61)
 - Settings: SKILLS (i install, g give to bots, a new bot with it, w write one, s allow scripts, x
