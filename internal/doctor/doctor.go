@@ -75,6 +75,7 @@ func Run(wsRoot string) Report {
 	r.Checks = append(r.Checks, LegacyToolchain()...)
 	r.Checks = append(r.Checks, Git()...)
 	r.Checks = append(r.Checks, Identity()...)
+	r.Checks = append(r.Checks, GitAccess(wsRoot)...)
 	r.Checks = append(r.Checks, Workspace(wsRoot)...)
 	r.Checks = append(r.Checks, Config(wsRoot)...)
 	r.Checks = append(r.Checks, Agents(wsRoot)...)
@@ -906,9 +907,14 @@ func Sandbox(mode string) []Check {
 			Detail: "off in settings (explicit opt-out) — path-jail + policy only"}}
 	case settings.SandboxAuto:
 		name := sandbox.Detect(runtime.GOOS, exec.LookPath)
+		if name == "noop" && runtime.GOOS == "linux" {
+			t, _ := hosttools.Get("bwrap")
+			return []Check{{Name: "sandbox/adapter", Status: Warn,
+				Detail: "bubblewrap is not installed — the IDE works, agents cannot run until it is: " + hosttools.Missing(t)}}
+		}
 		if name == "noop" {
 			return []Check{{Name: "sandbox/adapter", Status: Fail,
-				Detail: "OS sandbox helper missing (sandbox-exec/bwrap) — boot blocks until installed (ADR-0011)"}}
+				Detail: "no OS sandbox for agents on this system (sandbox-exec on macOS, bwrap on Linux)"}}
 		}
 		return []Check{{Name: "sandbox/adapter", Status: OK, Detail: name}}
 	default:

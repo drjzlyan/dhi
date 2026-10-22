@@ -1565,3 +1565,40 @@ func TestWorkspacePickerLaterCreatesNothing(t *testing.T) {
 		t.Fatal(".dhi written although the user chose later")
 	}
 }
+
+// ---- tools step (F-114) ----
+
+func TestToolsStepInstallsAMissingToolAfterAYes(t *testing.T) {
+	f := newFixture(t, true)
+	have := map[string]string{"git": "/opt/homebrew/bin/git", "gh": "/opt/homebrew/bin/gh"}
+	f.env.ToolStatus = func() []ToolRow {
+		var rows []ToolRow
+		for _, n := range []string{"git", "rg", "gh", "gopls"} {
+			r := ToolRow{Name: n, Purpose: "testing", Core: n != "gopls", Version: have[n]}
+			if r.Version == "" {
+				r.Install, r.CanRun = "brew install "+n, true
+			}
+			rows = append(rows, r)
+		}
+		return rows
+	}
+	var ran []string
+	f.env.RunInstall = func(name string, done func(error) tea.Msg) tea.Cmd {
+		return func() tea.Msg { ran = append(ran, name); have[name] = "/opt/homebrew/bin/" + name; return done(nil) }
+	}
+	s := &toolsStep{env: f.env}
+	if !s.Applies() {
+		t.Fatal("a missing core tool (rg) makes the step apply")
+	}
+	s.Enter()
+	s.HandleKey("j") // rg
+	s.HandleKey("i")
+	if v := strings.Join(s.View(100, 0), "\n"); !strings.Contains(ansi.Strip(v), "brew install rg") || len(ran) != 0 {
+		t.Fatalf("confirm view:\n%s", ansi.Strip(v))
+	}
+	s.HandleKey("y")
+	s.Update(s.TakeCmd()())
+	if len(ran) != 1 || ran[0] != "rg" || !strings.Contains(s.msg, "rg installed") || s.Applies() {
+		t.Fatalf("ran=%v msg=%q applies=%v", ran, s.msg, s.Applies())
+	}
+}

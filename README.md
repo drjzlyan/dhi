@@ -141,8 +141,32 @@ cd your-project && dhi
 
 Agents run on the coding CLI you already use: **Claude Code**, **Codex**,
 **Cursor Agent**, **GitHub Copilot CLI**, **opencode** or **Antigravity**.
-DHI detects it, installs most of them for you after asking, and keeps every
-agent inside the workspace's tools, scopes and approvals.
+DHI detects it, offers your package manager's command for one you don't
+have, and keeps every agent inside the workspace's tools, scopes and approvals.
+
+## What DHI changes on your machine
+
+DHI reads your environment and configuration like your terminal does and
+changes nothing outside its own folders and your workspace without a yes:
+
+- **Read, never written:** your shell environment, `~/.gitconfig`, ssh keys
+  (through your ssh-agent and ssh config), git credential helpers and your
+  `gh` login. Clone, fetch and push run your own `git`.
+- **Written by DHI:** `~/.config/dhi` (settings, credentials you add, grants)
+  and the workspace's `.dhi/` folder.
+- **Only after you say yes:**
+  - installing a tool (the exact `brew`/`apt`/`npm` command runs in a terminal you watch);
+  - your git identity (`~/.gitconfig`, or only this workspace's repos);
+  - deleting DHI's old toolchain folder from earlier versions;
+  - an agent pushing a branch (DHI pushes for it with your git).
+- **Agents** run inside the OS sandbox (Seatbelt on macOS, bubblewrap on
+  Linux):
+  - They write the workspace, their own CLI state and the standard package
+    caches (`~/.npm`, `~/go/pkg/mod`, `~/.cache`, …).
+  - Any other write, program folder or network access raises a card.
+  - They never read `~/.ssh`, `~/.aws`, `~/.config/gh` or similar credential folders.
+- **On Linux, agents need bubblewrap.** Without it the IDE works, and
+  `:install bwrap` offers the install.
 
 ## Skills and integrations
 

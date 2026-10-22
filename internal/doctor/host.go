@@ -2,8 +2,11 @@ package doctor
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
+	"os/exec"
+	"runtime"
 	"strings"
 	"time"
 
@@ -56,7 +59,7 @@ func Tools() []Check {
 	}
 	var have, missing []string
 	for _, t := range hosttools.Tools {
-		if isCore(t.Name) {
+		if isCore(t.Name) || !t.ForThisOS(runtime.GOOS) {
 			continue
 		}
 		if _, ok := hosttools.Find(t); ok {
@@ -158,4 +161,76 @@ func GH() []Check {
 			Detail: "gh is not installed — pull requests need it; install: " + hosttools.Missing(t) + ", then `gh auth login`"}}
 	}
 	return []Check{{Name: "gh/cli", Status: OK, Detail: p}}
+}
+
+// sshAgentKeys counts the keys the user's ssh-agent holds (-1: no agent).
+// Swapped by tests.
+var sshAgentKeys = func() int {
+	if os.Getenv("SSH_AUTH_SOCK") == "" {
+		return -1
+	}
+	ssh, err := lookPath("ssh-add")
+	if err != nil {
+		return -1
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, ssh, "-l").Output()
+	if err != nil {
+		var ee *exec.ExitError
+		if errors.As(err, &ee) && ee.ExitCode() == 1 {
+			return 0 // agent running, no identities
+		}
+		return -1
+	}
+	return len(strings.Split(strings.TrimSpace(string(out)), "\n"))
+}
+
+// GitAccess reports how the user's git reaches remotes (F-112), names
+// only: where the identity comes from, the credential helpers, and the
+// ssh-agent. DHI never reads keys or tokens.
+func GitAccess(wsRoot string) []Check {
+	r := userGit()
+	if r == nil {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	dir := wsRoot
+	if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
+		dir = ""
+	}
+	var parts []string
+	if out, _, err := r.Run(ctx, dir, "config", "--show-origin", "--get", "user.email"); err == nil {
+		origin, _, _ := strings.Cut(strings.TrimSpace(out), "\t")
+		parts = append(parts, "identity from "+tilde(strings.TrimPrefix(origin, "file:")))
+	}
+	if out, _, err := r.Run(ctx, dir, "config", "--get-all", "credential.helper"); err == nil && strings.TrimSpace(out) != "" {
+		var hs []string
+		for _, h := range strings.Split(strings.TrimSpace(out), "\n") {
+			if f := strings.Fields(h); len(f) > 0 {
+				hs = append(hs, f[0])
+			}
+		}
+		parts = append(parts, "credential helper "+strings.Join(hs, ", "))
+	} else {
+		parts = append(parts, "no credential helper (https remotes need one, e.g. `gh auth setup-git`)")
+	}
+	switch n := sshAgentKeys(); {
+	case n < 0:
+		parts = append(parts, "no ssh-agent")
+	case n == 0:
+		parts = append(parts, "ssh-agent with no keys loaded")
+	default:
+		parts = append(parts, fmt.Sprintf("ssh-agent with %d key(s)", n))
+	}
+	return []Check{{Name: "git/access", Status: OK, Detail: strings.Join(parts, " · ")}}
+}
+
+// tilde shows a path under home as ~/…
+func tilde(p string) string {
+	if home, err := os.UserHomeDir(); err == nil && home != "" && strings.HasPrefix(p, home+string(os.PathSeparator)) {
+		return "~" + p[len(home):]
+	}
+	return p
 }

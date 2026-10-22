@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/hosttools"
 	"github.com/drjzlyan/dhi/internal/setup"
 	"github.com/drjzlyan/dhi/internal/tui/surfaces/editor"
+	"github.com/drjzlyan/dhi/internal/tui/surfaces/wizard"
 	"github.com/drjzlyan/dhi/internal/workspace"
 )
 
@@ -157,4 +159,30 @@ func setWorkspaceIdentity(root string) func(ctx context.Context, id gitcore.Iden
 		st.LocalIdentity = &setup.Identity{Name: id.Name, Email: id.Email}
 		return setup.SaveState(p, st)
 	}
+}
+
+// setupTools are the tools the setup step lists: the core ones whole
+// features need, then the language servers and the debugger.
+var setupTools = []string{"git", "rg", "gh", "bwrap", "gopls", "typescript-language-server", "pyright",
+	"bash-language-server", "yaml-language-server", "vscode-langservers-extracted", "rust-analyzer", "dlv"}
+
+// toolRows is the tools step's view of the user's system (F-114).
+func toolRows() []wizard.ToolRow {
+	var rows []wizard.ToolRow
+	for _, name := range setupTools {
+		t, ok := hosttools.Get(name)
+		if !ok || !t.ForThisOS(runtime.GOOS) {
+			continue
+		}
+		row := wizard.ToolRow{Name: t.Name, Purpose: t.Purpose, Core: name == "git" || name == "rg" || name == "gh" || name == "bwrap"}
+		if p, found := hosttools.Find(t); found {
+			row.Version = p
+		} else if in, ok := hosttools.Recipe(t); ok {
+			row.Install, row.CanRun = in.String(), true
+		} else {
+			row.Install = t.Doc
+		}
+		rows = append(rows, row)
+	}
+	return rows
 }

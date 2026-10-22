@@ -63,6 +63,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/tasks"
 	"github.com/drjzlyan/dhi/internal/tui/app"
 	"github.com/drjzlyan/dhi/internal/tui/kit"
+	"github.com/drjzlyan/dhi/internal/tui/surfaces"
 	"github.com/drjzlyan/dhi/internal/tui/surfaces/bootgate"
 	"github.com/drjzlyan/dhi/internal/tui/surfaces/editor"
 	"github.com/drjzlyan/dhi/internal/tui/surfaces/gatechain"
@@ -632,6 +633,18 @@ func runTUI() (relaunch bool) {
 		appRef.QueueGate(w)
 	}
 	a.SetSetup(func() []kit.ChecklistItem { return checklist }, runStep)
+	// A tool installed in another terminal, or a changed shell profile,
+	// reaches DHI without a restart (F-109).
+	a.AddCommand(surfaces.Command{Group: "Tools", Title: "Reload shell environment", Run: func() tea.Cmd {
+		return func() tea.Msg {
+			s := hostenv.Reload()
+			hostenv.Apply()
+			if s.Err != nil {
+				return app.ToastMsg{Kind: kit.ToastWarning, Title: "Shell environment not read", Detail: s.Err.Error()}
+			}
+			return app.ToastMsg{Kind: kit.ToastSuccess, Title: "Shell environment reloaded", Detail: "from " + s.Shell}
+		}
+	}})
 
 	// Gates, in strict order: a block never releases; then the repairs.
 	var gates []gatechain.Gate
@@ -782,6 +795,7 @@ func newSetupEnv(cwd string, ws *workspace.Workspace, userCfg string,
 		}
 		return rows
 	}
+	env.ToolStatus = toolRows
 	// Installs use the user's package manager, in their terminal, after
 	// they saw the exact command (F-110).
 	env.CLIInstall = cliInstall

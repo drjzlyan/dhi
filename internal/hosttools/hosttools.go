@@ -29,6 +29,10 @@ type Tool struct {
 	// argument(s) for that installer.
 	Recipes map[string][]string
 	Doc     string // where the vendor says to get it
+	// Verify: found only when the version command succeeds (macOS ships a
+	// /usr/bin/java stub that fails without a JDK).
+	Verify bool
+	OS     string // "" = every OS; "linux" = Linux only (bwrap)
 }
 
 // The installers DHI knows, OS managers first (their order is the
@@ -65,7 +69,7 @@ var Tools = []Tool{
 		Recipes: map[string][]string{"brew": {"rust"}, "apt": {"cargo"}, "dnf": {"cargo"}, "pacman": {"rust"}, "zypper": {"cargo"}},
 		Doc:     "https://rustup.rs"},
 	// Homebrew's openjdk is keg-only (not on PATH), so macOS gets the docs.
-	{Name: "jdk", Bin: "java", Purpose: "Java builds and tests", Version: []string{"-version"},
+	{Name: "jdk", Bin: "java", Purpose: "Java builds and tests", Version: []string{"-version"}, Verify: true,
 		Recipes: map[string][]string{"apt": {"default-jdk"}, "dnf": {"java-latest-openjdk-devel"}, "pacman": {"jdk-openjdk"}},
 		Doc:     "https://adoptium.net"},
 	{Name: "maven", Bin: "mvn", Purpose: "Maven builds and tests", Version: []string{"--version"},
@@ -120,7 +124,7 @@ var Tools = []Tool{
 		Doc:     "https://docs.github.com/copilot/how-tos/set-up/install-copilot-cli"},
 	{Name: "cursor-agent", Bin: "cursor-agent", Purpose: "the Cursor agent", Version: []string{"--version"},
 		Doc: "https://cursor.com/cli"},
-	{Name: "bwrap", Bin: "bwrap", Purpose: "running agents inside a boundary (Linux)", Version: []string{"--version"},
+	{Name: "bwrap", Bin: "bwrap", Purpose: "running agents inside a boundary (Linux)", Version: []string{"--version"}, OS: "linux",
 		Recipes: map[string][]string{"apt": {"bubblewrap"}, "dnf": {"bubblewrap"}, "pacman": {"bubblewrap"}, "zypper": {"bubblewrap"}},
 		Doc:     "https://github.com/containers/bubblewrap"},
 }
@@ -152,6 +156,14 @@ func Find(t Tool) (string, bool) {
 
 // Locate is Find that also says whether the tool is on PATH.
 func Locate(t Tool) (path string, onPath, ok bool) {
+	path, onPath, ok = locate(t)
+	if ok && t.Verify && !runs(path, t.Version) {
+		return "", false, false
+	}
+	return path, onPath, ok
+}
+
+func locate(t Tool) (string, bool, bool) {
 	if p, err := look(t.Bin); err == nil {
 		return p, true, true
 	}
@@ -163,6 +175,16 @@ func Locate(t Tool) (path string, onPath, ok bool) {
 	}
 	return "", false, false
 }
+
+// runs reports whether path args exits 0 within 3 s.
+func runs(path string, args []string) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	return exec.CommandContext(ctx, path, args...).Run() == nil
+}
+
+// ForThisOS reports whether t applies on goos.
+func (t Tool) ForThisOS(goos string) bool { return t.OS == "" || t.OS == goos }
 
 // installDirs are where go install, cargo and pipx/uv put binaries.
 func installDirs() []string {

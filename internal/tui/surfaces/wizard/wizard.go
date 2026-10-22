@@ -88,7 +88,10 @@ type Env struct {
 	// RunInstall runs it after the user said yes, in their own terminal
 	// (DHI steps aside so they see it and can answer prompts), and reports
 	// the outcome through done. Either nil: guidance only.
-	CLIStatus  func() []CLIRow
+	CLIStatus func() []CLIRow
+	// ToolStatus lists the host tools for the tools step (F-114); nil
+	// hides it. Installs share RunInstall.
+	ToolStatus func() []ToolRow
 	CLIInstall func(name string) (cmd string, ok bool)
 	RunInstall func(name string, done func(error) tea.Msg) tea.Cmd
 
@@ -211,7 +214,7 @@ func New(env *Env, state setup.State, steps ...Step) *Model {
 // people first ran setup (M31), and the team, which waits on a workspace
 // that may only appear later. Each is offered once, while it applies and
 // was never applied or skipped (F-085).
-var catchUpIDs = map[string]bool{"project": true, "you": true, "instructions": true, "team": true}
+var catchUpIDs = map[string]bool{"project": true, "you": true, "instructions": true, "team": true, "tools": true}
 
 // CatchUpSteps returns the steps a finished setup still owes the user,
 // with the closing step; nil when there are none.
@@ -243,6 +246,7 @@ func DefaultSteps(env *Env, version string) []Step {
 		&styleStep{env: env},
 		&instructionsStep{env: env},
 		&conventionsStep{env: env},
+		&toolsStep{env: env},
 		&cliStep{env: env},
 		&teamStep{env: env},
 		&integrationsStep{env: env},

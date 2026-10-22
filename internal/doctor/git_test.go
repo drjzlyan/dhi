@@ -81,3 +81,25 @@ func TestLegacyToolchainIsNamedWithItsSize(t *testing.T) {
 		t.Fatalf("old toolchain = %+v", c)
 	}
 }
+
+// Git access is reported by name only: identity origin, helpers, agent.
+func TestGitAccessNamesOnly(t *testing.T) {
+	dir := t.TempDir()
+	script := "#!/bin/sh\ncase \"$*\" in\n*--show-origin*) printf 'file:/home/me/.gitconfig\\tada@x.io\\n'; exit 0;;\n*credential.helper*) echo osxkeychain; echo '!gh auth git-credential'; exit 0;;\nesac\nexit 1\n"
+	os.WriteFile(filepath.Join(dir, "git"), []byte(script), 0o755)
+	orig, origKeys := lookPath, sshAgentKeys
+	t.Cleanup(func() { lookPath, sshAgentKeys = orig, origKeys })
+	lookPath = func(n string) (string, error) {
+		if n == "git" {
+			return filepath.Join(dir, "git"), nil
+		}
+		return "", errors.New("not found")
+	}
+	sshAgentKeys = func() int { return 2 }
+	c, ok := statusOf(GitAccess(""), "git/access")
+	for _, want := range []string{"identity from /home/me/.gitconfig", "credential helper osxkeychain, !gh", "ssh-agent with 2 key(s)"} {
+		if !ok || !strings.Contains(c.Detail, want) {
+			t.Errorf("detail %q lacks %q", c.Detail, want)
+		}
+	}
+}

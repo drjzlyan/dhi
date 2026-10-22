@@ -64,8 +64,9 @@ type App struct {
 
 	gate       Gate
 	gateRan    bool
-	queuedGate Gate        // started after the current input (QueueGate)
-	setupGate  func() Gate // palette "Run setup wizard" (F-043)
+	queuedGate Gate               // started after the current input (QueueGate)
+	setupGate  func() Gate        // palette "Run setup wizard" (F-043)
+	commands   []surfaces.Command // app-wide palette commands cmd adds
 	// setupItems/setupRun back the setup pill and palette entries.
 	setupItems      func() []kit.ChecklistItem
 	setupRun        func(id string)
@@ -549,6 +550,10 @@ func (a *App) StartGate(g Gate) tea.Cmd {
 // wizard"; nil hides the entry.
 func (a *App) SetSetupGate(f func() Gate) { a.setupGate = f }
 
+// AddCommand adds an app-wide palette command (e.g. "Reload shell
+// environment", F-109).
+func (a *App) AddCommand(c surfaces.Command) { a.commands = append(a.commands, c) }
+
 // activeCapturesInput reports whether the focused surface is collecting
 // free text (surfaces.InputCapturer); such a surface owns plain keys.
 func (a *App) activeCapturesInput() bool {
@@ -718,6 +723,9 @@ func (a *App) openPalette() {
 	}
 	if a.setupGate != nil {
 		add("Setup", "Run setup wizard", "", func() tea.Cmd { return a.StartGate(a.setupGate()) })
+	}
+	for _, c := range a.commands {
+		add(c.Group, c.Title, c.Hint, c.Run)
 	}
 	add("", "Show keyboard help", "?", func() tea.Cmd { a.openHelp(); return nil })
 	add("", "Select text with the mouse", "", func() tea.Cmd { a.selecting = true; return nil })
