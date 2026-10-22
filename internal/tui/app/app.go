@@ -453,8 +453,38 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return a, nil
 
+	case tea.MouseMotionMsg:
+		// Cell-motion mode reports motion only while a button is held:
+		// a drag (F-103) — the editor turns it into a selection.
+		if !a.gateActive() {
+			m := msg.Mouse()
+			if d, ok := a.Active().(interface{ Drag(x, y int) bool }); ok {
+				d.Drag(m.X, m.Y-1)
+			}
+		}
+		return a, nil
+
+	case tea.MouseReleaseMsg:
+		if !a.gateActive() {
+			m := msg.Mouse()
+			if d, ok := a.Active().(interface{ Release(x, y int) bool }); ok {
+				d.Release(m.X, m.Y-1)
+			}
+		}
+		return a, nil
+
 	case tea.MouseClickMsg:
 		if a.gateActive() {
+			// A gate may take clicks (the wizard's step bar, F-108).
+			m := msg.Mouse()
+			if c, ok := a.gate.(interface{ Click(x, y int) bool }); ok && m.Y > 0 {
+				c.Click(m.X, m.Y-1)
+				var cmd tea.Cmd
+				if cg, ok := a.gate.(interface{ TakeCmd() tea.Cmd }); ok {
+					cmd = cg.TakeCmd()
+				}
+				return a, a.releaseGate(cmd)
+			}
 			return a, nil
 		}
 		m := msg.Mouse()

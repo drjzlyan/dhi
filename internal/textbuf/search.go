@@ -139,3 +139,14 @@ func (e *Editor) TakeYank() (string, bool) {
 	e.yanked = nil
 	return t, true
 }
+
+// SelectFrom starts (or re-anchors) a visual selection at anchor, the
+// cursor marking its other end (a mouse drag, F-103).
+func (e *Editor) SelectFrom(anchor Pos) {
+	if e.mode == ModeInsert {
+		e.buf.EndUndoGroup() // leaving insert closes its undo step
+	}
+	e.clearPending()
+	e.mode = ModeVisual
+	e.visualStart = anchor
+}

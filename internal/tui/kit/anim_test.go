@@ -72,7 +72,12 @@ func TestStepperCollapsesWhenNarrow(t *testing.T) {
 			t.Errorf("wide stepper lacks %q: %q", want, wide)
 		}
 	}
-	if got := ansi.Strip(Stepper(steps(), 30, 0)); got != "3/5 identity" {
+	// F-108: a window of steps around the active one (each still
+	// clickable); only when none fits does it collapse to "3/5 identity".
+	if got := ansi.Strip(Stepper(steps(), 40, 0)); got != "3/5 … – workspace ── · identity …" {
+		t.Errorf("windowed stepper = %q", got)
+	}
+	if got := ansi.Strip(Stepper(steps(), 14, 0)); got != "3/5 identity" {
 		t.Errorf("narrow stepper = %q", got)
 	}
 }

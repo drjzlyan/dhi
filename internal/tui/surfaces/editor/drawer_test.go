@@ -1,6 +1,7 @@
 package editor
 
 import (
+	"github.com/drjzlyan/dhi/internal/textbuf"
 	"os"
 	"regexp"
 	"strings"
@@ -211,5 +212,52 @@ func TestYankAlsoCopiesToTheSystemClipboard(t *testing.T) {
 	cmd := m.TakeCmd()
 	if cmd == nil {
 		t.Fatal("yy queued no clipboard command")
+	}
+}
+
+// F-103: a click in the text puts the cursor there; a drag selects the
+// text between, and y copies it.
+func TestClickAndDragInTheBuffer(t *testing.T) {
+	m := newEditor(t)
+	feed(m, "enter", "down", "down", "enter") // open alpha/src/app.go
+	e := m.active()
+	if e == nil {
+		t.Fatal("no buffer")
+	}
+	e.Buffer().SetCursor(textbuf.Pos{})
+	m.View() // records where the text is
+	g := m.bufGeom
+	if !g.ok {
+		t.Fatal("no buffer geometry after a render")
+	}
+	line := 0
+	for ; line < e.Buffer().LineCount() && len([]rune(e.Buffer().Line(line))) < 6; line++ {
+	}
+	if line == e.Buffer().LineCount() {
+		t.Skip("fixture has no line long enough")
+	}
+	x, y := g.ox+g.textX+4, g.oy+line-g.top
+	screen := []rune(strings.Split(ansi.Strip(m.View()), "\n")[y])
+	if want := []rune(e.Buffer().Line(line))[4]; x >= len(screen) || screen[x] != want {
+		t.Fatalf("screen cell (%d,%d) is %q, buffer has %q:\n%s", x, y, string(screen[min(x, len(screen)-1)]), want, string(screen))
+	}
+	if !m.Click(x, y) {
+		t.Fatal("click in the text not taken")
+	}
+	if c := e.Buffer().Cursor(); c.Line != line || c.Col != 4 {
+		t.Fatalf("cursor = %+v, want line %d col 4", c, line)
+	}
+	m.Drag(x+1, y)
+	if e.Mode() != textbuf.ModeVisual {
+		t.Fatal("a drag must select")
+	}
+	m.Release(x+1, y)
+	m.TakeCmd()
+	feed(m, "y")
+	if text, ok := e.RegisterText(); !ok && text == "" || len([]rune(text)) != 2 {
+		t.Fatalf("yanked %q", text)
+	}
+	if m.Click(g.ox+g.textX, g.oy+g.rows+5) {
+		t.Fatal("a click below the text must not move the cursor")
 	}
 }

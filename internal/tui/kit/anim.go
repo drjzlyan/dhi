@@ -6,7 +6,6 @@ import (
 
 	"charm.land/lipgloss/v2"
 
-	"github.com/drjzlyan/dhi/internal/ansi"
 	"github.com/drjzlyan/dhi/internal/tui/theme"
 )
 
@@ -109,42 +108,92 @@ type StepItem struct {
 //	✓ welcome ── ● identity ── ○ team
 //
 // The connector is green behind finished steps and a quiet rule ahead
-// (F-093). When that does not fit width it collapses to "2/3 identity".
+// (F-093). When the whole bar does not fit width it shows a window of
+// steps around the active one — "3/10 … ✓ project ── ● identity ── ○ you …"
+// — so every visible step can still be clicked (F-108); only when not
+// even one step fits does it fall back to "2/3 identity".
 func Stepper(items []StepItem, width, frame int) string {
 	done := theme.SuccessText().Render(" ── ")
 	ahead := theme.RuleText().Render(" ── ")
-	parts := make([]string, 0, len(items))
-	for _, it := range items {
+	parts := make([]string, len(items))
+	widths := make([]int, len(items))
+	active := 0
+	for i, it := range items {
 		switch it.State {
 		case StepDone:
-			parts = append(parts, theme.SuccessText().Render(theme.GlyphCheck)+" "+theme.TextStyle().Render(it.Label))
+			parts[i] = theme.SuccessText().Render(theme.GlyphCheck) + " " + theme.TextStyle().Render(it.Label)
 		case StepActive:
-			parts = append(parts, SpinnerGlyph(frame)+" "+theme.Brand().Render(it.Label))
+			parts[i] = SpinnerGlyph(frame) + " " + theme.Brand().Render(it.Label)
+			active = i
 		case StepSkipped:
-			parts = append(parts, theme.TextDim().Render("– "+it.Label))
+			parts[i] = theme.TextDim().Render("– " + it.Label)
 		default:
-			parts = append(parts, theme.TextDim().Render("○ "+it.Label))
+			parts[i] = theme.TextDim().Render("○ " + it.Label)
 		}
+		widths[i] = 2 + len([]rune(it.Label))
 	}
-	var line string
-	for i, p := range parts {
-		if i > 0 {
-			if items[i-1].State == StepDone || items[i-1].State == StepSkipped {
-				line += done
-			} else {
-				line += ahead
+	join := func(from, to int) string {
+		var line string
+		for i := from; i < to; i++ {
+			if i > from {
+				if items[i-1].State == StepDone || items[i-1].State == StepSkipped {
+					line += done
+				} else {
+					line += ahead
+				}
 			}
+			line += parts[i]
 		}
-		line += p
-	}
-	if width <= 0 || len([]rune(ansi.Strip(line))) <= width {
 		return line
 	}
-	for i, it := range items {
-		if it.State == StepActive {
-			compact := theme.TextDim().Render(strconv.Itoa(i+1)+"/"+strconv.Itoa(len(items))+" ") + theme.Brand().Render(it.Label)
-			return compact
+	span := func(from, to int) int {
+		w := 0
+		for i := from; i < to; i++ {
+			w += widths[i]
+			if i > from {
+				w += 4
+			}
+		}
+		return w
+	}
+	if width <= 0 || span(0, len(items)) <= width {
+		return join(0, len(items))
+	}
+	if len(items) == 0 {
+		return ""
+	}
+	prefix := strconv.Itoa(active+1) + "/" + strconv.Itoa(len(items)) + " "
+	fits := func(from, to int) bool {
+		w := len(prefix) + span(from, to)
+		if from > 0 {
+			w += 2 // "… "
+		}
+		if to < len(items) {
+			w += 2 // " …"
+		}
+		return w <= width
+	}
+	from, to := active, active+1
+	if !fits(from, to) {
+		return theme.TextDim().Render(prefix) + theme.Brand().Render(items[active].Label)
+	}
+	// Earlier steps first: they are the ones a click goes back to.
+	for grew := true; grew; {
+		grew = false
+		if from > 0 && fits(from-1, to) {
+			from, grew = from-1, true
+		}
+		if to < len(items) && fits(from, to+1) {
+			to, grew = to+1, true
 		}
 	}
-	return ""
+	line := theme.TextDim().Render(prefix)
+	if from > 0 {
+		line += theme.TextDim().Render("… ")
+	}
+	line += join(from, to)
+	if to < len(items) {
+		line += theme.TextDim().Render(" …")
+	}
+	return line
 }

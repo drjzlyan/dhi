@@ -50,10 +50,14 @@
     with the new `DHI_EVAL_SKILL`/`DHI_EVAL_ARM` knobs: with the client guide's wording the agent
     skipped the skill; a firmer catalog instruction got it read first (F-105 table).
   - Manual Terminal.app/iTerm2 checks (Option on/off, cmd+v, select mode) are the user's.
-  - Wizard stepper click, buffer click-to-cursor.
+  - (Done after the report: buffer click/drag and the clickable wizard step bar — see below.)
 - After review: the skill-file repair also renames the skill in agent manifests; setup's plugin
   install assigns only the servers (a plugin's skills wait in SKILLS); README narrowed (scripts are
   gated for skills DHI installs, not ones found in ~/.agents or a repo).
+- Follow-up (same session): a click in a buffer places the cursor and a drag selects (`bufGeom`
+  recorded by the render; app routes MouseMotion/MouseRelease as Drag/Release). The wizard's step
+  bar is clickable (zones found in the rendered frame; gates now get clicks) and windows around the
+  current step instead of collapsing to "2/10". Both checked live in tmux with SGR mouse sequences.
 - Gotchas:
   - `gitcore.CloneAt(ctx, url, ref, dst)` — same order as `install.Fetcher`.
   - Settings caches the library; call `m.reloadLib()` after any skill write.

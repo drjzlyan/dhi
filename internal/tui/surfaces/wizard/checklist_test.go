@@ -159,3 +159,35 @@ func TestReRunningADoneStepIsPrefilledAndEscKeepsIt(t *testing.T) {
 		t.Fatal("creating a workspace cannot re-run inside one")
 	}
 }
+
+// F-108: the step bar is clickable — an earlier step opens again; a later
+// step that is not done yet stays out of reach.
+func TestStepBarClickJumpsBack(t *testing.T) {
+	f := newFixture(t, true)
+	m := f.wizard()
+	key(m, "enter", "enter") // welcome, identity → on conventions
+	cur := m.cur().ID()
+	frame := plain(m)
+	var welcome, later stepZone
+	for _, z := range m.zones {
+		switch m.steps[z.idx].ID() {
+		case "welcome":
+			welcome = z
+		case "done":
+			later = z
+		}
+	}
+	if welcome.to == 0 {
+		t.Fatalf("no zone for welcome:\n%s", frame)
+	}
+	row := []rune(strings.Split(frame, "\n")[welcome.row])
+	if got := string(row[welcome.from+2 : welcome.to]); got != "welcome" {
+		t.Fatalf("zone covers %q", got)
+	}
+	if later.to > 0 && m.Click(later.from, later.row) {
+		t.Fatal("a later step that is not done must not open")
+	}
+	if !m.Click(welcome.from+3, welcome.row) || m.cur().ID() != "welcome" {
+		t.Fatalf("clicking welcome left us on %s (was %s)", m.cur().ID(), cur)
+	}
+}

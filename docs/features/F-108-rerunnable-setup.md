@@ -16,11 +16,13 @@ show the current values, and single-step runs had no back.
   conventions read your config); saving updates in place; esc leaves the step and its record as
   they were ("esc leave as is"). Steps whose first-run condition no longer holds (a brief, a profile,
   instructions, a team exist) still re-run (`CanRerun`); creating a workspace cannot re-run inside one.
-- The wizard goes back with `ctrl+b`, or Option+← (alt+left) on steps that are not taking text.
-  A clickable stepper was left out: the card's geometry is not recorded for clicks.
+- The wizard goes back with `ctrl+b`, Option+← (alt+left) on steps that are not taking text, or a
+  click on the step bar: any earlier step, or a later one already done. When the bar does not fit it
+  shows a window around the current step ("2/10 ✓ welcome ── ◦ project ── … …"), earlier steps
+  first, so there is always something to click.
 - The integrations step offers the vendors' official plugins (F-105); skills install from SKILLS.
 
 ## Acceptance
 - [x] Re-run of a done step is prefilled and keeps ✓ on esc.
 - [x] Reset clears step records only (Settings test; config is not touched by the reset path).
-- [ ] Stepper click jumps to an earlier step (not done; ctrl+b / alt+← go back).
+- [x] Stepper click jumps to an earlier step (test + live tmux click).

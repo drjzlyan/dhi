@@ -88,6 +88,11 @@ func (m *Model) bufferView() string {
 
 	gut := strconv.Itoa(end)
 	gutW := len(gut) + 1
+	if !m.renderingSplit {
+		// Where the text starts and which line is on top, so a click maps
+		// back to a buffer position (F-103).
+		m.bufGeom = bufGeom{top: top, rows: end - top, textX: gutW + 1}
+	}
 
 	var a, z textbuf.Pos
 	visual := e.Mode() == textbuf.ModeVisual

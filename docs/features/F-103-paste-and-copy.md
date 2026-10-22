@@ -1,6 +1,6 @@
 # F-103 — Paste and copy
 
-Status: done (session 61, M35 P3; buffer click-to-cursor deferred) · ADR-0042
+Status: done (session 61, M35 P3; click and drag in the buffer added after P9) · ADR-0042
 
 ## Why
 Bubble Tea delivers cmd+v as a bracketed paste (`tea.PasteMsg`), and nothing handled it, so paste
@@ -21,7 +21,9 @@ mouse capture blocks the terminal's own selection.
   error). Surfaces hand text over through `surfaces.Copier`.
 - Mouse: palette "Select text with the mouse" turns mouse capture off (a SELECT mode block on the
   status row) until the next key, so the terminal's own drag-select and cmd+c work anywhere.
-  Click-to-cursor inside a buffer is deferred: it needs the split-aware buffer geometry.
+  In a buffer, a click places the cursor and a drag selects (visual mode), so `y` copies it. The
+  last render records where the text sits (`bufGeom`); a split view keeps clicks on the panes as
+  before. Checked live in tmux with SGR mouse sequences, through a tab-indented line.
 
 ## Acceptance
 - [x] PasteMsg reaches editor, composers, forms, secret field, terminal (tests).

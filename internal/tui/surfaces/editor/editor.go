@@ -199,6 +199,8 @@ type Model struct {
 
 	drawerOpen  bool
 	termCopy    string // text a terminal program copied (OSC 52), not yet sent
+	bufGeom     bufGeom
+	dragFrom    *textbuf.Pos // where a mouse drag in the buffer started
 	termFocus   bool
 	terms       []*termTab
 	activeTerm  int
@@ -1189,6 +1191,15 @@ func (m *Model) View() string {
 // selected (and the tree focused); clicking the selected row again opens
 // the file or toggles the folder, like enter.
 func (m *Model) Click(x, y int) bool {
+	if p, ok := m.bufferPos(x, y); ok { // a click in the text places the cursor (F-103)
+		e := m.active()
+		if e.Mode() == textbuf.ModeVisual {
+			e.Key("esc")
+		}
+		e.Buffer().SetCursor(p)
+		m.bufFocus, m.dragFrom = true, &p
+		return true
+	}
 	if m.startVisible() && !m.reviewOpen && (m.ws == nil || x >= m.railW()) {
 		return m.startClick(x-m.startOX, y-m.startOY)
 	}
@@ -1295,8 +1306,15 @@ func (m *Model) navView() string {
 	if m.mode == modeResults || m.active() != nil {
 		centered = main // lists and buffers are left-aligned
 	}
+	m.bufGeom.ok = false
 	if m.active() != nil && m.mode != modeResults {
-		centered = joinV(tabStrip(m.bufs, m.activeTab, mainW-2), centered)
+		strip := tabStrip(m.bufs, m.activeTab, mainW-2)
+		centered = joinV(strip, centered)
+		mdPrev := m.previewOn && preview.IsMarkdown(m.active().Path())
+		if !mdPrev && !m.splitActive() {
+			// Inside the pane: one divider column, one header row, the tabs.
+			m.bufGeom.ok, m.bufGeom.ox, m.bufGeom.oy = true, railW+1, 1+len(splitLines(strip))
+		}
 	}
 	mainPanel := kit.NewPanel(title, true)
 	mainPanel.SetContent(splitLines(centered)...)
@@ -1850,4 +1868,72 @@ func truncateRunes(s string, n int) string {
 		return s
 	}
 	return string(r[:n-1]) + "…"
+}
+
+// bufGeom is where the active buffer's text sits in the surface, recorded
+// by the last render (F-103).
+type bufGeom struct {
+	ok        bool
+	ox, oy    int // surface cell of the first text row's gutter
+	textX     int // cells of gutter before the text
+	top, rows int // first buffer line shown, and how many
+}
+
+// bufferPos maps a surface cell to a buffer position (false outside the
+// text).
+func (m *Model) bufferPos(x, y int) (textbuf.Pos, bool) {
+	g := m.bufGeom
+	e := m.active()
+	if !g.ok || e == nil || m.mode != modeNav || m.reviewOpen || y < g.oy || y >= g.oy+g.rows || x < g.ox {
+		return textbuf.Pos{}, false
+	}
+	line := g.top + y - g.oy
+	if line >= e.Buffer().LineCount() {
+		return textbuf.Pos{}, false
+	}
+	vc := max(x-g.ox-g.textX, 0)
+	return textbuf.Pos{Line: line, Col: runeCol(e.Buffer().Line(line), vc)}, true
+}
+
+// runeCol is the rune index under visual column vc (tabs expanded).
+func runeCol(raw string, vc int) int {
+	v := 0
+	rs := []rune(raw)
+	for i, r := range rs {
+		w := 1
+		if r == '\t' {
+			w = tabStop - v%tabStop
+		}
+		if vc < v+w {
+			return i
+		}
+		v += w
+	}
+	return len(rs)
+}
+
+// Drag extends a selection from the last click (F-103): the text between
+// becomes a visual selection that y copies.
+func (m *Model) Drag(x, y int) bool {
+	if m.dragFrom == nil {
+		return false
+	}
+	p, ok := m.bufferPos(x, y)
+	if !ok {
+		return false
+	}
+	e := m.active()
+	if p == *m.dragFrom && e.Mode() != textbuf.ModeVisual {
+		return true
+	}
+	e.SelectFrom(*m.dragFrom)
+	e.Buffer().SetCursor(p)
+	return true
+}
+
+// Release ends a drag.
+func (m *Model) Release(x, y int) bool {
+	held := m.dragFrom != nil
+	m.dragFrom = nil
+	return held
 }

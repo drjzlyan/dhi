@@ -6,6 +6,7 @@ package wizard
 
 import (
 	"context"
+	"github.com/drjzlyan/dhi/internal/ansi"
 	"strings"
 	"time"
 
@@ -171,6 +172,7 @@ type Model struct {
 	env   *Env
 	steps []Step
 	state setup.State
+	zones []stepZone // the step bar's cells, from the last View (F-108)
 
 	idx        int
 	skipped    map[string]bool
@@ -488,10 +490,78 @@ func (m *Model) View() string {
 	card.Boxed = true
 	card.Width = w + 4
 	card.SetContent(append(lines, "")...)
+	var out string
 	if len(lines)+3 > m.height { // a short terminal: no frame, no clip
-		return kit.Center(strings.Join(lines, "\n"), m.width, m.height)
+		out = kit.Center(strings.Join(lines, "\n"), m.width, m.height)
+	} else {
+		out = kit.Center(card.View(), m.width, m.height)
 	}
-	return kit.Center(card.View(), m.width, m.height)
+	m.recordStepZones(out, w)
+	return out
+}
+
+// stepZone is one step's cells on the step bar, for clicks (F-108).
+type stepZone struct {
+	row, from, to int
+	idx           int // index into m.steps
+}
+
+// recordStepZones finds the step bar in the rendered frame and records
+// where each visible step's label sits, for clicks.
+func (m *Model) recordStepZones(frame string, w int) {
+	m.zones = m.zones[:0]
+	if m.single {
+		return
+	}
+	items, idxs := m.stepItemsIdx()
+	bar := ansi.Strip(kit.Stepper(items, w, m.frame))
+	if bar == "" {
+		return
+	}
+	for row, l := range strings.Split(ansi.Strip(frame), "\n") {
+		at := strings.Index(l, bar)
+		if at < 0 {
+			continue
+		}
+		rs := []rune(l)
+		col := len([]rune(l[:at]))
+		end := col + len([]rune(bar))
+		// Each visible step is "<glyph> <label>"; find them in order.
+		for i, it := range items {
+			label := []rune(" " + it.Label)
+			for c := col; c+1+len(label) <= end; c++ {
+				if string(rs[c+1:c+1+len(label)]) == string(label) {
+					m.zones = append(m.zones, stepZone{row: row, from: c, to: c + 1 + len(label), idx: idxs[i]})
+					col = c + 1 + len(label)
+					break
+				}
+			}
+		}
+		return
+	}
+}
+
+// Click jumps to a step on the bar (F-108): any earlier step, or a later
+// one that is already done. Clicks elsewhere do nothing.
+func (m *Model) Click(x, y int) bool {
+	if m.single || m.finished {
+		return false
+	}
+	if b, ok := m.cur().(interface{ Busy() bool }); ok && b.Busy() {
+		return false
+	}
+	for _, z := range m.zones {
+		if y != z.row || x < z.from || x >= z.to || z.idx == m.idx {
+			continue
+		}
+		if z.idx > m.idx && !m.state.Has(m.steps[z.idx].ID()) {
+			return false
+		}
+		m.idx = z.idx
+		m.enter()
+		return true
+	}
+	return false
 }
 
 // Hints implements surfaces.HintProvider (ADR-0040): the wizard's keys
@@ -522,7 +592,14 @@ func (m *Model) keys() []string {
 }
 
 func (m *Model) stepItems() []kit.StepItem {
+	items, _ := m.stepItemsIdx()
+	return items
+}
+
+// stepItemsIdx is stepItems with each item's index into m.steps.
+func (m *Model) stepItemsIdx() ([]kit.StepItem, []int) {
 	var items []kit.StepItem
+	var idxs []int
 	for i, s := range m.steps {
 		// A step that no longer applies (the workspace now exists) stays
 		// visible if it was done or skipped on the way here.
@@ -540,6 +617,7 @@ func (m *Model) stepItems() []kit.StepItem {
 			st = kit.StepDone
 		}
 		items = append(items, kit.StepItem{Label: s.Title(), State: st})
+		idxs = append(idxs, i)
 	}
-	return items
+	return items, idxs
 }
