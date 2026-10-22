@@ -79,12 +79,15 @@ type Env struct {
 	// ("" = not installed); SetEngine stores the workspace default engine.
 	Engine string // the configured default engine ("cli:<name>" or "")
 
-	// CLI step (F-046). CLIStatus lists the registered coding CLIs with
-	// their detected state; InstallCLI installs one through the toolchain
-	// seam after the user confirmed the exact command (nil = guided only).
+	// CLI step (F-046, F-110). CLIStatus lists the registered coding CLIs
+	// with their detected state. CLIInstall is the package-manager command
+	// that installs one on this machine (ok=false: guidance only);
+	// RunInstall runs it after the user said yes, in their own terminal
+	// (DHI steps aside so they see it and can answer prompts), and reports
+	// the outcome through done. Either nil: guidance only.
 	CLIStatus  func() []CLIRow
-	InstallCLI func(ctx context.Context, name string) error
-	CLIPrefix  func(name string) string // where a managed install lands
+	CLIInstall func(name string) (cmd string, ok bool)
+	RunInstall func(name string, done func(error) tea.Msg) tea.Cmd
 
 	// Integrations step (ADR-0043). SetupIntegration installs a vendor's
 	// official plugin from the marketplace and gives it to who ("the bots

@@ -1127,7 +1127,7 @@ Plan: `~/.claude/plans/all-the-keys-should-playful-hanrahan.md`. Branch `m35`, o
 Plan: `~/.claude/plans/all-the-keys-should-playful-hanrahan.md`. Branch `m36`, one commit per phase. ADR-0044, F-109–F-114.
 
 - [x] P1 The user's environment, read once (F-109)
-- [ ] P2 Host tools and package-manager installs (F-110)
+- [x] P2 Host tools and package-manager installs (F-110)
 - [ ] P3 Remove the hermetic toolchain (F-111)
 - [ ] P4 Git as the user has it (F-112)
 - [ ] P5 The approval boundary for agents (F-113)

@@ -45,7 +45,7 @@ func TestRuntimes(t *testing.T) {
 		got[c.Name] = c.Status
 	}
 	claudeCheck, found := statusOf(checks, "runtime/claude")
-	if !found || got["runtime/claude"] != Fail || !strings.Contains(claudeCheck.Detail, "not found on PATH") {
+	if !found || got["runtime/claude"] != Fail || !strings.Contains(claudeCheck.Detail, "is not on your PATH") {
 		t.Errorf("missing claude must fail with a named cause: %+v", checks)
 	}
 
@@ -87,23 +87,3 @@ func TestRuntimes(t *testing.T) {
 }
 
 // A CLI DHI installed into its managed folder is found when it is not on PATH.
-func TestRuntimesAtFindsManagedInstall(t *testing.T) {
-	orig := lookPath
-	t.Cleanup(func() { lookPath = orig })
-	lookPath = stubLook(t.TempDir()) // nothing on PATH
-
-	root := t.TempDir()
-	bin := filepath.Join(root, "clis", "claude", "node_modules", ".bin")
-	os.MkdirAll(bin, 0o755)
-	if err := os.WriteFile(filepath.Join(bin, "claude"), []byte(versionedClaude), 0o755); err != nil {
-		t.Fatal(err)
-	}
-
-	if c, _ := statusOf(RuntimesAt(""), "runtime/claude"); c.Status != Fail {
-		t.Fatalf("without the managed root claude must be missing: %+v", c)
-	}
-	c, _ := statusOf(RuntimesAt(root), "runtime/claude")
-	if c.Status != OK || !strings.Contains(c.Detail, "2.1.177") {
-		t.Fatalf("managed claude = %+v", c)
-	}
-}

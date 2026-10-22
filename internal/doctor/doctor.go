@@ -481,14 +481,14 @@ func Library(wsRoot string) []Check {
 func Runtimes() []Check { return RuntimesAt("") }
 
 // RuntimesAt probes the registered host agent CLIs (F-013, ADR-0012,
-// ADR-0027): a missing binary is a FAIL that points at the wizard (PATH
-// first, then the DHI-managed folder under toolRoot), a version in a
+// ADR-0044): a missing binary is a FAIL that points at the wizard (the
+// user's PATH; toolRoot is unused and goes with the toolchain), a version in a
 // different major than the adapter was verified against is a FAIL, a
 // same-major difference is a WARN (auto-updating CLIs must not turn the
 // report red), and unset declared pass-through vars warn so auth
 // failures surface before a run, not mid-run.
 func RuntimesAt(toolRoot string) []Check {
-	reg := clirun.NewRegistry(clirun.ManagedLook(toolRoot, lookPath))
+	reg := clirun.NewRegistry(lookPath)
 	if len(reg.Names()) == 0 {
 		return nil
 	}
@@ -498,7 +498,7 @@ func RuntimesAt(toolRoot string) []Check {
 		v := detected[c.Name]
 		if v == "" {
 			checks = append(checks, Check{Name: "runtime/" + c.Name, Status: Fail,
-				Detail: c.Bin + " not found on PATH or in DHI's managed folder — install it from the setup wizard (ctrl+p → Run setup wizard) or see the vendor docs"})
+				Detail: c.Bin + " is not on your PATH — install it from the setup wizard (ctrl+p → Run setup wizard) or see the vendor docs"})
 			continue
 		}
 		verdict, why := clirun.Assess(c.Tested, v)

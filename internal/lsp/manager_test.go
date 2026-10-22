@@ -17,37 +17,29 @@ func touch(t *testing.T, p string) {
 	}
 }
 
-func TestLocateNeverConsultsThePath(t *testing.T) {
-	shim, managed, other := t.TempDir(), t.TempDir(), t.TempDir()
-	m := NewManager(shim, nil)
-	m.SetManagedRoot(managed)
-
-	touch(t, filepath.Join(other, "mine-ls"))
-	t.Setenv("PATH", other) // a binary on the host PATH must stay invisible
-	if _, ok := m.Locate("python", "mine-ls"); ok {
-		t.Fatal("found a server on the host PATH")
+func TestLocateUsesTheGivenLookup(t *testing.T) {
+	other := t.TempDir()
+	m := NewManager(func(name string) (string, bool) {
+		if name == "gopls" {
+			return "/opt/homebrew/bin/gopls", true
+		}
+		return "", false
+	}, nil)
+	if p, ok := m.Locate("gopls"); !ok || p != "/opt/homebrew/bin/gopls" {
+		t.Fatalf("bare name = %q %v", p, ok)
 	}
-	if p, ok := m.Locate("python", filepath.Join(other, "mine-ls")); !ok || p != filepath.Join(other, "mine-ls") {
+	if _, ok := m.Locate("pyright-langserver"); ok {
+		t.Fatal("a missing server was found")
+	}
+	touch(t, filepath.Join(other, "mine-ls"))
+	if p, ok := m.Locate(filepath.Join(other, "mine-ls")); !ok || p != filepath.Join(other, "mine-ls") {
 		t.Fatalf("an absolute command is the user's explicit choice: %q %v", p, ok)
 	}
-	if _, ok := m.Locate("python", filepath.Join(other, "missing")); ok {
+	if _, ok := m.Locate(filepath.Join(other, "missing")); ok {
 		t.Fatal("a missing absolute command was accepted")
 	}
-
-	touch(t, filepath.Join(managed, "python", "node_modules", ".bin", "pyright-langserver"))
-	if p, ok := m.Locate("python", "pyright-langserver"); !ok || p != filepath.Join(managed, "python", "node_modules", ".bin", "pyright-langserver") {
-		t.Fatalf("managed install not found: %q %v", p, ok)
-	}
-	if _, ok := m.Locate("typescript", "pyright-langserver"); ok {
-		t.Fatal("one language's managed install leaked into another")
-	}
-
-	touch(t, filepath.Join(shim, "gopls"))
-	if p, ok := m.Locate("go", "gopls"); !ok || p != filepath.Join(shim, "gopls") {
-		t.Fatalf("toolchain shim = %q %v", p, ok)
-	}
-	if got := m.ManagedPrefix("yaml"); got != filepath.Join(managed, "yaml") {
-		t.Fatalf("prefix = %q", got)
+	if _, ok := NewManager(nil, nil).Locate("gopls"); ok {
+		t.Fatal("no lookup: nothing is found")
 	}
 }
 

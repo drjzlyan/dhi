@@ -25,6 +25,7 @@ type termTab struct {
 	dir    string
 	screen *vt.Screen // emulated terminal sized to the pane (F-061)
 	exited bool
+	tool   string // an approved install of this host tool runs here (F-110)
 }
 
 // ToggleDrawer opens/closes/focus-blurs the terminal drawer (ctrl+t):
@@ -57,7 +58,7 @@ func (m *Model) ensureTermTabs() {
 // newTermTab starts a session; errors render inline as an exited tab.
 func (m *Model) newTermTab(dir, label string) {
 	ctx, cancel := context.WithCancel(context.Background())
-	sess, err := term.Start(ctx, term.Options{Dir: dir, Label: label, Env: m.termEnv})
+	sess, err := term.Start(ctx, term.Options{Dir: dir, Label: label, Env: m.env()})
 	t := &termTab{sess: sess, dir: dir, screen: vt.New(scrollbackCap)}
 	// A program copying through OSC 52 (tmux, vim over SSH) reaches the
 	// system clipboard (F-103); Feed runs on the UI loop, so no lock.
@@ -162,10 +163,25 @@ func (m *Model) ingestTermChunk(idx int, chunk []byte) {
 
 func (m *Model) termExited(idx int) {
 	if idx >= 0 && idx < len(m.terms) && !m.terms[idx].exited {
-		m.terms[idx].exited = true
-		m.terms[idx].screen.Feed([]byte("\r\n\x1b[2m[process exited]\x1b[0m"))
-		m.terms[idx].screen.Close()
+		t := m.terms[idx]
+		t.exited = true
+		code := -1
+		if t.sess != nil {
+			code = t.sess.ExitCode()
+		}
+		t.screen.Feed([]byte("\r\n\x1b[2m[process exited" + exitNote(code) + "]\x1b[0m"))
+		t.screen.Close()
+		if t.tool != "" {
+			m.toolInstallDone(t.tool, code)
+		}
 	}
+}
+
+func exitNote(code int) string {
+	if code < 0 {
+		return ""
+	}
+	return " with status " + itoa(code)
 }
 
 // drawerView renders the bottom terminal panel (F-064): it spans the

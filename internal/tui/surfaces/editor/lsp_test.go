@@ -52,7 +52,7 @@ func startFakeServerFor(t *testing.T, lang string, noFormat bool) (*goplusFake, 
 	f := &goplusFake{conn: serverConn, rd: bufio.NewReader(serverConn), noFormat: noFormat}
 	go f.serve()
 
-	mgr := lsp.NewManager("", nil)
+	mgr := lsp.NewManager(nil, nil)
 	c, err := lsp.New(context.Background(), clientConn, "/ws")
 	if err != nil {
 		t.Fatal(err)

@@ -7,25 +7,21 @@ import (
 	"testing"
 	"time"
 
+	"github.com/drjzlyan/dhi/internal/hostenv"
+	"github.com/drjzlyan/dhi/internal/hosttools"
 	"github.com/drjzlyan/dhi/internal/langserver"
 	"github.com/drjzlyan/dhi/internal/lsp"
-	"github.com/drjzlyan/dhi/internal/toolchain"
 )
 
-// TestPinnedServersInstallAndHandshake installs every npm-provisioned
-// server at its pinned version with DHI's own npm and talks to it. It needs
-// the network and the DHI toolchain, so it runs only with DHI_SMOKE_LSP=1.
-func TestPinnedServersInstallAndHandshake(t *testing.T) {
+// TestInstalledServersHandshake talks to every built-in server installed
+// on this machine (the user's PATH, F-110). Run with DHI_SMOKE_LSP=1.
+func TestInstalledServersHandshake(t *testing.T) {
 	if os.Getenv("DHI_SMOKE_LSP") == "" {
-		t.Skip("set DHI_SMOKE_LSP=1 to install and handshake the pinned servers (network)")
+		t.Skip("set DHI_SMOKE_LSP=1 to handshake the installed servers")
 	}
-	root, err := toolchain.DefaultRoot()
-	if err != nil {
-		t.Fatal(err)
-	}
-	mgr := toolchain.New(root)
-	env := mgr.Env(nil)
+	env := hostenv.Env()
 	samples := map[string]struct{ file, text string }{
+		"go":         {"a.go", "package a\n"},
 		"typescript": {"a.ts", "const x: number = 1;\n"},
 		"python":     {"a.py", "x: int = 1\n"},
 		"bash":       {"a.sh", "#!/bin/bash\necho hi\n"},
@@ -33,15 +29,12 @@ func TestPinnedServersInstallAndHandshake(t *testing.T) {
 		"json":       {"a.json", "{\"a\": 1}\n"},
 	}
 	for _, l := range langserver.Builtin() {
-		if l.Install.Method != langserver.MethodNPM {
-			continue
-		}
 		l := l
 		t.Run(l.ID, func(t *testing.T) {
-			prefix := t.TempDir()
-			bin, err := mgr.NPMInstall(context.Background(), prefix, l.Install.Packages[0], l.Install.Packages[1:]...)
-			if err != nil {
-				t.Fatal(err)
+			tool, _ := hosttools.Get(l.Install.Tool)
+			bin, ok := hosttools.Find(tool)
+			if !ok {
+				t.Skipf("%s is not installed (%s)", l.Server, hosttools.Missing(tool))
 			}
 			dir := t.TempDir()
 			s := samples[l.ID]
@@ -51,7 +44,7 @@ func TestPinnedServersInstallAndHandshake(t *testing.T) {
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 			defer cancel()
-			c, err := lsp.StartProcess(ctx, filepath.Join(bin, l.Server), l.Args, env, dir)
+			c, err := lsp.StartProcess(ctx, bin, l.Args, env, dir)
 			if err != nil {
 				t.Fatalf("%s did not start: %v", l.Server, err)
 			}

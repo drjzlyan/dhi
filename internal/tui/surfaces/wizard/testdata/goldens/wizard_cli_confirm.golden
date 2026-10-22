@@ -18,11 +18,12 @@
           │ ▌ codex        —           · not installed                                   │
           │   cursor-agent —           · not installed                                   │
           │                                                                              │
-          │ DHI will run, with its own npm (no sudo, nothing global):                    │
+          │ DHI will run this with your package manager, in your terminal:               │
           │                                                                              │
-          │   npm install --prefix /dhi/clis/codex @openai/codex                         │
+          │   npm install -g @openai/codex                                               │
           │                                                                              │
-          │ Installs into DHI's folder only. Source: https://github.com/openai/codex     │
+          │ You see its output and answer any prompt; DHI comes back when it ends.       │
+          │ Docs: https://github.com/openai/codex                                        │
           │                                                                              │
           │  y Install    n Cancel                                                       │
           │                                                                              │

@@ -64,7 +64,7 @@ func (m *Model) testCommand(cmd string) (string, bool) {
 func (m *Model) startTests(dir string, args []string) {
 	st := &testState{dir: dir, args: args, running: true}
 	m.testing = st
-	env := m.termEnv
+	env := m.env()
 	ch := m.termMsgs
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), testRunTimeout)

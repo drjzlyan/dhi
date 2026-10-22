@@ -159,7 +159,7 @@ func (m *Model) startDebug() string {
 		bps[p] = append([]int(nil), ls...)
 	}
 	cfg := dap.LaunchConfig{Mode: "debug", Program: filepath.Dir(e.Path()), Cwd: root}
-	env, ch := m.termEnv, m.termMsgs
+	env, ch := m.env(), m.termMsgs
 	m.dbg = &dbgState{starting: true}
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute) // includes the compile

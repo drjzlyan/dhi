@@ -129,9 +129,9 @@ func runTUI() (relaunch bool) {
 		toolRoot = root
 	}
 
-	// Coding CLIs resolve from PATH first, then DHI's managed folder
-	// (ADR-0027); every consumer shares the one lookup.
-	cliLook := clirun.ManagedLook(toolRoot, exec.LookPath)
+	// Coding CLIs resolve on the user's own PATH (F-110); every consumer
+	// shares the one lookup.
+	cliLook := hostLook
 	var toolBin []string // tool shims for bridged MCP servers (uvx/npx)
 	mcpHome := ""        // their private HOME, inside the sandbox's writable prefix
 	if toolRoot != "" {
@@ -209,21 +209,17 @@ func runTUI() (relaunch bool) {
 	// environment (F-109, ADR-0044); agents keep their private TMPDIR.
 	termEnv = hostenv.Env()
 	agentEnv = termEnv
-	edOpts = append(edOpts, editor.WithTermEnv(termEnv))
+	edOpts = append(edOpts, editor.WithTermEnvFunc(hostenv.Env), editor.WithHostTools(editorTools{}))
+	// Language servers come from the user's system (F-110); a missing one
+	// raises the install card. Shut down on every return — the relaunch
+	// loop re-enters runTUI, so a leak would stack one gopls per relaunch.
+	lspMgr := lsp.NewManager(hostFind, hostenv.Env)
+	defer lspMgr.ShutdownAll()
+	edOpts = append(edOpts, editor.WithLSP(lspMgr))
+	// The user's ripgrep, looked up at each search; missing → install card.
+	rgSearcher = search.Host{Look: hostFind}
 	if toolRoot != "" {
 		mgr := toolchain.New(toolRoot)
-		// Language servers run from the same hermetic shim dir and env.
-		// Shut down on every return — the relaunch loop re-enters runTUI,
-		// so a leak here would stack one gopls per setup relaunch.
-		lspMgr := lsp.NewManager(mgr.ShimDir(), termEnv)
-		lspMgr.SetManagedRoot(filepath.Join(toolRoot, "lsp"))
-		defer lspMgr.ShutdownAll()
-		edOpts = append(edOpts, editor.WithLSP(lspMgr),
-			// Only ever called after the user confirmed `:lsp install` (F-050).
-			editor.WithLSPInstaller(func(ctx context.Context, prefix string, pkgs []string) error {
-				_, err := mgr.NPMInstall(ctx, prefix, pkgs[0], pkgs[1:]...)
-				return err
-			}))
 		// F-029: one identity resolver, read from the user's git config
 		// (host path) through the hermetic git binary. It is nil when the
 		// toolchain is absent, which makes every commit path refuse by
@@ -238,12 +234,6 @@ func runTUI() (relaunch bool) {
 			gitRunner = r
 		}
 		runRunner = execRunner{env: runTmpEnv(agentEnv, ws), timeout: 5 * time.Minute, sandbox: guardWorkspace(decision.Sandbox, ws)}
-		if _, err := os.Stat(filepath.Join(toolRoot, "bin", "rg")); err == nil {
-			rgSearcher = search.Ripgrep{Bin: filepath.Join(toolRoot, "bin", "rg")}
-		}
-	}
-	if rgSearcher == nil {
-		rgSearcher = search.Refused{Reason: "search unavailable: rg shim not installed — run bootstrap (dhi doctor shows status)"}
 	}
 	edOpts = append(edOpts, editor.WithSearcher(rgSearcher))
 
@@ -381,7 +371,7 @@ func runTUI() (relaunch bool) {
 					return gitcore.SetIdentity(ctx, idRunner(), id)
 				}
 				settingsDeps.SuggestIdentity = func(ctx context.Context) []gitcore.Suggestion {
-					return suggestIdentity(ctx, idRunner(), memberDirs(ws), toolRoot)
+					return suggestIdentity(ctx, idRunner(), memberDirs(ws))
 				}
 			}
 			if kb, kerr := knowledge.Open(ws, knowledge.Review, rgSearcher); kerr == nil {
@@ -810,7 +800,7 @@ func newSetupEnv(cwd string, ws *workspace.Workspace, userCfg, toolRoot string,
 					dirs = memberDirs(w)
 				}
 			}
-			return suggestIdentity(ctx, gitcore.NewRunner(mgr.GitBin(), mgr.GitIdentityEnv(nil)), dirs, toolRoot)
+			return suggestIdentity(ctx, gitcore.NewRunner(mgr.GitBin(), mgr.GitIdentityEnv(nil)), dirs)
 		}
 	}
 	// You step (F-081): the profile is personal, so it lives in the user config.
@@ -850,7 +840,6 @@ func newSetupEnv(cwd string, ws *workspace.Workspace, userCfg, toolRoot string,
 		return detected
 	}
 	env.DetectCLIs = detect
-	env.CLIPrefix = func(name string) string { return clirun.ManagedDir(toolRoot, name) }
 	env.CLIStatus = func() []wizard.CLIRow {
 		reg := clirun.NewRegistry(cliLook)
 		detected := detect()
@@ -865,17 +854,14 @@ func newSetupEnv(cwd string, ws *workspace.Workspace, userCfg, toolRoot string,
 		}
 		return rows
 	}
-	if toolRoot != "" {
-		mgr := toolchain.New(toolRoot)
-		env.InstallCLI = func(ctx context.Context, name string) error {
-			plan, ok := clirun.PlanFor(name)
-			if !ok || plan.Method != clirun.MethodNPM {
-				return fmt.Errorf("%s is not installed by DHI (guided manual install)", name)
-			}
-			_, err := mgr.NPMInstall(ctx, clirun.ManagedDir(toolRoot, name), plan.Package)
+	// Installs use the user's package manager, in their terminal, after
+	// they saw the exact command (F-110).
+	env.CLIInstall = cliInstall
+	env.RunInstall = func(name string, done func(error) tea.Msg) tea.Cmd {
+		return runInstall(name, func(err error) tea.Msg {
 			detected = nil // the next look sees what was installed
-			return err
-		}
+			return done(err)
+		})
 	}
 	env.ApplyTeam = func(slug string) (starter.Result, error) {
 		tpl, ok := starter.Get(slug)
@@ -1041,15 +1027,10 @@ func openReviewService(ws *workspace.Workspace, conv func() conventions.Config, 
 		fmt.Fprintln(os.Stderr, "dhi: review store:", err)
 		return nil
 	}
-	// gh is hermetic (ADR-0011): the shim path lights PR flows; absent
-	// shim → the seam refuses with the named fix, never a host lookup.
-	ghShim := ""
-	if root, rerr := toolchain.DefaultRoot(); rerr == nil {
-		if _, serr := os.Stat(filepath.Join(root, "bin", "gh")); serr == nil {
-			ghShim = filepath.Join(root, "bin", "gh")
-		}
-	}
-	gh := review.NewGHCLI(ghShim)
+	// The user's own gh and its login light PR flows (F-110); without it
+	// the seam refuses by name.
+	ghBin, _ := hostLook("gh")
+	gh := review.NewGHCLI(ghBin)
 	svc := review.NewService(ws, st, nil, gh)
 	svc.SetPRBodyFunc(prBody)
 	svc.SetTokenFn(func(ctx context.Context) (string, error) {
@@ -1842,12 +1823,12 @@ func learnConventions(r *gitcore.Runner, dirs []string) conventions.Inference {
 // suggestIdentity gathers git identity candidates (F-083): the repos'
 // config and history, the signed-in GitHub account (managed gh only),
 // and the computer account's full name.
-func suggestIdentity(ctx context.Context, r *gitcore.Runner, dirs []string, toolRoot string) []gitcore.Suggestion {
+func suggestIdentity(ctx context.Context, r *gitcore.Runner, dirs []string) []gitcore.Suggestion {
 	var extra []gitcore.Suggestion
-	if shim := filepath.Join(toolRoot, "bin", "gh"); toolRoot != "" {
-		if _, err := os.Stat(shim); err == nil {
+	if gh, err := hostLook("gh"); err == nil {
+		{
 			gctx, cancel := context.WithTimeout(ctx, 4*time.Second)
-			if u, err := review.NewGHCLI(shim).User(gctx); err == nil {
+			if u, err := review.NewGHCLI(gh).User(gctx); err == nil {
 				email := u.Email
 				if email == "" {
 					email = u.NoReplyEmail()

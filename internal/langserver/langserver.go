@@ -10,26 +10,13 @@ import (
 	"strings"
 )
 
-// Method says how a server gets onto the machine.
-type Method string
-
-const (
-	// MethodToolchain: the binary ships in DHI's hermetic toolchain (gopls).
-	MethodToolchain Method = "toolchain"
-	// MethodNPM: installed by DHI's own npm into <toolchain>/lsp/<id> after
-	// the user confirms the exact packages (nothing installs on open).
-	MethodNPM Method = "npm"
-	// MethodNone: DHI does not provision it; the user sets `command`.
-	MethodNone Method = "none"
-)
-
-// Install is the provisioning plan for one language's server. Package
-// versions are pins that were installed and handshaken with the hermetic
-// npm (F-050) — never "latest".
+// Install says how a server gets onto the machine: the host tool
+// (internal/hosttools) whose approved package-manager command installs it
+// (F-110). An empty Tool means DHI does not install it: the user's
+// configured command is used as is.
 type Install struct {
-	Method   Method
-	Packages []string
-	Note     string
+	Tool string
+	Note string
 }
 
 // Language is one resolved entry.
@@ -38,7 +25,7 @@ type Language struct {
 	Name    string
 	Exts    []string          // lower-case, with the dot
 	LangIDs map[string]string // ext → LSP languageId, when it differs from ID
-	Server  string            // binary name (toolchain/managed) or absolute path
+	Server  string            // binary name on the user's PATH, or an absolute path
 	Args    []string
 	Install Install
 	UseTabs bool
@@ -59,35 +46,33 @@ func (l Language) LanguageID(ext string) string {
 func Builtin() []Language {
 	return []Language{
 		{ID: "go", Name: "Go", Exts: []string{".go"}, Server: "gopls",
-			Install: Install{Method: MethodToolchain, Note: "gopls ships with the DHI toolchain (run the first-run install)"},
+			Install: Install{Tool: "gopls"},
 			UseTabs: true, Width: 4},
 		{ID: "typescript", Name: "TypeScript / JavaScript",
 			Exts: []string{".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"},
 			LangIDs: map[string]string{".tsx": "typescriptreact", ".js": "javascript", ".jsx": "javascriptreact",
 				".mjs": "javascript", ".cjs": "javascript"},
 			Server: "typescript-language-server", Args: []string{"--stdio"},
-			// typescript is pinned to 5.x: TypeScript 7 ships no tsserver and the
-			// server refuses to start ("Could not find a valid TypeScript installation").
-			Install: Install{Method: MethodNPM, Packages: []string{"typescript-language-server@6.0.1", "typescript@5.9.3"}},
+			Install: Install{Tool: "typescript-language-server"},
 			Width:   2},
 		{ID: "python", Name: "Python", Exts: []string{".py", ".pyi"},
 			Server: "pyright-langserver", Args: []string{"--stdio"},
-			Install: Install{Method: MethodNPM, Packages: []string{"pyright@1.1.414"},
+			Install: Install{Tool: "pyright",
 				Note: "pyright does not format; set `formatter` to use one (e.g. [\"ruff\", \"format\", \"-\"])"},
 			Width: 4},
 		{ID: "bash", Name: "Shell", Exts: []string{".sh", ".bash"},
 			LangIDs: map[string]string{".sh": "shellscript", ".bash": "shellscript"},
 			Server:  "bash-language-server", Args: []string{"start"},
-			Install: Install{Method: MethodNPM, Packages: []string{"bash-language-server@5.8.1"}},
+			Install: Install{Tool: "bash-language-server"},
 			Width:   2},
 		{ID: "yaml", Name: "YAML", Exts: []string{".yaml", ".yml"},
 			Server: "yaml-language-server", Args: []string{"--stdio"},
-			Install: Install{Method: MethodNPM, Packages: []string{"yaml-language-server@1.24.0"}},
+			Install: Install{Tool: "yaml-language-server"},
 			Width:   2},
 		{ID: "json", Name: "JSON", Exts: []string{".json", ".jsonc"},
 			LangIDs: map[string]string{".jsonc": "jsonc"},
 			Server:  "vscode-json-language-server", Args: []string{"--stdio"},
-			Install: Install{Method: MethodNPM, Packages: []string{"vscode-langservers-extracted@4.10.0"}},
+			Install: Install{Tool: "vscode-langservers-extracted"},
 			Width:   2},
 	}
 }
@@ -146,14 +131,14 @@ func Resolve(overrides map[string]Override) (Registry, []string) {
 				warns = append(warns, "editor.languages."+key+": a new language needs both `command` and `exts` — ignored")
 				continue
 			}
-			l = Language{ID: key, Name: key, Custom: true, Width: 4, Install: Install{Method: MethodNone}}
+			l = Language{ID: key, Name: key, Custom: true, Width: 4}
 		}
 		if o.Name != "" {
 			l.Name = o.Name
 		}
 		if c := strings.TrimSpace(o.Command); c != "" {
 			l.Server = c
-			l.Install = Install{Method: MethodNone, Note: "uses your configured command"}
+			l.Install = Install{Note: "uses your configured command"}
 			if o.Args == nil && builtin {
 				l.Args = nil // a different server: the built-in's flags would not apply
 			}

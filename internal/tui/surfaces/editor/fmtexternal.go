@@ -20,15 +20,15 @@ const formatTimeout = 10 * time.Second
 // formatExternal pipes the buffer through the language's configured
 // formatter (stdin → stdout) and applies a changed result as one undo
 // group. The command is the user's explicit choice; it runs with the same
-// hermetic environment as the terminal drawer, so a bare name is looked up
-// in DHI's PATH, never the host's (ADR-0011).
+// environment as the terminal drawer (the user's own, F-109).
 func (m *Model) formatExternal(ed *textbuf.Editor, l langserver.Language) string {
-	if len(m.termEnv) == 0 {
-		return "format: no hermetic environment — finish the first-run install"
+	env := m.env()
+	if len(env) == 0 {
+		return "format: no environment to run " + l.Format[0] + " in"
 	}
-	bin, ok := lookIn(m.termEnv, l.Format[0])
+	bin, ok := lookIn(env, l.Format[0])
 	if !ok {
-		return "format: " + l.Format[0] + " not found in DHI's environment — use an absolute path in editor.languages." + l.ID + ".formatter"
+		return "format: " + l.Format[0] + " is not on your PATH — install it, or use an absolute path in editor.languages." + l.ID + ".formatter"
 	}
 	buf := ed.Buffer()
 	text := buf.Text()
@@ -39,7 +39,7 @@ func (m *Model) formatExternal(ed *textbuf.Editor, l langserver.Language) string
 		args = append(args, strings.ReplaceAll(a, "{file}", ed.Path()))
 	}
 	cmd := exec.CommandContext(ctx, bin, args...)
-	cmd.Env = m.termEnv
+	cmd.Env = env
 	cmd.Dir = filepath.Dir(ed.Path())
 	cmd.Stdin = strings.NewReader(text)
 	var out, errb bytes.Buffer

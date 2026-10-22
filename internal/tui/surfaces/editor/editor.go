@@ -7,6 +7,7 @@ package editor
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -57,16 +58,29 @@ const (
 // Option configures optional editor capabilities.
 type Option func(*Model)
 
-// WithSearcher enables cross-repo ripgrep search. Without it the `s`
-// key is inert (ADR-0005: no silent host-tool fallback).
+// WithSearcher enables cross-repo search (ripgrep from the user's PATH).
 func WithSearcher(s search.Searcher) Option {
 	return func(m *Model) { m.searcher = s }
 }
 
-// WithTermEnv sets the environment for terminal drawer sessions
-// (toolchain.Manager.Env output).
+// WithTermEnv sets a fixed environment for terminals, tests, the
+// debugger and formatters.
 func WithTermEnv(env []string) Option {
-	return func(m *Model) { m.termEnv = env }
+	return func(m *Model) { m.termEnv = func() []string { return env } }
+}
+
+// WithTermEnvFunc reads the environment at every start, so a reloaded
+// shell environment (F-109) reaches the next terminal or test run.
+func WithTermEnvFunc(fn func() []string) Option {
+	return func(m *Model) { m.termEnv = fn }
+}
+
+// env is the environment for child processes (nil when none was given).
+func (m *Model) env() []string {
+	if m.termEnv == nil {
+		return nil
+	}
+	return m.termEnv()
 }
 
 // WithLSP enables language-server integration (nil disables).
@@ -89,15 +103,6 @@ func (m *Model) act(event string) {
 // [editor.languages] overrides). Without it the built-ins apply.
 func WithLanguages(r langserver.Registry) Option {
 	return func(m *Model) { m.langs = r }
-}
-
-// LSPInstaller installs npm packages into prefix with DHI's own npm. The
-// editor calls it only after the user confirmed the exact packages.
-type LSPInstaller func(ctx context.Context, prefix string, packages []string) error
-
-// WithLSPInstaller enables `:lsp install` (nil leaves it explaining why not).
-func WithLSPInstaller(fn LSPInstaller) Option {
-	return func(m *Model) { m.lspInstaller = fn }
 }
 
 // WithChat attaches the agent runtime powering the crew sidebar (F-007).
@@ -206,7 +211,7 @@ type Model struct {
 	activeTerm  int
 	cancelTerms []context.CancelFunc
 	termMsgs    chan teaMsg
-	termEnv     []string
+	termEnv     func() []string
 
 	memEvents chan struct{} // workspace roster pings (P1 re-resolution)
 	memCancel func()
@@ -245,26 +250,26 @@ type Model struct {
 	replace        *replaceState
 	replaceNote    string
 
-	lspMgr        *lsp.Manager
-	emit          func(event string) // tutorial action events (F-051); nil = not wired
-	lspNoted      map[string]bool    // languages already told about a missing server (F-011, F-050)
-	langs         langserver.Registry
-	lspInstaller  LSPInstaller
-	lspInstalling map[string]bool   // language id → install in flight
-	lspSent       map[string]string // vpath → last pushed text
-	lspDiags      map[string][]lsp.Diagnostic
-	compOpen      bool
-	compItems     []lsp.CompletionItem
-	compCur       int
-	lspPendingG   bool // `g` prefix armed (F-009 sequences)
-	hoverOpen     bool
-	hoverLines    []string
-	renameMode    bool
-	renameOld     string
-	renameInput   []rune
-	actionOpen    bool
-	actionItems   []lsp.CodeAction
-	actionCur     int
+	lspMgr      *lsp.Manager
+	emit        func(event string) // tutorial action events (F-051); nil = not wired
+	lspNoted    map[string]bool    // languages already told about a missing server (F-011, F-050)
+	langs       langserver.Registry
+	tools       HostTools         // finds and installs host tools (F-110)
+	toolCard    *ToolPlan         // the open install card
+	lspSent     map[string]string // vpath → last pushed text
+	lspDiags    map[string][]lsp.Diagnostic
+	compOpen    bool
+	compItems   []lsp.CompletionItem
+	compCur     int
+	lspPendingG bool // `g` prefix armed (F-009 sequences)
+	hoverOpen   bool
+	hoverLines  []string
+	renameMode  bool
+	renameOld   string
+	renameInput []rune
+	actionOpen  bool
+	actionItems []lsp.CodeAction
+	actionCur   int
 
 	chat *chatModel
 }
@@ -280,14 +285,13 @@ var _ surfaces.Surface = (*Model)(nil)
 // New builds the editor for a workspace; nil ws renders the empty state.
 func New(version string, ws *workspace.Workspace, opts ...Option) *Model {
 	m := &Model{
-		version:       version,
-		ws:            ws,
-		termMsgs:      make(chan teaMsg, 128),
-		memEvents:     make(chan struct{}, 8),
-		lspSent:       map[string]string{},
-		lspNoted:      map[string]bool{},
-		lspInstalling: map[string]bool{},
-		lspDiags:      map[string][]lsp.Diagnostic{},
+		version:   version,
+		ws:        ws,
+		termMsgs:  make(chan teaMsg, 128),
+		memEvents: make(chan struct{}, 8),
+		lspSent:   map[string]string{},
+		lspNoted:  map[string]bool{},
+		lspDiags:  map[string][]lsp.Diagnostic{},
 
 		formatOnSave: true,
 	}
@@ -609,8 +613,8 @@ type teaMsg struct {
 	edit      *lsp.WorkspaceEdit
 	actions   []lsp.CodeAction
 	note      string
-	lang      string // lspMsgInstalled: the language id
-	installOK bool   // lspMsgInstalled: the install succeeded
+	lang      string // toolMsgInstalled: the tool
+	installOK bool   // toolMsgInstalled: the tool is now found
 	testRep   *testrun.Report
 	dbgStart  *dbgStarted
 }
@@ -624,7 +628,7 @@ const (
 	lspMsgEdit
 	lspMsgAction
 	lspMsgNote
-	lspMsgInstalled // a confirmed `:lsp install` finished (note carries the outcome)
+	toolMsgInstalled // an approved install tab exited (lang: the tool; note: the outcome)
 	testMsgDone
 	dbgMsgStarted
 	dbgMsgUpdate
@@ -671,8 +675,10 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 			}
 		case termMsgClosed:
 			m.termExited(msg.tab)
-		case lspMsgDiag, lspMsgComp, lspMsgHover, lspMsgEdit, lspMsgAction, lspMsgNote, lspMsgInstalled:
+		case lspMsgDiag, lspMsgComp, lspMsgHover, lspMsgEdit, lspMsgAction, lspMsgNote:
 			m.applyLSPUpdate(msg)
+		case toolMsgInstalled:
+			m.applyToolInstalled(msg)
 		case testMsgDone:
 			m.applyTestDone(msg.testRep)
 		case dbgMsgStarted:
@@ -738,6 +744,9 @@ func (m *Model) TakeCmd() tea.Cmd {
 
 // HandleKey implements surface key routing.
 func (m *Model) HandleKey(key string) bool {
+	if m.toolCard != nil {
+		return m.handleToolCardKey(key)
+	}
 	if m.ws == nil {
 		return m.startVisible() && m.startKey(key)
 	}
@@ -1156,6 +1165,13 @@ func (m *Model) refreshRows() {
 }
 
 func (m *Model) View() string {
+	if m.toolCard != nil {
+		return m.toolCardView(m.view())
+	}
+	return m.view()
+}
+
+func (m *Model) view() string {
 	if m.ws == nil {
 		if m.startVisible() {
 			return m.noWorkspaceStart()
@@ -1669,6 +1685,10 @@ func (m *Model) startSearch(q string) {
 		m.searching = false
 		m.hitsCh = nil
 		m.searchErr = err.Error()
+		var missing *search.MissingToolError
+		if errors.As(err, &missing) && m.askInstall(missing.Tool) {
+			m.searchErr = "search needs ripgrep (" + missing.Tool + ") — install it, then search again"
+		}
 		return
 	}
 	m.searchErr = ""

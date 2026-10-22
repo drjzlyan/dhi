@@ -630,7 +630,6 @@ type cliFixture struct {
 func newCLIFixture(t *testing.T) *cliFixture {
 	t.Helper()
 	f := &cliFixture{fixture: newFixture(t, true), installed: map[string]string{"claude": "2.1.285"}}
-	f.env.CLIPrefix = func(n string) string { return "/dhi/clis/" + n }
 	f.env.CLIStatus = func() []CLIRow {
 		var rows []CLIRow
 		for _, name := range []string{"claude", "codex", "cursor-agent"} {
@@ -643,15 +642,21 @@ func newCLIFixture(t *testing.T) *cliFixture {
 		}
 		return rows
 	}
-	f.env.InstallCLI = func(_ context.Context, name string) error {
-		f.installs = append(f.installs, name)
-		if f.installFn != nil {
-			if err := f.installFn(name); err != nil {
-				return err
+	f.env.CLIInstall = func(name string) (string, bool) {
+		pkg := map[string]string{"claude": "@anthropic-ai/claude-code", "codex": "@openai/codex"}[name]
+		return "npm install -g " + pkg, pkg != ""
+	}
+	f.env.RunInstall = func(name string, done func(error) tea.Msg) tea.Cmd {
+		return func() tea.Msg {
+			f.installs = append(f.installs, name)
+			if f.installFn != nil {
+				if err := f.installFn(name); err != nil {
+					return done(err)
+				}
 			}
+			f.installed[name] = "0.147.0"
+			return done(nil)
 		}
-		f.installed[name] = "0.147.0"
-		return nil
 	}
 	return f
 }
@@ -691,8 +696,8 @@ func TestCLIInstallShowsTheExactCommandAndCancelDoesNothing(t *testing.T) {
 	m := f.toCLI(t)
 	key(m, "j", "i")
 	v := plain(m)
-	if !strings.Contains(v, "npm install --prefix /dhi/clis/codex @openai/codex") ||
-		!strings.Contains(v, "no sudo, nothing global") {
+	if !strings.Contains(v, "npm install -g @openai/codex") ||
+		!strings.Contains(v, "with your package manager, in your terminal") {
 		t.Fatalf("exact command not shown:\n%s", v)
 	}
 	if len(f.installs) != 0 {
@@ -715,8 +720,21 @@ func TestCLIInstallRunsRefreshesAndFlagsRelaunch(t *testing.T) {
 	if !strings.Contains(v, "codex installed") || strings.Contains(v, "not installed · i installs it") {
 		t.Fatalf("list not refreshed after install:\n%s", v)
 	}
-	if !f.env.Changed || !strings.Contains(strings.Join(f.env.Applied, "|"), "installed codex (@openai/codex)") {
+	if !f.env.Changed || !strings.Contains(strings.Join(f.env.Applied, "|"), "installed codex (npm install -g @openai/codex)") {
 		t.Fatalf("changed=%v applied=%v", f.env.Changed, f.env.Applied)
+	}
+}
+
+// The command ran but the CLI is still not found: say so, mark nothing.
+func TestCLIInstallThatLeavesItMissingIsNamed(t *testing.T) {
+	f := newCLIFixture(t)
+	f.env.RunInstall = func(name string, done func(error) tea.Msg) tea.Cmd {
+		return func() tea.Msg { return done(nil) }
+	}
+	m := f.toCLI(t)
+	key(m, "j", "i", "enter")
+	if v := plain(m); !strings.Contains(v, "still not on your PATH") || f.env.Changed {
+		t.Fatalf("changed=%v:\n%s", f.env.Changed, v)
 	}
 }
 
@@ -797,7 +815,7 @@ func TestCLIStepHiddenWithoutStatusAndGuidedWithoutInstaller(t *testing.T) {
 		t.Fatal("step shown with no CLIStatus")
 	}
 	g := newCLIFixture(t)
-	g.env.InstallCLI = nil // no toolchain
+	g.env.RunInstall = nil // no package manager
 	m := g.toCLI(t)
 	key(m, "j", "i")
 	if !strings.Contains(plain(m), "Install codex yourself") {

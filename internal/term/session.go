@@ -1,7 +1,7 @@
 // Package term runs PTY-backed terminal sessions for the editor drawer.
-// Each session spawns a shell pinned to a working directory with DHI's
-// hermetic toolchain PATH (toolchain.Manager.Env — ADR-0005), streams
-// output to a channel, and supports write/resize/kill. Output is
+// Each session spawns a shell (or a given command, such as an approved
+// install) pinned to a working directory with the user's own environment
+// (F-109), streams output to a channel, and supports write/resize/kill. Output is
 // delivered raw; the drawer strips ANSI for its MVP scrollback (full
 // VT emulation is deferred).
 package term
@@ -27,6 +27,7 @@ type Session struct {
 
 	mu     sync.Mutex
 	closed bool
+	code   int // exit status once Out is closed (-1: killed or unknown)
 
 	Out <-chan []byte
 }
@@ -35,15 +36,12 @@ type Session struct {
 type Options struct {
 	Dir     string   // working directory (member repo root)
 	Label   string   // tab label
-	Env     []string // full environment (use toolchain Manager.Env)
+	Env     []string // full environment (the user's, from hostenv)
 	Command []string // override argv; default = user shell
 }
 
-// Start launches a session; output flows on s.Out until exit.
-// Strict (ADR-0011): an empty Env refuses — a DHI child process must
-// never silently inherit the host environment. Callers without a
-// toolchain pass os.Environ() explicitly (opt-out), production passes
-// toolchain.Manager.Env.
+// Start launches a session; output flows on s.Out until exit. An empty
+// Env refuses: callers pass the environment they mean (hostenv.Env).
 func Start(ctx context.Context, opt Options) (*Session, error) {
 	if opt.Dir == "" {
 		return nil, fmt.Errorf("term: no working directory")
@@ -52,7 +50,7 @@ func Start(ctx context.Context, opt Options) (*Session, error) {
 		return nil, fmt.Errorf("term: bad dir %s", opt.Dir)
 	}
 	if len(opt.Env) == 0 {
-		return nil, fmt.Errorf("term: hermetic environment unavailable (toolchain not installed — run bootstrap); refusing to leak the host PATH (ADR-0011)")
+		return nil, fmt.Errorf("term: no environment given")
 	}
 	argv := opt.Command
 	if len(argv) == 0 {
@@ -66,12 +64,24 @@ func Start(ctx context.Context, opt Options) (*Session, error) {
 	if err != nil {
 		return nil, fmt.Errorf("term: start %s: %w", argv[0], err)
 	}
-	s := &Session{cmd: cmd, tty: tty, dir: opt.Dir, label: opt.Label}
+	s := &Session{cmd: cmd, tty: tty, dir: opt.Dir, label: opt.Label, code: -1}
 
 	out := make(chan []byte, 64)
 	s.Out = out
 	go func() {
 		defer close(out)
+		// Reap the process before Out closes, so ExitCode is set by then.
+		defer func() {
+			code := -1
+			if err := cmd.Wait(); err == nil {
+				code = 0
+			} else if ee, ok := err.(*exec.ExitError); ok && ee.Exited() {
+				code = ee.ExitCode()
+			}
+			s.mu.Lock()
+			s.code = code
+			s.mu.Unlock()
+		}()
 		buf := make([]byte, 32*1024)
 		for {
 			n, err := tty.Read(buf)
@@ -112,6 +122,14 @@ func defaultShell() string {
 		return "/bin/bash"
 	}
 	return "/bin/sh"
+}
+
+// ExitCode is the program's exit status, valid once Out is closed (-1
+// when it was killed or the status is unknown).
+func (s *Session) ExitCode() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.code
 }
 
 // Write sends input to the running program.
