@@ -1165,3 +1165,15 @@ func (a *App) clickStatus(x int) {
 		a.handleGlobal(k, false)
 	}
 }
+
+// OpenSettingsSection switches to Settings at the named section ("SETUP",
+// F-108); false when there is no such surface or section.
+func (a *App) OpenSettingsSection(label string) bool {
+	for i, s := range a.surfaces {
+		if sel, ok := s.(interface{ GoToSection(string) bool }); ok && sel.GoToSection(label) {
+			a.selectSurface(i)
+			return true
+		}
+	}
+	return false
+}

@@ -48,6 +48,11 @@ func (s *projectStep) Applies() bool {
 
 func (s *projectStep) Enter() tea.Cmd {
 	draft := s.env.DetectBrief()
+	if s.env.LoadBrief != nil { // a re-run edits what was saved (F-108)
+		if saved, ok := s.env.LoadBrief(); ok {
+			draft = saved
+		}
+	}
 	s.inputs = make([]kit.Input, len(brief.Fields))
 	for i, f := range brief.Fields {
 		s.inputs[i] = kit.NewInput(draft.Get(f.Key), "")

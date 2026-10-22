@@ -1,11 +1,12 @@
   general ───── ▏ proposals ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
   CONFIG        ▏ what agents asked you to approve · nothing they propose is active until you say y                     
   PROJECT       ▏                                                                                                       
-  agents ────── ▏  PENDING ─────────────────────────────────────────────────────────────────────────────────────────    
-  AGENTS        ▏ ▌ ◆ race_test         exec recipe · v1 · by dev · Run one package's tests with -race                  
-  BRAIN         ▏                                                                                                       
-▌ PROPOSALS     ▏  FORGED TOOLS ────────────────────────────────────────────────────────────────────────────────────    
-  LIBRARY       ▏   ✓ custom__check_all         exec v1 · 0 calls · Vet and race-test every package                     
+  SETUP         ▏  PENDING ─────────────────────────────────────────────────────────────────────────────────────────    
+  agents ────── ▏ ▌ ◆ race_test         exec recipe · v1 · by dev · Run one package's tests with -race                  
+  AGENTS        ▏                                                                                                       
+  BRAIN         ▏  FORGED TOOLS ────────────────────────────────────────────────────────────────────────────────────    
+▌ PROPOSALS     ▏   ✓ custom__check_all         exec v1 · 0 calls · Vet and race-test every package                     
+  LIBRARY       ▏                                                                                                       
   team ──────── ▏                                                                                                       
   TEAMS         ▏                                                                                                       
   STANDARDS     ▏                                                                                                       
@@ -17,7 +18,6 @@
   SKILLS        ▏                                                                                                       
   INTEGRATIONS  ▏                                                                                                       
   SECRETS       ▏                                                                                                       
-                ▏                                                                                                       
                 ▏                                                                                                       
                 ▏                                                                                                       
                 ▏                                                                                                       

@@ -21,6 +21,9 @@ type StartDeps struct {
 	RunStep   func(id string)
 	StartTour func()
 	NewTask   func()
+	// OpenSetup shows every setup step to change (Settings → SETUP,
+	// F-108); nil hides the "change a step" line once all are settled.
+	OpenSetup func()
 }
 
 // WithStart wires the start page (F-097).
@@ -120,6 +123,14 @@ func (m *Model) startPage(w int) []string {
 			out = append(out, row)
 		}
 		out = append(out, "")
+	} else if len(items) > 0 && m.start.OpenSetup != nil {
+		// Everything settled: one line, still a keystroke from changing
+		// any step (F-108).
+		cl := kit.Checklist{Items: items}
+		line := theme.SectionHeader().Render("SETUP") + "  " + theme.SuccessText().Render(theme.GlyphCheck) +
+			theme.TextMuted().Render(" "+progressLine(cl)+" · c change a step")
+		m.startZones = append(m.startZones, startZone{line: len(out), from: 0, to: w, key: "c"})
+		out = append(out, kit.ClipEllipsis(line, w), "")
 	}
 
 	tips := []string{"? help", "^p palette"}
@@ -160,6 +171,10 @@ func (m *Model) startKey(key string) bool {
 	case "c":
 		if _, next := m.pendingSteps(); next != "" && m.start.RunStep != nil {
 			m.start.RunStep(next)
+			return true
+		}
+		if m.start.OpenSetup != nil {
+			m.start.OpenSetup()
 			return true
 		}
 	case "t":

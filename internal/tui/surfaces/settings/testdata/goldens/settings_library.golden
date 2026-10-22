@@ -1,23 +1,23 @@
   general ───── ▏ library ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
   CONFIG        ▏  ROLES                                                                  
   PROJECT       ▏ ▌ backend            builtin Builds services, APIs and data layers wit  
-  agents ────── ▏   designer           builtin Designs flows and interfaces: wireframes,  
-  AGENTS        ▏   devops             builtin Keeps build, CI and release healthy: pipe  
-  BRAIN         ▏   fixer              builtin Fixes failing tasks end-to-end: reproduce  
-  PROPOSALS     ▏   frontend           builtin Builds user interfaces: components, state  
-▌ LIBRARY       ▏   fullstack          builtin Builds features end to end: UI, API and d  
-  team ──────── ▏   lead               builtin Leads a team: plans the work, assigns it,  
-  TEAMS         ▏   planner            builtin Breaks goals into task cards with accepta  
-  STANDARDS     ▏   product-manager    builtin Owns the what and why: specs, acceptance   
-  CONVENTIONS   ▏   reviewer           builtin Reviews diffs and PRs: correctness, tests  
-  automation ── ▏   scout              builtin Explores the codebase and reports finding  
-  WORKFLOWS     ▏   scribe             builtin Keeps channels and tasks documented: summ  
-  AUTOPILOTS    ▏   tester             builtin Tests the work: writes and runs tests, re  
-  extend ────── ▏  PERSONAS                                                               
-  SKILLS        ▏   friendly           builtin Warm and upbeat, still to the point        
-  INTEGRATIONS  ▏   mentor             builtin Patient teacher: explains the why and the  
-  SECRETS       ▏   meticulous         builtin Careful and exact: verifies before claimi  
-                ▏   pragmatic          builtin Direct and practical: the answer first, t  
+  SETUP         ▏   designer           builtin Designs flows and interfaces: wireframes,  
+  agents ────── ▏   devops             builtin Keeps build, CI and release healthy: pipe  
+  AGENTS        ▏   fixer              builtin Fixes failing tasks end-to-end: reproduce  
+  BRAIN         ▏   frontend           builtin Builds user interfaces: components, state  
+  PROPOSALS     ▏   fullstack          builtin Builds features end to end: UI, API and d  
+▌ LIBRARY       ▏   lead               builtin Leads a team: plans the work, assigns it,  
+  team ──────── ▏   planner            builtin Breaks goals into task cards with accepta  
+  TEAMS         ▏   product-manager    builtin Owns the what and why: specs, acceptance   
+  STANDARDS     ▏   reviewer           builtin Reviews diffs and PRs: correctness, tests  
+  CONVENTIONS   ▏   scout              builtin Explores the codebase and reports finding  
+  automation ── ▏   scribe             builtin Keeps channels and tasks documented: summ  
+  WORKFLOWS     ▏   tester             builtin Tests the work: writes and runs tests, re  
+  AUTOPILOTS    ▏  PERSONAS                                                               
+  extend ────── ▏   friendly           builtin Warm and upbeat, still to the point        
+  SKILLS        ▏   mentor             builtin Patient teacher: explains the why and the  
+  INTEGRATIONS  ▏   meticulous         builtin Careful and exact: verifies before claimi  
+  SECRETS       ▏   pragmatic          builtin Direct and practical: the answer first, t  
                 ▏   terse              builtin Minimal words: one-line answers, no pream  
                 ▏                                                                         
                 ▏                                                                         

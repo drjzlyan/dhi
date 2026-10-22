@@ -1,6 +1,7 @@
   general ───── ▏ teams ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
   CONFIG        ▏ ▌ platform        lead: scout       1 members                           
   PROJECT       ▏                                                                         
+  SETUP         ▏                                                                         
   agents ────── ▏                                                                         
   AGENTS        ▏                                                                         
   BRAIN         ▏                                                                         
@@ -17,7 +18,6 @@
   SKILLS        ▏                                                                         
   INTEGRATIONS  ▏                                                                         
   SECRETS       ▏                                                                         
-                ▏                                                                         
                 ▏                                                                         
                 ▏                                                                         
                 ▏                                                                         

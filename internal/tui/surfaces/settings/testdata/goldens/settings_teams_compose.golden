@@ -1,23 +1,23 @@
   general ───── ▏ teams ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
   CONFIG        ▏ (no teams — "a" adds employees by role, "n" creates an empty team)      
   PROJECT       ▏                                                                         
+  SETUP         ▏                                                                         
   agents ────── ▏                                                                         
   AGENTS        ▏                                                                         
   BRAIN         ▏                                                                         
-  PROPOSALS     ▏                                                                         
-  LIBRARY       ▏  ╭─ add employees by role ─────────────────────────╮                    
-  team ──────── ▏  │ into      ▎‹a new team per lead›                │                    
-▌ TEAMS         ▏  │ leads     ▎‹2›                                  │                    
-  STANDARDS     ▏  │ fullstack ▎‹3›                                  │                    
-  CONVENTIONS   ▏  │ frontend  ▎‹0›                                  │                    
-  automation ── ▏  │ backend   ▎‹0›                                  │                    
-  WORKFLOWS     ▏  │ testers   ▎‹0›                                  │                    
-  AUTOPILOTS    ▏  │ PMs       ▎‹0›                                  │                    
-  extend ────── ▏  │ designers ▎‹0›                                  │                    
-  SKILLS        ▏  │ devops    ▎‹0›                                  │                    
-  INTEGRATIONS  ▏  │ tab field · ←/→ cycle · enter save · esc cancel │                    
-  SECRETS       ▏  ╰─────────────────────────────────────────────────╯                    
-                ▏                                                                         
+  PROPOSALS     ▏  ╭─ add employees by role ─────────────────────────╮                    
+  LIBRARY       ▏  │ into      ▎‹a new team per lead›                │                    
+  team ──────── ▏  │ leads     ▎‹2›                                  │                    
+▌ TEAMS         ▏  │ fullstack ▎‹3›                                  │                    
+  STANDARDS     ▏  │ frontend  ▎‹0›                                  │                    
+  CONVENTIONS   ▏  │ backend   ▎‹0›                                  │                    
+  automation ── ▏  │ testers   ▎‹0›                                  │                    
+  WORKFLOWS     ▏  │ PMs       ▎‹0›                                  │                    
+  AUTOPILOTS    ▏  │ designers ▎‹0›                                  │                    
+  extend ────── ▏  │ devops    ▎‹0›                                  │                    
+  SKILLS        ▏  │ tab field · ←/→ cycle · enter save · esc cancel │                    
+  INTEGRATIONS  ▏  ╰─────────────────────────────────────────────────╯                    
+  SECRETS       ▏                                                                         
                 ▏                                                                         
                 ▏                                                                         
                 ▏                                                                         

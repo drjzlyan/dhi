@@ -1,23 +1,23 @@
   general ───── ▏ conventions ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
   CONFIG        ▏ Naming templates: task branches, worktree folders, commit subjects, PR  
   PROJECT       ▏ title and description. Enter uses one; n copies it into a template you  
-  agents ────── ▏ can edit; p learns your style from a commit or PR you paste, g from     
-  AGENTS        ▏ your git history.                                                       
-  BRAIN         ▏                                                                         
-  PROPOSALS     ▏ ▌ ● default        built-in  task/<slug> branches, free-form commits    
-  LIBRARY       ▏     feature        built-in  feature/<slug> branches, Conventional Co…  
-  team ──────── ▏     ticket         built-in  <TICKET>/<slug> branches, "TICKET: subje…  
-  TEAMS         ▏     personal       built-in  <user>/<slug> branches, free-form commits  
-  STANDARDS     ▏                                                                         
-▌ CONVENTIONS   ▏ PREVIEW default (in use)                                                
-  automation ── ▏   branch    task/login-timeout                                          
-  WORKFLOWS     ▏   worktree  .dhi/tasks/login-timeout/api                                
-  AUTOPILOTS    ▏   commit    retry the token refresh                                     
-  extend ────── ▏   PR title  Fix login timeout                                           
-  SKILLS        ▏   PR body   Created from DHI worktree `task/login-timeout`.             
-  INTEGRATIONS  ▏                                                                         
-  SECRETS       ▏   placeholders: {slug} {member} {ticket} {user} {date} {title}          
-                ▏   {assignee} {type} {subject}. The ticket is the first match of         
+  SETUP         ▏ can edit; p learns your style from a commit or PR you paste, g from     
+  agents ────── ▏ your git history.                                                       
+  AGENTS        ▏                                                                         
+  BRAIN         ▏ ▌ ● default        built-in  task/<slug> branches, free-form commits    
+  PROPOSALS     ▏     feature        built-in  feature/<slug> branches, Conventional Co…  
+  LIBRARY       ▏     ticket         built-in  <TICKET>/<slug> branches, "TICKET: subje…  
+  team ──────── ▏     personal       built-in  <user>/<slug> branches, free-form commits  
+  TEAMS         ▏                                                                         
+  STANDARDS     ▏ PREVIEW default (in use)                                                
+▌ CONVENTIONS   ▏   branch    task/login-timeout                                          
+  automation ── ▏   worktree  .dhi/tasks/login-timeout/api                                
+  WORKFLOWS     ▏   commit    retry the token refresh                                     
+  AUTOPILOTS    ▏   PR title  Fix login timeout                                           
+  extend ────── ▏   PR body   Created from DHI worktree `task/login-timeout`.             
+  SKILLS        ▏                                                                         
+  INTEGRATIONS  ▏   placeholders: {slug} {member} {ticket} {user} {date} {title}          
+  SECRETS       ▏   {assignee} {type} {subject}. The ticket is the first match of         
                 ▏   [A-Z][A-Z0-9]+-\d+ in the card's slug, title, epic or labels, else    
                 ▏   the slug.                                                             
                 ▏                                                                         

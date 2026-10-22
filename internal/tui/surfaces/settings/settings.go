@@ -57,6 +57,7 @@ type Model struct {
 	brainFilter   string
 	brainTyping   bool
 	libCur        int                  // LIBRARY listing rows
+	setupCur      int                  // SETUP rows (F-108)
 	teamCur       int                  // TEAMS rows
 	secretCur     int                  // SECRETS rows (F-089)
 	stdCur        int                  // STANDARDS rows
@@ -116,6 +117,7 @@ type sectionID uint8
 const (
 	secConfig sectionID = iota
 	secProject
+	secSetup
 	secAgents
 	secBrain
 	secProposals
@@ -137,6 +139,8 @@ func (s sectionID) label() string {
 		return "CONFIG"
 	case secProject:
 		return "PROJECT"
+	case secSetup:
+		return "SETUP"
 	case secAgents:
 		return "AGENTS"
 	case secBrain:
@@ -233,6 +237,12 @@ type Deps struct {
 	Grants GrantStore
 	// Secrets lists and edits the stored secrets (F-089); nil hides them.
 	Secrets SecretStore
+	// Setup lists the onboarding steps (F-108); RunSetup re-runs one with
+	// the current values; ResetSetup clears every step's record (never
+	// the settings) and starts the setup again. Nil hides SETUP's actions.
+	Setup      func() []kit.ChecklistItem
+	RunSetup   func(id string)
+	ResetSetup func() error
 }
 
 // GrantStore is the approvals queue's remembered-grant surface.
@@ -408,6 +418,8 @@ func (m *Model) HandleKey(key string) bool {
 		return m.teamsKey(key)
 	case secProject:
 		return m.projectKey(key)
+	case secSetup:
+		return m.setupKey(key)
 	case secSkills:
 		return m.skillsKey(key)
 	case secStandards:
@@ -1431,7 +1443,7 @@ func (m *Model) View() string {
 // ordered so each group is contiguous.
 func (s sectionID) group() string {
 	switch {
-	case s <= secProject:
+	case s <= secSetup:
 		return "General"
 	case s <= secLibrary:
 		return "Agents"
@@ -1460,6 +1472,8 @@ func (m *Model) sectionPane(w, h int) string {
 	switch m.sec {
 	case secProject:
 		content = m.projectView(w - 4)
+	case secSetup:
+		content = m.setupView(w - 4)
 	case secAgents:
 		content = m.agentsView()
 	case secBrain:
@@ -1531,6 +1545,8 @@ func (m *Model) sectionHints() []string {
 		sec = []string{"v view", "y approve", "n reject", "x archive"}
 	case secProject:
 		sec = []string{"e edit", "d draft from repo", "i interview me"}
+	case secSetup:
+		sec = []string{"enter re-run", "R set up again"}
 	case secTeams:
 		sec = []string{"a add by role", "n new", "e edit", "x delete"}
 	case secSkills:

@@ -59,7 +59,8 @@ func Checklist(env *Env, version string, st setup.State) []kit.ChecklistItem {
 func ChecklistTitle(id string) string { return checklistCopy[id].title }
 
 // Single runs one setup step as a focused dialog (F-098): applying marks
-// that step, esc skips it, and neither marks setup finished. onDone runs
+// that step, esc skips it (or, re-running a done step, leaves it as it
+// was — F-108), and neither marks setup finished. onDone runs
 // when the dialog closes in this process (not when it relaunches). nil
 // when id names no step or the step does not apply.
 func Single(env *Env, version string, state setup.State, id string, onDone func()) *Model {
@@ -68,11 +69,38 @@ func Single(env *Env, version string, state setup.State, id string, onDone func(
 			continue
 		}
 		if !s.Applies() {
-			return nil
+			// F-108: a step that is configured no longer applies to a
+			// first run, but can still be run again to change it.
+			r, ok := s.(rerunnable)
+			if !ok || !r.CanRerun() {
+				return nil
+			}
 		}
-		m := New(env, state, s)
+		m := &Model{env: env, steps: []Step{s}, state: state, skipped: map[string]bool{}}
 		m.single, m.onDone = true, onDone
 		return m
 	}
 	return nil
+}
+
+// rerunnable is a step that can run again to change what it set up, even
+// once Applies says a first run no longer needs it (F-108).
+type rerunnable interface{ CanRerun() bool }
+
+// CanRerun: the brief can be edited again (prefilled from the saved one).
+func (s *projectStep) CanRerun() bool {
+	return s.env.Root != "" && s.env.DetectBrief != nil && s.env.SaveBrief != nil
+}
+
+// CanRerun: your profile can be changed again.
+func (s *styleStep) CanRerun() bool { return s.env.SaveProfile != nil }
+
+// CanRerun: your instructions can be edited again.
+func (s *instructionsStep) CanRerun() bool {
+	return s.env.Instructions != nil && s.env.SaveInstructions != nil
+}
+
+// CanRerun: another team can be added by role.
+func (s *teamStep) CanRerun() bool {
+	return s.env.Root != "" && (s.env.ApplyTeam != nil || s.env.ComposeTeam != nil)
 }

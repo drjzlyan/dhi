@@ -136,3 +136,24 @@ func TestFocusedTerminalKeepsAltDigits(t *testing.T) {
 		t.Fatal("a focused terminal keeps alt+1..9 for its tabs")
 	}
 }
+
+// F-108: when every step is settled the start page keeps one line, and c
+// opens the full list to change any step.
+func TestStartPageKeepsSetupReachableWhenAllDone(t *testing.T) {
+	m, spy := newStartEditor(t)
+	opened := 0
+	d := spy.deps()
+	d.OpenSetup = func() { opened++ }
+	m.start = d
+	for i := range spy.items {
+		spy.items[i].State = kit.ItemDone
+	}
+	v := ansi.Strip(m.View())
+	if !strings.Contains(v, "SETUP") || !strings.Contains(v, "c change a step") || strings.Contains(v, "GET SET UP") {
+		t.Fatalf("start page:\n%s", v)
+	}
+	m.HandleKey("c")
+	if opened != 1 || len(spy.ran) != 0 {
+		t.Fatalf("opened=%d ran=%v", opened, spy.ran)
+	}
+}

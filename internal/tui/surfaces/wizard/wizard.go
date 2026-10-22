@@ -108,6 +108,8 @@ type Env struct {
 	DetectBrief func() brief.Brief
 	SaveBrief   func(b brief.Brief) error
 	HasBrief    func() bool
+	// LoadBrief reads the saved brief, so a re-run starts from it.
+	LoadBrief func() (brief.Brief, bool)
 	// ComposeTeam creates teams from role counts (F-079); nil hides
 	// the custom choice.
 	ComposeTeam func(c starter.Counts) ([]starter.Result, error)
@@ -316,6 +318,15 @@ func (m *Model) HandleKey(key string) bool {
 	if busy {
 		return true
 	}
+	// Option+← (alt+left) goes back too where no text is being typed:
+	// ctrl+b is tmux's prefix (F-101).
+	typing := false
+	if c, ok := m.cur().(interface{ CapturesText() bool }); ok {
+		typing = c.CapturesText()
+	}
+	if key == "alt+left" && !typing {
+		key = "ctrl+b"
+	}
 	switch key {
 	case "ctrl+b":
 		if !m.single {
@@ -370,6 +381,12 @@ func (m *Model) act(a Action) {
 }
 
 func (m *Model) advance(skip bool) {
+	// F-108: leaving a re-run of a step that was already done keeps its
+	// record — esc means "leave it as it was", not "skip it".
+	if skip && m.single && m.state.Has(m.cur().ID()) {
+		m.close()
+		return
+	}
 	if skip {
 		m.skipped[m.cur().ID()] = true
 		m.env.noteSkipped(m.cur().Title(), true)
@@ -492,11 +509,14 @@ func (m *Model) keys() []string {
 		parts = k.Keys() // the step's own keys first
 	}
 	if m.single {
+		if m.state.Has(m.cur().ID()) { // a re-run (F-108)
+			return append(parts, "enter save", "esc leave as is")
+		}
 		return append(parts, "enter save", "esc skip")
 	}
 	parts = append(parts, "enter continue", "esc skip step")
 	if m.prevApplicable(m.idx-1) >= 0 {
-		parts = append(parts, "^b back")
+		parts = append(parts, "^b/"+kit.AltLabel("alt+←")+" back")
 	}
 	return append(parts, "^x skip setup")
 }

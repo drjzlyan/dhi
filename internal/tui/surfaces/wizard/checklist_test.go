@@ -2,8 +2,10 @@ package wizard
 
 import (
 	"context"
+	"github.com/drjzlyan/dhi/internal/agentkit/brief"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/drjzlyan/dhi/internal/settings"
 	"github.com/drjzlyan/dhi/internal/setup"
@@ -121,4 +123,39 @@ func TestGoldenSingleStepDialogs(t *testing.T) {
 		key(m, string(r))
 	}
 	golden.Snapshot(t, "wizard_single_instructions", plain(m))
+}
+
+// F-108: a configured step can be run again from the checklist; it opens
+// with what was saved, and esc leaves it done (not skipped).
+func TestReRunningADoneStepIsPrefilledAndEscKeepsIt(t *testing.T) {
+	f, saved := projectFixture(t)
+	*saved = append(*saved, brief.Brief{Name: "widget"}) // a brief exists: the step no longer applies to a first run
+	f.env.LoadBrief = func() (brief.Brief, bool) {
+		return brief.Brief{Name: "widget", Summary: "The saved summary."}, true
+	}
+	var persisted []setup.State
+	f.env.Persist = func(_ string, st setup.State) error { persisted = append(persisted, st); return nil }
+	st := setup.State{}
+	st.Mark("project", time.Now())
+	m := Single(f.env, "9.9.9", st, "project", nil)
+	if m == nil {
+		t.Fatal("a done project step must be re-runnable")
+	}
+	m.Resize(100, 40)
+	run(m, m.Init())
+	if v := plain(m); !strings.Contains(v, "The saved summary.") {
+		t.Fatalf("re-run must start from the saved brief:\n%s", v)
+	}
+	if _, h := m.Hints(); !strings.Contains(strings.Join(h, ","), "esc leave as is") {
+		t.Fatalf("hints = %v", h)
+	}
+	key(m, "esc")
+	for _, p := range persisted {
+		if _, skipped := p.Skipped["project"]; skipped {
+			t.Fatal("esc on a re-run must not mark the step skipped")
+		}
+	}
+	if Single(f.env, "9.9.9", st, "workspace", nil) != nil {
+		t.Fatal("creating a workspace cannot re-run inside one")
+	}
 }

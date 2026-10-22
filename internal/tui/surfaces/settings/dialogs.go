@@ -54,6 +54,7 @@ const (
 	dlgServerSnippet
 	dlgServerRemove
 	dlgSignInPaste
+	dlgSetupReset
 	dlgDisplay // read-only: profile, standards preview, last-run info
 )
 
@@ -208,6 +209,8 @@ func (m *Model) submitConfirmDialog() {
 		m.removeExtension("server", target)
 	case dlgSkillScripts:
 		m.allowScriptsConfirmed(target)
+	case dlgSetupReset:
+		m.resetSetupConfirmed()
 	case dlgLibDelete:
 		m.submitLibraryDelete(target)
 	case dlgAutoDelete:

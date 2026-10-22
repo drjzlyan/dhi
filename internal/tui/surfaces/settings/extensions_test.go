@@ -13,6 +13,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/org"
 	"github.com/drjzlyan/dhi/internal/ansi"
 	"github.com/drjzlyan/dhi/internal/testutil/golden"
+	"github.com/drjzlyan/dhi/internal/tui/kit"
 	"github.com/drjzlyan/dhi/internal/workspace"
 )
 
@@ -153,5 +154,38 @@ func TestAddAServerByURLAndRemoveIt(t *testing.T) {
 	feed(m, "x", "enter")
 	if _, ok := mcpserver.Open(ws.Root).Get("jira"); ok {
 		t.Fatal("x did not remove the server")
+	}
+}
+
+// F-108: SETUP lists every step; enter re-runs the selected one, R asks
+// before restarting the setup.
+func TestSetupSectionReRunsAnyStep(t *testing.T) {
+	m, _, _, _ := agentSurface(t)
+	var ran []string
+	resets := 0
+	m.d.Setup = func() []kit.ChecklistItem {
+		return []kit.ChecklistItem{{ID: "you", Title: "Tell us about you", State: kit.ItemDone},
+			{ID: "team", Title: "Hire your team", State: kit.ItemSkipped}}
+	}
+	m.d.RunSetup = func(id string) { ran = append(ran, id) }
+	m.d.ResetSetup = func() error { resets++; return nil }
+	if !m.GoToSection("SETUP") {
+		t.Fatal("no SETUP section")
+	}
+	v := ansi.Strip(m.View())
+	if !strings.Contains(v, "Tell us about you") || !strings.Contains(v, "Hire your team") {
+		t.Fatalf("SETUP:\n%s", v)
+	}
+	feed(m, "j", "enter")
+	if len(ran) != 1 || ran[0] != "team" {
+		t.Fatalf("ran = %v", ran)
+	}
+	feed(m, "R")
+	if m.dkind != dlgSetupReset {
+		t.Fatal("R must ask first")
+	}
+	feed(m, "enter")
+	if resets != 1 {
+		t.Fatalf("resets = %d", resets)
 	}
 }

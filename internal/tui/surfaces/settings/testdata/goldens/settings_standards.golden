@@ -1,6 +1,7 @@
   general ───── ▏ standards ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
   CONFIG        ▏ ▌ workspace       1 rules                                               
   PROJECT       ▏   scout           0 rules -                                             
+  SETUP         ▏                                                                         
   agents ────── ▏                                                                         
   AGENTS        ▏                                                                         
   BRAIN         ▏                                                                         
@@ -17,7 +18,6 @@
   SKILLS        ▏                                                                         
   INTEGRATIONS  ▏                                                                         
   SECRETS       ▏                                                                         
-                ▏                                                                         
                 ▏                                                                         
                 ▏                                                                         
                 ▏                                                                         

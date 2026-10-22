@@ -1,23 +1,23 @@
   general ───── ▏ conventions ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
   CONFIG        ▏ Naming templates: task branches, worktree folders, commit subjects, PR  
   PROJECT       ▏ title and description. Enter uses one; n copies it into a template you  
-  agents ────── ▏ can edit; p learns your style from a commit or PR you paste, g from     
-  AGENTS        ▏ your git history.                                                       
-  BRAIN         ▏                                                                         
-            ╭─ learned from your example ────────────────────────────────────╮            
-  LIBRARY   │ • subject is a Conventional Commit                             │            
-  team ─────│ • commit bodies follow your example's structure                │            
-  TEAMS     │                                                                │            
-            │   branch    task/login-timeout                                 │            
-▌           │   worktree  .dhi/tasks/login-timeout/api                       │            
-            │   commit    fix: retry the token refresh                       │            
+  SETUP         ▏ can edit; p learns your style from a commit or PR you paste, g from     
+  agents ────── ▏ your git history.                                                       
+  AGENTS        ▏                                                                         
+  BRAIN     ╭─ learned from your example ────────────────────────────────────╮            
+            │ • subject is a Conventional Commit                             │            
+  LIBRARY   │ • commit bodies follow your example's structure                │            
+  team ─────│                                                                │            
+  TEAMS     │   branch    task/login-timeout                                 │            
+            │   worktree  .dhi/tasks/login-timeout/api                       │            
+▌           │   commit    fix: retry the token refresh                       │            
             │   PR title  Fix login timeout                                  │            
             │   PR body   Created from DHI worktree `task/login-timeout`.    │            
-  extend ───│   body      Why: users asked. ⏎ Risk: low                      │            
-  SKILLS    │                                                                │            
-            │ enter save · esc cancel                                        │            
-  SECRETS   ╰────────────────────────────────────────────────────────────────╯            
-                ▏   {assignee} {type} {subject}. The ticket is the first match of         
+            │   body      Why: users asked. ⏎ Risk: low                      │            
+  extend ───│                                                                │            
+  SKILLS    │ enter save · esc cancel                                        │            
+            ╰────────────────────────────────────────────────────────────────╯            
+  SECRETS       ▏   {assignee} {type} {subject}. The ticket is the first match of         
                 ▏   [A-Z][A-Z0-9]+-\d+ in the card's slug, title, epic or labels, else    
                 ▏   the slug.                                                             
                 ▏                                                                         

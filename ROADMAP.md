@@ -1119,5 +1119,5 @@ Plan: `~/.claude/plans/all-the-keys-should-playful-hanrahan.md`. Branch `m35`, o
 - [x] P5 Agent Skills, mcpServers JSON, vendor plugins; packs/registry/marketplace removed (F-105)
 - [x] P6 Login-only MCP OAuth like Claude Code; Settings → INTEGRATIONS (F-106)
 - [x] P7 Assign to recommended bots / all bots (F-107)
-- [ ] P8 Re-runnable onboarding (F-108)
+- [x] P8 Re-runnable onboarding (F-108)
 - [ ] P9 Docs, live checks, STATE

@@ -409,6 +409,7 @@ func runTUI() (relaunch bool) {
 	// setup checklist (F-098) is bound after the wizard wiring below.
 	var checklist []kit.ChecklistItem
 	var runStep func(id string)
+	var resetSetup func() error // F-108: clear step records, run setup again
 	edOpts = append(edOpts, editor.WithStart(editor.StartDeps{
 		Checklist: func() []kit.ChecklistItem { return checklist },
 		RunStep: func(id string) {
@@ -426,7 +427,25 @@ func runTUI() (relaunch bool) {
 				appRef.OpenNewTask()
 			}
 		},
+		OpenSetup: func() {
+			if appRef != nil {
+				appRef.OpenSettingsSection("SETUP")
+			}
+		},
 	}))
+	// Settings → SETUP (F-108): every step, re-runnable, and a full reset.
+	settingsDeps.Setup = func() []kit.ChecklistItem { return checklist }
+	settingsDeps.RunSetup = func(id string) {
+		if runStep != nil {
+			runStep(id)
+		}
+	}
+	settingsDeps.ResetSetup = func() error {
+		if resetSetup == nil {
+			return fmt.Errorf("setup is not available here")
+		}
+		return resetSetup()
+	}
 	// The Editor is view 1 (ADR-0041): DHI opens where you write code.
 	a := app.New(version.Version,
 		editor.New(version.Version, ws, edOpts...),
@@ -592,6 +611,30 @@ func runTUI() (relaunch bool) {
 		checklist = wizard.Checklist(env, version.Version, loadSetupState(ws))
 	}
 	refreshChecklist()
+	resetSetup = func() error {
+		if decision.Block != "" || appRef == nil {
+			return fmt.Errorf("setup is blocked: %s", decision.Block)
+		}
+		st := loadSetupState(ws)
+		st.Steps, st.Skipped, st.Finished = nil, nil, false
+		root := ""
+		if ws != nil {
+			root = ws.Root
+		}
+		if p, err := setup.UserStatePath(); err == nil {
+			if err := setup.SaveState(p, st); err != nil {
+				return err
+			}
+		}
+		if root != "" {
+			if err := setup.SaveState(setup.WorkspaceStatePath(root), st); err != nil {
+				return err
+			}
+		}
+		refreshChecklist()
+		appRef.QueueGate(newWizard())
+		return nil
+	}
 	runStep = func(id string) {
 		if decision.Block != "" || appRef == nil {
 			return
@@ -610,7 +653,7 @@ func runTUI() (relaunch bool) {
 			// exists): say so instead of ignoring the click.
 			refreshChecklist()
 			appRef.Toast(kit.Toast{Kind: kit.ToastInfo, Title: wizard.ChecklistTitle(id) + " is already set up",
-				Detail: "change it in Settings (5)"})
+				Detail: "change it in Settings"})
 			return
 		}
 		wizards = append(wizards, w)
@@ -870,6 +913,10 @@ func newSetupEnv(cwd string, ws *workspace.Workspace, userCfg, toolRoot string,
 	}
 	env.SaveBrief = func(b brief.Brief) error { return brief.Save(env.Root, b) }
 	env.HasBrief = func() bool { _, ok, err := brief.Load(env.Root); return ok || err != nil }
+	env.LoadBrief = func() (brief.Brief, bool) {
+		b, ok, err := brief.Load(env.Root)
+		return b, ok && err == nil
+	}
 	env.ComposeTeam = func(c starter.Counts) ([]starter.Result, error) {
 		w, err := workspace.Load(env.Root)
 		if err != nil {

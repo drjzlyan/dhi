@@ -1,13 +1,14 @@
   general ───── ▏ brain ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
   CONFIG        ▏ what your crew has learned · 4 lessons  / to filter                                                   
   PROJECT       ▏                                                                                                       
-  agents ────── ▏  YOUR PREFERENCES ────────────────────────────────────────────────────────────────────────────────    
-  AGENTS        ▏ ▌ ● ▮▮▮▮▮ Keep pull requests small and focused                    ×0 · correction · 2d                
-▌ BRAIN         ▏                                                                                                       
-  PROPOSALS     ▏  DEV ─────────────────────────────────────────────────────────────────────────────────────────────    
-  LIBRARY       ▏   ◆ ▮▮▮▮▯ Run go test with -race in this repo                     ×6 · reflection · 2d  standard?     
-  team ──────── ▏   ● ▮▮▮▯▯ Distribute the remainder one cent at a time             ×0 · reflection · 2d                
-  TEAMS         ▏   ✗ ▮▮▯▯▯ Use the legacy money package                            ×0 · agent · 2d                     
+  SETUP         ▏  YOUR PREFERENCES ────────────────────────────────────────────────────────────────────────────────    
+  agents ────── ▏ ▌ ● ▮▮▮▮▮ Keep pull requests small and focused                    ×0 · correction · 2d                
+  AGENTS        ▏                                                                                                       
+▌ BRAIN         ▏  DEV ─────────────────────────────────────────────────────────────────────────────────────────────    
+  PROPOSALS     ▏   ◆ ▮▮▮▮▯ Run go test with -race in this repo                     ×6 · reflection · 2d  standard?     
+  LIBRARY       ▏   ● ▮▮▮▯▯ Distribute the remainder one cent at a time             ×0 · reflection · 2d                
+  team ──────── ▏   ✗ ▮▮▯▯▯ Use the legacy money package                            ×0 · agent · 2d                     
+  TEAMS         ▏                                                                                                       
   STANDARDS     ▏                                                                                                       
   CONVENTIONS   ▏                                                                                                       
   automation ── ▏                                                                                                       
@@ -17,7 +18,6 @@
   SKILLS        ▏                                                                                                       
   INTEGRATIONS  ▏                                                                                                       
   SECRETS       ▏                                                                                                       
-                ▏                                                                                                       
                 ▏                                                                                                       
                 ▏                                                                                                       
                 ▏                                                                                                       

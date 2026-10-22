@@ -1,23 +1,23 @@
   general ───── ▏ project ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
   CONFIG        ▏ What the project is and how you work. Every employee reads this on      
 ▌ PROJECT       ▏ every task.                                                             
-  agents ────── ▏                                                                         
-  AGENTS        ▏ Project       shop                                                      
-  BRAIN         ▏ What it is    —                                                         
-  PROPOSALS     ▏ Goals         —                                                         
-  LIBRARY       ▏ Who it's for  —                                                         
-  team ──────── ▏ Stack         Go                                                        
-  TEAMS         ▏ How we work   Work from task cards: one branch per card, small focused  
-  STANDARDS     ▏               commits, open a pull request, address review, merge when  
-  CONVENTIONS   ▏               checks pass.                                              
-  automation ── ▏ Reviews       Every change goes through a pull request the user         
-  WORKFLOWS     ▏               reviews before it merges.                                 
-  AUTOPILOTS    ▏ Testing       Run before saying done: go test ./... (in repo)           
-  extend ────── ▏ Never         —                                                         
+  SETUP         ▏                                                                         
+  agents ────── ▏ Project       shop                                                      
+  AGENTS        ▏ What it is    —                                                         
+  BRAIN         ▏ Goals         —                                                         
+  PROPOSALS     ▏ Who it's for  —                                                         
+  LIBRARY       ▏ Stack         Go                                                        
+  team ──────── ▏ How we work   Work from task cards: one branch per card, small focused  
+  TEAMS         ▏               commits, open a pull request, address review, merge when  
+  STANDARDS     ▏               checks pass.                                              
+  CONVENTIONS   ▏ Reviews       Every change goes through a pull request the user         
+  automation ── ▏               reviews before it merges.                                 
+  WORKFLOWS     ▏ Testing       Run before saying done: go test ./... (in repo)           
+  AUTOPILOTS    ▏ Never         —                                                         
+  extend ────── ▏                                                                         
   SKILLS        ▏                                                                         
   INTEGRATIONS  ▏                                                                         
   SECRETS       ▏                                                                         
-                ▏                                                                         
                 ▏                                                                         
                 ▏                                                                         
                 ▏                                                                         

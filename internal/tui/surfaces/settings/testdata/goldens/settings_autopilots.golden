@@ -1,6 +1,7 @@
   general ───── ▏ autopilots ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
   CONFIG        ▏   name                agent       schedule                    next-due  
   PROJECT       ▏ ▌ Sweep               scout       daily 09:00                 09:00     
+  SETUP         ▏                                                                         
   agents ────── ▏                                                                         
   AGENTS        ▏                                                                         
   BRAIN         ▏                                                                         
@@ -17,7 +18,6 @@
   SKILLS        ▏                                                                         
   INTEGRATIONS  ▏                                                                         
   SECRETS       ▏                                                                         
-                ▏                                                                         
                 ▏                                                                         
                 ▏                                                                         
                 ▏                                                                         

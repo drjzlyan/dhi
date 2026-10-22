@@ -1,6 +1,7 @@
   general ───── ▏ agents ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
   CONFIG        ▏ ▌ scout       m-1           claude    2 tools                           
   PROJECT       ▏   muse        archived                                                  
+  SETUP         ▏                                                                         
   agents ────── ▏                                                                         
 ▌ AGENTS        ▏                                                                         
   BRAIN         ▏                                                                         
@@ -17,7 +18,6 @@
   SKILLS        ▏                                                                         
   INTEGRATIONS  ▏                                                                         
   SECRETS       ▏                                                                         
-                ▏                                                                         
                 ▏                                                                         
                 ▏                                                                         
                 ▏                                                                         
