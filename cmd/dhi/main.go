@@ -1,7 +1,7 @@
 // Command dhi launches the DHI IDE. Per ADR-0004 the CLI surface is
 // minimal: no project-management subcommands — everything happens inside
 // the TUI. The one exception is `dhi doctor [--json]`, which audits the
-// hermetic install and workspace health.
+// tools DHI finds on your system and workspace health.
 //
 // Five views: Workspace (boot) · Editor · Ideator · Reviewer · Settings.
 package main
@@ -11,6 +11,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/drjzlyan/dhi/internal/hostenv"
+	"github.com/drjzlyan/dhi/internal/hosttools"
 	"os"
 	"os/exec"
 	osuser "os/user"
@@ -60,11 +61,9 @@ import (
 	"github.com/drjzlyan/dhi/internal/settings"
 	"github.com/drjzlyan/dhi/internal/setup"
 	"github.com/drjzlyan/dhi/internal/tasks"
-	"github.com/drjzlyan/dhi/internal/toolchain"
 	"github.com/drjzlyan/dhi/internal/tui/app"
 	"github.com/drjzlyan/dhi/internal/tui/kit"
 	"github.com/drjzlyan/dhi/internal/tui/surfaces/bootgate"
-	"github.com/drjzlyan/dhi/internal/tui/surfaces/bootstrap"
 	"github.com/drjzlyan/dhi/internal/tui/surfaces/editor"
 	"github.com/drjzlyan/dhi/internal/tui/surfaces/gatechain"
 	ideator "github.com/drjzlyan/dhi/internal/tui/surfaces/ideator"
@@ -108,9 +107,8 @@ func main() {
 		}
 	}
 	// A relaunch is a fresh process image's worth of state: services read
-	// the workspace, settings and toolchain once at launch, so when setup
-	// or the bootstrap changed any of them we start over rather than
-	// hot-swap (F-043).
+	// the workspace and settings once at launch, so when setup changed
+	// them we start over rather than hot-swap (F-043).
 	for runTUI() {
 	}
 }
@@ -124,27 +122,15 @@ func runTUI() (relaunch bool) {
 		os.Exit(1)
 	}
 	userCfg, _ := settings.DefaultUserPath()
-	toolRoot := ""
-	if root, terr := toolchain.DefaultRoot(); terr == nil {
-		toolRoot = root
-	}
 
 	// Coding CLIs resolve on the user's own PATH (F-110); every consumer
 	// shares the one lookup.
 	cliLook := hostLook
-	var toolBin []string // tool shims for bridged MCP servers (uvx/npx)
-	mcpHome := ""        // their private HOME, inside the sandbox's writable prefix
-	if toolRoot != "" {
-		toolBin = []string{toolchain.New(toolRoot).ShimDir()}
-		mcpHome = filepath.Join(toolRoot, "mcp-home")
-	}
 
 	// The boot audit resolves everything up front (F-011 / ADR-0011):
-	// proceed, offer confirmation-gated installs, or block with named
-	// reasons. No fallbacks live below this line.
+	// proceed, or block with named reasons.
 	decision := boot.Audit(boot.Input{
 		CWD:      cwd,
-		ToolRoot: toolRoot,
 		UserCfg:  userCfg,
 		GOOS:     runtime.GOOS,
 		LookPath: exec.LookPath,
@@ -170,7 +156,7 @@ func runTUI() (relaunch bool) {
 	cfg.Apply()
 	kit.SetKeyMap(cfg.Keys)                       // [keys] remaps (F-058): the shell translates, the chrome shows them
 	kit.MacKeys = runtime.GOOS == "darwin"        // hints spell alt as ⌥ (F-101)
-	kit.SetOSClipboard(toolchain.CopyToClipboard) // copy works where OSC 52 does not (ADR-0042)
+	kit.SetOSClipboard(hosttools.CopyToClipboard) // copy works where OSC 52 does not (ADR-0042)
 	// Conventions are re-read when their files change, so Settings edits and
 	// hand edits of .dhi/conventions.toml govern branch names, commits, PRs and
 	// the agents' prompts without a restart (F-052).
@@ -218,27 +204,19 @@ func runTUI() (relaunch bool) {
 	edOpts = append(edOpts, editor.WithLSP(lspMgr))
 	// The user's ripgrep, looked up at each search; missing → install card.
 	rgSearcher = search.Host{Look: hostFind}
-	if toolRoot != "" {
-		mgr := toolchain.New(toolRoot)
-		// F-029: one identity resolver, read from the user's git config
-		// (host path) through the hermetic git binary. It is nil when the
-		// toolchain is absent, which makes every commit path refuse by
-		// name rather than invent an author.
-		identityFn = func(ctx context.Context) (gitcore.Identity, error) {
-			return gitcore.ResolveIdentity(ctx, gitcore.NewRunner(mgr.GitBin(), mgr.GitIdentityEnv(nil)))
-		}
-		edOpts = append(edOpts, editor.WithIdentity(identityFn))
-		// Hermetic git runner backs the served git_diff tool (M15 P1);
-		// absent git leaves it nil and the tool refuses by name.
-		if r, err := gitcore.ResolveRunner(mgr); err == nil {
-			gitRunner = r
-		}
-		runRunner = execRunner{env: runTmpEnv(agentEnv, ws), timeout: 5 * time.Minute, sandbox: guardWorkspace(decision.Sandbox, ws)}
-	}
+	// F-029: one identity resolver, read from the user's own git config.
+	// Without git it errors, so every commit path refuses by name rather
+	// than invent an author.
+	identityFn = userIdentity
+	edOpts = append(edOpts, editor.WithIdentity(identityFn))
+	// The user's git backs the served git_diff tool (M15 P1); without git
+	// it is nil and the tool refuses by name.
+	gitRunner = userGit()
+	runRunner = execRunner{env: runTmpEnv(agentEnv, ws), timeout: 5 * time.Minute, sandbox: guardWorkspace(decision.Sandbox, ws)}
 	edOpts = append(edOpts, editor.WithSearcher(rgSearcher))
 
 	// Message bus + tasks store exist for every workspace; the worktree
-	// seam lights up only when the hermetic git shim is installed.
+	// seam lights up only when git is installed.
 	var messageBus *bus.Bus
 	var agentRT *agentkitRuntime.Runtime
 	var taskStore *tasks.Store
@@ -286,7 +264,7 @@ func runTUI() (relaunch bool) {
 		// under .dhi/agents/. Guards carry the audited OS-sandbox
 		// adapter (nil here is impossible: the audit blocked first).
 		if messageBus != nil {
-			agentRT = newAgentRuntime(ws, messageBus, guardWorkspace(decision.Sandbox, ws), agentEnv, cfg.Engine, gitRunner, identityFn, sessionStore, runRunner, editorBridge, wsScopes, taskStore, reviewSvc, rgSearcher, mcpStore, convLive.Source(), cliLook, toolBin, mcpHome, decision.Worktrees,
+			agentRT = newAgentRuntime(ws, messageBus, guardWorkspace(decision.Sandbox, ws), agentEnv, cfg.Engine, gitRunner, identityFn, sessionStore, runRunner, editorBridge, wsScopes, taskStore, reviewSvc, rgSearcher, mcpStore, convLive.Source(), cliLook, decision.Worktrees,
 				liveTuning(userCfg, wsCfg, cfg, identityFn))
 			if agentRT != nil {
 				// F-071: a held sub-card starts the moment its blockers are
@@ -362,17 +340,11 @@ func runTUI() (relaunch bool) {
 			settingsDeps.UserConfig, settingsDeps.WorkspaceConfig = userCfg, wsCfg
 			settingsDeps.LearnConventions = func() conventions.Inference { return learnConventions(gitRunner, memberDirs(ws)) }
 			// F-083: the git identity row reads, suggests and sets through
-			// the same hermetic git as the wizard.
+			// the user's git, like the wizard.
 			settingsDeps.Identity = identityFn
-			if identityFn != nil {
-				mgr := toolchain.New(toolRoot)
-				idRunner := func() *gitcore.Runner { return gitcore.NewRunner(mgr.GitBin(), mgr.GitIdentityEnv(nil)) }
-				settingsDeps.SetIdentity = func(ctx context.Context, id gitcore.Identity) error {
-					return gitcore.SetIdentity(ctx, idRunner(), id)
-				}
-				settingsDeps.SuggestIdentity = func(ctx context.Context) []gitcore.Suggestion {
-					return suggestIdentity(ctx, idRunner(), memberDirs(ws))
-				}
+			settingsDeps.SetIdentity = setUserIdentity
+			settingsDeps.SuggestIdentity = func(ctx context.Context) []gitcore.Suggestion {
+				return suggestIdentity(ctx, userGit(), memberDirs(ws))
 			}
 			if kb, kerr := knowledge.Open(ws, knowledge.Review, rgSearcher); kerr == nil {
 				settingsDeps.ShareLesson = func(l lessons.Lesson) (string, error) {
@@ -577,7 +549,7 @@ func runTUI() (relaunch bool) {
 	// so a palette re-run starts from the state on disk.
 	var wizards []*wizard.Model
 	newWizard := func() *wizard.Model {
-		env := newSetupEnv(cwd, ws, userCfg, toolRoot, cfg.Conventions, cfg.Engine, identityFn, cliLook,
+		env := newSetupEnv(cwd, ws, userCfg, cfg.Conventions, cfg.Engine, identityFn, cliLook,
 			func() { startLesson("tour") })
 		w := wizard.New(env, loadSetupState(ws), wizard.DefaultSteps(env, version.Version)...)
 		wizards = append(wizards, w)
@@ -600,7 +572,7 @@ func runTUI() (relaunch bool) {
 			checklist = nil
 			return
 		}
-		env := newSetupEnv(cwd, ws, userCfg, toolRoot, cfg.Conventions, cfg.Engine, identityFn, cliLook,
+		env := newSetupEnv(cwd, ws, userCfg, cfg.Conventions, cfg.Engine, identityFn, cliLook,
 			func() { startLesson("tour") })
 		checklist = wizard.Checklist(env, version.Version, loadSetupState(ws))
 	}
@@ -633,7 +605,7 @@ func runTUI() (relaunch bool) {
 		if decision.Block != "" || appRef == nil {
 			return
 		}
-		env := newSetupEnv(cwd, ws, userCfg, toolRoot, cfg.Conventions, cfg.Engine, identityFn, cliLook,
+		env := newSetupEnv(cwd, ws, userCfg, cfg.Conventions, cfg.Engine, identityFn, cliLook,
 			func() { startLesson("tour") })
 		before := pendingCount(checklist)
 		w := wizard.Single(env, version.Version, loadSetupState(ws), id, func() {
@@ -655,37 +627,10 @@ func runTUI() (relaunch bool) {
 	}
 	a.SetSetup(func() []kit.ChecklistItem { return checklist }, runStep)
 
-	// Gates, in strict order: a block never releases; missing pieces
-	// offer the confirmation-gated install; first-run (no lockfile)
-	// keeps the classic full bootstrap. The setup wizard follows, then a
-	// tail that relaunches when the toolchain changed under the services.
+	// Gates, in strict order: a block never releases; then the repairs.
 	var gates []gatechain.Gate
-	switch {
-	case decision.Block != "":
-		gates = append(gates, bootgate.New(version.Version, decision, nil))
-	case len(decision.Offer) > 0:
-		gates = append(gates, bootgate.New(version.Version, decision, toolchain.New(toolRoot)))
-	case needsBootstrap(toolRoot):
-		mgr := toolchain.New(toolchainRoot())
-		// DHI_REGISTRY overrides the embedded manifest with a remote one
-		// (loopback http allowed) for testing the pipeline end-to-end; that
-		// path stays the unattended classic bootstrap.
-		if os.Getenv("DHI_REGISTRY") != "" {
-			gates = append(gates, bootstrap.New(version.Version, mgr, os.Getenv("DHI_REGISTRY")))
-			break
-		}
-		// A real first run asks before downloading ~150 MB: what, how big,
-		// where it goes (F-044). Skipping is allowed; capabilities then
-		// refuse by name until it is installed.
-		first := decision
-		first.FirstRun = true
-		first.OfferRoot = mgr.Root()
-		first.Offer, first.OfferBytes, first.OfferTotal = boot.FirstRunOffer()
-		if len(first.Offer) == 0 {
-			gates = append(gates, bootstrap.New(version.Version, mgr, ""))
-			break
-		}
-		gates = append(gates, bootgate.New(version.Version, first, mgr))
+	if decision.Block != "" {
+		gates = append(gates, bootgate.New(version.Version, decision))
 	}
 	// Self-healing (F-085, ADR-0038): safe repairs run now and are
 	// reported; the rest wait on the user's yes in the same card.
@@ -693,12 +638,6 @@ func runTUI() (relaunch bool) {
 		if g := repairGate(ws, gitRunner); g != nil {
 			gates = append(gates, g)
 		}
-	}
-	toolsAtLaunch := toolsFingerprint(toolRoot)
-	var tail *gatechain.RelaunchGate
-	if decision.Block == "" && len(gates) > 0 {
-		tail = gatechain.Relaunch(func() bool { return toolsFingerprint(toolRoot) != toolsAtLaunch })
-		gates = append(gates, tail)
 	}
 	switch len(gates) {
 	case 0:
@@ -720,7 +659,7 @@ func runTUI() (relaunch bool) {
 			return true
 		}
 	}
-	return tail != nil && tail.NeedsRelaunch()
+	return false
 }
 
 // tourMarker is the file a relaunching wizard leaves to say "start the
@@ -731,22 +670,6 @@ func tourMarker() (string, error) {
 		return "", err
 	}
 	return filepath.Join(filepath.Dir(p), "tour.pending"), nil
-}
-
-// toolsFingerprint captures which hermetic tools exist: the services read
-// them once at launch (git runner, ripgrep searcher, terminal env), so a
-// change means they are stale.
-func toolsFingerprint(root string) string {
-	if root == "" {
-		return ""
-	}
-	var b strings.Builder
-	for _, rel := range []string{"git", "rg", "go", "gopls", "dlv"} {
-		if _, err := os.Stat(filepath.Join(root, "bin", rel)); err == nil {
-			b.WriteString(rel + ";")
-		}
-	}
-	return b.String()
 }
 
 // pendingCount counts checklist items still to do.
@@ -774,10 +697,8 @@ func loadSetupState(ws *workspace.Workspace) setup.State {
 	return setup.Scoped(user, here)
 }
 
-// newSetupEnv wires the wizard to real services. Funcs stay nil when the
-// capability is absent (no toolchain root → no git), and the step then
-// explains the manual fix instead of guessing.
-func newSetupEnv(cwd string, ws *workspace.Workspace, userCfg, toolRoot string,
+// newSetupEnv wires the wizard to real services.
+func newSetupEnv(cwd string, ws *workspace.Workspace, userCfg string,
 	conv conventions.Config, engine string, identityFn gitcore.IdentityFunc,
 	cliLook func(string) (string, error), startTour func()) *wizard.Env {
 	env := &wizard.Env{
@@ -788,20 +709,15 @@ func newSetupEnv(cwd string, ws *workspace.Workspace, userCfg, toolRoot string,
 	if ws != nil {
 		env.Root = ws.Root
 	}
-	if toolRoot != "" {
-		mgr := toolchain.New(toolRoot)
-		env.SetIdentity = func(ctx context.Context, id gitcore.Identity) error {
-			return gitcore.SetIdentity(ctx, gitcore.NewRunner(mgr.GitBin(), mgr.GitIdentityEnv(nil)), id)
-		}
-		env.SuggestIdentity = func(ctx context.Context) []gitcore.Suggestion {
-			dirs := []string{cwd}
-			if env.Root != "" {
-				if w, err := workspace.Load(env.Root); err == nil {
-					dirs = memberDirs(w)
-				}
+	env.SetIdentity = setUserIdentity
+	env.SuggestIdentity = func(ctx context.Context) []gitcore.Suggestion {
+		dirs := []string{cwd}
+		if env.Root != "" {
+			if w, err := workspace.Load(env.Root); err == nil {
+				dirs = memberDirs(w)
 			}
-			return suggestIdentity(ctx, gitcore.NewRunner(mgr.GitBin(), mgr.GitIdentityEnv(nil)), dirs)
 		}
+		return suggestIdentity(ctx, userGit(), dirs)
 	}
 	// You step (F-081): the profile is personal, so it lives in the user config.
 	if c, err := settings.Load(userCfg, ""); err == nil {
@@ -886,11 +802,7 @@ func newSetupEnv(cwd string, ws *workspace.Workspace, userCfg, toolRoot string,
 		if err != nil {
 			return conventions.Inference{}
 		}
-		var r *gitcore.Runner
-		if toolRoot != "" {
-			r, _ = gitcore.ResolveRunner(toolchain.New(toolRoot))
-		}
-		return learnConventions(r, memberDirs(w))
+		return learnConventions(userGit(), memberDirs(w))
 	}
 	env.DetectBrief = func() brief.Brief {
 		var dirs []string
@@ -999,27 +911,9 @@ func newSetupEnv(cwd string, ws *workspace.Workspace, userCfg, toolRoot string,
 	return env
 }
 
-// toolchainRoot resolves the hermetic prefix, falling back to a
-// temp-dir-safe empty result when home cannot be located.
-func toolchainRoot() string {
-	root, err := toolchain.DefaultRoot()
-	if err != nil {
-		return filepath.Join(os.TempDir(), "dhi-unavailable")
-	}
-	return root
-}
-
-// needsBootstrap reports whether the hermetic prefix has never been
-// installed (no lockfile). A corrupt lockfile boots normally; doctor
-// surfaces it as a failure.
-func needsBootstrap(root string) bool {
-	_, err := os.Stat(filepath.Join(root, "lock.json"))
-	return os.IsNotExist(err)
-}
-
 // openReviewService builds the review orchestration layer: TOML store
-// always; worktree seam + diff runner light up with the hermetic git
-// shim; PR inputs additionally need the host gh CLI.
+// always; worktree seam + diff runner light up with the user's git; PR
+// inputs additionally need their gh.
 func openReviewService(ws *workspace.Workspace, conv func() conventions.Config, wt worktrees.Layout) *review.Service {
 	prBody := func() string { return conv().PR.Body }
 	st, err := review.Open(ws)
@@ -1036,13 +930,9 @@ func openReviewService(ws *workspace.Workspace, conv func() conventions.Config, 
 	svc.SetTokenFn(func(ctx context.Context) (string, error) {
 		return gh.AuthToken(ctx)
 	})
-	root, err := toolchain.DefaultRoot()
-	if err != nil {
-		return svc
-	}
-	runner, rerr := gitcore.ResolveRunner(toolchain.New(root))
-	if rerr != nil {
-		return svc // pre-release: shim absent; diffs degrade visibly
+	runner := userGit()
+	if runner == nil {
+		return svc // no git: diffs degrade visibly
 	}
 	svc = review.NewService(ws, st, runner, gh)
 	svc.SetPRBodyFunc(prBody)
@@ -1084,16 +974,12 @@ func openReviewService(ws *workspace.Workspace, conv func() conventions.Config, 
 	return svc
 }
 
-// wireTaskSeam connects task ChangeSets to hermetic-git worktrees when
-// the shim exists; without it, attaching reports a visible error.
+// wireTaskSeam connects task ChangeSets to git worktrees when git is
+// installed; without it, attaching reports a visible error.
 func wireTaskSeam(ws *workspace.Workspace, ts *tasks.Store, conv func() conventions.Config, wt worktrees.Layout) {
-	root, err := toolchain.DefaultRoot()
-	if err != nil {
-		return
-	}
-	runner, err := gitcore.ResolveRunner(toolchain.New(root))
-	if err != nil {
-		return // pre-release: shim absent; doctor explains
+	runner := userGit()
+	if runner == nil {
+		return // no git; doctor explains
 	}
 	ts.SetAttach(
 		func(slug, member, branch, startpoint string) (string, error) {
@@ -1302,8 +1188,8 @@ func (b *editorBridge) LSP(ctx context.Context, op, path string, line, col int, 
 	return r.Text, err
 }
 
-// execRunner implements dhitools.CommandRunner: a hermetic-env child
-// process (no shell) with a wall-clock timeout and capped output. The
+// execRunner implements dhitools.CommandRunner: a child process (no
+// shell) in the user's environment with a wall-clock timeout and capped output. The
 // allowlist policy lives in dhitools; this only executes vetted argv.
 type execRunner struct {
 	env     []string
@@ -1492,7 +1378,7 @@ func liveTuning(userCfg, wsCfg string, boot settings.Config, identityFn gitcore.
 	}
 }
 
-func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cliEnv []string, defaultEngine string, gitRunner *gitcore.Runner, identityFn gitcore.IdentityFunc, sessionStore *ideation.Store, runRunner dhitools.CommandRunner, editor dhitools.EditorAPI, workspaceScopes scopes.Set, taskStore *tasks.Store, reviewSvc *review.Service, kbSearcher search.Searcher, mcpStore *mcpserver.Store, conv conventions.Source, cliLook func(string) (string, error), toolBin []string, mcpHome string, wt worktrees.Layout, tune func() agentkitRuntime.Tuning) *agentkitRuntime.Runtime {
+func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cliEnv []string, defaultEngine string, gitRunner *gitcore.Runner, identityFn gitcore.IdentityFunc, sessionStore *ideation.Store, runRunner dhitools.CommandRunner, editor dhitools.EditorAPI, workspaceScopes scopes.Set, taskStore *tasks.Store, reviewSvc *review.Service, kbSearcher search.Searcher, mcpStore *mcpserver.Store, conv conventions.Source, cliLook func(string) (string, error), wt worktrees.Layout, tune func() agentkitRuntime.Tuning) *agentkitRuntime.Runtime {
 	roster, err := manifest.LoadDir(filepath.Join(ws.Root, workspace.DirAgents))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "dhi: agent roster:", err)
@@ -1552,14 +1438,15 @@ func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cl
 		Standards:     true,
 		Conventions:   conv,
 		ExtraRoots:    worktreeRoots(wt),
-		ToolBin:       toolBin,
-		MCPHome:       mcpHome,
-		Workflows:     true,
-		Sandbox:       sb,
-		Memory:        memStore,
-		Knowledge:     kbStore,
-		Search:        kbSearcher,
-		// M15 P1 tool seams: the hermetic git runner (git_diff), the F-029
+		// Bridged MCP servers get a private HOME inside .dhi, which the
+		// sandbox lets them write (F-109).
+		MCPHome:   filepath.Join(ws.Root, workspace.DHIDir, "mcp-home"),
+		Workflows: true,
+		Sandbox:   sb,
+		Memory:    memStore,
+		Knowledge: kbStore,
+		Search:    kbSearcher,
+		// M15 P1 tool seams: the user's git runner (git_diff), the F-029
 		// identity resolver (git_commit), the shared ideation store
 		// (ideation_*), and the allowlisted command runner (`run`). A nil
 		// seam makes its tool refuse by name — never a host fallback.
@@ -1593,7 +1480,7 @@ func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cl
 		// F-067: a task turn without a worktree gets one on the convention
 		// branch before the agent starts, so the work lands where DHI can
 		// verify it and open the PR.
-		Toolchain: optionalToolchain(),
+		Toolchain: hostToolchain{},
 		Provision: func(slug, member string) error {
 			if taskStore == nil {
 				return fmt.Errorf("task store unavailable")
@@ -1658,18 +1545,13 @@ func runDoctor(args []string) int {
 		}
 	}
 
-	toolRoot, err := toolchain.DefaultRoot()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "dhi doctor:", err)
-		return 1
-	}
 	cwd, err := os.Getwd()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "dhi doctor:", err)
 		return 1
 	}
 
-	report := doctor.Run(toolRoot, cwd)
+	report := doctor.Run(cwd)
 	if asJSON {
 		data, err := report.JSON()
 		if err != nil {
@@ -1731,43 +1613,19 @@ func taskVars(ts *tasks.Store, c conventions.Config, slug, member string) map[st
 	return v
 }
 
-// toolchainSeam adapts the toolchain manager to the runtime's optional-
-// toolchain seam (F-076); installs are serialised.
-type toolchainSeam struct {
-	mgr *toolchain.Manager
-	mu  sync.Mutex
-}
+// hostToolchain is the runtime's host-tool seam (F-110): verify names a
+// missing toolchain and its install command; agents never install.
+type hostToolchain struct{}
 
-func (t *toolchainSeam) Optional(name string) (int64, bool) {
-	mf, err := toolchain.Embedded()
-	if err != nil {
-		return 0, false
+func (hostToolchain) Missing(name string) (string, bool) {
+	t, ok := hosttools.Get(name)
+	if !ok {
+		return "", false
 	}
-	tool, ok := mf.Tools[name]
-	if !ok || !tool.Optional {
-		return 0, false
+	if _, found := hosttools.Find(t); found {
+		return "", false
 	}
-	return tool.Platforms[toolchain.PlatformKey()].Size, true
-}
-
-func (t *toolchainSeam) Installed(name string) bool { return t.mgr.Installed(name) }
-
-func (t *toolchainSeam) Install(ctx context.Context, name string) error {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	if t.mgr.Installed(name) {
-		return nil // another verify installed it while this one waited
-	}
-	return t.mgr.InstallEmbedded(ctx, []string{name})
-}
-
-// optionalToolchain is the runtime's install seam, nil without a prefix.
-func optionalToolchain() agentkitRuntime.Toolchain {
-	root, err := toolchain.DefaultRoot()
-	if err != nil {
-		return nil
-	}
-	return &toolchainSeam{mgr: toolchain.New(root)}
+	return hosttools.Missing(t), true
 }
 
 // composeOptions marks every roster id (archived included) and team slug
@@ -1798,7 +1656,7 @@ func memberDirs(ws *workspace.Workspace) []string {
 }
 
 // learnConventions infers commit and PR style from the members' recent
-// history (hermetic git) and their PR templates (F-082). A nil runner
+// history (git) and their PR templates (F-082). A nil runner
 // learns from the templates only.
 func learnConventions(r *gitcore.Runner, dirs []string) conventions.Inference {
 	var subjects []string
@@ -1849,7 +1707,7 @@ func suggestIdentity(ctx context.Context, r *gitcore.Runner, dirs []string) []gi
 // repairs, and returns the card that reports them and asks about the
 // rest; nil when there is nothing to say (F-085).
 func repairGate(ws *workspace.Workspace, git *gitcore.Runner) *repairgate.Model {
-	in := repair.Input{WS: ws, Library: library.Open(ws), UserConfig: settingsUserPath()}
+	in := repair.Input{WS: ws, Library: library.Open(ws), UserConfig: settingsUserPath(), LegacyToolchain: hosttools.LegacyToolchainDir()}
 	if o, err := agentkitOrg.Load(ws.Root); err == nil {
 		in.Org = o
 	}

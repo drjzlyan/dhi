@@ -638,15 +638,14 @@ func (r *Runtime) serveToolsFor(e *entry, trigger bus.Message, tt turnTools) *se
 	if wantBridge && servers != nil {
 		dialCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		bridge = mcpbridge.New(dialCtx, mcpbridge.Deps{
-			Servers:    servers,
-			Agent:      e.m,
-			Sandbox:    r.cfg.Sandbox,
-			Approvals:  r.cfg.Approvals,
-			Scopes:     r.agentScopes(e.m),
-			PathPrefix: r.cfg.ToolBin,
-			HomeDir:    r.cfg.MCPHome,
-			Workspace:  r.wsRoot(),
-			Auth:       r.cfg.MCPAuth,
+			Servers:   servers,
+			Agent:     e.m,
+			Sandbox:   r.cfg.Sandbox,
+			Approvals: r.cfg.Approvals,
+			Scopes:    r.agentScopes(e.m),
+			HomeDir:   r.cfg.MCPHome,
+			Workspace: r.wsRoot(),
+			Auth:      r.cfg.MCPAuth,
 		})
 		cancel()
 		if len(bridge.Tools()) > 0 {
@@ -1035,8 +1034,8 @@ func (r *Runtime) boundTask(trigger bus.Message) (tasks.Task, bool) {
 	return r.cfg.Tasks.FindByThread(trigger.Channel, bus.ThreadOf(trigger))
 }
 
-// cliEnv assembles the spawn environment: the hermetic base (toolchain
-// PATH etc.) extended by the CLI's EXACT declared pass-through. Nothing
+// cliEnv assembles the spawn environment: the user's base environment
+// extended by the CLI's EXACT declared pass-through. Nothing
 // else crosses (ADR-0012 §4) — an auditable, fixed set. TMPDIR and the
 // CLI's own temp vars point at the agent's private dir inside the
 // sandbox's writable roots (F-086): the host's /tmp and /var/folders

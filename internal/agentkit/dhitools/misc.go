@@ -12,7 +12,7 @@ import (
 )
 
 // CommandRunner executes one already-vetted argv in dir. It is satisfied
-// by a hermetic-env exec adapter wired in cmd/dhi; the allowlist policy
+// by an exec adapter wired in cmd/dhi; the allowlist policy
 // lives here, never in the runner.
 type CommandRunner interface {
 	Run(ctx context.Context, dir string, argv []string, allowNetwork bool) (string, error)
@@ -73,7 +73,7 @@ func (d Deps) miscTools() []tool {
 		{
 			info: mcp.ToolInfo{
 				Name:        "run",
-				Description: "Run an allowlisted hermetic command: go build/test/vet/fmt, rg, npm test/run/ci/install, corepack pnpm/yarn, uv run/sync/pip/venv, cargo build/test/check/fmt/clippy/fetch, mvn, gradle, dotnet build/test/restore/format. No shell. Args: {\"program\":\"go\",\"args\":[\"test\",\"./...\"]}. Mutating: crosses approvals.",
+				Description: "Run an allowlisted command: go build/test/vet/fmt, rg, npm test/run/ci/install, corepack pnpm/yarn, uv run/sync/pip/venv, cargo build/test/check/fmt/clippy/fetch, mvn, gradle, dotnet build/test/restore/format. No shell. Args: {\"program\":\"go\",\"args\":[\"test\",\"./...\"]}. Mutating: crosses approvals.",
 				InputSchema: json.RawMessage(`{"type":"object","required":["program"],"properties":{"program":{"type":"string"},"args":{"type":"array","items":{"type":"string"}}},"additionalProperties":false}`),
 			},
 			parse: func(raw json.RawMessage) (any, error) {

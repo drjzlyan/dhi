@@ -1,11 +1,14 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"os"
 	"os/exec"
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/drjzlyan/dhi/internal/gitcore"
 	"github.com/drjzlyan/dhi/internal/hostenv"
 	"github.com/drjzlyan/dhi/internal/hosttools"
 	"github.com/drjzlyan/dhi/internal/tui/surfaces/editor"
@@ -97,4 +100,33 @@ func runInstall(name string, done func(error) tea.Msg) tea.Cmd {
 		}
 		return done(err)
 	})
+}
+
+// userGit is the user's own git with their environment (F-112); nil when
+// git is not installed.
+func userGit() *gitcore.Runner {
+	r, err := gitcore.ResolveRunner(hostLook, hostenv.Env())
+	if err != nil {
+		return nil
+	}
+	return r
+}
+
+// userIdentity reads the user's git identity from their own config.
+func userIdentity(ctx context.Context) (gitcore.Identity, error) {
+	r := userGit()
+	if r == nil {
+		return gitcore.Identity{}, errors.New("git is not installed")
+	}
+	return gitcore.ResolveIdentity(ctx, r)
+}
+
+// setUserIdentity writes the identity to the user's ~/.gitconfig, after
+// they confirmed it (F-083, F-112).
+func setUserIdentity(ctx context.Context, id gitcore.Identity) error {
+	r := userGit()
+	if r == nil {
+		return errors.New("git is not installed")
+	}
+	return gitcore.SetIdentity(ctx, r, id)
 }

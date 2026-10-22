@@ -22,7 +22,7 @@ import (
 // Service orchestrates review sessions over member repos: it resolves
 // targets (fetching PR heads via go-git), creates the dedicated review
 // worktree through the store's seam, and produces diffs with the
-// hermetic git runner. Persistence lives in Store; this type holds no
+// user's git. Persistence lives in Store; this type holds no
 // state beyond its deps.
 type Service struct {
 	ws     *workspace.Workspace
@@ -427,7 +427,7 @@ func (s *Service) Start(ctx context.Context, memberName string, kind Kind, base,
 
 	work, _ := s.store.seams()
 	if work == nil {
-		return Review{}, fmt.Errorf("review: worktree seam unavailable (hermetic git not installed?)")
+		return Review{}, fmt.Errorf("review: worktree seam unavailable (is git installed?)")
 	}
 	rel, err := work(r.ID, mem.Name, target.Head)
 	if err != nil {
@@ -447,7 +447,7 @@ func (s *Service) Patch(ctx context.Context, r Review) (string, error) {
 		return "", fmt.Errorf("review: %s has no live worktree", r.ID)
 	}
 	if s.diffFn == nil {
-		return "", fmt.Errorf("review: hermetic git unavailable — cannot diff %s", r.ID)
+		return "", fmt.Errorf("review: git is not installed — cannot diff %s", r.ID)
 	}
 	dir := filepath.Join(s.ws.Root, filepath.FromSlash(r.WorkRel))
 	patch, err := s.diffFn(ctx, dir, "diff", "--no-color", r.Target.Base+"..."+r.Target.Head)

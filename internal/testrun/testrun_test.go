@@ -95,7 +95,7 @@ func TestRunWithStubGo(t *testing.T) {
 }
 
 func TestRunReportsMissingGoAndEmptyOutput(t *testing.T) {
-	if rep := Run(context.Background(), t.TempDir(), []string{"PATH=/nonexistent"}, "."); !strings.Contains(rep.Err, "not found") {
+	if rep := Run(context.Background(), t.TempDir(), []string{"PATH=/nonexistent"}, "."); !strings.Contains(rep.Err, "is not on your PATH") {
 		t.Fatalf("rep = %+v", rep)
 	}
 	dir := t.TempDir()

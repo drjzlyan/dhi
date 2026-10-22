@@ -202,6 +202,7 @@ var RuntimeEntries = []string{
 	"agents/.archived/", "agents/*/runs/",
 	"config.toml", "marketplace.json", "unread.json", "welcome.seen", "setup.json", "org.toml",
 	"evals/", "episodes/", "traces/", "proposals/", "spend.jsonl", "grants.json", "tools/usage.toml", "tmp/", "hooks/",
+	"mcp-home/",
 }
 
 // GitignoreHeader opens .dhi/.gitignore.

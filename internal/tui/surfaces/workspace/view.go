@@ -1039,7 +1039,7 @@ func (m *Model) modalLines() []string {
 		if where == "" {
 			where = ".dhi/tasks/<slug>/<member>"
 		}
-		hint := "creates " + where + " via hermetic git"
+		hint := "creates " + where + " with git"
 		lines := []string{}
 		for i, fl := range f.fields() {
 			lines = append(lines, m.fieldLine(fl, i == f.curField() && !f.busy))

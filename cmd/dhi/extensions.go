@@ -24,8 +24,8 @@ import (
 	agentkitOrg "github.com/drjzlyan/dhi/internal/agentkit/org"
 	"github.com/drjzlyan/dhi/internal/agentkit/skillprop"
 	"github.com/drjzlyan/dhi/internal/gitcore"
+	"github.com/drjzlyan/dhi/internal/hosttools"
 	"github.com/drjzlyan/dhi/internal/mcp"
-	"github.com/drjzlyan/dhi/internal/toolchain"
 	"github.com/drjzlyan/dhi/internal/tui/app"
 	"github.com/drjzlyan/dhi/internal/tui/kit"
 	settingsview "github.com/drjzlyan/dhi/internal/tui/surfaces/settings"
@@ -355,9 +355,9 @@ var uiSend func(tea.Msg)
 
 var mcpOAuth = &mcp.OAuth{
 	Store: credTokens{}, HTTP: extHTTP, ClientName: "DHI",
-	Open: toolchain.OpenURL,
+	Open: hosttools.OpenURL,
 	Show: func(host, u string) {
-		_ = toolchain.CopyToClipboard(u) // the fallback when no browser opens
+		_ = hosttools.CopyToClipboard(u) // the fallback when no browser opens
 		if uiSend != nil {
 			uiSend(app.ToastMsg{Kind: kit.ToastInfo, Title: "Sign in to " + host,
 				Detail: "finish in your browser (the address is copied); over SSH: INTEGRATIONS → p"})

@@ -1,7 +1,7 @@
 // Package doctor runs DHI's self-check suite. The same report feeds
 // `dhi doctor [--json]` and the in-app health panel; statuses are
 // coarse (ok/warn/fail) and every failure degrades visibly rather than
-// aborting (ADR-0005).
+// aborting.
 package doctor
 
 import (
@@ -30,14 +30,13 @@ import (
 	agentkitStandards "github.com/drjzlyan/dhi/internal/agentkit/standards"
 	agentkitWorkflow "github.com/drjzlyan/dhi/internal/agentkit/workflow"
 	"github.com/drjzlyan/dhi/internal/autopilot"
-	"github.com/drjzlyan/dhi/internal/gitcore"
+	"github.com/drjzlyan/dhi/internal/hosttools"
 	"github.com/drjzlyan/dhi/internal/ideation"
 	"github.com/drjzlyan/dhi/internal/langserver"
 	"github.com/drjzlyan/dhi/internal/repair"
 	"github.com/drjzlyan/dhi/internal/sandbox"
 	"github.com/drjzlyan/dhi/internal/settings"
 	"github.com/drjzlyan/dhi/internal/tasks"
-	"github.com/drjzlyan/dhi/internal/toolchain"
 	"github.com/drjzlyan/dhi/internal/unread"
 	"github.com/drjzlyan/dhi/internal/workspace"
 )
@@ -69,11 +68,13 @@ type Report struct {
 }
 
 // Run executes every registered suite.
-func Run(toolRoot, wsRoot string) Report {
+func Run(wsRoot string) Report {
 	var r Report
-	r.Checks = append(r.Checks, Toolchain(toolRoot)...)
-	r.Checks = append(r.Checks, Git(toolRoot)...)
-	r.Checks = append(r.Checks, Identity(toolRoot)...)
+	r.Checks = append(r.Checks, Environment()...)
+	r.Checks = append(r.Checks, Tools()...)
+	r.Checks = append(r.Checks, LegacyToolchain()...)
+	r.Checks = append(r.Checks, Git()...)
+	r.Checks = append(r.Checks, Identity()...)
 	r.Checks = append(r.Checks, Workspace(wsRoot)...)
 	r.Checks = append(r.Checks, Config(wsRoot)...)
 	r.Checks = append(r.Checks, Agents(wsRoot)...)
@@ -82,10 +83,10 @@ func Run(toolRoot, wsRoot string) Report {
 	r.Checks = append(r.Checks, Authority(wsRoot)...)
 	r.Checks = append(r.Checks, Standards(wsRoot)...)
 	r.Checks = append(r.Checks, Project(wsRoot)...)
-	r.Checks = append(r.Checks, Repairs(toolRoot, wsRoot)...)
+	r.Checks = append(r.Checks, Repairs(wsRoot)...)
 	r.Checks = append(r.Checks, Workflows(wsRoot)...)
 	r.Checks = append(r.Checks, Dependencies(wsRoot)...)
-	r.Checks = append(r.Checks, RuntimesAt(toolRoot)...)
+	r.Checks = append(r.Checks, Runtimes()...)
 	r.Checks = append(r.Checks, Tasks(wsRoot)...)
 	r.Checks = append(r.Checks, RunStore(wsRoot)...)
 	r.Checks = append(r.Checks, Autopilots(wsRoot)...)
@@ -94,7 +95,7 @@ func Run(toolRoot, wsRoot string) Report {
 	r.Checks = append(r.Checks, Sessions(wsRoot)...)
 	r.Checks = append(r.Checks, Installed(wsRoot)...)
 	r.Checks = append(r.Checks, MCPServers(wsRoot)...)
-	r.Checks = append(r.Checks, GH(toolRoot)...)
+	r.Checks = append(r.Checks, GH()...)
 	r.Checks = append(r.Checks, Sandbox(sandboxMode(wsRoot))...)
 	r.Checks = append(r.Checks, Secrets(os.Environ())...)
 	r.Healthy = true
@@ -114,168 +115,6 @@ func (r Report) JSON() ([]byte, error) {
 		return nil, fmt.Errorf("doctor: encode report: %w", err)
 	}
 	return append(data, '\n'), nil
-}
-
-// Toolchain probes the hermetic prefix: existence, writability, lockfile
-// sanity, locked payloads on disk, and staging cleanliness.
-func Toolchain(root string) []Check {
-	if root == "" {
-		return nil
-	}
-	m := toolchain.New(root)
-
-	if _, err := os.Stat(filepath.Join(root)); os.IsNotExist(err) {
-		return []Check{{
-			Name:   "toolchain/prefix",
-			Status: Warn,
-			Detail: fmt.Sprintf("%s not installed yet (first bootstrap will create it)", root),
-		}}
-	}
-
-	checks := []Check{}
-	f, err := os.CreateTemp(root, ".doctor-*")
-	if err != nil {
-		checks = append(checks, Check{Name: "toolchain/prefix", Status: Fail,
-			Detail: fmt.Sprintf("%s is not writable: %v", root, err)})
-		return checks
-	}
-	tmpName := f.Name()
-	_ = f.Close()
-	_ = os.Remove(tmpName)
-	checks = append(checks, Check{Name: "toolchain/prefix", Status: OK, Detail: root})
-
-	lf, err := m.ReadLockfile()
-	switch {
-	case err != nil:
-		checks = append(checks, Check{Name: "toolchain/lockfile", Status: Fail, Detail: err.Error()})
-		return checks
-	case len(lf.Tools) == 0:
-		checks = append(checks, Check{Name: "toolchain/lockfile", Status: Warn, Detail: "nothing installed yet"})
-	default:
-		for name, locked := range lf.Tools {
-			dir := filepath.Join(root, locked.Path)
-			if _, err := os.Stat(dir); err != nil {
-				checks = append(checks, Check{Name: "toolchain/" + name, Status: Fail,
-					Detail: fmt.Sprintf("locked %s missing on disk: %s", locked.Version, dir)})
-				continue
-			}
-			checks = append(checks, Check{Name: "toolchain/" + name, Status: OK,
-				Detail: fmt.Sprintf("locked %s", locked.Version)})
-		}
-	}
-
-	// Optional toolchains (F-076) install on first use; name the ones
-	// still absent so "why is my Rust task unverified" has an answer.
-	if mf, err := toolchain.Embedded(); err == nil {
-		var absent []string
-		for _, name := range sortedNames(mf) {
-			if _, ok := lf.Tools[name]; mf.Tools[name].Optional && !ok {
-				absent = append(absent, name)
-			}
-		}
-		if len(absent) > 0 {
-			checks = append(checks, Check{Name: "toolchain/optional", Status: OK,
-				Detail: "not installed yet (installed on first use, after you approve): " + strings.Join(absent, ", ")})
-		}
-	}
-
-	if entries, _ := os.ReadDir(filepath.Join(root, "staging")); len(entries) > 0 {
-		checks = append(checks, Check{Name: "toolchain/staging", Status: Warn,
-			Detail: fmt.Sprintf("%d leftover staging dir(s)", len(entries))})
-	}
-	return checks
-}
-
-// Git probes hermetic git readiness (ADR-0009): silent while the
-// embedded registry carries no git pin (pre-release), otherwise the
-// lockfile entry, shim link, and `git --version` must all agree with
-// the pinned version.
-func Git(toolRoot string) []Check {
-	mf, err := toolchain.Embedded()
-	if err != nil {
-		return []Check{{Name: "git/shim", Status: Warn,
-			Detail: "embedded registry unreadable: " + err.Error()}}
-	}
-	pin, ok := mf.Tools["git"]
-	if !ok {
-		return nil // pin not flipped yet; feature absent by design
-	}
-	return gitChecks(pin.Version, toolRoot)
-}
-
-func gitChecks(version, root string) []Check {
-	if _, err := os.Stat(root); os.IsNotExist(err) {
-		return []Check{{Name: "git/shim", Status: Warn,
-			Detail: fmt.Sprintf("git %s pending first bootstrap", version)}}
-	}
-	m := toolchain.New(root)
-
-	lf, err := m.ReadLockfile()
-	if err != nil {
-		return []Check{{Name: "git/shim", Status: Fail, Detail: err.Error()}}
-	}
-	locked, isLocked := lf.Tools["git"]
-	switch {
-	case !isLocked:
-		return []Check{{Name: "git/shim", Status: Warn,
-			Detail: fmt.Sprintf("not installed yet (bootstrap will fetch git %s)", version)}}
-	case locked.Version != version:
-		return []Check{{Name: "git/shim", Status: Warn,
-			Detail: fmt.Sprintf("locked %s, registry pins %s (bootstrap will upgrade)",
-				locked.Version, version)}}
-	}
-
-	shim := m.GitBin()
-	if _, err := os.Stat(shim); err != nil {
-		return []Check{{Name: "git/shim", Status: Fail,
-			Detail: fmt.Sprintf("locked %s but shim missing: %s", locked.Version, shim)}}
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	r := gitcore.NewRunner(shim, m.GitEnv(nil))
-	got, err := r.Version(ctx)
-	if err != nil {
-		return []Check{{Name: "git/version", Status: Fail,
-			Detail: strings.TrimSpace(err.Error())}}
-	}
-	// Build stamps may prefix 'v' (ours do); compare semantically.
-	trim := func(s string) string { return strings.TrimPrefix(s, "v") }
-	if trim(got) != trim(version) {
-		return []Check{{Name: "git/version", Status: Fail,
-			Detail: fmt.Sprintf("shim reports %s, registry pins %s", got, version)}}
-	}
-	return []Check{{Name: "git/version", Status: OK,
-		Detail: fmt.Sprintf("hermetic git %s", got)}}
-}
-
-// Identity reports the user's git identity (F-029): OK when user.name
-// and user.email resolve through the hermetic git binary under the host
-// config, Warn (naming the exact fix) when unset. Silent while git is
-// not installed — the Git suite already covers that. Unset is a Warn,
-// not a Fail: the IDE boots and agents run; commit paths refuse at use
-// with the same message (ADR-0011, "refused capability surfaces at use").
-func Identity(toolRoot string) []Check {
-	mf, err := toolchain.Embedded()
-	if err != nil {
-		return nil
-	}
-	if _, ok := mf.Tools["git"]; !ok {
-		return nil
-	}
-	m := toolchain.New(toolRoot)
-	if _, err := os.Stat(m.GitBin()); err != nil {
-		return nil
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	r := gitcore.NewRunner(m.GitBin(), m.GitIdentityEnv(nil))
-	id, err := gitcore.ResolveIdentity(ctx, r)
-	if err != nil {
-		return []Check{{Name: "identity", Status: Warn, Detail: err.Error()}}
-	}
-	return []Check{{Name: "identity", Status: OK,
-		Detail: fmt.Sprintf("%s <%s>", id.Name, id.Email)}}
 }
 
 // Authority reports each agent's effective capability scopes (F-030
@@ -476,18 +315,13 @@ func Library(wsRoot string) []Check {
 	return []Check{{Name: "agents/library", Status: Warn, Detail: strings.Join(problems, "; ")}}
 }
 
-// Runtimes probes the registered host agent CLIs without a DHI toolchain
-// root (PATH only); see RuntimesAt.
-func Runtimes() []Check { return RuntimesAt("") }
-
-// RuntimesAt probes the registered host agent CLIs (F-013, ADR-0012,
-// ADR-0044): a missing binary is a FAIL that points at the wizard (the
-// user's PATH; toolRoot is unused and goes with the toolchain), a version in a
-// different major than the adapter was verified against is a FAIL, a
-// same-major difference is a WARN (auto-updating CLIs must not turn the
-// report red), and unset declared pass-through vars warn so auth
+// Runtimes probes the registered coding CLIs (F-013, ADR-0012, ADR-0044):
+// a missing binary is a FAIL that points at the wizard (the user's PATH),
+// a version in a different major than the adapter was verified against is
+// a FAIL, a same-major difference is a WARN (auto-updating CLIs must not
+// turn the report red), and unset declared pass-through vars warn so auth
 // failures surface before a run, not mid-run.
-func RuntimesAt(toolRoot string) []Check {
+func Runtimes() []Check {
 	reg := clirun.NewRegistry(lookPath)
 	if len(reg.Names()) == 0 {
 		return nil
@@ -693,7 +527,7 @@ func Project(wsRoot string) []Check {
 
 // Repairs lists what DHI would fix at the next launch (F-085): safe
 // repairs it applies on its own, the rest after asking.
-func Repairs(toolRoot, wsRoot string) []Check {
+func Repairs(wsRoot string) []Check {
 	if wsRoot == "" {
 		return nil
 	}
@@ -701,16 +535,14 @@ func Repairs(toolRoot, wsRoot string) []Check {
 	if err != nil {
 		return nil
 	}
-	in := repair.Input{WS: ws, Library: library.Open(ws), UserConfig: settingsUserPath()}
+	in := repair.Input{WS: ws, Library: library.Open(ws), UserConfig: settingsUserPath(), LegacyToolchain: hosttools.LegacyToolchainDir()}
 	if o, err := org.Load(wsRoot); err == nil {
 		in.Org = o
 	}
-	if toolRoot != "" {
-		if r, err := gitcore.ResolveRunner(toolchain.New(toolRoot)); err == nil {
-			in.Ignored = func(rel string) bool {
-				_, _, err := r.Run(context.Background(), wsRoot, "check-ignore", "-q", rel)
-				return err == nil
-			}
+	if r := userGit(); r != nil {
+		in.Ignored = func(rel string) bool {
+			_, _, err := r.Run(context.Background(), wsRoot, "check-ignore", "-q", rel)
+			return err == nil
 		}
 	}
 	rs := repair.Find(in)
@@ -1047,21 +879,6 @@ func UnreadStore(wsRoot string) []Check {
 	return []Check{{Name: "unread/store", Status: OK, Detail: detail}}
 }
 
-// GH probes the hermetic gh shim (registry-pinned, ADR-0011). The host
-// `gh` lookup is gone; a missing shim is a Fail — PR flows refuse until
-// bootstrap provides the pinned binary.
-func GH(toolRoot string) []Check {
-	if toolRoot == "" {
-		return nil
-	}
-	shim := filepath.Join(toolRoot, "bin", "gh")
-	if _, err := os.Stat(shim); err != nil {
-		return []Check{{Name: "gh/cli", Status: Fail,
-			Detail: "gh shim not installed — PR flows refuse until bootstrap installs the pinned gh (dispatch the pin pipeline)"}}
-	}
-	return []Check{{Name: "gh/cli", Status: OK, Detail: shim}}
-}
-
 // sandboxMode resolves the effective sandbox setting; any load problem
 // degrades to auto here because doctor must report ON a broken install,
 // not refuse to run (strict boot is cmd's job, ADR-0011).
@@ -1177,13 +994,4 @@ func Dependencies(wsRoot string) []Check {
 	}
 	return []Check{{Name: "dependencies", Status: OK,
 		Detail: fmt.Sprintf("%d declared edge(s)", len(deps))}}
-}
-
-func sortedNames(mf *toolchain.Manifest) []string {
-	out := make([]string, 0, len(mf.Tools))
-	for n := range mf.Tools {
-		out = append(out, n)
-	}
-	sort.Strings(out)
-	return out
 }

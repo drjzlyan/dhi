@@ -47,8 +47,7 @@ type Editor struct {
 
 // LanguageConfig is one [editor.languages.<id>] table. Every field is
 // optional for a built-in language; a custom language needs Exts and
-// Command. Command is an absolute path or a binary in DHI's toolchain —
-// never resolved from the host PATH.
+// Command. Command is an absolute path or a binary on the user's PATH.
 type LanguageConfig struct {
 	Enabled    *bool    `toml:"enabled,omitempty"`
 	Name       string   `toml:"name,omitempty"`

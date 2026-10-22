@@ -1,7 +1,6 @@
 // Package search runs content searches across workspace members. The
-// production backend shells out to DHI's own ripgrep (installed via the
-// hermetic toolchain, invoked with the shim path — never the host copy,
-// ADR-0005). Results stream so large trees stay responsive.
+// production backend runs the user's ripgrep (F-110); results stream so
+// large trees stay responsive.
 package search
 
 import (

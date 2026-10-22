@@ -14,7 +14,7 @@ import (
 
 // liveEditor builds an editor whose terminal sessions get an explicit
 // environment (ADR-0011: tests opt in explicitly, like production
-// passes the hermetic toolchain env).
+// passes the user's env).
 func liveEditor(t *testing.T) *Model {
 	t.Helper()
 	theme.SwapForTest(t, theme.Dark())

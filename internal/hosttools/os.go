@@ -1,4 +1,4 @@
-package toolchain
+package hosttools
 
 import (
 	"context"
@@ -10,12 +10,10 @@ import (
 	"time"
 )
 
-// OS seams (ADR-0042). DHI is hermetic (ADR-0005), with two narrow
-// exceptions that only the operating system can provide: putting text on
-// the system clipboard (macOS Terminal.app ignores OSC 52) and opening a
-// login page in the user's browser. Both use the OS's own tool, are
-// optional — callers always have a fallback (OSC 52, a printed URL) — and
-// live here so nothing else in DHI shells out to the host.
+// OS seams (ADR-0042): putting text on the system clipboard (macOS
+// Terminal.app ignores OSC 52) and opening a login page in the user's
+// browser. Both use the OS's own tool and are optional — callers always
+// have a fallback (OSC 52, a printed URL).
 
 // ErrNoOSTool reports that the platform has no tool for the request.
 var ErrNoOSTool = errors.New("no system tool available")

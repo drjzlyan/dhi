@@ -8,6 +8,8 @@ Read this before changing anything. It keeps multi-session work coherent.
 |---|---|
 | `cmd/dhi/` | entrypoint only (no logic; minimal CLI per ADR-0004) |
 | `internal/boot/` | launch decision policy (ADR-0011); table-tested, no fallbacks anywhere else |
+| `internal/hostenv/` | the user's login-shell environment, read once (F-109) |
+| `internal/hosttools/` | host tools, package-manager install commands, clipboard/browser seams (F-110) |
 | `.dhi/` | local self-hosting workspace (root is its own member); per-user and gitignored, never committed |
 | `internal/tui/theme/` | ALL colors/metrics/glyphs. Raw `lipgloss.Color(` outside this package fails tests |
 | `internal/tui/kit/` | reusable primitives; deterministic render; no app knowledge |
@@ -30,9 +32,12 @@ services (`runtime/gitcore/workspace/toolchain/...`) never import `tui`;
    every visual change regenerates goldens deliberately:
    `DHI_UPDATE_GOLDENS=1 go test ./...` — review diffs like code.
 4. **Verify before declaring done:** `make verify` (fmt+vet+build+test+race).
-5. **No system dependencies:** DHI must build with plain Go and run hermetic
-   (ADR-0005); don't add code that shells out to unmanaged tools outside
-   `internal/toolchain` seams.
+5. **The user's system, read-only (ADR-0044):** DHI builds with plain Go
+   and uses the tools on the user's PATH (`internal/hostenv`,
+   `internal/hosttools`). Never download tool binaries, pipe a remote script,
+   or write outside DHI's folders and the workspace without an approval
+   card; installs run only as the exact package-manager command the user
+   approved.
 
 ## Commands
 

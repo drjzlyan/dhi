@@ -45,7 +45,7 @@ func TestLive(t *testing.T) {
 	c := Config{
 		CLI: cli, Model: os.Getenv("DHI_EVAL_MODEL"),
 		Look: exec.LookPath,
-		// The app's base env (toolchain.Manager.Env(nil) = the host env):
+		// The app's base env (the host env):
 		// claude on macOS needs USER to find its Keychain login, so a
 		// stripped env would fail both arms as "Not logged in".
 		Env:     os.Environ(),

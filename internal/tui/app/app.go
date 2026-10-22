@@ -163,7 +163,7 @@ func (a *App) activityCmd() tea.Cmd {
 	return tea.Tick(activityInterval, func(time.Time) tea.Msg { return activityTickMsg{} })
 }
 
-// SetGate installs a first-run gate (e.g. toolchain bootstrap). Call
+// SetGate installs a launch gate (e.g. a blocked boot). Call
 // before Init.
 func (a *App) SetGate(g Gate) { a.gate = g }
 

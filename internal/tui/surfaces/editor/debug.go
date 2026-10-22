@@ -2,6 +2,7 @@ package editor
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"sort"
@@ -199,9 +200,11 @@ func (m *Model) applyDebugStarted(s *dbgStarted) {
 	}
 	if s.err != nil {
 		m.dbg = nil
-		if e := m.active(); e != nil {
-			e.SetMessage("debug: " + s.err.Error())
+		if errors.Is(s.err, dap.ErrNoDelve) && m.askInstall("dlv") {
+			m.note("debugging needs dlv — install it, then start the debugger again")
+			return
 		}
+		m.note("debug: " + s.err.Error())
 		return
 	}
 	m.dbg.starting, m.dbg.client, m.dbg.sess = false, s.client, s.sess

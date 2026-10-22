@@ -13,8 +13,8 @@
 #   DHI_REC_OUT=/some/dir   where GIF/MP4 land (default docs/assets/recordings)
 #   DHI_REC_MAX_MB=6        per-GIF size budget (default 6)
 #
-# Needs VHS (brew install vhs — brings ttyd; ffmpeg too), tmux and go. The
-# toolchain is read from your real XDG_DATA_HOME so nothing is downloaded.
+# Needs VHS (brew install vhs — brings ttyd; ffmpeg too), tmux, go and git.
+# DHI uses the tools on your PATH.
 set -eu
 
 for bin in vhs tmux go; do

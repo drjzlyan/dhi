@@ -1,4 +1,4 @@
-package toolchain
+package hosttools
 
 import (
 	"os"

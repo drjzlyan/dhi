@@ -61,6 +61,22 @@ var Tools = []Tool{
 	{Name: "uv", Bin: "uv", Purpose: "Python packages and uvx MCP servers", Version: []string{"--version"},
 		Recipes: map[string][]string{"brew": {"uv"}, "pacman": {"uv"}},
 		Doc:     "https://docs.astral.sh/uv/getting-started/installation/"},
+	{Name: "rust", Bin: "cargo", Purpose: "Rust builds and tests", Version: []string{"--version"},
+		Recipes: map[string][]string{"brew": {"rust"}, "apt": {"cargo"}, "dnf": {"cargo"}, "pacman": {"rust"}, "zypper": {"cargo"}},
+		Doc:     "https://rustup.rs"},
+	// Homebrew's openjdk is keg-only (not on PATH), so macOS gets the docs.
+	{Name: "jdk", Bin: "java", Purpose: "Java builds and tests", Version: []string{"-version"},
+		Recipes: map[string][]string{"apt": {"default-jdk"}, "dnf": {"java-latest-openjdk-devel"}, "pacman": {"jdk-openjdk"}},
+		Doc:     "https://adoptium.net"},
+	{Name: "maven", Bin: "mvn", Purpose: "Maven builds and tests", Version: []string{"--version"},
+		Recipes: map[string][]string{"brew": {"maven"}, "apt": {"maven"}, "dnf": {"maven"}, "pacman": {"maven"}, "zypper": {"maven"}},
+		Doc:     "https://maven.apache.org/install.html"},
+	{Name: "gradle", Bin: "gradle", Purpose: "Gradle builds and tests", Version: []string{"--version"},
+		Recipes: map[string][]string{"brew": {"gradle"}, "pacman": {"gradle"}},
+		Doc:     "https://gradle.org/install/"},
+	{Name: "dotnet", Bin: "dotnet", Purpose: ".NET builds and tests", Version: []string{"--version"},
+		Recipes: map[string][]string{"brew": {"dotnet"}},
+		Doc:     "https://dotnet.microsoft.com/download"},
 	{Name: "gopls", Bin: "gopls", Purpose: "Go language features", Version: []string{"version"},
 		Recipes: map[string][]string{"brew": {"gopls"}, "pacman": {"gopls"}, "go": {"golang.org/x/tools/gopls@latest"}},
 		Doc:     "https://go.dev/gopls"},
@@ -304,4 +320,33 @@ func Missing(t Tool) string {
 		return in.String()
 	}
 	return t.Doc
+}
+
+// LegacyToolchainDir is where DHI kept its own toolchain before ADR-0044
+// (Go, Node, git… downloaded per user). DHI no longer uses it; doctor
+// names it and a repair deletes it after the user says yes.
+func LegacyToolchainDir() string {
+	base := os.Getenv("XDG_DATA_HOME")
+	if base == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return ""
+		}
+		base = filepath.Join(home, ".local", "share")
+	}
+	return filepath.Join(base, "dhi", "toolchain")
+}
+
+// DirSize sums the sizes of the regular files under dir.
+func DirSize(dir string) int64 {
+	var n int64
+	_ = filepath.WalkDir(dir, func(_ string, d os.DirEntry, err error) error {
+		if err == nil && d.Type().IsRegular() {
+			if fi, ierr := d.Info(); ierr == nil {
+				n += fi.Size()
+			}
+		}
+		return nil
+	})
+	return n
 }

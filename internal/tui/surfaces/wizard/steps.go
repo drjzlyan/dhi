@@ -450,7 +450,7 @@ func (s *identityStep) Apply() error {
 		return nil
 	}
 	if s.env.SetIdentity == nil {
-		s.err = "cannot write git config: hermetic git is not installed"
+		s.err = "cannot write git config: git is not installed"
 		s.phase = idUnavailable
 		return fmt.Errorf("%s", s.err)
 	}
@@ -505,7 +505,7 @@ func (s *identityStep) View(w, f int) []string {
 		out = append(append(out, ""), bl...)
 	case idUnavailable:
 		out = []string{
-			warn("Git isn't installed in DHI's toolchain yet."),
+			warn("Git isn't installed."),
 			dim("Run these yourself when it is, or re-run setup from the palette:"), "",
 		}
 		for _, c := range gitcore.IdentityCommands(gitcore.Identity{Name: "Your Name", Email: "you@example.com"}) {

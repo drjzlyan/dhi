@@ -144,3 +144,34 @@ func TestDanglingTeamLeadGoesToYou(t *testing.T) {
 		t.Fatalf("team %+v", tm)
 	}
 }
+
+// The old toolchain is deleted only on yes, and only a dhi/toolchain dir.
+func TestLegacyToolchainAsksBeforeDeleting(t *testing.T) {
+	in := fixture(t)
+	base := t.TempDir()
+	dir := filepath.Join(base, "dhi", "toolchain")
+	os.MkdirAll(filepath.Join(dir, "bin"), 0o755)
+	os.WriteFile(filepath.Join(dir, "bin", "go"), []byte("x"), 0o755)
+
+	in.LegacyToolchain = dir
+	rs := Find(in)
+	r, ok := byID(rs, "legacy-toolchain")
+	if !ok || r.Safe || !strings.Contains(r.What, dir) {
+		t.Fatalf("repair = %+v", r)
+	}
+	Run(rs, true) // safe-only: kept
+	if _, err := os.Stat(dir); err != nil {
+		t.Fatal("deleted without a yes")
+	}
+	if err := r.Apply(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Fatal("not deleted on yes")
+	}
+	for _, other := range []string{base, filepath.Join(base, "toolchain")} {
+		if _, ok := legacyToolchain(other); ok {
+			t.Fatalf("%s must never qualify", other)
+		}
+	}
+}

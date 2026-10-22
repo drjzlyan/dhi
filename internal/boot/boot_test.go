@@ -7,9 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/drjzlyan/dhi/internal/sandbox"
 	"github.com/drjzlyan/dhi/internal/settings"
-	"github.com/drjzlyan/dhi/internal/toolchain"
 )
 
 func lookHit(string) (string, error) { return "/bin/helper", nil }
@@ -49,9 +47,6 @@ func TestPlainDirectoryBootsEmptyState(t *testing.T) {
 	// helper presence was still required (lookHit passed).
 	if d.Sandbox != nil {
 		t.Fatalf("no-workspace boot carries no adapter, got %v", d.Sandbox)
-	}
-	if len(d.Offer) != 0 {
-		t.Fatalf("unexpected offer: %v", d.Offer)
 	}
 }
 
@@ -115,74 +110,15 @@ func TestBrokenSettingsBlockBoot(t *testing.T) {
 	}
 }
 
-func TestCorruptLockfileBlocks(t *testing.T) {
+func TestSandboxRootsIncludeWorkspaceAndReadOnlyTrees(t *testing.T) {
+	// seatbelt Wrap must carry the workspace root + .dhi, and the
+	// read-only trees (skills) as readable but not writable.
 	root := mkWorkspace(t, wsCfg)
-	toolRoot := t.TempDir()
-	writeFile(t, filepath.Join(toolRoot, "lock.json"), "{broken")
-	d := Audit(Input{CWD: root, ToolRoot: toolRoot, GOOS: "darwin", LookPath: lookHit})
-	if d.Block == "" || !strings.Contains(d.Block, "lockfile") {
-		t.Fatalf("block = %q", d.Block)
+	skills := t.TempDir()
+	if r, err := filepath.EvalSymlinks(skills); err == nil {
+		skills = r
 	}
-	if len(d.Fixes) != 1 || !strings.Contains(d.Fixes[0], "bootstrap") {
-		t.Fatalf("fixes = %v", d.Fixes)
-	}
-}
-
-func TestMissingLockfileMeansFirstRun(t *testing.T) {
-	root := mkWorkspace(t, wsCfg)
-	d := Audit(Input{CWD: root, ToolRoot: t.TempDir(), GOOS: "darwin", LookPath: lookHit})
-	if d.Block != "" {
-		t.Fatalf("first run must not block: %s", d.Block)
-	}
-	// first-run install is the bootstrap gate's job, not the offer list
-	if len(d.Offer) != 0 {
-		t.Fatalf("offer = %v", d.Offer)
-	}
-}
-
-func TestPartialInstallOffersMissing(t *testing.T) {
-	root := mkWorkspace(t, wsCfg)
-	toolRoot := t.TempDir()
-	// go is installed at the manifest version; rg/uv/node/git are not.
-	writeFile(t, filepath.Join(toolRoot, "lock.json"),
-		`{"schema":1,"updated_at":"2026-09-02T00:00:00Z","tools":{"go":{"version":"1.27.0","sha256":"x","path":"tools/go"}}}`)
-	d := Audit(Input{CWD: root, ToolRoot: toolRoot, GOOS: "darwin", LookPath: lookHit})
-	if d.Block != "" {
-		t.Fatalf("partial install must not block: %s", d.Block)
-	}
-	joined := strings.Join(d.Offer, ",")
-	for _, want := range []string{"rg", "uv", "node", "git", "gh", "gopls", "dlv (built from source)"} {
-		if !strings.Contains(joined, want) {
-			t.Errorf("offer missing %q: %v", want, d.Offer)
-		}
-	}
-	if strings.Contains(joined, "go,") || strings.HasSuffix(joined, "go") && !strings.Contains(joined, "gopls") {
-		t.Errorf("installed go offered: %v", d.Offer)
-	}
-}
-
-func TestFullInstallOffersNothing(t *testing.T) {
-	root := mkWorkspace(t, wsCfg)
-	toolRoot := t.TempDir()
-	writeFile(t, filepath.Join(toolRoot, "lock.json"),
-		`{"schema":1,"updated_at":"2026-09-02T00:00:00Z","tools":{"go":{"version":"1.27.0","sha256":"x","path":"t"},"rg":{"version":"15.2.0","sha256":"x","path":"t"},"uv":{"version":"0.12.5","sha256":"x","path":"t"},"node":{"version":"24.19.0","sha256":"x","path":"t"},"git":{"version":"2.55.0","sha256":"x","path":"t"},"gh":{"version":"2.100.0","sha256":"x","path":"t"}}}`)
-	writeFile(t, filepath.Join(toolRoot, "bin", "gopls"), "x")
-	writeFile(t, filepath.Join(toolRoot, "bin", "dlv"), "x")
-	d := Audit(Input{CWD: root, ToolRoot: toolRoot, GOOS: "darwin", LookPath: lookHit})
-	if d.Block != "" {
-		t.Fatalf("full install must not block: %s", d.Block)
-	}
-	if len(d.Offer) != 0 {
-		t.Fatalf("offer = %v", d.Offer)
-	}
-}
-
-func TestSandboxRootsIncludeWorkspaceAndPrefix(t *testing.T) {
-	// seatbelt Wrap must carry the workspace root + .dhi + tool prefix.
-	root := mkWorkspace(t, wsCfg)
-	toolRoot := t.TempDir()
-	writeFile(t, filepath.Join(toolRoot, "lock.json"), `{"schema":1,"tools":{}}`)
-	d := Audit(Input{CWD: root, ToolRoot: toolRoot, GOOS: "darwin", LookPath: lookHit})
+	d := Audit(Input{CWD: root, ReadOnly: []string{skills}, GOOS: "darwin", LookPath: lookHit})
 	if d.Block != "" || d.Sandbox == nil {
 		t.Fatalf("decision = %+v", d)
 	}
@@ -191,10 +127,23 @@ func TestSandboxRootsIncludeWorkspaceAndPrefix(t *testing.T) {
 		t.Fatal("sandbox is not the seatbelt adapter")
 	}
 	p := seat.Profile()
-	for _, want := range []string{filepath.Join(root, "repos", "alpha"), filepath.Join(root, ".dhi"), toolRoot} {
+	for _, want := range []string{filepath.Join(root, "repos", "alpha"), filepath.Join(root, ".dhi"), skills} {
 		if !strings.Contains(p, want) {
 			t.Errorf("profile missing root %s:\n%s", want, p)
 		}
+	}
+	for _, line := range strings.Split(p, "\n") {
+		if strings.HasPrefix(line, "(allow file-write*") && strings.Contains(line, `"`+skills+`"`) {
+			t.Fatalf("a read-only tree is writable:\n%s", line)
+		}
+	}
+}
+
+// Tools never block boot (ADR-0044): there is no toolchain to check.
+func TestNoToolBlocksBoot(t *testing.T) {
+	d := Audit(Input{CWD: mkWorkspace(t, wsCfg), GOOS: "darwin", LookPath: lookHit})
+	if d.Block != "" {
+		t.Fatalf("blocked: %s", d.Block)
 	}
 }
 
@@ -274,35 +223,5 @@ func TestUnusableWorktreeRootBlocksBootWithTheFix(t *testing.T) {
 	d = Audit(Input{CWD: root, UserCfg: cfg, GOOS: "darwin", LookPath: lookHit})
 	if d.Block == "" || !strings.Contains(d.Block, "home") {
 		t.Fatalf("block = %q", d.Block)
-	}
-}
-
-// TestToolchainIsReadOnlyToAgents pins the ro-root differentiation: the
-// pinned toolchain is readable/executable but not writable inside the
-// sandbox; only its runtime caches are.
-func TestToolchainIsReadOnlyToAgents(t *testing.T) {
-	toolRoot := t.TempDir()
-	d := Audit(Input{CWD: t.TempDir(), ToolRoot: toolRoot, GOOS: "darwin", LookPath: lookHit})
-	sb, ok := d.Sandbox.(*sandbox.Seatbelt)
-	if !ok {
-		t.Fatalf("sandbox = %T (block %q)", d.Sandbox, d.Block)
-	}
-	var write string
-	for _, line := range strings.Split(sb.Profile(), "\n") {
-		// The roots line; device nodes (/dev/null…) have a rule of their own.
-		if strings.HasPrefix(line, "(allow file-write*") && strings.Contains(line, "(subpath") {
-			write = line
-		}
-	}
-	if strings.Contains(write, `"`+toolRoot+`"`) {
-		t.Fatalf("the toolchain root is writable:\n%s", write)
-	}
-	for _, sub := range toolchain.WritableSubdirs {
-		if !strings.Contains(write, filepath.Join(toolRoot, sub)) {
-			t.Errorf("%s must stay writable:\n%s", sub, write)
-		}
-	}
-	if !strings.Contains(sb.Profile(), `(subpath "`+toolRoot+`")`) {
-		t.Fatal("the toolchain must stay readable/executable")
 	}
 }

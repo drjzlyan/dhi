@@ -32,9 +32,11 @@ already work in:
   member repo at once; changes that span services stay linked.
 - **Your keyboard, your rules.** Vim-style editing, a command palette for
   everything, and every key shown where you need it. The mouse works too.
-- **Nothing to install around it.** DHI brings its own pinned Go, Node, git,
-  ripgrep and GitHub CLI under one folder. No sudo, and your system
-  toolchain is never touched.
+- **Your tools, your config.** DHI uses the git, language servers, ripgrep,
+  GitHub CLI and coding agents already on your machine, with your shell
+  environment, `~/.gitconfig`, SSH keys and logins, as your terminal does.
+  A missing tool is offered with your package manager's exact command, and
+  it runs only when you say yes.
 - **Fits any window.** Every screen adapts from a narrow split to an
   ultrawide monitor and is tested at each size.
 
@@ -83,9 +85,7 @@ Use one method, not both: a copy in `~/.local/bin` earlier on your `PATH`
 hides the Homebrew one (`rm ~/.local/bin/dhi` if you switch to Homebrew).
 
 **Platforms:** macOS (Apple silicon and Intel, macOS 12+) and Linux
-(x86_64 and arm64). These are the platforms DHI pins a complete toolchain
-for; others are refused at install time with the reason, rather than
-failing on first run.
+(x86_64 and arm64). Others are refused at install time with the reason.
 
 <details>
 <summary>Build from source</summary>
@@ -109,8 +109,7 @@ brew update && brew upgrade dhi
 dhi version   # check what you have
 ```
 
-Updating never touches your toolchain (`~/.local/share/dhi`), settings
-(`~/.config/dhi`) or workspaces. Restart any running `dhi` to pick up the new
+Updating never touches your settings (`~/.config/dhi`) or workspaces. Restart any running `dhi` to pick up the new
 version. To go back to an older release, re-run the script with
 `DHI_VERSION=<version>`.
 
@@ -120,9 +119,13 @@ version. To go back to an older release, re-run the script with
 cd your-project && dhi
 ```
 
-1. **Toolchain.** DHI lists what it will download (about 157 MB: Go, Node,
-   uv, ripgrep, git, gh) and where, then asks before installing. Everything
-   lands in `~/.local/share/dhi`; delete that folder to uninstall.
+1. **Your tools.** DHI reads your login shell's environment, so tools from
+   Homebrew, nvm, asdf or mise are found. Nothing is downloaded at launch.
+   When a feature needs a missing tool (a language server, ripgrep), a card
+   shows the command, for example `brew install gopls`. Press `y` and it
+   runs in a terminal tab you can watch. Earlier versions kept a toolchain
+   in `~/.local/share/dhi/toolchain`; DHI offers to delete it, and does so
+   only on yes.
 2. **Setup.** A short wizard covers:
    - the workspace;
    - your git identity;

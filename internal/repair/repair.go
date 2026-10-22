@@ -42,6 +42,9 @@ type Input struct {
 	UserConfig string
 	// Creds is the credentials file; nil skips the credential-kind repair.
 	Creds *credstore.Store
+	// LegacyToolchain is the toolchain folder DHI kept before ADR-0044;
+	// "" skips the repair that offers to delete it.
+	LegacyToolchain string
 }
 
 // Find lists the repairs that apply now, safe ones first.
@@ -69,6 +72,9 @@ func Find(in Input) []Repair {
 		out = append(out, r)
 	}
 	if r, ok := skillFiles(in); ok {
+		out = append(out, r)
+	}
+	if r, ok := legacyToolchain(in.LegacyToolchain); ok {
 		out = append(out, r)
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Safe && !out[j].Safe })
@@ -335,4 +341,36 @@ func credentialKinds(in Input) (Repair, bool) {
 			return err
 		},
 	}, true
+}
+
+// legacyToolchain offers to delete the toolchain DHI downloaded before it
+// used the user's own tools (ADR-0044). It is never safe: deleting needs
+// the user's yes, and only a folder named dhi/toolchain qualifies.
+func legacyToolchain(dir string) (Repair, bool) {
+	if dir == "" || filepath.Base(dir) != "toolchain" || filepath.Base(filepath.Dir(dir)) != "dhi" {
+		return Repair{}, false
+	}
+	if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
+		return Repair{}, false
+	}
+	return Repair{
+		ID:   "legacy-toolchain",
+		What: fmt.Sprintf("DHI no longer uses its own toolchain (it uses the tools on your system); delete %s (%d MB)", dir, dirSize(dir)>>20),
+		Apply: func() error {
+			return os.RemoveAll(dir)
+		},
+	}, true
+}
+
+func dirSize(dir string) int64 {
+	var n int64
+	_ = filepath.WalkDir(dir, func(_ string, d os.DirEntry, err error) error {
+		if err == nil && d.Type().IsRegular() {
+			if fi, ierr := d.Info(); ierr == nil {
+				n += fi.Size()
+			}
+		}
+		return nil
+	})
+	return n
 }

@@ -1,7 +1,6 @@
 // Package gatechain runs several boot gates in order behind the shell's
-// single gate slot (F-043): the toolchain gate first, then the setup
-// wizard. A later gate starts only when the one before it finishes, so
-// the wizard never races a bootstrap.
+// single gate slot (F-043): a blocked boot, the repairs, then the setup
+// wizard. A later gate starts only when the one before it finishes.
 package gatechain
 
 import (
@@ -140,28 +139,3 @@ func (c *Chain) NeedsRelaunch() bool {
 	}
 	return false
 }
-
-// RelaunchGate is the chain's tail: when needed() reports that something
-// the running services captured at launch has since changed (e.g. the
-// bootstrap just installed git), it ends the program so main can start a
-// fresh process instead of running on stale services. With nothing to do
-// it is already finished and the chain skips it.
-type RelaunchGate struct {
-	needed        func() bool
-	fired         bool
-	width, height int
-}
-
-// Relaunch builds the gate.
-func Relaunch(needed func() bool) *RelaunchGate { return &RelaunchGate{needed: needed} }
-
-func (g *RelaunchGate) Init() tea.Cmd {
-	g.fired = true
-	return tea.Quit
-}
-func (g *RelaunchGate) Resize(w, h int)        { g.width, g.height = w, h }
-func (g *RelaunchGate) Update(tea.Msg) tea.Cmd { return nil }
-func (g *RelaunchGate) HandleKey(string) bool  { return true }
-func (g *RelaunchGate) Finished() bool         { return !g.fired && (g.needed == nil || !g.needed()) }
-func (g *RelaunchGate) NeedsRelaunch() bool    { return g.fired }
-func (g *RelaunchGate) View() string           { return "restarting DHI to use the new toolchain…" }

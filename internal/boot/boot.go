@@ -1,19 +1,17 @@
 // Package boot resolves what launch must do before any surface renders
-// (F-011 / ADR-0011): proceed, offer confirmation-gated installs, or
-// block with named reasons and fixes. All resolution policy lives here
-// and is table-tested; cmd/dhi only renders the decision. There are no
-// fallbacks: a missing hard requirement refuses boot; a declined
-// install leaves the capability refusing at use with the named fix.
+// (F-011 / ADR-0011, amended by ADR-0044): proceed, or block with named
+// reasons and fixes. All resolution policy lives here and is
+// table-tested; cmd/dhi only renders the decision. Tools never block
+// boot: they come from the user's system, and a missing one raises its
+// install card where it is needed (F-110).
 package boot
 
 import (
 	"os"
 	"path/filepath"
-	"sort"
 
 	"github.com/drjzlyan/dhi/internal/sandbox"
 	"github.com/drjzlyan/dhi/internal/settings"
-	"github.com/drjzlyan/dhi/internal/toolchain"
 	"github.com/drjzlyan/dhi/internal/workspace"
 	"github.com/drjzlyan/dhi/internal/worktrees"
 )
@@ -22,7 +20,6 @@ import (
 // decision table-testable without a real host.
 type Input struct {
 	CWD      string // launch directory (workspace probe)
-	ToolRoot string // hermetic prefix ("" disables toolchain checks)
 	UserCfg  string // settings user layer ("" ok)
 	Home     string // home directory for `~` in worktrees.root ("" = the process's)
 	GOOS     string
@@ -40,19 +37,6 @@ type Decision struct {
 	Block string
 	Fixes []string
 
-	// Offer lists missing hermetic pieces for the confirmation-gated
-	// install (empty when nothing is missing or boot is blocked).
-	Offer []string
-	// OfferBytes are the per-tool download sizes behind Offer (this
-	// platform), OfferTotal their sum; 0 = unknown. FirstRun marks the
-	// one-time install of the whole toolchain (no lockfile yet).
-	OfferBytes map[string]int64
-	OfferTotal int64
-	FirstRun   bool
-	// OfferRoot is where the install lands (the hermetic prefix), shown
-	// to the user before they agree.
-	OfferRoot string
-
 	// Sandbox is the adapter for runtime.Config (nil when no workspace
 	// is loaded — the runtime is never built then — or boot blocked).
 	Sandbox sandbox.Sandbox
@@ -68,7 +52,7 @@ type Decision struct {
 }
 
 // Audit resolves the full launch decision in a fixed order: workspace →
-// settings → sandbox → toolchain. The first hard failure blocks; every
+// settings → sandbox. The first hard failure blocks; every
 // block names the offending file or seam and how to fix it.
 func Audit(in Input) Decision {
 	d := Decision{}
@@ -130,19 +114,7 @@ func Audit(in Input) Decision {
 			rw = append(rw, base)
 		}
 	}
-	// The pinned toolchain is read-only to sandboxed agent processes (an
-	// agent must never swap DHI's compilers); only its runtime caches are
-	// writable. DHI itself installs outside the sandbox.
 	var ro []string
-	if in.ToolRoot != "" {
-		ro = append(ro, in.ToolRoot)
-		for _, sub := range toolchain.WritableSubdirs {
-			dir := filepath.Join(in.ToolRoot, sub)
-			if err := os.MkdirAll(dir, 0o755); err == nil {
-				rw = append(rw, dir)
-			}
-		}
-	}
 	for _, r := range in.ReadOnly {
 		if resolved, err := filepath.EvalSymlinks(r); err == nil {
 			ro = append(ro, resolved)
@@ -179,57 +151,7 @@ func Audit(in Input) Decision {
 		d.Sandbox = sb
 	}
 
-	// 4. Toolchain: a corrupt lockfile refuses (supply-chain surface);
-	// a missing lockfile is first-run and the bootstrap gate handles
-	// it; missing pieces become the confirmation-gated install offer.
-	if in.ToolRoot != "" {
-		mgr := toolchain.New(in.ToolRoot)
-		lf, err := mgr.ReadLockfile()
-		if err != nil {
-			d.Block = "toolchain lockfile is corrupt: " + err.Error()
-			d.Fixes = []string{"re-run bootstrap (delete " + in.ToolRoot + " to reinstall from scratch)"}
-			return d
-		}
-		if lf != nil && len(lf.Tools) > 0 {
-			d.Offer = missingTools(mgr)
-			d.OfferBytes, d.OfferTotal = offerSizes(d.Offer)
-			d.OfferRoot = in.ToolRoot
-			for _, spec := range toolchain.SourceBuilt() {
-				if !hasShim(in.ToolRoot, spec.Name) {
-					d.Offer = append(d.Offer, spec.Name+" (built from source)")
-				}
-			}
-		}
-	}
 	return d
-}
-
-// missingTools diffs the embedded registry against installed state.
-// Resolve errors (unknown tool, unreadable state) surface as an offer
-// of everything the manifest lists — the install either fixes it or
-// reports the failure visibly.
-func missingTools(mgr *toolchain.Manager) []string {
-	mf, err := toolchain.Embedded()
-	if err != nil {
-		return nil
-	}
-	plan, err := mgr.Resolve(mf, nil)
-	if err != nil {
-		return nil
-	}
-	var out []string
-	for _, p := range plan {
-		if p.Reason == "missing" {
-			out = append(out, p.Tool)
-		}
-	}
-	return out
-}
-
-// hasShim reports whether a named executable sits in the prefix bin.
-func hasShim(root, name string) bool {
-	_, err := os.Stat(filepath.Join(root, "bin", name))
-	return err == nil
 }
 
 // SandboxMode re-reads the sandbox setting for surfaces that need to
@@ -241,31 +163,4 @@ func SandboxMode(userCfg, wsCfg string) string {
 		return settings.SandboxAuto
 	}
 	return cfg.Security.Sandbox
-}
-
-// offerSizes looks up the pinned download size of each offered tool.
-func offerSizes(names []string) (map[string]int64, int64) {
-	mf, err := toolchain.Embedded()
-	if err != nil || len(names) == 0 {
-		return nil, 0
-	}
-	return mf.DownloadSize(names)
-}
-
-// FirstRunOffer describes the one-time install of the whole embedded
-// toolchain (everything the manifest pins for this platform), sorted by
-// name, so the first launch can ask before downloading anything.
-func FirstRunOffer() (names []string, bytes map[string]int64, total int64) {
-	mf, err := toolchain.Embedded()
-	if err != nil {
-		return nil, nil, 0
-	}
-	for n, t := range mf.Tools {
-		if _, ok := t.Platforms[toolchain.PlatformKey()]; ok {
-			names = append(names, n)
-		}
-	}
-	sort.Strings(names)
-	bytes, total = mf.DownloadSize(names)
-	return names, bytes, total
 }

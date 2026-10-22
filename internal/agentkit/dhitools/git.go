@@ -11,8 +11,7 @@ import (
 )
 
 // GitCLI is the narrow git-CLI seam the diff tool needs (go-git has no
-// patch producer). Satisfied by *gitcore.Runner — the hermetic git
-// binary with its declared env.
+// patch producer). Satisfied by *gitcore.Runner — the user's git.
 type GitCLI interface {
 	Run(ctx context.Context, dir string, args ...string) (string, string, error)
 }

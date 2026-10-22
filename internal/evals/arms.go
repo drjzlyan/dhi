@@ -362,8 +362,7 @@ func (e execRunner) Run(ctx context.Context, dir string, argv []string, _ bool) 
 	return string(out), err
 }
 
-// gitWorktreeAttach mirrors the app's task worktree seam with the host
-// git (the app uses DHI's hermetic git; evals are a dev harness).
+// gitWorktreeAttach mirrors the app's task worktree seam with git.
 func gitWorktreeAttach(ws *workspace.Workspace) tasks.AttachFn {
 	return func(slug, member, branch, startpoint string) (string, error) {
 		mem, ok := ws.Member(member)

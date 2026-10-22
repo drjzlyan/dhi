@@ -1,162 +1,83 @@
 package doctor
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/drjzlyan/dhi/internal/toolchain"
 )
 
-// fakeGitShim installs a stub git at root/bin/git printing the given
-// --version line, mirroring the shim layout toolchain.Manager expects.
-func fakeGitShim(t *testing.T, root, version string) {
+// fakeGit puts a stub git on a private PATH: --version prints version,
+// config --get prints the given identity.
+func fakeGit(t *testing.T, version, name, email string) {
 	t.Helper()
-	shimDir := filepath.Join(root, "bin")
-	if err := os.MkdirAll(shimDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	script := "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo \"git version " + version + "\"; fi\n"
-	if err := os.WriteFile(filepath.Join(shimDir, "git"), []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestGitChecksSilentWithoutPin(t *testing.T) {
-	// Pre-pin the registry has no git entry and the suite stays silent;
-	// once the pin flips (ADR-0009 release), warn-until-installed takes
-	// over and this absence-case is obsolete.
-	mf, err := toolchain.Embedded()
-	if err != nil {
-		t.Fatalf("embedded registry: %v", err)
-	}
-	if _, pinned := mf.Tools["git"]; pinned {
-		t.Skip("git pin flipped; silence-case no longer applicable")
-	}
-	if checks := Git(t.TempDir()); checks != nil {
-		t.Errorf("expected no checks pre-pin, got %+v", checks)
-	}
-}
-
-func TestGitChecksBranches(t *testing.T) {
-	const pin = "9.9.9"
-
-	t.Run("absent prefix warns", func(t *testing.T) {
-		checks := gitChecks(pin, filepath.Join(t.TempDir(), "absent"))
-		c, ok := statusOf(checks, "git/shim")
-		if !ok || c.Status != Warn || !strings.Contains(c.Detail, "pending first bootstrap") {
-			t.Errorf("absent prefix = %+v (found=%v)", c, ok)
-		}
-	})
-
-	t.Run("unlocked warns", func(t *testing.T) {
-		root := t.TempDir()
-		checks := gitChecks(pin, root)
-		c, ok := statusOf(checks, "git/shim")
-		if !ok || c.Status != Warn || !strings.Contains(c.Detail, "not installed yet") {
-			t.Errorf("unlocked = %+v (found=%v)", c, ok)
-		}
-	})
-
-	t.Run("stale lockfile warns", func(t *testing.T) {
-		root := t.TempDir()
-		writeLockfile(t, root, map[string]lockedTool{
-			"git": {Version: "2.54.0", SHA256: strings.Repeat("a", 64), Path: "tools/git/2.54.0"},
-		})
-		checks := gitChecks(pin, root)
-		c, ok := statusOf(checks, "git/shim")
-		if !ok || c.Status != Warn || !strings.Contains(c.Detail, "bootstrap will upgrade") {
-			t.Errorf("stale lock = %+v (found=%v)", c, ok)
-		}
-	})
-
-	t.Run("missing shim fails", func(t *testing.T) {
-		root := t.TempDir()
-		writeLockfile(t, root, map[string]lockedTool{
-			"git": {Version: pin, SHA256: strings.Repeat("b", 64), Path: "tools/git/" + pin},
-		})
-		checks := gitChecks(pin, root)
-		c, ok := statusOf(checks, "git/shim")
-		if !ok || c.Status != Fail || !strings.Contains(c.Detail, "shim missing") {
-			t.Errorf("missing shim = %+v (found=%v)", c, ok)
-		}
-	})
-
-	t.Run("version mismatch fails", func(t *testing.T) {
-		root := t.TempDir()
-		writeLockfile(t, root, map[string]lockedTool{
-			"git": {Version: pin, SHA256: strings.Repeat("b", 64), Path: "tools/git/" + pin},
-		})
-		fakeGitShim(t, root, "2.55.0-somethingelse")
-		checks := gitChecks(pin, root)
-		c, ok := statusOf(checks, "git/version")
-		if !ok || c.Status != Fail || !strings.Contains(c.Detail, "registry pins") {
-			t.Errorf("mismatch = %+v (found=%v)", c, ok)
-		}
-	})
-
-	t.Run("healthy install passes", func(t *testing.T) {
-		root := t.TempDir()
-		writeLockfile(t, root, map[string]lockedTool{
-			"git": {Version: pin, SHA256: strings.Repeat("c", 64), Path: "tools/git/" + pin},
-		})
-		fakeGitShim(t, root, pin)
-		checks := gitChecks(pin, root)
-		if len(checks) != 1 {
-			t.Fatalf("healthy install emitted %+v, want single OK check", checks)
-		}
-		if checks[0].Name != "git/version" || checks[0].Status != OK {
-			t.Errorf("healthy = %+v", checks[0])
-		}
-	})
-}
-
-// identityShim installs a stub git at root/bin/git whose `config --get`
-// answers (or refuses) user.name/user.email.
-func identityShim(t *testing.T, root, name, email string) {
-	t.Helper()
-	shimDir := filepath.Join(root, "bin")
-	if err := os.MkdirAll(shimDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	script := "#!/bin/sh\n"
+	dir := t.TempDir()
+	script := "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo \"git version " + version + "\"; exit 0; fi\n"
 	if name != "" {
-		script += "if [ \"$3\" = user.name ]; then echo " + name + "; exit 0; fi\n"
+		script += "case \"$*\" in *user.name*) echo " + name + "; exit 0;; esac\n"
 	}
 	if email != "" {
-		script += "if [ \"$3\" = user.email ]; then echo " + email + "; exit 0; fi\n"
+		script += "case \"$*\" in *user.email*) echo " + email + "; exit 0;; esac\n"
 	}
 	script += "exit 1\n"
-	if err := os.WriteFile(filepath.Join(shimDir, "git"), []byte(script), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "git"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)
+	}
+	orig := lookPath
+	t.Cleanup(func() { lookPath = orig })
+	lookPath = func(n string) (string, error) {
+		if n == "git" {
+			return filepath.Join(dir, "git"), nil
+		}
+		return "", errors.New("not found")
 	}
 }
 
-func TestIdentityRow(t *testing.T) {
-	mf, err := toolchain.Embedded()
-	if err != nil {
-		t.Fatalf("embedded registry: %v", err)
+func TestGitReportsTheUsersGit(t *testing.T) {
+	fakeGit(t, "2.55.0", "Ada", "ada@example.com")
+	if c, ok := statusOf(Git(), "git/version"); !ok || c.Status != OK || !strings.Contains(c.Detail, "2.55.0") {
+		t.Fatalf("git = %+v", c)
 	}
-	if _, ok := mf.Tools["git"]; !ok {
-		t.Skip("git pin not flipped; identity row stays silent")
+	if c, ok := statusOf(Identity(), "identity"); !ok || c.Status != OK || !strings.Contains(c.Detail, "Ada <ada@example.com>") {
+		t.Fatalf("identity = %+v", c)
 	}
+}
 
-	t.Run("set reports OK", func(t *testing.T) {
-		root := t.TempDir()
-		identityShim(t, root, "Ada", "ada@example.com")
-		c, ok := statusOf(Identity(root), "identity")
-		if !ok || c.Status != OK || !strings.Contains(c.Detail, "Ada") {
-			t.Errorf("set = %+v (found=%v)", c, ok)
-		}
-	})
+func TestIdentityUnsetWarnsNamingTheFix(t *testing.T) {
+	fakeGit(t, "2.55.0", "", "")
+	c, ok := statusOf(Identity(), "identity")
+	if !ok || c.Status != Warn || !strings.Contains(c.Detail, "user.name") {
+		t.Fatalf("unset = %+v (found=%v)", c, ok)
+	}
+}
 
-	t.Run("unset warns naming the fix", func(t *testing.T) {
-		root := t.TempDir()
-		identityShim(t, root, "", "")
-		c, ok := statusOf(Identity(root), "identity")
-		if !ok || c.Status != Warn || !strings.Contains(c.Detail, "user.name") {
-			t.Errorf("unset = %+v (found=%v)", c, ok)
-		}
-	})
+func TestMissingGitAndGHWarnWithTheInstallCommand(t *testing.T) {
+	orig := lookPath
+	t.Cleanup(func() { lookPath = orig })
+	lookPath = func(string) (string, error) { return "", errors.New("not found") }
+	if c, _ := statusOf(Git(), "git/version"); c.Status != Warn || !strings.Contains(c.Detail, "install") {
+		t.Fatalf("git = %+v", c)
+	}
+	if Identity() != nil {
+		t.Fatal("identity is silent without git")
+	}
+	if c, _ := statusOf(GH(), "gh/cli"); c.Status != Warn || !strings.Contains(c.Detail, "gh auth login") {
+		t.Fatalf("gh = %+v", c)
+	}
+}
+
+func TestLegacyToolchainIsNamedWithItsSize(t *testing.T) {
+	data := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", data)
+	if LegacyToolchain() != nil {
+		t.Fatal("no old folder: no row")
+	}
+	dir := filepath.Join(data, "dhi", "toolchain", "tools")
+	os.MkdirAll(dir, 0o755)
+	os.WriteFile(filepath.Join(dir, "big"), make([]byte, 3<<20), 0o644)
+	c, ok := statusOf(LegacyToolchain(), "host/old-toolchain")
+	if !ok || c.Status != Warn || !strings.Contains(c.Detail, "3 MB") || !strings.Contains(c.Detail, "delete") {
+		t.Fatalf("old toolchain = %+v", c)
+	}
 }

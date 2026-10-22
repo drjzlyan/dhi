@@ -210,7 +210,7 @@ func (m *Model) renderDiff(w, h int, viewed map[string]bool) string {
 			return theme.TextDim().Render("(worktree discarded)")
 		default:
 			return kit.Notice{Kind: kit.NoticeWarning, What: "No diff to show",
-				Why:   "the review has no changes, or the hermetic git could not run.",
+				Why:   "the review has no changes, or git could not run.",
 				Retry: "run dhi doctor if you expected changes"}.String(w)
 		}
 	}

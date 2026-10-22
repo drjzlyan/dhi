@@ -16,7 +16,7 @@ import (
 )
 
 // Claude writes a fixture `claude` companion into a fresh temp bin dir
-// and returns the hermetic CLIEnv (PATH = bin dir + standard system
+// and returns a CLIEnv (PATH = bin dir + standard system
 // dirs, so the script's own helpers resolve) and a registry resolving
 // claude to it.
 func Claude(t *testing.T, script string) (binDir, cliEnv string, reg *clirun.Registry) {

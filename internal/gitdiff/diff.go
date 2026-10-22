@@ -3,7 +3,7 @@
 // pairs hunk lines into aligned rows for the two-column layout.
 //
 // Parse is a pure function of patch text: it never invokes git. Callers
-// obtain patches from the hermetic CLI (`git diff --no-color base...head`)
+// obtain patches from the git CLI (`git diff --no-color base...head`)
 // or from external sources such as `gh pr diff`.
 package gitdiff
 

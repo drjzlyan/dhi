@@ -128,19 +128,18 @@ type RemoteComment struct {
 	CreatedAt time.Time
 }
 
-// GHCLI runs DHI's hermetic gh shim (registry-pinned, ADR-0011). The
-// host `gh` lookup path is gone: when the shim is absent the seam
-// reports unavailable and PR flows refuse with the named fix.
+// GHCLI runs the user's gh with their login (F-110). When gh is not
+// installed the seam reports unavailable and PR flows refuse with the
+// named fix.
 type GHCLI struct {
-	bin string // shim path; "" = unavailable
+	bin string // gh's path; "" = unavailable
 }
 
-// NewGHCLI binds the gh seam to a shim path. Callers pass the
-// toolchain shim path (<prefix>/bin/gh); an empty path yields a
-// permanently unavailable seam.
+// NewGHCLI binds the gh seam to gh's path; "" yields a permanently
+// unavailable seam.
 func NewGHCLI(bin string) *GHCLI { return &GHCLI{bin: bin} }
 
-// Available reports whether the hermetic gh shim was provided.
+// Available reports whether gh was found.
 func (g *GHCLI) Available() bool { return g.bin != "" }
 
 func (g *GHCLI) run(ctx context.Context, args ...string) (string, error) {

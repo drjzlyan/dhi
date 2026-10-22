@@ -85,71 +85,34 @@ func TestVerifyPrepareRespectsNetworkScope(t *testing.T) {
 	}
 }
 
-// fakeToolchain is an optional-toolchain seam that records installs.
-type fakeToolchain struct {
-	installed map[string]bool
-	installs  []string
+// fakeToolchain is a host-tool seam with a fixed set of missing tools.
+type fakeToolchain struct{ missing map[string]string }
+
+func (f *fakeToolchain) Missing(name string) (string, bool) {
+	hint, ok := f.missing[name]
+	return hint, ok
 }
 
-func (f *fakeToolchain) Optional(name string) (int64, bool) {
-	return 300 << 20, name == "rust" || name == "jdk"
-}
-func (f *fakeToolchain) Installed(name string) bool { return f.installed[name] }
-func (f *fakeToolchain) Install(_ context.Context, name string) error {
-	f.installs = append(f.installs, name)
-	f.installed[name] = true
-	return nil
-}
-
-func TestVerifyInstallsMissingToolchainAfterApproval(t *testing.T) {
+// A project whose toolchain is not installed stays unverified, named,
+// with the install command; nothing is installed and nothing asks.
+func TestVerifyNamesAMissingToolchain(t *testing.T) {
 	nr := &netRunner{}
-	tc := &fakeToolchain{installed: map[string]bool{}}
 	ap := tools.NewApprovals()
-	r := &Runtime{cfg: Config{Run: nr, Toolchain: tc, Approvals: ap}}
+	r := &Runtime{cfg: Config{Run: nr, Toolchain: &fakeToolchain{missing: map[string]string{"rust": "brew install rust"}}, Approvals: ap}}
 	dir := t.TempDir()
 	_ = os.WriteFile(filepath.Join(dir, "Cargo.toml"), []byte("[package]"), 0o644)
 	p := verifyplan.Detect(dir)[0]
 	tg := verifyTarget{dir: dir, argv: p.Test, plan: p}
 
-	var asked string
-	go func() {
-		for i := 0; i < 200; i++ {
-			if l := ap.List(); len(l) > 0 {
-				asked = l[0].Target
-				ap.Resolve(l[0].ID, true)
-				return
-			}
-			time.Sleep(5 * time.Millisecond)
-		}
-	}()
 	res := r.verify(context.Background(), "scout", scopes.Set{scopes.Network: scopes.Auto}, []verifyTarget{tg})
-	if !res.ok || strings.Join(tc.installs, ",") != "rust" {
-		t.Fatalf("res=%+v installs=%v", res, tc.installs)
-	}
-	if !strings.Contains(asked, "install the managed rust toolchain (300 MB download)") {
-		t.Fatalf("approval asked %q", asked)
-	}
-	// Installed now: no second ask, no second install.
-	r.verify(context.Background(), "scout", scopes.Set{scopes.Network: scopes.Auto}, []verifyTarget{tg})
-	if len(tc.installs) != 1 || len(ap.List()) != 0 {
-		t.Fatalf("reinstalled or re-asked: %v", tc.installs)
+	if res.ok || !res.env || !strings.Contains(res.tail, "rust toolchain is not installed") ||
+		!strings.Contains(res.tail, "brew install rust") || len(nr.calls) != 0 || len(ap.List()) != 0 {
+		t.Fatalf("res=%+v calls=%v asks=%d", res, nr.calls, len(ap.List()))
 	}
 
-	// Denied: unverified, named, nothing installed.
-	tc2 := &fakeToolchain{installed: map[string]bool{}}
-	r.cfg.Toolchain = tc2
-	go func() {
-		for i := 0; i < 200; i++ {
-			if l := ap.List(); len(l) > 0 {
-				ap.Resolve(l[0].ID, false)
-				return
-			}
-			time.Sleep(5 * time.Millisecond)
-		}
-	}()
-	res = r.verify(context.Background(), "scout", scopes.Set{scopes.Network: scopes.Auto}, []verifyTarget{tg})
-	if res.ok || !res.env || !strings.Contains(res.tail, "rust toolchain is not installed") || len(tc2.installs) != 0 {
-		t.Fatalf("denied: %+v installs=%v", res, tc2.installs)
+	r.cfg.Toolchain = &fakeToolchain{} // installed now
+	if res := r.verify(context.Background(), "scout", scopes.Set{scopes.Network: scopes.Auto}, []verifyTarget{tg}); !res.ok {
+		t.Fatalf("installed: %+v", res)
 	}
 }
 
