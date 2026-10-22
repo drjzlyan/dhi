@@ -767,7 +767,7 @@ func (m *Model) HandleKey(key string) bool {
 		m.ToggleGitPanel()
 		return true
 	}
-	if key == "ctrl+a" && m.chat != nil && !(m.chat.open && m.chat.focus) { // typing: line start
+	if key == "ctrl+a" && m.chat != nil && (!m.chat.open || !m.chat.focus) { // typing: line start
 		m.chat.Toggle()
 		return true
 	}

@@ -63,7 +63,7 @@ func marketplaceBytes(ctx context.Context, src Source, client *http.Client, fetc
 		if err != nil {
 			return nil, fmt.Errorf("fetch %s: %w", url, err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		if resp.StatusCode != http.StatusOK {
 			return nil, fmt.Errorf("fetch %s: %s", url, resp.Status)
 		}
@@ -76,7 +76,7 @@ func marketplaceBytes(ctx context.Context, src Source, client *http.Client, fetc
 	if err != nil {
 		return nil, err
 	}
-	defer os.RemoveAll(dir)
+	defer func() { _ = os.RemoveAll(dir) }()
 	if _, err := fetch(ctx, src.URL, src.Ref, dir); err != nil {
 		return nil, err
 	}

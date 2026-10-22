@@ -185,7 +185,7 @@ func (t *oauthTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 		return resp, err
 	}
 	// 401 with a refresh token: refresh once and retry.
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	nt, rerr := t.o.refresh(r.Context(), tok)
 	if rerr != nil {
 		_ = t.o.Store.Delete(t.key) // the grant is gone: sign in again
@@ -212,7 +212,7 @@ func snapshotBody(r *http.Request) ([]byte, error) {
 		return nil, nil
 	}
 	b, err := io.ReadAll(r.Body)
-	r.Body.Close()
+	_ = r.Body.Close()
 	return b, err
 }
 
@@ -248,8 +248,8 @@ func (o *OAuth) probe(ctx context.Context, serverURL string) (http.Header, int, 
 	if err != nil {
 		return nil, 0, err
 	}
-	io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<16))
-	resp.Body.Close()
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<16))
+	_ = resp.Body.Close()
 	return resp.Header, resp.StatusCode, nil
 }
 
@@ -277,7 +277,7 @@ func (o *OAuth) getJSON(ctx context.Context, u string, out any) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("%s: %s", u, resp.Status)
 	}
@@ -412,7 +412,7 @@ func (o *OAuth) login(ctx context.Context, serverURL string, cfg ClientConfig, l
 	if err != nil {
 		return fmt.Errorf("listen for the sign-in redirect on port %d: %w", cfg.CallbackPort, err)
 	}
-	defer ln.Close()
+	defer func() { _ = ln.Close() }()
 	redirect := fmt.Sprintf("http://localhost:%d/callback", ln.Addr().(*net.TCPAddr).Port)
 
 	clientID, secret := cfg.ClientID, ""
@@ -458,14 +458,14 @@ func (o *OAuth) login(ctx context.Context, serverURL string, cfg ClientConfig, l
 			return
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		fmt.Fprint(w, "<!doctype html><title>DHI</title><p style=\"font-family:sans-serif\">Signed in. You can close this tab and return to DHI.</p>")
+		_, _ = fmt.Fprint(w, "<!doctype html><title>DHI</title><p style=\"font-family:sans-serif\">Signed in. You can close this tab and return to DHI.</p>")
 		select {
 		case codes <- r.URL.Query():
 		default:
 		}
 	})}
-	go srv.Serve(ln)
-	defer srv.Close()
+	go func() { _ = srv.Serve(ln) }()
+	defer func() { _ = srv.Close() }()
 
 	if o.Show != nil {
 		o.Show(hostOf(serverURL), authURL)
@@ -527,7 +527,7 @@ func (o *OAuth) register(ctx context.Context, endpoint, redirect string) (string
 	if err != nil {
 		return "", "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode/100 != 2 {
 		b, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
 		return "", "", fmt.Errorf("register with %s: %s %s", hostOf(endpoint), resp.Status, strings.TrimSpace(string(b)))
@@ -557,7 +557,7 @@ func (o *OAuth) exchange(ctx context.Context, as *authServerMeta, form url.Value
 	if err != nil {
 		return Token{}, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	var out struct {
 		AccessToken  string `json:"access_token"`
 		RefreshToken string `json:"refresh_token"`
@@ -627,7 +627,7 @@ func (o *OAuth) Logout(ctx context.Context, serverURL string) error {
 			if req, err := http.NewRequestWithContext(ctx, http.MethodPost, t.RevokeURL, strings.NewReader(form.Encode())); err == nil {
 				req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 				if resp, err := o.http().Do(req); err == nil {
-					resp.Body.Close()
+					_ = resp.Body.Close()
 				}
 			}
 		}

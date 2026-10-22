@@ -85,7 +85,6 @@ type extState struct {
 	picker           *kit.Palette          // plugin / add-server picker
 	assign           *assignState
 	queue            []assign.Item // more items to assign after this one
-	pendingAgent     string        // skill or server the "new agent with it" form adds
 }
 
 // extEvent carries an async fetch result to the loop.

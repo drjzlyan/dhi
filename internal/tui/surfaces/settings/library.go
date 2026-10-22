@@ -87,10 +87,10 @@ func (m *Model) libraryBody(w int) string {
 			style = theme.TabActive()
 		}
 		src := ""
-		switch {
-		case r.source == "builtin":
+		switch r.source {
+		case "builtin":
 			src = theme.TextMuted().Render(" builtin")
-		case r.source == "local":
+		case "local":
 			src = theme.TextMuted().Render(" local")
 		}
 		desc := ""

@@ -127,13 +127,13 @@ func Digest(dir string) (string, error) {
 	sort.Strings(files)
 	for _, f := range files {
 		rel, _ := filepath.Rel(dir, f)
-		io.WriteString(h, filepath.ToSlash(rel)+"\x00")
+		_, _ = io.WriteString(h, filepath.ToSlash(rel)+"\x00")
 		fh, err := os.Open(f)
 		if err != nil {
 			return "", err
 		}
 		_, err = io.Copy(h, fh)
-		fh.Close()
+		_ = fh.Close()
 		if err != nil {
 			return "", err
 		}
