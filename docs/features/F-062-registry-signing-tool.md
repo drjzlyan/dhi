@@ -1,5 +1,7 @@
 # F-062 — Publisher tool for signed pack indexes
 
+> **Superseded (session 61, ADR-0043):** the signed registry is removed, and the signing tool with it. Installs pin a commit instead (F-105).
+
 Status: done (M27 P7; closes the M18 "signature verification deferred" note)
 
 ## Finding

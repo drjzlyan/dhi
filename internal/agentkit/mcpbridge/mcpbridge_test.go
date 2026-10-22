@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -34,11 +33,12 @@ func (f *fakeCaller) CallTool(_ context.Context, name string, _ json.RawMessage)
 }
 func (f *fakeCaller) Close() error { f.closed = true; return nil }
 
-// openServers writes one server card and loads the store.
+// openServers writes one server into the workspace's mcp.json and
+// loads the store.
 func openServers(t *testing.T, srv mcpserver.Server) *mcpserver.Store {
 	t.Helper()
 	root := t.TempDir()
-	if err := mcpserver.Write(root, &srv); err != nil {
+	if err := mcpserver.Add(mcpserver.WorkspaceFile(root), srv.Slug, srv.Entry()); err != nil {
 		t.Fatal(err)
 	}
 	return mcpserver.Open(root)
@@ -49,7 +49,7 @@ func fakeDialer(c *fakeCaller) Dialer {
 }
 
 func TestBridgeAllowlistAndRouting(t *testing.T) {
-	srv := mcpserver.Server{Slug: "fs", Name: "FS", Transport: mcpserver.Stdio, Command: "npx"}
+	srv := mcpserver.Server{Slug: "fs", Transport: mcpserver.Stdio, Command: "npx"}
 	servers := openServers(t, srv)
 	caller := &fakeCaller{tools: []mcp.ToolInfo{
 		{Name: "read", Description: "read a file"},
@@ -82,7 +82,7 @@ func TestBridgeAllowlistAndRouting(t *testing.T) {
 }
 
 func TestBridgeScopeAndApprovals(t *testing.T) {
-	srv := mcpserver.Server{Slug: "fs", Name: "FS", Transport: mcpserver.Stdio, Command: "npx"}
+	srv := mcpserver.Server{Slug: "fs", Transport: mcpserver.Stdio, Command: "npx"}
 	agent := &manifest.Agent{ID: "scout", Tools: []string{"mcp__fs__read"}}
 	caller := &fakeCaller{tools: []mcp.ToolInfo{{Name: "read"}}}
 
@@ -138,7 +138,7 @@ func TestBridgeScopeAndApprovals(t *testing.T) {
 }
 
 func TestBridgeRecordsUndialableServer(t *testing.T) {
-	srv := mcpserver.Server{Slug: "fs", Name: "FS", Transport: mcpserver.Stdio, Command: "npx"}
+	srv := mcpserver.Server{Slug: "fs", Transport: mcpserver.Stdio, Command: "npx"}
 	agent := &manifest.Agent{ID: "scout", Tools: []string{"mcp__fs__read"}}
 	b := New(context.Background(), Deps{
 		Servers: openServers(t, srv), Agent: agent,
@@ -182,40 +182,18 @@ func TestStdioSandboxAndEnv(t *testing.T) {
 		}
 		return "", false
 	}}}
-	// No declared origins → sandbox.Wrap (network denied by profile).
-	argv, err := b.stdioArgv(mcpserver.Server{Command: "npx", Args: []string{"srv"}})
-	if err != nil || sb.wraps != 1 || argv[0] != "WRAP" {
-		t.Fatalf("argv = %v wraps=%d err=%v", argv, sb.wraps, err)
+	// A local server reaches its service: network allowed, files sandboxed.
+	argv, err := b.stdioArgv(mcpserver.Server{Command: "npx", Args: []string{"srv", "--key=${FS_TOKEN}"}})
+	if err != nil || len(sb.netCalls) != 1 || !sb.netCalls[0] || argv[0] != "WRAPNET" || argv[len(argv)-1] != "--key=s3cret" {
+		t.Fatalf("argv = %v net=%v err=%v", argv, sb.netCalls, err)
 	}
-	// Declared origins → WrapNetwork(allow=true).
-	argv, err = b.stdioArgv(mcpserver.Server{Command: "npx", Origins: []string{"api.example.com"}})
-	if err != nil || len(sb.netCalls) != 1 || sb.netCalls[0] != true || argv[0] != "WRAPNET" {
-		t.Fatalf("network argv = %v net=%v err=%v", argv, sb.netCalls, err)
-	}
-	// Credentials resolve by name; a missing one is a named refusal.
-	env, err := b.stdioEnv(mcpserver.Server{Env: []string{"FS_TOKEN"}})
-	if err != nil || !contains(env, "FS_TOKEN=s3cret") {
+	// ${VAR}s in env resolve by name; literals pass; a missing one refuses by name.
+	env, err := b.stdioEnv(mcpserver.Server{Env: map[string]string{"FS_TOKEN": "${FS_TOKEN}", "MODE": "ro"}})
+	if err != nil || !contains(env, "FS_TOKEN=s3cret") || !contains(env, "MODE=ro") {
 		t.Fatalf("env = %v err=%v", env, err)
 	}
-	if _, err := b.stdioEnv(mcpserver.Server{Env: []string{"MISSING"}}); err == nil || !strings.Contains(err.Error(), "MISSING") {
+	if _, err := b.stdioEnv(mcpserver.Server{Env: map[string]string{"X": "${MISSING}"}}); err == nil || !strings.Contains(err.Error(), "MISSING") {
 		t.Fatalf("missing credential = %v", err)
-	}
-}
-
-func TestHTTPOriginEnforced(t *testing.T) {
-	servers := []mcpserver.Server{
-		{Slug: "web", Name: "Web", Transport: mcpserver.HTTP, URL: "https://api.example.com/mcp", Origins: []string{"api.example.com"}},
-	}
-	// Declared origin passes the origin gate (dial then fails on network,
-	// which is fine — the gate is what we assert).
-	b := &Bridge{deps: Deps{}}
-	b.deps.Sandbox = nil
-	if _, err := b.dialDefault(context.Background(), servers[0]); err != nil && strings.Contains(err.Error(), "not a declared origin") {
-		t.Fatalf("declared origin refused: %v", err)
-	}
-	bad := mcpserver.Server{Slug: "web", Name: "Web", Transport: mcpserver.HTTP, URL: "https://evil.example.com/mcp", Origins: []string{"api.example.com"}}
-	if _, err := b.dialDefault(context.Background(), bad); err == nil || !strings.Contains(err.Error(), "not a declared origin") {
-		t.Fatalf("undeclared origin = %v", err)
 	}
 }
 
@@ -254,9 +232,8 @@ func TestHTTPServerGetsItsBearerCredential(t *testing.T) {
 		w.Write([]byte(`{"jsonrpc":"2.0","id":` + string(in.ID) + `,"result":{}}`))
 	}))
 	defer hs.Close()
-	u, _ := url.Parse(hs.URL)
-	srv := mcpserver.Server{Slug: "linear", Name: "L", Transport: mcpserver.HTTP, URL: hs.URL,
-		Origins: []string{u.Host}, AuthEnv: "LINEAR_API_KEY"}
+	srv := mcpserver.Server{Slug: "linear", Transport: mcpserver.HTTP, URL: hs.URL,
+		Headers: map[string]string{"Authorization": "Bearer ${LINEAR_API_KEY}"}}
 
 	b := &Bridge{deps: Deps{Lookup: func(n string) (string, bool) {
 		return "key-xyz", n == "LINEAR_API_KEY"
@@ -272,7 +249,7 @@ func TestHTTPServerGetsItsBearerCredential(t *testing.T) {
 
 	missing := &Bridge{deps: Deps{Lookup: func(string) (string, bool) { return "", false }}}
 	if _, err := missing.dialDefault(context.Background(), srv); err == nil ||
-		!strings.Contains(err.Error(), "credential LINEAR_API_KEY is not set") {
+		!strings.Contains(err.Error(), "LINEAR_API_KEY is not set") {
 		t.Fatalf("missing credential = %v; it must refuse by name", err)
 	}
 }

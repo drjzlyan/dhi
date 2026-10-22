@@ -1,5 +1,7 @@
 # F-091 — Employees suggest skills; you install them, verified, here or everywhere
 
+> **Amended (session 61, ADR-0043):** suggestions name a marketplace plugin or a GitHub/git URL instead of a registry entry; DHI pins the commit and shows every skill and script in full (F-105).
+
 Status: done (M32 P6) · ADR-0039, ADR-0022
 
 ## Behaviour

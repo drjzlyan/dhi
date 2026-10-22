@@ -163,22 +163,23 @@ func (d Deps) miscTools() []tool {
 		{
 			info: mcp.ToolInfo{
 				Name:        "skill_run",
-				Description: "Run a local skill's declared script (shebang, no shell) under the sandbox. Args: {\"skill\": \"<slug>\", \"args\": [\"...\"]}. Mutating: crosses approvals.",
-				InputSchema: json.RawMessage(`{"type":"object","required":["skill"],"properties":{"skill":{"type":"string"},"args":{"type":"array","items":{"type":"string"}}},"additionalProperties":false}`),
+				Description: "Run a script from one of your skills (shebang, no shell) under the sandbox. Args: {\"skill\": \"<name>\", \"script\": \"scripts/<file>\", \"args\": [\"...\"]}. Mutating: crosses approvals.",
+				InputSchema: json.RawMessage(`{"type":"object","required":["skill","script"],"properties":{"skill":{"type":"string"},"script":{"type":"string"},"args":{"type":"array","items":{"type":"string"}}},"additionalProperties":false}`),
 			},
 			parse: func(raw json.RawMessage) (any, error) {
 				var a struct {
-					Skill string   `json:"skill"`
-					Args  []string `json:"args"`
+					Skill  string   `json:"skill"`
+					Script string   `json:"script"`
+					Args   []string `json:"args"`
 				}
 				if err := args(raw, &a); err != nil {
 					return nil, err
 				}
-				s := strings.TrimSpace(a.Skill)
-				if s == "" {
-					return nil, fmt.Errorf("skill is required")
+				s, sc := strings.TrimSpace(a.Skill), strings.TrimSpace(a.Script)
+				if s == "" || sc == "" {
+					return nil, fmt.Errorf("skill and script are required")
 				}
-				return runPlan{argv: append([]string{s}, a.Args...)}, nil
+				return runPlan{argv: append([]string{s, sc}, a.Args...)}, nil
 			},
 			exec: func(ctx context.Context, dec any) (string, error) {
 				plan := dec.(runPlan)
@@ -191,7 +192,10 @@ func (d Deps) miscTools() []tool {
 				if strings.TrimSpace(d.Workdir) == "" {
 					return "", fmt.Errorf("no working directory for this turn")
 				}
-				script, err := d.Skills.Script(plan.argv[0])
+				if !d.assigned(plan.argv[0]) {
+					return "", fmt.Errorf("skill %q is not one of yours (ask the human to give it to you in Settings → SKILLS)", plan.argv[0])
+				}
+				script, err := d.Skills.Script(plan.argv[0], plan.argv[1])
 				if err != nil {
 					return "", err
 				}
@@ -200,7 +204,7 @@ func (d Deps) miscTools() []tool {
 					set = scopes.Default()
 				}
 				allowNet := set.EffectFor(scopes.Network) == scopes.Auto
-				argv := append([]string{script}, plan.argv[1:]...)
+				argv := append([]string{script}, plan.argv[2:]...)
 				out, err := d.runWith(ctx, argv, allowNet)
 				if err != nil {
 					if strings.TrimSpace(out) != "" {

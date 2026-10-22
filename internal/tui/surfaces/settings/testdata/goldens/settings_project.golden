@@ -8,14 +8,14 @@
   LIBRARY       ▏ Who it's for  —                                                         
   team ──────── ▏ Stack         Go                                                        
   TEAMS         ▏ How we work   Work from task cards: one branch per card, small focused  
-  PACKS         ▏               commits, open a pull request, address review, merge when  
-  STANDARDS     ▏               checks pass.                                              
-  CONVENTIONS   ▏ Reviews       Every change goes through a pull request the user         
-  automation ── ▏               reviews before it merges.                                 
-  WORKFLOWS     ▏ Testing       Run before saying done: go test ./... (in repo)           
-  AUTOPILOTS    ▏ Never         —                                                         
-  extend ────── ▏                                                                         
-  MARKETPLACE   ▏                                                                         
+  STANDARDS     ▏               commits, open a pull request, address review, merge when  
+  CONVENTIONS   ▏               checks pass.                                              
+  automation ── ▏ Reviews       Every change goes through a pull request the user         
+  WORKFLOWS     ▏               reviews before it merges.                                 
+  AUTOPILOTS    ▏ Testing       Run before saying done: go test ./... (in repo)           
+  extend ────── ▏ Never         —                                                         
+  SKILLS        ▏                                                                         
+  INTEGRATIONS  ▏                                                                         
   SECRETS       ▏                                                                         
                 ▏                                                                         
                 ▏                                                                         

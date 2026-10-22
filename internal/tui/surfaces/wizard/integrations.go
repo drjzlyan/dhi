@@ -1,54 +1,63 @@
 package wizard
 
 import (
+	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"charm.land/bubbletea/v2"
 
-	"github.com/drjzlyan/dhi/internal/agentkit/catalog"
 	"github.com/drjzlyan/dhi/internal/tui/kit"
 	"github.com/drjzlyan/dhi/internal/tui/theme"
 )
 
-// IntegrationRow is one catalog entry with its state on this machine.
+// IntegrationRow is one vendor's official plugin as setup offers it
+// (ADR-0043): Atlassian, Slack, Zoom, Linear, Notion, GitHub.
 type IntegrationRow struct {
-	Entry catalog.Entry
-	State catalog.State
+	Name        string // display name ("Atlassian")
+	Plugin      string // the plugin's name in the marketplace ("atlassian")
+	Description string
+	Installed   bool
+	// SignIn says how it authorizes: "sign in in your browser on first
+	// use", or what it needs instead (Zoom's token).
+	SignIn string
 }
 
-// Who gets a newly connected integration.
+// Who gets a newly added integration.
 const (
-	whoEveryone = "every employee"
-	whoLead     = "the team lead only"
-	whoNobody   = "nobody yet"
+	whoRecommended = "the bots it fits"
+	whoEveryone    = "every bot"
+	whoNobody      = "nobody yet"
 )
 
 type intPhase uint8
 
 const (
 	intList intPhase = iota
-	intInfo
-	intFields
 	intWho
-	intConfirm
+	intInstalling
 )
 
-// integrationsStep connects Jira, Slack and the rest (F-047, ADR-0028):
-// shows who runs each server and how far to trust it, collects the
-// credentials with masked input, and says exactly where they will be stored
-// before anything is written.
+type intInstalledMsg struct {
+	name string
+	note string
+	err  error
+}
+
+// integrationsStep adds the vendors' official plugins (ADR-0043): their
+// remote MCP servers and skills, installed the standard way; agents sign
+// in through the vendor's own login on first use — no app, no API key.
 type integrationsStep struct {
 	base
-	env    *Env
-	rows   []IntegrationRow
-	cur    int
-	phase  intPhase
-	form   *kit.Form
-	who    *kit.Form
-	inputs map[string]string
-	msg    string
-	err    string
+	env     *Env
+	rows    []IntegrationRow
+	cur     int
+	phase   intPhase
+	who     *kit.Form
+	msg     string
+	err     string
+	pending tea.Cmd
 }
 
 func (*integrationsStep) ID() string    { return "integrations" }
@@ -78,43 +87,27 @@ func (s *integrationsStep) selected() (IntegrationRow, bool) {
 	return s.rows[s.cur], true
 }
 
-// CapturesText: the credential fields take typed text.
-func (s *integrationsStep) CapturesText() bool { return s.phase == intFields }
+// Busy blocks navigation while a plugin installs.
+func (s *integrationsStep) Busy() bool { return s.phase == intInstalling }
+
+func (s *integrationsStep) TakeCmd() tea.Cmd {
+	c := s.pending
+	s.pending = nil
+	return c
+}
 
 func (s *integrationsStep) HandleKey(key string) Action {
 	row, ok := s.selected()
 	switch s.phase {
-	case intInfo:
-		switch key {
-		case "enter":
-			s.openFields(row)
-		case "esc":
-			s.phase = intList
-		}
-		return Stay
-	case intFields:
-		switch s.form.HandleKey(key) {
-		case kit.FormCancel:
-			s.phase = intInfo
-		case kit.FormSubmit:
-			s.submitFields(row)
-		}
-		return Stay
 	case intWho:
 		switch s.who.HandleKey(key) {
 		case kit.FormCancel:
-			s.phase = intFields
+			s.phase = intList
 		case kit.FormSubmit:
-			s.phase = intConfirm
+			s.start(row, s.who.Values()[0])
 		}
 		return Stay
-	case intConfirm:
-		switch key {
-		case "enter", "y":
-			s.apply(row)
-		case "esc", "n":
-			s.phase = intWho
-		}
+	case intInstalling:
 		return Stay
 	}
 	switch key {
@@ -127,9 +120,10 @@ func (s *integrationsStep) HandleKey(key string) Action {
 			s.cur--
 		}
 	case "s", "space", " ":
-		if ok && row.Entry.Unavailable == "" {
+		if ok && !row.Installed {
 			s.msg, s.err = "", ""
-			s.phase = intInfo
+			s.who = kit.NewForm("who", kit.NewToggleField("give it to", []string{whoRecommended, whoEveryone, whoNobody}, 0))
+			s.phase = intWho
 		}
 	case "enter":
 		return Next
@@ -139,188 +133,95 @@ func (s *integrationsStep) HandleKey(key string) Action {
 	return Stay
 }
 
-func (s *integrationsStep) openFields(row IntegrationRow) {
-	fields := make([]kit.Field, 0, len(row.Entry.Inputs))
-	for _, in := range row.Entry.Inputs {
-		label := fmt.Sprintf("%-10s", in.Label)
-		if in.Secret {
-			fields = append(fields, kit.NewSecretField(label))
-		} else {
-			fields = append(fields, kit.NewTextField(label, ""))
-		}
+func (s *integrationsStep) start(row IntegrationRow, who string) {
+	s.phase = intInstalling
+	setup := s.env.SetupIntegration
+	s.pending = func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+		defer cancel()
+		note, err := setup(ctx, row.Plugin, who)
+		return intInstalledMsg{name: row.Name, note: note, err: err}
 	}
-	s.form = kit.NewForm(row.Entry.Name, fields...)
-	s.phase = intFields
 }
 
-func (s *integrationsStep) submitFields(row IntegrationRow) {
-	vals := s.form.Values()
-	in := map[string]string{}
-	for i, f := range row.Entry.Inputs {
-		in[f.Key] = strings.TrimSpace(vals[i])
-	}
-	// Validate now (pure) so a typo is caught before any "where it is
-	// stored" screen; Install re-validates before writing.
-	if row.Entry.Derive != nil {
-		if _, err := row.Entry.Derive(in); err != nil {
-			s.form.SetError(err.Error())
-			return
-		}
-	}
-	for _, f := range row.Entry.Inputs {
-		if in[f.Key] == "" {
-			s.form.SetError(f.Label + " is required")
-			return
-		}
-	}
-	s.inputs = in
-	choices := []string{whoEveryone, whoLead, whoNobody}
-	s.who = kit.NewForm("who", kit.NewToggleField("give it to", choices, 0))
-	s.phase = intWho
-}
-
-func (s *integrationsStep) apply(row IntegrationRow) {
-	who := s.who.Values()[0]
-	enabled, err := s.env.SetupIntegration(row.Entry.Slug, s.inputs, who)
-	s.inputs = nil // the secrets leave memory with the form
-	if err != nil {
-		s.err = fmt.Sprintf("could not connect %s: %v", row.Entry.Name, err)
-		s.phase = intList
-		s.refresh()
-		return
-	}
-	s.env.Changed = true // cards are read at launch
-	line := "connected " + row.Entry.Name
-	if len(enabled) > 0 {
-		line += " (" + strings.Join(enabled, ", ") + ")"
-	}
-	s.env.Applied = append(s.env.Applied, line)
-	s.msg = row.Entry.Name + " connected"
-	if len(enabled) == 0 {
-		s.msg += " — no employee has access yet"
+func (s *integrationsStep) Update(msg tea.Msg) tea.Cmd {
+	m, ok := msg.(intInstalledMsg)
+	if !ok {
+		return nil
 	}
 	s.phase = intList
+	if m.err != nil {
+		s.err = fmt.Sprintf("could not add %s: %v", m.name, m.err)
+		return nil
+	}
+	s.env.Changed = true // servers are read at launch
+	s.env.Applied = append(s.env.Applied, "added "+m.name+" ("+m.note+")")
+	s.msg = m.name + " added — " + m.note
 	s.refresh()
+	return nil
 }
 
-// status is a row's state as a badge (F-098).
 func (s *integrationsStep) status(r IntegrationRow) string {
-	switch {
-	case r.Entry.Unavailable != "":
-		return kit.Badge(theme.BadgeNeutral, "not available yet")
-	case r.State.Ready():
-		return kit.Badge(theme.BadgeOK, "connected")
-	case r.State.Installed:
-		return kit.Badge(theme.BadgeWarn, "needs "+strings.Join(r.State.Missing, ", "))
-	default:
-		return kit.Badge(theme.BadgeNeutral, "not connected")
+	if r.Installed {
+		return kit.Badge(theme.BadgeOK, "added")
 	}
+	return kit.Badge(theme.BadgeNeutral, "not added")
 }
 
 // Keys names the step's own keys for the status row, by phase.
 func (s *integrationsStep) Keys() []string {
 	switch s.phase {
-	case intInfo:
-		return []string{"esc back"}
-	case intFields:
-		return []string{"tab next field", "esc back"}
 	case intWho:
-		return []string{"←/→ choose", "esc back"}
-	case intConfirm:
-		return []string{"y connect", "esc back"}
+		return []string{"←/→ choose", "enter add", "esc back"}
+	case intInstalling:
+		return nil
 	}
 	keys := []string{"↑/↓ select"}
-	if r, ok := s.selected(); ok && r.Entry.Unavailable == "" {
-		keys = append(keys, "s set up")
+	if r, ok := s.selected(); ok && !r.Installed {
+		keys = append(keys, "s add")
 	}
 	return keys
 }
 
-func trustLabel(t catalog.Trust) string {
-	switch t {
-	case catalog.TrustVendorHosted:
-		return ok("run by the vendor")
-	case catalog.TrustVendor:
-		return ok("published by the vendor, runs locally")
-	default:
-		return warn("community project, runs locally with your token")
-	}
-}
-
 func (s *integrationsStep) View(w, f int) []string {
-	out := []string{
-		theme.TextStyle().Render("Connect the tools your employees work in"),
-		dim("Optional — it stays on the start page's checklist for later."), "",
+	out := []string{theme.TextStyle().Render("Connect the tools your bots work in")}
+	for _, l := range kit.WrapWords("The vendors' own plugins: sign in with your account when a bot first uses one. Optional — more in Settings → INTEGRATIONS.", w) {
+		out = append(out, dim(l))
 	}
+	out = append(out, "")
 	for i, r := range s.rows {
-		mark, name := "  ", theme.TextStyle().Render(fmt.Sprintf("%-20s", r.Entry.Name))
+		mark, name := "  ", theme.TextStyle().Render(fmt.Sprintf("%-14s", r.Name))
 		if i == s.cur {
 			mark = theme.AccentText().Render(theme.GlyphCursor) + " "
-			name = theme.AccentText().Render(fmt.Sprintf("%-20s", r.Entry.Name))
+			name = theme.AccentText().Render(fmt.Sprintf("%-14s", r.Name))
 		}
 		out = append(out, kit.ClipEllipsis(mark+name+s.status(r), w))
 	}
-	row, hasRow := s.selected()
-	if !hasRow {
-		return out
-	}
-	e := row.Entry
-	switch s.phase {
-	case intInfo:
-		out = append(out, "", theme.AccentText().Render(e.Name)+dim(" — "+e.Description), "", trustLabel(e.Trust))
-		for _, l := range kit.WrapWords(e.TrustNote, w) {
+	if row, ok := s.selected(); ok {
+		out = append(out, "")
+		for _, l := range kit.WrapWords(row.Description, w) {
 			out = append(out, dim(l))
 		}
-		out = append(out, "", theme.TextStyle().Render("Before you continue:"))
-		for i, st := range e.Steps {
-			for j, l := range kit.WrapWords(st, w-5) {
-				prefix := "   "
-				if j == 0 {
-					prefix = fmt.Sprintf("%d. ", i+1)
-				}
-				out = append(out, "  "+dim(prefix+l))
-			}
+		if row.SignIn != "" {
+			out = append(out, ok2(row.SignIn))
 		}
-		out = append(out, "", dim("create it here: ")+theme.Link().Render(e.TokenURL))
-	case intFields:
-		out = append(out, "", theme.AccentText().Render(e.Name)+dim(" — enter the details (hidden as you type)"), "")
-		out = append(out, formLines(s.form)...)
-		for _, in := range e.Inputs {
-			if in.Help != "" {
-				out = append(out, dim(fmt.Sprintf("  %s: %s", in.Label, in.Help)))
-			}
-		}
+	}
+	switch s.phase {
 	case intWho:
-		out = append(out, "", theme.AccentText().Render(e.Name), "")
+		out = append(out, "")
 		out = append(out, formLines(s.who)...)
-	case intConfirm:
-		path := "your credentials file"
-		if s.env.CredentialsPath != "" {
-			path = s.env.CredentialsPath
-		}
-		out = append(out, "", theme.TextStyle().Render("DHI will:"), "",
-			"  "+fmt.Sprintf("store %s in %s", kit.Count(len(e.Credentials()), "credential"), theme.AccentText().Render(path)),
-			"  "+dim("(owner-only file, readable plain text — like ~/.aws/credentials)"),
-			"  "+fmt.Sprintf("add %s to this workspace (no secrets in it, safe to commit)", theme.AccentText().Render(".dhi/mcp/"+e.Slug+".toml")),
-			"  "+fmt.Sprintf("give %s access, each call still asks you first", s.who.Values()[0]), "")
-		bl, _ := kit.Buttons([]kit.Button{{Key: "y", Label: "Connect", Focused: true},
-			{Key: "esc", Label: "Back", Variant: theme.ButtonGhost}}, w)
-		out = append(out, bl...)
-	default:
-		if e.Unavailable != "" {
-			out = append(out, "")
-			for _, l := range kit.WrapWords(e.Unavailable, w) {
-				out = append(out, warn(l))
-			}
-		} else {
-			out = append(out, "", dim(e.Description), trustLabel(e.Trust))
-		}
+	case intInstalling:
+		out = append(out, "", dim("adding "+s.rows[s.cur].Name+"…"))
 	}
 	if s.msg != "" {
 		out = append(out, "", ok(s.msg))
 	}
 	if s.err != "" {
-		out = append(out, "", bad(s.err))
+		for _, l := range kit.WrapWords(s.err, w) {
+			out = append(out, bad(l))
+		}
 	}
 	return out
 }
+
+func ok2(s string) string { return theme.Hint().Render(strings.TrimSpace(s)) }

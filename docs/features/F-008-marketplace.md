@@ -1,5 +1,7 @@
 # F-008: Marketplace packs
 
+> **Superseded (session 61, ADR-0043):** packs and the DHI marketplace are removed. Skills are Agent Skills and plugins come from vendor marketplaces (F-105).
+
 Status: implemented (M4 P2, 2026-08-25) · Parent: [F-003](F-003-workspace.md)
 
 ## Summary

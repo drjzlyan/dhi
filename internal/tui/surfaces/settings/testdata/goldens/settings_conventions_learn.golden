@@ -8,13 +8,13 @@
   LIBRARY   │ • subject is a Conventional Commit                             │            
   team ─────│ • commit bodies follow your example's structure                │            
   TEAMS     │                                                                │            
-  PACKS     │   branch    task/login-timeout                                 │            
-            │   worktree  .dhi/tasks/login-timeout/api                       │            
-▌           │   commit    fix: retry the token refresh                       │            
+            │   branch    task/login-timeout                                 │            
+▌           │   worktree  .dhi/tasks/login-timeout/api                       │            
+            │   commit    fix: retry the token refresh                       │            
             │   PR title  Fix login timeout                                  │            
             │   PR body   Created from DHI worktree `task/login-timeout`.    │            
-            │   body      Why: users asked. ⏎ Risk: low                      │            
-  extend ───│                                                                │            
+  extend ───│   body      Why: users asked. ⏎ Risk: low                      │            
+  SKILLS    │                                                                │            
             │ enter save · esc cancel                                        │            
   SECRETS   ╰────────────────────────────────────────────────────────────────╯            
                 ▏   {assignee} {type} {subject}. The ticket is the first match of         

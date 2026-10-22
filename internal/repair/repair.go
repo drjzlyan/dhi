@@ -65,6 +65,12 @@ func Find(in Input) []Repair {
 	if r, ok := credentialKinds(in); ok {
 		out = append(out, r)
 	}
+	if r, ok := mcpCards(in); ok {
+		out = append(out, r)
+	}
+	if r, ok := skillFiles(in); ok {
+		out = append(out, r)
+	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Safe && !out[j].Safe })
 	return out
 }

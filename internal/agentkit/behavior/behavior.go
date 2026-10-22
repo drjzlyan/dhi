@@ -11,6 +11,7 @@ import (
 
 	"github.com/drjzlyan/dhi/internal/agentkit/library"
 	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
+	"github.com/drjzlyan/dhi/internal/agentkit/skills"
 )
 
 // Input is everything the composer needs; library lookups happen
@@ -26,7 +27,7 @@ type Input struct {
 
 // Compose renders the effective system block:
 //
-//	manifest system → role template → persona voice → skills (manifest order)
+//	manifest system → role template → persona voice → skill catalog (manifest order)
 //
 // Empty parts vanish (no stray blank sections); the whole result is
 // trimmed. Skills extend the role, the role extends the manifest,
@@ -43,9 +44,10 @@ func Compose(in Input) string {
 		add(substitute(in.Role.System, in))
 	}
 	add(in.Persona.Render()) // role says what the job is, persona how they speak
-	for _, k := range in.Skills {
-		add(k.Body)
-	}
+	// Skills are disclosed progressively (agentskills.io, ADR-0043): a
+	// catalog of the assigned skills; the agent loads one when a task
+	// matches, instead of every body riding in every prompt.
+	add(skills.Catalog(in.Skills))
 	return strings.Join(parts, "\n\n")
 }
 

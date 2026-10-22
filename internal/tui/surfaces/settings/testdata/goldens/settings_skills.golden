@@ -1,0 +1,26 @@
+  general ───── ▏ skills ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
+  CONFIG        ▏ Agent Skills (SKILL.md) your bots can use · i install from GitHub, a g  
+  PROJECT       ▏                                                                         
+  agents ────── ▏ ▌ code-review           built in         no bots                        
+  AGENTS        ▏     A repeatable pass over any diff, correctness first and style last.  
+  BRAIN         ▏     Use when reviewing a pull request, a patch or your own change       
+  PROPOSALS     ▏     before handing it over.                                             
+  LIBRARY       ▏   docs                  built in         no bots                        
+  team ──────── ▏   incident-triage       built in         no bots                        
+  TEAMS         ▏   review-kit            this workspace   sage                           
+  STANDARDS     ▏   test-writing          built in         no bots                        
+  CONVENTIONS   ▏                                                                         
+  automation ── ▏                                                                         
+  WORKFLOWS     ▏                                                                         
+  AUTOPILOTS    ▏                                                                         
+  extend ────── ▏                                                                         
+▌ SKILLS        ▏                                                                         
+  INTEGRATIONS  ▏                                                                         
+  SECRETS       ▏                                                                         
+                ▏                                                                         
+                ▏                                                                         
+                ▏                                                                         
+                ▏                                                                         
+                ▏                                                                         
+                ▏                                                                         
+                ▏                                                                         

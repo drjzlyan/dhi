@@ -24,7 +24,6 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/brief"
 	"github.com/drjzlyan/dhi/internal/agentkit/budget"
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
-	"github.com/drjzlyan/dhi/internal/agentkit/catalog"
 	"github.com/drjzlyan/dhi/internal/agentkit/clirun"
 	"github.com/drjzlyan/dhi/internal/agentkit/dhitools"
 	"github.com/drjzlyan/dhi/internal/agentkit/episode"
@@ -33,11 +32,9 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/lessons"
 	"github.com/drjzlyan/dhi/internal/agentkit/library"
 	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
-	"github.com/drjzlyan/dhi/internal/agentkit/mcpbridge"
 	"github.com/drjzlyan/dhi/internal/agentkit/mcpserver"
 	"github.com/drjzlyan/dhi/internal/agentkit/memory"
 	agentkitOrg "github.com/drjzlyan/dhi/internal/agentkit/org"
-	"github.com/drjzlyan/dhi/internal/agentkit/registry"
 	agentkitRuntime "github.com/drjzlyan/dhi/internal/agentkit/runtime"
 	"github.com/drjzlyan/dhi/internal/agentkit/scopes"
 	"github.com/drjzlyan/dhi/internal/agentkit/setprop"
@@ -88,8 +85,7 @@ func main() {
 	if cred, err := credstore.DefaultPath(); err == nil {
 		cfgDir := filepath.Dir(cred)
 		standards.UserPath = filepath.Join(cfgDir, "standards.toml")
-		library.UserSkillsDir = filepath.Join(cfgDir, "skills")
-		registry.UserDir = filepath.Join(cfgDir, "registry")
+		setupExtensionPaths(cfgDir) // ADR-0043: skills, MCP servers, installs
 	}
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
@@ -145,7 +141,9 @@ func runTUI() (relaunch bool) {
 		UserCfg:  userCfg,
 		GOOS:     runtime.GOOS,
 		LookPath: exec.LookPath,
-		ReadOnly: []string{library.UserSkillsDir}, // F-091: your skills' scripts
+		// Skills agents read (ADR-0043): yours, other tools' and the
+		// built-ins written out for them.
+		ReadOnly: nonEmpty(library.UserSkillsDir, library.AgentsSkillsDir, library.BuiltinSkillsDir),
 	})
 
 	// Surfaces are built against the validated state (a blocked boot
@@ -274,7 +272,7 @@ func runTUI() (relaunch bool) {
 				return nil
 			})
 		}
-		mcpStore = mcpserver.Open(ws.Root)
+		mcpStore = mcpserver.OpenWith(ws.Root, ws.Members())
 		if ss, err := ideation.Open(ws); err == nil {
 			sessionStore = ss
 		} else {
@@ -349,8 +347,7 @@ func runTUI() (relaunch bool) {
 				Autopilots: autoStore,
 				Bus:        messageBus,
 				Tasks:      taskStore,
-				Registry:   registry.New(ws),
-				RunScript:  runRunner,
+				Ext:        newExtensions(ws.Root),
 			}
 			if agentRT != nil {
 				// Only a live runtime: a typed-nil one inside the interface
@@ -889,59 +886,11 @@ func newSetupEnv(cwd string, ws *workspace.Workspace, userCfg, toolRoot string,
 		}
 		return starter.ApplyAll(w, o, library.Open(w), tpls)
 	}
-	// Integrations step: credentials live in the user-level file, the card in
-	// the workspace; both resolve env.Root at call time.
-	env.CredentialsPath, _ = credstore.DefaultPath()
-	env.IntegrationRows = func() []wizard.IntegrationRow {
-		var rows []wizard.IntegrationRow
-		for _, e := range catalog.Entries() {
-			rows = append(rows, wizard.IntegrationRow{
-				Entry: e, State: catalog.Status(env.Root, e, mcpbridge.DefaultLookup)})
-		}
-		return rows
-	}
-	env.SetupIntegration = func(slug string, inputs map[string]string, who string) ([]string, error) {
-		e, ok := catalog.Get(slug)
-		if !ok {
-			return nil, fmt.Errorf("unknown integration %q", slug)
-		}
-		st, err := credstore.Open()
-		if err != nil {
-			return nil, err
-		}
-		if err := catalog.Install(env.Root, st, e, inputs); err != nil {
-			return nil, err
-		}
-		w, err := workspace.Load(env.Root)
-		if err != nil {
-			return nil, err
-		}
-		o, err := agentkitOrg.Load(env.Root)
-		if err != nil {
-			return nil, err
-		}
-		roster, err := agentkitOrg.LoadRoster(w)
-		if err != nil {
-			return nil, err
-		}
-		var ids []string
-		switch who {
-		case "every employee":
-			for _, a := range roster {
-				ids = append(ids, a.ID)
-			}
-		case "the team lead only":
-			for _, t := range o.Teams() { // teams are sorted; the first agent lead wins
-				if t.Lead != "" && t.Lead != agentkitOrg.Human {
-					ids = append(ids, t.Lead)
-					break
-				}
-			}
-		}
-		if len(ids) == 0 {
-			return nil, nil
-		}
-		return catalog.Enable(w, o, e, ids)
+	// Integrations step (ADR-0043): the vendors' official plugins from the
+	// marketplace, given to the bots they fit.
+	env.IntegrationRows = func() []wizard.IntegrationRow { return integrationRows(env.Root) }
+	env.SetupIntegration = func(ctx context.Context, plugin, who string) (string, error) {
+		return setupIntegration(ctx, env.Root, plugin, who)
 	}
 	// Tour: begin in this process when the wizard does not relaunch, else
 	// leave a marker for the next launch.
@@ -1598,31 +1547,12 @@ func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cl
 		// F-070: agents propose settings changes; the human applies them.
 		SetProps:     setprop.Open(ws.Root),
 		SettingCheck: settingCheck(ws),
-		// F-091: employees find and suggest skills from the DHI registry;
-		// DHI verifies the suggestion and the human installs it.
-		SkillSearch: func(q string) ([]dhitools.SkillHit, error) {
-			es, err := registry.New(ws).Search(q)
-			var out []dhitools.SkillHit
-			for _, e := range es {
-				out = append(out, dhitools.SkillHit{Name: e.Name, Version: e.Version, Description: e.Description})
-			}
-			return out, err
-		},
-		SkillSuggest: func(ctx context.Context, agent, entry, reason string) (string, error) {
-			p, err := skillprop.Review(ctx, registry.New(ws), entry)
-			if err != nil {
-				return "", err
-			}
-			p.Agent, p.Reason = agent, reason
-			if _, err := skillprop.Open(ws.Root).Propose(p); err != nil {
-				return "", err
-			}
-			what := fmt.Sprintf("%d skill(s), %s", len(p.Skills), p.Trust())
-			if p.HasScripts() {
-				what += ", ships a script"
-			}
-			return what, nil
-		},
+		// F-091 (ADR-0043): employees find skills in the plugin marketplace
+		// or on GitHub and suggest them; DHI pins the commit and the human
+		// installs it.
+		SkillSearch:  skillSearch,
+		SkillSuggest: skillSuggest(ws.Root),
+		AllBots:      allBots(ws.Root), // F-107: given to every bot, new ones too
 		// F-067: a task turn without a worktree gets one on the convention
 		// branch before the agent starts, so the work lands where DHI can
 		// verify it and open the PR.
@@ -1930,4 +1860,15 @@ func pushGuard(ws *workspace.Workspace) string {
 		return ""
 	}
 	return p
+}
+
+// nonEmpty drops empty paths.
+func nonEmpty(paths ...string) []string {
+	var out []string
+	for _, p := range paths {
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }

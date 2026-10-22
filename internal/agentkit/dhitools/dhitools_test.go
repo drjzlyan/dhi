@@ -313,49 +313,55 @@ func TestPROpenRefusals(t *testing.T) {
 func TestSkillRunTool(t *testing.T) {
 	f, m := newFixture(t, "skill_run")
 	ws := f.ws
-	dir := filepath.Join(ws.Root, workspace.DirSkills)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	dir := filepath.Join(ws.Root, workspace.DirSkills, "checks")
+	if err := os.MkdirAll(filepath.Join(dir, "scripts"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	doc := "---\nname: Checks\ndescription: run checks\nscript: checks.sh\n---\n\nRun.\n"
-	if err := os.WriteFile(filepath.Join(dir, "checks.md"), []byte(doc), 0o644); err != nil {
+	doc := "---\nname: checks\ndescription: run checks\n---\n\nRun scripts/checks.sh.\n"
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(doc), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	script := filepath.Join(dir, "checks.sh")
+	script := filepath.Join(dir, "scripts", "checks.sh")
 	if err := os.WriteFile(script, []byte("#!/bin/sh\necho ok\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	lib := library.Open(ws)
 	run := &fakeRunner{out: "ran\n"}
 	auto := scopes.Set{scopes.Read: scopes.Auto, scopes.Exec: scopes.Auto}
-	h := Deps{Agent: m, Skills: lib, Run: run, Workdir: ws.Root, Channel: "#general", Scopes: auto}.Handler()
+	mine := *m
+	mine.Skills = []string{"checks"}
+	h := Deps{Agent: &mine, Skills: lib, Run: run, Workdir: ws.Root, Channel: "#general", Scopes: auto}.Handler()
 
-	out, isErr := call(h, t, "skill_run", `{"skill":"checks","args":["--fast"]}`)
+	out, isErr := call(h, t, "skill_run", `{"skill":"checks","script":"scripts/checks.sh","args":["--fast"]}`)
 	if isErr || !strings.Contains(out, "ran") {
 		t.Fatalf("skill_run = %q isErr=%v", out, isErr)
 	}
 	if !run.called || len(run.argv) != 2 || run.argv[0] != script || run.argv[1] != "--fast" || run.network {
 		t.Fatalf("argv=%v dir=%q net=%v", run.argv, run.dir, run.network)
 	}
-
-	// Unknown skill refuses.
-	if out, isErr := call(h, t, "skill_run", `{"skill":"nope"}`); !isErr || !strings.Contains(out, "not found") {
-		t.Fatalf("unknown skill = %q isErr=%v", out, isErr)
+	// A skill that is not the agent's refuses (ADR-0043).
+	other := Deps{Agent: m, Skills: lib, Run: run, Workdir: ws.Root, Scopes: auto}.Handler()
+	if out, isErr := call(other, t, "skill_run", `{"skill":"checks","script":"checks.sh"}`); !isErr || !strings.Contains(out, "not one of yours") {
+		t.Fatalf("unassigned = %q isErr=%v", out, isErr)
+	}
+	// An escaping script path refuses.
+	if out, isErr := call(h, t, "skill_run", `{"skill":"checks","script":"../../x"}`); !isErr || !strings.Contains(out, "escapes") {
+		t.Fatalf("escape = %q isErr=%v", out, isErr)
 	}
 	// Exec denied by scope refuses by name (before the runner).
-	denied := Deps{Agent: m, Skills: lib, Run: run, Workdir: ws.Root, Scopes: scopes.Set{scopes.Exec: scopes.Deny}}.Handler()
-	if out, isErr := call(denied, t, "skill_run", `{"skill":"checks"}`); !isErr || !strings.Contains(out, "denied by capability scope") {
+	denied := Deps{Agent: &mine, Skills: lib, Run: run, Workdir: ws.Root, Scopes: scopes.Set{scopes.Exec: scopes.Deny}}.Handler()
+	if out, isErr := call(denied, t, "skill_run", `{"skill":"checks","script":"checks.sh"}`); !isErr || !strings.Contains(out, "denied by capability scope") {
 		t.Fatalf("denied = %q isErr=%v", out, isErr)
 	}
 	// No runner refuses.
-	noRun := Deps{Agent: m, Skills: lib, Workdir: ws.Root, Scopes: auto}.Handler()
-	if out, isErr := call(noRun, t, "skill_run", `{"skill":"checks"}`); !isErr || !strings.Contains(out, "command runner unavailable") {
+	noRun := Deps{Agent: &mine, Skills: lib, Workdir: ws.Root, Scopes: auto}.Handler()
+	if out, isErr := call(noRun, t, "skill_run", `{"skill":"checks","script":"checks.sh"}`); !isErr || !strings.Contains(out, "command runner unavailable") {
 		t.Fatalf("no runner = %q isErr=%v", out, isErr)
 	}
-	// No library refuses.
-	noLib := Deps{Agent: m, Run: run, Workdir: ws.Root, Scopes: auto}.Handler()
-	if out, isErr := call(noLib, t, "skill_run", `{"skill":"checks"}`); !isErr || !strings.Contains(out, "skill library unavailable") {
-		t.Fatalf("no library = %q isErr=%v", out, isErr)
+	// skill_activate hands over the instructions and lists the script.
+	out, isErr = call(h, t, "skill_activate", `{"name":"checks"}`)
+	if isErr || !strings.Contains(out, `<skill_content name="checks">`) || !strings.Contains(out, "<file>scripts/checks.sh</file>") {
+		t.Fatalf("skill_activate = %q isErr=%v", out, isErr)
 	}
 }
 

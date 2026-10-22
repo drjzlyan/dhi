@@ -17,6 +17,7 @@ require (
 	github.com/lucasb-eyer/go-colorful v1.4.1
 	github.com/mattn/go-runewidth v0.0.30
 	github.com/yuin/goldmark v1.7.13
+	go.yaml.in/yaml/v3 v3.0.4
 )
 
 require (

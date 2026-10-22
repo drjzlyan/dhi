@@ -1,5 +1,7 @@
 # F-034: Pack registry & MCP install
 
+> **Superseded (session 61, ADR-0043):** the pack registry is removed; MCP servers use the standard mcpServers JSON (`.dhi/mcp.json`). The MCP bridge (part C) stays, reading the new format (F-105, F-106).
+
 Status: done (M19) · Companion to: ADR-0022 (third-party content
 trust), ADR-0019 (DHI owns the loop), F-018/F-019 (agents, packs).
 Product rule: installing expertise is one visible, reversible, offline-

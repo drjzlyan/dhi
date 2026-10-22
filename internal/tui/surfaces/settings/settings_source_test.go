@@ -128,28 +128,6 @@ func TestImportRefusesWholeBatchOnBadManifest(t *testing.T) {
 	}
 }
 
-func TestImportPrefersPackWhenPresent(t *testing.T) {
-	m, ws, _, reloads := agentSurface(t)
-	dir := writeImportFixture(t, map[string]string{
-		"pack.toml":  "schema = 2\nname = \"crew\"\nversion = \"1.0.0\"\nagents = [\"scout.toml\"]\n",
-		"scout.toml": importScoutDoc,
-		"muse.toml":  importMuseDoc, // ignored: the pack owns the flow
-	})
-	submitSource(t, m, dir)
-
-	out := ansi.Strip(fullView(m))
-	if !strings.Contains(out, "installed pack crew") {
-		t.Fatalf("pack flow not taken:\n%s", out)
-	}
-	roster, _ := org.LoadRoster(ws)
-	if len(roster) != 1 || roster[0].ID != "scout" {
-		t.Fatalf("pack install wrote %+v", roster)
-	}
-	if *reloads != 1 {
-		t.Fatalf("reload called %d times, want 1", *reloads)
-	}
-}
-
 func TestImportSubpathScopesAndEmptyDirNamed(t *testing.T) {
 	m, ws, _, _ := agentSurface(t)
 	dir := writeImportFixture(t, map[string]string{
@@ -165,7 +143,7 @@ func TestImportSubpathScopesAndEmptyDirNamed(t *testing.T) {
 	// A source with nothing importable names the reason.
 	empty := t.TempDir()
 	submitSource(t, m, empty)
-	if !strings.Contains(ansi.Strip(fullView(m)), "no pack.toml or agent manifests") {
+	if !strings.Contains(ansi.Strip(fullView(m)), "no agent manifests") {
 		t.Fatalf("empty source not named:\n%s", ansi.Strip(fullView(m)))
 	}
 	if roster, _ := org.LoadRoster(ws); len(roster) != 1 {

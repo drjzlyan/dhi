@@ -137,3 +137,32 @@ func (h *HTTP) CallTool(ctx context.Context, name string, args json.RawMessage) 
 // Close is a no-op for the stateless HTTP transport (session ids expire
 // server-side).
 func (h *HTTP) Close() error { return nil }
+
+// HeaderClient returns an HTTP client that sends headers on every
+// request: a server config's resolved headers (an API key, a bearer
+// token) — the standard mcpServers "headers" field.
+func HeaderClient(headers map[string]string, base *http.Client) *http.Client {
+	if base == nil {
+		base = http.DefaultClient
+	}
+	rt := base.Transport
+	if rt == nil {
+		rt = http.DefaultTransport
+	}
+	c := *base
+	c.Transport = headerTransport{headers: headers, next: rt}
+	return &c
+}
+
+type headerTransport struct {
+	headers map[string]string
+	next    http.RoundTripper
+}
+
+func (h headerTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	r2 := r.Clone(r.Context())
+	for k, v := range h.headers {
+		r2.Header.Set(k, v)
+	}
+	return h.next.RoundTrip(r2)
+}

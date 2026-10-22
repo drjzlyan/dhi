@@ -1116,8 +1116,8 @@ Plan: `~/.claude/plans/all-the-keys-should-playful-hanrahan.md`. Branch `m35`, o
 - [x] P2 One line editor for every field; buffer search and insert-mode editing (F-102)
 - [x] P3 Paste everywhere (secret field included), copy to the system clipboard, select mode (F-103)
 - [x] P4 Secret gaps: workspace lookup for MCP, grant-gated MCP env, setting vs secret, label (F-104)
-- [ ] P5 Agent Skills, mcpServers JSON, vendor plugins; packs/registry/marketplace removed (F-105)
+- [x] P5 Agent Skills, mcpServers JSON, vendor plugins; packs/registry/marketplace removed (F-105)
 - [ ] P6 Login-only MCP OAuth like Claude Code; Settings → INTEGRATIONS (F-106)
-- [ ] P7 Assign to recommended bots / all bots (F-107)
+- [x] P7 Assign to recommended bots / all bots (F-107)
 - [ ] P8 Re-runnable onboarding (F-108)
 - [ ] P9 Docs, live checks, STATE

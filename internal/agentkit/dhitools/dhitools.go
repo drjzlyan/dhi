@@ -135,8 +135,8 @@ type Deps struct {
 	Access func(ctx context.Context, kind, target, reason string) (string, error)
 	// Secret asks the human for a secret by name (F-089); nil = no tool.
 	Secret func(ctx context.Context, name, reason string) (string, error)
-	// SkillSearch lists the DHI registry entries matching a query and
-	// SkillSuggest records a reviewed suggestion for the human (F-091);
+	// SkillSearch lists marketplace plugins matching a query and
+	// SkillSuggest records a pinned suggestion for the human (F-091);
 	// nil = no skill tools.
 	SkillSearch  func(query string) ([]SkillHit, error)
 	SkillSuggest func(ctx context.Context, entry, reason string) (string, error)
@@ -284,8 +284,14 @@ func (d Deps) Handler() mcp.Handler {
 	all = append(all, d.accessTools()...)
 	all = append(all, d.secretTools()...)
 	all = append(all, d.skillTools()...)
+	all = append(all, d.activateTool()...)
 	for _, s := range harnessSlugs {
 		allow[s] = true
+	}
+	// An agent with skills can load them and run their scripts (ADR-0043);
+	// skill_run still refuses a skill that is not the agent's.
+	if d.Agent != nil && len(d.Agent.Skills) > 0 {
+		allow["skill_activate"], allow["skill_run"] = true, true
 	}
 	// Approved forged tools are workspace tools the human signed off:
 	// served to every agent, gated by their declared scope.

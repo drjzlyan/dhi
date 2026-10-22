@@ -6,7 +6,6 @@ import (
 
 	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
 	"github.com/drjzlyan/dhi/internal/agentkit/org"
-	"github.com/drjzlyan/dhi/internal/agentkit/pack"
 	"github.com/drjzlyan/dhi/internal/tui/kit"
 	"github.com/drjzlyan/dhi/internal/tui/theme"
 	"github.com/drjzlyan/dhi/internal/workspace"
@@ -20,8 +19,6 @@ type dialogKind uint8
 const (
 	dlgTeam dialogKind = iota
 	dlgTeamDelete
-	dlgPackInstall
-	dlgPackUninstall
 	dlgStdLayer
 	dlgStdPreview
 	dlgWorkflowNew
@@ -30,12 +27,7 @@ const (
 	dlgLibNew
 	dlgLibEdit
 	dlgLibDelete
-	dlgLibRunSkill
 	dlgPersona
-	dlgRegistrySource
-	dlgRegistryInstall
-	dlgRegistryTrustKey
-	dlgRegistryUntrust
 	dlgConvNew
 	dlgConvEdit
 	dlgConvDelete
@@ -52,6 +44,15 @@ const (
 	dlgSecretSet
 	dlgSecretDelete
 	dlgSkillInstall
+	dlgSkillRemove
+	dlgSkillScripts
+	dlgSkillAuthor
+	dlgExtSource
+	dlgExtConfirm
+	dlgPluginScope
+	dlgServerURL
+	dlgServerSnippet
+	dlgServerRemove
 	dlgDisplay // read-only: profile, standards preview, last-run info
 )
 
@@ -98,8 +99,12 @@ func minInt(a, b int) int {
 }
 
 func (m *Model) closeDialog() {
+	if m.dkind == dlgExtConfirm && m.extState.bundle != nil {
+		m.extState.bundle.Close() // a cancelled install drops its checkout
+		m.extState.bundle = nil
+	}
 	m.dlg, m.dform, m.dkind, m.dtarget = nil, nil, 0, ""
-	m.valueHint = ""
+	m.valueHint, m.dlgExtra = "", nil
 }
 
 // dialogKey implements the focus trap: while a dialog is open every
@@ -147,8 +152,18 @@ func (m *Model) submitDialog() {
 		m.submitLanguages()
 	case dlgKeys:
 		m.submitKeys()
-	case dlgPackInstall:
-		m.submitPackInstall()
+	case dlgSkillAuthor:
+		m.submitSkillAuthor()
+	case dlgExtSource:
+		m.submitInstallSource()
+	case dlgExtConfirm:
+		m.submitInstallConfirm()
+	case dlgPluginScope:
+		m.submitPluginScope()
+	case dlgServerURL:
+		m.submitServerURL()
+	case dlgServerSnippet:
+		m.submitServerSnippet()
 	case dlgStdLayer:
 		m.submitStdLayer()
 	case dlgStdPreview:
@@ -163,10 +178,6 @@ func (m *Model) submitDialog() {
 		m.submitLibrary()
 	case dlgPersona:
 		m.submitPersona()
-	case dlgRegistrySource:
-		m.submitRegistrySource()
-	case dlgRegistryTrustKey:
-		m.submitRegistryTrustKey()
 	}
 }
 
@@ -188,39 +199,14 @@ func (m *Model) submitConfirmDialog() {
 		}
 		m.closeDialog()
 		m.flash = "team " + target + " deleted"
-	case dlgPackUninstall:
-		if m.d.WS == nil {
-			m.closeDialog()
-			m.flash = "failed: pack management unavailable — not inside a workspace"
-			return
-		}
-		if err := (&pack.Installer{WS: m.d.WS}).Uninstall(target); err != nil {
-			m.dlg.Lines = append(m.dlg.Lines[:2], theme.DangerText().Render(err.Error()))
-			return
-		}
-		m.closeDialog()
-		m.flash = "pack " + target + " uninstalled"
+	case dlgSkillRemove:
+		m.removeExtension("skill", target)
+	case dlgServerRemove:
+		m.removeExtension("server", target)
+	case dlgSkillScripts:
+		m.allowScriptsConfirmed(target)
 	case dlgLibDelete:
 		m.submitLibraryDelete(target)
-	case dlgLibRunSkill:
-		m.runLibSkill(target)
-	case dlgRegistryInstall:
-		m.submitRegistryInstall(target)
-	case dlgRegistryUntrust:
-		if m.d.Registry == nil {
-			m.closeDialog()
-			m.flash = "failed: registry unavailable"
-			return
-		}
-		keys, _ := m.d.Registry.TrustedKeys()
-		for _, k := range keys {
-			if err := m.d.Registry.UntrustKey(k); err != nil {
-				m.dlg.Lines = append(m.dlg.Lines[:2], theme.DangerText().Render(err.Error()))
-				return
-			}
-		}
-		m.closeDialog()
-		m.flash = "cleared trusted publisher keys"
 	case dlgAutoDelete:
 		if m.d.Autopilots == nil {
 			m.closeDialog()

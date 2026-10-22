@@ -23,15 +23,14 @@ func skillLines(p skillprop.Proposal) []string {
 		"why: " + p.Reason,
 		"source: " + p.Source,
 		"trust: " + p.Trust(),
-		"sha256: " + p.SHA256,
 	}
 	lines = append(lines, p.Ignored...)
 	for _, k := range p.Skills {
 		lines = append(lines, "", fmt.Sprintf("── skill %s: %s — %s", k.Slug, k.Name, k.Description))
 		lines = append(lines, strings.Split(strings.TrimRight(k.Body, "\n"), "\n")...)
-		if k.Script != "" {
-			lines = append(lines, "", "── script "+k.Script+" (runs sandboxed when an employee calls skill_run):")
-			for _, l := range strings.Split(strings.TrimRight(k.ScriptText, "\n"), "\n") {
+		for _, sc := range k.Scripts {
+			lines = append(lines, "", "── script "+sc.Path+" (runs sandboxed when an employee calls skill_run):")
+			for _, l := range strings.Split(strings.TrimRight(sc.Text, "\n"), "\n") {
 				lines = append(lines, "  "+l)
 			}
 		}
@@ -40,8 +39,8 @@ func skillLines(p skillprop.Proposal) []string {
 }
 
 func (m *Model) openSkillInstall(p skillprop.Proposal) {
-	if m.d.Registry == nil || m.d.WS == nil {
-		m.flash = "failed: the registry is unavailable here"
+	if m.d.Ext == nil || m.d.WS == nil {
+		m.flash = "failed: installs are unavailable here"
 		return
 	}
 	title := "install " + p.Entry
@@ -49,7 +48,7 @@ func (m *Model) openSkillInstall(p skillprop.Proposal) {
 		title += " — it ships a script (v to read it)"
 	}
 	m.openFormDialog(title, dlgSkillInstall, fmt.Sprint(p.ID),
-		kit.NewToggleField("install for", []string{skillprop.ScopeWorkspace, skillprop.ScopeEverywhere}, 0),
+		kit.NewToggleField("install for", m.d.Ext.scopeNames(), 0),
 		kit.NewToggleField("add to "+p.Agent, skillAttach, 0))
 }
 
@@ -68,7 +67,7 @@ func (m *Model) submitSkillInstall() {
 	v := m.dform.Values()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	slugs, err := skillprop.Install(ctx, m.d.Registry, m.d.WS, *p, v[0])
+	slugs, err := skillprop.Install(ctx, m.d.Ext.Fetch, m.d.Ext.Tmp, *p, m.d.Ext.scope(v[0]))
 	if err != nil {
 		m.dform.SetError(err.Error())
 		return

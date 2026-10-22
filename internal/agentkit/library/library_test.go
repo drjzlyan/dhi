@@ -87,15 +87,8 @@ func TestLocalShadowsBuiltin(t *testing.T) {
 func TestMalformedCardWarnsNotDies(t *testing.T) {
 	ws := newWs(t)
 	dir := filepath.Join(ws.Root, workspace.DirSkills)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "broken.md"), []byte("no frontmatter\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "good.md"), []byte("---\nname: Good\ndescription: fine\n---\nbody\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writeSkillDir(t, dir, "broken", "no frontmatter\n")
+	writeSkillDir(t, dir, "good", "---\nname: good\ndescription: fine\n---\nbody\n")
 	s := Open(ws)
 	if _, ok := s.Skill("good"); !ok {
 		t.Fatal("good skill lost alongside a broken one")
@@ -105,13 +98,25 @@ func TestMalformedCardWarnsNotDies(t *testing.T) {
 	}
 	found := false
 	for _, w := range s.Warnings() {
-		if strings.Contains(w, "broken.md") {
+		if strings.Contains(w, "broken") {
 			found = true
 		}
 	}
 	if !found {
 		t.Fatalf("malformed card not named: %v", s.Warnings())
 	}
+}
+
+func writeSkillDir(t *testing.T, parent, name, doc string) string {
+	t.Helper()
+	dir := filepath.Join(parent, name)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(doc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return dir
 }
 
 func TestWriteRoleRoundTrip(t *testing.T) {
@@ -136,14 +141,17 @@ func TestWriteRoleRoundTrip(t *testing.T) {
 func TestWriteSkillRoundTrip(t *testing.T) {
 	ws := newWs(t)
 	s := Open(ws)
-	k := &Skill{Slug: "my-skill", Name: "My Skill", Description: "d", Body: "step one"}
+	k := &Skill{Name: "my-skill", Description: "d", Body: "step one"}
 	if err := s.WriteSkill(ws, k); err != nil {
 		t.Fatal(err)
 	}
 	s = Open(ws) // the section reloads after a write (Settings seam)
 	back, ok := s.Skill("my-skill")
-	if !ok || back.Name != "My Skill" || back.Body != "step one" {
+	if !ok || back.Body != "step one" || back.Location() != filepath.Join(ws.Root, workspace.DirSkills, "my-skill", "SKILL.md") {
 		t.Fatalf("round trip: %+v ok=%v", back, ok)
+	}
+	if err := s.WriteSkill(ws, &Skill{Name: "My Skill", Description: "d", Body: "b"}); err == nil {
+		t.Fatal("a non-spec name must be refused")
 	}
 }
 
@@ -153,7 +161,10 @@ func TestDeleteGuardsBuiltins(t *testing.T) {
 	if err := s.Delete(ws, "role", "reviewer"); err == nil || !strings.Contains(err.Error(), "builtin") {
 		t.Fatalf("builtin delete err = %v", err)
 	}
-	if err := s.WriteSkill(ws, &Skill{Slug: "tmp", Name: "T", Description: "d", Body: "b"}); err != nil {
+	if err := s.Delete(ws, "skill", "code-review"); err == nil || !strings.Contains(err.Error(), "builtin") {
+		t.Fatalf("builtin skill delete err = %v", err)
+	}
+	if err := s.WriteSkill(ws, &Skill{Name: "tmp", Description: "d", Body: "b"}); err != nil {
 		t.Fatal(err)
 	}
 	s = Open(ws) // fresh snapshot sees the local card
@@ -165,89 +176,73 @@ func TestDeleteGuardsBuiltins(t *testing.T) {
 	}
 }
 
-func TestParseSkillFrontmatterStrict(t *testing.T) {
-	if _, err := parseSkill("x", []byte("---\nname: N\ndescription: D\n---\nbody")); err != nil {
-		t.Fatalf("valid frontmatter refused: %v", err)
+// Skills other tools installed are read too: a member repo's
+// .agents/skills and .claude/skills, and ~/.agents/skills; the
+// workspace's own .dhi/skills wins a name clash (ADR-0043).
+func TestSkillsFromOtherToolsAreDiscovered(t *testing.T) {
+	ws := newWs(t)
+	mem := ws.Members()[0].Path
+	writeSkillDir(t, filepath.Join(mem, ".claude", "skills"), "pdf", "---\nname: pdf\ndescription: from the repo\n---\nb\n")
+	writeSkillDir(t, filepath.Join(mem, ".agents", "skills"), "sql", "---\nname: sql\ndescription: x\n---\nb\n")
+	AgentsSkillsDir = t.TempDir()
+	t.Cleanup(func() { AgentsSkillsDir = "" })
+	writeSkillDir(t, AgentsSkillsDir, "lint", "---\nname: lint\ndescription: x\n---\nb\n")
+	writeSkillDir(t, filepath.Join(ws.Root, workspace.DirSkills), "pdf", "---\nname: pdf\ndescription: the workspace one\n---\nb\n")
+	s := Open(ws)
+	for name, src := range map[string]string{"pdf": SourceLocal, "sql": SourceMember, "lint": SourceAgents} {
+		if _, ok := s.Skill(name); !ok || s.Source("skill", name) != src {
+			t.Errorf("%s: source %q, want %q", name, s.Source("skill", name), src)
+		}
 	}
-	if _, err := parseSkill("x", []byte("---\nname: N\n---\nbody")); err == nil {
-		t.Fatal("missing description accepted")
+	if k, _ := s.Skill("pdf"); k.Description != "the workspace one" {
+		t.Fatal("the workspace's own skill must win")
 	}
-	if _, err := parseSkill("x", []byte("---\nname: N\ndescription: D\nbogus: y\n---\nbody")); err == nil {
-		t.Fatal("bogus frontmatter accepted")
+	if err := s.Delete(ws, "skill", "sql"); err == nil {
+		t.Fatal("a skill another tool installed is not DHI's to delete")
 	}
 }
 
 func TestSkillScriptResolution(t *testing.T) {
 	ws := newWs(t)
-	dir := filepath.Join(ws.Root, workspace.DirSkills)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	dir := writeSkillDir(t, filepath.Join(ws.Root, workspace.DirSkills), "checks", "---\nname: checks\ndescription: run checks\n---\n\nRun the checks.\n")
+	scriptPath := filepath.Join(dir, "scripts", "checks.sh")
+	if err := os.MkdirAll(filepath.Dir(scriptPath), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	doc := "---\nname: Checks\ndescription: run checks\nscript: checks.sh\n---\n\nRun the checks.\n"
-	if err := os.WriteFile(filepath.Join(dir, "checks.md"), []byte(doc), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	scriptPath := filepath.Join(dir, "checks.sh")
 	if err := os.WriteFile(scriptPath, []byte("#!/bin/sh\necho ok\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	lib := Open(ws)
-	// Not executable yet → named refusal.
-	if _, err := lib.Script("checks"); err == nil || !strings.Contains(err.Error(), "not executable") {
+	if _, err := lib.Script("checks", "checks.sh"); err == nil || !strings.Contains(err.Error(), "not executable") {
 		t.Fatalf("non-executable script = %v", err)
 	}
 	if err := os.Chmod(scriptPath, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	got, err := lib.Script("checks")
-	if err != nil || got != scriptPath {
+	if got, err := lib.Script("checks", "scripts/checks.sh"); err != nil || got != scriptPath {
 		t.Fatalf("Script = %q err=%v", got, err)
 	}
-	// Instruction-only skill refuses.
-	if err := os.WriteFile(filepath.Join(dir, "plain.md"),
-		[]byte("---\nname: Plain\ndescription: none\n---\n\nbody\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	lib = Open(ws)
-	if _, err := lib.Script("plain"); err == nil || !strings.Contains(err.Error(), "declares no script") {
-		t.Fatalf("scriptless skill = %v", err)
-	}
-	// Missing script file refuses.
-	if err := os.Remove(scriptPath); err != nil {
-		t.Fatal(err)
-	}
-	lib = Open(ws)
-	if _, err := lib.Script("checks"); err == nil {
+	if _, err := lib.Script("checks", "missing.sh"); err == nil {
 		t.Fatal("missing script accepted")
 	}
-	// Builtin skills refuse (no script scope).
-	if _, err := lib.Script("code-review"); err == nil || !strings.Contains(err.Error(), "builtin") {
+	if _, err := lib.Script("code-review", "x.sh"); err == nil || !strings.Contains(err.Error(), "built in") {
 		t.Fatalf("builtin skill = %v", err)
 	}
 }
 
-func TestSkillScriptFrontmatterValidation(t *testing.T) {
-	good := "---\nname: A\ndescription: b\nscript: sub/run.sh\n---\n\nbody\n"
-	k, err := parseSkill("a", []byte(good))
-	if err != nil || k.Script != "sub/run.sh" {
-		t.Fatalf("valid script = %+v err=%v", k, err)
-	}
-	for _, bad := range []string{
-		"/abs/run.sh", "../escape.sh", "a/../../b.sh", `c:\x.sh`, ".",
-	} {
-		doc := "---\nname: A\ndescription: b\nscript: " + bad + "\n---\n\nbody\n"
-		if _, err := parseSkill("a", []byte(doc)); err == nil {
-			t.Fatalf("script %q accepted", bad)
-		}
-	}
-	// Round-trip through WriteSkill preserves the script.
-	ws := newWs(t)
-	if err := (&Store{}).WriteSkill(ws, &Skill{Slug: "a", Name: "A", Description: "b", Script: "run.sh", Body: "body"}); err != nil {
+func TestMaterializeBuiltinsGivesThemALocation(t *testing.T) {
+	dir := t.TempDir()
+	if err := MaterializeBuiltins(dir); err != nil {
 		t.Fatal(err)
 	}
-	back, ok := Open(ws).Skill("a")
-	if !ok || back.Script != "run.sh" {
-		t.Fatalf("round-trip script = %+v ok=%v", back, ok)
+	BuiltinSkillsDir = dir
+	t.Cleanup(func() { BuiltinSkillsDir = "" })
+	k, ok := Open(nil).Skill("code-review")
+	if !ok || k.Location() != filepath.Join(dir, "code-review", "SKILL.md") {
+		t.Fatalf("builtin location: %+v", k)
+	}
+	if _, err := os.Stat(k.Location()); err != nil {
+		t.Fatal(err)
 	}
 }
 

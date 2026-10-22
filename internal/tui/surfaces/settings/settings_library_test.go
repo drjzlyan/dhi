@@ -1,16 +1,12 @@
 package settings
 
 import (
-	"context"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/drjzlyan/dhi/internal/agentkit/library"
 	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
 	"github.com/drjzlyan/dhi/internal/agentkit/org"
-	"github.com/drjzlyan/dhi/internal/agentkit/pack"
 	"github.com/drjzlyan/dhi/internal/ansi"
 	"github.com/drjzlyan/dhi/internal/testutil/golden"
 	"github.com/drjzlyan/dhi/internal/workspace"
@@ -35,7 +31,7 @@ func libSurface(t *testing.T) (*Model, *workspace.Workspace) {
 func TestLibraryListsBuiltins(t *testing.T) {
 	m, _ := libSurface(t)
 	out := ansi.Strip(m.View())
-	for _, want := range []string{"ROLES", "SKILLS", "reviewer", "scout", "fixer", "code-review", "test-writing", "builtin"} {
+	for _, want := range []string{"ROLES", "PERSONAS", "reviewer", "scout", "fixer", "builtin"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("library listing missing %q:\n%s", want, out)
 		}
@@ -97,23 +93,6 @@ func typeLibDialog(m *Model, kind string, vals ...string) {
 	}
 }
 
-func TestLibraryAuthorSkillRoundTrip(t *testing.T) {
-	m, ws := libSurface(t)
-	if !m.HandleKey("n") {
-		t.Fatal("n refused")
-	}
-	typeLibDialog(m, "skill", "my-skill", "teaches", "My Skill", "", "", "step one")
-	feed(m, "enter")
-	if m.dform != nil {
-		t.Fatalf("dialog still open: err=%s", m.dform.Err)
-	}
-	lib := library.Open(ws)
-	k, ok := lib.Skill("my-skill")
-	if !ok || k.Name != "My Skill" || k.Body != "step one" {
-		t.Fatalf("round trip: %+v ok=%v", k, ok)
-	}
-}
-
 func TestLibraryBuiltinReadOnly(t *testing.T) {
 	m, _ := libSurface(t)
 	// The first row is a role (reviewer, builtin): edit refuses by name.
@@ -133,16 +112,13 @@ func TestLibraryBuiltinReadOnly(t *testing.T) {
 
 func TestLibraryDeleteLocal(t *testing.T) {
 	m, ws := libSurface(t)
-	// Author a local card first (through the store, then refresh).
-	if err := m.lib.WriteSkill(ws, &library.Skill{
-		Slug: "tmp", Name: "T", Description: "d", Body: "b",
-	}); err != nil {
+	// Author a local role first (through the store, then refresh).
+	if err := m.lib.WriteRole(ws, &library.Role{Slug: "tmp", Description: "d", System: "s"}); err != nil {
 		t.Fatal(err)
 	}
 	m.lib = library.Open(ws)
-	// Navigate to the skill row: down past the roles.
 	for i, r := range m.libRows() {
-		if r.kind == "skill" && r.slug == "tmp" {
+		if r.kind == "role" && r.slug == "tmp" {
 			m.libCur = i
 			break
 		}
@@ -151,10 +127,10 @@ func TestLibraryDeleteLocal(t *testing.T) {
 		t.Fatal("x refused")
 	}
 	feed(m, "enter")
-	if !strings.Contains(m.flash, "skill tmp deleted") {
+	if !strings.Contains(m.flash, "role tmp deleted") {
 		t.Fatalf("flash = %q", m.flash)
 	}
-	if _, ok := library.Open(ws).Skill("tmp"); ok {
+	if _, ok := library.Open(ws).Role("tmp"); ok {
 		t.Fatal("card survived delete")
 	}
 }
@@ -246,101 +222,6 @@ func TestAgentSubmitCarriesRoleSkills(t *testing.T) {
 		return
 	}
 	t.Fatal("spec agent missing from roster")
-}
-
-func TestLibraryPackBadges(t *testing.T) {
-	m, ws := libSurface(t)
-
-	// Install a pack that ships one role + one skill.
-	root := t.TempDir()
-	write := func(rel, body string) {
-		t.Helper()
-		p := filepath.Join(root, filepath.FromSlash(rel))
-		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	write("roles/scribe.toml", "schema = 1\ndescription = \"writes docs\"\ntools = [\"read\"]\npolicy_preset = \"read-only\"\n")
-	write("skills/docs.md", "---\nname: Docs\ndescription: write docs\n---\n\nKeep docs short.\n")
-	write("pack.toml", "schema = 2\nname = \"everykind\"\nversion = \"1.0.0\"\nroles = [\"roles/scribe.toml\"]\nskills = [\"skills/docs.md\"]\n")
-	if _, err := (&pack.Installer{WS: ws}).Install(context.Background(), root); err != nil {
-		t.Fatalf("install: %v", err)
-	}
-
-	// The listing (fresh store) badges both cards with the pack name.
-	m.lib = nil
-	m.d.Library = nil
-	out := ansi.Strip(m.libraryBody(100))
-	if !strings.Contains(out, "scribe") || !strings.Contains(out, "pack:everykind") {
-		t.Fatalf("role pack badge missing:\n%s", out)
-	}
-	if strings.Count(out, "pack:everykind") != 2 {
-		t.Fatalf("expected both role and skill badged:\n%s", out)
-	}
-}
-
-type fakeScriptRunner struct {
-	argv []string
-	net  bool
-	out  string
-	err  error
-}
-
-func (f *fakeScriptRunner) Run(_ context.Context, _ string, argv []string, allowNet bool) (string, error) {
-	f.argv, f.net = argv, allowNet
-	return f.out, f.err
-}
-
-func TestLibraryRunSkillScript(t *testing.T) {
-	m, ws := libSurface(t)
-	dir := filepath.Join(ws.Root, workspace.DirSkills)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	doc := "---\nname: Checks\ndescription: run checks\nscript: checks.sh\n---\n\nRun.\n"
-	if err := os.WriteFile(filepath.Join(dir, "checks.md"), []byte(doc), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	script := filepath.Join(dir, "checks.sh")
-	if err := os.WriteFile(script, []byte("#!/bin/sh\necho ok\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	run := &fakeScriptRunner{out: "hello from script\n"}
-	m.d.RunScript = run
-	m.d.Library, m.lib = nil, nil // reopen to pick up the new skill
-
-	// Focus the "checks" skill row.
-	idx := -1
-	for i, r := range m.libRows() {
-		if r.slug == "checks" {
-			idx = i
-		}
-	}
-	if idx < 0 {
-		t.Fatalf("checks row missing: %+v", m.libRows())
-	}
-	m.libCur = idx
-
-	// r opens a confirm, enter runs async, the output lands in a dialog.
-	feed(m, "r")
-	if m.dlg == nil || m.dkind != dlgLibRunSkill {
-		t.Fatalf("r did not open the run confirm: %+v", m.dlg)
-	}
-	feed(m, "enter")
-	drainDialogEvent(t, m)
-	if m.dlg == nil || m.dkind != dlgDisplay {
-		t.Fatalf("output dialog missing: %+v", m.dlg)
-	}
-	out := ansi.Strip(strings.Join(m.dlg.Lines, "\n"))
-	if !strings.Contains(out, "hello from script") {
-		t.Fatalf("output dialog = %q", out)
-	}
-	if len(run.argv) != 1 || run.argv[0] != script || run.net {
-		t.Fatalf("runner argv=%v net=%v", run.argv, run.net)
-	}
 }
 
 func TestLibraryListsPersonasAndShowsTheirCard(t *testing.T) {

@@ -1,6 +1,7 @@
 package wizard
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -41,7 +42,7 @@ func TestChecklistStates(t *testing.T) {
 	h := newFixture(t, true)
 	h.env.SaveProfile = func(settings.Profile) error { return nil } // "you" applies: a catch-up step
 	h.env.IntegrationRows = func() []IntegrationRow { return nil }
-	h.env.SetupIntegration = func(string, map[string]string, string) ([]string, error) { return nil, nil }
+	h.env.SetupIntegration = func(context.Context, string, string) (string, error) { return "", nil }
 	if got := states(Checklist(h.env, "9.9.9", setup.State{Finished: true})); got != "–identity ○you –conventions –integrations" {
 		t.Fatalf("migrated: %s", got)
 	}

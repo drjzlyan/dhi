@@ -1,6 +1,6 @@
 # F-105 — Standard skills, MCP servers and plugins (packs removed)
 
-Status: planned (session 61, M35 P5) · ADR-0043 · supersedes F-008, F-034, F-062, F-091 (registry parts)
+Status: done (session 61, M35 P5); eval gate and live install in P9 · ADR-0043 · supersedes F-008, F-034, F-062, F-091 (registry parts)
 
 ## Why
 DHI had its own skill file format, its own pack/registry/marketplace and a hardcoded integrations
@@ -26,9 +26,20 @@ catalog with community packages. The user wants widely used standards only: Agen
   Atlassian/Slack servers with the official plugins.
 
 ## Acceptance
-- [ ] Spec validation and lenient-parse tables.
-- [ ] Real Slack/Zoom/Atlassian `.mcp.json` files parse and round-trip.
-- [ ] plugin.json and marketplace.json parse; install from local git fixtures.
-- [ ] Each repair; `skill_run` refuses unassigned skills.
-- [ ] Prompt has `<available_skills>` only when skills are assigned.
+- [x] Spec validation and lenient-parse tables.
+- [x] Real Slack/Zoom/Atlassian `.mcp.json` files parse and round-trip.
+- [x] plugin.json and marketplace.json parse; install from local git fixtures.
+- [x] Each repair; `skill_run` refuses unassigned skills.
+- [x] Prompt has `<available_skills>` only when skills are assigned.
 - [ ] F-099 evals within noise of the M34 baseline.
+
+## Notes (session 61)
+- Settings: SKILLS (i install, g give to bots, a new bot with it, w write one, s allow scripts, x
+  remove, v view) and INTEGRATIONS (+ add a plugin / URL / snippet, g, a, x, v). LIBRARY keeps roles
+  and personas. PACKS and MARKETPLACE are gone; AGENTS `g` imports agent manifests only.
+- Marketplace catalogs on GitHub are read as one file (raw.githubusercontent.com) and cached a day;
+  other hosts are cloned. Plugin sources: relative, url+sha, git-subdir, github.
+- Built-in skills are written to `<cache>/dhi/builtin-skills/<version>/` so agents read them by
+  path; those dirs, yours and `~/.agents/skills` are read-only sandbox roots.
+- A stdio server from the standard config gets network (the format has no origin list); files stay
+  sandboxed. Legacy SSE is refused by name.

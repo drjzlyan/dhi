@@ -11,6 +11,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/drjzlyan/dhi/internal/agentkit/assign"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -133,6 +134,9 @@ type Config struct {
 	// allowlist names an mcp__<server>__<tool> and its network scope
 	// permits the call.
 	MCPServers *mcpserver.Store
+	// AllBots is the "give it to every bot" policy (F-107), read when an
+	// agent's entry is built; nil = none.
+	AllBots func() assign.Policy
 	// Run executes the `run` tool's allowlisted commands (M15 P1); nil
 	// makes the tool refuse by name.
 	Run dhitools.CommandRunner
@@ -617,6 +621,11 @@ func (r *Runtime) buildEntry(m *manifest.Agent, jailRoots []string) (*entry, err
 	}
 	guard := sandbox.NewGuard(jail, policy)
 	guard.Sandbox = r.cfg.Sandbox
+	if r.cfg.AllBots != nil {
+		// F-107: skills and servers given to every bot, including ones
+		// created after the choice.
+		m = assign.Effective(m, r.cfg.AllBots())
+	}
 	return &entry{m: m, guard: guard, cli: c, cliPath: path}, nil
 }
 

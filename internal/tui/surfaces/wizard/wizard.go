@@ -85,13 +85,12 @@ type Env struct {
 	InstallCLI func(ctx context.Context, name string) error
 	CLIPrefix  func(name string) string // where a managed install lands
 
-	// Integrations step (F-047). SetupIntegration installs the card and
-	// credentials for slug from the user's inputs and enables it for the
-	// chosen employees ("every employee" / "the team lead only" / "nobody
-	// yet"), returning the ids it was enabled for.
+	// Integrations step (ADR-0043). SetupIntegration installs a vendor's
+	// official plugin from the marketplace and gives it to who ("the bots
+	// it fits" / "every bot" / "nobody yet"); it returns a short note of
+	// what happened.
 	IntegrationRows  func() []IntegrationRow
-	SetupIntegration func(slug string, inputs map[string]string, who string) ([]string, error)
-	CredentialsPath  string // shown before anything is stored
+	SetupIntegration func(ctx context.Context, plugin, who string) (string, error)
 	RosterCount      func() int
 	DetectCLIs       func() map[string]string
 	ApplyTeam        func(templateSlug string) (starter.Result, error)

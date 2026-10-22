@@ -9,20 +9,19 @@
 
 
 
+
           ╭─ dhi setup ──────────────────────────────────────────────────────────────────╮
           │ ✓ welcome ── ✓ identity ── ✓ conventions ── ● integrations ── ○ done         │
           │                                                                              │
-          │ Connect the tools your employees work in                                     │
-          │ Optional — it stays on the start page's checklist for later.                 │
+          │ Connect the tools your bots work in                                          │
+          │ The vendors' own plugins: sign in with your account when a bot first uses    │
+          │ one. Optional — more in Settings → INTEGRATIONS.                             │
           │                                                                              │
-          │ ▌ Jira + Confluence    · not connected                                       │
-          │   GitHub               · not connected                                       │
-          │   Linear               · not connected                                       │
-          │   Notion               ✓ connected                                           │
-          │   Slack                · not connected                                       │
-          │   Microsoft Teams      · not available yet                                   │
+          │ ▌ Atlassian      · not added                                                 │
+          │   Slack          ✓ added                                                     │
+          │   Zoom           · not added                                                 │
           │                                                                              │
-          │ Search and update Jira issues, read and write Confluence pages.              │
-          │ community project, runs locally with your token                              │
+          │ Jira and Confluence                                                          │
+          │ sign in with your Atlassian account on first use                             │
           │                                                                              │
           ╰──────────────────────────────────────────────────────────────────────────────╯

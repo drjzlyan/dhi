@@ -13,7 +13,6 @@ import (
 	"charm.land/bubbletea/v2"
 
 	"github.com/drjzlyan/dhi/internal/agentkit/brief"
-	"github.com/drjzlyan/dhi/internal/agentkit/catalog"
 	"github.com/drjzlyan/dhi/internal/agentkit/clirun"
 	"github.com/drjzlyan/dhi/internal/agentkit/starter"
 	"github.com/drjzlyan/dhi/internal/ansi"
@@ -814,41 +813,41 @@ func TestGoldenCLIStep(t *testing.T) {
 	golden.Snapshot(t, "wizard_cli_confirm", plain(m))
 }
 
-// ---- integrations step (F-047) ----
+// ---- integrations step (ADR-0043: the vendors' official plugins) ----
 
 type intFixture struct {
 	*fixture
-	calls   []string
-	inputs  map[string]string
-	who     string
-	failAs  error
-	enabled []string
-	ready   map[string]bool
+	calls  []string
+	who    string
+	failAs error
+	added  map[string]bool
+}
+
+var officialRows = []IntegrationRow{
+	{Name: "Atlassian", Plugin: "atlassian", Description: "Jira and Confluence", SignIn: "sign in with your Atlassian account on first use"},
+	{Name: "Slack", Plugin: "slack", Description: "Search messages and channels", SignIn: "sign in with your Slack account on first use"},
+	{Name: "Zoom", Plugin: "zoom-plugin", Description: "Meetings and chat", SignIn: "needs a Zoom access token (Settings → SECRETS)"},
 }
 
 func newIntFixture(t *testing.T) *intFixture {
 	t.Helper()
-	f := &intFixture{fixture: newFixture(t, true), ready: map[string]bool{}, enabled: []string{"atlas", "forge"}}
-	f.env.CredentialsPath = "/home/me/.config/dhi/credentials.toml"
+	f := &intFixture{fixture: newFixture(t, true), added: map[string]bool{}}
 	f.env.IntegrationRows = func() []IntegrationRow {
 		var rows []IntegrationRow
-		for _, e := range catalog.Entries() {
-			st := catalog.State{}
-			if f.ready[e.Slug] {
-				st = catalog.State{Installed: true}
-			}
-			rows = append(rows, IntegrationRow{Entry: e, State: st})
+		for _, r := range officialRows {
+			r.Installed = f.added[r.Plugin]
+			rows = append(rows, r)
 		}
 		return rows
 	}
-	f.env.SetupIntegration = func(slug string, in map[string]string, who string) ([]string, error) {
-		f.calls = append(f.calls, slug)
-		f.inputs, f.who = in, who
+	f.env.SetupIntegration = func(_ context.Context, plugin, who string) (string, error) {
+		f.calls = append(f.calls, plugin)
+		f.who = who
 		if f.failAs != nil {
-			return nil, f.failAs
+			return "", f.failAs
 		}
-		f.ready[slug] = true
-		return f.enabled, nil
+		f.added[plugin] = true
+		return "atlas, quill have it", nil
 	}
 	return f
 }
@@ -863,169 +862,52 @@ func (f *intFixture) toIntegrations(t *testing.T) *Model {
 	return m
 }
 
-// selectEntry moves the cursor to a catalog slug.
-func selectEntry(t *testing.T, m *Model, slug string) {
-	t.Helper()
-	for i, e := range catalog.Entries() {
-		if e.Slug == slug {
-			for j := 0; j < i; j++ {
-				key(m, "j")
-			}
-			return
-		}
-	}
-	t.Fatalf("no catalog entry %q", slug)
-}
-
-func TestIntegrationsListShowsEveryEntryAndTeamsIsUnavailable(t *testing.T) {
+func TestIntegrationsListsTheOfficialPlugins(t *testing.T) {
 	f := newIntFixture(t)
 	m := f.toIntegrations(t)
 	v := plain(m)
-	for _, want := range []string{"Jira + Confluence", "GitHub", "Linear", "Notion", "Slack", "Microsoft Teams", "· not connected"} {
+	for _, want := range []string{"Atlassian", "Slack", "Zoom", "not added", "sign in with your Atlassian account"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("list lacks %q:\n%s", want, v)
 		}
 	}
-	selectEntry(t, m, "teams")
-	key(m, "s")
-	v = plain(m)
-	if !strings.Contains(v, "Entra ID") || m.cur().(*integrationsStep).phase != intList {
-		t.Fatalf("an unavailable entry must explain itself and not open a setup:\n%s", v)
-	}
 }
 
-func TestIntegrationsFullFlowMasksTheSecretAndNamesTheStorage(t *testing.T) {
+func TestIntegrationsAddsAPluginForTheChosenBots(t *testing.T) {
 	f := newIntFixture(t)
 	m := f.toIntegrations(t)
-	selectEntry(t, m, "linear")
-	const secret = "lin_api_SuperSecret123"
-
-	var seen []string
-	snap := func() { seen = append(seen, plain(m)) }
-
-	key(m, "s")
-	snap()
-	if v := plain(m); !strings.Contains(v, "run by the vendor") || !strings.Contains(v, "https://linear.app/settings/account/security") {
-		t.Fatalf("info screen:\n%s", v)
+	key(m, "j", "s", "enter") // Slack → the bots it fits → add
+	if len(f.calls) != 1 || f.calls[0] != "slack" || f.who != whoRecommended {
+		t.Fatalf("calls=%v who=%q", f.calls, f.who)
 	}
-	key(m, "enter") // → fields
-	typeText(m, secret)
-	snap()
-	if v := plain(m); strings.Contains(v, "SuperSecret") || !strings.Contains(v, strings.Repeat("•", len(secret))) {
-		t.Fatalf("the secret must be masked while typing:\n%s", v)
-	}
-	key(m, "enter") // → who
-	snap()
-	key(m, "enter") // → confirm
-	snap()
 	v := plain(m)
-	for _, want := range []string{"/home/me/.config/dhi/credentials.toml", "owner-only", "readable plain text",
-		".dhi/mcp/linear.toml", "no secrets in it", "every employee"} {
-		if !strings.Contains(v, want) {
-			t.Errorf("confirm lacks %q:\n%s", want, v)
-		}
-	}
-	if len(f.calls) != 0 {
-		t.Fatal("wrote before confirmation")
-	}
-	key(m, "enter") // connect
-	snap()
-
-	if strings.Join(f.calls, ",") != "linear" || f.inputs["LINEAR_API_KEY"] != secret || f.who != whoEveryone {
-		t.Fatalf("setup call = %v inputs=%v who=%q", f.calls, f.inputs, f.who)
-	}
-	if !f.env.Changed || !strings.Contains(strings.Join(f.env.Applied, "|"), "connected Linear (atlas, forge)") {
-		t.Fatalf("changed=%v applied=%v", f.env.Changed, f.env.Applied)
-	}
-	for i, screen := range seen {
-		if strings.Contains(screen, "SuperSecret") {
-			t.Errorf("the secret was rendered on screen %d:\n%s", i, screen)
-		}
-	}
-	if !strings.Contains(plain(m), "Linear connected") {
-		t.Fatalf("no success message:\n%s", plain(m))
+	if !strings.Contains(v, "Slack added") || !strings.Contains(v, "added") || !f.env.Changed {
+		t.Fatalf("after add (changed=%v):\n%s", f.env.Changed, v)
 	}
 }
 
-func TestIntegrationsValidateBeforeAnyWrite(t *testing.T) {
+func TestIntegrationsEveryBotAndFailure(t *testing.T) {
 	f := newIntFixture(t)
 	m := f.toIntegrations(t)
-	selectEntry(t, m, "atlassian")
-	key(m, "s", "enter")
-	typeText(m, "acme")
-	key(m, "tab")
-	typeText(m, "not-an-email")
-	key(m, "tab")
-	typeText(m, "tok")
-	key(m, "enter")
-	if v := plain(m); !strings.Contains(v, "email must look like") || m.cur().(*integrationsStep).phase != intFields {
-		t.Fatalf("a bad email must stay in the form with the reason:\n%s", v)
+	key(m, "s", "right", "enter")
+	if f.who != whoEveryone {
+		t.Fatalf("who = %q", f.who)
 	}
-	key(m, "shift+tab") // token → email
-	for i := 0; i < len("not-an-email"); i++ {
-		key(m, "backspace")
-	}
-	typeText(m, "me@acme.com")
-	key(m, "enter") // → who
-	if m.cur().(*integrationsStep).phase != intWho {
-		t.Fatalf("valid inputs should advance:\n%s", plain(m))
-	}
-	if len(f.calls) != 0 {
-		t.Fatal("validation must happen before any write")
-	}
-
 	g := newIntFixture(t)
-	m2 := g.toIntegrations(t)
-	selectEntry(t, m2, "linear")
-	key(m2, "s", "enter", "enter") // submit with the key empty
-	if !strings.Contains(plain(m2), "required") {
-		t.Fatalf("an empty secret must be refused:\n%s", plain(m2))
+	g.failAs = errors.New("could not reach github.com")
+	m = g.toIntegrations(t)
+	key(m, "s", "enter")
+	if v := plain(m); !strings.Contains(v, "could not add Atlassian: could not reach github.com") || g.env.Changed {
+		t.Fatalf("failure (changed=%v):\n%s", g.env.Changed, v)
 	}
 }
 
 func TestIntegrationsEscStepsBackWithoutWriting(t *testing.T) {
 	f := newIntFixture(t)
 	m := f.toIntegrations(t)
-	selectEntry(t, m, "linear")
-	key(m, "s", "enter")
-	typeText(m, "tok")
-	key(m, "enter", "enter") // who → confirm
-	st := m.cur().(*integrationsStep)
-	for _, want := range []intPhase{intWho, intFields, intInfo, intList} {
-		key(m, "esc")
-		if st.phase != want {
-			t.Fatalf("phase = %v, want %v", st.phase, want)
-		}
-	}
-	if len(f.calls) != 0 {
+	key(m, "s", "esc")
+	if len(f.calls) != 0 || m.cur().(*integrationsStep).phase != intList {
 		t.Fatal("backing out wrote something")
-	}
-}
-
-func TestIntegrationsFailureIsReportedAndNotMarkedChanged(t *testing.T) {
-	f := newIntFixture(t)
-	f.failAs = errors.New("credentials file is not valid TOML")
-	m := f.toIntegrations(t)
-	selectEntry(t, m, "notion")
-	key(m, "s", "enter")
-	typeText(m, "ntn_x")
-	key(m, "enter", "enter", "enter")
-	v := plain(m)
-	if !strings.Contains(v, "could not connect Notion: credentials file is not valid TOML") || f.env.Changed {
-		t.Fatalf("failure (changed=%v):\n%s", f.env.Changed, v)
-	}
-}
-
-func TestIntegrationsNobodyYetSaysSo(t *testing.T) {
-	f := newIntFixture(t)
-	f.enabled = nil
-	m := f.toIntegrations(t)
-	selectEntry(t, m, "github")
-	key(m, "s", "enter")
-	typeText(m, "github_pat_x")
-	key(m, "enter", "right", "right", "enter", "enter") // who → "nobody yet" → confirm → connect
-	if f.who != whoNobody || !strings.Contains(plain(m), "no employee has access yet") {
-		t.Fatalf("who=%q:\n%s", f.who, plain(m))
 	}
 }
 
@@ -1043,10 +925,9 @@ func TestIntegrationsStepHiddenWithoutWorkspaceOrHooks(t *testing.T) {
 
 func TestGoldenIntegrations(t *testing.T) {
 	f := newIntFixture(t)
-	f.ready["notion"] = true
+	f.added["slack"] = true
 	m := f.toIntegrations(t)
 	golden.Snapshot(t, "wizard_integrations", plain(m))
-	selectEntry(t, m, "atlassian")
 	key(m, "s")
 	golden.Snapshot(t, "wizard_integrations_info", plain(m))
 }

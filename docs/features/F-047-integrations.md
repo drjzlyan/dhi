@@ -1,5 +1,7 @@
 # F-047: Integrations catalog + guided setup
 
+> **Superseded (session 61, ADR-0043):** the hardcoded catalog (community Atlassian and Slack packages, API tokens) is replaced by the vendors' official plugins and remote servers, with sign-in on first use (F-105, F-106).
+
 Status: complete (M25 P6) · ADR-0028 · Builds on F-034 (MCP bridge), F-043 (wizard), F-045 (employees).
 
 ## Problem

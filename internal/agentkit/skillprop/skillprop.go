@@ -1,9 +1,9 @@
 // Package skillprop holds the skills employees suggest installing
-// (F-091, ADR-0039). A suggestion names a DHI registry entry; DHI fetches
-// it, checks its digest (and signature, when a key is pinned) and records
-// what the human needs to judge it: every skill's text and any script in
-// full. Approving installs exactly that content — re-fetched and required
-// to match the recorded digest — for this workspace or every workspace.
+// (F-091, ADR-0039, ADR-0043). A suggestion names where a skill is
+// published — a GitHub or git URL, or a plugin in a marketplace; DHI
+// fetches it, pins the commit, and records what the human needs to judge
+// it: every skill's instructions and every script in full. Approving
+// installs exactly that commit for this workspace or every workspace.
 package skillprop
 
 import (
@@ -15,14 +15,11 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
-	"github.com/drjzlyan/dhi/internal/agentkit/library"
+	"github.com/drjzlyan/dhi/internal/agentkit/install"
 	"github.com/drjzlyan/dhi/internal/agentkit/org"
-	"github.com/drjzlyan/dhi/internal/agentkit/pack"
-	"github.com/drjzlyan/dhi/internal/agentkit/registry"
 	"github.com/drjzlyan/dhi/internal/workspace"
 )
 
@@ -44,12 +41,17 @@ const (
 
 // SkillInfo is one skill as the reviewer sees it.
 type SkillInfo struct {
-	Slug        string `json:"slug"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Body        string `json:"body"`             // goes into every prompt it is attached to
-	Script      string `json:"script,omitempty"` // path, when it ships one
-	ScriptText  string `json:"script_text,omitempty"`
+	Slug        string       `json:"slug"`
+	Name        string       `json:"name"`
+	Description string       `json:"description"`
+	Body        string       `json:"body"` // what the agent reads when the skill applies
+	Scripts     []ScriptInfo `json:"scripts,omitempty"`
+}
+
+// ScriptInfo is one file the skill could run, in full.
+type ScriptInfo struct {
+	Path string `json:"path"`
+	Text string `json:"text"`
 }
 
 // Proposal is one suggestion and its review.
@@ -58,10 +60,8 @@ type Proposal struct {
 	Entry   string      `json:"entry"`
 	Version string      `json:"version"`
 	Source  string      `json:"source"`
-	SHA256  string      `json:"sha256"`
-	Signed  bool        `json:"signed"`
 	Skills  []SkillInfo `json:"skills"`
-	Ignored []string    `json:"ignored,omitempty"` // pack items a skill install leaves out
+	Ignored []string    `json:"ignored,omitempty"` // what a skill install leaves out
 	Agent   string      `json:"agent"`
 	Reason  string      `json:"reason"`
 	Status  string      `json:"status"`
@@ -73,19 +73,26 @@ type Proposal struct {
 // HasScripts reports a suggestion that ships executable code.
 func (p Proposal) HasScripts() bool {
 	for _, k := range p.Skills {
-		if k.Script != "" {
+		if len(k.Scripts) > 0 {
 			return true
 		}
 	}
 	return false
 }
 
-// Trust names how the content was verified.
+// Trust names how the content is pinned.
 func (p Proposal) Trust() string {
-	if p.Signed {
-		return "signed by a publisher you trust, digest verified"
+	if p.Version != "" {
+		return "pinned to commit " + short(p.Version) + "; installs exactly what you review"
 	}
-	return "digest verified (no publisher key pinned: unsigned)"
+	return "a local folder: installs what is there when you approve"
+}
+
+func short(sha string) string {
+	if len(sha) > 12 {
+		return sha[:12]
+	}
+	return sha
 }
 
 // Store persists proposals for one workspace.
@@ -181,82 +188,63 @@ func (s *Store) Resolve(id int, status, scope string) error {
 	return fmt.Errorf("skillprop: no suggestion #%d", id)
 }
 
-// Review fetches entry from reg (digest-verified) and builds the record
-// a human judges. A pack with no skills is refused: suggesting agents or
-// workflows is not what this is for.
-func Review(ctx context.Context, reg *registry.Registry, entry string) (Proposal, error) {
-	f, err := reg.Fetch(ctx, entry)
+// Review fetches source (a GitHub URL, a git URL, or a plugin from a
+// marketplace) and builds the record a human judges: every skill's
+// instructions and every script in full, pinned to the commit fetched.
+func Review(ctx context.Context, fetch install.Fetcher, tmp string, source install.Source) (Proposal, error) {
+	b, err := install.Preview(ctx, source, fetch, tmp)
 	if err != nil {
 		return Proposal{}, err
 	}
-	defer f.Close()
-	payloads, spec, err := pack.ReadSkills(f.Dir)
-	if err != nil {
-		return Proposal{}, err
+	defer b.Close()
+	if b.Marketplace != nil {
+		return Proposal{}, fmt.Errorf("%s is a marketplace; suggest one of its plugins", source)
 	}
-	if len(payloads) == 0 {
-		return Proposal{}, fmt.Errorf("%s ships no skills (it is a pack of %s); install packs from Settings → MARKETPLACE", entry, packKinds(spec))
+	if len(b.Skills) == 0 {
+		return Proposal{}, fmt.Errorf("%s ships no skills", source)
 	}
-	p := Proposal{Entry: entry, Version: f.Entry.Version, Source: f.Entry.Source, SHA256: f.Entry.SHA256, Signed: f.Signed}
-	for _, k := range payloads {
-		p.Skills = append(p.Skills, SkillInfo{Slug: k.Slug, Name: k.Skill.Name, Description: k.Skill.Description,
-			Body: k.Skill.Body, Script: k.Skill.Script, ScriptText: string(k.Script)})
+	pinned := source
+	if b.Commit != "" {
+		pinned.Ref = b.Commit
 	}
-	if kinds := packKinds(spec); kinds != "skills" {
-		p.Ignored = append(p.Ignored, "the pack also has "+kinds+"; a skill install adds only its skills")
+	p := Proposal{Entry: pinned.String(), Version: b.Commit, Source: source.String()}
+	for _, c := range b.Skills {
+		info := SkillInfo{Slug: c.Skill.Slug, Name: c.Skill.Name, Description: c.Skill.Description, Body: c.Skill.Body}
+		for _, rel := range c.Scripts {
+			text, _ := os.ReadFile(filepath.Join(c.Dir, filepath.FromSlash(rel)))
+			info.Scripts = append(info.Scripts, ScriptInfo{Path: rel, Text: string(text)})
+		}
+		p.Skills = append(p.Skills, info)
+	}
+	if len(b.Servers) > 0 {
+		p.Ignored = append(p.Ignored, fmt.Sprintf("it also configures %d MCP server(s); add those from Settings → INTEGRATIONS", len(b.Servers)))
 	}
 	return p, nil
 }
 
-func packKinds(s *pack.Spec) string {
-	var k []string
-	add := func(n int, what string) {
-		if n > 0 {
-			k = append(k, fmt.Sprintf("%d %s", n, what))
-		}
-	}
-	add(len(s.Agents), "agents")
-	add(len(s.Workflows), "workflows")
-	add(len(s.Roles), "roles")
-	add(len(s.Standards), "standards")
-	add(len(s.MCPServers), "MCP servers")
-	if len(k) == 0 {
-		return "skills"
-	}
-	return strings.Join(k, ", ")
-}
-
-// Install re-fetches p's entry, requires the digest the human reviewed,
-// and writes its skills (with scripts) to this workspace's .dhi/skills or
-// to library.UserSkillsDir for every workspace. It returns the slugs.
-func Install(ctx context.Context, reg *registry.Registry, ws *workspace.Workspace, p Proposal, scope string) ([]string, error) {
-	f, err := reg.Fetch(ctx, p.Entry)
+// Install fetches exactly the reviewed commit and installs p's skills
+// (scripts allowed: the human read them) into scope. It returns the
+// skill names.
+func Install(ctx context.Context, fetch install.Fetcher, tmp string, p Proposal, scope install.Scope) ([]string, error) {
+	src, err := install.ParseSource(p.Entry)
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
-	if !strings.EqualFold(f.Entry.SHA256, p.SHA256) {
-		return nil, fmt.Errorf("%s changed since it was reviewed (digest %s, reviewed %s); ask for a new suggestion", p.Entry, f.Entry.SHA256, p.SHA256)
-	}
-	payloads, _, err := pack.ReadSkills(f.Dir)
+	b, err := install.Preview(ctx, src, fetch, tmp)
 	if err != nil {
 		return nil, err
 	}
-	dest := filepath.Join(ws.Root, workspace.DirSkills)
-	if scope == ScopeEverywhere {
-		if library.UserSkillsDir == "" {
-			return nil, fmt.Errorf("no user config dir: install for this workspace instead")
-		}
-		dest = library.UserSkillsDir
+	defer b.Close()
+	if p.Version != "" && b.Commit != p.Version {
+		return nil, fmt.Errorf("%s changed since it was reviewed (commit %s, reviewed %s); ask for a new suggestion", p.Source, b.Commit, p.Version)
 	}
-	if err := pack.WriteSkills(dest, payloads); err != nil {
-		return nil, err
+	var names []string
+	for _, k := range p.Skills {
+		names = append(names, k.Slug)
 	}
-	var slugs []string
-	for _, k := range payloads {
-		slugs = append(slugs, k.Slug)
-	}
-	return slugs, nil
+	b.Servers = nil // a suggestion installs skills only
+	res, err := install.Apply(b, scope, &install.Pick{Skills: names}, true)
+	return res.Skills, err
 }
 
 // Attach adds slugs to an employee's skills (they ride in its prompt).

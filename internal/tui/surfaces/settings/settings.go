@@ -18,14 +18,13 @@ import (
 
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/agentkit/forge"
+	"github.com/drjzlyan/dhi/internal/agentkit/install"
 	"github.com/drjzlyan/dhi/internal/agentkit/lessons"
 	"github.com/drjzlyan/dhi/internal/agentkit/library"
 	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
 	"github.com/drjzlyan/dhi/internal/agentkit/memory"
 	"github.com/drjzlyan/dhi/internal/agentkit/org"
-	"github.com/drjzlyan/dhi/internal/agentkit/pack"
 	"github.com/drjzlyan/dhi/internal/agentkit/principal"
-	"github.com/drjzlyan/dhi/internal/agentkit/registry"
 	"github.com/drjzlyan/dhi/internal/agentkit/setprop"
 	"github.com/drjzlyan/dhi/internal/agentkit/skillprop"
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
@@ -54,21 +53,19 @@ type Model struct {
 	// PROPOSALS (F-069/F-070): selected row.
 	propCur int
 	// BRAIN (F-068): lesson cursor, filter text, and whether / is typing.
-	brainCur    int
-	brainFilter string
-	brainTyping bool
-	libCur      int // LIBRARY listing rows
-	teamCur     int // TEAMS rows
-	secretCur   int // SECRETS rows (F-089)
-	packCur     int // PACKS rows
-	stdCur      int // STANDARDS rows
-	wfCur       int // WORKFLOWS rows
-	convCur     int // CONVENTIONS rows (F-075)
-	autoCur     int // AUTOPILOTS rows
-	mktCur      int // MARKETPLACE rows
-	mktQuery    string
-	mktEdit     bool // search input focused
-	mktBusy     bool
+	brainCur      int
+	brainFilter   string
+	brainTyping   bool
+	libCur        int                  // LIBRARY listing rows
+	teamCur       int                  // TEAMS rows
+	secretCur     int                  // SECRETS rows (F-089)
+	stdCur        int                  // STANDARDS rows
+	wfCur         int                  // WORKFLOWS rows
+	convCur       int                  // CONVENTIONS rows (F-075)
+	autoCur       int                  // AUTOPILOTS rows
+	extState      extState             // SKILLS / INTEGRATIONS (ADR-0043)
+	dlgExtra      []string             // lines shown under a form dialog
+	pendingPlugin *install.PluginEntry // the plugin whose scope is being chosen
 
 	detected map[string]string // runtime name → version ("" = not installed)
 	lib      *library.Store    // lazy snapshot of the behaviour library
@@ -109,8 +106,9 @@ var _ surfaces.Surface = (*Model)(nil)
 type settingsEvent struct {
 	msg   string
 	err   string
-	title string   // when lines is set: a display dialog title
-	lines []string // when set: open a display dialog with these lines
+	title string    // when lines is set: a display dialog title
+	lines []string  // when set: open a display dialog with these lines
+	ext   *extEvent // an install fetch finished (SKILLS / INTEGRATIONS)
 }
 
 type sectionID uint8
@@ -123,12 +121,12 @@ const (
 	secProposals
 	secLibrary
 	secTeams
-	secPacks
 	secStandards
 	secConventions
 	secWorkflows
 	secAutopilots
-	secMarketplace
+	secSkills
+	secIntegrations
 	secSecrets
 	secCount
 )
@@ -149,8 +147,8 @@ func (s sectionID) label() string {
 		return "LIBRARY"
 	case secTeams:
 		return "TEAMS"
-	case secPacks:
-		return "PACKS"
+	case secSkills:
+		return "SKILLS"
 	case secStandards:
 		return "STANDARDS"
 	case secConventions:
@@ -159,8 +157,8 @@ func (s sectionID) label() string {
 		return "WORKFLOWS"
 	case secAutopilots:
 		return "AUTOPILOTS"
-	case secMarketplace:
-		return "MARKETPLACE"
+	case secIntegrations:
+		return "INTEGRATIONS"
 	case secSecrets:
 		return "SECRETS"
 	default:
@@ -172,12 +170,6 @@ func (s sectionID) label() string {
 // through (satisfied by *runtime.Runtime).
 type TurnHandler interface {
 	Handle(ctx context.Context, msg bus.Message)
-}
-
-// runner executes one already-vetted argv under the sandbox
-// (dhitools.CommandRunner). Nil disables the LIBRARY skill-run action.
-type runner interface {
-	Run(ctx context.Context, dir string, argv []string, allowNetwork bool) (string, error)
 }
 
 // Deps wires workspace-scoped services. Zero fields degrade the managed
@@ -212,12 +204,9 @@ type Deps struct {
 	Bus        *bus.Bus
 	Runtime    TurnHandler
 	Tasks      *tasks.Store
-	// Registry is the cached signed pack index (F-034 part B). Nil
-	// degrades the MARKETPLACE section to a named unavailable row.
-	Registry *registry.Registry
-	// RunScript executes a local skill's declared script (sandboxed,
-	// network denied). Nil disables the LIBRARY run action.
-	RunScript runner
+	// Ext installs skills, plugins and MCP servers (ADR-0043): SKILLS
+	// and INTEGRATIONS. Nil shows them read-only.
+	Ext *Extensions
 	// SetProps are the agents' settings proposals (F-070); applying one
 	// writes a single key into WorkspaceConfig or UserConfig. Nil hides
 	// them.
@@ -228,7 +217,7 @@ type Deps struct {
 	// and archives them. Nil shows only settings proposals.
 	Forge *forge.Store
 	// SkillProps are the skills employees suggested (F-091); approving
-	// one installs it through Registry.
+	// one installs it through Ext.
 	SkillProps *skillprop.Store
 	// Lessons are what the crew has learned (F-068): the BRAIN section.
 	// Nil renders a named unavailable section.
@@ -331,7 +320,9 @@ func (m *Model) Commands() []surfaces.Command {
 
 // CapturesInput implements surfaces.InputCapturer: forms and dialogs
 // take plain keys as text.
-func (m *Model) CapturesInput() bool { return m.form.open || m.dlg != nil }
+func (m *Model) CapturesInput() bool {
+	return m.form.open || m.dlg != nil || m.extState.picker != nil || m.extState.assign != nil
+}
 
 // Init starts the async-outcome listener (imports/clones can take
 // seconds; the form stays busy until the event lands).
@@ -350,13 +341,13 @@ func (m *Model) listen() tea.Cmd {
 
 func (m *Model) Update(msg tea.Msg) tea.Cmd {
 	if ev, ok := msg.(settingsEvent); ok {
+		if ev.ext != nil {
+			m.onExtEvent(*ev.ext)
+			return m.listen()
+		}
 		m.form.busy = false
-		m.mktBusy = false
 		if m.form.kind == formSource {
 			m.form.open = false
-		}
-		if m.dlg != nil && (m.dkind == dlgPackInstall || m.dkind == dlgRegistrySource) {
-			m.closeDialog()
 		}
 		if ev.err != "" {
 			m.flash = "failed: " + ev.err
@@ -378,6 +369,14 @@ func (m *Model) Resize(w, h int) {
 }
 
 func (m *Model) HandleKey(key string) bool {
+	if m.extState.assign != nil {
+		m.assignKey(key)
+		return true
+	}
+	if m.extState.picker != nil {
+		m.pickerKey(key)
+		return true
+	}
 	if m.dlg != nil {
 		m.dialogKey(key)
 		return true // the modal swallows everything (focus trap)
@@ -409,8 +408,8 @@ func (m *Model) HandleKey(key string) bool {
 		return m.teamsKey(key)
 	case secProject:
 		return m.projectKey(key)
-	case secPacks:
-		return m.packsKey(key)
+	case secSkills:
+		return m.skillsKey(key)
 	case secStandards:
 		return m.standardsKey(key)
 	case secConventions:
@@ -419,8 +418,8 @@ func (m *Model) HandleKey(key string) bool {
 		return m.workflowsKey(key)
 	case secAutopilots:
 		return m.autopilotsKey(key)
-	case secMarketplace:
-		return m.marketplaceKey(key)
+	case secIntegrations:
+		return m.integrationsKey(key)
 	case secSecrets:
 		return m.secretsKey(key)
 	default:
@@ -888,7 +887,7 @@ func (m *Model) agentsKey(key string) bool {
 		}
 		return true
 	case "n":
-		m.form = newAgentForm(m.d.CLIs, m.detectedFirst(m.d.CLIs))
+		m.openNewAgentForm()
 		return true
 	case "g":
 		m.form = newSourceForm() // F-019: add from source (one flow)
@@ -1125,6 +1124,14 @@ func (m *Model) submitAgent() {
 		}
 	}
 	persona := strings.TrimSpace(vals[8])
+	if lib := m.libStore(); lib != nil {
+		for _, k := range skills {
+			if _, ok := lib.Skill(k); !ok {
+				f.setErr("unknown skill " + k + " — install it in Settings → SKILLS")
+				return
+			}
+		}
+	}
 	if f.orig != "" && id != f.orig {
 		f.setErr("id is immutable — archive this agent and create a new one")
 		return
@@ -1227,9 +1234,9 @@ func (m *Model) submitSource() {
 	}(src)
 }
 
-// addFromSource is the F-019 one flow: a git URL clones through the
-// hermetic shim; then pack.toml delegates to the validated pack
-// install, and bare manifests validate ALL before the first write.
+// addFromSource is the F-019 one flow: a git URL clones in-process, and
+// agent manifests validate ALL before the first write (skills and MCP
+// servers install from SKILLS and INTEGRATIONS, ADR-0043).
 // Duplicate ids skip with named reasons — never fatal, never silent.
 func (m *Model) addFromSource(src string) (string, error) {
 	dir := src
@@ -1258,19 +1265,6 @@ func (m *Model) addFromSource(src string) (string, error) {
 		}
 	}
 
-	// pack.toml present → the existing pack flow (provenance tracked).
-	if _, err := os.Stat(filepath.Join(dir, "pack.toml")); err == nil {
-		res, err := (&pack.Installer{WS: m.d.WS}).Install(context.Background(), dir)
-		if err != nil {
-			return "", err
-		}
-		if rerr := m.reloadAfterImport(); rerr != nil {
-			return fmt.Sprintf("installed pack %s (%d agents); reload failed: %s",
-				res.Pack, len(res.Agents), rerr), nil
-		}
-		return fmt.Sprintf("installed pack %s (%d agents)", res.Pack, len(res.Agents)), nil
-	}
-
 	// Bare manifests: strict-parse every candidate BEFORE the first
 	// write — one bad file refuses the whole import, named.
 	cands, err := scanManifests(dir)
@@ -1278,7 +1272,7 @@ func (m *Model) addFromSource(src string) (string, error) {
 		return "", err
 	}
 	if len(cands) == 0 {
-		return "", fmt.Errorf("no pack.toml or agent manifests found in %s", dir)
+		return "", fmt.Errorf("no agent manifests (.toml) found in %s", dir)
 	}
 	var imported, skipped []string
 	for _, a := range cands {
@@ -1416,8 +1410,15 @@ func (m *Model) View() string {
 					m.dlg.Lines = append(m.dlg.Lines, theme.Hint().Render(l))
 				}
 			}
+			for _, l := range m.dlgExtra {
+				m.dlg.Lines = append(m.dlg.Lines, kit.ClipEllipsis(l, min(w-railW-8, 96)))
+			}
 		}
 		view = kit.Overlay(strings.Split(view, "\n"), m.dlg.View(), w, h)
+	case m.extState.assign != nil:
+		view = kit.Overlay(strings.Split(view, "\n"), m.assignView(w-railW), w, h)
+	case m.extState.picker != nil:
+		view = kit.Overlay(strings.Split(view, "\n"), m.extState.picker.View(min(w-railW-8, 100)), w, h)
 	case m.form.open:
 		// The legacy agent form rides the same overlay system.
 		box := kit.Modal{Title: m.formTitle(), Lines: m.formView()}
@@ -1469,8 +1470,8 @@ func (m *Model) sectionPane(w, h int) string {
 		content = strings.Split(m.libraryBody(w), "\n")
 	case secTeams:
 		content = m.teamsView()
-	case secPacks:
-		content = m.packsView()
+	case secSkills:
+		content = m.skillsView(w - 4)
 	case secStandards:
 		content = m.standardsView()
 	case secConventions:
@@ -1479,8 +1480,8 @@ func (m *Model) sectionPane(w, h int) string {
 		content = m.workflowsView()
 	case secAutopilots:
 		content = m.autopilotsView()
-	case secMarketplace:
-		content = m.marketplaceView(w)
+	case secIntegrations:
+		content = m.integrationsView(w - 4)
 	case secSecrets:
 		content = m.secretsView(w - 4)
 	default:
@@ -1520,7 +1521,7 @@ func (m *Model) sectionHints() []string {
 	case secConfig:
 		sec = []string{"enter change", "h/l cycle", "e type a value", m.scopeHint()}
 	case secAgents:
-		sec = []string{"n new", "e edit", "a archive", "x delete", "v profile"}
+		sec = []string{"n new", "g import", "e edit", "a archive", "x delete", "v profile"}
 		if m.selectedHasGrants() {
 			sec = append(sec, "r revoke grants") // only when there is something to revoke
 		}
@@ -1532,8 +1533,8 @@ func (m *Model) sectionHints() []string {
 		sec = []string{"e edit", "d draft from repo", "i interview me"}
 	case secTeams:
 		sec = []string{"a add by role", "n new", "e edit", "x delete"}
-	case secPacks:
-		sec = []string{"i install", "x uninstall"}
+	case secSkills:
+		sec = []string{"i install", "g give to bots", "a new bot with it", "w write one", "s allow scripts", "x remove", "v view"}
 	case secStandards:
 		sec = []string{"u yours", "w workspace", "t team", "g agent", "v preview"}
 	case secConventions:
@@ -1541,11 +1542,11 @@ func (m *Model) sectionHints() []string {
 	case secWorkflows:
 		sec = []string{"n new", "d default", "v preview"}
 	case secLibrary:
-		sec = []string{"n new", "p persona", "e edit", "x delete", "r run script", "v card"}
+		sec = []string{"n new role", "p persona", "e edit", "x delete", "v card"}
 	case secAutopilots:
 		sec = []string{"n new", "t rituals", "e arm/pause", "r run now", "c task cards", "o last run", "x remove"}
-	case secMarketplace:
-		sec = []string{"r refresh", "/ search", "enter install", "t pin key", "T clear", "v inspect"}
+	case secIntegrations:
+		sec = []string{"+ add", "enter sign in", "g give to bots", "a new bot with it", "d sign out", "x remove", "v config", "R refresh plugins"}
 	case secSecrets:
 		sec = []string{"a add", "e replace value", "x delete"}
 	}
@@ -1951,4 +1952,9 @@ func maxInt(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// openNewAgentForm opens the create-agent form.
+func (m *Model) openNewAgentForm() {
+	m.form = newAgentForm(m.d.CLIs, m.detectedFirst(m.d.CLIs))
 }

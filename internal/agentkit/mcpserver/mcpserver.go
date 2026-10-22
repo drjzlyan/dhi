@@ -1,250 +1,319 @@
-// Package mcpserver models installed third-party MCP servers (F-034,
-// ADR-0022). One strict TOML card per server lives under .dhi/mcp/<slug>.toml.
-// A card declares *how* to reach the server — never a credential value:
-// `env` lists the variable names whose values are resolved from the OS
-// keychain / environment at spawn time, so secrets never touch .dhi/.
-// Network access is a declared origin list; anything else is denied by
-// the sandbox. Packs ship these cards; the runtime bridges them into the
-// served tool surface under the agent's scope. A card a pack installs is
-// provenance-tracked and removed exactly on uninstall.
+// Package mcpserver reads and writes MCP server configuration in the
+// standard "mcpServers" JSON (ADR-0043) — the same shape Claude Code's
+// .mcp.json, Cursor, VS Code and the vendors' own plugins use:
+//
+//	{"mcpServers": {
+//	  "atlassian": {"type": "http", "url": "https://mcp.atlassian.com/v2/mcp"},
+//	  "slack": {"type": "http", "url": "https://mcp.slack.com/mcp",
+//	            "oauth": {"clientId": "…", "callbackPort": 3118}},
+//	  "zoom-mcp": {"type": "http", "url": "https://mcp.zoom.us/mcp/zoom/streamable",
+//	               "headers": {"Authorization": "Bearer ${ZOOM_MCP_ACCESS_TOKEN}"}},
+//	  "files": {"command": "npx", "args": ["-y", "@scope/server"], "env": {"TOKEN": "${TOKEN}"}}
+//	}}
+//
+// Values may reference variables as ${NAME} (or ${NAME:-default}); DHI
+// resolves them at dial time from the environment and the secret store,
+// so a config file never needs to hold a credential.
+//
+// Servers come from, in rising precedence: your own file
+// (<config>/dhi/mcp.json, every workspace), a member repo's .mcp.json
+// (read only — the repo's own config for every tool), and the
+// workspace's .dhi/mcp.json. Malformed entries are warnings, never fatal
+// (ADR-0011).
 package mcpserver
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
-
-	"github.com/BurntSushi/toml"
 
 	"github.com/drjzlyan/dhi/internal/workspace"
 )
 
-// SchemaVersion is the server-card schema this build writes (2: + auth_env,
-// ADR-0028). Schema 1 cards still load.
-const SchemaVersion = 2
+// File is the workspace's server file, relative to its root.
+const File = ".dhi/mcp.json"
 
-// Dir is the reserved tree holding server cards.
-const Dir = workspace.DirMCP
+// RepoFile is a repository's own MCP config (read only).
+const RepoFile = ".mcp.json"
 
-var (
-	slugRe    = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]*$`)
-	envNameRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
-	originRe  = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]*(\:[0-9]{1,5})?$`)
-)
+// UserFile is your servers for every workspace: <config>/dhi/mcp.json.
+// Set once by the app at startup; "" (tests, tools) means none.
+var UserFile string
 
 // Transport is how DHI reaches a server.
 type Transport string
 
-// Transports. stdio spawns a child under the sandbox; http dials a URL.
+// Transports. stdio spawns a child under the sandbox; http dials a URL
+// (MCP streamable HTTP).
 const (
 	Stdio Transport = "stdio"
 	HTTP  Transport = "http"
 )
 
-// Server is one installed MCP server card.
+// Sources: where a server's entry was read from.
+const (
+	SourceWorkspace = "workspace"
+	SourceUser      = "yours"
+	SourceRepo      = "repo"
+)
+
+// OAuth is a server's pre-registered OAuth client, as a vendor's plugin
+// publishes it (Slack's). Servers without one use dynamic registration.
+type OAuth struct {
+	ClientID     string `json:"clientId,omitempty"`
+	CallbackPort int    `json:"callbackPort,omitempty"`
+}
+
+// Server is one configured MCP server.
 type Server struct {
-	Slug        string
-	Name        string
-	Description string
-	Transport   Transport
-	Command     string   // stdio: executable
-	Args        []string // stdio: arguments
-	URL         string   // http: endpoint
-	Env         []string // declared env var NAMES (values resolved at spawn)
-	Origins     []string // declared network origins (host[:port])
-	// AuthEnv (http only) names the credential sent as a Bearer token;
-	// the value is resolved at dial time, never stored in the card.
-	AuthEnv string
+	Slug      string
+	Transport Transport
+	Command   string            // stdio
+	Args      []string          // stdio
+	Env       map[string]string // stdio: values may hold ${VAR}
+	URL       string            // http
+	Headers   map[string]string // http: values may hold ${VAR}
+	OAuth     *OAuth
+	Source    string // SourceWorkspace, SourceUser, SourceRepo
+	File      string // the file the entry came from
 }
 
-type file struct {
-	Schema      int      `toml:"schema"`
-	Name        string   `toml:"name"`
-	Description string   `toml:"description"`
-	Transport   string   `toml:"transport"`
-	Command     string   `toml:"command"`
-	Args        []string `toml:"args"`
-	URL         string   `toml:"url"`
-	Env         []string `toml:"env"`
-	Origins     []string `toml:"origins"`
-	AuthEnv     string   `toml:"auth_env"`
+// entry is one server's JSON object.
+type entry struct {
+	Type    string            `json:"type,omitempty"`
+	Command string            `json:"command,omitempty"`
+	Args    []string          `json:"args,omitempty"`
+	Env     map[string]string `json:"env,omitempty"`
+	URL     string            `json:"url,omitempty"`
+	Headers map[string]string `json:"headers,omitempty"`
+	OAuth   *OAuth            `json:"oauth,omitempty"`
 }
 
-// Parse decodes and validates one server card strictly.
-func Parse(slug string, data []byte) (*Server, error) {
-	if !slugRe.MatchString(slug) {
-		return nil, fmt.Errorf("mcp: bad slug %q (lowercase [a-z0-9._-])", slug)
+var slugRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
+
+// ValidSlug reports whether name can name a server (it becomes part of
+// the agent tool names mcp__<name>__<tool>).
+func ValidSlug(name string) bool { return slugRe.MatchString(name) && !strings.Contains(name, "__") }
+
+// varRe matches ${NAME} and ${NAME:-default}.
+var varRe = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}`)
+
+// Vars lists the variables the server's config references, sorted: the
+// names DHI asks for (masked) when they are not set.
+func (s Server) Vars() []string {
+	seen := map[string]bool{}
+	scan := func(v string) {
+		for _, m := range varRe.FindAllStringSubmatch(v, -1) {
+			if m[2] == "" { // a default means it is not required
+				seen[m[1]] = true
+			}
+		}
 	}
-	var f file
-	md, err := toml.Decode(string(data), &f)
+	scan(s.URL)
+	scan(s.Command)
+	for _, a := range s.Args {
+		scan(a)
+	}
+	for _, v := range s.Env {
+		scan(v)
+	}
+	for _, v := range s.Headers {
+		scan(v)
+	}
+	out := make([]string, 0, len(seen))
+	for n := range seen {
+		out = append(out, n)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// Expand replaces ${NAME} and ${NAME:-default} in v through lookup; a
+// required variable that is not set is a named error.
+func Expand(v string, lookup func(string) (string, bool)) (string, error) {
+	var missing []string
+	out := varRe.ReplaceAllStringFunc(v, func(m string) string {
+		parts := varRe.FindStringSubmatch(m)
+		if val, ok := lookup(parts[1]); ok {
+			return val
+		}
+		if strings.Contains(m, ":-") {
+			return parts[2]
+		}
+		missing = append(missing, parts[1])
+		return ""
+	})
+	if len(missing) > 0 {
+		return "", fmt.Errorf("%s is not set", strings.Join(missing, ", "))
+	}
+	return out, nil
+}
+
+// Host is an http server's host[:port] ("" for stdio).
+func (s Server) Host() string {
+	u, err := url.Parse(s.URL)
 	if err != nil {
-		return nil, fmt.Errorf("mcp: parse %s: %w", slug, err)
+		return ""
 	}
-	if und := md.Undecoded(); len(und) > 0 {
-		keys := make([]string, 0, len(und))
-		for _, k := range und {
-			keys = append(keys, k.String())
-		}
-		sort.Strings(keys)
-		return nil, fmt.Errorf("mcp: %s: unknown key(s): %s (bump schema?)", slug, strings.Join(keys, ", "))
+	return u.Host
+}
+
+// Parse reads a server file: {"mcpServers": {...}} (Claude Code, Cursor,
+// a plugin's .mcp.json) or, as some vendors publish snippets, the bare
+// {"name": {...}} map. Invalid entries are skipped with a warning.
+func Parse(data []byte, source, file string) ([]Server, []string, error) {
+	var doc map[string]json.RawMessage
+	if err := json.Unmarshal(data, &doc); err != nil {
+		return nil, nil, fmt.Errorf("mcp: %s is not valid JSON: %w", displayFile(file), err)
 	}
-	if f.Schema < 1 || f.Schema > SchemaVersion {
-		return nil, fmt.Errorf("mcp: %s: schema %d, want 1..%d", slug, f.Schema, SchemaVersion)
-	}
-	s := &Server{
-		Slug:        slug,
-		Name:        strings.TrimSpace(f.Name),
-		Description: strings.TrimSpace(f.Description),
-		Transport:   Transport(f.Transport),
-		Command:     strings.TrimSpace(f.Command),
-		Args:        f.Args,
-		URL:         strings.TrimSpace(f.URL),
-		Env:         cleanStrings(f.Env),
-		Origins:     cleanStrings(f.Origins),
-		AuthEnv:     strings.TrimSpace(f.AuthEnv),
-	}
-	if s.AuthEnv != "" {
-		if f.Schema < 2 {
-			return nil, fmt.Errorf("mcp: %s: auth_env requires schema = 2", slug)
-		}
-		if !envNameRe.MatchString(s.AuthEnv) {
-			return nil, fmt.Errorf("mcp: %s: auth_env %q is not a variable name (declare the name, never the value)", slug, s.AuthEnv)
+	servers := doc
+	if raw, ok := doc["mcpServers"]; ok {
+		servers = nil
+		if err := json.Unmarshal(raw, &servers); err != nil {
+			return nil, nil, fmt.Errorf("mcp: %s: mcpServers is not an object: %w", displayFile(file), err)
 		}
 	}
-	if s.Name == "" {
-		return nil, fmt.Errorf("mcp: %s: name is required", slug)
+	var out []Server
+	var warns []string
+	names := make([]string, 0, len(servers))
+	for n := range servers {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		s, err := ParseEntry(name, servers[name])
+		if err != nil {
+			warns = append(warns, fmt.Sprintf("mcp %s in %s: %v (skipped)", name, displayFile(file), err))
+			continue
+		}
+		s.Source, s.File = source, file
+		out = append(out, s)
+	}
+	return out, warns, nil
+}
+
+// ParseEntry validates one server's JSON object.
+func ParseEntry(name string, raw json.RawMessage) (Server, error) {
+	if !ValidSlug(name) {
+		return Server{}, fmt.Errorf("name %q must be letters, digits, '.', '_' or '-'", name)
+	}
+	var e entry
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	if err := dec.Decode(&e); err != nil {
+		return Server{}, err
+	}
+	s := Server{Slug: name, Command: strings.TrimSpace(e.Command), Args: e.Args, Env: e.Env,
+		URL: strings.TrimSpace(e.URL), Headers: e.Headers, OAuth: e.OAuth}
+	switch strings.ToLower(e.Type) {
+	case "", "stdio":
+		if s.Command == "" && s.URL != "" && e.Type == "" {
+			s.Transport = HTTP
+		} else {
+			s.Transport = Stdio
+		}
+	case "http", "streamable-http", "streamable_http", "streamablehttp":
+		s.Transport = HTTP
+	case "sse":
+		return Server{}, fmt.Errorf("the legacy SSE transport is not supported; use the server's streamable HTTP URL")
+	default:
+		return Server{}, fmt.Errorf("unknown type %q (want stdio or http)", e.Type)
 	}
 	switch s.Transport {
 	case Stdio:
 		if s.Command == "" {
-			return nil, fmt.Errorf("mcp: %s: stdio server needs a command", slug)
-		}
-		if s.URL != "" {
-			return nil, fmt.Errorf("mcp: %s: stdio server must not set url", slug)
-		}
-		if s.AuthEnv != "" {
-			return nil, fmt.Errorf("mcp: %s: auth_env is for http servers (a stdio server takes its credentials through env)", slug)
+			return Server{}, fmt.Errorf("a stdio server needs a command")
 		}
 	case HTTP:
 		if s.URL == "" {
-			return nil, fmt.Errorf("mcp: %s: http server needs a url", slug)
+			return Server{}, fmt.Errorf("an http server needs a url")
 		}
-		if s.Command != "" {
-			return nil, fmt.Errorf("mcp: %s: http server must not set command", slug)
+		u, err := url.Parse(s.URL)
+		if err != nil || u.Host == "" {
+			return Server{}, fmt.Errorf("bad url %q", s.URL)
 		}
-		if !strings.HasPrefix(s.URL, "https://") && !isLoopbackHTTP(s.URL) {
-			return nil, fmt.Errorf("mcp: %s: url must be https (http only for loopback tests)", slug)
-		}
-		if s.AuthEnv != "" && !strings.HasPrefix(s.URL, "https://") {
-			return nil, fmt.Errorf("mcp: %s: a bearer token is only sent over https", slug)
-		}
-	default:
-		return nil, fmt.Errorf("mcp: %s: bad transport %q (want stdio or http)", slug, f.Transport)
-	}
-	for _, e := range s.Env {
-		if !envNameRe.MatchString(e) {
-			return nil, fmt.Errorf("mcp: %s: env %q is not a variable name (declare names, never values)", slug, e)
-		}
-	}
-	for _, o := range s.Origins {
-		if !originRe.MatchString(o) {
-			return nil, fmt.Errorf("mcp: %s: bad origin %q (want host[:port])", slug, o)
+		if u.Scheme != "https" && !isLoopback(u.Hostname()) {
+			return Server{}, fmt.Errorf("url must be https (http only for a loopback test server)")
 		}
 	}
 	return s, nil
 }
 
-// Write validates-then-writes a card atomically under root/.dhi/mcp.
-func Write(root string, s *Server) error {
-	var f file
-	f.Schema = SchemaVersion
-	f.Name = s.Name
-	f.Description = s.Description
-	f.Transport = string(s.Transport)
-	f.Command = s.Command
-	f.Args = s.Args
-	f.URL = s.URL
-	f.Env = cleanStrings(s.Env)
-	f.Origins = cleanStrings(s.Origins)
-	f.AuthEnv = s.AuthEnv
-	var buf strings.Builder
-	if err := toml.NewEncoder(&buf).Encode(f); err != nil {
-		return fmt.Errorf("mcp: encode: %w", err)
+func isLoopback(host string) bool { return host == "127.0.0.1" || host == "localhost" || host == "::1" }
+
+// Entry is the JSON object for s, as written to a server file.
+func (s Server) Entry() json.RawMessage {
+	e := entry{Command: s.Command, Args: s.Args, Env: s.Env, URL: s.URL, Headers: s.Headers, OAuth: s.OAuth}
+	if s.Transport == HTTP {
+		e.Type = "http"
 	}
-	if _, err := Parse(s.Slug, []byte(buf.String())); err != nil {
-		return fmt.Errorf("mcp: self-check: %w", err)
-	}
-	dir := filepath.Join(root, Dir)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("mcp: mkdir: %w", err)
-	}
-	return atomicWrite(Path(root, s.Slug), buf.String())
+	b, _ := json.Marshal(e)
+	return b
 }
 
-// Delete removes a server card; a missing card is not an error (uninstall
-// tolerates manual removal).
-func Delete(root, slug string) error {
-	if err := os.Remove(Path(root, slug)); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("mcp: delete %s: %w", slug, err)
-	}
-	return nil
-}
-
-// Path is the card location for a slug.
-func Path(root, slug string) string {
-	return filepath.Join(root, Dir, slug+".toml")
-}
-
-// Store is the loaded server set.
+// Store is the merged server set for one workspace.
 type Store struct {
 	items    map[string]Server
-	order    []string
 	warnings []string
 }
 
-// Open loads every card under root/.dhi/mcp. A missing dir is empty;
-// malformed cards are warnings, never fatal (ADR-0011).
+// Open loads every server for the workspace at root ("" = only yours).
 func Open(root string) *Store {
+	return OpenWith(root, nil)
+}
+
+// OpenWith is Open that also reads each member repo's .mcp.json.
+func OpenWith(root string, members []workspace.Member) *Store {
 	s := &Store{items: map[string]Server{}}
-	entries, err := os.ReadDir(filepath.Join(root, Dir))
-	if os.IsNotExist(err) {
-		return s
+	s.load(UserFile, SourceUser)
+	for _, m := range members {
+		s.load(filepath.Join(m.Path, RepoFile), SourceRepo)
 	}
-	if err != nil {
-		s.warnings = append(s.warnings, fmt.Sprintf("mcp: read %s: %v", Dir, err))
-		return s
+	if root != "" {
+		s.load(filepath.Join(root, File), SourceWorkspace)
 	}
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".toml") {
-			continue
-		}
-		slug := strings.TrimSuffix(e.Name(), ".toml")
-		data, err := os.ReadFile(filepath.Join(root, Dir, e.Name()))
-		if err != nil {
-			s.warnings = append(s.warnings, fmt.Sprintf("mcp %s: %v", slug, err))
-			continue
-		}
-		srv, err := Parse(slug, data)
-		if err != nil {
-			s.warnings = append(s.warnings, fmt.Sprintf("mcp %s: %v", slug, err))
-			continue
-		}
-		s.items[slug] = *srv
-		s.order = append(s.order, slug)
-	}
-	sort.Strings(s.order)
 	return s
 }
 
-// Servers lists servers sorted by slug.
-func (s *Store) Servers() []Server {
-	out := make([]Server, 0, len(s.order))
-	for _, slug := range s.order {
-		out = append(out, s.items[slug])
+func (s *Store) load(path, source string) {
+	if path == "" {
+		return
 	}
+	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return
+	}
+	if err != nil {
+		s.warnings = append(s.warnings, fmt.Sprintf("mcp: read %s: %v", path, err))
+		return
+	}
+	servers, warns, err := Parse(data, source, path)
+	if err != nil {
+		s.warnings = append(s.warnings, err.Error())
+		return
+	}
+	s.warnings = append(s.warnings, warns...)
+	for _, srv := range servers {
+		if prev, ok := s.items[srv.Slug]; ok && prev.Source != srv.Source {
+			s.warnings = append(s.warnings, fmt.Sprintf("mcp %s: the %s entry replaces the %s one", srv.Slug, source, prev.Source))
+		}
+		s.items[srv.Slug] = srv
+	}
+}
+
+// Servers lists servers sorted by name.
+func (s *Store) Servers() []Server {
+	out := make([]Server, 0, len(s.items))
+	for _, v := range s.items {
+		out = append(out, v)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Slug < out[j].Slug })
 	return out
 }
 
@@ -254,31 +323,78 @@ func (s *Store) Get(slug string) (Server, bool) {
 	return srv, ok
 }
 
-// Warnings names malformed cards.
+// Warnings names unreadable files and skipped entries.
 func (s *Store) Warnings() []string { return append([]string(nil), s.warnings...) }
 
-func cleanStrings(in []string) []string {
-	out := make([]string, 0, len(in))
-	seen := map[string]bool{}
-	for _, v := range in {
-		v = strings.TrimSpace(v)
-		if v == "" || seen[v] {
-			continue
-		}
-		seen[v] = true
-		out = append(out, v)
+// Add writes (or replaces) server name in the file at path, keeping
+// every other entry and key exactly as it was.
+func Add(path, name string, e json.RawMessage) error {
+	if _, err := ParseEntry(name, e); err != nil {
+		return fmt.Errorf("mcp %s: %w", name, err)
 	}
-	return out
+	return edit(path, func(servers map[string]json.RawMessage) { servers[name] = e })
 }
 
-func isLoopbackHTTP(u string) bool {
-	return strings.HasPrefix(u, "http://127.0.0.1:") || strings.HasPrefix(u, "http://localhost:")
+// Remove deletes server name from the file at path (absent is fine).
+func Remove(path, name string) error {
+	return edit(path, func(servers map[string]json.RawMessage) { delete(servers, name) })
 }
 
-func atomicWrite(path, data string) error {
+func edit(path string, change func(map[string]json.RawMessage)) error {
+	doc := map[string]json.RawMessage{}
+	if data, err := os.ReadFile(path); err == nil {
+		if err := json.Unmarshal(data, &doc); err != nil {
+			return fmt.Errorf("mcp: %s is not valid JSON (fix or remove it): %w", path, err)
+		}
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	servers := map[string]json.RawMessage{}
+	if raw, ok := doc["mcpServers"]; ok {
+		if err := json.Unmarshal(raw, &servers); err != nil {
+			return fmt.Errorf("mcp: %s: mcpServers is not an object", path)
+		}
+	}
+	change(servers)
+	enc, err := json.Marshal(servers)
+	if err != nil {
+		return err
+	}
+	doc["mcpServers"] = enc
+	out, err := json.MarshalIndent(doc, "", "  ")
+	if err != nil {
+		return err
+	}
+	// MarshalIndent of RawMessage keeps the inner bytes compact; indent
+	// the whole document once more for a readable file.
+	var pretty bytes.Buffer
+	if err := json.Indent(&pretty, out, "", "  "); err != nil {
+		return err
+	}
+	pretty.WriteByte('\n')
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, []byte(data), 0o644); err != nil {
+	if err := os.WriteFile(tmp, pretty.Bytes(), 0o644); err != nil {
 		return err
 	}
 	return os.Rename(tmp, path)
+}
+
+// WorkspaceFile is the workspace's server file.
+func WorkspaceFile(root string) string { return filepath.Join(root, File) }
+
+func displayFile(p string) string {
+	if p == "" {
+		return "the snippet"
+	}
+	return p
+}
+
+// HTTPServer builds the entry for a remote server by URL (the "add by
+// URL" path): DHI logs in on first use.
+func HTTPServer(name, rawURL string) (Server, error) {
+	s, err := ParseEntry(name, json.RawMessage(`{"type":"http","url":`+strconv.Quote(rawURL)+`}`))
+	return s, err
 }

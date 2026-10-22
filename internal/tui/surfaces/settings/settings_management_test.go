@@ -139,60 +139,6 @@ func TestTeamsSectionGolden(t *testing.T) {
 	golden.Snapshot(t, "settings_teams", m.View())
 }
 
-func TestPacksInstallUninstallRoundTrip(t *testing.T) {
-	m, ws, _, _ := agentSurface(t)
-	m.sec = secPacks
-
-	src := writeImportFixture(t, map[string]string{
-		"pack.toml":  "schema = 2\nname = \"ux\"\nagents = [\"scout.toml\"]\n",
-		"scout.toml": importScoutDoc,
-	})
-	feed(m, "i")
-	if m.dlg == nil || m.dkind != dlgPackInstall {
-		t.Fatal("i did not open the install dialog")
-	}
-	typeDialog(m, src)
-	feed(m, "enter")
-	if !m.dform.Busy {
-		t.Fatal("install did not mark the dialog busy")
-	}
-	drainDialogEvent(t, m)
-	if m.dlg != nil {
-		t.Fatal("install dialog did not close on outcome")
-	}
-	if !strings.Contains(m.flash, "installed pack ux") {
-		t.Fatalf("flash = %q", m.flash)
-	}
-	recs := m.packRows()
-	if len(recs) != 1 || recs[0].name != "ux" || recs[0].counts != "1 agent" {
-		t.Fatalf("provenance rows = %+v", recs)
-	}
-	roster, _ := org.LoadRoster(ws)
-	if len(roster) != 1 || roster[0].ID != "scout" {
-		t.Fatalf("pack agent missing: %+v", roster)
-	}
-
-	// uninstall via confirm
-	feed(m, "x")
-	if m.dkind != dlgPackUninstall {
-		t.Fatal("x did not open the uninstall confirm")
-	}
-	feed(m, "enter")
-	if len(m.packRows()) != 0 {
-		t.Fatal("pack not uninstalled")
-	}
-	roster, _ = org.LoadRoster(ws)
-	if len(roster) != 0 {
-		t.Fatalf("pack agents not removed: %+v", roster)
-	}
-}
-
-func TestPacksSectionGolden(t *testing.T) {
-	m, _, _, _ := agentSurface(t)
-	m.sec = secPacks
-	golden.Snapshot(t, "settings_packs", m.View())
-}
-
 func TestTeamsAddByRoleCreatesOneTeamPerLead(t *testing.T) {
 	m, ws, o, reloads := agentSurface(t)
 	m.d.Library = library.Open(ws)

@@ -20,13 +20,12 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/agentkit/clirun"
 	"github.com/drjzlyan/dhi/internal/agentkit/dhitools"
+	"github.com/drjzlyan/dhi/internal/agentkit/install"
 	"github.com/drjzlyan/dhi/internal/agentkit/library"
 	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
 	"github.com/drjzlyan/dhi/internal/agentkit/mcpbridge"
 	"github.com/drjzlyan/dhi/internal/agentkit/mcpserver"
 	"github.com/drjzlyan/dhi/internal/agentkit/org"
-	"github.com/drjzlyan/dhi/internal/agentkit/pack"
-	"github.com/drjzlyan/dhi/internal/agentkit/registry"
 	"github.com/drjzlyan/dhi/internal/agentkit/scopes"
 	agentkitStandards "github.com/drjzlyan/dhi/internal/agentkit/standards"
 	agentkitWorkflow "github.com/drjzlyan/dhi/internal/agentkit/workflow"
@@ -93,8 +92,7 @@ func Run(toolRoot, wsRoot string) Report {
 	r.Checks = append(r.Checks, UnreadStore(wsRoot)...)
 	r.Checks = append(r.Checks, Memory(wsRoot)...)
 	r.Checks = append(r.Checks, Sessions(wsRoot)...)
-	r.Checks = append(r.Checks, Marketplace(wsRoot)...)
-	r.Checks = append(r.Checks, Packs(wsRoot)...)
+	r.Checks = append(r.Checks, Installed(wsRoot)...)
 	r.Checks = append(r.Checks, MCPServers(wsRoot)...)
 	r.Checks = append(r.Checks, GH(toolRoot)...)
 	r.Checks = append(r.Checks, Sandbox(sandboxMode(wsRoot))...)
@@ -859,95 +857,76 @@ func Sessions(wsRoot string) []Check {
 	return []Check{{Name: "sessions/store", Status: OK, Detail: detail}}
 }
 
-// Marketplace probes the cached signed pack index (F-034 part B). No
-// cache is a healthy "not configured" Warn (browsing needs a source);
-// a malformed cache is a Fail.
-func Marketplace(wsRoot string) []Check {
+// Installed checks what DHI installed in the workspace (ADR-0043): each
+// skill's files still match the digest recorded at install, so a local
+// edit or a half-finished update is named, not silently run.
+func Installed(wsRoot string) []Check {
 	if wsRoot == "" {
 		return nil
 	}
-	ws, err := workspace.Load(wsRoot)
+	lock, err := install.ReadLock(filepath.Join(wsRoot, ".dhi", install.LockFile))
 	if err != nil {
+		return []Check{{Name: "installed", Status: Fail, Detail: err.Error()}}
+	}
+	if len(lock.Skills)+len(lock.Servers) == 0 {
 		return nil
 	}
-	reg := registry.New(ws)
-	entries, berr := reg.Browse()
-	if berr != nil {
-		if strings.Contains(berr.Error(), "no cached index") {
-			return []Check{{Name: "registry", Status: Warn,
-				Detail: "no cached index — set a source in Settings → MARKETPLACE (r)"}}
+	var changed []string
+	for name, rec := range lock.Skills {
+		dir := filepath.Join(wsRoot, ".dhi", "skills", name)
+		if dg, err := install.Digest(dir); err != nil || (rec.Digest != "" && dg != rec.Digest) {
+			changed = append(changed, name)
 		}
-		return []Check{{Name: "registry", Status: Fail, Detail: berr.Error()}}
 	}
-	detail := fmt.Sprintf("%d pack(s)", len(entries))
-	if src, ok := reg.Source(); ok {
-		detail += " · " + src
+	sort.Strings(changed)
+	detail := fmt.Sprintf("%s, %s", plural(len(lock.Skills), "skill"), plural(len(lock.Servers), "MCP server"))
+	if len(changed) > 0 {
+		return []Check{{Name: "installed", Status: Warn,
+			Detail: detail + "; changed since install: " + strings.Join(changed, ", ") + " (reinstall from Settings → SKILLS)"}}
 	}
-	if at, ok := reg.FetchedAt(); ok {
-		detail += " · fetched " + at.UTC().Format("2006-01-02")
-	}
-	return []Check{{Name: "registry", Status: OK, Detail: detail}}
+	return []Check{{Name: "installed", Status: OK, Detail: detail}}
 }
 
-// Packs probes .dhi/marketplace.json provenance (F-034 part A). A
-// malformed file FAILs; otherwise the installed packs are named.
-func Packs(wsRoot string) []Check {
-	if wsRoot == "" {
-		return nil
+func plural(n int, noun string) string {
+	if n == 1 {
+		return "1 " + noun
 	}
-	ws, err := workspace.Load(wsRoot)
-	if err != nil {
-		return nil
-	}
-	recs, rerr := (&pack.Installer{WS: ws}).Records()
-	if rerr != nil {
-		return []Check{{Name: "packs/provenance", Status: Fail, Detail: rerr.Error()}}
-	}
-	if len(recs) == 0 {
-		return nil // no packs is healthy
-	}
-	names := make([]string, 0, len(recs))
-	for name := range recs {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	return []Check{{Name: "packs/provenance", Status: OK,
-		Detail: fmt.Sprintf("%d pack(s): %s", len(names), strings.Join(names, ", "))}}
+	return fmt.Sprintf("%d %ss", n, noun)
 }
 
-// MCPServers probes .dhi/mcp/ (F-034 part C): malformed cards FAIL by
-// name; installed servers are listed with their transport and declared
-// origins (posture is auditable, never assumed).
+// MCPServers probes the configured servers (the mcpServers JSON,
+// ADR-0043): skipped entries FAIL by name; servers are listed with their
+// transport and host, and every ${VAR} they need is checked by name,
+// never value (ADR-0028).
 func MCPServers(wsRoot string) []Check {
 	if wsRoot == "" {
 		return nil
 	}
-	st := mcpserver.Open(wsRoot)
+	var members []workspace.Member
+	if ws, err := workspace.Load(wsRoot); err == nil {
+		members = ws.Members()
+	}
+	st := mcpserver.OpenWith(wsRoot, members)
 	if w := st.Warnings(); len(w) > 0 {
 		return []Check{{Name: "mcp/servers", Status: Fail,
-			Detail: fmt.Sprintf("%d malformed card(s): %s", len(w), strings.Join(w, "; "))}}
+			Detail: fmt.Sprintf("%d problem(s): %s", len(w), strings.Join(w, "; "))}}
 	}
 	servers := st.Servers()
 	if len(servers) == 0 {
 		return nil
 	}
 	var parts, missing []string
+	lookup := mcpbridge.LookupFor(wsRoot)
 	for _, s := range servers {
 		posture := string(s.Transport)
-		if len(s.Origins) > 0 {
-			posture += " → " + strings.Join(s.Origins, ",")
+		if s.Transport == mcpserver.HTTP {
+			posture += " → " + s.Host()
 		} else {
-			posture += " (no network)"
+			posture += " (local, network allowed)"
 		}
 		parts = append(parts, s.Slug+" ["+posture+"]")
-		// Names only, never values (ADR-0028): which declared credentials
-		// resolve from the environment, credentials file or keychain.
-		need := append([]string(nil), s.Env...)
-		if s.AuthEnv != "" {
-			need = append(need, s.AuthEnv)
-		}
-		for _, name := range need {
-			if _, ok := mcpbridge.DefaultLookup(name); !ok {
+		for _, name := range s.Vars() {
+			if _, ok := lookup(name); !ok {
 				missing = append(missing, s.Slug+": "+name)
 			}
 		}
@@ -956,9 +935,9 @@ func MCPServers(wsRoot string) []Check {
 	if len(missing) > 0 {
 		sort.Strings(missing)
 		checks = append(checks, Check{Name: "mcp/credentials", Status: Warn,
-			Detail: "not set — " + strings.Join(missing, ", ") + " (add them in the setup wizard, or export them)"})
+			Detail: "not set — " + strings.Join(missing, ", ") + " (add them in Settings → SECRETS)"})
 	} else {
-		checks = append(checks, Check{Name: "mcp/credentials", Status: OK, Detail: "every declared credential resolves"})
+		checks = append(checks, Check{Name: "mcp/credentials", Status: OK, Detail: "every ${VAR} the servers use resolves"})
 	}
 	return checks
 }

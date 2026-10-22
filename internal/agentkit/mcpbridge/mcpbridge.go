@@ -18,7 +18,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -72,6 +71,9 @@ type Deps struct {
 	// ones (F-104): a secret saved "for this workspace" reaches its
 	// servers.
 	Workspace string
+	// Auth, when set, authorizes an http server that needs a login
+	// (OAuth, F-106): it returns the client to dial with.
+	Auth func(ctx context.Context, srv mcpserver.Server, base *http.Client) (*http.Client, error)
 	// PathPrefix directories go first on a stdio server's PATH — DHI's
 	// tool shims, so `uvx`/`npx` are the pinned hermetic ones (ADR-0028).
 	PathPrefix []string
@@ -218,48 +220,60 @@ func (b *Bridge) dialDefault(ctx context.Context, srv mcpserver.Server) (mcp.Cal
 		}
 		return mcp.DialStdio(ctx, env, argv...)
 	case mcpserver.HTTP:
-		u, err := url.Parse(srv.URL)
+		// The URL is the server's one origin; its headers' ${VAR}s come
+		// from the environment and the secret store (ADR-0043).
+		endpoint, err := mcpserver.Expand(srv.URL, b.lookup())
 		if err != nil {
-			return nil, fmt.Errorf("bad url: %w", err)
+			return nil, err
 		}
-		if !originDeclared(srv, u.Host) {
-			return nil, fmt.Errorf("url host %q is not a declared origin", u.Host)
+		headers := map[string]string{}
+		for k, v := range srv.Headers {
+			val, err := mcpserver.Expand(v, b.lookup())
+			if err != nil {
+				return nil, fmt.Errorf("header %s: %w (set it in Settings → SECRETS)", k, err)
+			}
+			headers[k] = val
 		}
 		var client *http.Client
-		if srv.AuthEnv != "" {
-			lookup := b.deps.Lookup
-			if lookup == nil {
-				lookup = LookupFor(b.deps.Workspace)
-			}
-			token, ok := lookup(srv.AuthEnv)
-			if !ok {
-				return nil, fmt.Errorf("credential %s is not set (add it in the setup wizard, or export it)", srv.AuthEnv)
-			}
-			client = mcp.BearerClient(token, nil)
+		if len(headers) > 0 {
+			client = mcp.HeaderClient(headers, nil)
 		}
-		return mcp.DialHTTP(ctx, srv.URL, client)
+		if b.deps.Auth != nil {
+			if client, err = b.deps.Auth(ctx, srv, client); err != nil {
+				return nil, err
+			}
+		}
+		return mcp.DialHTTP(ctx, endpoint, client)
 	default:
 		return nil, fmt.Errorf("unknown transport %q", srv.Transport)
 	}
 }
 
-// stdioArgv wraps the server command in the OS sandbox. Network is
-// allowed only when the card declares origins (best-effort containment —
-// the OS adapters are boolean; declared origins are audited).
+// lookup is the credential lookup for this bridge's workspace.
+func (b *Bridge) lookup() Lookup {
+	if b.deps.Lookup != nil {
+		return b.deps.Lookup
+	}
+	return LookupFor(b.deps.Workspace)
+}
+
+// stdioArgv wraps the server command in the OS sandbox. A local server
+// talks to its service over the network (the standard config has no
+// origin list), so network is allowed; files stay sandboxed.
 func (b *Bridge) stdioArgv(srv mcpserver.Server) ([]string, error) {
-	argv := append([]string{srv.Command}, srv.Args...)
+	argv := []string{srv.Command}
+	for _, a := range srv.Args {
+		v, err := mcpserver.Expand(a, b.lookup())
+		if err != nil {
+			return nil, err
+		}
+		argv = append(argv, v)
+	}
 	if b.deps.Sandbox == nil || b.deps.Sandbox.Name() == "noop" {
 		return argv, nil
 	}
-	if len(srv.Origins) > 0 {
-		if np, ok := b.deps.Sandbox.(sandbox.NetworkPolicy); ok {
-			wrapped, err := np.WrapNetwork(argv, true)
-			if err != nil {
-				return nil, err
-			}
-			return wrapped, nil
-		}
-		return argv, nil
+	if np, ok := b.deps.Sandbox.(sandbox.NetworkPolicy); ok {
+		return np.WrapNetwork(argv, true)
 	}
 	return b.deps.Sandbox.Wrap(argv)
 }
@@ -292,10 +306,15 @@ func (b *Bridge) stdioEnv(srv mcpserver.Server) ([]string, error) {
 		}
 		env = append(env, "HOME="+home, "TMPDIR="+tmp)
 	}
-	for _, name := range srv.Env {
-		val, ok := lookup(name)
-		if !ok {
-			return nil, fmt.Errorf("credential %s is not set (declare it in the OS keychain or environment)", name)
+	keys := make([]string, 0, len(srv.Env))
+	for k := range srv.Env {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, name := range keys {
+		val, err := mcpserver.Expand(srv.Env[name], lookup)
+		if err != nil {
+			return nil, fmt.Errorf("env %s: %w (set it in Settings → SECRETS)", name, err)
 		}
 		env = append(env, name+"="+val)
 	}
@@ -392,14 +411,4 @@ func agentID(a *manifest.Agent) string {
 		return "agent"
 	}
 	return a.ID
-}
-
-func originDeclared(srv mcpserver.Server, host string) bool {
-	host = strings.ToLower(host)
-	for _, o := range srv.Origins {
-		if strings.EqualFold(o, host) || strings.HasPrefix(host, strings.ToLower(o)+":") {
-			return true
-		}
-	}
-	return false
 }

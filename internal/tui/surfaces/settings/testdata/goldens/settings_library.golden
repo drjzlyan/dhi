@@ -8,19 +8,19 @@
 ▌ LIBRARY       ▏   fullstack          builtin Builds features end to end: UI, API and d  
   team ──────── ▏   lead               builtin Leads a team: plans the work, assigns it,  
   TEAMS         ▏   planner            builtin Breaks goals into task cards with accepta  
-  PACKS         ▏   product-manager    builtin Owns the what and why: specs, acceptance   
-  STANDARDS     ▏   reviewer           builtin Reviews diffs and PRs: correctness, tests  
-  CONVENTIONS   ▏   scout              builtin Explores the codebase and reports finding  
-  automation ── ▏   scribe             builtin Keeps channels and tasks documented: summ  
-  WORKFLOWS     ▏   tester             builtin Tests the work: writes and runs tests, re  
-  AUTOPILOTS    ▏  SKILLS                                                                 
-  extend ────── ▏   code-review        builtin A repeatable pass over any diff — correct  
-  MARKETPLACE   ▏   docs               builtin Writing docs that a newcomer can act on    
-  SECRETS       ▏   incident-triage    builtin First response for a failing system — con  
-                ▏   test-writing       builtin How to add tests that fail honestly and p  
-                ▏  PERSONAS                                                               
-                ▏   friendly           builtin Warm and upbeat, still to the point        
-                ▏   mentor             builtin Patient teacher: explains the why and the  
-                ▏   meticulous         builtin Careful and exact: verifies before claimi  
+  STANDARDS     ▏   product-manager    builtin Owns the what and why: specs, acceptance   
+  CONVENTIONS   ▏   reviewer           builtin Reviews diffs and PRs: correctness, tests  
+  automation ── ▏   scout              builtin Explores the codebase and reports finding  
+  WORKFLOWS     ▏   scribe             builtin Keeps channels and tasks documented: summ  
+  AUTOPILOTS    ▏   tester             builtin Tests the work: writes and runs tests, re  
+  extend ────── ▏  PERSONAS                                                               
+  SKILLS        ▏   friendly           builtin Warm and upbeat, still to the point        
+  INTEGRATIONS  ▏   mentor             builtin Patient teacher: explains the why and the  
+  SECRETS       ▏   meticulous         builtin Careful and exact: verifies before claimi  
                 ▏   pragmatic          builtin Direct and practical: the answer first, t  
+                ▏   terse              builtin Minimal words: one-line answers, no pream  
+                ▏                                                                         
+                ▏                                                                         
+                ▏                                                                         
+                ▏                                                                         
                 ▏                                                                         

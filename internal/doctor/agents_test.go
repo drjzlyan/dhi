@@ -228,10 +228,8 @@ func TestMCPCredentialsAreReportedByNameNeverValue(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("DHI_DOC_TOKEN", "")
 	root := wsFixture(t)
-	dir := filepath.Join(root, workspace.DHIDir, "mcp")
-	os.MkdirAll(dir, 0o755)
-	card := "schema = 2\nname = \"L\"\ntransport = \"http\"\nurl = \"https://mcp.example.com/mcp\"\norigins = [\"mcp.example.com\"]\nauth_env = \"DHI_DOC_TOKEN\"\n"
-	os.WriteFile(filepath.Join(dir, "linear.toml"), []byte(card), 0o644)
+	os.WriteFile(filepath.Join(root, workspace.DHIDir, "mcp.json"),
+		[]byte(`{"mcpServers":{"linear":{"type":"http","url":"https://mcp.example.com/mcp","headers":{"Authorization":"Bearer ${DHI_DOC_TOKEN}"}}}}`), 0o644)
 
 	c, ok := statusOf(MCPServers(root), "mcp/credentials")
 	if !ok || c.Status != Warn || !strings.Contains(c.Detail, "linear: DHI_DOC_TOKEN") {

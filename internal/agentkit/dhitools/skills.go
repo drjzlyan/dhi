@@ -7,17 +7,21 @@ import (
 	"strings"
 
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
+	"github.com/drjzlyan/dhi/internal/agentkit/skills"
 	"github.com/drjzlyan/dhi/internal/mcp"
 )
 
-// SkillHit is one DHI registry entry an agent can suggest (F-091).
+// SkillHit is one plugin or skill source an agent can suggest (F-091,
+// ADR-0043): a plugin from a configured marketplace, by name.
 type SkillHit struct {
 	Name, Version, Description string
 }
 
-// skillTools serves skill_search and skill_suggest (F-091): an employee
-// that would do better with a skill finds one in the DHI registry and
-// suggests it; DHI verifies it and the human decides.
+// skillTools serves skill_search and skill_suggest (F-091, ADR-0043): an
+// employee that would do better with a skill finds one — in the plugin
+// marketplaces the human configured, or anywhere it knows a GitHub
+// repository of Agent Skills — and suggests it; DHI pins and shows it in
+// full, and the human decides.
 func (d Deps) skillTools() []tool {
 	if d.SkillSearch == nil || d.SkillSuggest == nil {
 		return nil
@@ -33,7 +37,7 @@ func (d Deps) skillTools() []tool {
 		{
 			info: mcp.ToolInfo{
 				Name:        "skill_search",
-				Description: "Search the DHI skill registry (the only source DHI installs skills from). Args: {\"query\":\"terraform\"} (empty lists all). Returns entry names to pass to skill_suggest.",
+				Description: "Search the plugin marketplaces DHI is set up with for skills. Args: {\"query\":\"terraform\"} (empty lists all). Returns plugin names to pass to skill_suggest.",
 				InputSchema: json.RawMessage(`{"type":"object","properties":{"query":{"type":"string"}},"additionalProperties":false}`),
 			},
 			parse: func(raw json.RawMessage) (any, error) {
@@ -46,7 +50,7 @@ func (d Deps) skillTools() []tool {
 					return "", err
 				}
 				if len(hits) == 0 {
-					return "no registry entries match", nil
+					return "no plugins match; suggest a GitHub repository of skills you know instead", nil
 				}
 				var b strings.Builder
 				for _, h := range hits {
@@ -58,8 +62,8 @@ func (d Deps) skillTools() []tool {
 		{
 			info: mcp.ToolInfo{
 				Name: "skill_suggest",
-				Description: "Suggest installing a skill from the DHI registry when it would make you better at this kind of task. " +
-					"Args: {\"entry\":\"name from skill_search\",\"reason\":\"what it would help with\"}. DHI verifies it (digest, signature) " +
+				Description: "Suggest installing an Agent Skill when it would make you better at this kind of task. " +
+					"Args: {\"entry\":\"a plugin name from skill_search, or a GitHub URL / owner/repo of skills\",\"reason\":\"what it would help with\"}. DHI pins the exact commit " +
 					"and the human reviews every skill and script before installing it for this workspace or every workspace. Carry on without it meanwhile.",
 				InputSchema: json.RawMessage(`{"type":"object","required":["entry","reason"],"properties":{"entry":{"type":"string"},"reason":{"type":"string"}},"additionalProperties":false}`),
 			},
@@ -91,4 +95,72 @@ func (d Deps) skillTools() []tool {
 			},
 		},
 	}
+}
+
+// assigned reports whether skill name is one of the calling agent's.
+func (d Deps) assigned(name string) bool {
+	if d.Agent == nil {
+		return false
+	}
+	for _, s := range d.Agent.Skills {
+		if s == name {
+			return true
+		}
+	}
+	return false
+}
+
+// activateTool serves skill_activate (agentskills.io, ADR-0043): it hands
+// the agent one of its skills' instructions, wrapped, with the skill's
+// directory and bundled files listed, for runtimes that cannot read the
+// SKILL.md the catalog points at. Only the agent's own skills are
+// offered (the name is an enum); none, no tool.
+func (d Deps) activateTool() []tool {
+	if d.Skills == nil || d.Agent == nil || len(d.Agent.Skills) == 0 {
+		return nil
+	}
+	var names []string
+	for _, n := range d.Agent.Skills {
+		if _, ok := d.Skills.Skill(n); ok {
+			names = append(names, n)
+		}
+	}
+	if len(names) == 0 {
+		return nil
+	}
+	enum, _ := json.Marshal(names)
+	type activateArgs struct {
+		Name string `json:"name"`
+	}
+	seen := map[string]bool{}
+	return []tool{{
+		info: mcp.ToolInfo{
+			Name:        "skill_activate",
+			Description: "Load the full instructions of one of your skills when a task matches its description. Args: {\"name\":\"<skill>\"}.",
+			InputSchema: json.RawMessage(`{"type":"object","required":["name"],"properties":{"name":{"type":"string","enum":` + string(enum) + `}},"additionalProperties":false}`),
+		},
+		parse: func(raw json.RawMessage) (any, error) {
+			var a activateArgs
+			if err := args(raw, &a); err != nil {
+				return nil, err
+			}
+			a.Name = strings.TrimSpace(a.Name)
+			if !d.assigned(a.Name) {
+				return nil, fmt.Errorf("%q is not one of your skills", a.Name)
+			}
+			return a, nil
+		},
+		exec: func(_ context.Context, dec any) (string, error) {
+			name := dec.(activateArgs).Name
+			k, ok := d.Skills.Skill(name)
+			if !ok {
+				return "", fmt.Errorf("skill %q is not installed", name)
+			}
+			if seen[name] { // already in context: do not repeat it
+				return "skill " + name + " is already loaded above; follow it.", nil
+			}
+			seen[name] = true
+			return skills.Activation(*k), nil
+		},
+	}}
 }

@@ -225,11 +225,11 @@ func (m *Model) propLine(it propItem, selected bool, w int) string {
 		if p.HasScripts() {
 			flag = " · ships a script"
 		}
-		trust := "unsigned"
-		if p.Signed {
-			trust = "signed"
+		trust := "folder"
+		if p.Version != "" {
+			trust = "pinned"
 		}
-		return lead + theme.WarningText().Render(theme.GlyphDiamond) + " " + nameStyle.Render(padTo("skill "+p.Entry, 26)) +
+		return lead + theme.WarningText().Render(theme.GlyphDiamond) + " " + nameStyle.Render(padTo("skill "+clip(shortSource(p.Source), 19), 26)) +
 			theme.Chip().Render(trust) + " " + theme.Hint().Render(fmt.Sprintf("%s%s · by %s · ", kit.Count(len(p.Skills), "skill"), flag, p.Agent)) +
 			theme.TextDim().Render(clip(p.Reason, max(w-66, 16)))
 	case "setting":
@@ -254,4 +254,13 @@ func clip(s string, n int) string {
 		return string(r[:n-1]) + "…"
 	}
 	return s
+}
+
+// shortSource is a source as people say it: owner/repo for GitHub.
+func shortSource(src string) string {
+	src = strings.TrimPrefix(src, "https://github.com/")
+	if i := strings.Index(src, "#"); i >= 0 {
+		src = src[:i]
+	}
+	return strings.TrimSuffix(src, ".git")
 }

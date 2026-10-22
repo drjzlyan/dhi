@@ -15,13 +15,20 @@ func TestComposeOrder(t *testing.T) {
 		ManifestSystem: "manifest line",
 		Role:           &library.Role{System: "role for {{agent}} at {{workspace}}"},
 		Skills: []library.Skill{
-			{Slug: "a", Body: "skill A"},
-			{Slug: "b", Body: "skill B"},
+			{Slug: "a", Description: "does A", Body: "skill A body"},
+			{Slug: "b", Description: "does B", Body: "skill B body", Dir: "/skills/b"},
 		},
 	})
-	want := "manifest line\n\nrole for scout at dhi\n\nskill A\n\nskill B"
-	if out != want {
-		t.Fatalf("compose = %q, want %q", out, want)
+	if !strings.HasPrefix(out, "manifest line\n\nrole for scout at dhi\n\n") {
+		t.Fatalf("manifest then role first: %q", out)
+	}
+	// ADR-0043: skills are a catalog in manifest order, not inlined bodies.
+	if strings.Contains(out, "skill A body") {
+		t.Fatal("a skill body must not ride in the prompt")
+	}
+	a, b := strings.Index(out, "<name>a</name>"), strings.Index(out, "<name>b</name>")
+	if a < 0 || b < a || !strings.Contains(out, "<location>/skills/b/SKILL.md</location>") {
+		t.Fatalf("catalog: %q", out)
 	}
 }
 

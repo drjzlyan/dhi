@@ -380,6 +380,46 @@ func Clone(ctx context.Context, url, dst string) (*Repo, error) {
 	return &Repo{path: dst, r: r}, nil
 }
 
+// CloneAt clones url into dst and checks out ref (a commit sha, a branch
+// or a tag; "" keeps the default branch). It returns the commit checked
+// out, which installs record so an update is a visible change.
+func CloneAt(ctx context.Context, url, dst, ref string) (string, error) {
+	if strings.TrimSpace(url) == "" {
+		return "", fmt.Errorf("gitcore: clone: empty url")
+	}
+	opts := &git.CloneOptions{URL: url}
+	if ref == "" {
+		opts.Depth = 1 // the default branch's tip is all an install needs
+	}
+	r, err := git.PlainCloneContext(ctx, dst, false, opts)
+	if err != nil {
+		return "", fmt.Errorf("gitcore: clone %s: %w", url, err)
+	}
+	rp := &Repo{path: dst, r: r}
+	wt, err := rp.r.Worktree()
+	if err != nil {
+		return "", fmt.Errorf("gitcore: worktree: %w", err)
+	}
+	if ref != "" {
+		hash, err := rp.r.ResolveRevision(plumbing.Revision(ref))
+		if err != nil {
+			// A branch or tag that is not local yet resolves on the remote.
+			hash, err = rp.r.ResolveRevision(plumbing.Revision("origin/" + ref))
+			if err != nil {
+				return "", fmt.Errorf("gitcore: %s has no %q: %w", url, ref, err)
+			}
+		}
+		if err := wt.Checkout(&git.CheckoutOptions{Hash: *hash, Force: true}); err != nil {
+			return "", fmt.Errorf("gitcore: checkout %s: %w", ref, err)
+		}
+	}
+	head, err := rp.r.Head()
+	if err != nil {
+		return "", fmt.Errorf("gitcore: head: %w", err)
+	}
+	return head.Hash().String(), nil
+}
+
 // HeadContent returns the file's content at HEAD (rel is slash-separated,
 // relative to the repo root). ok is false when the file is not tracked at
 // HEAD or the repo has no commits yet — both are normal, not errors.
