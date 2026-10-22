@@ -38,6 +38,11 @@ func (e *Editor) KeyUngrouped(key string) {
 
 func (e *Editor) keyNormal(key string) {
 	e.message = ""
+	if text, ok := strings.CutPrefix(key, "paste:"); ok {
+		e.clearPending()
+		e.buf.InsertString(text) // a terminal paste lands at the cursor, one undo step
+		return
+	}
 
 	// count digits (0 only valid when a count is already started or as motion)
 	if len(key) == 1 && key[0] >= '0' && key[0] <= '9' {
@@ -110,6 +115,7 @@ func (e *Editor) runOperator(o op, a, z Pos, linewise bool) {
 		e.message = opMessage(o, linewise)
 	case opYank:
 		e.register, e.registerLW = text, linewise
+		e.yanked = &text
 		e.buf.SetCursor(a)
 		e.message = opMessage(o, linewise)
 	case opChange:
@@ -358,6 +364,11 @@ func (e *Editor) paste(count int, after bool) {
 
 func (e *Editor) keyVisual(key string) {
 	e.message = ""
+	if strings.HasPrefix(key, "paste:") { // leave the selection, paste at the cursor
+		e.mode = ModeNormal
+		e.keyNormal(key)
+		return
+	}
 	if key == "esc" {
 		e.mode = ModeNormal
 		return
@@ -383,12 +394,14 @@ func (e *Editor) keyVisual(key string) {
 		}
 		e.mode = ModeCommand
 		e.cmdline = nil
+		e.cmdPrefix = ':'
 	case "d", "x":
 		e.register, e.registerLW = e.buf.yankRange(a, z), false
 		e.buf.deleteRange(a, z)
 		e.mode = ModeNormal
 	case "y":
 		e.register, e.registerLW = e.buf.yankRange(a, z), false
+		e.yanked = &e.register
 		e.buf.SetCursor(a)
 		e.mode = ModeNormal
 	case "c":

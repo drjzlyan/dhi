@@ -7,6 +7,7 @@
 package vt
 
 import (
+	"encoding/base64"
 	"io"
 	"strings"
 
@@ -93,4 +94,30 @@ func (s *Screen) Lines(width, height int) []string {
 		out = append(out, "")
 	}
 	return out
+}
+
+// Paste sends text to the program as a paste: wrapped in bracketed-paste
+// markers when the program turned that mode on (shells, vim), so it is
+// not run line by line. The text goes out through Replies.
+func (s *Screen) Paste(text string) { s.emu.Paste(text) }
+
+// OnClipboard calls f with the text a program copies through OSC 52
+// (tmux, vim's "+y over SSH, neovim): the drawer forwards it to the
+// system clipboard. Read requests ("?") are ignored; DHI never hands the
+// clipboard to a program.
+func (s *Screen) OnClipboard(f func(text string)) {
+	s.emu.RegisterOscHandler(52, func(data []byte) bool {
+		// data is "52;<selection>;<base64>"; older forms omit the code.
+		parts := strings.SplitN(string(data), ";", 3)
+		payload := parts[len(parts)-1]
+		if payload == "?" || payload == "" {
+			return true
+		}
+		b, err := base64.StdEncoding.DecodeString(payload)
+		if err != nil {
+			return true
+		}
+		f(string(b))
+		return true
+	})
 }

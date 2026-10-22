@@ -59,6 +59,9 @@ func (m *Model) newTermTab(dir, label string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	sess, err := term.Start(ctx, term.Options{Dir: dir, Label: label, Env: m.termEnv})
 	t := &termTab{sess: sess, dir: dir, screen: vt.New(scrollbackCap)}
+	// A program copying through OSC 52 (tmux, vim over SSH) reaches the
+	// system clipboard (F-103); Feed runs on the UI loop, so no lock.
+	t.screen.OnClipboard(func(text string) { m.termCopy = text })
 	m.terms = append(m.terms, t)
 	m.cancelTerms = append(m.cancelTerms, cancel)
 	if err != nil {
@@ -133,6 +136,13 @@ func (m *Model) pumpTerm(idx int, sess *term.Session, msgs chan<- teaMsg) {
 		msgs <- teaMsg{kind: termMsgOut, tab: idx, chunk: chunk}
 	}
 	msgs <- teaMsg{kind: termMsgClosed, tab: idx}
+}
+
+// takeTermCopy returns, once, what a terminal program last copied.
+func (m *Model) takeTermCopy() string {
+	c := m.termCopy
+	m.termCopy = ""
+	return c
 }
 
 func (m *Model) ingestTermChunk(idx int, chunk []byte) {

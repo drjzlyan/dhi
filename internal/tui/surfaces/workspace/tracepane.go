@@ -130,6 +130,13 @@ func (m *Model) traceKey(key string) bool {
 		tp.searching = true
 	case "x":
 		tp.note = m.exportTrace(tp)
+	case "Y": // copy the visible events as Markdown (F-103)
+		var b strings.Builder
+		if err := tp.tr.WriteMarkdown(&b, tp.events()); err != nil {
+			tp.note = "copy failed: " + err.Error()
+		} else {
+			m.copyText = b.String()
+		}
 	}
 	return true // modal until esc
 }

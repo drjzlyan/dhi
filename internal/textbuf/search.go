@@ -128,3 +128,14 @@ func (e *Editor) scroll(lines int) {
 	}
 	e.buf.move(motDown, lines)
 }
+
+// TakeYank returns, once, the text of the last yank (y, yy, visual y), so
+// the surface can put it on the system clipboard too.
+func (e *Editor) TakeYank() (string, bool) {
+	if e.yanked == nil {
+		return "", false
+	}
+	t := *e.yanked
+	e.yanked = nil
+	return t, true
+}

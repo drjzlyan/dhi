@@ -67,8 +67,9 @@ type chatPane struct {
 	flash    string // post-failure notice for the chrome bar (F-026 P3)
 	note     string // what an answered ask did (F-087): news, not a failure
 	input    kit.Input
-	cursor   int   // selected message index (blurred navigation)
-	threadID int64 // 0 = channel view; else thread filter
+	copyText string // a message put up for the clipboard (TakeCopy)
+	cursor   int    // selected message index (blurred navigation)
+	threadID int64  // 0 = channel view; else thread filter
 
 	railFocus bool   // tab toggles rail navigation (wide layout)
 	railCur   int    // rail highlight (wide layout)
@@ -187,7 +188,7 @@ func (p *chatPane) hints() []string {
 	// tab is width-gated (the rail is a column only on wide floors) —
 	// never advertise an inert key (F-026 P3).
 	base := []string{"i compose", "j/k select", "t thread", "v profile",
-		"/ search", "+ react", "e edit", "p pin", "R all read", ",/. channel", "ctrl+g jump"}
+		"/ search", "+ react", "e edit", "Y copy", "p pin", "R all read", ",/. channel", "ctrl+g jump"}
 	if p.lastWidth >= slackCtxMin {
 		return append([]string{"tab rail"}, base...)
 	}
@@ -550,6 +551,11 @@ func (p *chatPane) handleKey(key string) bool {
 		return true
 	case "R":
 		p.markAllReadNow()
+		return true
+	case "Y": // copy the selected message (F-103)
+		if p.cursor < len(history) {
+			p.copyText = p.displayText(history[p.cursor])
+		}
 		return true
 	case "i", "enter":
 		p.focus = true

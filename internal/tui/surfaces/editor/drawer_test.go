@@ -198,3 +198,18 @@ func TestFocusedTerminalKeepsReadlineKeys(t *testing.T) {
 		t.Fatal("ctrl+t must still blur the terminal")
 	}
 }
+
+// F-103: yy puts the line on the system clipboard as well as the register.
+func TestYankAlsoCopiesToTheSystemClipboard(t *testing.T) {
+	m := newEditor(t)
+	feed(m, "enter", "down", "down", "enter") // open alpha/src/app.go
+	if !m.bufFocus {
+		t.Fatal("no buffer")
+	}
+	m.TakeCmd()
+	feed(m, "y", "y")
+	cmd := m.TakeCmd()
+	if cmd == nil {
+		t.Fatal("yy queued no clipboard command")
+	}
+}

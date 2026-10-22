@@ -231,7 +231,7 @@ func (m *Model) sectionHints() []string {
 			return []string{"esc close", "j/k scroll", "g/G top/bottom"}
 		}
 		if m.trace != nil {
-			return []string{"esc close", "j/k scroll", "n/p run", "f filter", "/ search", "x export", "g/G top/bottom"}
+			return []string{"esc close", "j/k scroll", "n/p run", "f filter", "/ search", "x export", "Y copy", "g/G top/bottom"}
 		}
 		if m.assign != nil {
 			return []string{"type to filter", "enter assign", "esc cancel"}

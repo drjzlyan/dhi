@@ -70,7 +70,8 @@ type App struct {
 	setupItems      func() []kit.ChecklistItem
 	setupRun        func(id string)
 	queuedToast     *kit.Toast // raised by Toast, shown by pollToasts
-	optionExplained bool       // the Option-key toast was shown (F-101)
+	optionExplained bool
+	selecting       bool // select mode: the terminal owns the mouse (F-103)       // the Option-key toast was shown (F-101)
 
 	coach     *coach // running tutorial lesson (F-048); nil = none
 	tutorials []tutorial.Tutorial
@@ -316,6 +317,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if tc := a.pollToasts(); tc != nil {
 		cmd = tea.Batch(cmd, tc)
 	}
+	if c, ok := a.Active().(surfaces.Copier); ok {
+		if text, ok := c.TakeCopy(); ok {
+			cmd = tea.Batch(cmd, kit.Copy(text))
+		}
+	}
 	if ac := a.activityCmd(); ac != nil {
 		if cmd == nil {
 			return m, ac
@@ -353,6 +359,12 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case tea.KeyPressMsg:
+		if a.selecting { // select mode: any key ends it; esc only ends it
+			a.selecting = false
+			if k := keyString(msg); k == "esc" || k == "enter" {
+				return a, nil
+			}
+		}
 		// F-101: one spelling per key whatever the terminal sent (Option
 		// characters, ESC b/f). A gate is all fields, so it is "typing".
 		key, option := kit.NormalizeKey(keyString(msg),
@@ -410,6 +422,18 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		a.Active().HandleKey(key)
 		return a, a.drainSurfaceCmd()
+
+	case tea.PasteMsg:
+		return a, a.paste(msg.Content)
+
+	case kit.CopiedMsg:
+		t := kit.Toast{Kind: kit.ToastSuccess, Title: "Copied", Detail: kit.Count(msg.Chars, "character")}
+		if msg.Err != nil {
+			t = kit.Toast{Kind: kit.ToastWarning, Title: "Copied with the terminal only",
+				Detail: "the system clipboard tool failed: " + msg.Err.Error()}
+		}
+		a.Toast(t)
+		return a, nil
 
 	case tea.MouseWheelMsg:
 		if a.gateActive() {
@@ -496,6 +520,46 @@ func (a *App) SetSetupGate(f func() Gate) { a.setupGate = f }
 func (a *App) activeCapturesInput() bool {
 	c, ok := a.Active().(surfaces.InputCapturer)
 	return ok && c.CapturesInput()
+}
+
+// maxPaste bounds one paste: anything larger is a file, not a field value.
+const maxPaste = 1 << 20
+
+// paste delivers a bracketed paste (cmd+v, ctrl+shift+v) to whatever has
+// the keyboard — gate, palette, help filter, or the active surface — as
+// one "paste:<text>" key that every DHI field understands (F-103). It
+// never passes through key normalization, remaps or global bindings, and
+// its content is never logged, flashed or recorded: a pasted secret
+// reaches only the field it was pasted into.
+func (a *App) paste(text string) tea.Cmd {
+	text = strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\n"), "\r", "\n")
+	if text == "" {
+		return nil
+	}
+	if len(text) > maxPaste {
+		a.Toast(kit.Toast{Kind: kit.ToastWarning, Title: "Paste too large",
+			Detail: fmt.Sprintf("%d KB; open it as a file instead", len(text)/1024)})
+		return nil
+	}
+	key := "paste:" + text
+	switch {
+	case a.gateActive():
+		a.gate.HandleKey(key)
+		var cmd tea.Cmd
+		if cg, ok := a.gate.(interface{ TakeCmd() tea.Cmd }); ok {
+			cmd = cg.TakeCmd()
+		}
+		return a.releaseGate(cmd)
+	case a.palette != nil:
+		return a.paletteKey(key)
+	case a.showHelp:
+		if a.help.filtering {
+			a.helpKey(key)
+		}
+		return nil
+	}
+	a.Active().HandleKey(key)
+	return a.drainSurfaceCmd()
 }
 
 // activeRawKeys reports a focused terminal: its program receives keys
@@ -622,6 +686,7 @@ func (a *App) openPalette() {
 		add("Setup", "Run setup wizard", "", func() tea.Cmd { return a.StartGate(a.setupGate()) })
 	}
 	add("", "Show keyboard help", "?", func() tea.Cmd { a.openHelp(); return nil })
+	add("", "Select text with the mouse", "", func() tea.Cmd { a.selecting = true; return nil })
 	a.coachCommands(add)
 	add("Theme", "Dark", "", func() tea.Cmd { theme.Current = theme.Dark(); return nil })
 	add("Theme", "Light", "", func() tea.Cmd { theme.Current = theme.Light(); return nil })
@@ -859,6 +924,11 @@ func (a *App) View() tea.View {
 	// (F-026 P2); the shell routes them to the tab bar and the active
 	// surface via narrow seams.
 	v.MouseMode = tea.MouseModeCellMotion
+	if a.selecting {
+		// Select mode (F-103): the terminal owns the mouse, so drag
+		// selects text and cmd+c / ctrl+shift+c copies it, anywhere.
+		v.MouseMode = tea.MouseModeNone
+	}
 	return v
 }
 
@@ -1003,6 +1073,13 @@ func (a *App) buildStatus() *kit.StatusLine {
 		sl.More = ""
 	} else {
 		sl.Globals = []string{"^p palette", "? help", fmt.Sprintf("1-%d views", len(a.surfaces)), "tab next", quit}
+	}
+	if a.selecting {
+		sl.Left = []kit.StatusSegment{kit.ModeBlock("select")}
+		sl.Flash = "drag to select · cmd+c (ctrl+shift+c) copies"
+		sl.Hints, sl.Globals, sl.More = []string{"esc done"}, []string{quit}, ""
+		sl.Width = a.width
+		return sl
 	}
 	if a.gateActive() {
 		// A gate (boot, repair, setup) owns every key: the status row

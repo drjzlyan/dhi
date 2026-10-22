@@ -98,7 +98,9 @@ type Model struct {
 	org    *org.Org
 	orgErr string
 	pane   *chatPane
-	replay *runReplay // non-nil = run-replay pane open (F-014)
+	// copyText is text put up for the system clipboard (F-103).
+	copyText string
+	replay   *runReplay // non-nil = run-replay pane open (F-014)
 
 	form formState
 
@@ -1634,4 +1636,15 @@ func (m *Model) OpenNewTask() bool {
 		textField("slug  ", ""), textField("title ", ""),
 		textField("assign ", ""), textField("team  ", ""))
 	return true
+}
+
+// TakeCopy implements surfaces.Copier: a message or trace put up for the
+// system clipboard, handed over once.
+func (m *Model) TakeCopy() (string, bool) {
+	text := m.copyText
+	if m.pane != nil && m.pane.copyText != "" {
+		text, m.pane.copyText = m.pane.copyText, ""
+	}
+	m.copyText = ""
+	return text, text != ""
 }

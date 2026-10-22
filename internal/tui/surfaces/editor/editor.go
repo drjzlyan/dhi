@@ -180,6 +180,7 @@ type Model struct {
 	pairAgent    string        // pairing partner (F-038); "" = no session
 
 	drawerOpen  bool
+	termCopy    string // text a terminal program copied (OSC 52), not yet sent
 	termFocus   bool
 	terms       []*termTab
 	activeTerm  int
@@ -645,6 +646,9 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 		switch msg.kind {
 		case termMsgOut:
 			m.ingestTermChunk(msg.tab, msg.chunk)
+			if text := m.takeTermCopy(); text != "" {
+				return tea.Batch(m.listenTerm(), kit.Copy(text))
+			}
 		case termMsgClosed:
 			m.termExited(msg.tab)
 		case lspMsgDiag, lspMsgComp, lspMsgHover, lspMsgEdit, lspMsgAction, lspMsgNote, lspMsgInstalled:
@@ -694,6 +698,15 @@ func (m *Model) listenHits() tea.Cmd {
 		}
 		return hitMsg(h)
 	}
+}
+
+// queue adds cmd to what TakeCmd hands the shell next.
+func (m *Model) queue(cmd tea.Cmd) {
+	if m.queued == nil {
+		m.queued = cmd
+		return
+	}
+	m.queued = tea.Batch(m.queued, cmd)
 }
 
 // TakeCmd implements surfaces.CmdSource: work a key started.
@@ -864,6 +877,9 @@ func (m *Model) HandleKey(key string) bool {
 		was := e.Mode()
 		e.SetPageSize(m.height - 4) // ctrl+d/u and pgup/pgdown step by the visible rows
 		e.Key(key)
+		if text, ok := e.TakeYank(); ok { // y also copies to the system clipboard (F-103)
+			m.queue(kit.Copy(text))
+		}
 		if e.Mode() == textbuf.ModeInsert && was != textbuf.ModeInsert {
 			m.act(tutorial.EvEditorInsert)
 		}
@@ -893,6 +909,10 @@ func (m *Model) handleTermKey(key string) bool {
 	}
 	t := m.activeTermTab()
 	if t == nil || t.sess == nil || t.exited {
+		return true
+	}
+	if text, ok := strings.CutPrefix(key, "paste:"); ok {
+		t.screen.Paste(text) // bracketed when the program asked for it
 		return true
 	}
 	if data, ok := termKeyBytes(key); ok {

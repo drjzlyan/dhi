@@ -46,12 +46,13 @@ type Editor struct {
 	saveNote    string
 	lastSel     *Selected // selection captured when ":" left visual mode
 
-	cmdline    []rune // content after ':', '/' or '?'
-	cmdPrefix  rune   // ':' (ex command), '/' or '?' (search)
-	lastSearch string // the last search, repeated by n/N
-	lastDir    int    // 1 after "/", -1 after "?"
-	page       int    // lines on one screen (SetPageSize)
-	message    string // transient status message ("", "3 fewer lines", errors)
+	cmdline    []rune  // content after ':', '/' or '?'
+	cmdPrefix  rune    // ':' (ex command), '/' or '?' (search)
+	lastSearch string  // the last search, repeated by n/N
+	lastDir    int     // 1 after "/", -1 after "?"
+	page       int     // lines on one screen (SetPageSize)
+	yanked     *string // the last yank, until TakeYank (system clipboard)
+	message    string  // transient status message ("", "3 fewer lines", errors)
 	register   string
 	registerLW bool // register holds linewise text
 

@@ -128,3 +128,43 @@ func TestSecretAskCollectsTheValueMasked(t *testing.T) {
 		t.Fatal("not granted for the workspace")
 	}
 }
+
+// F-103: a pasted secret (cmd+v arrives as one "paste:" key) fills the
+// masked field, drops the copied trailing newline, and appears nowhere on
+// screen — not the view, the flash, nor the status hints.
+func TestSecretAskAcceptsAPasteWithoutShowingIt(t *testing.T) {
+	m, ws := newSurface(t)
+	m.approvals = tools.NewApprovals()
+	saved := savedSecrets{}
+	m.secrets = saved
+	done := make(chan error, 1)
+	go func() {
+		done <- m.approvals.AskSecret(context.Background(), "anvil", "API_TOKEN", "call the API", true)
+	}()
+	deadline := time.After(5 * time.Second)
+	for len(m.approvals.List()) == 0 {
+		select {
+		case <-m.approvals.Changes():
+		case <-deadline:
+			t.Fatal("no ask")
+		}
+	}
+	m.decideAsk(m.approvals.List()[0], "yes")
+	const sentinel = "tok_SENTINEL_9f8e7d"
+	m.HandleKey("paste:" + sentinel + "\n")
+	flash, hints := m.Hints()
+	if strings.Contains(ansi.Strip(m.View())+flash+strings.Join(hints, " "), sentinel) {
+		t.Fatal("the pasted secret reached the screen")
+	}
+	m.HandleKey("enter")
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if saved[ws.Root+"|API_TOKEN"] != sentinel {
+		t.Fatalf("saved = %v", saved)
+	}
+	flash, _ = m.Hints()
+	if strings.Contains(ansi.Strip(m.View())+flash, sentinel) {
+		t.Fatal("the secret appeared after saving")
+	}
+}

@@ -1,8 +1,11 @@
 package editor
 
 import (
+	"path/filepath"
+
 	"charm.land/bubbletea/v2"
 
+	"github.com/drjzlyan/dhi/internal/tui/kit"
 	"github.com/drjzlyan/dhi/internal/tui/surfaces"
 )
 
@@ -38,6 +41,11 @@ func (m *Model) Commands() []surfaces.Command {
 	}
 	if e := m.active(); e != nil {
 		add("Save file", ":w", func() { e.Key(":"); e.Key("w"); e.Key("enter") })
+		if p := e.Path(); p != "" { // F-103: paths for a PR, a chat, a shell
+			out = append(out,
+				surfaces.Command{Group: "Editor", Title: "Copy file path", Run: func() tea.Cmd { return kit.Copy(p) }},
+				surfaces.Command{Group: "Editor", Title: "Copy relative path", Run: func() tea.Cmd { return kit.Copy(m.relToWorkspace(p)) }})
+		}
 		add("Format document", ":fmt", ex("fmt"))
 		add("Go to symbol", ":sym", ex("sym"))
 		add("Run tests in this package", ":test", ex("test"))
@@ -71,3 +79,17 @@ func (m *Model) Commands() []surfaces.Command {
 	}
 	return out
 }
+
+// relToWorkspace is p relative to the workspace root (p itself when it
+// lies outside or there is no workspace).
+func (m *Model) relToWorkspace(p string) string {
+	if m.ws == nil {
+		return p
+	}
+	if r, err := filepath.Rel(m.ws.Root, p); err == nil && !filepath.IsAbs(r) && r != ".." && !hasDotDotPrefix(r) {
+		return r
+	}
+	return p
+}
+
+func hasDotDotPrefix(r string) bool { return len(r) >= 3 && r[:3] == ".."+string(filepath.Separator) }

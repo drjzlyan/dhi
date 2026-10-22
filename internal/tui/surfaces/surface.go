@@ -86,6 +86,13 @@ type AltDigitTaker interface {
 	TakesAltDigits() bool
 }
 
+// Copier (F-103) is the copy seam: a surface that put text up for the
+// system clipboard (a chat message, a trace line) hands it over once;
+// the shell sends it through kit.Copy and shows the "Copied" toast.
+type Copier interface {
+	TakeCopy() (string, bool)
+}
+
 // CmdSource lets a surface start async work from a key: HandleKey cannot
 // return a tea.Cmd, so the surface queues one and the shell drains it
 // right after the key (nil = nothing queued). Without it, work started

@@ -54,6 +54,8 @@ func (a *App) helpSections() []helpSection {
 		{"alt+←/→", "move by word in text fields (Option+←/→ on a Mac)"},
 		{"fn+←/→ ↑/↓", "home/end and page up/down on Mac laptops"},
 		{"ctrl+←/→", "taken by macOS Spaces unless turned off in System Settings → Keyboard → Shortcuts"},
+		{"cmd+v / ctrl+shift+v", "paste into the focused field, buffer or terminal (secret fields stay masked)"},
+		{"copy", "y in a buffer, Y on a chat message or trace, palette → Copy file path; ctrl+p → Select text with the mouse lets the terminal select anything"},
 	}})
 	if hp, ok := a.Active().(helpProvider); ok {
 		if rows := kit.DedupeHelpRows(hp.HelpSections()); len(rows) > 0 {
