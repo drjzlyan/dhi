@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"github.com/drjzlyan/dhi/internal/agentkit/dhitools"
 	"os"
 	"path/filepath"
 	"strings"
@@ -183,4 +184,50 @@ func TestExecDenialOffersTheProgramsFolder(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatal("no continuation after the grant")
+}
+
+// grantRunner records the grants it was grown by.
+type grantRunner struct{ write, exec []string }
+
+func (g *grantRunner) Run(context.Context, string, []string, bool) (string, error) { return "", nil }
+func (g *grantRunner) WithGrants(write, exec []string) dhitools.CommandRunner {
+	return &grantRunner{write: write, exec: exec}
+}
+
+// A folder the human granted reaches `run` too, not only the agent CLI.
+func TestGrantsReachTheRunTool(t *testing.T) {
+	h := episodeHarness(t)
+	base := &grantRunner{}
+	h.rt.cfg.Run = base
+	e, _ := h.rt.agentEntry("scout")
+	if h.rt.runFor(e) != base {
+		t.Fatal("no grants: the shared runner")
+	}
+	target := realPath(t.TempDir())
+	go func() {
+		ap := firstPending(t, h.approvals)
+		h.approvals.ResolveFor(ap.ID, tools.LayerWorkspace)
+	}()
+	if err := h.approvals.AskScope(context.Background(), "scout", tools.AccessWrite+target, sandbox.OpWrite, target, "test"); err != nil {
+		t.Fatal(err)
+	}
+	got, ok := h.rt.runFor(e).(*grantRunner)
+	if !ok || len(got.write) != 1 || got.write[0] != target {
+		t.Fatalf("runner = %+v", got)
+	}
+}
+
+// A reloaded shell environment reaches the next spawn (F-109).
+func TestBaseEnvIsReadPerSpawn(t *testing.T) {
+	h := episodeHarness(t)
+	h.rt.cfg.CLIEnv = []string{"PATH=/old"}
+	if got := h.rt.baseEnv(); got[0] != "PATH=/old" {
+		t.Fatalf("env = %v", got)
+	}
+	path := "/a"
+	h.rt.cfg.CLIEnvFunc = func() []string { return []string{"PATH=" + path} }
+	path = "/reloaded"
+	if got := h.rt.baseEnv(); got[0] != "PATH=/reloaded" {
+		t.Fatalf("env = %v", got)
+	}
 }

@@ -18,6 +18,13 @@ type CommandRunner interface {
 	Run(ctx context.Context, dir string, argv []string, allowNetwork bool) (string, error)
 }
 
+// GrantRunner is a CommandRunner whose sandbox can grow by the access
+// grants the human gave one agent (F-113): write roots and folders to run
+// programs from. The runtime asks it for a per-agent runner each turn.
+type GrantRunner interface {
+	WithGrants(write, exec []string) CommandRunner
+}
+
 // EnvRunner is a CommandRunner that can add environment to one run: the
 // secrets an agent was granted (F-089). They reach that command only —
 // never the agent CLI, whose own shell could print them into its session.

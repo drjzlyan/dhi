@@ -11,6 +11,7 @@ import (
 
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/agentkit/clirun"
+	"github.com/drjzlyan/dhi/internal/agentkit/dhitools"
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
 	"github.com/drjzlyan/dhi/internal/credstore"
 	"github.com/drjzlyan/dhi/internal/sandbox"
@@ -90,6 +91,17 @@ func within(p, root string) bool {
 // the CLI starts.
 func (r *Runtime) spawnSandbox(e *entry) sandbox.Sandbox {
 	sb := e.guard.Sandbox
+	// The folders on the current PATH run, a reloaded one included (F-109).
+	if r.cfg.CLIEnvFunc != nil {
+		home, _ := os.UserHomeDir()
+		if roots := sandbox.ExecRoots(envPath(r.baseEnv()), home); len(roots) > 0 {
+			if re, ok := sb.(sandbox.ReadOnlyExtender); ok {
+				if ext, err := re.WithExtraReadOnly(roots); err == nil {
+					sb = ext
+				}
+			}
+		}
+	}
 	if r.cfg.Approvals == nil {
 		return sb
 	}
@@ -244,4 +256,20 @@ func (r *Runtime) offerAccess(agentID string, trigger bus.Message, denied string
 				done+" was granted; retry what the sandbox blocked")
 		}
 	}()
+}
+
+// runFor is the command runner for e's `run` and skill_run calls: the
+// runtime's, grown by the write and exec grants e holds (F-113), so a
+// folder the human allowed is reachable from run too, not only from the
+// agent CLI's own tools.
+func (r *Runtime) runFor(e *entry) dhitools.CommandRunner {
+	gr, ok := r.cfg.Run.(dhitools.GrantRunner)
+	if !ok || r.cfg.Approvals == nil {
+		return r.cfg.Run
+	}
+	write, exec := r.cfg.Approvals.Targets(e.m.ID), r.cfg.Approvals.ExecTargets(e.m.ID)
+	if len(write) == 0 && len(exec) == 0 {
+		return r.cfg.Run
+	}
+	return gr.WithGrants(write, exec)
 }

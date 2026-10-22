@@ -3,6 +3,7 @@ package wizard
 import (
 	"context"
 	"errors"
+	"github.com/drjzlyan/dhi/internal/tui/kit"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -1600,5 +1601,35 @@ func TestToolsStepInstallsAMissingToolAfterAYes(t *testing.T) {
 	s.Update(s.TakeCmd()())
 	if len(ran) != 1 || ran[0] != "rg" || !strings.Contains(s.msg, "rg installed") || s.Applies() {
 		t.Fatalf("ran=%v msg=%q applies=%v", ran, s.msg, s.Applies())
+	}
+}
+
+// The tools step is always on the checklist: done with every core tool
+// present, pending when one is missing.
+func TestToolsStepIsAlwaysListed(t *testing.T) {
+	f := newFixture(t, true)
+	missing := false
+	f.env.ToolStatus = func() []ToolRow {
+		r := ToolRow{Name: "rg", Core: true, Version: "/bin/rg"}
+		if missing {
+			r.Version = ""
+		}
+		return []ToolRow{r}
+	}
+	find := func() kit.ChecklistItem {
+		for _, it := range Checklist(f.env, "test", setup.State{}) {
+			if it.ID == "tools" {
+				return it
+			}
+		}
+		t.Fatal("tools not listed")
+		return kit.ChecklistItem{}
+	}
+	if find().State != kit.ItemDone {
+		t.Fatal("all core tools present: done")
+	}
+	missing = true
+	if find().State != kit.ItemPending {
+		t.Fatal("a missing core tool: pending")
 	}
 }

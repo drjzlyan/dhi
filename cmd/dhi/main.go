@@ -218,7 +218,7 @@ func runTUI() (relaunch bool) {
 	// Clone, fetch and push go through the user's git: their ssh keys,
 	// agent, credential helpers and insteadOf rules (F-112).
 	gitcore.SetNetwork(gitRunner)
-	runRunner = execRunner{env: runTmpEnv(agentEnv, ws), timeout: 5 * time.Minute, sandbox: guardWorkspace(decision.Sandbox, ws)}
+	runRunner = execRunner{envFn: func() []string { return runTmpEnv(hostenv.Env(), ws) }, timeout: 5 * time.Minute, sandbox: guardWorkspace(decision.Sandbox, ws)}
 	edOpts = append(edOpts, editor.WithSearcher(rgSearcher))
 
 	// Message bus + tasks store exist for every workspace; the worktree
@@ -1213,6 +1213,7 @@ func (b *editorBridge) LSP(ctx context.Context, op, path string, line, col int, 
 // allowlist policy lives in dhitools; this only executes vetted argv.
 type execRunner struct {
 	env     []string
+	envFn   func() []string // read per run when set (F-109)
 	timeout time.Duration
 	sandbox sandbox.Sandbox
 }
@@ -1237,6 +1238,24 @@ func runTmpEnv(env []string, ws *workspace.Workspace) []string {
 	return append(out, "TMPDIR="+dir)
 }
 
+// WithGrants implements dhitools.GrantRunner: a runner whose sandbox
+// also admits one agent's granted write roots and program folders.
+func (r execRunner) WithGrants(write, exec []string) dhitools.CommandRunner {
+	sb := r.sandbox
+	if re, ok := sb.(sandbox.RootExtender); ok && len(write) > 0 {
+		if ext, err := re.WithExtraRoots(write); err == nil {
+			sb = ext
+		}
+	}
+	if re, ok := sb.(sandbox.ReadOnlyExtender); ok && len(exec) > 0 {
+		if ext, err := re.WithExtraReadOnly(exec); err == nil {
+			sb = ext
+		}
+	}
+	r.sandbox = sb
+	return r
+}
+
 func (r execRunner) Run(ctx context.Context, dir string, argv []string, allowNetwork bool) (string, error) {
 	return r.RunEnv(ctx, dir, argv, allowNetwork, nil)
 }
@@ -1246,6 +1265,19 @@ func (r execRunner) Run(ctx context.Context, dir string, argv []string, allowNet
 func (r execRunner) RunEnv(ctx context.Context, dir string, argv []string, allowNetwork bool, extra []string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, r.timeout)
 	defer cancel()
+	base := r.env
+	if r.envFn != nil {
+		base = r.envFn()
+		// The folders on the current PATH run, a reloaded one included.
+		home, _ := os.UserHomeDir()
+		if roots := sandbox.ExecRoots(pathOf(base), home); len(roots) > 0 {
+			if re, ok := r.sandbox.(sandbox.ReadOnlyExtender); ok {
+				if ext, err := re.WithExtraReadOnly(roots); err == nil {
+					r.sandbox = ext
+				}
+			}
+		}
+	}
 	// Every run is inside the OS sandbox (F-113): writes stay in the
 	// workspace and the package caches whether or not network is allowed.
 	// Network is a declared scope (F-030 P2); a Noop adapter (the user's
@@ -1261,7 +1293,7 @@ func (r execRunner) RunEnv(ctx context.Context, dir string, argv []string, allow
 	}
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	cmd.Dir = dir
-	cmd.Env = append(append([]string(nil), r.env...), extra...)
+	cmd.Env = append(append([]string(nil), base...), extra...)
 	cmd.WaitDelay = 500 * time.Millisecond
 	var buf bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &buf, &buf
@@ -1457,6 +1489,7 @@ func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cl
 		// refuses by name at build time.
 		DefaultEngine: defaultEngine,
 		CLIEnv:        cliEnv,
+		CLIEnvFunc:    hostenv.Env, // "Reload shell environment" reaches the next spawn
 		Tasks:         taskStore,
 		Org:           company,
 		Standards:     true,

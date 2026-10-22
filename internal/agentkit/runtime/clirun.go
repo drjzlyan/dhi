@@ -768,7 +768,7 @@ func (r *Runtime) toolDeps(e *entry, trigger bus.Message, tt turnTools, gate fun
 		Approvals:   r.cfg.Approvals,
 		Git:         r.cfg.Git,
 		Identity:    r.cfg.Identity,
-		Run:         r.cfg.Run, // live (M32): never wired — `run` always said "runner unavailable"
+		Run:         r.runFor(e), // live (M32): never wired — `run` always said "runner unavailable"
 		Sessions:    r.cfg.Sessions,
 		Editor:      r.cfg.Editor,
 		Scopes:      r.agentScopes(e.m),
@@ -1041,7 +1041,7 @@ func (r *Runtime) boundTask(trigger bus.Message) (tasks.Task, bool) {
 // sandbox's writable roots (F-086): the host's /tmp and /var/folders
 // are not writable there.
 func (r *Runtime) cliEnv(c *clirun.CLI, agentID, mcpConfig string) []string {
-	env := append([]string(nil), r.cfg.CLIEnv...)
+	env := append([]string(nil), r.baseEnv()...)
 	for _, k := range c.EnvPass {
 		if v, ok := os.LookupEnv(k); ok {
 			env = append(env, k+"="+v)

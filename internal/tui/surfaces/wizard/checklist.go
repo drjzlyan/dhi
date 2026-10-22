@@ -45,6 +45,16 @@ func Checklist(env *Env, version string, st setup.State) []kit.ChecklistItem {
 		case st.Finished && !catchUpIDs[id]:
 			state = kit.ItemSkipped
 		}
+		if id == "tools" && env.ToolStatus != nil {
+			// Always listed (Settings → SETUP is where language servers get
+			// installed): done while every core tool is on your system.
+			state = kit.ItemDone
+			if s.Applies() {
+				state = kit.ItemPending
+			}
+			out = append(out, kit.ChecklistItem{ID: id, Title: c.title, Why: c.why, State: state})
+			continue
+		}
 		if state == kit.ItemPending && !s.Applies() {
 			continue
 		}

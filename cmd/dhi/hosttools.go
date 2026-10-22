@@ -186,3 +186,9 @@ func toolRows() []wizard.ToolRow {
 	}
 	return rows
 }
+
+// pathOf is env's PATH.
+func pathOf(env []string) string {
+	p, _ := hostenv.Lookup(env, "PATH")
+	return p
+}

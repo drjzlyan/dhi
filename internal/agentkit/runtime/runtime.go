@@ -83,6 +83,9 @@ type Config struct {
 	// F-109). The executor extends it with each CLI's
 	// declared pass-through — the exact set, nothing else (ADR-0012 §4).
 	CLIEnv []string
+	// CLIEnvFunc, when set, is read at every spawn instead of CLIEnv, so a
+	// reloaded shell environment reaches the next agent run (F-109).
+	CLIEnvFunc func() []string
 	// Tasks persists run records onto task cards (F-013). Nil disables
 	// card recording; the transcript still lives on the bus.
 	Tasks *tasks.Store
@@ -450,7 +453,7 @@ func (r *Runtime) extendSandboxForRoster(roster []*manifest.Agent) error {
 			// "#!/usr/bin/env bash"; on PATH that was Homebrew's bash,
 			// outside the exec roots — every spawn died "env: bash:
 			// Operation not permitted", live M32).
-			ro = append(ro, interpreterDirs(resolved, envPath(r.cfg.CLIEnv))...)
+			ro = append(ro, interpreterDirs(resolved, envPath(r.baseEnv()))...)
 		}
 	}
 	if len(extras) == 0 && len(ro) == 0 {
@@ -1025,4 +1028,12 @@ func (r *Runtime) Guard(id string) (*sandbox.Guard, bool) {
 		return nil, false
 	}
 	return e.guard, true
+}
+
+// baseEnv is the environment agent CLIs start from.
+func (r *Runtime) baseEnv() []string {
+	if r.cfg.CLIEnvFunc != nil {
+		return r.cfg.CLIEnvFunc()
+	}
+	return r.cfg.CLIEnv
 }
