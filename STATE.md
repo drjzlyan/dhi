@@ -46,10 +46,14 @@
 - Not done / open:
   - Real sign-ins need the user's accounts (Atlassian, Slack); not run. Installing from Settings
     opens the browser at once.
-  - F-099 evals not rerun: the fixtures have no skills, so the catalog change does not alter their
-    prompts; a skill-activation eval fixture is still to write.
+  - F-099 suite not rerun (no fixture assigns a skill, prompts unchanged). Skill loading checked live
+    with the new `DHI_EVAL_SKILL`/`DHI_EVAL_ARM` knobs: with the client guide's wording the agent
+    skipped the skill; a firmer catalog instruction got it read first (F-105 table).
   - Manual Terminal.app/iTerm2 checks (Option on/off, cmd+v, select mode) are the user's.
   - Wizard stepper click, buffer click-to-cursor.
+- After review: the skill-file repair also renames the skill in agent manifests; setup's plugin
+  install assigns only the servers (a plugin's skills wait in SKILLS); README narrowed (scripts are
+  gated for skills DHI installs, not ones found in ~/.agents or a repo).
 - Gotchas:
   - `gitcore.CloneAt(ctx, url, ref, dst)` — same order as `install.Fetcher`.
   - Settings caches the library; call `m.reloadLib()` after any skill write.

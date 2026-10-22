@@ -3,6 +3,7 @@ package evals
 import (
 	"context"
 	"fmt"
+	"github.com/drjzlyan/dhi/internal/agentkit/library"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -217,6 +218,18 @@ func RunDHI(c Config, t Task, root string) Result {
 		return fail("manifest", err)
 	}
 	m.Retries = c.Retries
+	// DHI_EVAL_SKILL assigns one built-in skill (ADR-0043), to check the
+	// agent loads it on demand from the catalog; SkillUse reports it.
+	skill := os.Getenv("DHI_EVAL_SKILL")
+	if skill != "" {
+		dir := filepath.Join(root, ".dhi", "builtin-skills")
+		if err := library.MaterializeBuiltins(dir); err != nil {
+			return fail("skills", err)
+		}
+		library.BuiltinSkillsDir = dir
+		defer func() { library.BuiltinSkillsDir = "" }()
+		m.Skills = []string{skill}
+	}
 
 	var asks atomic.Int32
 	ap := tools.NewApprovals()
@@ -288,6 +301,9 @@ func RunDHI(c Config, t Task, root string) Result {
 		}
 		r.CacheRead, r.CacheWrite = rl.CacheRead, rl.CacheWrite
 		r.CostUSD, r.HasCost = rl.CostSum, rl.Costed > 0
+	}
+	if skill != "" {
+		r.SkillUse = skillUse(root, skill)
 	}
 	if ep, ok, err := episode.Open(root).Get(evalAgent, episode.Key("eval-"+t.Name, "", 0)); err == nil && ok {
 		r.VerifyRounds, r.Verify = ep.Iterations, ep.Verify
@@ -382,4 +398,35 @@ func ArmOrder(turn int) []func(Config, Task, string) Result {
 		return []func(Config, Task, string) Result{RunDHI, RunRaw}
 	}
 	return []func(Config, Task, string) Result{RunRaw, RunDHI}
+}
+
+// skillUse reports how the agent took up its skill: "read" (it read the
+// SKILL.md), "activated" (skill_activate), or "unused". It scans what
+// DHI recorded of the run (transcripts, traces) for either.
+func skillUse(root, skill string) string {
+	read, activated := false, false
+	_ = filepath.WalkDir(filepath.Join(root, ".dhi"), func(p string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() || strings.Contains(p, "builtin-skills") {
+			return nil
+		}
+		b, err := os.ReadFile(p)
+		if err != nil {
+			return nil
+		}
+		text := string(b)
+		if strings.Contains(text, skill+"/SKILL.md") {
+			read = true
+		}
+		if strings.Contains(text, "skill_activate") && strings.Contains(text, skill) {
+			activated = true
+		}
+		return nil
+	})
+	switch {
+	case read:
+		return "read"
+	case activated:
+		return "activated"
+	}
+	return "unused"
 }

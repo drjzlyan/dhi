@@ -182,16 +182,19 @@ func setupIntegration(ctx context.Context, root, plugin, who string) (string, er
 	if err != nil {
 		return "", err
 	}
-	items := make([]assign.Item, 0, len(res.Skills)+len(res.Servers))
-	for _, c := range b.Skills {
-		items = append(items, assign.Item{Kind: assign.KindSkill, Name: c.Skill.Slug, Description: c.Skill.Description})
-	}
+	// Only the servers are given out here: a plugin's skills are often for
+	// building on the vendor's platform, not using it, so they wait in
+	// Settings → SKILLS for the user to give (g).
+	items := make([]assign.Item, 0, len(res.Servers))
 	for _, n := range res.Servers {
 		items = append(items, assign.Item{Kind: assign.KindServer, Name: n, Description: entry.Description, Category: entry.Category})
 	}
 	note, err := giveTo(root, sc, items, who)
 	if err != nil {
 		return "", err
+	}
+	if n := len(res.Skills); n > 0 {
+		note += fmt.Sprintf("; its %d skill(s) are in Settings → SKILLS", n)
 	}
 	signInNow(b.Servers) // the browser opens for the vendor's own login
 	return note, nil

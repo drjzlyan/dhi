@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"testing"
 	"time"
@@ -19,6 +20,9 @@ import (
 //   - DHI_EVAL_REPEAT: runs per arm (default 1 — an anecdote; use 3+ for a claim)
 //   - DHI_EVAL_OUT: scorecard path (default <repo>/.dhi/evals/scorecard.jsonl)
 //   - DHI_EVAL_KEEP=1: keep each run's directory (transcripts, bus) and log it
+//   - DHI_EVAL_SKILL: give the DHI agent one built-in skill and report
+//     whether it read or activated it (ADR-0043)
+//   - DHI_EVAL_ARM: run one arm only (raw or dhi)
 //
 // Arm order alternates per run so neither arm always inherits the CLI's
 // warm prompt cache.
@@ -61,6 +65,9 @@ func TestLive(t *testing.T) {
 		for i := 0; i < repeat; i++ {
 			turn++
 			for _, run := range ArmOrder(turn) {
+				if arm := os.Getenv("DHI_EVAL_ARM"); arm != "" && armName(run) != arm {
+					continue
+				}
 				dir := t.TempDir()
 				if os.Getenv("DHI_EVAL_KEEP") == "1" {
 					if dir, err = os.MkdirTemp("", "dhi-eval-"+task.Name+"-"); err != nil {
@@ -74,6 +81,9 @@ func TestLive(t *testing.T) {
 				t.Logf("%-16s %-3s ok=%-5v tokens=%d+%d cached=%d written=%d cost=$%.4f attempts=%d asks=%d rounds=%d/%d %s %s %v",
 					r.Task, r.Arm, r.OK, r.TokensIn, r.TokensOut, r.CacheRead, r.CacheWrite, r.CostUSD, r.Attempts, r.Asks,
 					r.VerifyRounds, task.ExpectRounds, r.Verify, r.Err, r.Unmet)
+				if r.SkillUse != "" {
+					t.Logf("%-16s %-3s skill %s: %s", r.Task, r.Arm, os.Getenv("DHI_EVAL_SKILL"), r.SkillUse)
+				}
 				results = append(results, r)
 			}
 		}
@@ -82,4 +92,12 @@ func TestLive(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Logf("scorecard: %s\n%s", out, Table(Summarize(results)))
+}
+
+// armName names an arm function ("dhi" or "raw") for DHI_EVAL_ARM.
+func armName(run func(Config, Task, string) Result) string {
+	if reflect.ValueOf(run).Pointer() == reflect.ValueOf(RunDHI).Pointer() {
+		return "dhi"
+	}
+	return "raw"
 }

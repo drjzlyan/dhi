@@ -10,6 +10,7 @@ import (
 
 	"github.com/drjzlyan/dhi/internal/agentkit/library"
 	"github.com/drjzlyan/dhi/internal/agentkit/mcpserver"
+	"github.com/drjzlyan/dhi/internal/agentkit/org"
 	"github.com/drjzlyan/dhi/internal/agentkit/skills"
 	"github.com/drjzlyan/dhi/internal/workspace"
 )
@@ -156,10 +157,14 @@ func skillFiles(in Input) (Repair, bool) {
 		What: fmt.Sprintf("Convert %d skill file(s) to Agent Skills folders (<name>/SKILL.md), the format every coding agent reads", len(jobs)),
 		Safe: true,
 		Apply: func() error {
+			renamed := map[string]string{} // old slug → spec name, when they differ
 			for _, j := range jobs {
 				name := specName(j.k.slug)
 				if name == "" {
 					continue
+				}
+				if name != j.k.slug {
+					renamed[j.k.slug] = name
 				}
 				s := &skills.Skill{Name: name, Slug: name, Description: j.k.desc, Body: j.k.body}
 				if j.k.script != "" {
@@ -185,7 +190,37 @@ func skillFiles(in Input) (Repair, bool) {
 					return err
 				}
 			}
-			return nil
+			return renameSkillRefs(in, renamed)
 		},
 	}, true
+}
+
+// renameSkillRefs points agents at the renamed skills, so none silently
+// loses one (a dangling name is dropped at run time).
+func renameSkillRefs(in Input, renamed map[string]string) error {
+	if len(renamed) == 0 || in.Org == nil {
+		return nil
+	}
+	roster, err := org.LoadRoster(in.WS)
+	if err != nil {
+		return err
+	}
+	for _, a := range roster {
+		changed := false
+		skills := append([]string(nil), a.Skills...)
+		for i, k := range skills {
+			if n, ok := renamed[k]; ok {
+				skills[i], changed = n, true
+			}
+		}
+		if !changed {
+			continue
+		}
+		cp := *a
+		cp.Skills = skills
+		if err := in.Org.UpdateAgent(in.WS, &cp); err != nil {
+			return err
+		}
+	}
+	return nil
 }

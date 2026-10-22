@@ -154,8 +154,8 @@ DHI uses the formats every coding agent reads, so nothing is DHI-only:
   opens the vendor's login page the first time a bot needs it. No app to register, no API key.
 - **Who gets what.** Every install ends by choosing the bots: DHI recommends the ones whose role
   fits (and says why), or give it to all bots, including ones you add later.
-- Installs pin the commit and show every script and command first; scripts stay off until you allow
-  them.
+- Installs pin the commit and show every script and command first; the scripts of a skill DHI
+  installs stay off until you allow them.
 
 ## Keys
 

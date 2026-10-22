@@ -7,7 +7,9 @@ import (
 	"testing"
 
 	"github.com/drjzlyan/dhi/internal/agentkit/library"
+	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
 	"github.com/drjzlyan/dhi/internal/agentkit/mcpserver"
+	"github.com/drjzlyan/dhi/internal/agentkit/org"
 	"github.com/drjzlyan/dhi/internal/workspace"
 )
 
@@ -45,8 +47,11 @@ func TestOldSkillFilesBecomeSkillFolders(t *testing.T) {
 	in := fixture(t)
 	dir := filepath.Join(in.WS.Root, workspace.DirSkills)
 	os.MkdirAll(dir, 0o755)
-	os.WriteFile(filepath.Join(dir, "Deploy_Checks.md"), []byte("---\nname: Deploy checks\ndescription: run before a deploy\nscript: deploy.sh\n---\n\nRun the checks.\n"), 0o644)
+	os.WriteFile(filepath.Join(dir, "deploy_checks.md"), []byte("---\nname: Deploy checks\ndescription: run before a deploy\nscript: deploy.sh\n---\n\nRun the checks.\n"), 0o644)
 	os.WriteFile(filepath.Join(dir, "deploy.sh"), []byte("#!/bin/sh\n"), 0o755)
+	if err := in.Org.CreateAgent(in.WS, &manifest.Agent{ID: "atlas", Name: "Atlas", Model: "m", Skills: []string{"deploy_checks"}}); err != nil {
+		t.Fatal(err)
+	}
 	r, ok := byID(Find(in), "skills-standard-format")
 	if !ok {
 		t.Fatal("no repair")
@@ -61,7 +66,11 @@ func TestOldSkillFilesBecomeSkillFolders(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, "deploy-checks", "scripts", "deploy.sh")); err != nil {
 		t.Fatal("the script did not move into the skill")
 	}
-	if _, err := os.Stat(filepath.Join(dir, "Deploy_Checks.md")); err == nil {
+	if _, err := os.Stat(filepath.Join(dir, "deploy_checks.md")); err == nil {
 		t.Fatal("the old file stayed")
+	}
+	roster, _ := org.LoadRoster(in.WS)
+	if len(roster) != 1 || len(roster[0].Skills) != 1 || roster[0].Skills[0] != "deploy-checks" {
+		t.Fatalf("the agent must follow the rename: %+v", roster)
 	}
 }

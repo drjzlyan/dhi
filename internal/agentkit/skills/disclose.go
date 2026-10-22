@@ -13,8 +13,8 @@ import (
 
 // catalogIntro is the guide's behavioural instruction for file-read
 // activation, with the dedicated tool as the alternative.
-const catalogIntro = `The following skills provide specialized instructions for specific tasks.
-When a task matches a skill's description, use your file-read tool to load the SKILL.md at the listed location (or call skill_activate with the skill's name) before proceeding.
+const catalogIntro = `Your skills are part of your instructions: the team chose them for the work you do.
+Before you start a task, check the list below. When the task matches a skill's description, load that skill first — read the SKILL.md at its location with your file-read tool (or call skill_activate with its name) — and follow it; say which skill you used in your summary.
 When a skill references relative paths, resolve them against the skill's directory (the parent of SKILL.md) and use absolute paths in tool calls. Run a skill's scripts with skill_run.`
 
 // Catalog renders the <available_skills> section; "" when there are none

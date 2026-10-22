@@ -228,6 +228,9 @@ type Result struct {
 	WallMs     int64   `json:"wall_ms"`
 
 	OverBudget bool `json:"over_budget,omitempty"`
+	// SkillUse is how the agent took up DHI_EVAL_SKILL: read, activated
+	// or unused ("" when no skill was assigned).
+	SkillUse string `json:"skill_use,omitempty"`
 
 	// DHI's goal loop (F-077): verify rounds run and the last verdict
 	// (pass / fail / stuck / env / "" = no verify).

@@ -1,6 +1,6 @@
 # F-105 — Standard skills, MCP servers and plugins (packs removed)
 
-Status: done (session 61, M35 P5); live install checked in P9; eval gate open (fixtures carry no skills) · ADR-0043 · supersedes F-008, F-034, F-062, F-091 (registry parts)
+Status: done (session 61, M35 P5); live install and skill loading checked in P9 · ADR-0043 · supersedes F-008, F-034, F-062, F-091 (registry parts)
 
 ## Why
 DHI had its own skill file format, its own pack/registry/marketplace and a hardcoded integrations
@@ -31,7 +31,7 @@ catalog with community packages. The user wants widely used standards only: Agen
 - [x] plugin.json and marketplace.json parse; install from local git fixtures.
 - [x] Each repair; `skill_run` refuses unassigned skills.
 - [x] Prompt has `<available_skills>` only when skills are assigned.
-- [ ] F-099 evals within noise of the M34 baseline — not run: no fixture assigns a skill, so prompts are unchanged; a skill-activation fixture is still to write.
+- [x] Skill loading checked live (`DHI_EVAL_SKILL`): see below. The F-099 suite was not rerun: no fixture assigns a skill, so those prompts are unchanged.
 
 ## Notes (session 61)
 - Settings: SKILLS (i install, g give to bots, a new bot with it, w write one, s allow scripts, x
@@ -43,3 +43,14 @@ catalog with community packages. The user wants widely used standards only: Agen
   path; those dirs, yours and `~/.agents/skills` are read-only sandbox roots.
 - A stdio server from the standard config gets network (the format has no origin list); files stay
   sandboxed. Legacy SSE is refused by name.
+
+## Live skill loading (session 61)
+`make eval` knobs `DHI_EVAL_SKILL=test-writing DHI_EVAL_TASK=sum-func DHI_EVAL_ARM=dhi`, claude CLI:
+
+| Catalog instruction | Passed | Cost | Skill |
+|---|---|---|---|
+| the client guide's wording ("when a task matches … load it") | ✓ | $0.220 | unused |
+| firmer: "part of your instructions; check before you start; load and follow; name it" | ✓ | $0.233 | read first |
+
+With the guide's wording the agent judged the skill unnecessary; inlined bodies never left that
+choice. The firmer wording keeps progressive disclosure and got the read. One run each: an anecdote.
