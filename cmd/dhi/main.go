@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/drjzlyan/dhi/internal/hostenv"
 	"os"
 	"os/exec"
 	osuser "os/user"
@@ -86,6 +87,12 @@ func main() {
 		cfgDir := filepath.Dir(cred)
 		standards.UserPath = filepath.Join(cfgDir, "standards.toml")
 		setupExtensionPaths(cfgDir) // ADR-0043: skills, MCP servers, installs
+	}
+	// F-109: the environment as the user's login shell sets it up (nvm,
+	// Homebrew, asdf…) becomes DHI's own, so every child — and doctor —
+	// sees what the user's terminal sees.
+	if os.Getenv("DHI_RESOLVING_ENV") == "" { // never recurse from an rc file that runs dhi
+		hostenv.Apply()
 	}
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
@@ -198,13 +205,13 @@ func runTUI() (relaunch bool) {
 	// editorBridge routes agent editor actions onto the UI loop
 	// (ADR-0023); its program is attached once the TUI is created.
 	editorBridge := &editorBridge{ws: ws}
+	// Terminals, tests, the debugger and agents start from the user's own
+	// environment (F-109, ADR-0044); agents keep their private TMPDIR.
+	termEnv = hostenv.Env()
+	agentEnv = termEnv
+	edOpts = append(edOpts, editor.WithTermEnv(termEnv))
 	if toolRoot != "" {
 		mgr := toolchain.New(toolRoot)
-		// Terminal sessions run with DHI's hermetic PATH. When the
-		// toolchain is absent the drawer REFUSES to open a session
-		// naming the fix — it never leaks the host PATH (ADR-0011).
-		termEnv = mgr.Env(nil)
-		edOpts = append(edOpts, editor.WithTermEnv(termEnv))
 		// Language servers run from the same hermetic shim dir and env.
 		// Shut down on every return — the relaunch loop re-enters runTUI,
 		// so a leak here would stack one gopls per setup relaunch.
@@ -230,9 +237,6 @@ func runTUI() (relaunch bool) {
 		if r, err := gitcore.ResolveRunner(mgr); err == nil {
 			gitRunner = r
 		}
-		// Agents and DHI's own verify build with caches redirected into
-		// the toolchain's writable folders (F-076); terminals keep home.
-		agentEnv = append(append(append([]string(nil), termEnv...), mgr.BuildEnv()...), mgr.ToolEnv()...)
 		runRunner = execRunner{env: runTmpEnv(agentEnv, ws), timeout: 5 * time.Minute, sandbox: guardWorkspace(decision.Sandbox, ws)}
 		if _, err := os.Stat(filepath.Join(toolRoot, "bin", "rg")); err == nil {
 			rgSearcher = search.Ripgrep{Bin: filepath.Join(toolRoot, "bin", "rg")}
