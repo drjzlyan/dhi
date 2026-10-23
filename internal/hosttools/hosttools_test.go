@@ -107,3 +107,18 @@ func TestEveryToolHasADocOrRecipe(t *testing.T) {
 		}
 	}
 }
+
+func TestRootRunsWithoutSudo(t *testing.T) {
+	look = func(n string) (string, error) {
+		if n == "apt-get" {
+			return "/usr/bin/apt-get", nil
+		}
+		return "", errors.New("not found")
+	}
+	isRoot = func() bool { return true }
+	defer func() { look, isRoot = hostenv.LookPath, func() bool { return os.Geteuid() == 0 } }()
+	bw, _ := Get("bwrap")
+	if in, ok := Recipe(bw); !ok || in.Sudo || in.String() != "apt-get install -y bubblewrap" {
+		t.Fatalf("root recipe = %q sudo=%v", in.String(), in.Sudo)
+	}
+}

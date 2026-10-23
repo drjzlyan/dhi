@@ -296,8 +296,15 @@ func (i Install) String() string { return strings.Join(i.Argv, " ") }
 // manager when it carries the tool, else a language manager. ok is false
 // when nothing present can install it (the card then shows Doc).
 func Recipe(t Tool) (Install, bool) {
-	return recipeWith(t, Managers())
+	in, ok := recipeWith(t, Managers())
+	if ok && in.Sudo && isRoot() {
+		in.Argv, in.Sudo = in.Argv[1:], false // root needs (and may lack) no sudo
+	}
+	return in, ok
 }
+
+// isRoot is swapped by tests.
+var isRoot = func() bool { return os.Geteuid() == 0 }
 
 func recipeWith(t Tool, have []string) (Install, bool) {
 	for _, m := range have {

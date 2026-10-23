@@ -32,5 +32,14 @@ Status: done (M36 P5) · ADR-0044 · amends F-086, F-087
 - `:install <tool>` raises the install card for any host tool DHI knows.
 - `cmd/dhi/writes_audit_test.go` lists every file that writes, with counts; a new write site fails
   until it is reviewed. The npm writability probe uses access(2) instead of a test file.
-- Not done: write/exec grants reaching `run` (they reach the agent CLI's own sandbox); Linux ENOENT
-  on unbound paths is not recognised (too ambiguous).
+- Write/exec grants reach `run` and `skill_run` too (`dhitools.GrantRunner`, a per-agent runner).
+- Agent spawns and `run` read the user's environment per call, with the current PATH's folders as
+  exec roots, so "Reload shell environment" reaches them without a restart.
+- bubblewrap's own root is remounted read-only after the binds: before, a write to ~/.bashrc
+  "succeeded" into a throwaway tmpfs file (live, Debian). Now it fails with EROFS and raises the
+  file card; a granted file stays writable (checked with bwrap directly).
+- Live on Linux (Debian bookworm arm64, Docker, root): without bwrap boot is not blocked, doctor and
+  each spawn name `apt-get install -y bubblewrap` (no sudo as root); `:install bwrap` showed the card
+  and ran apt in a terminal tab (exit 0, "bwrap is installed"); then workspace and ~/.npm writes
+  worked, ~/.bashrc gave the card, ~/.ssh was not visible, git ran.
+- Not recognised: Linux ENOENT on unbound paths (too ambiguous).

@@ -43,9 +43,14 @@
 - Deviations for the user: the cursor `.git/info/exclude` line and (bubblewrap only) loose
   default-ref copies are still written without a card; a missing bwrap fails each spawn with the
   install command instead of a paused queue; the Settings tools view is the setup "tools" step.
-  Agents' CLI env is captured at launch: "Reload shell environment" reaches agents after a restart.
-- Not done / open: Linux live checks (Docker daemon not running here): bwrap install card, a
-  ~/.bashrc denial card, cache writes. Real agent `git_push` against an SSH remote not run live.
+- Follow-up (same session): grants reach `run`; agent spawns and `run` read the env per call (PATH
+  exec roots too); the tools step is always on the checklist (Settings → SETUP); recipes drop sudo as
+  root; bwrap's root is read-only (a ~/.bashrc write had "succeeded" into tmpfs). Linux checked live
+  in Docker (Debian arm64): no-bwrap boot, doctor, `:install bwrap` → apt in a tab, ~/.bashrc card,
+  caches, ~/.ssh hidden. SSH push auth checked with `git push --dry-run` through DHI's runner
+  (nothing published).
+- Open: on Linux a missing ~/.cache makes sandboxed go builds fail (EROFS → card) instead of
+  silently using tmpfs; agents' CLI state dirs must exist to be bound.
 
 ### Session 61 (M35: every keyboard, paste & copy, standard skills + MCP, sign-in, re-runnable setup, branch `m35`)
 

@@ -86,7 +86,7 @@ func (m *Model) note(msg string) {
 func (m *Model) toolCardView(base string) string {
 	p := m.toolCard
 	dim, accent := theme.TextMuted(), theme.AccentText()
-	lines := []string{"DHI uses " + p.Tool + " for " + p.Purpose + ". It is not installed.", ""}
+	lines := append(kit.WrapWords("DHI uses "+p.Tool+" for "+p.Purpose+".", 70), "It is not installed.", "")
 	if len(p.Argv) > 0 {
 		lines = append(lines, "Install it with your package manager:", "  "+accent.Render(p.Command()))
 		if p.Sudo {

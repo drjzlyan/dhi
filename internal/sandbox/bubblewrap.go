@@ -131,6 +131,11 @@ func (b *Bubblewrap) Name() string { return "bubblewrap" }
 
 // Wrap implements Sandbox: bwrap flags then the original argv.
 func (b *Bubblewrap) Wrap(argv []string) ([]string, error) {
+	return b.args(argv, b.allowNetwork)
+}
+
+// args builds the bwrap command line for argv with a network posture.
+func (b *Bubblewrap) args(argv []string, allowNetwork bool) ([]string, error) {
 	if len(argv) == 0 {
 		return nil, fmt.Errorf("sandbox: empty argv")
 	}
@@ -139,10 +144,10 @@ func (b *Bubblewrap) Wrap(argv []string) ([]string, error) {
 		return nil, err
 	}
 	net := "--share-net"
-	if !b.allowNetwork {
+	if !allowNetwork {
 		net = "--unshare-net"
 	}
-	out := make([]string, 0, len(argv)+len(b.rw)*2+len(b.ro)*2+len(bwrapSystemDirs)*2+8)
+	out := make([]string, 0, len(argv)+len(b.rw)*2+len(b.ro)*2+len(bwrapSystemDirs)*2+10)
 	out = append(out, bin,
 		"--unshare-all", net, "--die-with-parent",
 		"--dev-bind", "/dev", "/dev",
@@ -165,6 +170,11 @@ func (b *Bubblewrap) Wrap(argv []string) ([]string, error) {
 	}
 	out = append(out, b.guardArgs()...)
 	out = append(out, b.credentialMasks()...)
+	// The namespace's own root is a tmpfs holding the mount points: left
+	// writable, a write to ~/.bashrc "succeeded" into a throwaway file
+	// (live, M36 Linux). Read-only, it fails with EROFS and the agent gets
+	// the access card. Binds are their own mounts and keep their mode.
+	out = append(out, "--remount-ro", "/")
 	return append(out, argv...), nil
 }
 
@@ -211,7 +221,7 @@ func (b *Bubblewrap) resolveBin() (string, error) {
 	}
 	p, err := systemLookPath(b.bin)
 	if err != nil {
-		return "", fmt.Errorf("agents run inside bubblewrap, which is not installed: %w — install it with your package manager (sudo apt-get install bubblewrap; in the editor, :install bwrap)", ErrHelperMissing)
+		return "", fmt.Errorf("agents run inside bubblewrap, which is not installed: %w — install it with your package manager (in the editor, :install bwrap shows the command), then ask again", ErrHelperMissing)
 	}
 	return p, nil
 }
@@ -219,34 +229,7 @@ func (b *Bubblewrap) resolveBin() (string, error) {
 // WrapNetwork implements NetworkPolicy: it binds with the requested
 // network posture for one invocation.
 func (b *Bubblewrap) WrapNetwork(argv []string, allow bool) ([]string, error) {
-	bin, err := b.resolveBin()
-	if err != nil {
-		return nil, err
-	}
-	net := "--share-net"
-	if !allow {
-		net = "--unshare-net"
-	}
-	out := make([]string, 0, len(argv)+len(b.rw)*2+len(b.ro)*2+len(bwrapSystemDirs)*2+8)
-	out = append(out, bin, "--unshare-all", net, "--die-with-parent",
-		"--dev-bind", "/dev", "/dev", "--proc", "/proc", "--tmpfs", "/tmp")
-	for _, d := range bwrapSystemDirs {
-		// -try: a dir the distro lacks (/lib64 on arm64 Debian) is
-		// skipped; a plain bind refused every spawn (live, M32).
-		out = append(out, "--ro-bind-try", d, d)
-	}
-	// ro first, rw on top: a writable child of a read-only root (a
-	// package cache inside a tool's prefix) must stay writable, and a
-	// later bind shadows an earlier one at the same place.
-	for _, r := range b.ro {
-		out = append(out, "--ro-bind", r, r)
-	}
-	for _, r := range b.rw {
-		out = append(out, "--bind", r, r)
-	}
-	out = append(out, b.guardArgs()...)
-	out = append(out, b.credentialMasks()...)
-	return append(out, argv...), nil
+	return b.args(argv, allow)
 }
 
 // Roots returns copies of the rw/ro root lists (for doctor/tests).

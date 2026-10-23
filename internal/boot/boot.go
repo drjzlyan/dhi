@@ -152,7 +152,7 @@ func Audit(in Input) Decision {
 			// The IDE never blocks on it (ADR-0044): agents name the
 			// install at each spawn until it is present.
 			d.Sandbox = sb
-			d.Warnings = append(d.Warnings, "agents need bubblewrap to run inside a boundary — install it (in the editor, :install bwrap); agent turns wait until it is present")
+			d.Warnings = append(d.Warnings, "agents need bubblewrap to run inside a boundary — install it (in the editor, :install bwrap); until then agent runs fail with this message")
 			break
 		}
 		if err != nil {
