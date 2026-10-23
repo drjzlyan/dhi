@@ -28,7 +28,6 @@ type PRMeta struct {
 // visible message when unavailable. Tests fake it.
 type GH interface {
 	Available() bool
-	AuthToken(ctx context.Context) (string, error)
 	PR(ctx context.Context, repo, number string) (PRMeta, error)
 	Diff(ctx context.Context, repo, number string) (string, error)
 	PostComment(ctx context.Context, repo, number, body string) error
@@ -128,19 +127,18 @@ type RemoteComment struct {
 	CreatedAt time.Time
 }
 
-// GHCLI runs DHI's hermetic gh shim (registry-pinned, ADR-0011). The
-// host `gh` lookup path is gone: when the shim is absent the seam
-// reports unavailable and PR flows refuse with the named fix.
+// GHCLI runs the user's gh with their login (F-110). When gh is not
+// installed the seam reports unavailable and PR flows refuse with the
+// named fix.
 type GHCLI struct {
-	bin string // shim path; "" = unavailable
+	bin string // gh's path; "" = unavailable
 }
 
-// NewGHCLI binds the gh seam to a shim path. Callers pass the
-// toolchain shim path (<prefix>/bin/gh); an empty path yields a
-// permanently unavailable seam.
+// NewGHCLI binds the gh seam to gh's path; "" yields a permanently
+// unavailable seam.
 func NewGHCLI(bin string) *GHCLI { return &GHCLI{bin: bin} }
 
-// Available reports whether the hermetic gh shim was provided.
+// Available reports whether gh was found.
 func (g *GHCLI) Available() bool { return g.bin != "" }
 
 func (g *GHCLI) run(ctx context.Context, args ...string) (string, error) {
@@ -277,19 +275,6 @@ func (g *GHCLI) Login(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("review: gh api user: %w", err)
 	}
 	return strings.TrimSpace(out), nil
-}
-
-// AuthToken returns gh's stored OAuth token (push credentials).
-func (g *GHCLI) AuthToken(ctx context.Context) (string, error) {
-	out, err := g.run(ctx, "auth", "token")
-	if err != nil {
-		return "", fmt.Errorf("review: gh auth token: %w", err)
-	}
-	tok := strings.TrimSpace(out)
-	if tok == "" {
-		return "", fmt.Errorf("review: gh auth token: empty")
-	}
-	return tok, nil
 }
 
 // CreatePR opens a pull request and returns its metadata.

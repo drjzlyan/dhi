@@ -79,9 +79,9 @@ func TestTestCommandGreenRunIsOneLine(t *testing.T) {
 }
 
 func TestTestCommandRefusals(t *testing.T) {
-	m := testEditor(t, nil) // no toolchain PATH at all
+	m := testEditor(t, nil) // no PATH at all
 	runEx(m, "test")
-	waitFor(t, m, func() bool { return strings.Contains(m.active().Message(), "not found on the DHI toolchain PATH") }, "named missing-go refusal")
+	waitFor(t, m, func() bool { return strings.Contains(m.active().Message(), "is not on your PATH") }, "named missing-go refusal")
 
 	n := newEditor(t) // nothing open
 	runEx(n, "test")

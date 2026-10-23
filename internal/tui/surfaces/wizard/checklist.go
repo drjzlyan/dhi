@@ -14,6 +14,7 @@ var checklistCopy = map[string]struct{ title, why, est string }{
 	"you":          {"How you like to work", "agents write the way you read", "30s"},
 	"instructions": {"House rules", "what every agent always does", "30s"},
 	"conventions":  {"Branch and commit style", "names agents follow", "20s"},
+	"tools":        {"Your tools", "git, search and language servers DHI uses", "1 min"},
 	"cli":          {"Coding agent", "the CLI that does the work", "1 min"},
 	"team":         {"Pick a team", "agents that take your tasks", "30s"},
 	"integrations": {"Connect services", "GitHub, Linear and more", "2 min"},
@@ -43,6 +44,16 @@ func Checklist(env *Env, version string, st setup.State) []kit.ChecklistItem {
 			state = kit.ItemSkipped
 		case st.Finished && !catchUpIDs[id]:
 			state = kit.ItemSkipped
+		}
+		if id == "tools" && env.ToolStatus != nil {
+			// Always listed (Settings → SETUP is where language servers get
+			// installed): done while every core tool is on your system.
+			state = kit.ItemDone
+			if s.Applies() {
+				state = kit.ItemPending
+			}
+			out = append(out, kit.ChecklistItem{ID: id, Title: c.title, Why: c.why, State: state})
+			continue
 		}
 		if state == kit.ItemPending && !s.Applies() {
 			continue

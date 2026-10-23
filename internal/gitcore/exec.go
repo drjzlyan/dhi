@@ -1,30 +1,25 @@
-// GitRunner executes DHI's hermetic git CLI (ADR-0009): the binary is
-// always the toolchain shim, the environment always comes from
-// Manager.GitEnv, and there is no host-git fallback — a missing shim is
-// an error callers surface visibly. The CLI covers what go-git cannot:
-// the linked-worktree lifecycle today; further local plumbing later.
-// Network transports are not built into the hermetic artifact, so
-// clone/fetch/push stay in-process (ADR-0008).
+// GitRunner executes the user's own git (F-112, ADR-0044): the git on
+// their PATH, with their environment, so their config, includeIf, hooks,
+// credential helpers and ssh-agent apply exactly as in their terminal.
+// DHI adds only GIT_TERMINAL_PROMPT=0, so a background call with a
+// missing credential fails visibly instead of waiting for input.
 package gitcore
 
 import (
 	"bytes"
 	"context"
 	"fmt"
-	"os"
 	"os/exec"
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/drjzlyan/dhi/internal/toolchain"
 )
 
 // defaultRunTimeout bounds every git invocation so a wedged process can
 // never hang a turn or the UI forever.
 const defaultRunTimeout = 2 * time.Minute
 
-// Runner drives the hermetic git CLI.
+// Runner drives the git CLI.
 type Runner struct {
 	bin     string
 	env     []string
@@ -32,24 +27,41 @@ type Runner struct {
 }
 
 // NewRunner binds a Runner to a git binary path plus its environment.
-// Production callers pass toolchain.Manager.GitBin() and .GitEnv(nil);
-// tests pass stubs.
+// Production callers use ResolveRunner; tests pass stubs.
 func NewRunner(bin string, env []string) *Runner {
 	return &Runner{bin: bin, env: env, timeout: defaultRunTimeout}
 }
 
-// ResolveRunner builds the production runner from the toolchain prefix,
-// materializing the managed git config first. It fails when the shim
-// has not been installed yet (degrade-visibly, ADR-0005/0009).
-func ResolveRunner(m *toolchain.Manager) (*Runner, error) {
-	bin := m.GitBin()
-	if _, err := os.Stat(bin); err != nil {
-		return nil, fmt.Errorf("gitcore: hermetic git not installed at %s (run bootstrap)", bin)
+// ResolveRunner builds the production runner: git as look finds it (the
+// user's PATH), env as the user's shell has it. It fails, by name, when
+// git is not installed.
+func ResolveRunner(look func(string) (string, error), env []string) (*Runner, error) {
+	bin, err := look("git")
+	if err != nil {
+		return nil, fmt.Errorf("gitcore: git is not installed (%v)", err)
 	}
-	if err := m.EnsureGitConfig(); err != nil {
-		return nil, err
+	return NewRunner(bin, BackgroundEnv(env)), nil
+}
+
+// BackgroundEnv is env for git calls nobody watches: never prompt.
+func BackgroundEnv(env []string) []string {
+	out := make([]string, 0, len(env)+1)
+	for _, kv := range env {
+		if !strings.HasPrefix(kv, "GIT_TERMINAL_PROMPT=") {
+			out = append(out, kv)
+		}
 	}
-	return NewRunner(bin, m.GitEnv(nil)), nil
+	return append(out, "GIT_TERMINAL_PROMPT=0")
+}
+
+// networkTimeout bounds a clone, fetch or push (large repos, slow links).
+const networkTimeout = 15 * time.Minute
+
+// WithTimeout returns a copy of r with another per-call timeout.
+func (r *Runner) WithTimeout(d time.Duration) *Runner {
+	c := *r
+	c.timeout = d
+	return &c
 }
 
 // Run executes one git invocation inside dir ("" = inherit), returning
@@ -61,6 +73,7 @@ func (r *Runner) Run(ctx context.Context, dir string, args ...string) (string, s
 	cmd := exec.CommandContext(ctx, r.bin, args...)
 	cmd.Dir = dir
 	cmd.Env = r.env
+	detach(cmd)
 	// A killed shell leaves grandchildren holding our pipes; WaitDelay
 	// forces Wait to return promptly once the context is done.
 	cmd.WaitDelay = 500 * time.Millisecond

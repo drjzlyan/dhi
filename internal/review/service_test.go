@@ -37,9 +37,6 @@ type fakeGH struct {
 }
 
 func (f *fakeGH) Available() bool { return true }
-func (f *fakeGH) AuthToken(context.Context) (string, error) {
-	return "test-token", nil
-}
 func (f *fakeGH) PR(_ context.Context, _, _ string) (PRMeta, error) {
 	f.prCalls++
 	return f.meta, nil
@@ -338,7 +335,7 @@ func bareFixture(t *testing.T) (*workspace.Workspace, *Store, *fakeGH, string, s
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-	if err := sr.Push(ctx, "", "refs/heads/master:refs/heads/master", nil); err != nil {
+	if err := sr.Push(ctx, "", "refs/heads/master:refs/heads/master"); err != nil {
 		t.Fatal(err)
 	}
 

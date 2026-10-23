@@ -32,9 +32,11 @@ already work in:
   member repo at once; changes that span services stay linked.
 - **Your keyboard, your rules.** Vim-style editing, a command palette for
   everything, and every key shown where you need it. The mouse works too.
-- **Nothing to install around it.** DHI brings its own pinned Go, Node, git,
-  ripgrep and GitHub CLI under one folder. No sudo, and your system
-  toolchain is never touched.
+- **Your tools, your config.** DHI uses the git, language servers, ripgrep,
+  GitHub CLI and coding agents already on your machine, with your shell
+  environment, `~/.gitconfig`, SSH keys and logins, as your terminal does.
+  A missing tool is offered with your package manager's exact command, and
+  it runs only when you say yes.
 - **Fits any window.** Every screen adapts from a narrow split to an
   ultrawide monitor and is tested at each size.
 
@@ -83,9 +85,7 @@ Use one method, not both: a copy in `~/.local/bin` earlier on your `PATH`
 hides the Homebrew one (`rm ~/.local/bin/dhi` if you switch to Homebrew).
 
 **Platforms:** macOS (Apple silicon and Intel, macOS 12+) and Linux
-(x86_64 and arm64). These are the platforms DHI pins a complete toolchain
-for; others are refused at install time with the reason, rather than
-failing on first run.
+(x86_64 and arm64). Others are refused at install time with the reason.
 
 <details>
 <summary>Build from source</summary>
@@ -109,8 +109,7 @@ brew update && brew upgrade dhi
 dhi version   # check what you have
 ```
 
-Updating never touches your toolchain (`~/.local/share/dhi`), settings
-(`~/.config/dhi`) or workspaces. Restart any running `dhi` to pick up the new
+Updating never touches your settings (`~/.config/dhi`) or workspaces. Restart any running `dhi` to pick up the new
 version. To go back to an older release, re-run the script with
 `DHI_VERSION=<version>`.
 
@@ -120,9 +119,13 @@ version. To go back to an older release, re-run the script with
 cd your-project && dhi
 ```
 
-1. **Toolchain.** DHI lists what it will download (about 157 MB: Go, Node,
-   uv, ripgrep, git, gh) and where, then asks before installing. Everything
-   lands in `~/.local/share/dhi`; delete that folder to uninstall.
+1. **Your tools.** DHI reads your login shell's environment, so tools from
+   Homebrew, nvm, asdf or mise are found. Nothing is downloaded at launch.
+   When a feature needs a missing tool (a language server, ripgrep), a card
+   shows the command, for example `brew install gopls`. Press `y` and it
+   runs in a terminal tab you can watch. Earlier versions kept a toolchain
+   in `~/.local/share/dhi/toolchain`; DHI offers to delete it, and does so
+   only on yes.
 2. **Setup.** A short wizard covers:
    - the workspace;
    - your git identity;
@@ -138,8 +141,35 @@ cd your-project && dhi
 
 Agents run on the coding CLI you already use: **Claude Code**, **Codex**,
 **Cursor Agent**, **GitHub Copilot CLI**, **opencode** or **Antigravity**.
-DHI detects it, installs most of them for you after asking, and keeps every
-agent inside the workspace's tools, scopes and approvals.
+DHI detects it, offers your package manager's command for one you don't
+have, and keeps every agent inside the workspace's tools, scopes and approvals.
+
+## What DHI changes on your machine
+
+DHI reads your environment and configuration like your terminal does and
+changes nothing outside its own folders and your workspace without a yes:
+
+- **Read, never written:** your shell environment, `~/.gitconfig`, ssh keys
+  (through your ssh-agent and ssh config), git credential helpers and your
+  `gh` login. Clone, fetch and push run your own `git`.
+- **Written by DHI:** `~/.config/dhi` (settings, credentials you add, grants)
+  and the workspace's `.dhi/` folder.
+- **Only after you say yes:**
+  - installing a tool (the exact `brew`/`apt`/`npm` command runs in a terminal you watch);
+  - your git identity (`~/.gitconfig`, or only this workspace's repos);
+  - deleting DHI's old toolchain folder from earlier versions;
+  - an agent pushing a branch (DHI pushes for it with your git);
+  - the one line Cursor Agent needs in a repo's `.git/info/exclude`, and, on Linux, the loose copy
+    of a packed default branch that lets the sandbox keep agents off it.
+- **Agents** run inside the OS sandbox (Seatbelt on macOS, bubblewrap on
+  Linux):
+  - They write the workspace, their own CLI state and the standard package
+    caches (`~/.npm`, `~/go/pkg/mod`, `~/.cache`, …).
+  - Any other write, program folder or network access raises a card.
+  - They never read `~/.ssh`, `~/.aws`, `~/.config/gh` or similar credential folders.
+- **On Linux, agents need bubblewrap.** Without it the IDE works; an agent
+  turn waits, the editor shows the install card, and the turn continues once
+  it is installed.
 
 ## Skills and integrations
 

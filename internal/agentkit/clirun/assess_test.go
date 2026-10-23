@@ -1,8 +1,6 @@
 package clirun
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -43,49 +41,9 @@ func TestEveryRegisteredCLIHasAnInstallPlan(t *testing.T) {
 		if p.Auth == "" && name != "antigravity" {
 			t.Errorf("%s: no sign-in hint", name)
 		}
-		switch p.Method {
-		case MethodNPM:
-			if p.Package == "" || p.Command != "" {
-				t.Errorf("%s: npm plan needs a package and no shell command: %+v", name, p)
-			}
-		case MethodManual:
-			if p.Package != "" {
-				t.Errorf("%s: manual plan must not name a package DHI would install: %+v", name, p)
-			}
-			if p.Command == "" && p.Note == "" {
-				t.Errorf("%s: manual plan with no command must say why", name)
-			}
-		default:
-			t.Errorf("%s: unknown method %q", name, p.Method)
+		if p.Docs == "" && p.Note == "" {
+			t.Errorf("%s: no docs and no note saying why", name)
 		}
-	}
-}
-
-func TestManagedLookPathWinsThenManagedDir(t *testing.T) {
-	root := t.TempDir()
-	managed := filepath.Join(ManagedBinDir(root, "codex"), "codex")
-	os.MkdirAll(filepath.Dir(managed), 0o755)
-	os.WriteFile(managed, []byte("#!/bin/sh\n"), 0o755)
-
-	notFound := func(string) (string, error) { return "", os.ErrNotExist }
-	onPath := func(b string) (string, error) { return "/usr/bin/" + b, nil }
-
-	if p, err := ManagedLook(root, notFound)("codex"); err != nil || p != managed {
-		t.Fatalf("managed = %q, %v", p, err)
-	}
-	if p, _ := ManagedLook(root, onPath)("codex"); p != "/usr/bin/codex" {
-		t.Fatalf("the user's own install must win, got %q", p)
-	}
-	if _, err := ManagedLook(root, notFound)("claude"); err == nil {
-		t.Fatal("a CLI that is nowhere must stay not found")
-	}
-	// A non-executable file is not a CLI.
-	os.WriteFile(filepath.Join(ManagedBinDir(root, "codex"), "claude"), []byte("x"), 0o644)
-	if _, err := ManagedLook(root, notFound)("claude"); err == nil {
-		t.Fatal("a non-executable file was accepted")
-	}
-	if _, err := ManagedLook("", notFound)("codex"); err == nil {
-		t.Fatal("no root, no managed lookup")
 	}
 }
 

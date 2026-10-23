@@ -1,5 +1,59 @@
 # STATE — current position
 
+### Session 62 (M36: the user's system behind an approval boundary, branch `m36`)
+
+- User asked: use the user's configuration without modifying it, drop the hermetic toolchain for
+  what top IDEs do (package managers), and make isolation an approval boundary agents cross only
+  with permission — the IDE never blocked. Decisions: package-manager installs after approving the
+  exact command; git identity written globally and named, or kept to the workspace's repos;
+  credentials never reach agents (DHI pushes on approval); package caches writable, everything else
+  asks. ADR-0044 supersedes ADR-0005/0009/0036 and the install parts of 0011/0027/0029. Plan
+  `~/.claude/plans/all-the-keys-should-playful-hanrahan.md`; F-109–F-114. Commits on `m36`: P0
+  b43ce1c, P1 a9c743b, P2 086fc5d, P3 b4a7ea3, P4 0b717d9, P5 8921b16, P6 148d3b3, review fixes (this). Not pushed.
+- Environment (F-109): `internal/hostenv` runs `$SHELL -ilc` once (3 s, own session, group kill),
+  `hostenv.Apply()` at the top of main; palette "Reload shell environment".
+- Tools (F-110): `internal/hosttools` = tool table, per-manager recipes (brew/apt/dnf/pacman/zypper,
+  npm/go/rustup/uv; npm only with a writable prefix, checked with access(2)), `Find` also in
+  GOBIN/GOPATH/bin, ~/.cargo/bin, ~/.local/bin; `Verify` for macOS's java stub. Editor card
+  (`:lsp install`, missing rg on search, missing dlv, `:install <tool>`) runs the command in a
+  drawer tab; the session now reaps and keeps the exit code. Wizard installs via tea.ExecProcess.
+- No toolchain (F-111): package, bootstrap screen, relaunch gate, pin scripts/workflows deleted.
+  Boot blocks only on broken workspace/settings. Repair `legacy-toolchain` deletes
+  ~/.local/share/dhi/toolchain on yes (817 MB here; not applied). Verify's project toolchains are
+  named with the install command, never downloaded. MCP servers' HOME is `.dhi/mcp-home`.
+- Git (F-112): `gitcore.ResolveRunner(look, env)` = user's git + GIT_TERMINAL_PROMPT=0, detached
+  from the tty (ssh can't prompt over the TUI); `gitcore.SetNetwork` routes clone/fetch/push/CloneAt
+  through it (live SSH clone with the user's keys worked). gh token push auth removed. Identity:
+  enter = ~/.gitconfig, w = this workspace's repos (setup state `local_identity` + repair for new
+  members). Kept deliberately: loose default-ref copies and the cursor `info/exclude` line.
+- Boundary (F-113): run/verify always wrapped; caches rw and PATH prefixes ro+exec
+  (`sandbox.PackageCaches/ExecRoots`, live: sandboxed `go build` with Homebrew go works); more
+  credential files fenced; denial cards for ~ files, programs, EROFS; network grants work;
+  `git_push` tool (card "push x to origin (url)") and in the coding roles; missing bwrap → warning,
+  spawns name `:install bwrap`, picks bwrap up without restart; `cmd/dhi/writes_audit_test.go`.
+- Doctor/setup/docs (F-114): host/environment, installers, git/rg/gh, other tools, old toolchain,
+  git/access (identity origin, helpers, ssh-agent key count); setup "tools" step (catch-up while a
+  core tool is missing); README "What DHI changes on your machine"; AGENTS.md rule 5.
+- After review: ~/.cargo and ~/.gradle writable (credentials fenced for writes too), ~/.rustup and
+  Xcode/CLT exec roots — sandboxed cargo test and gradle build pass live; loose default-ref copies
+  only under bubblewrap.
+- Gotchas: seatbelt matches canonical paths (a workspace under /tmp needs /private/tmp); a
+  workspace in a symlinked dir would hit the same (pre-existing). Write/exec grants do not reach
+  `run` yet (they reach the CLI's sandbox).
+- Follow-up (same session): grants reach `run`; agent spawns and `run` read the env per call (PATH
+  exec roots too); the tools step is always on the checklist (Settings → SETUP); recipes drop sudo as
+  root; bwrap's root is read-only (a ~/.bashrc write had "succeeded" into tmpfs). Linux checked live
+  in Docker (Debian arm64): no-bwrap boot, doctor, `:install bwrap` → apt in a tab, ~/.bashrc card,
+  caches, ~/.ssh hidden. SSH push auth checked with `git push --dry-run` through DHI's runner
+  (nothing published).
+- Then (user: "fix all the issues"): caches the user does not have go to `.dhi/cache`; a turn
+  without bwrap waits (thread notice + editor install card via EditorRequest "install") and
+  continues once installed; cursor's exclude line asks once (scope `git-exclude:<file>`); the
+  packed-only default-ref copy is the asking `default-ref/<member>` repair (bubblewrap only).
+- A CLI whose state folder does not exist yet (never run/signed in) is named before spawning under
+  bubblewrap ("run `claude` once in a terminal to sign in"); DHI does not create it.
+- Open: the new waiting/cache paths are unit-tested, not re-run live in Docker.
+
 ### Session 61 (M35: every keyboard, paste & copy, standard skills + MCP, sign-in, re-runnable setup, branch `m35`)
 
 - User asked: every key working on Mac and PC keyboards, copy/paste and basic editing, whether secret

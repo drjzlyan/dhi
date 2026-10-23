@@ -5,9 +5,9 @@
 // tested version, its headless invocation, its stream parser, its cost
 // extraction, and the EXACT environment pass-through. The registry is
 // static and strict: an unknown runtime name is a refusal and a missing
-// binary is a named doctor row — never a fallback. DHI installs a CLI
-// only after the user confirms the exact command, through the toolchain
-// seam (ADR-0027, install.go); authentication stays the CLI's own.
+// binary is a named doctor row — never a fallback. A CLI is installed
+// with the user's package manager after they confirm the exact command
+// (ADR-0044, install.go); authentication stays the CLI's own.
 package clirun
 
 import (

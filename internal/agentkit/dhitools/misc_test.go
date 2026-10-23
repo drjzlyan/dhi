@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"github.com/drjzlyan/dhi/internal/agentkit/scopes"
+	"github.com/drjzlyan/dhi/internal/sandbox"
 	"strings"
 	"testing"
+	"time"
 )
 
 // fakeRunner records a command run for the `run` tool.
@@ -179,5 +181,26 @@ func TestRunNetworkPostureFromScope(t *testing.T) {
 	}
 	if !fr2.network {
 		t.Fatal("network=auto must allow the network")
+	}
+	// network=ask: off until the human grants it (permission_request), then on.
+	ask := map[scopes.Scope]scopes.Effect{scopes.Exec: scopes.Auto, scopes.Network: scopes.Ask}
+	d := Deps{Agent: m, WS: f.ws, Workdir: "/tmp/wd", Approvals: f.approvals, Scopes: ask}
+	if d.networkAllowed() {
+		t.Fatal("ask without a grant must deny")
+	}
+	go func() {
+		for i := 0; i < 200; i++ {
+			if l := f.approvals.List(); len(l) > 0 {
+				f.approvals.ResolveAlways(l[0].ID)
+				return
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+	}()
+	if err := f.approvals.AskScope(context.Background(), m.ID, string(scopes.Network), sandbox.OpExec, "network", "test"); err != nil {
+		t.Fatal(err)
+	}
+	if !d.networkAllowed() {
+		t.Fatal("a network grant must take effect")
 	}
 }

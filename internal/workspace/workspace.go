@@ -43,6 +43,7 @@ const (
 	DirSkills     = ".dhi/skills"   // behaviour library: skill docs (F-027)
 	DirPersonas   = ".dhi/personas" // behaviour library: persona cards (F-045)
 	DirTmp        = ".dhi/tmp"      // private temp dirs for sandboxed children (F-086)
+	DirCache      = ".dhi/cache"    // tool caches when the standard one does not exist (F-113)
 )
 
 // Member is one repo registered in the workspace.

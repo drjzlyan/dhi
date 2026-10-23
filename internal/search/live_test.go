@@ -3,35 +3,25 @@ package search
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/drjzlyan/dhi/internal/toolchain"
 )
 
-// TestLiveRipgrepThroughToolchainShim proves the full production path:
-// pinned artifact → verified install → shim symlink → spawned rg →
-// parsed hits. Gated like the other network smokes:
-//
-//	DHI_SMOKE_NET=1 go test ./internal/search/ -run TestLiveRipgrep
-func TestLiveRipgrepThroughToolchainShim(t *testing.T) {
-	if os.Getenv("DHI_SMOKE_NET") != "1" {
-		t.Skip("set DHI_SMOKE_NET=1 to verify the live rg pipeline")
+// TestLiveRipgrepOnPath proves the production path with the user's rg:
+// spawned rg → parsed hits. Skipped when rg is not installed.
+func TestLiveRipgrepOnPath(t *testing.T) {
+	bin, err := exec.LookPath("rg")
+	if err != nil {
+		t.Skip("rg is not installed")
 	}
-	root := t.TempDir()
-	m := toolchain.New(root)
-	if err := m.InstallEmbedded(context.Background(), []string{"rg"}); err != nil {
-		t.Fatalf("install rg: %v", err)
-	}
-
 	fixture := t.TempDir()
 	file := filepath.Join(fixture, "sample.go")
 	if err := os.WriteFile(file, []byte("package main\n\nfunc main() {\n\tneedleInHaystack()\n}\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-
-	hits, err := Ripgrep{Bin: filepath.Join(m.ShimDir(), "rg")}.Search(
+	hits, err := Host{Look: func(string) (string, bool) { return bin, true }}.Search(
 		context.Background(), "needleinhaystack", []string{fixture})
 	if err != nil {
 		t.Fatal(err)
@@ -44,5 +34,10 @@ func TestLiveRipgrepThroughToolchainShim(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("live search missed the fixture hit")
+	}
+	if _, err := (Host{}).Search(context.Background(), "x", []string{fixture}); err == nil {
+		t.Fatal("no rg: the missing-tool error")
+	} else if _, ok := err.(*MissingToolError); !ok {
+		t.Fatalf("err = %T %v", err, err)
 	}
 }

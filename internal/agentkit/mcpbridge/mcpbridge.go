@@ -74,9 +74,6 @@ type Deps struct {
 	// Auth, when set, authorizes an http server that needs a login
 	// (OAuth, F-106): it returns the client to dial with.
 	Auth func(ctx context.Context, srv mcpserver.Server, base *http.Client) (*http.Client, error)
-	// PathPrefix directories go first on a stdio server's PATH — DHI's
-	// tool shims, so `uvx`/`npx` are the pinned hermetic ones (ADR-0028).
-	PathPrefix []string
 	// HomeDir, when set, is the stdio server's HOME and (under it) TMPDIR.
 	// It must be inside the sandbox's writable roots: uvx and npx write
 	// caches, logs and temp files, and under the OS sandbox they cannot
@@ -278,21 +275,13 @@ func (b *Bridge) stdioArgv(srv mcpserver.Server) ([]string, error) {
 	return b.deps.Sandbox.Wrap(argv)
 }
 
-// stdioEnv builds the child env from PATH + the card's declared names,
+// stdioEnv builds the child env from the user's PATH (so `uvx`/`npx` are
+// theirs, F-110) + the card's declared names,
 // resolved through the keychain/env lookup. A declared-but-missing
 // credential is a named refusal (never an empty value).
 func (b *Bridge) stdioEnv(srv mcpserver.Server) ([]string, error) {
 	env := []string{}
-	path := os.Getenv("PATH")
-	if len(b.deps.PathPrefix) > 0 {
-		pre := strings.Join(b.deps.PathPrefix, string(os.PathListSeparator))
-		if path == "" {
-			path = pre
-		} else {
-			path = pre + string(os.PathListSeparator) + path
-		}
-	}
-	if path != "" {
+	if path := os.Getenv("PATH"); path != "" {
 		env = append(env, "PATH="+path)
 	}
 	lookup := b.deps.Lookup

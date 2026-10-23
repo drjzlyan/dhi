@@ -34,17 +34,10 @@ func TestEveryBuiltinExtensionResolvesToItsLanguageAndLanguageID(t *testing.T) {
 	}
 }
 
-func TestBuiltinInstallPlansArePinnedAndNeverLatest(t *testing.T) {
+func TestBuiltinServersNameTheirHostTool(t *testing.T) {
 	for _, l := range Builtin() {
-		if l.Install.Method == MethodNPM {
-			if len(l.Install.Packages) == 0 {
-				t.Errorf("%s: npm method without packages", l.ID)
-			}
-			for _, p := range l.Install.Packages {
-				if i := strings.LastIndex(p, "@"); i <= 0 || i == len(p)-1 {
-					t.Errorf("%s: package %q has no pinned version", l.ID, p)
-				}
-			}
+		if l.Install.Tool == "" {
+			t.Errorf("%s: no host tool installs its server", l.ID)
 		}
 		if l.Server == "" {
 			t.Errorf("%s: no server", l.ID)
@@ -60,7 +53,7 @@ func TestOverridesReplaceDisableAndAddLanguages(t *testing.T) {
 		"zig":    {Command: "zls"}, // no exts: rejected
 	})
 	py, _, _ := r.For("a.py")
-	if py.Server != "/opt/basedpyright-langserver" || len(py.Args) != 2 || py.Install.Method != MethodNone || len(py.Format) != 3 {
+	if py.Server != "/opt/basedpyright-langserver" || len(py.Args) != 2 || py.Install.Tool != "" || len(py.Format) != 3 {
 		t.Fatalf("python = %+v", py)
 	}
 	if _, _, ok := r.For("a.yaml"); ok {

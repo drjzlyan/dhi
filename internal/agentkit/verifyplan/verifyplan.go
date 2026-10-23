@@ -40,7 +40,7 @@ type Target struct {
 	// Lockfiles fingerprint Prepare: it reruns only when they change.
 	Lockfiles []string
 	Test      []string
-	// Tools are the managed toolchains the commands need ("go", "node",
+	// Tools are the toolchains the commands need on the user's system ("go", "node",
 	// "uv", "rust", "jdk", "maven", "gradle", "dotnet").
 	Tools []string
 }

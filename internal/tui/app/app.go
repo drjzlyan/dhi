@@ -64,8 +64,9 @@ type App struct {
 
 	gate       Gate
 	gateRan    bool
-	queuedGate Gate        // started after the current input (QueueGate)
-	setupGate  func() Gate // palette "Run setup wizard" (F-043)
+	queuedGate Gate               // started after the current input (QueueGate)
+	setupGate  func() Gate        // palette "Run setup wizard" (F-043)
+	commands   []surfaces.Command // app-wide palette commands cmd adds
 	// setupItems/setupRun back the setup pill and palette entries.
 	setupItems      func() []kit.ChecklistItem
 	setupRun        func(id string)
@@ -163,7 +164,7 @@ func (a *App) activityCmd() tea.Cmd {
 	return tea.Tick(activityInterval, func(time.Time) tea.Msg { return activityTickMsg{} })
 }
 
-// SetGate installs a first-run gate (e.g. toolchain bootstrap). Call
+// SetGate installs a launch gate (e.g. a blocked boot). Call
 // before Init.
 func (a *App) SetGate(g Gate) { a.gate = g }
 
@@ -194,7 +195,7 @@ func (a *App) Init() tea.Cmd {
 // Update loop (ADR-0023): the runtime's editor seam sends it and blocks
 // on Reply. Paths are absolute; the seam resolves VPaths before sending.
 type EditorRequest struct {
-	Op    string // "open" | "reveal" | "apply" | "context" | "propose" | "lsp"
+	Op    string // "open" | "reveal" | "apply" | "context" | "propose" | "lsp" | "install"
 	Paths []string
 	// Path/Old/New/All carry an "apply" edit.
 	Path string
@@ -243,6 +244,15 @@ func (a *App) handleEditorRequest(r EditorRequest) {
 		}
 	case "apply":
 		errStr = a.applyInEditor(r.Path, r.Old, r.New, r.All)
+	case "install":
+		// The install card waits in the editor; the toast says where, so
+		// whatever the user is doing is not interrupted (F-113).
+		if !a.installInEditor(r.Arg) {
+			errStr = "the editor cannot install " + r.Arg
+		} else {
+			a.Toast(kit.Toast{Kind: kit.ToastWarning, Title: "Agents are waiting for " + r.Arg,
+				Detail: "the install card is open in the Editor (alt+1)"})
+		}
 	case "context", "propose", "debug":
 		text, err := a.pairInEditor(r)
 		if err != nil {
@@ -549,6 +559,10 @@ func (a *App) StartGate(g Gate) tea.Cmd {
 // wizard"; nil hides the entry.
 func (a *App) SetSetupGate(f func() Gate) { a.setupGate = f }
 
+// AddCommand adds an app-wide palette command (e.g. "Reload shell
+// environment", F-109).
+func (a *App) AddCommand(c surfaces.Command) { a.commands = append(a.commands, c) }
+
 // activeCapturesInput reports whether the focused surface is collecting
 // free text (surfaces.InputCapturer); such a surface owns plain keys.
 func (a *App) activeCapturesInput() bool {
@@ -719,6 +733,9 @@ func (a *App) openPalette() {
 	if a.setupGate != nil {
 		add("Setup", "Run setup wizard", "", func() tea.Cmd { return a.StartGate(a.setupGate()) })
 	}
+	for _, c := range a.commands {
+		add(c.Group, c.Title, c.Hint, c.Run)
+	}
 	add("", "Show keyboard help", "?", func() tea.Cmd { a.openHelp(); return nil })
 	add("", "Select text with the mouse", "", func() tea.Cmd { a.selecting = true; return nil })
 	a.coachCommands(add)
@@ -813,6 +830,19 @@ func (a *App) applyInEditor(abs, old, new string, all bool) string {
 		return ""
 	}
 	return "editor surface unavailable"
+}
+
+// installInEditor opens the editor's install card for tool.
+func (a *App) installInEditor(tool string) bool {
+	for _, s := range a.surfaces {
+		if s.Meta().ID != "editor" {
+			continue
+		}
+		if in, ok := s.(interface{ AskInstall(string) bool }); ok {
+			return in.AskInstall(tool)
+		}
+	}
+	return false
 }
 
 // FocusEditorChat opens the editor's chat sidebar focused (the F-016

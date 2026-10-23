@@ -25,8 +25,7 @@ func (l lineWriter) write(b []byte) error {
 }
 
 // Stdio runs one MCP server as a child process speaking newline-framed
-// JSON-RPC on stdin/stdout. Env is the child's environment; callers pass
-// toolchain.Manager.Env(nil) so servers resolve hermetic shims (ADR-0005).
+// JSON-RPC on stdin/stdout. Env is the child's environment.
 type Stdio struct {
 	cmd    *exec.Cmd
 	conn   *conn

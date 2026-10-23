@@ -86,7 +86,7 @@ func (m *Model) View() string {
 		for _, r := range m.ask {
 			items = append(items, r.What)
 		}
-		list("Can fix, with your OK (these change files your team shares):", items, "•", plain)
+		list("Can fix, with your OK:", items, "•", plain)
 		lines = append(lines, theme.Hint().Render("enter fix them · esc not now"))
 	case m.after != nil:
 		list("Fixed:", m.after.Done, theme.GlyphCheck, good)

@@ -254,20 +254,15 @@ func TestHTTPServerGetsItsBearerCredential(t *testing.T) {
 	}
 }
 
-func TestStdioPathStartsWithTheToolShims(t *testing.T) {
+// Stdio servers get the user's own PATH (their uvx/npx), nothing else.
+func TestStdioPathIsTheUsers(t *testing.T) {
 	t.Setenv("PATH", "/usr/bin:/bin")
-	b := &Bridge{deps: Deps{PathPrefix: []string{"/dhi/bin", "/dhi/other"}}}
-	env, err := b.stdioEnv(mcpserver.Server{})
+	env, err := (&Bridge{}).stdioEnv(mcpserver.Server{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(env) != 1 || env[0] != "PATH=/dhi/bin:/dhi/other:/usr/bin:/bin" {
-		t.Fatalf("env = %v", env)
-	}
-	plain := &Bridge{}
-	env, _ = plain.stdioEnv(mcpserver.Server{})
 	if len(env) != 1 || env[0] != "PATH=/usr/bin:/bin" {
-		t.Fatalf("no prefix must leave PATH alone: %v", env)
+		t.Fatalf("env = %v", env)
 	}
 }
 

@@ -3,6 +3,7 @@ package wizard
 import (
 	"context"
 	"errors"
+	"github.com/drjzlyan/dhi/internal/tui/kit"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -199,7 +200,32 @@ func TestIdentityIsWrittenOnlyAfterConfirmation(t *testing.T) {
 	if len(f.setCalls) != 1 || f.setCalls[0] != (gitcore.Identity{Name: "Grace Hopper", Email: "grace@navy.mil"}) {
 		t.Fatalf("calls = %+v", f.setCalls)
 	}
-	if !strings.Contains(strings.Join(f.env.Applied, "|"), "git identity set") {
+	if !strings.Contains(strings.Join(f.env.Applied, "|"), "saved to your global git config (~/.gitconfig)") {
+		t.Fatalf("applied = %v", f.env.Applied)
+	}
+}
+
+// w keeps the identity to this workspace's repos; ~/.gitconfig is not written.
+func TestIdentityCanBeKeptToTheWorkspace(t *testing.T) {
+	f := newFixture(t, true)
+	f.env.Root = f.root
+	f.env.Identity = func(context.Context) (gitcore.Identity, error) { return gitcore.Identity{}, gitcore.ErrIdentityUnset }
+	var local []gitcore.Identity
+	f.env.SetIdentityLocal = func(_ context.Context, id gitcore.Identity) error { local = append(local, id); return nil }
+	m := f.wizard()
+	key(m, "enter")
+	typeText(m, "Grace Hopper")
+	key(m, "tab")
+	typeText(m, "grace@navy.mil")
+	key(m, "enter")
+	if v := plain(m); !strings.Contains(v, "git config user.name 'Grace Hopper'") || !strings.Contains(v, "This workspace only") {
+		t.Fatalf("workspace choice not shown:\n%s", v)
+	}
+	key(m, "w")
+	if len(local) != 1 || len(f.setCalls) != 0 {
+		t.Fatalf("local=%v global=%v", local, f.setCalls)
+	}
+	if !strings.Contains(strings.Join(f.env.Applied, "|"), "this workspace's repos only") {
 		t.Fatalf("applied = %v", f.env.Applied)
 	}
 }
@@ -630,7 +656,6 @@ type cliFixture struct {
 func newCLIFixture(t *testing.T) *cliFixture {
 	t.Helper()
 	f := &cliFixture{fixture: newFixture(t, true), installed: map[string]string{"claude": "2.1.285"}}
-	f.env.CLIPrefix = func(n string) string { return "/dhi/clis/" + n }
 	f.env.CLIStatus = func() []CLIRow {
 		var rows []CLIRow
 		for _, name := range []string{"claude", "codex", "cursor-agent"} {
@@ -643,15 +668,21 @@ func newCLIFixture(t *testing.T) *cliFixture {
 		}
 		return rows
 	}
-	f.env.InstallCLI = func(_ context.Context, name string) error {
-		f.installs = append(f.installs, name)
-		if f.installFn != nil {
-			if err := f.installFn(name); err != nil {
-				return err
+	f.env.CLIInstall = func(name string) (string, bool) {
+		pkg := map[string]string{"claude": "@anthropic-ai/claude-code", "codex": "@openai/codex"}[name]
+		return "npm install -g " + pkg, pkg != ""
+	}
+	f.env.RunInstall = func(name string, done func(error) tea.Msg) tea.Cmd {
+		return func() tea.Msg {
+			f.installs = append(f.installs, name)
+			if f.installFn != nil {
+				if err := f.installFn(name); err != nil {
+					return done(err)
+				}
 			}
+			f.installed[name] = "0.147.0"
+			return done(nil)
 		}
-		f.installed[name] = "0.147.0"
-		return nil
 	}
 	return f
 }
@@ -691,8 +722,8 @@ func TestCLIInstallShowsTheExactCommandAndCancelDoesNothing(t *testing.T) {
 	m := f.toCLI(t)
 	key(m, "j", "i")
 	v := plain(m)
-	if !strings.Contains(v, "npm install --prefix /dhi/clis/codex @openai/codex") ||
-		!strings.Contains(v, "no sudo, nothing global") {
+	if !strings.Contains(v, "npm install -g @openai/codex") ||
+		!strings.Contains(v, "with your package manager, in your terminal") {
 		t.Fatalf("exact command not shown:\n%s", v)
 	}
 	if len(f.installs) != 0 {
@@ -715,8 +746,21 @@ func TestCLIInstallRunsRefreshesAndFlagsRelaunch(t *testing.T) {
 	if !strings.Contains(v, "codex installed") || strings.Contains(v, "not installed · i installs it") {
 		t.Fatalf("list not refreshed after install:\n%s", v)
 	}
-	if !f.env.Changed || !strings.Contains(strings.Join(f.env.Applied, "|"), "installed codex (@openai/codex)") {
+	if !f.env.Changed || !strings.Contains(strings.Join(f.env.Applied, "|"), "installed codex (npm install -g @openai/codex)") {
 		t.Fatalf("changed=%v applied=%v", f.env.Changed, f.env.Applied)
+	}
+}
+
+// The command ran but the CLI is still not found: say so, mark nothing.
+func TestCLIInstallThatLeavesItMissingIsNamed(t *testing.T) {
+	f := newCLIFixture(t)
+	f.env.RunInstall = func(name string, done func(error) tea.Msg) tea.Cmd {
+		return func() tea.Msg { return done(nil) }
+	}
+	m := f.toCLI(t)
+	key(m, "j", "i", "enter")
+	if v := plain(m); !strings.Contains(v, "still not on your PATH") || f.env.Changed {
+		t.Fatalf("changed=%v:\n%s", f.env.Changed, v)
 	}
 }
 
@@ -797,7 +841,7 @@ func TestCLIStepHiddenWithoutStatusAndGuidedWithoutInstaller(t *testing.T) {
 		t.Fatal("step shown with no CLIStatus")
 	}
 	g := newCLIFixture(t)
-	g.env.InstallCLI = nil // no toolchain
+	g.env.RunInstall = nil // no package manager
 	m := g.toCLI(t)
 	key(m, "j", "i")
 	if !strings.Contains(plain(m), "Install codex yourself") {
@@ -1520,5 +1564,72 @@ func TestWorkspacePickerLaterCreatesNothing(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(f.root, ".dhi")); !os.IsNotExist(err) {
 		t.Fatal(".dhi written although the user chose later")
+	}
+}
+
+// ---- tools step (F-114) ----
+
+func TestToolsStepInstallsAMissingToolAfterAYes(t *testing.T) {
+	f := newFixture(t, true)
+	have := map[string]string{"git": "/opt/homebrew/bin/git", "gh": "/opt/homebrew/bin/gh"}
+	f.env.ToolStatus = func() []ToolRow {
+		var rows []ToolRow
+		for _, n := range []string{"git", "rg", "gh", "gopls"} {
+			r := ToolRow{Name: n, Purpose: "testing", Core: n != "gopls", Version: have[n]}
+			if r.Version == "" {
+				r.Install, r.CanRun = "brew install "+n, true
+			}
+			rows = append(rows, r)
+		}
+		return rows
+	}
+	var ran []string
+	f.env.RunInstall = func(name string, done func(error) tea.Msg) tea.Cmd {
+		return func() tea.Msg { ran = append(ran, name); have[name] = "/opt/homebrew/bin/" + name; return done(nil) }
+	}
+	s := &toolsStep{env: f.env}
+	if !s.Applies() {
+		t.Fatal("a missing core tool (rg) makes the step apply")
+	}
+	s.Enter()
+	s.HandleKey("j") // rg
+	s.HandleKey("i")
+	if v := strings.Join(s.View(100, 0), "\n"); !strings.Contains(ansi.Strip(v), "brew install rg") || len(ran) != 0 {
+		t.Fatalf("confirm view:\n%s", ansi.Strip(v))
+	}
+	s.HandleKey("y")
+	s.Update(s.TakeCmd()())
+	if len(ran) != 1 || ran[0] != "rg" || !strings.Contains(s.msg, "rg installed") || s.Applies() {
+		t.Fatalf("ran=%v msg=%q applies=%v", ran, s.msg, s.Applies())
+	}
+}
+
+// The tools step is always on the checklist: done with every core tool
+// present, pending when one is missing.
+func TestToolsStepIsAlwaysListed(t *testing.T) {
+	f := newFixture(t, true)
+	missing := false
+	f.env.ToolStatus = func() []ToolRow {
+		r := ToolRow{Name: "rg", Core: true, Version: "/bin/rg"}
+		if missing {
+			r.Version = ""
+		}
+		return []ToolRow{r}
+	}
+	find := func() kit.ChecklistItem {
+		for _, it := range Checklist(f.env, "test", setup.State{}) {
+			if it.ID == "tools" {
+				return it
+			}
+		}
+		t.Fatal("tools not listed")
+		return kit.ChecklistItem{}
+	}
+	if find().State != kit.ItemDone {
+		t.Fatal("all core tools present: done")
+	}
+	missing = true
+	if find().State != kit.ItemPending {
+		t.Fatal("a missing core tool: pending")
 	}
 }

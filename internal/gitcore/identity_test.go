@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -103,5 +104,30 @@ esac
 	}
 	if b := BestSuggestion(nil); b.Name != "" || b.Source != "" {
 		t.Fatalf("empty %+v", b)
+	}
+}
+
+func TestSetLocalIdentityWritesOnlyTheRepo(t *testing.T) {
+	bin, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("git is not installed")
+	}
+	base := t.TempDir()
+	global := filepath.Join(base, "gitconfig")
+	os.WriteFile(global, nil, 0o644)
+	r := NewRunner(bin, BackgroundEnv(append(os.Environ(), "GIT_CONFIG_GLOBAL="+global, "GIT_CONFIG_NOSYSTEM=1")))
+	ctx := context.Background()
+	repo := filepath.Join(base, "repo")
+	if _, _, err := r.Run(ctx, "", "init", "-q", repo); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetLocalIdentity(ctx, r, repo, Identity{Name: "Ada", Email: "ada@x.io"}); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(repo, ".git", "config")); !strings.Contains(string(b), "ada@x.io") {
+		t.Fatalf("repo config:\n%s", b)
+	}
+	if b, _ := os.ReadFile(global); len(b) != 0 {
+		t.Fatalf("global config written:\n%s", b)
 	}
 }

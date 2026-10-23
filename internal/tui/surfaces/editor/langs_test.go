@@ -1,7 +1,8 @@
 package editor
 
 import (
-	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -38,17 +39,34 @@ func TestFilesReachTheirOwnServerWithTheirOwnLanguageID(t *testing.T) {
 	}
 }
 
+// fakeTools is a HostTools whose tool counts as installed once its
+// marker file exists (the install command creates it).
+type fakeTools struct {
+	marker    string
+	refreshed int
+	mu        sync.Mutex
+}
+
+func (f *fakeTools) Find(tool string) (string, bool) {
+	if _, err := os.Stat(f.marker); err == nil {
+		return f.marker, true
+	}
+	return "", false
+}
+
+func (f *fakeTools) Plan(tool string) ToolPlan {
+	return ToolPlan{Tool: tool, Purpose: "testing", Argv: []string{"/bin/sh", "-c", "touch " + f.marker}}
+}
+
+func (f *fakeTools) Refresh() {
+	f.mu.Lock()
+	f.refreshed++
+	f.mu.Unlock()
+}
+
 func TestMissingServerIsReportedOncePerLanguageAndNothingInstalls(t *testing.T) {
-	var installs int
-	var mu sync.Mutex
-	mgr := lsp.NewManager(t.TempDir(), nil)
-	mgr.SetManagedRoot(t.TempDir())
-	m := openGoWithManager(t, mgr, WithLSPInstaller(func(context.Context, string, []string) error {
-		mu.Lock()
-		installs++
-		mu.Unlock()
-		return nil
-	}))
+	tools := &fakeTools{marker: filepath.Join(t.TempDir(), "installed")}
+	m := openGoWithManager(t, lsp.NewManager(nil, nil), WithHostTools(tools))
 	e := m.active()
 
 	m.lspOpenDoc("/p/a.ts", "x")
@@ -64,79 +82,75 @@ func TestMissingServerIsReportedOncePerLanguageAndNothingInstalls(t *testing.T) 
 	if !strings.Contains(e.Message(), "Python") {
 		t.Fatalf("python note = %q", e.Message())
 	}
-	mu.Lock()
-	defer mu.Unlock()
-	if installs != 0 {
-		t.Fatalf("opening files installed %d time(s)", installs)
+	if m.toolCard != nil || len(m.terms) != 0 {
+		t.Fatal("opening files raised a card or ran an install")
 	}
 }
 
-func TestLSPInstallShowsThePlanAndInstallsOnlyOnYes(t *testing.T) {
-	type call struct {
-		prefix string
-		pkgs   []string
-	}
-	calls := make(chan call, 4)
-	mgr := lsp.NewManager(t.TempDir(), nil)
-	mgr.SetManagedRoot(t.TempDir())
-	m := openGoWithManager(t, mgr, WithLSPInstaller(func(_ context.Context, prefix string, pkgs []string) error {
-		calls <- call{prefix, pkgs}
-		return nil
-	}))
+// :lsp install raises the card with the exact command; it runs only on
+// y, in a terminal tab, and DHI looks for the tool again when it exits.
+func TestLSPInstallRunsTheApprovedCommandInATerminalTab(t *testing.T) {
+	tools := &fakeTools{marker: filepath.Join(t.TempDir(), "installed")}
+	m := openGoWithManager(t, lsp.NewManager(nil, nil), WithHostTools(tools), WithTermEnv(os.Environ()))
 	e := m.active()
 
 	m.ExecEx(e, "lsp install typescript")
-	plan := e.Message()
-	for _, want := range []string{"typescript-language-server@6.0.1", "typescript@5.9.3", mgr.ManagedPrefix("typescript"), "yes"} {
-		if !strings.Contains(plan, want) {
-			t.Errorf("plan lacks %q: %s", want, plan)
+	if m.toolCard == nil || m.toolCard.Tool != "typescript-language-server" {
+		t.Fatalf("card = %+v", m.toolCard)
+	}
+	view := plainView(m)
+	for _, want := range []string{"install typescript-language-server", "touch ", "y run it in a terminal tab"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("card lacks %q", want)
 		}
 	}
-	select {
-	case <-calls:
-		t.Fatal("installed without confirmation")
-	case <-time.After(100 * time.Millisecond):
+	m.HandleKey("x") // the card traps keys
+	if len(m.terms) != 0 {
+		t.Fatal("ran without a yes")
 	}
+	m.HandleKey("y")
+	if m.toolCard != nil || len(m.terms) != 1 || m.terms[0].tool != "typescript-language-server" || !m.drawerOpen {
+		t.Fatalf("install tab not opened: card=%v terms=%d", m.toolCard, len(m.terms))
+	}
+	waitFor(t, m, func() bool { return strings.Contains(e.Message(), "is installed") }, "outcome after the tab exits")
 
-	m.ExecEx(e, "lsp install typescript yes")
-	select {
-	case c := <-calls:
-		if c.prefix != mgr.ManagedPrefix("typescript") || len(c.pkgs) != 2 {
-			t.Fatalf("install call = %+v", c)
-		}
-	case <-time.After(15 * time.Second):
-		t.Fatal("confirmed install never ran")
+	m.ExecEx(e, "lsp install typescript")
+	if m.toolCard == nil {
+		t.Fatal("card closed")
 	}
-	waitFor(t, m, func() bool { return !m.lspInstalling["typescript"] }, "install flag cleared")
-	if !strings.Contains(e.Message(), "installed") && !strings.Contains(e.Message(), "language server") {
-		t.Errorf("outcome not shown: %q", e.Message())
+	m.HandleKey("n")
+	if m.toolCard != nil {
+		t.Fatal("n must close the card")
 	}
-
 	for _, c := range []struct{ cmd, want string }{
 		{"lsp install", "name a language"},
 		{"lsp install cobol", "unknown language"},
-		{"lsp install go", "toolchain"},
-		{"lsp install python x", "pyright@1.1.414"},
 	} {
-		cmd, want := c.cmd, c.want
-		m.ExecEx(e, cmd)
-		if !strings.Contains(e.Message(), want) {
-			t.Errorf("%q → %q, want %q", cmd, e.Message(), want)
+		m.ExecEx(e, c.cmd)
+		if !strings.Contains(e.Message(), c.want) {
+			t.Errorf("%q → %q, want %q", c.cmd, e.Message(), c.want)
 		}
 	}
 }
 
-func TestInstallFailureIsNamedAndClearsTheFlag(t *testing.T) {
-	mgr := lsp.NewManager(t.TempDir(), nil)
-	mgr.SetManagedRoot(t.TempDir())
-	m := openGoWithManager(t, mgr, WithLSPInstaller(func(context.Context, string, []string) error {
-		return context.DeadlineExceeded
-	}))
-	m.ExecEx(m.active(), "lsp install yaml yes")
-	waitFor(t, m, func() bool { return strings.Contains(m.active().Message(), "failed") }, "failure note")
-	if m.lspInstalling["yaml"] {
-		t.Fatal("flag stuck after a failed install")
+// A failed install says so and points at its tab.
+func TestFailedInstallIsNamed(t *testing.T) {
+	tools := &failTools{fakeTools{marker: filepath.Join(t.TempDir(), "never")}}
+	m := openGoWithManager(t, lsp.NewManager(nil, nil), WithHostTools(tools), WithTermEnv(os.Environ()))
+	m.ExecEx(m.active(), "lsp install yaml")
+	m.HandleKey("y")
+	waitFor(t, m, func() bool { return strings.Contains(m.active().Message(), "failed (exit 2)") }, "failure note")
+	tools.mu.Lock()
+	defer tools.mu.Unlock()
+	if tools.refreshed != 1 {
+		t.Fatalf("a missing tool re-reads the shell env once, got %d", tools.refreshed)
 	}
+}
+
+type failTools struct{ fakeTools }
+
+func (f *failTools) Plan(tool string) ToolPlan {
+	return ToolPlan{Tool: tool, Purpose: "testing", Argv: []string{"/bin/sh", "-c", "exit 2"}}
 }
 
 func TestFormattingNeedsTheServerToAdvertiseIt(t *testing.T) {
@@ -163,21 +177,20 @@ func TestFormattingNeedsTheServerToAdvertiseIt(t *testing.T) {
 	}
 }
 
-func TestConfiguredFormatterRunsInTheHermeticEnvironmentOnly(t *testing.T) {
+func TestConfiguredFormatterRunsInTheUsersEnvironment(t *testing.T) {
 	reg, _ := langserver.Resolve(map[string]langserver.Override{"go": {Formatter: []string{"tr", "a-z", "A-Z"}}})
-	m := openGoWithManager(t, lsp.NewManager(t.TempDir(), nil), WithLanguages(reg))
+	m := openGoWithManager(t, lsp.NewManager(nil, nil), WithLanguages(reg))
 	e := m.active()
 
-	// No hermetic environment: refuse by name, never use the host PATH.
-	if note := m.formatEditor(e); !strings.Contains(note, "hermetic") {
+	if note := m.formatEditor(e); !strings.Contains(note, "no environment") {
 		t.Fatalf("note without env = %q", note)
 	}
-	m.termEnv = []string{"PATH=/nonexistent"}
-	if note := m.formatEditor(e); !strings.Contains(note, "not found in DHI's environment") {
+	WithTermEnv([]string{"PATH=/nonexistent"})(m)
+	if note := m.formatEditor(e); !strings.Contains(note, "not on your PATH") {
 		t.Fatalf("note with an empty PATH = %q", note)
 	}
 
-	m.termEnv = []string{"PATH=/usr/bin:/bin"}
+	WithTermEnv([]string{"PATH=/usr/bin:/bin"})(m)
 	before := e.Buffer().Text()
 	if note := m.formatEditor(e); note != "" {
 		t.Fatalf("format: %q", note)
@@ -194,8 +207,8 @@ func TestConfiguredFormatterRunsInTheHermeticEnvironmentOnly(t *testing.T) {
 
 func TestFormatterFailureKeepsTheTextAndSaysWhy(t *testing.T) {
 	reg, _ := langserver.Resolve(map[string]langserver.Override{"go": {Formatter: []string{"false"}}})
-	m := openGoWithManager(t, lsp.NewManager(t.TempDir(), nil), WithLanguages(reg))
-	m.termEnv = []string{"PATH=/usr/bin:/bin"}
+	m := openGoWithManager(t, lsp.NewManager(nil, nil), WithLanguages(reg))
+	WithTermEnv([]string{"PATH=/usr/bin:/bin"})(m)
 	before := m.active().Buffer().Text()
 	if note := m.formatEditor(m.active()); !strings.Contains(note, "format failed") {
 		t.Fatalf("note = %q", note)
@@ -216,4 +229,18 @@ func openGoWithManager(t *testing.T, mgr *lsp.Manager, opts ...Option) *Model {
 		t.Fatal("no buffer opened")
 	}
 	return m
+}
+
+func TestInstallCommandRaisesTheCard(t *testing.T) {
+	tools := &fakeTools{marker: filepath.Join(t.TempDir(), "installed")}
+	m := openGoWithManager(t, lsp.NewManager(nil, nil), WithHostTools(tools))
+	m.ExecEx(m.active(), "install bwrap")
+	if m.toolCard == nil || m.toolCard.Tool != "bwrap" {
+		t.Fatalf("card = %+v", m.toolCard)
+	}
+	m.HandleKey("n")
+	m.ExecEx(m.active(), "install")
+	if !strings.Contains(m.active().Message(), "name a tool") {
+		t.Fatalf("msg = %q", m.active().Message())
+	}
 }

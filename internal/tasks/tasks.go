@@ -1,9 +1,8 @@
 // Package tasks is DHI's task tracker (F-003 component 3): one TOML
 // card per task under the reserved .dhi/tasks/ tree, kanban statuses,
 // and ChangeSets — per-member linked worktrees created through an
-// injectable attach seam so the store stays hermetic in tests and works
-// pre-registry-flip (attaching reports a visible error until the
-// hermetic git shim exists).
+// injectable attach seam so the store stays isolated in tests and works
+// without git (attaching then reports a visible error).
 package tasks
 
 import (
@@ -736,7 +735,7 @@ func (s *Store) Attach(slug, member, branch, startpoint string) error {
 		return fmt.Errorf("tasks: unknown task %q", slug)
 	}
 	if fn == nil {
-		return fmt.Errorf("tasks: worktree seam unavailable (hermetic git not installed?)")
+		return fmt.Errorf("tasks: worktree seam unavailable (is git installed?)")
 	}
 	if member == "" || branch == "" {
 		return fmt.Errorf("tasks: member and branch required")
@@ -1082,7 +1081,7 @@ func (s *Store) PushBranch(slug string) error {
 			continue
 		}
 		refspec := "refs/heads/" + cs.Branch + ":refs/heads/" + cs.Branch
-		if err := repo.Push(context.Background(), "", refspec, nil); err != nil {
+		if err := repo.Push(context.Background(), "", refspec); err != nil {
 			failures = append(failures, cs.Member+": "+err.Error())
 		}
 	}

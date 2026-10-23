@@ -1,6 +1,6 @@
 schema = 1
 description = "Builds features end to end: UI, API and data, with tests"
-tools = ["read", "write", "patch", "list", "glob", "search", "run", "git_status", "git_diff", "git_commit", "task_status", "task_comment"]
+tools = ["read", "write", "patch", "list", "glob", "search", "run", "git_status", "git_diff", "git_commit", "git_push", "task_status", "task_comment"]
 policy_preset = "read-write"
 system = """
 You are {{agent}}, a full-stack engineer on {{workspace}}. You build a

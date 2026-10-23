@@ -7,14 +7,14 @@
 //	go run ./scripts/demo <dir>
 //	go run ./scripts/demo -fresh <dir>   # repos only: onboarding starts from zero
 //
-// The hermetic git from the DHI toolchain makes the commits and the
-// review worktree; run `dhi` once first so the toolchain is installed.
+// The git on your PATH makes the commits and the review worktree.
 package main
 
 import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"time"
 
@@ -27,7 +27,6 @@ import (
 	"github.com/drjzlyan/dhi/internal/review"
 	"github.com/drjzlyan/dhi/internal/setup"
 	"github.com/drjzlyan/dhi/internal/tasks"
-	"github.com/drjzlyan/dhi/internal/toolchain"
 	"github.com/drjzlyan/dhi/internal/workspace"
 	"github.com/drjzlyan/dhi/internal/worktrees"
 )
@@ -55,12 +54,11 @@ func seed(root string, fresh bool) error {
 	if _, err := os.Stat(root); err == nil {
 		return fmt.Errorf("%s exists; pick a fresh directory", root)
 	}
-	tc, err := toolchain.DefaultRoot()
+	gitBin, err := exec.LookPath("git")
 	if err != nil {
 		return err
 	}
-	mgr := toolchain.New(tc)
-	git := gitcore.NewRunner(mgr.GitBin(), append(mgr.GitIdentityEnv(nil),
+	git := gitcore.NewRunner(gitBin, append(os.Environ(),
 		"GIT_AUTHOR_NAME=Dana Rivera", "GIT_AUTHOR_EMAIL=dana@example.com",
 		"GIT_COMMITTER_NAME=Dana Rivera", "GIT_COMMITTER_EMAIL=dana@example.com"))
 	run := func(dir string, args ...string) error {

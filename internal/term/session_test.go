@@ -8,13 +8,34 @@ import (
 	"time"
 )
 
-// TestNilEnvRefused pins the ADR-0011 strictness: DHI child processes
-// never silently inherit the host environment.
+// TestNilEnvRefused: callers say which environment they mean.
 func TestNilEnvRefused(t *testing.T) {
 	if _, err := Start(context.Background(), Options{Dir: t.TempDir()}); err == nil {
 		t.Fatal("nil Env must refuse")
-	} else if !strings.Contains(err.Error(), "ADR-0011") {
-		t.Errorf("refusal should cite ADR-0011: %v", err)
+	}
+}
+
+// An approved install runs as the tab's command; its status is kept.
+func TestExitCodeIsKept(t *testing.T) {
+	s, err := Start(context.Background(), Options{
+		Dir: t.TempDir(), Command: []string{"/bin/sh", "-c", "echo hi; exit 3"}, Env: os.Environ(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.After(5 * time.Second)
+	for {
+		select {
+		case _, ok := <-s.Out:
+			if !ok {
+				if s.ExitCode() != 3 {
+					t.Fatalf("exit code = %d", s.ExitCode())
+				}
+				return
+			}
+		case <-deadline:
+			t.Fatal("timeout")
+		}
 	}
 }
 

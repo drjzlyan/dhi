@@ -79,10 +79,17 @@ type Config struct {
 	// Redact scrubs known secret values (F-088) from tool results, run
 	// records and transcripts; nil = none. The bus carries its own.
 	Redact func(string) string
-	// CLIEnv is the base environment for CLI spawns (hermetic toolchain
-	// PATH and the like). The executor extends it with each CLI's
+	// CLIEnv is the base environment for CLI spawns (the user's own,
+	// F-109). The executor extends it with each CLI's
 	// declared pass-through — the exact set, nothing else (ADR-0012 §4).
 	CLIEnv []string
+	// CLIEnvFunc, when set, is read at every spawn instead of CLIEnv, so a
+	// reloaded shell environment reaches the next agent run (F-109).
+	CLIEnvFunc func() []string
+	// OnHelperMissing runs when a turn starts waiting for the sandbox
+	// helper (bwrap): cmd raises the install card. nil = the thread
+	// notice only.
+	OnHelperMissing func()
 	// Tasks persists run records onto task cards (F-013). Nil disables
 	// card recording; the transcript still lives on the bus.
 	Tasks *tasks.Store
@@ -99,11 +106,8 @@ type Config struct {
 	// Conventions are the team style rules (F-042): injected into the
 	// system prompt and enforced at git_commit. nil = none.
 	Conventions conventions.Source
-	// ToolBin are DHI's tool-shim directories, put first on a bridged
-	// stdio MCP server's PATH so `uvx`/`npx` are the hermetic ones.
-	ToolBin []string
 	// MCPHome is the private HOME for bridged stdio servers; it must sit
-	// inside the sandbox's writable roots (the toolchain prefix).
+	// inside the sandbox's writable roots (.dhi/mcp-home).
 	MCPHome string
 	// Workflows resolves and injects the agent's active feature workflow
 	// (F-031) and enforces its gates at DHI's seams. A malformed
@@ -122,7 +126,7 @@ type Config struct {
 	// Search backs the workspace_search IDE tool (F-028); nil omits
 	// the tool from the served surface.
 	Search search.Searcher
-	// Git is the hermetic git CLI runner backing git_diff (M15 P1); nil
+	// Git is the user's git CLI runner backing git_diff (M15 P1); nil
 	// makes the diff tool refuse by name (never a host fallback).
 	Git *gitcore.Runner
 	// Identity resolves the user's git identity for git_commit (F-029);
@@ -176,20 +180,18 @@ type Config struct {
 	// app). nil = DHI never provisions; the agent works where it is.
 	Provision func(slug, member string) error
 
-	// Toolchain installs optional managed toolchains on demand (F-076):
-	// verify asks the human once (the approvals inbox) before the first
-	// download. nil = never installs.
+	// Toolchain says whether the tools a project's checks need are on the
+	// user's system (F-110). nil = assume they are.
 	Toolchain Toolchain
 }
 
-// Toolchain is the optional-toolchain seam (cmd/dhi adapts the toolchain
-// manager).
+// Toolchain is the host-tool seam (cmd/dhi adapts internal/hosttools).
+// Agents never install tools: a missing one fails the check by name,
+// with the command the user can run (ADR-0044).
 type Toolchain interface {
-	// Optional reports whether name is an optional managed tool and its
-	// download size on this platform.
-	Optional(name string) (size int64, ok bool)
-	Installed(name string) bool
-	Install(ctx context.Context, name string) error
+	// Missing reports whether name (go, node, uv, rust, jdk, maven,
+	// gradle, dotnet) is absent, and how to install it.
+	Missing(name string) (hint string, missing bool)
 }
 
 // Runtime manages rostered agents and executes their turns.
@@ -455,7 +457,7 @@ func (r *Runtime) extendSandboxForRoster(roster []*manifest.Agent) error {
 			// "#!/usr/bin/env bash"; on PATH that was Homebrew's bash,
 			// outside the exec roots — every spawn died "env: bash:
 			// Operation not permitted", live M32).
-			ro = append(ro, interpreterDirs(resolved, envPath(r.cfg.CLIEnv))...)
+			ro = append(ro, interpreterDirs(resolved, envPath(r.baseEnv()))...)
 		}
 	}
 	if len(extras) == 0 && len(ro) == 0 {
@@ -1030,4 +1032,12 @@ func (r *Runtime) Guard(id string) (*sandbox.Guard, bool) {
 		return nil, false
 	}
 	return e.guard, true
+}
+
+// baseEnv is the environment agent CLIs start from.
+func (r *Runtime) baseEnv() []string {
+	if r.cfg.CLIEnvFunc != nil {
+		return r.cfg.CLIEnvFunc()
+	}
+	return r.cfg.CLIEnv
 }

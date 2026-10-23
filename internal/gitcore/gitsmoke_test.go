@@ -3,49 +3,30 @@ package gitcore
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/drjzlyan/dhi/internal/toolchain"
 )
 
-// TestHermeticGitRoundTrip drives the real hermetic git shim through
-// the operations M4 ChangeSets depend on (ADR-0009): init → commit →
-// worktree add/list/remove/prune → local clone. Skipped unless:
-//
-//	DHI_SMOKE_GIT=1 [DHI_SMOKE_GIT_BIN=/path/to/git]
-//
-// DHI_SMOKE_GIT_BIN defaults to the installed toolchain shim. Build one
-// locally with scripts/build-hermetic-git.sh.
-func TestHermeticGitRoundTrip(t *testing.T) {
-	if os.Getenv("DHI_SMOKE_GIT") != "1" {
-		t.Skip("set DHI_SMOKE_GIT=1 to exercise the hermetic git CLI end-to-end")
+// TestGitRoundTrip drives the git on PATH through the operations task
+// worktrees depend on: init → commit → worktree add/list/remove/prune →
+// local clone. The user's own config is kept out (a test must not depend
+// on it); production runs with it.
+func TestGitRoundTrip(t *testing.T) {
+	bin, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("git is not installed")
 	}
-	bin := os.Getenv("DHI_SMOKE_GIT_BIN")
-	if bin == "" {
-		mgr, err := toolchain.DefaultRoot()
-		if err != nil {
-			t.Fatalf("locate toolchain root: %v", err)
-		}
-		bin = toolchain.New(mgr).GitBin()
-	}
-	if _, err := os.Stat(bin); err != nil {
-		t.Fatalf("hermetic git not found at %s (build via scripts/build-hermetic-git.sh)", bin)
-	}
-
-	mgr := toolchain.New(filepath.Dir(filepath.Dir(bin))) // prefix = parent of bin/
-	if err := mgr.EnsureGitConfig(); err != nil {
-		t.Fatalf("EnsureGitConfig: %v", err)
-	}
-	r := NewRunner(bin, mgr.GitEnv(nil))
+	env := append(os.Environ(), "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1")
+	r := NewRunner(bin, BackgroundEnv(env))
 	ctx := context.Background()
 
 	v, err := r.Version(ctx)
 	if err != nil {
 		t.Fatalf("Version: %v", err)
 	}
-	t.Logf("hermetic git %s at %s", v, bin)
+	t.Logf("git %s at %s", v, bin)
 
 	base := t.TempDir()
 	repo := filepath.Join(base, "origin")

@@ -10,66 +10,34 @@ import (
 	"sync"
 )
 
-// Manager owns one client per language, resolving servers through the
-// hermetic toolchain shim dir. A language without an installed server
-// simply has no LSP support — never a host-tool fallback (ADR-0005).
+// Manager owns one client per language. Servers come from the user's
+// own system (F-110): a bare name resolves through look (the user's PATH
+// and the folders language installers use), an absolute one is the
+// user's explicit choice.
 type Manager struct {
-	shimDir string
-	managed string // DHI-installed servers: <managed>/<lang>/node_modules/.bin
-	env     []string
+	look func(string) (string, bool)
+	env  func() []string
 
 	mu      sync.Mutex
 	clients map[string]*Client
 }
 
-// NewManager builds a manager; env is the child-process environment
-// (toolchain.Manager.Env output).
-func NewManager(shimDir string, env []string) *Manager {
-	return &Manager{shimDir: shimDir, env: env, clients: map[string]*Client{}}
+// NewManager builds a manager. env is read at every server start, so a
+// reloaded shell environment reaches the next server (nil: DHI's own).
+func NewManager(look func(string) (string, bool), env func() []string) *Manager {
+	return &Manager{look: look, env: env, clients: map[string]*Client{}}
 }
 
-// SetManagedRoot names the folder holding servers DHI installed itself, one
-// sub-folder per language (F-050).
-func (m *Manager) SetManagedRoot(dir string) { m.managed = dir }
-
-// ManagedPrefix is the npm prefix a language's server installs into.
-func (m *Manager) ManagedPrefix(lang string) string {
-	if m.managed == "" {
-		return ""
-	}
-	return filepath.Join(m.managed, lang)
-}
-
-// Locate finds a server binary without ever consulting the host PATH: an
-// absolute `server` is the user's explicit choice; a bare name is looked up
-// in the toolchain shim dir, then in the language's managed install.
-func (m *Manager) Locate(lang, server string) (string, bool) {
+// Locate finds a server binary.
+func (m *Manager) Locate(server string) (string, bool) {
 	if filepath.IsAbs(server) {
 		_, err := os.Stat(server)
 		return server, err == nil
 	}
-	if p := m.ShimPath(server); fileExists(p) {
-		return p, true
+	if m.look == nil {
+		return "", false
 	}
-	if m.managed != "" {
-		if p := filepath.Join(m.managed, lang, "node_modules", ".bin", server); fileExists(p) {
-			return p, true
-		}
-	}
-	return "", false
-}
-
-func fileExists(p string) bool { _, err := os.Stat(p); return err == nil }
-
-// ShimPath is where the named server binary must live.
-func (m *Manager) ShimPath(server string) string {
-	return filepath.Join(m.shimDir, server)
-}
-
-// Available reports whether the server binary exists.
-func (m *Manager) Available(server string) bool {
-	_, err := os.Stat(m.ShimPath(server))
-	return err == nil
+	return m.look(server)
 }
 
 // Ensure returns a live client for lang, starting `server` on first use.
@@ -78,8 +46,8 @@ func (m *Manager) Ensure(ctx context.Context, lang, server, rootDir string) (*Cl
 	return m.EnsureServer(ctx, lang, server, nil, rootDir)
 }
 
-// EnsureServer is Ensure with the server's arguments (most npm servers need
-// --stdio) and the managed-install lookup of Locate.
+// EnsureServer is Ensure with the server's arguments (most servers need
+// --stdio).
 func (m *Manager) EnsureServer(ctx context.Context, lang, server string, args []string, rootDir string) (*Client, error) {
 	m.mu.Lock()
 	if c, ok := m.clients[lang]; ok {
@@ -93,11 +61,15 @@ func (m *Manager) EnsureServer(ctx context.Context, lang, server string, args []
 	}
 	m.mu.Unlock()
 
-	bin, ok := m.Locate(lang, server)
+	bin, ok := m.Locate(server)
 	if !ok {
-		return nil, fmt.Errorf("lsp: %s not installed (%s)", server, m.ShimPath(server))
+		return nil, fmt.Errorf("lsp: %s is not installed", server)
 	}
-	c, err := StartProcess(ctx, bin, append([]string{}, args...), m.env, rootDir)
+	var env []string
+	if m.env != nil {
+		env = m.env()
+	}
+	c, err := StartProcess(ctx, bin, append([]string{}, args...), env, rootDir)
 	if err != nil {
 		return nil, err
 	}

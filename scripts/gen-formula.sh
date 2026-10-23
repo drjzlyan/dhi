@@ -56,8 +56,8 @@ $(platform_block linux)
 
   def caveats
     <<~EOS
-      Run \`dhi\` in a project directory. On first run DHI downloads its own
-      pinned toolchain under ~/.local/share/dhi and walks you through setup.
+      Run \`dhi\` in a project directory. DHI uses the tools on your system
+      (git, language servers, coding CLIs) and walks you through setup.
     EOS
   end
 

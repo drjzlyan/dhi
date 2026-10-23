@@ -5,9 +5,9 @@
 #
 # Downloads the release binary for this machine, verifies its SHA-256
 # against the release's checksums.txt (and its cosign signature when
-# `cosign` is installed), and installs it to ~/.local/bin. DHI itself
-# fetches its own pinned toolchain on first run — nothing else is
-# installed here, and no sudo is used.
+# `cosign` is installed), and installs it to ~/.local/bin. DHI uses the
+# tools already on your system — nothing else is installed here, and no
+# sudo is used.
 #
 # Environment:
 #   DHI_VERSION            install this release (e.g. 0.2.0) instead of the latest
@@ -137,7 +137,7 @@ main() {
 			;;
 	esac
 	printf '\n%sNext:%s run %sdhi%s in a project directory — it sets everything else up.\n' "$C_BRAND" "$C_OFF" "$C_BRAND" "$C_OFF"
-	note "On first run DHI downloads its own pinned toolchain (no sudo, nothing outside ~/.local/share/dhi)."
+	note "DHI uses your own git, language servers and coding CLIs; a missing one is offered with your package manager's command, run only when you say yes."
 	note "Uninstall: rm -rf ${dest}/dhi ~/.local/share/dhi ~/.config/dhi"
 }
 

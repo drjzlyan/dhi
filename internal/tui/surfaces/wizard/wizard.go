@@ -64,6 +64,9 @@ type Env struct {
 
 	Identity    func(ctx context.Context) (gitcore.Identity, error) // nil: git unavailable
 	SetIdentity func(ctx context.Context, id gitcore.Identity) error
+	// SetIdentityLocal keeps the identity to this workspace's repos
+	// instead (each member's .git/config, F-112); nil hides the choice.
+	SetIdentityLocal func(ctx context.Context, id gitcore.Identity) error
 	// SuggestIdentity finds candidates when none is set (F-083): the
 	// repo's config and history, GitHub, the computer account.
 	SuggestIdentity func(ctx context.Context) []gitcore.Suggestion
@@ -79,12 +82,18 @@ type Env struct {
 	// ("" = not installed); SetEngine stores the workspace default engine.
 	Engine string // the configured default engine ("cli:<name>" or "")
 
-	// CLI step (F-046). CLIStatus lists the registered coding CLIs with
-	// their detected state; InstallCLI installs one through the toolchain
-	// seam after the user confirmed the exact command (nil = guided only).
-	CLIStatus  func() []CLIRow
-	InstallCLI func(ctx context.Context, name string) error
-	CLIPrefix  func(name string) string // where a managed install lands
+	// CLI step (F-046, F-110). CLIStatus lists the registered coding CLIs
+	// with their detected state. CLIInstall is the package-manager command
+	// that installs one on this machine (ok=false: guidance only);
+	// RunInstall runs it after the user said yes, in their own terminal
+	// (DHI steps aside so they see it and can answer prompts), and reports
+	// the outcome through done. Either nil: guidance only.
+	CLIStatus func() []CLIRow
+	// ToolStatus lists the host tools for the tools step (F-114); nil
+	// hides it. Installs share RunInstall.
+	ToolStatus func() []ToolRow
+	CLIInstall func(name string) (cmd string, ok bool)
+	RunInstall func(name string, done func(error) tea.Msg) tea.Cmd
 
 	// Integrations step (ADR-0043). SetupIntegration installs a vendor's
 	// official plugin from the marketplace and gives it to who ("the bots
@@ -205,7 +214,7 @@ func New(env *Env, state setup.State, steps ...Step) *Model {
 // people first ran setup (M31), and the team, which waits on a workspace
 // that may only appear later. Each is offered once, while it applies and
 // was never applied or skipped (F-085).
-var catchUpIDs = map[string]bool{"project": true, "you": true, "instructions": true, "team": true}
+var catchUpIDs = map[string]bool{"project": true, "you": true, "instructions": true, "team": true, "tools": true}
 
 // CatchUpSteps returns the steps a finished setup still owes the user,
 // with the closing step; nil when there are none.
@@ -237,6 +246,7 @@ func DefaultSteps(env *Env, version string) []Step {
 		&styleStep{env: env},
 		&instructionsStep{env: env},
 		&conventionsStep{env: env},
+		&toolsStep{env: env},
 		&cliStep{env: env},
 		&teamStep{env: env},
 		&integrationsStep{env: env},

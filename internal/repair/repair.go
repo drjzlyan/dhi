@@ -17,6 +17,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/library"
 	"github.com/drjzlyan/dhi/internal/agentkit/org"
 	"github.com/drjzlyan/dhi/internal/credstore"
+	"github.com/drjzlyan/dhi/internal/gitcore"
 	"github.com/drjzlyan/dhi/internal/settings"
 	"github.com/drjzlyan/dhi/internal/setup"
 	"github.com/drjzlyan/dhi/internal/workspace"
@@ -42,6 +43,18 @@ type Input struct {
 	UserConfig string
 	// Creds is the credentials file; nil skips the credential-kind repair.
 	Creds *credstore.Store
+	// LegacyToolchain is the toolchain folder DHI kept before ADR-0044;
+	// "" skips the repair that offers to delete it.
+	LegacyToolchain string
+	// LocalIdentity is the git identity the user kept to this workspace
+	// (F-112); SetLocalIdentity writes it into one member repo. Either
+	// nil skips the repair that gives members added later the same.
+	LocalIdentity    *setup.Identity
+	SetLocalIdentity func(dir string) error
+	// GuardRefs: the sandbox (bubblewrap) protects only ref files that
+	// exist, so a default branch kept only in packed-refs gets a repair
+	// offering a loose copy (F-112). Seatbelt needs none.
+	GuardRefs bool
 }
 
 // Find lists the repairs that apply now, safe ones first.
@@ -71,6 +84,11 @@ func Find(in Input) []Repair {
 	if r, ok := skillFiles(in); ok {
 		out = append(out, r)
 	}
+	if r, ok := legacyToolchain(in.LegacyToolchain); ok {
+		out = append(out, r)
+	}
+	out = append(out, localIdentity(in)...)
+	out = append(out, defaultRefs(in)...)
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Safe && !out[j].Safe })
 	return out
 }
@@ -335,4 +353,88 @@ func credentialKinds(in Input) (Repair, bool) {
 			return err
 		},
 	}, true
+}
+
+// legacyToolchain offers to delete the toolchain DHI downloaded before it
+// used the user's own tools (ADR-0044). It is never safe: deleting needs
+// the user's yes, and only a folder named dhi/toolchain qualifies.
+func legacyToolchain(dir string) (Repair, bool) {
+	if dir == "" || filepath.Base(dir) != "toolchain" || filepath.Base(filepath.Dir(dir)) != "dhi" {
+		return Repair{}, false
+	}
+	if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
+		return Repair{}, false
+	}
+	return Repair{
+		ID:   "legacy-toolchain",
+		What: fmt.Sprintf("DHI no longer uses its own toolchain (it uses the tools on your system); delete %s (%d MB)", dir, dirSize(dir)>>20),
+		Apply: func() error {
+			return os.RemoveAll(dir)
+		},
+	}, true
+}
+
+func dirSize(dir string) int64 {
+	var n int64
+	_ = filepath.WalkDir(dir, func(_ string, d os.DirEntry, err error) error {
+		if err == nil && d.Type().IsRegular() {
+			if fi, ierr := d.Info(); ierr == nil {
+				n += fi.Size()
+			}
+		}
+		return nil
+	})
+	return n
+}
+
+// localIdentity gives a member added after the user kept their git
+// identity to this workspace the same identity (F-112). Safe: the user
+// already chose it for every repo here; the notice names the repo.
+func localIdentity(in Input) []Repair {
+	if in.LocalIdentity == nil || in.SetLocalIdentity == nil {
+		return nil
+	}
+	var out []Repair
+	for _, m := range in.WS.Members() {
+		cfg, err := os.ReadFile(filepath.Join(m.Path, ".git", "config"))
+		if err != nil || strings.Contains(string(cfg), "[user]") {
+			continue // not a plain repo (or unreadable), or it has its own identity
+		}
+		dir := m.Path
+		out = append(out, Repair{
+			ID:    "local-identity/" + m.Name,
+			What:  "set this workspace's git identity (" + in.LocalIdentity.Name + ") in " + m.Name + "/.git/config",
+			Safe:  true,
+			Apply: func() error { return in.SetLocalIdentity(dir) },
+		})
+	}
+	return out
+}
+
+// defaultRefs offers, per member, the loose copy of a packed-only default
+// branch that lets bubblewrap keep agents off it. It asks: it is a change
+// to your repo (the same commit; git reads it the same).
+func defaultRefs(in Input) []Repair {
+	if !in.GuardRefs {
+		return nil
+	}
+	var out []Repair
+	for _, m := range in.WS.Members() {
+		refs := gitcore.PackedOnlyDefaultRefs(m.Path)
+		if len(refs) == 0 {
+			continue
+		}
+		var names []string
+		for _, r := range refs {
+			names = append(names, filepath.Base(r))
+		}
+		dir := m.Path
+		out = append(out, Repair{
+			ID: "default-ref/" + m.Name,
+			What: "let the sandbox keep agents off " + strings.Join(names, ", ") + " in " + m.Name +
+				": write .git/refs/heads/" + strings.Join(names, ", ") + " (the same commit as packed-refs; git reads it the same)",
+			Apply: func() error { return gitcore.LooseDefaultRefs(dir) },
+		})
+	}
+	return out
 }

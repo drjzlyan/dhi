@@ -3,6 +3,7 @@ package dap
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -13,10 +14,13 @@ import (
 	"github.com/drjzlyan/dhi/internal/testrun"
 )
 
-// VerifiedDelve is the delve release confirmed to build with DHI's pinned
-// Go toolchain (go1.27.0, CGO_ENABLED=0) and to speak the DAP dialect this
-// client expects through initialize → launch → build.
-const VerifiedDelve = "v1.27.2" // must equal toolchain.DelveVersion
+// VerifiedDelve is the delve release confirmed to speak the DAP dialect
+// this client expects through initialize → launch → build.
+const VerifiedDelve = "v1.27.2"
+
+// ErrNoDelve says dlv is not installed; the editor offers to install it
+// with the user's package manager (F-110).
+var ErrNoDelve = errors.New("debugging needs the delve adapter (dlv), which is not installed")
 
 // listenLine is what `dlv dap` prints once it accepts connections.
 var listenLine = regexp.MustCompile(`DAP server listening at:\s*(\S+)`)
@@ -39,13 +43,13 @@ func (p *procConn) Close() error {
 	return err
 }
 
-// StartDelve launches `dlv dap` (resolved from env's PATH — the DHI
-// toolchain shims, never the host PATH) in dir and returns a Client
-// connected to it. Closing the Client stops the adapter.
+// StartDelve launches `dlv dap` (resolved from env's PATH, the user's
+// own) in dir and returns a Client connected to it. Closing the Client
+// stops the adapter.
 func StartDelve(ctx context.Context, dir string, env []string) (*Client, error) {
 	bin, err := testrun.LookPath("dlv", env)
 	if err != nil {
-		return nil, fmt.Errorf("debugging needs the delve adapter: %w (build it with `go install github.com/go-delve/delve/cmd/dlv@%s` and put dlv in the DHI toolchain bin dir)", err, VerifiedDelve)
+		return nil, ErrNoDelve
 	}
 	cmd := exec.Command(bin, "dap", "--listen=127.0.0.1:0")
 	cmd.Dir = dir

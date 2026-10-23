@@ -2,8 +2,8 @@ bin/
 coverage.out
 *.test
 .DS_Store
-dhi-git-*.tar.gz
-dhi-git-*.sha256
+# `go build ./cmd/dhi` output.
+/dhi
 
 # .dhi/ is the local self-hosting workspace: per-user, never tracked.
 .dhi/

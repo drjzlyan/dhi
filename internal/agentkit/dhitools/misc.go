@@ -12,10 +12,17 @@ import (
 )
 
 // CommandRunner executes one already-vetted argv in dir. It is satisfied
-// by a hermetic-env exec adapter wired in cmd/dhi; the allowlist policy
+// by an exec adapter wired in cmd/dhi; the allowlist policy
 // lives here, never in the runner.
 type CommandRunner interface {
 	Run(ctx context.Context, dir string, argv []string, allowNetwork bool) (string, error)
+}
+
+// GrantRunner is a CommandRunner whose sandbox can grow by the access
+// grants the human gave one agent (F-113): write roots and folders to run
+// programs from. The runtime asks it for a per-agent runner each turn.
+type GrantRunner interface {
+	WithGrants(write, exec []string) CommandRunner
 }
 
 // EnvRunner is a CommandRunner that can add environment to one run: the
@@ -23,6 +30,23 @@ type CommandRunner interface {
 // never the agent CLI, whose own shell could print them into its session.
 type EnvRunner interface {
 	RunEnv(ctx context.Context, dir string, argv []string, allowNetwork bool, extra []string) (string, error)
+}
+
+// networkAllowed reports whether a command may reach the network: the
+// agent's network scope is auto, or it asks and the human granted it
+// (permission_request "network", F-113).
+func (d Deps) networkAllowed() bool {
+	set := d.Scopes
+	if set == nil {
+		set = scopes.Default()
+	}
+	switch set.EffectFor(scopes.Network) {
+	case scopes.Auto:
+		return true
+	case scopes.Ask:
+		return d.Approvals != nil && d.Agent != nil && d.Approvals.Granted(d.Agent.ID, string(scopes.Network))
+	}
+	return false
 }
 
 // runWith runs argv with the agent's granted secrets in its environment.
@@ -73,7 +97,7 @@ func (d Deps) miscTools() []tool {
 		{
 			info: mcp.ToolInfo{
 				Name:        "run",
-				Description: "Run an allowlisted hermetic command: go build/test/vet/fmt, rg, npm test/run/ci/install, corepack pnpm/yarn, uv run/sync/pip/venv, cargo build/test/check/fmt/clippy/fetch, mvn, gradle, dotnet build/test/restore/format. No shell. Args: {\"program\":\"go\",\"args\":[\"test\",\"./...\"]}. Mutating: crosses approvals.",
+				Description: "Run an allowlisted command: go build/test/vet/fmt, rg, npm test/run/ci/install, corepack pnpm/yarn, uv run/sync/pip/venv, cargo build/test/check/fmt/clippy/fetch, mvn, gradle, dotnet build/test/restore/format. No shell. Args: {\"program\":\"go\",\"args\":[\"test\",\"./...\"]}. Mutating: crosses approvals.",
 				InputSchema: json.RawMessage(`{"type":"object","required":["program"],"properties":{"program":{"type":"string"},"args":{"type":"array","items":{"type":"string"}}},"additionalProperties":false}`),
 			},
 			parse: func(raw json.RawMessage) (any, error) {
@@ -105,11 +129,7 @@ func (d Deps) miscTools() []tool {
 				if strings.TrimSpace(d.Workdir) == "" {
 					return "", fmt.Errorf("no working directory for this turn")
 				}
-				set := d.Scopes
-				if set == nil {
-					set = scopes.Default()
-				}
-				allowNet := set.EffectFor(scopes.Network) == scopes.Auto
+				allowNet := d.networkAllowed()
 				argv := dec.(runPlan).argv
 				out, err := d.runWith(ctx, argv, allowNet)
 				if d.OnRun != nil {
@@ -199,11 +219,7 @@ func (d Deps) miscTools() []tool {
 				if err != nil {
 					return "", err
 				}
-				set := d.Scopes
-				if set == nil {
-					set = scopes.Default()
-				}
-				allowNet := set.EffectFor(scopes.Network) == scopes.Auto
+				allowNet := d.networkAllowed()
 				argv := append([]string{script}, plan.argv[2:]...)
 				out, err := d.runWith(ctx, argv, allowNet)
 				if err != nil {

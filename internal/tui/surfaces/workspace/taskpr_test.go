@@ -31,9 +31,6 @@ func (g *ghStub) SubmitReview(context.Context, string, string, review.ReviewSubm
 }
 func (g *ghStub) Login(context.Context) (string, error) { return "", nil }
 func (g *ghStub) Available() bool                       { return true }
-func (g *ghStub) AuthToken(context.Context) (string, error) {
-	return "", context.Canceled
-}
 func (g *ghStub) PR(context.Context, string, string) (review.PRMeta, error) {
 	return review.PRMeta{}, nil
 }
@@ -90,7 +87,7 @@ func gitTaskFixture(t *testing.T) (*Model, *tasks.Store, *review.Store, *ghStub)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := sr.Push(ctx, "", "refs/heads/master:refs/heads/master", nil); err != nil {
+	if err := sr.Push(ctx, "", "refs/heads/master:refs/heads/master"); err != nil {
 		t.Fatal(err)
 	}
 

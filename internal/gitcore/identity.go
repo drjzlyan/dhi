@@ -26,12 +26,8 @@ var ErrIdentityUnset = errors.New(
 // inject one; a nil resolver makes commit paths refuse by name.
 type IdentityFunc func(ctx context.Context) (Identity, error)
 
-// ResolveIdentity reads user.name/user.email through the hermetic git
-// binary under the HOST config path (HOME / user global config). It
-// deliberately does NOT use the managed hermetic config (ADR-0009),
-// which carries no [user] section: reading the user's identity is the
-// named exception that makes everything reaching a remote belong to the
-// user (F-029).
+// ResolveIdentity reads user.name/user.email from the user's own git
+// config, so everything reaching a remote belongs to the user (F-029).
 func ResolveIdentity(ctx context.Context, r *Runner) (Identity, error) {
 	name := r.configGet(ctx, "user.name")
 	email := r.configGet(ctx, "user.email")
@@ -61,6 +57,14 @@ func IdentityCommands(id Identity) []string {
 	}
 }
 
+// LocalIdentityCommands are the commands SetLocalIdentity runs in each repo.
+func LocalIdentityCommands(id Identity) []string {
+	return []string{
+		"git config user.name " + shellQuote(id.Name),
+		"git config user.email " + shellQuote(id.Email),
+	}
+}
+
 func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
@@ -83,10 +87,8 @@ func ValidateIdentity(id Identity) error {
 	return nil
 }
 
-// SetIdentity writes user.name/user.email to the user's GLOBAL git config.
-// The Runner must carry the identity environment (host HOME, no forced
-// GIT_CONFIG_GLOBAL — toolchain.GitIdentityEnv), the same named exception
-// ResolveIdentity uses; callers confirm with the user before calling.
+// SetIdentity writes user.name/user.email to the user's GLOBAL git config
+// (~/.gitconfig). Callers confirm with the user before calling (F-112).
 func SetIdentity(ctx context.Context, r *Runner, id Identity) error {
 	if err := ValidateIdentity(id); err != nil {
 		return err
@@ -222,4 +224,21 @@ func topAuthor(ctx context.Context, r *Runner, dir string) (Identity, bool) {
 		}
 	}
 	return best, best != Identity{}
+}
+
+// SetLocalIdentity writes user.name/user.email into one repo's own config
+// (dir/.git/config), so the identity applies there only — the choice for a
+// user who keeps their global config untouched (F-112). Callers confirm
+// with the user first.
+func SetLocalIdentity(ctx context.Context, r *Runner, dir string, id Identity) error {
+	if err := ValidateIdentity(id); err != nil {
+		return err
+	}
+	id = Identity{Name: strings.TrimSpace(id.Name), Email: strings.TrimSpace(id.Email)}
+	for _, kv := range [][2]string{{"user.name", id.Name}, {"user.email", id.Email}} {
+		if _, _, err := r.Run(ctx, dir, "config", "--local", kv[0], kv[1]); err != nil {
+			return err
+		}
+	}
+	return nil
 }

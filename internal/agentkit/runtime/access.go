@@ -7,9 +7,12 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	goruntime "runtime"
 	"strings"
 
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
+	"github.com/drjzlyan/dhi/internal/agentkit/clirun"
+	"github.com/drjzlyan/dhi/internal/agentkit/dhitools"
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
 	"github.com/drjzlyan/dhi/internal/credstore"
 	"github.com/drjzlyan/dhi/internal/sandbox"
@@ -89,6 +92,17 @@ func within(p, root string) bool {
 // the CLI starts.
 func (r *Runtime) spawnSandbox(e *entry) sandbox.Sandbox {
 	sb := e.guard.Sandbox
+	// The folders on the current PATH run, a reloaded one included (F-109).
+	if r.cfg.CLIEnvFunc != nil {
+		home, _ := os.UserHomeDir()
+		if roots := sandbox.ExecRoots(envPath(r.baseEnv()), home); len(roots) > 0 {
+			if re, ok := sb.(sandbox.ReadOnlyExtender); ok {
+				if ext, err := re.WithExtraReadOnly(roots); err == nil {
+					sb = ext
+				}
+			}
+		}
+	}
 	if r.cfg.Approvals == nil {
 		return sb
 	}
@@ -187,19 +201,37 @@ func (r *Runtime) writeGranted(agentID, p string) bool {
 	return false
 }
 
-// offerAccess turns a sandbox write denial seen in a run into the same
-// approval card (F-087), so the human can unblock an agent that never
-// thought to ask. One card per agent and path at a time; a grant wakes
-// the agent in the thread to retry.
+// offerAccess turns a sandbox denial seen in a run into the same
+// approval card (F-087, F-113): a write card for a path, or — when the
+// denial names a program — a card to run programs from its folder. One
+// card per agent and target at a time; a grant wakes the agent in the
+// thread to retry.
 func (r *Runtime) offerAccess(agentID string, trigger bus.Message, denied string) {
 	if r.cfg.Approvals == nil {
 		return
 	}
 	p, err := r.accessTarget(denied)
-	if err != nil || r.writeGranted(agentID, p) {
+	if err != nil {
 		return
 	}
-	key := agentID + "|" + p
+	scope, op, what, done := tools.AccessWrite+p, sandbox.OpWrite, "write", "write access to "+p
+	granted := func() bool { return r.writeGranted(agentID, p) }
+	if clirun.IsProgram(p) {
+		p = filepath.Dir(p)
+		scope, op, what, done = tools.AccessExec+p, sandbox.OpExec, "run programs from", "running programs from "+p
+		granted = func() bool {
+			for _, g := range r.cfg.Approvals.ExecTargets(agentID) {
+				if within(p, g) {
+					return true
+				}
+			}
+			return false
+		}
+	}
+	if granted() {
+		return
+	}
+	key := agentID + "|" + scope
 	r.offerMu.Lock()
 	if r.offering == nil {
 		r.offering = map[string]bool{}
@@ -218,11 +250,46 @@ func (r *Runtime) offerAccess(agentID string, trigger bus.Message, denied string
 			delete(r.offering, key)
 			r.offerMu.Unlock()
 		}()
-		err := r.cfg.Approvals.AskScope(context.Background(), agentID, tools.AccessWrite+p, sandbox.OpWrite, p,
-			"the sandbox blocked "+agentID+" from writing here")
-		if err == nil && r.writeGranted(agentID, p) {
+		err := r.cfg.Approvals.AskScope(context.Background(), agentID, scope, op, p,
+			"the sandbox blocked "+agentID+" — it needs to "+what+" "+p)
+		if err == nil && granted() {
 			r.continueTurn(context.Background(), agentID, trigger,
-				"write access to "+p+" was granted; retry what the sandbox blocked")
+				done+" was granted; retry what the sandbox blocked")
 		}
 	}()
+}
+
+// runFor is the command runner for e's `run` and skill_run calls: the
+// runtime's, grown by the write and exec grants e holds (F-113), so a
+// folder the human allowed is reachable from run too, not only from the
+// agent CLI's own tools.
+func (r *Runtime) runFor(e *entry) dhitools.CommandRunner {
+	gr, ok := r.cfg.Run.(dhitools.GrantRunner)
+	if !ok || r.cfg.Approvals == nil {
+		return r.cfg.Run
+	}
+	write, exec := r.cfg.Approvals.Targets(e.m.ID), r.cfg.Approvals.ExecTargets(e.m.ID)
+	if len(write) == 0 && len(exec) == 0 {
+		return r.cfg.Run
+	}
+	return gr.WithGrants(write, exec)
+}
+
+// cacheFallback points caches the user does not have yet into the
+// workspace's .dhi/cache, so a sandboxed build works without DHI creating
+// folders in your home (F-113).
+func (r *Runtime) cacheFallback(env []string) []string {
+	if r.cfg.WS == nil {
+		return nil
+	}
+	home, _ := os.UserHomeDir()
+	get := func(k string) string {
+		for i := len(env) - 1; i >= 0; i-- {
+			if v, ok := strings.CutPrefix(env[i], k+"="); ok {
+				return v
+			}
+		}
+		return ""
+	}
+	return sandbox.CacheFallbackEnv(home, goruntime.GOOS, get, filepath.Join(r.cfg.WS.Root, workspace.DirCache))
 }

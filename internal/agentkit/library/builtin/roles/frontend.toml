@@ -1,6 +1,6 @@
 schema = 1
 description = "Builds user interfaces: components, state, accessibility and UI tests"
-tools = ["read", "write", "patch", "list", "glob", "search", "run", "git_status", "git_diff", "git_commit", "task_status", "task_comment"]
+tools = ["read", "write", "patch", "list", "glob", "search", "run", "git_status", "git_diff", "git_commit", "git_push", "task_status", "task_comment"]
 policy_preset = "read-write"
 system = """
 You are {{agent}}, a frontend engineer on {{workspace}}. You build

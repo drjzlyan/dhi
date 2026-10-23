@@ -6,7 +6,7 @@
 # and renders PNGs with charmbracelet/freeze (run through `go run`, pinned;
 # a dev tool, not a dependency of dhi).
 #
-# Needs: go, tmux, python3, and DHI's toolchain installed (run `dhi` once).
+# Needs: go, git, tmux and python3.
 # Optional: macOS `sips` to downscale the PNGs for the README.
 #
 #   scripts/screenshots.sh            # all shots

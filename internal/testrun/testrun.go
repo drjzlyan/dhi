@@ -1,7 +1,6 @@
 // Package testrun runs `go test -json` and turns the event stream into a
 // compact report the editor can show and jump through (F-040). The go
-// binary is resolved from the supplied environment's PATH — the hermetic
-// toolchain shims come first — never from the host PATH of this process.
+// binary is resolved from the supplied environment's PATH (the user's).
 package testrun
 
 import (
@@ -202,7 +201,7 @@ func LookPath(name string, env []string) (string, error) {
 			}
 		}
 	}
-	return "", fmt.Errorf("%s not found on the DHI toolchain PATH", name)
+	return "", fmt.Errorf("%s is not on your PATH", name)
 }
 
 // Run executes `go test -json <args...>` in dir and reports. A non-zero

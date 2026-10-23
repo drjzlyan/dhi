@@ -2,6 +2,7 @@ package editor
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"sort"
@@ -159,7 +160,7 @@ func (m *Model) startDebug() string {
 		bps[p] = append([]int(nil), ls...)
 	}
 	cfg := dap.LaunchConfig{Mode: "debug", Program: filepath.Dir(e.Path()), Cwd: root}
-	env, ch := m.termEnv, m.termMsgs
+	env, ch := m.env(), m.termMsgs
 	m.dbg = &dbgState{starting: true}
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute) // includes the compile
@@ -199,9 +200,11 @@ func (m *Model) applyDebugStarted(s *dbgStarted) {
 	}
 	if s.err != nil {
 		m.dbg = nil
-		if e := m.active(); e != nil {
-			e.SetMessage("debug: " + s.err.Error())
+		if errors.Is(s.err, dap.ErrNoDelve) && m.askInstall("dlv") {
+			m.note("debugging needs dlv — install it, then start the debugger again")
+			return
 		}
+		m.note("debug: " + s.err.Error())
 		return
 	}
 	m.dbg.starting, m.dbg.client, m.dbg.sess = false, s.client, s.sess

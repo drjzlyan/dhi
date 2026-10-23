@@ -1121,3 +1121,14 @@ Plan: `~/.claude/plans/all-the-keys-should-playful-hanrahan.md`. Branch `m35`, o
 - [x] P7 Assign to recommended bots / all bots (F-107)
 - [x] P8 Re-runnable onboarding (F-108)
 - [x] P9 Docs, live checks, STATE (open: real sign-ins, skill eval fixture, manual Mac terminal checks)
+
+## M36 — Use the user's system, behind an approval boundary (session 62)
+
+Plan: `~/.claude/plans/all-the-keys-should-playful-hanrahan.md`. Branch `m36`, one commit per phase. ADR-0044, F-109–F-114.
+
+- [x] P1 The user's environment, read once (F-109)
+- [x] P2 Host tools and package-manager installs (F-110)
+- [x] P3 Remove the hermetic toolchain (F-111)
+- [x] P4 Git as the user has it (F-112)
+- [x] P5 The approval boundary for agents (F-113)
+- [x] P6 Doctor, onboarding, docs (F-114) — Linux live checks open

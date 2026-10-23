@@ -2,8 +2,8 @@ package sandbox
 
 import "github.com/drjzlyan/dhi/internal/gitcore"
 
-// DefaultRefsForTest mirrors guardWorkspace: materialize, then guard.
+// DefaultRefsForTest mirrors an approved default-ref repair, then the guard.
 func DefaultRefsForTest(repo string) []string {
-	gitcore.LooseDefaultRefs(repo)
+	_ = gitcore.LooseDefaultRefs(repo)
 	return gitcore.DefaultBranchRefs(repo)
 }

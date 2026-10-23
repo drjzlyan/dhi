@@ -10,9 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-git/go-git/v5/plumbing/transport"
-	httptransport "github.com/go-git/go-git/v5/plumbing/transport/http"
-
 	"github.com/drjzlyan/dhi/internal/conventions"
 	"github.com/drjzlyan/dhi/internal/gitcore"
 	"github.com/drjzlyan/dhi/internal/gitdiff"
@@ -22,7 +19,7 @@ import (
 // Service orchestrates review sessions over member repos: it resolves
 // targets (fetching PR heads via go-git), creates the dedicated review
 // worktree through the store's seam, and produces diffs with the
-// hermetic git runner. Persistence lives in Store; this type holds no
+// user's git. Persistence lives in Store; this type holds no
 // state beyond its deps.
 type Service struct {
 	ws     *workspace.Workspace
@@ -32,8 +29,6 @@ type Service struct {
 
 	// diffFn is injectable for tests; production wraps runner.Run.
 	diffFn func(ctx context.Context, dir string, args ...string) (string, error)
-	// tokenFn mints push credentials (gh auth token in production).
-	tokenFn func(ctx context.Context) (string, error)
 	// prBody is the PR body template (conventions.pr.body, F-042); "" keeps
 	// the built-in line.
 	prBody   string
@@ -75,12 +70,6 @@ func (s *Service) SetPRVarsFunc(fn func(branch string) map[string]string) { s.pr
 // SetPRBody installs the PR body template. Placeholders: {branch},
 // {member}, {title}.
 func (s *Service) SetPRBody(tpl string) { s.prBody = tpl }
-
-// SetTokenFn installs the credential source for pushes (production:
-// gh auth token; tests: nil keeps local remotes auth-free).
-func (s *Service) SetTokenFn(fn func(ctx context.Context) (string, error)) {
-	s.tokenFn = fn
-}
 
 // HasRunner reports whether diff production can work.
 func (s *Service) HasRunner() bool { return s.runner != nil }
@@ -205,32 +194,16 @@ func (s *Service) PostComment(ctx context.Context, r Review, body string) error 
 	return s.store.MarkPosted(r.ID)
 }
 
-// pushAuth builds go-git credentials from the injected token source.
-// HTTPS origins get BasicAuth; anything else pushes anonymously (local
-// test remotes) or fails visibly upstream.
-func (s *Service) pushAuth(ctx context.Context) (transport.AuthMethod, error) {
-	if s.tokenFn == nil {
-		return nil, nil
-	}
-	tok, err := s.tokenFn(ctx)
-	if err != nil || tok == "" {
-		return nil, err
-	}
-	return &httptransport.BasicAuth{Username: "x-access-token", Password: tok}, nil
-}
-
 // pushBranch pushes refs/heads/<branch> from the member repo to origin.
 func (s *Service) pushBranch(ctx context.Context, memberPath, branch string) error {
 	repo, err := gitcore.Open(memberPath)
 	if err != nil {
 		return err
 	}
-	auth, err := s.pushAuth(ctx)
-	if err != nil {
-		return fmt.Errorf("review: push credentials: %w", err)
-	}
+	// The user's git pushes with their own ssh keys or credential helper
+	// (F-112); DHI never handles a token for it.
 	spec := "refs/heads/" + branch + ":refs/heads/" + branch
-	if err := repo.Push(ctx, "", spec, auth); err != nil {
+	if err := repo.Push(ctx, "", spec); err != nil {
 		return err
 	}
 	return nil
@@ -427,7 +400,7 @@ func (s *Service) Start(ctx context.Context, memberName string, kind Kind, base,
 
 	work, _ := s.store.seams()
 	if work == nil {
-		return Review{}, fmt.Errorf("review: worktree seam unavailable (hermetic git not installed?)")
+		return Review{}, fmt.Errorf("review: worktree seam unavailable (is git installed?)")
 	}
 	rel, err := work(r.ID, mem.Name, target.Head)
 	if err != nil {
@@ -447,7 +420,7 @@ func (s *Service) Patch(ctx context.Context, r Review) (string, error) {
 		return "", fmt.Errorf("review: %s has no live worktree", r.ID)
 	}
 	if s.diffFn == nil {
-		return "", fmt.Errorf("review: hermetic git unavailable — cannot diff %s", r.ID)
+		return "", fmt.Errorf("review: git is not installed — cannot diff %s", r.ID)
 	}
 	dir := filepath.Join(s.ws.Root, filepath.FromSlash(r.WorkRel))
 	patch, err := s.diffFn(ctx, dir, "diff", "--no-color", r.Target.Base+"..."+r.Target.Head)

@@ -29,6 +29,16 @@ type State struct {
 	// Skipped maps a step the user skipped to when (F-085): catch-up runs
 	// never offer it again.
 	Skipped map[string]string `json:"skipped,omitempty"`
+	// LocalIdentity is the git identity the user chose to keep to this
+	// workspace's repos (F-112): written to each member's .git/config,
+	// and to members added later by a repair.
+	LocalIdentity *Identity `json:"local_identity,omitempty"`
+}
+
+// Identity is a git author kept in setup state.
+type Identity struct {
+	Name  string `json:"name"`
+	Email string `json:"email"`
 }
 
 // MarkSkipped records that the user skipped a step.
@@ -202,6 +212,7 @@ var RuntimeEntries = []string{
 	"agents/.archived/", "agents/*/runs/",
 	"config.toml", "marketplace.json", "unread.json", "welcome.seen", "setup.json", "org.toml",
 	"evals/", "episodes/", "traces/", "proposals/", "spend.jsonl", "grants.json", "tools/usage.toml", "tmp/", "hooks/",
+	"mcp-home/", "cache/",
 }
 
 // GitignoreHeader opens .dhi/.gitignore.

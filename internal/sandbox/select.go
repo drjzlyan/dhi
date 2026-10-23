@@ -32,10 +32,11 @@ func Detect(goos string, look LookPath) string {
 }
 
 // Select builds the platform adapter for the given roots: rw roots are
-// writable inside the sandbox, ro roots readable/executable only.
-// Strict (ADR-0011): a missing helper binary or unsupported platform is
-// an ERROR naming the fix — never a silent Noop downgrade. mode "off"
-// returns Noop as the user's explicit opt-out.
+// writable inside the sandbox, ro roots readable/executable only. An
+// unsupported platform is an error naming the fix — never a silent Noop
+// downgrade; mode "off" returns Noop as the user's explicit opt-out. A
+// missing bwrap returns the adapter AND ErrHelperMissing (ADR-0044): the
+// IDE runs, and each agent spawn names the install until bwrap exists.
 func Select(goos string, look LookPath, mode string, rw, ro []string) (Sandbox, error) {
 	if mode == "off" {
 		return Noop{}, nil
@@ -46,6 +47,14 @@ func Select(goos string, look LookPath, mode string, rw, ro []string) (Sandbox, 
 	}
 	path, err := look(bin)
 	if err != nil {
+		if goos == "linux" {
+			sb, berr := NewBubblewrap(bin, rw, ro)
+			if berr != nil {
+				return nil, berr
+			}
+			sb.missing = true
+			return sb, fmt.Errorf("sandbox: %s not found: %w", bin, ErrHelperMissing)
+		}
 		return nil, fmt.Errorf("sandbox: %s not found (install it, or set security.sandbox = \"off\" in settings to opt out explicitly)", bin)
 	}
 	switch goos {

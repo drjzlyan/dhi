@@ -2,9 +2,8 @@
 // (F-002 §7, F-009): JSON-RPC 2.0 over stdio with the flows the editor
 // needs — initialize handshake, full-text didOpen/didChange, streamed
 // publishDiagnostics, completion, hover, rename, code actions, and
-// workspace/applyEdit routing. Servers resolve through the hermetic
-// toolchain shim dir (ADR-0005); tests drive an in-process fake server
-// over net.Pipe.
+// workspace/applyEdit routing. Servers come from the user's system
+// (F-110); tests drive an in-process fake server over net.Pipe.
 package lsp
 
 import (

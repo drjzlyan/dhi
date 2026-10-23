@@ -1,9 +1,7 @@
 package wizard
 
 import (
-	"context"
 	"fmt"
-	"time"
 
 	"charm.land/bubbletea/v2"
 
@@ -37,8 +35,9 @@ type cliInstalledMsg struct {
 }
 
 // cliStep lets the user see which coding CLIs are ready and install a
-// missing one (ADR-0027): npm-distributed CLIs install after the exact
-// command is shown and confirmed; the rest show the vendor's command.
+// missing one (ADR-0044): the user's package manager installs it after
+// the exact command is shown and confirmed; the rest show the vendor's
+// docs.
 type cliStep struct {
 	env     *Env
 	rows    []CLIRow
@@ -122,7 +121,7 @@ func (s *cliStep) HandleKey(key string) Action {
 		switch {
 		case row.Version != "":
 			s.msg = row.Name + " is already installed"
-		case row.Plan.Method == clirun.MethodNPM && s.env.InstallCLI != nil:
+		case s.installable(row.Name):
 			s.phase = cliConfirm
 		default:
 			s.phase = cliManualInfo
@@ -178,14 +177,24 @@ func (s *cliStep) Apply() error {
 	return nil
 }
 
+// installCmd is the command that installs name here ("" = none).
+func (s *cliStep) installCmd(name string) string {
+	if s.env.CLIInstall == nil || s.env.RunInstall == nil {
+		return ""
+	}
+	cmd, ok := s.env.CLIInstall(name)
+	if !ok {
+		return ""
+	}
+	return cmd
+}
+
+func (s *cliStep) installable(name string) bool { return s.installCmd(name) != "" }
+
 func (s *cliStep) start(row CLIRow) {
 	s.phase = cliInstalling
-	install, name := s.env.InstallCLI, row.Name
-	s.pending = func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 6*time.Minute)
-		defer cancel()
-		return cliInstalledMsg{name: name, err: install(ctx, name)}
-	}
+	name := row.Name
+	s.pending = s.env.RunInstall(name, func(err error) tea.Msg { return cliInstalledMsg{name: name, err: err} })
 }
 
 func (s *cliStep) Update(msg tea.Msg) tea.Cmd {
@@ -199,14 +208,14 @@ func (s *cliStep) Update(msg tea.Msg) tea.Cmd {
 		return nil
 	}
 	s.refresh()
-	s.env.Changed = true // the runtime registry reads CLIs at launch
-	plan := clirun.InstallPlan{}
 	for _, r := range s.rows {
-		if r.Name == m.name {
-			plan = r.Plan
+		if r.Name == m.name && r.Version == "" {
+			s.errText = "the install finished but " + m.name + " is still not on your PATH — check your shell profile, then press r"
+			return nil
 		}
 	}
-	s.env.Applied = append(s.env.Applied, "installed "+m.name+" ("+plan.Package+")")
+	s.env.Changed = true // the runtime registry reads CLIs at launch
+	s.env.Applied = append(s.env.Applied, "installed "+m.name+" ("+s.installCmd(m.name)+")")
 	s.msg = m.name + " installed"
 	return nil
 }
@@ -238,7 +247,7 @@ func (s *cliStep) Keys() []string {
 	}
 	keys := []string{"↑/↓ select"}
 	if row, ok := s.selected(); ok && row.Version == "" {
-		if row.Plan.Method == clirun.MethodNPM && s.env.InstallCLI != nil {
+		if s.installable(row.Name) {
 			keys = append(keys, "i install")
 		} else {
 			keys = append(keys, "i how to install")
@@ -276,14 +285,15 @@ func (s *cliStep) View(w, f int) []string {
 	row, hasRow := s.selected()
 	switch s.phase {
 	case cliConfirm:
-		out = append(out, "", theme.TextStyle().Render("DHI will run, with its own npm (no sudo, nothing global):"), "",
-			"  "+theme.AccentText().Render("npm install --prefix "+s.prefixOf(row.Name)+" "+row.Plan.Package), "",
-			dim("Installs into DHI's folder only. Source: "+orDash(row.Plan.Docs)))
+		out = append(out, "", theme.TextStyle().Render("DHI will run this with your package manager, in your terminal:"), "",
+			"  "+theme.AccentText().Render(s.installCmd(row.Name)), "",
+			dim("You see its output and answer any prompt; DHI comes back when it ends."),
+			dim("Docs: "+orDash(row.Plan.Docs)))
 		bl, _ := kit.Buttons([]kit.Button{{Key: "y", Label: "Install", Focused: true},
 			{Key: "n", Label: "Cancel", Variant: theme.ButtonGhost}}, w)
 		out = append(append(out, ""), bl...)
 	case cliInstalling:
-		out = append(out, "", kit.SpinnerGlyph(f)+" "+dim("installing "+row.Plan.Package+" with DHI's npm — this can take a minute…"))
+		out = append(out, "", kit.SpinnerGlyph(f)+" "+dim("installing "+row.Name+" in your terminal…"))
 	case cliManualInfo:
 		out = append(out, "", theme.TextStyle().Render("Install "+row.Name+" yourself:"))
 		if row.Plan.Command != "" {
@@ -318,12 +328,4 @@ func orDash(s string) string {
 		return "—"
 	}
 	return s
-}
-
-// prefixOf is where a managed install of name lands, for display.
-func (s *cliStep) prefixOf(name string) string {
-	if s.env.CLIPrefix != nil {
-		return s.env.CLIPrefix(name)
-	}
-	return "<dhi toolchain>/" + clirun.ManagedSubdir + "/" + name
 }

@@ -2,6 +2,8 @@ package dhitools
 
 import (
 	"context"
+	"encoding/json"
+	"github.com/go-git/go-git/v5/config"
 	"os"
 	"path/filepath"
 	"strings"
@@ -354,5 +356,48 @@ func TestGitCommitFollowsAChangingConventionsSource(t *testing.T) {
 	resolve := callAsync(h, "git_commit", `{"message":"did stuff"}`, f)
 	if out, isErr := resolve(t); isErr {
 		t.Fatalf("the relaxed rule is not live: %s", out)
+	}
+}
+
+// git_push asks with a card naming the branch and remote; on yes DHI
+// pushes with the user's git. The default branch is refused before a card.
+func TestGitPushAsksThenPushes(t *testing.T) {
+	f, m := newFixture(t, "git_push")
+	api := memberDir(t, f.ws, "api")
+	initRepo(t, api)
+	origin := filepath.Join(t.TempDir(), "origin.git")
+	if _, err := git.PlainInit(origin, true); err != nil {
+		t.Fatal(err)
+	}
+	r, _ := git.PlainOpen(api)
+	if _, err := r.CreateRemote(&config.RemoteConfig{Name: "origin", URLs: []string{origin}}); err != nil {
+		t.Fatal(err)
+	}
+	h := Deps{Agent: m, WS: f.ws, Workdir: api, Approvals: f.approvals}.Handler()
+	if out, isErr := call(h, t, "git_push", `{}`); !isErr || !strings.Contains(out, "default branch") || len(f.approvals.List()) != 0 {
+		t.Fatalf("push of master = %q isErr=%v", out, isErr)
+	}
+	onBranch(t, api, "task/x")
+	var target string
+	go func() {
+		for i := 0; i < 200; i++ {
+			if l := f.approvals.List(); len(l) > 0 {
+				target = l[0].Target
+				f.approvals.Resolve(l[0].ID, true)
+				return
+			}
+			sleepTick()
+		}
+	}()
+	out, isErr, _ := h.CallTool(context.Background(), "git_push", json.RawMessage(`{}`))
+	if isErr || !strings.Contains(out, "pushed task/x to origin") {
+		t.Fatalf("push = %q isErr=%v", out, isErr)
+	}
+	if target != "push task/x to origin ("+origin+")" {
+		t.Fatalf("card target = %q", target)
+	}
+	or, _ := git.PlainOpen(origin)
+	if _, err := or.Reference(plumbing.NewBranchReferenceName("task/x"), true); err != nil {
+		t.Fatalf("origin has no task/x: %v", err)
 	}
 }

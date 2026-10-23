@@ -119,7 +119,7 @@ func TestDebugStopCommandDisconnects(t *testing.T) {
 }
 
 func TestDebugRefusals(t *testing.T) {
-	m := testEditor(t, nil) // no dlv on the (empty) toolchain PATH
+	m := testEditor(t, nil) // no dlv on the (empty) PATH
 	for _, c := range []struct{ cmd, want string }{
 		{"next", "no session"},
 		{"stop", "no session"},

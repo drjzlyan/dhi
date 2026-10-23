@@ -66,7 +66,7 @@ func TestUnreadStoreSuite(t *testing.T) {
 	}
 
 	// The aggregate JSON report includes the row.
-	if data, err := json.Marshal(Run("", ws)); err != nil {
+	if data, err := json.Marshal(Run(ws)); err != nil {
 		t.Fatal(err)
 	} else if !strings.Contains(string(data), "unread/store") {
 		t.Fatalf("report missing unread/store: %s", data)

@@ -68,8 +68,8 @@ func (r *Runtime) memberRoots(task tasks.Task) map[string]string {
 	return out
 }
 
-// worktreeState fingerprints dir (HEAD + porcelain status) through DHI's
-// hermetic git, so the loop verifies only work that changed something —
+// worktreeState fingerprints dir (HEAD + porcelain status) through the
+// user's git, so the loop verifies only work that changed something —
 // a status report or a summary turn on a card never trips `go test`.
 // ok is false when it cannot tell (no git seam): the loop then verifies.
 func (r *Runtime) worktreeState(ctx context.Context, dir string) (string, bool) {
@@ -126,29 +126,21 @@ func (r *Runtime) verify(ctx context.Context, agentID string, sc scopes.Set, tar
 	return verifyResult{ok: true}
 }
 
-// ensureTools installs the optional managed toolchains a target needs
-// (F-076) — Rust, a JDK, Maven, Gradle, .NET — after the human approves
-// the download in the approvals inbox ("allow always" covers later ones).
-func (r *Runtime) ensureTools(ctx context.Context, agentID string, t verifyTarget) (verifyResult, bool) {
+// ensureTools checks the tools a target needs are on the user's system
+// (F-110). A missing one leaves the work unverified, named, with the
+// install command for the human — agents never install tools.
+func (r *Runtime) ensureTools(_ context.Context, _ string, t verifyTarget) (verifyResult, bool) {
 	tc := r.cfg.Toolchain
 	if tc == nil {
 		return verifyResult{}, true
 	}
 	for _, name := range t.plan.Tools {
-		size, optional := tc.Optional(name)
-		if !optional || tc.Installed(name) {
-			continue
-		}
-		what := fmt.Sprintf("install the managed %s toolchain (%d MB download)", name, (size+(1<<20)-1)>>20)
-		if r.cfg.Approvals == nil {
-			return verifyResult{cmd: t.String(), tail: "the " + name + " toolchain is not installed", env: true}, false
-		}
-		if err := r.cfg.Approvals.AskScope(ctx, agentID, "toolchain", sandbox.OpExec, what,
-			"DHI needs it to run this project's tests"); err != nil {
-			return verifyResult{cmd: t.String(), tail: "the " + name + " toolchain is not installed: " + err.Error(), env: true}, false
-		}
-		if err := tc.Install(ctx, name); err != nil {
-			return verifyResult{cmd: t.String(), tail: "installing the " + name + " toolchain failed: " + err.Error(), env: true}, false
+		if hint, missing := tc.Missing(name); missing {
+			tail := "the " + name + " toolchain is not installed on this machine"
+			if hint != "" {
+				tail += " — install it with: " + hint
+			}
+			return verifyResult{cmd: t.String(), tail: tail, env: true}, false
 		}
 	}
 	return verifyResult{}, true

@@ -1,7 +1,6 @@
 // Package search runs content searches across workspace members. The
-// production backend shells out to DHI's own ripgrep (installed via the
-// hermetic toolchain, invoked with the shim path — never the host copy,
-// ADR-0005). Results stream so large trees stay responsive.
+// production backend runs the user's ripgrep (F-110); results stream so
+// large trees stay responsive.
 package search
 
 import (
@@ -31,7 +30,7 @@ type Searcher interface {
 	Search(ctx context.Context, query string, roots []string) (<-chan Hit, error)
 }
 
-// Ripgrep searches with an rg binary at Bin (DHI's shim path).
+// Ripgrep searches with an rg binary at Bin.
 type Ripgrep struct {
 	Bin string
 }
@@ -142,6 +141,45 @@ func parseRipgrepJSON(line []byte) (Hit, bool) {
 // Format renders a hit for list display.
 func (h Hit) String() string {
 	return h.Path + ":" + strconv.Itoa(h.Line) + ": " + h.Text
+}
+
+// MissingToolError says the searcher's program is not installed; the
+// editor turns it into the install card (F-110).
+type MissingToolError struct{ Tool string }
+
+func (e *MissingToolError) Error() string { return e.Tool + " is not installed" }
+
+// Host searches with the user's own ripgrep, looked up at every search so
+// one installed mid-session is used without a restart (F-110).
+type Host struct {
+	Look func(name string) (string, bool)
+}
+
+func (h Host) rg() (Ripgrep, error) {
+	if h.Look != nil {
+		if p, ok := h.Look("rg"); ok {
+			return Ripgrep{Bin: p}, nil
+		}
+	}
+	return Ripgrep{}, &MissingToolError{Tool: "rg"}
+}
+
+// Search implements Searcher.
+func (h Host) Search(ctx context.Context, query string, roots []string) (<-chan Hit, error) {
+	r, err := h.rg()
+	if err != nil {
+		return nil, err
+	}
+	return r.Search(ctx, query, roots)
+}
+
+// SearchRegex implements RegexSearcher.
+func (h Host) SearchRegex(ctx context.Context, pattern string, roots []string) (<-chan Hit, error) {
+	r, err := h.rg()
+	if err != nil {
+		return nil, err
+	}
+	return r.SearchRegex(ctx, pattern, roots)
 }
 
 // Refused is the explicit "capability not installed" searcher

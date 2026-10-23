@@ -14,9 +14,9 @@ import (
 )
 
 // lspOpenDoc announces a document to its language's server. A missing
-// server is surfaced once per language (ADR-0011): the command line names
-// the fix instead of LSP being silently off. Nothing is ever installed here —
-// provisioning is the confirm-gated `:lsp install`.
+// server is surfaced once per language: the command line names the fix
+// instead of LSP being silently off. Nothing is installed here — `:lsp
+// install` raises the install card (F-110).
 func (m *Model) lspOpenDoc(path, text string) {
 	if m.lspMgr == nil {
 		return
@@ -45,13 +45,13 @@ func (m *Model) lspOpenDoc(path, text string) {
 // missingServerNote tells the user exactly how to get the server.
 func missingServerNote(l langserver.Language, err error) string {
 	head := "no " + l.Name + " language server"
-	switch l.Install.Method {
-	case langserver.MethodNPM:
-		return head + " — :lsp install " + l.ID + " adds it (asks first)"
-	case langserver.MethodToolchain:
-		return head + " — " + l.Install.Note
+	if l.Install.Tool == "" {
+		return head + " (" + err.Error() + ") — check editor.languages." + l.ID + ".command"
 	}
-	return head + " (" + err.Error() + ") — check editor.languages." + l.ID + ".command"
+	if !strings.Contains(err.Error(), "not installed") {
+		return l.Name + " language server did not start: " + err.Error()
+	}
+	return head + " — :lsp install " + l.ID + " (asks first)"
 }
 
 // pumpLSPEvents forwards diagnostics and server edits into the message channel.
@@ -142,15 +142,6 @@ func (m *Model) applyLSPUpdate(msg teaMsg) {
 	case lspMsgNote:
 		if e := m.active(); e != nil {
 			e.SetMessage(msg.note)
-		}
-	case lspMsgInstalled:
-		delete(m.lspInstalling, msg.lang)
-		if e := m.active(); e != nil {
-			e.SetMessage(msg.note)
-			if msg.installOK {
-				// A freshly installed server starts for the file already open.
-				m.lspOpenDoc(e.Path(), e.Buffer().Text())
-			}
 		}
 	}
 }

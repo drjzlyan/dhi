@@ -193,9 +193,12 @@ type Deps struct {
 	Library *library.Store
 	// Identity / SetIdentity / SuggestIdentity back the git identity row
 	// (F-083); nil Identity shows it as unavailable.
-	Identity        gitcore.IdentityFunc
-	SetIdentity     func(ctx context.Context, id gitcore.Identity) error
-	SuggestIdentity func(ctx context.Context) []gitcore.Suggestion
+	Identity    gitcore.IdentityFunc
+	SetIdentity func(ctx context.Context, id gitcore.Identity) error
+	// SetIdentityLocal keeps it to this workspace's repos (F-112); nil
+	// hides the choice.
+	SetIdentityLocal func(ctx context.Context, id gitcore.Identity) error
+	SuggestIdentity  func(ctx context.Context) []gitcore.Suggestion
 	// LearnConventions infers the team's commit and PR style from git
 	// history and the repo's PR template (F-082); nil hides g.
 	LearnConventions func() conventions.Inference

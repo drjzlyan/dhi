@@ -40,9 +40,8 @@ func (g *ghFake) SubmitReview(_ context.Context, _, num string, sub review.Revie
 	}
 	return "https://github.com/acme/api/pull/" + num + "#review", nil
 }
-func (g *ghFake) Login(context.Context) (string, error)     { return g.login, nil }
-func (g *ghFake) Available() bool                           { return true }
-func (g *ghFake) AuthToken(context.Context) (string, error) { return "tok", nil }
+func (g *ghFake) Login(context.Context) (string, error) { return g.login, nil }
+func (g *ghFake) Available() bool                       { return true }
 func (g *ghFake) PR(context.Context, string, string) (review.PRMeta, error) {
 	return review.PRMeta{Author: g.prAuthor}, nil
 }
