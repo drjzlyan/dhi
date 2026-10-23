@@ -36,16 +36,17 @@ func DefaultBranchRefs(repo string) []string {
 	return out
 }
 
-// LooseDefaultRefs writes a loose ref file for each default branch that
-// exists only in packed-refs, so a sandbox that guards existing files
-// (bubblewrap binds read-only only what exists) can protect it. Git reads
-// loose and packed refs alike; the value is unchanged. Best effort.
-func LooseDefaultRefs(repo string) {
+// PackedOnlyDefaultRefs lists the default-branch ref files that exist
+// only in packed-refs: a sandbox that guards existing files (bubblewrap
+// binds read-only only what exists) cannot protect them until a loose
+// copy is written. Git reads loose and packed refs alike.
+func PackedOnlyDefaultRefs(repo string) []string {
 	gitDir := filepath.Join(repo, ".git")
 	packed, err := os.ReadFile(filepath.Join(gitDir, "packed-refs"))
 	if err != nil {
-		return
+		return nil
 	}
+	var out []string
 	for _, ref := range DefaultBranchRefs(repo) {
 		if strings.HasSuffix(ref, ".lock") {
 			continue
@@ -53,17 +54,43 @@ func LooseDefaultRefs(repo string) {
 		if _, err := os.Stat(ref); err == nil {
 			continue
 		}
-		rel, err := filepath.Rel(gitDir, ref)
-		if err != nil {
-			continue
-		}
-		name := filepath.ToSlash(rel)
-		for _, line := range strings.Split(string(packed), "\n") {
-			sha, r, ok := strings.Cut(strings.TrimSpace(line), " ")
-			if ok && r == name && len(sha) >= 40 {
-				_ = os.MkdirAll(filepath.Dir(ref), 0o755)
-				_ = os.WriteFile(ref, []byte(sha+"\n"), 0o644)
-			}
+		if packedSHA(string(packed), gitDir, ref) != "" {
+			out = append(out, ref)
 		}
 	}
+	return out
+}
+
+func packedSHA(packed, gitDir, ref string) string {
+	rel, err := filepath.Rel(gitDir, ref)
+	if err != nil {
+		return ""
+	}
+	name := filepath.ToSlash(rel)
+	for _, line := range strings.Split(packed, "\n") {
+		sha, r, ok := strings.Cut(strings.TrimSpace(line), " ")
+		if ok && r == name && len(sha) >= 40 {
+			return sha
+		}
+	}
+	return ""
+}
+
+// LooseDefaultRefs writes a loose copy of each packed-only default ref
+// (the same commit). It changes the repo, so callers ask first (F-112).
+func LooseDefaultRefs(repo string) error {
+	packed, err := os.ReadFile(filepath.Join(repo, ".git", "packed-refs"))
+	if err != nil {
+		return err
+	}
+	for _, ref := range PackedOnlyDefaultRefs(repo) {
+		sha := packedSHA(string(packed), filepath.Join(repo, ".git"), ref)
+		if err := os.MkdirAll(filepath.Dir(ref), 0o755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(ref, []byte(sha+"\n"), 0o644); err != nil {
+			return err
+		}
+	}
+	return nil
 }

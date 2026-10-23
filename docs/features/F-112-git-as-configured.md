@@ -23,7 +23,8 @@ Status: done (M36 P4) · ADR-0044 · amends F-083
 - DHI no longer reads `gh auth token` for pushes; the user's credential helper or ssh key is used.
 - Workspace-only identity is remembered in the workspace's setup state; a safe repair gives members
   added later the same identity.
-- Deviation from the plan, for the user to decide: the loose copy of a packed default-branch ref is
-  still written, but only under bubblewrap (which guards only existing files; seatbelt denies by
-  path, so macOS writes nothing). The one cursor line in `.git/info/exclude` is still appended
-  without a card. Both are local-only, never committed, inside the workspace's repos.
+- No silent writes into repos: cursor's per-turn `.cursor/mcp.json` needs one `/.cursor/mcp.json`
+  line in `.git/info/exclude`, added once per repo after an approval card (its own scope, which does
+  not widen the agent's sandbox); refused, the turn runs without IDE tools. Under bubblewrap a
+  default branch kept only in packed-refs gets the `default-ref/<member>` repair, which asks before
+  writing the loose copy the sandbox needs to guard it; seatbelt needs none.

@@ -654,7 +654,7 @@ func runTUI() (relaunch bool) {
 	// Self-healing (F-085, ADR-0038): safe repairs run now and are
 	// reported; the rest wait on the user's yes in the same card.
 	if decision.Block == "" && ws != nil {
-		if g := repairGate(ws, gitRunner); g != nil {
+		if g := repairGate(ws, gitRunner, decision.Sandbox); g != nil {
 			gates = append(gates, g)
 		}
 	}
@@ -1229,13 +1229,16 @@ func runTmpEnv(env []string, ws *workspace.Workspace) []string {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return env
 	}
-	out := make([]string, 0, len(env)+1)
-	for _, kv := range env {
-		if !strings.HasPrefix(kv, "TMPDIR=") {
-			out = append(out, kv)
-		}
+	home, _ := os.UserHomeDir()
+	set := append([]string{"TMPDIR=" + dir}, sandbox.CacheFallbackEnv(home, runtime.GOOS,
+		func(k string) string { v, _ := hostenv.Lookup(env, k); return v },
+		filepath.Join(ws.Root, workspace.DirCache))...)
+	out := append([]string(nil), env...)
+	for _, kv := range set {
+		k, _, _ := strings.Cut(kv, "=")
+		out = hostenv.With(out, k, strings.TrimPrefix(kv, k+"="))
 	}
-	return append(out, "TMPDIR="+dir)
+	return out
 }
 
 // WithGrants implements dhitools.GrantRunner: a runner whose sandbox
@@ -1357,13 +1360,9 @@ func guardWorkspace(sb sandbox.Sandbox, ws *workspace.Workspace) sandbox.Sandbox
 	guard := []string{dhi}
 	// F-086: the default branch moves only through DHI or you. An agent's
 	// own `git commit` on main fails, so work lands on a task branch.
-	_, bwrap := sb.(*sandbox.Bubblewrap)
+	// bubblewrap guards only ref files that exist: a packed-only default
+	// branch gets a loose copy from the default-ref repair, after a yes.
 	for _, m := range ws.Members() {
-		if bwrap {
-			// bubblewrap guards only files that exist; seatbelt denies by
-			// path, so on macOS nothing is written into the repo.
-			gitcore.LooseDefaultRefs(m.Path)
-		}
 		guard = append(guard, gitcore.DefaultBranchRefs(m.Path)...)
 	}
 	guarded, err := g.WithGuarded(guard, reopen)
@@ -1490,11 +1489,17 @@ func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cl
 		DefaultEngine: defaultEngine,
 		CLIEnv:        cliEnv,
 		CLIEnvFunc:    hostenv.Env, // "Reload shell environment" reaches the next spawn
-		Tasks:         taskStore,
-		Org:           company,
-		Standards:     true,
-		Conventions:   conv,
-		ExtraRoots:    worktreeRoots(wt),
+		// A turn waiting for bubblewrap opens its install card (F-113).
+		OnHelperMissing: func() {
+			if b, ok := editor.(*editorBridge); ok {
+				go func() { _, _ = b.request(context.Background(), app.EditorRequest{Op: "install", Arg: "bwrap"}) }()
+			}
+		},
+		Tasks:       taskStore,
+		Org:         company,
+		Standards:   true,
+		Conventions: conv,
+		ExtraRoots:  worktreeRoots(wt),
 		// Bridged MCP servers get a private HOME inside .dhi, which the
 		// sandbox lets them write (F-109).
 		MCPHome:   filepath.Join(ws.Root, workspace.DHIDir, "mcp-home"),
@@ -1763,8 +1768,9 @@ func suggestIdentity(ctx context.Context, r *gitcore.Runner, dirs []string) []gi
 // repairGate finds what DHI can fix in the workspace, applies the safe
 // repairs, and returns the card that reports them and asks about the
 // rest; nil when there is nothing to say (F-085).
-func repairGate(ws *workspace.Workspace, git *gitcore.Runner) *repairgate.Model {
+func repairGate(ws *workspace.Workspace, git *gitcore.Runner, sb sandbox.Sandbox) *repairgate.Model {
 	in := repair.Input{WS: ws, Library: library.Open(ws), UserConfig: settingsUserPath(), LegacyToolchain: hosttools.LegacyToolchainDir()}
+	_, in.GuardRefs = sb.(*sandbox.Bubblewrap)
 	if o, err := agentkitOrg.Load(ws.Root); err == nil {
 		in.Org = o
 	}

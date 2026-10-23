@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	goruntime "runtime"
 	"strings"
 
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
@@ -272,4 +273,23 @@ func (r *Runtime) runFor(e *entry) dhitools.CommandRunner {
 		return r.cfg.Run
 	}
 	return gr.WithGrants(write, exec)
+}
+
+// cacheFallback points caches the user does not have yet into the
+// workspace's .dhi/cache, so a sandboxed build works without DHI creating
+// folders in your home (F-113).
+func (r *Runtime) cacheFallback(env []string) []string {
+	if r.cfg.WS == nil {
+		return nil
+	}
+	home, _ := os.UserHomeDir()
+	get := func(k string) string {
+		for i := len(env) - 1; i >= 0; i-- {
+			if v, ok := strings.CutPrefix(env[i], k+"="); ok {
+				return v
+			}
+		}
+		return ""
+	}
+	return sandbox.CacheFallbackEnv(home, goruntime.GOOS, get, filepath.Join(r.cfg.WS.Root, workspace.DirCache))
 }

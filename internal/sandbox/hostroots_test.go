@@ -91,3 +91,21 @@ func TestToolHomesAndFencedCredentialWrites(t *testing.T) {
 		t.Fatal("a writable ~/.cargo must still fence its credentials")
 	}
 }
+
+func TestCacheFallbackOnlyForMissingCaches(t *testing.T) {
+	home := t.TempDir()
+	os.MkdirAll(filepath.Join(home, ".npm"), 0o755)
+	got := strings.Join(CacheFallbackEnv(home, "linux", nil, "/w/.dhi/cache"), ",")
+	if got != "XDG_CACHE_HOME=/w/.dhi/cache/xdg,GOMODCACHE=/w/.dhi/cache/gomod" {
+		t.Fatalf("env = %s", got)
+	}
+	moved := func(k string) string {
+		if k == "XDG_CACHE_HOME" {
+			return "/elsewhere"
+		}
+		return ""
+	}
+	if got := strings.Join(CacheFallbackEnv(home, "linux", moved, "/w/c"), ","); strings.Contains(got, "XDG") {
+		t.Fatalf("a moved cache is the user's: %s", got)
+	}
+}

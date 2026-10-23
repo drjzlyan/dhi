@@ -22,9 +22,12 @@ Status: done (M36 P5) · ADR-0044 · amends F-086, F-087
   /opt/homebrew, nvm's versions/node/vX), never home or /. More credential files are fenced:
   ~/.config/gh, ~/.git-credentials, ~/.docker/config.json, ~/.cargo/credentials.toml,
   ~/.local/share/keyrings.
-- Without bwrap the adapter is built anyway and looks bwrap up at each spawn: a spawn names the
-  install (`:install bwrap` in the editor raises the card), and once installed agents run without a
-  restart. Boot shows a warning. There is no separate "paused" queue: the turn fails visibly.
+- Without bwrap the adapter is built anyway and looks bwrap up at each spawn. A turn that needs it
+  waits: the thread says why, the editor's install card opens (a toast points to it, nothing is
+  interrupted), and the turn continues once bwrap is installed — no restart. Boot shows a warning.
+- A standard cache that does not exist yet (Linux ~/.cache, ~/go, ~/.npm) is pointed into
+  `.dhi/cache` for agents and `run` (XDG_CACHE_HOME, GOMODCACHE, npm_config_cache), so a sandboxed
+  build works without DHI creating folders in your home.
 - Tool homes: ~/.cargo and ~/.gradle are writable (cargo locks files in CARGO_HOME, Gradle keeps
   its daemon there) while credential files stay read- and write-denied; ~/.rustup and Apple's
   developer dirs (xcode-select's, Command Line Tools) are read+exec. Live on macOS: sandboxed

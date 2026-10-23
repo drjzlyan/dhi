@@ -29,7 +29,15 @@ func TestLooseDefaultRefsMaterializesAPackedMain(t *testing.T) {
 	os.MkdirAll(filepath.Join(repo, ".git", "refs", "heads"), 0o755)
 	sha := strings.Repeat("a", 40)
 	os.WriteFile(filepath.Join(repo, ".git", "packed-refs"), []byte("# pack-refs with: peeled fully-peeled sorted\n"+sha+" refs/heads/main\n"), 0o644)
-	LooseDefaultRefs(repo)
+	if got := PackedOnlyDefaultRefs(repo); len(got) != 1 || filepath.Base(got[0]) != "main" {
+		t.Fatalf("packed-only = %v", got)
+	}
+	if err := LooseDefaultRefs(repo); err != nil {
+		t.Fatal(err)
+	}
+	if got := PackedOnlyDefaultRefs(repo); len(got) != 0 {
+		t.Fatalf("after the copy = %v", got)
+	}
 	b, err := os.ReadFile(filepath.Join(repo, ".git", "refs", "heads", "main"))
 	if err != nil || strings.TrimSpace(string(b)) != sha {
 		t.Fatalf("loose main = %q %v", b, err)

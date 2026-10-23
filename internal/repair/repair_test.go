@@ -202,3 +202,34 @@ func TestLocalIdentityReachesNewMembers(t *testing.T) {
 		t.Fatal("a repo with an identity must be left alone")
 	}
 }
+
+// Under bubblewrap a packed-only default branch gets a repair that asks
+// before writing the loose copy; elsewhere nothing is offered.
+func TestDefaultRefRepairAsks(t *testing.T) {
+	in := fixture(t)
+	ms := in.WS.Members()
+	if len(ms) == 0 {
+		t.Skip("fixture has no members")
+	}
+	git := filepath.Join(ms[0].Path, ".git")
+	os.MkdirAll(filepath.Join(git, "refs", "heads"), 0o755)
+	os.WriteFile(filepath.Join(git, "packed-refs"), []byte(strings.Repeat("b", 40)+" refs/heads/main\n"), 0o644)
+	if _, ok := byID(Find(in), "default-ref/"+ms[0].Name); ok {
+		t.Fatal("seatbelt needs no copy")
+	}
+	in.GuardRefs = true
+	r, ok := byID(Find(in), "default-ref/"+ms[0].Name)
+	if !ok || r.Safe {
+		t.Fatalf("repair = %+v", r)
+	}
+	Run(Find(in), true)
+	if _, err := os.Stat(filepath.Join(git, "refs", "heads", "main")); err == nil {
+		t.Fatal("written without a yes")
+	}
+	if err := r.Apply(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(git, "refs", "heads", "main")); err != nil {
+		t.Fatal("not written on yes")
+	}
+}

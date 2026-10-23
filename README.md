@@ -158,15 +158,18 @@ changes nothing outside its own folders and your workspace without a yes:
   - installing a tool (the exact `brew`/`apt`/`npm` command runs in a terminal you watch);
   - your git identity (`~/.gitconfig`, or only this workspace's repos);
   - deleting DHI's old toolchain folder from earlier versions;
-  - an agent pushing a branch (DHI pushes for it with your git).
+  - an agent pushing a branch (DHI pushes for it with your git);
+  - the one line Cursor Agent needs in a repo's `.git/info/exclude`, and, on Linux, the loose copy
+    of a packed default branch that lets the sandbox keep agents off it.
 - **Agents** run inside the OS sandbox (Seatbelt on macOS, bubblewrap on
   Linux):
   - They write the workspace, their own CLI state and the standard package
     caches (`~/.npm`, `~/go/pkg/mod`, `~/.cache`, …).
   - Any other write, program folder or network access raises a card.
   - They never read `~/.ssh`, `~/.aws`, `~/.config/gh` or similar credential folders.
-- **On Linux, agents need bubblewrap.** Without it the IDE works, and
-  `:install bwrap` offers the install.
+- **On Linux, agents need bubblewrap.** Without it the IDE works; an agent
+  turn waits, the editor shows the install card, and the turn continues once
+  it is installed.
 
 ## Skills and integrations
 

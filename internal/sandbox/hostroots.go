@@ -106,3 +106,38 @@ func ExecRoots(path, home string) []string {
 	}
 	return out
 }
+
+// CacheFallbackEnv points a tool's cache into dir (inside the workspace's
+// writable .dhi) when its standard per-user cache does not exist yet:
+// creating ~/.cache or ~/go under a read-only root fails, and DHI never
+// creates folders in your home for an agent. A cache the user already
+// has, or moved with its variable, is left alone. One KEY=value per
+// redirected cache.
+func CacheFallbackEnv(home, goos string, getenv func(string) string, dir string) []string {
+	if home == "" || dir == "" {
+		return nil
+	}
+	if getenv == nil {
+		getenv = func(string) string { return "" }
+	}
+	missing := func(p string) bool {
+		_, err := os.Stat(p)
+		return err != nil
+	}
+	var out []string
+	set := func(key, sub string) {
+		if getenv(key) == "" {
+			out = append(out, key+"="+filepath.Join(dir, sub))
+		}
+	}
+	if goos != "darwin" && missing(filepath.Join(home, ".cache")) {
+		set("XDG_CACHE_HOME", "xdg") // go build cache, pip, uv, …
+	}
+	if getenv("GOPATH") == "" && missing(filepath.Join(home, "go")) {
+		set("GOMODCACHE", "gomod")
+	}
+	if missing(filepath.Join(home, ".npm")) {
+		set("npm_config_cache", "npm")
+	}
+	return out
+}

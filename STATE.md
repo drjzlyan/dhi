@@ -40,17 +40,17 @@
 - Gotchas: seatbelt matches canonical paths (a workspace under /tmp needs /private/tmp); a
   workspace in a symlinked dir would hit the same (pre-existing). Write/exec grants do not reach
   `run` yet (they reach the CLI's sandbox).
-- Deviations for the user: the cursor `.git/info/exclude` line and (bubblewrap only) loose
-  default-ref copies are still written without a card; a missing bwrap fails each spawn with the
-  install command instead of a paused queue; the Settings tools view is the setup "tools" step.
 - Follow-up (same session): grants reach `run`; agent spawns and `run` read the env per call (PATH
   exec roots too); the tools step is always on the checklist (Settings → SETUP); recipes drop sudo as
   root; bwrap's root is read-only (a ~/.bashrc write had "succeeded" into tmpfs). Linux checked live
   in Docker (Debian arm64): no-bwrap boot, doctor, `:install bwrap` → apt in a tab, ~/.bashrc card,
   caches, ~/.ssh hidden. SSH push auth checked with `git push --dry-run` through DHI's runner
   (nothing published).
-- Open: on Linux a missing ~/.cache makes sandboxed go builds fail (EROFS → card) instead of
-  silently using tmpfs; agents' CLI state dirs must exist to be bound.
+- Then (user: "fix all the issues"): caches the user does not have go to `.dhi/cache`; a turn
+  without bwrap waits (thread notice + editor install card via EditorRequest "install") and
+  continues once installed; cursor's exclude line asks once (scope `git-exclude:<file>`); the
+  packed-only default-ref copy is the asking `default-ref/<member>` repair (bubblewrap only).
+- Open: agents' CLI state dirs must exist to be bound.
 
 ### Session 61 (M35: every keyboard, paste & copy, standard skills + MCP, sign-in, re-runnable setup, branch `m35`)
 

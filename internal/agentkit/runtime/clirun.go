@@ -25,6 +25,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/workflow"
 	"github.com/drjzlyan/dhi/internal/gitcore"
 	"github.com/drjzlyan/dhi/internal/mcp"
+	"github.com/drjzlyan/dhi/internal/sandbox"
 	"github.com/drjzlyan/dhi/internal/tasks"
 	"github.com/drjzlyan/dhi/internal/workspace"
 )
@@ -358,6 +359,12 @@ func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Messag
 		MCPConfig: in.mcpConfig, MCPURL: in.mcpEndpoint, MCPGeminiDir: in.mcpGeminiDir,
 	})...)
 	wrapped, err := r.spawnSandbox(e).Wrap(argv)
+	if errors.Is(err, sandbox.ErrHelperMissing) {
+		// The IDE never blocks on it (ADR-0044): the turn waits here until
+		// the human installs bubblewrap, then continues as if nothing
+		// happened.
+		wrapped, err = r.waitForHelper(ctx, e, trigger, argv)
+	}
 	if err != nil {
 		run.Status = tasks.RunError
 		run.Error = fmt.Sprintf("wrap: %v", err)
@@ -702,22 +709,26 @@ func (r *Runtime) serveToolsFor(e *entry, trigger bus.Message, tt turnTools) *se
 	}
 	// Project-file adapters (cursor) need the config inside the worktree
 	// at a fixed relative path; write it there and git-exclude it so the
-	// agent's own commits never pick it up.
+	// agent's own commits never pick it up. The exclude line is a change to
+	// your repo, so it is added once, after you say yes (F-112).
 	if e.cli.MCPProjectFile != "" && e.cli.MCPConfigFile != nil {
 		dir := r.cliWorkdir(trigger)
+		if err := r.askExclude(e.m.ID, dir, e.cli.MCPProjectFile); err != nil {
+			stopAll()
+			r.notice(trigger, e.m.ID, "IDE tools unavailable this turn: "+err.Error())
+			return nil
+		}
 		path := filepath.Join(dir, e.cli.MCPProjectFile)
 		_, statErr := os.Stat(filepath.Dir(path))
 		madeDir := os.IsNotExist(statErr) // ours to remove again (live: an empty .cursor/ was left)
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err == nil {
 			if werr := os.WriteFile(path, []byte(e.cli.MCPConfigFile(endpoint)), 0o644); werr == nil {
-				unexclude := excludeFromGit(dir, e.cli.MCPProjectFile)
 				sess.configPath = path
 				sess.stop = func() {
 					_ = os.Remove(path)
 					if madeDir {
 						_ = os.Remove(filepath.Dir(path)) // only if still empty
 					}
-					unexclude()
 					stopAll()
 				}
 				return sess
@@ -1054,6 +1065,9 @@ func (r *Runtime) cliEnv(c *clirun.CLI, agentID, mcpConfig string) []string {
 			env = setEnv(env, k+"="+dir)
 		}
 	}
+	for _, kv := range r.cacheFallback(env) {
+		env = setEnv(env, kv)
+	}
 	if r.cfg.PushGuard != "" {
 		env = gitcore.PushGuardEnv(env, r.cfg.PushGuard)
 	}
@@ -1153,23 +1167,19 @@ func truncateRunes(s string, n int) string {
 	return string(r[:n-1]) + "…"
 }
 
-// excludeFromGit appends a worktree-relative path to the repo's
-// info/exclude (the worktree's gitdir) so the agent's commits never
-// capture a per-turn file, returning a cleanup that removes the line.
-// Best-effort: on any failure it returns a no-op rather than blocking
-// the turn.
-func excludeFromGit(worktree, rel string) func() {
-	noop := func() {}
+// excludePath is the info/exclude file git reads for worktree (a linked
+// worktree's lives in the common git dir) and the pattern for rel.
+func excludePath(worktree, rel string) (string, string, bool) {
 	gitDir := filepath.Join(worktree, ".git")
 	if fi, err := os.Stat(gitDir); err == nil && !fi.IsDir() {
 		b, err := os.ReadFile(gitDir)
 		if err != nil {
-			return noop
+			return "", "", false
 		}
 		const prefix = "gitdir:"
 		line := strings.TrimSpace(string(b))
 		if !strings.HasPrefix(line, prefix) {
-			return noop
+			return "", "", false
 		}
 		gd := strings.TrimSpace(strings.TrimPrefix(line, prefix))
 		if !filepath.IsAbs(gd) {
@@ -1186,21 +1196,80 @@ func excludeFromGit(worktree, rel string) func() {
 			}
 			gitDir = filepath.Clean(common)
 		}
+	} else if err != nil {
+		return "", "", false
 	}
-	ex := filepath.Join(gitDir, "info", "exclude")
-	pattern := "/" + filepath.ToSlash(rel)
-	_ = os.MkdirAll(filepath.Dir(ex), 0o755)
-	if orig, err := os.ReadFile(ex); err == nil && strings.Contains(string(orig), pattern) {
-		return noop
+	return filepath.Join(gitDir, "info", "exclude"), "/" + filepath.ToSlash(rel), true
+}
+
+// excluded reports whether the exclude file already lists pattern.
+func excluded(ex, pattern string) bool {
+	b, err := os.ReadFile(ex)
+	if err != nil {
+		return false
+	}
+	for _, l := range strings.Split(string(b), "\n") {
+		if strings.TrimSpace(l) == pattern {
+			return true
+		}
+	}
+	return false
+}
+
+// askExclude makes sure git ignores the per-turn file rel in worktree:
+// already listed, or added after the human approves the one line. The
+// line stays (info/exclude is local, never committed, shared by every
+// worktree of the repo), so the card appears once per repo. Its scope is
+// not a write grant: the agent's sandbox does not gain the file. Not a
+// git repo: nothing to protect.
+func (r *Runtime) askExclude(agentID, worktree, rel string) error {
+	ex, pattern, ok := excludePath(worktree, rel)
+	if !ok || excluded(ex, pattern) {
+		return nil
+	}
+	if r.cfg.Approvals == nil {
+		return fmt.Errorf("%s needs a line in %s so its per-turn file stays out of git, and no approvals queue is running", rel, ex)
+	}
+	if err := r.cfg.Approvals.AskScope(context.Background(), agentID, "git-exclude:"+ex, sandbox.OpWrite, ex,
+		"add the line "+pattern+" so the per-turn "+rel+" DHI writes for "+agentID+" is never committed"); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(ex), 0o755); err != nil {
+		return err
 	}
 	f, err := os.OpenFile(ex, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
-		return noop
+		return err
 	}
-	_, _ = f.WriteString(pattern + "\n")
-	_ = f.Close()
-	// The line stays: info/exclude is local and never committed, and it
-	// is shared by every worktree, so removing it when one turn ends
-	// would expose another turn's config mid-run.
-	return noop
+	_, werr := f.WriteString(pattern + "\n")
+	if cerr := f.Close(); werr == nil {
+		werr = cerr
+	}
+	return werr
+}
+
+// helperPoll is how often a waiting turn looks for the sandbox helper.
+var helperPoll = 3 * time.Second
+
+// waitForHelper parks a turn whose sandbox helper (bwrap) is missing: the
+// thread says why and how to install it, OnHelperMissing raises the
+// install card, and the turn continues once bwrap is on the system.
+func (r *Runtime) waitForHelper(ctx context.Context, e *entry, trigger bus.Message, argv []string) ([]string, error) {
+	r.notice(trigger, e.m.ID, "waiting for bubblewrap: agents run inside it on Linux. Install it (the editor shows the command: :install bwrap); this turn continues once it is installed.")
+	if r.cfg.OnHelperMissing != nil {
+		r.cfg.OnHelperMissing()
+	}
+	t := time.NewTicker(helperPoll)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-t.C:
+			wrapped, err := r.spawnSandbox(e).Wrap(argv)
+			if !errors.Is(err, sandbox.ErrHelperMissing) {
+				return wrapped, err
+			}
+		}
+	}
 }

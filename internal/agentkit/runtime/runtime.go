@@ -86,6 +86,10 @@ type Config struct {
 	// CLIEnvFunc, when set, is read at every spawn instead of CLIEnv, so a
 	// reloaded shell environment reaches the next agent run (F-109).
 	CLIEnvFunc func() []string
+	// OnHelperMissing runs when a turn starts waiting for the sandbox
+	// helper (bwrap): cmd raises the install card. nil = the thread
+	// notice only.
+	OnHelperMissing func()
 	// Tasks persists run records onto task cards (F-013). Nil disables
 	// card recording; the transcript still lives on the bus.
 	Tasks *tasks.Store

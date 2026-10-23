@@ -97,8 +97,9 @@ func TestInterpreterDirsResolvesEnvOnThePath(t *testing.T) {
 }
 
 // Live (M32): in a linked worktree the exclude must reach the common
-// dir, the only info/exclude git reads.
-func TestExcludeFromGitInALinkedWorktree(t *testing.T) {
+// dir, the only info/exclude git reads. The line is added once, after the
+// human approves it (F-112); a refusal leaves the repo untouched.
+func TestExcludeLineAsksOnceInALinkedWorktree(t *testing.T) {
 	root := t.TempDir()
 	common := filepath.Join(root, "repo", ".git")
 	wtGit := filepath.Join(common, "worktrees", "wt")
@@ -109,9 +110,33 @@ func TestExcludeFromGitInALinkedWorktree(t *testing.T) {
 	wt := filepath.Join(root, "wt")
 	_ = os.MkdirAll(wt, 0o755)
 	_ = os.WriteFile(filepath.Join(wt, ".git"), []byte("gitdir: "+wtGit+"\n"), 0o644)
-	excludeFromGit(wt, ".cursor/mcp.json")
-	b, err := os.ReadFile(filepath.Join(common, "info", "exclude"))
-	if err != nil || !strings.Contains(string(b), "/.cursor/mcp.json") {
+	ex := filepath.Join(common, "info", "exclude")
+
+	h := episodeHarness(t)
+	answer := func(allow bool) {
+		go func() {
+			ap := firstPending(t, h.approvals)
+			h.approvals.Resolve(ap.ID, allow)
+		}()
+	}
+	answer(false)
+	if err := h.rt.askExclude("scout", wt, ".cursor/mcp.json"); err == nil {
+		t.Fatal("a refusal must stop the per-turn file")
+	}
+	if _, err := os.Stat(ex); err == nil {
+		t.Fatal("refused, yet the exclude file was written")
+	}
+	answer(true)
+	if err := h.rt.askExclude("scout", wt, ".cursor/mcp.json"); err != nil {
+		t.Fatal(err)
+	}
+	if b, err := os.ReadFile(ex); err != nil || !strings.Contains(string(b), "/.cursor/mcp.json") {
 		t.Fatalf("common exclude = %q %v", b, err)
+	}
+	if err := h.rt.askExclude("scout", wt, ".cursor/mcp.json"); err != nil || len(h.approvals.List()) != 0 {
+		t.Fatalf("already excluded: no second card (%v)", err)
+	}
+	if len(h.approvals.Targets("scout")) != 0 {
+		t.Fatal("the card must not widen the agent's sandbox")
 	}
 }

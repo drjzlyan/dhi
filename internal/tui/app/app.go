@@ -195,7 +195,7 @@ func (a *App) Init() tea.Cmd {
 // Update loop (ADR-0023): the runtime's editor seam sends it and blocks
 // on Reply. Paths are absolute; the seam resolves VPaths before sending.
 type EditorRequest struct {
-	Op    string // "open" | "reveal" | "apply" | "context" | "propose" | "lsp"
+	Op    string // "open" | "reveal" | "apply" | "context" | "propose" | "lsp" | "install"
 	Paths []string
 	// Path/Old/New/All carry an "apply" edit.
 	Path string
@@ -244,6 +244,15 @@ func (a *App) handleEditorRequest(r EditorRequest) {
 		}
 	case "apply":
 		errStr = a.applyInEditor(r.Path, r.Old, r.New, r.All)
+	case "install":
+		// The install card waits in the editor; the toast says where, so
+		// whatever the user is doing is not interrupted (F-113).
+		if !a.installInEditor(r.Arg) {
+			errStr = "the editor cannot install " + r.Arg
+		} else {
+			a.Toast(kit.Toast{Kind: kit.ToastWarning, Title: "Agents are waiting for " + r.Arg,
+				Detail: "the install card is open in the Editor (alt+1)"})
+		}
 	case "context", "propose", "debug":
 		text, err := a.pairInEditor(r)
 		if err != nil {
@@ -821,6 +830,19 @@ func (a *App) applyInEditor(abs, old, new string, all bool) string {
 		return ""
 	}
 	return "editor surface unavailable"
+}
+
+// installInEditor opens the editor's install card for tool.
+func (a *App) installInEditor(tool string) bool {
+	for _, s := range a.surfaces {
+		if s.Meta().ID != "editor" {
+			continue
+		}
+		if in, ok := s.(interface{ AskInstall(string) bool }); ok {
+			return in.AskInstall(tool)
+		}
+	}
+	return false
 }
 
 // FocusEditorChat opens the editor's chat sidebar focused (the F-016

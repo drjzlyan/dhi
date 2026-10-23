@@ -40,6 +40,18 @@ func WithHostTools(t HostTools) Option {
 	return func(m *Model) { m.tools = t }
 }
 
+// AskInstall raises the install card for tool when it is still missing
+// (an agent waiting on bwrap, F-113); false when it cannot.
+func (m *Model) AskInstall(tool string) bool {
+	if m.tools == nil {
+		return false
+	}
+	if _, ok := m.tools.Find(tool); ok {
+		return true
+	}
+	return m.askInstall(tool)
+}
+
 // askInstall raises the install card for tool (no-op without HostTools).
 func (m *Model) askInstall(tool string) bool {
 	if m.tools == nil {

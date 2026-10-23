@@ -231,3 +231,46 @@ func TestBaseEnvIsReadPerSpawn(t *testing.T) {
 		t.Fatalf("env = %v", got)
 	}
 }
+
+// helperSandbox is missing its helper for the first n wraps.
+type helperSandbox struct{ n int }
+
+func (h *helperSandbox) Name() string { return "bubblewrap" }
+func (h *helperSandbox) Wrap(argv []string) ([]string, error) {
+	if h.n > 0 {
+		h.n--
+		return nil, sandbox.ErrHelperMissing
+	}
+	return append([]string{"bwrap"}, argv...), nil
+}
+
+// A turn without bwrap waits, says why, raises the install card, and
+// continues once bwrap is installed (F-113).
+func TestTurnWaitsForTheSandboxHelper(t *testing.T) {
+	h := episodeHarness(t)
+	trig := mustPost(t, h, bus.Message{Channel: "#general", Author: bus.Human, Text: "@scout build"})
+	e, _ := h.rt.agentEntry("scout")
+	e.guard.Sandbox = &helperSandbox{n: 2}
+	h.rt.cfg.Approvals = nil
+	helperPoll = 5 * time.Millisecond
+	defer func() { helperPoll = 3 * time.Second }()
+	asked := 0
+	h.rt.cfg.OnHelperMissing = func() { asked++ }
+	got, err := h.rt.waitForHelper(context.Background(), e, trig, []string{"claude"})
+	if err != nil || got[0] != "bwrap" || asked != 1 {
+		t.Fatalf("got=%v err=%v asked=%d", got, err, asked)
+	}
+	found := false
+	for _, m := range h.bus.History("#general", trig.Thread) {
+		found = found || strings.Contains(m.Text, "waiting for bubblewrap")
+	}
+	if !found {
+		t.Fatal("the thread must say why the turn waits")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	e.guard.Sandbox = &helperSandbox{n: 1 << 30}
+	if _, err := h.rt.waitForHelper(ctx, e, trig, []string{"claude"}); err == nil {
+		t.Fatal("a cancelled turn stops waiting")
+	}
+}

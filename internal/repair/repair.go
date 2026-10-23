@@ -17,6 +17,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/library"
 	"github.com/drjzlyan/dhi/internal/agentkit/org"
 	"github.com/drjzlyan/dhi/internal/credstore"
+	"github.com/drjzlyan/dhi/internal/gitcore"
 	"github.com/drjzlyan/dhi/internal/settings"
 	"github.com/drjzlyan/dhi/internal/setup"
 	"github.com/drjzlyan/dhi/internal/workspace"
@@ -50,6 +51,10 @@ type Input struct {
 	// nil skips the repair that gives members added later the same.
 	LocalIdentity    *setup.Identity
 	SetLocalIdentity func(dir string) error
+	// GuardRefs: the sandbox (bubblewrap) protects only ref files that
+	// exist, so a default branch kept only in packed-refs gets a repair
+	// offering a loose copy (F-112). Seatbelt needs none.
+	GuardRefs bool
 }
 
 // Find lists the repairs that apply now, safe ones first.
@@ -83,6 +88,7 @@ func Find(in Input) []Repair {
 		out = append(out, r)
 	}
 	out = append(out, localIdentity(in)...)
+	out = append(out, defaultRefs(in)...)
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Safe && !out[j].Safe })
 	return out
 }
@@ -400,6 +406,34 @@ func localIdentity(in Input) []Repair {
 			What:  "set this workspace's git identity (" + in.LocalIdentity.Name + ") in " + m.Name + "/.git/config",
 			Safe:  true,
 			Apply: func() error { return in.SetLocalIdentity(dir) },
+		})
+	}
+	return out
+}
+
+// defaultRefs offers, per member, the loose copy of a packed-only default
+// branch that lets bubblewrap keep agents off it. It asks: it is a change
+// to your repo (the same commit; git reads it the same).
+func defaultRefs(in Input) []Repair {
+	if !in.GuardRefs {
+		return nil
+	}
+	var out []Repair
+	for _, m := range in.WS.Members() {
+		refs := gitcore.PackedOnlyDefaultRefs(m.Path)
+		if len(refs) == 0 {
+			continue
+		}
+		var names []string
+		for _, r := range refs {
+			names = append(names, filepath.Base(r))
+		}
+		dir := m.Path
+		out = append(out, Repair{
+			ID: "default-ref/" + m.Name,
+			What: "let the sandbox keep agents off " + strings.Join(names, ", ") + " in " + m.Name +
+				": write .git/refs/heads/" + strings.Join(names, ", ") + " (the same commit as packed-refs; git reads it the same)",
+			Apply: func() error { return gitcore.LooseDefaultRefs(dir) },
 		})
 	}
 	return out
