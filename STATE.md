@@ -50,7 +50,9 @@
   without bwrap waits (thread notice + editor install card via EditorRequest "install") and
   continues once installed; cursor's exclude line asks once (scope `git-exclude:<file>`); the
   packed-only default-ref copy is the asking `default-ref/<member>` repair (bubblewrap only).
-- Open: agents' CLI state dirs must exist to be bound.
+- A CLI whose state folder does not exist yet (never run/signed in) is named before spawning under
+  bubblewrap ("run `claude` once in a terminal to sign in"); DHI does not create it.
+- Open: the new waiting/cache paths are unit-tested, not re-run live in Docker.
 
 ### Session 61 (M35: every keyboard, paste & copy, standard skills + MCP, sign-in, re-runnable setup, branch `m35`)
 

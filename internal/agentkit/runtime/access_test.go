@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"github.com/drjzlyan/dhi/internal/agentkit/clirun"
 	"github.com/drjzlyan/dhi/internal/agentkit/dhitools"
 	"os"
 	"path/filepath"
@@ -272,5 +273,26 @@ func TestTurnWaitsForTheSandboxHelper(t *testing.T) {
 	e.guard.Sandbox = &helperSandbox{n: 1 << 30}
 	if _, err := h.rt.waitForHelper(ctx, e, trig, []string{"claude"}); err == nil {
 		t.Fatal("a cancelled turn stops waiting")
+	}
+}
+
+type namedSandbox string
+
+func (n namedSandbox) Name() string                         { return string(n) }
+func (n namedSandbox) Wrap(argv []string) ([]string, error) { return argv, nil }
+
+// Under bubblewrap a CLI that was never run here is named, not spawned.
+func TestMissingCLIStateIsNamedUnderBubblewrap(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), ".claude")
+	c := &clirun.CLI{Name: "claude", StateRoot: func() []string { return []string{missing} }}
+	if msg := missingState(c, namedSandbox("bubblewrap")); !strings.Contains(msg, "run `claude` once") {
+		t.Fatalf("msg = %q", msg)
+	}
+	if missingState(c, namedSandbox("seatbelt")) != "" {
+		t.Fatal("seatbelt lets the CLI create its folder")
+	}
+	os.MkdirAll(missing, 0o755)
+	if missingState(c, namedSandbox("bubblewrap")) != "" {
+		t.Fatal("an existing folder binds")
 	}
 }

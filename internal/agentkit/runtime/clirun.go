@@ -358,6 +358,12 @@ func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Messag
 		Resume: in.resume, MaxTurns: in.maxTurns,
 		MCPConfig: in.mcpConfig, MCPURL: in.mcpEndpoint, MCPGeminiDir: in.mcpGeminiDir,
 	})...)
+	if msg := missingState(e.cli, r.spawnSandbox(e)); msg != "" {
+		run.Status = tasks.RunError
+		run.Error = msg
+		r.notice(trigger, e.m.ID, msg)
+		return run, nil
+	}
 	wrapped, err := r.spawnSandbox(e).Wrap(argv)
 	if errors.Is(err, sandbox.ErrHelperMissing) {
 		// The IDE never blocks on it (ADR-0044): the turn waits here until
@@ -1272,4 +1278,20 @@ func (r *Runtime) waitForHelper(ctx context.Context, e *entry, trigger bus.Messa
 			}
 		}
 	}
+}
+
+// missingState names a CLI state folder bubblewrap cannot bind because it
+// does not exist yet: the CLI was never run (or signed in) here. DHI does
+// not create folders in your home; running the CLI once does (F-113).
+// Seatbelt matches paths, so a CLI creates its own folder there.
+func missingState(c *clirun.CLI, sb sandbox.Sandbox) string {
+	if c == nil || c.StateRoot == nil || sb == nil || sb.Name() != "bubblewrap" {
+		return ""
+	}
+	for _, root := range c.StateRoot() {
+		if _, err := os.Stat(root); err != nil {
+			return fmt.Sprintf("%s has no state folder yet (%s): run `%s` once in a terminal to sign in, then ask again", c.Name, root, c.Name)
+		}
+	}
+	return ""
 }
