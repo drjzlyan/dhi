@@ -13,13 +13,13 @@ func (e *Editor) keyInsert(key string) {
 			e.buf.wantCol = e.buf.Cursor().Col
 		}
 	case "enter":
-		e.buf.BreakLine()
+		e.newline()
 	case "backspace":
-		e.buf.DeleteBackspace()
+		e.backspace()
 	case "delete":
 		e.buf.DeleteForward()
 	case "tab":
-		e.buf.InsertString("\t")
+		e.buf.InsertString(e.Indent())
 	case "left":
 		e.buf.move(motLeft, 1)
 	case "right":
@@ -59,7 +59,9 @@ func (e *Editor) keyInsert(key string) {
 			return
 		}
 		if r := []rune(key); len(r) == 1 && r[0] >= 32 {
-			e.buf.InsertString(key)
+			if !e.typeRune(r[0]) {
+				e.buf.InsertString(key)
+			}
 		}
 	}
 }

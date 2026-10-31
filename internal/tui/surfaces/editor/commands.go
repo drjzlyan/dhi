@@ -31,6 +31,17 @@ func (m *Model) Commands() []surfaces.Command {
 		}
 	}
 	add("Find and open a file", "/", m.openFind)
+	if len(m.closed) > 0 {
+		add("Reopen closed file", ":reopen", func() {
+			if msg := m.reopenClosed(); msg != "" && m.active() != nil {
+				m.active().SetMessage(msg)
+			}
+		})
+	}
+	for _, p := range m.recentShown(5) {
+		p := p
+		add("Open recent: "+m.relToWorkspace(p), "", func() { m.open(&node{kind: nodeFile, path: p, name: filepath.Base(p)}) })
+	}
 	if m.ws != nil && m.start.NewTask != nil {
 		add("New task", "n", m.start.NewTask)
 	}

@@ -285,9 +285,14 @@ type Model struct {
 	emit           func(event string) // tutorial action events (F-051); nil = not wired
 	lspNoted       map[string]bool    // languages already told about a missing server (F-011, F-050)
 	prefs          func() Prefs
-	saving         bool                 // format-on-save in progress: shorter formatter waits
-	toast          *kit.Toast           // for the shell's toaster seam (F-117)
-	startNote      string               // why a start-page key did nothing yet (F-118)
+	saving         bool       // format-on-save in progress: shorter formatter waits
+	toast          *kit.Toast // for the shell's toaster seam (F-117)
+	startNote      string     // why a start-page key did nothing yet (F-118)
+	recent         []string   // recently opened files, newest first (F-119)
+	recentLoaded   bool
+	closed         []string             // closed tabs, for reopen
+	treeOp         *treeOp              // the open file-operation dialog (F-119)
+	treeNote       string               // the last file operation, on the status row
 	lspStarting    map[string]bool      // a server start is in flight (F-116)
 	lspWaiting     map[string][]string  // files to open once their server is up
 	lspPumped      map[*lsp.Client]bool // clients whose events are already read
@@ -404,6 +409,8 @@ func (m *Model) Hints() (string, []string) {
 		return "", []string{"ctrl+t blur", kit.AltLabel("alt+1..9 tab"), kit.AltLabel("alt+n new tab")}
 	case m.gitOpen && m.gitFocus:
 		return "", []string{"s stage", "S all", "u unstage", "c commit", "tab status/log", "esc blur"}
+	case m.treeOp != nil:
+		return "", nil // the dialog names its keys
 	case m.mode != modeNav:
 		return "", nil // finder, search, symbols, tests: their prompts say it
 	case m.bufFocus && m.active() != nil:
@@ -419,7 +426,7 @@ func (m *Model) Hints() (string, []string) {
 		}
 		return "", hints
 	}
-	hints := []string{"enter open", "/ find", "s search"}
+	hints := []string{"enter open", "/ find", "s search", "a new", "r rename", "d delete"}
 	if m.drawerOpen && !m.termFocus {
 		hints = append(hints, "ctrl+t terminal")
 	}
@@ -431,7 +438,7 @@ func (m *Model) Hints() (string, []string) {
 			hints = append(hints, "t tour")
 		}
 	}
-	return "", hints
+	return m.treeNote, hints
 }
 
 // CapturesInput implements surfaces.InputCapturer. A focused buffer owns
@@ -493,12 +500,16 @@ func (m *Model) HelpSections() [][2]string {
 		{"enter", "open the selected file"},
 		{"/", "find a file"},
 		{"s", "search the workspace (ripgrep)"},
+		{"a · r · d", "new file or folder · rename/move · delete to DHI's trash (in the tree)"},
+		{": in the tree", "commands without a file: :e path · :reopen · :diag"},
 	}
 	switch {
 	case m.chat != nil && m.chat.open && m.chat.focus:
 		out = append(out,
-			[2]string{"enter", "send to the crew"},
-			[2]string{"ctrl+f", "apply the suggestion block"})
+			[2]string{"enter", "send to the crew (no @name: the default agent answers)"},
+			[2]string{"ctrl+x", "stop the turns running in this channel"},
+			[2]string{"alt+y · alt+n · /yes /no", "answer an agent's approval"},
+			[2]string{"ctrl+f", "apply the suggestion block (replaces a visual selection)"})
 	case m.drawerOpen && m.termFocus:
 		out = append(out,
 			[2]string{"ctrl+t", "blur/close the drawer"},
@@ -509,9 +520,17 @@ func (m *Model) HelpSections() [][2]string {
 			[2]string{"c", "commit"})
 	case m.bufFocus && m.active() != nil:
 		out = append(out,
-			[2]string{"i / esc", "insert · back to normal"},
-			[2]string{":w :q :wq :e", "save · quit · reload"},
-			[2]string{"K gr ga", "hover · rename · code actions"},
+			[2]string{"i / esc", "insert · back to normal (ctrl+c too)"},
+			[2]string{":w :q :wq · ctrl+s", "save · quit · save and quit · save in any mode"},
+			[2]string{":e path · :w path · :reopen", "open · save as · reopen the last closed file"},
+			[2]string{":e! · :w!", "reload from disk · overwrite an outside change"},
+			[2]string{":42 · 42G", "go to line"},
+			[2]string{"v · V · > <", "select · select lines · indent / outdent (>> << on a line)"},
+			[2]string{".", "repeat the last change"},
+			[2]string{"gd · gR · K", "go to definition · references · hover"},
+			[2]string{"]d · [d · :diag", "next / previous problem · all problems"},
+			[2]string{"gr · ga", "rename · code actions"},
+			[2]string{"ctrl+space", "completions (they also open as you type)"},
 			[2]string{":pair <agent>", "invite an agent to pair (:ask · :unpair)"},
 			[2]string{":break · :debug", "breakpoint · start debugging (:cont :next :step :out :stop :eval)"},
 			[2]string{":test [all|name]", "run Go tests · failures list jumps to the line"},
@@ -816,6 +835,9 @@ func (m *Model) HandleKey(key string) bool {
 	if m.toolCard != nil {
 		return m.handleToolCardKey(key)
 	}
+	if m.treeOp != nil {
+		return m.treeOpKey(key)
+	}
 	if m.ws == nil {
 		return m.startVisible() && m.startKey(key)
 	}
@@ -893,6 +915,14 @@ func (m *Model) HandleKey(key string) bool {
 		e := m.active()
 		if key == "ctrl+c" { // vim: leave insert/visual/command (F-115)
 			key = "esc"
+		}
+		if key == "ctrl+s" { // F-119: save in any mode, staying in it
+			if err := e.Save(); err != nil {
+				e.SetMessage(err.Error())
+			} else {
+				e.SetMessage(`"` + m.openVPath + `" written`)
+			}
+			return true
 		}
 
 		// completion popup intercepts navigation/accept keys
@@ -986,6 +1016,10 @@ func (m *Model) HandleKey(key string) bool {
 
 		// esc in normal mode hands focus back to the tree
 		if key == "esc" && e.Mode() == textbuf.ModeNormal {
+			if e.Highlight() != "" { // first esc clears the search marks, the next leaves
+				e.ClearHighlight()
+				return true
+			}
 			m.bufFocus = false
 			return true
 		}
@@ -1124,7 +1158,16 @@ func (m *Model) handleNavKey(key string) bool {
 	if m.startVisible() && m.startKey(key) {
 		return true
 	}
+	m.treeNote = ""
 	switch key {
+	case ":": // F-119: ex commands from the tree
+		return m.startTreeOp(opCommand)
+	case "a": // F-119 file operations
+		return m.startTreeOp(opNew)
+	case "r":
+		return m.startTreeOp(opRename)
+	case "d":
+		return m.startTreeOp(opDelete)
 	case "/":
 		m.openFind()
 		return true
@@ -1207,6 +1250,7 @@ func (m *Model) open(n *node) {
 		return
 	}
 	be.SetCommandDelegate(m)
+	be.SetIndent(m.indentFor(n.path, be.Buffer().Text())) // F-119
 	be.SetBeforeSave(m.beforeSave)
 	be.SetAfterSave(func(*textbuf.Editor) {
 		m.act(tutorial.EvEditorSave)
@@ -1218,6 +1262,7 @@ func (m *Model) open(n *node) {
 	m.activeTab = len(m.bufs) - 1
 	m.bufFocus = true
 	m.lspOpenDoc(n.path, be.Buffer().Text())
+	m.noteRecent(n.path)
 	m.act(tutorial.EvEditorOpen)
 }
 
@@ -1229,10 +1274,12 @@ func (m *Model) closeBuffer() {
 		return
 	}
 	closing := m.activeTab
+	m.closed = append(m.closed, m.bufs[closing].path) // F-119: :reopen
 	m.bufs = append(m.bufs[:m.activeTab], m.bufs[m.activeTab+1:]...)
 	switch {
 	case len(m.bufs) == 0:
 		m.bufFocus = false
+		m.openPath, m.openVPath = "", "" // the start page comes back (F-119)
 	case m.activeTab >= len(m.bufs):
 		m.activeTab = len(m.bufs) - 1
 	}
@@ -1265,6 +1312,9 @@ func (m *Model) refreshRows() {
 func (m *Model) View() string {
 	if m.toolCard != nil {
 		return m.toolCardView(m.view())
+	}
+	if m.treeOp != nil {
+		return m.treeOpView(m.view())
 	}
 	return m.view()
 }
@@ -1512,6 +1562,10 @@ func (m *Model) ExecEx(requester *textbuf.Editor, cmd string) bool {
 		if strings.TrimSpace(cmd) == "fmt" && msg == "formatted" {
 			m.act(tutorial.EvEditorFormat)
 		}
+		return true
+	}
+	if msg, ok := m.fileCommand(requester, cmd); ok {
+		requester.SetMessage(msg)
 		return true
 	}
 	if msg, ok := m.symCommand(cmd); ok {
@@ -2042,6 +2096,7 @@ type bufGeom struct {
 	ox, oy    int // surface cell of the first text row's gutter
 	textX     int // cells of gutter before the text
 	top, rows int // first buffer line shown, and how many
+	left      int // columns scrolled off the left (F-119)
 }
 
 // bufferPos maps a surface cell to a buffer position (false outside the
@@ -2056,7 +2111,7 @@ func (m *Model) bufferPos(x, y int) (textbuf.Pos, bool) {
 	if line >= e.Buffer().LineCount() {
 		return textbuf.Pos{}, false
 	}
-	vc := max(x-g.ox-g.textX, 0)
+	vc := max(x-g.ox-g.textX, 0) + g.left
 	return textbuf.Pos{Line: line, Col: runeCol(e.Buffer().Line(line), vc)}, true
 }
 

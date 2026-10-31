@@ -99,19 +99,33 @@ func (m *Model) bufferView() string {
 		m.bufGeom = bufGeom{top: top, rows: end - top, textX: gutW + 1}
 	}
 
+	curLine := b.Cursor().Line
+	curCol := visCol(b.Line(curLine), b.Cursor().Col)
 	var a, z textbuf.Pos
 	visual := e.Mode() == textbuf.ModeVisual
 	if visual {
 		a, z = textbuf.Order(e.VisualStart(), b.Cursor())
-		z.Col++ // inclusive of cursor rune like real visual mode
+		z.Col++             // inclusive of cursor rune like real visual mode
+		if e.VisualLine() { // V: whole lines (F-119)
+			a.Col, z.Col = 0, len([]rune(b.Line(z.Line)))+1
+		}
+	}
+	hl := e.Highlight()
+	// Horizontal scroll (F-119): long lines shift left so the cursor stays
+	// in view instead of running off the panel.
+	textW := m.bufTextWidth(gutW)
+	left := 0
+	if curCol >= textW-1 {
+		left = curCol - textW + 2
+	}
+	if !m.renderingSplit {
+		m.bufGeom.left = left
 	}
 
 	var out []string
 	path := e.Path()
 	syntax := m.syntaxFor(e)
 	marks := m.gutterMarks(m.bufs[m.activeTab])
-	curLine := b.Cursor().Line
-	curCol := visCol(b.Line(curLine), b.Cursor().Col)
 	for l := top; l < end; l++ {
 		num := strconv.Itoa(l + 1)
 		if !prefs.LineNumbers {
@@ -143,6 +157,8 @@ func (m *Model) bufferView() string {
 			text = markRange(text, selStart, selEnd)
 		} else if l == curLine {
 			text = withCursor(text, curCol)
+		} else if hl != "" && strings.Contains(raw, hl) {
+			text = markMatches(text, expandTabs(hl)) // plain, so the marks stay exact
 		} else if syntax != nil {
 			// Colorized lines keep the raw text underneath (F-026 P4);
 			// cursor and selection lines render plain so the rune-level
@@ -150,6 +166,9 @@ func (m *Model) bufferView() string {
 			if st := syntax.styled(l); st != "" {
 				text = expandTabs(st) // escapes never contain a tab
 			}
+		}
+		if left > 0 || ansi.Width(text) > textW {
+			text = ansi.Slice(text, left, left+textW)
 		}
 		marker := gitMarkGlyph(marks, l)
 		if g, ok := m.debugGutter(path, l); ok {
@@ -297,6 +316,39 @@ func withCursor(line string, col int) string {
 }
 
 // markRange inverts [start,end) within line; -1,-1 means no selection.
+// searchStyle marks matches of the last search (F-119).
+var searchStyle = lipgloss.NewStyle().Underline(true).Bold(true)
+
+// markMatches underlines every occurrence of pat in a plain line.
+func markMatches(line, pat string) string {
+	if pat == "" {
+		return line
+	}
+	var b strings.Builder
+	for {
+		i := strings.Index(line, pat)
+		if i < 0 {
+			b.WriteString(line)
+			return b.String()
+		}
+		b.WriteString(line[:i])
+		b.WriteString(searchStyle.Foreground(theme.Current.Warning).Render(pat))
+		line = line[i+len(pat):]
+	}
+}
+
+// bufTextWidth is how many cells of text a buffer row shows.
+func (m *Model) bufTextWidth(gutW int) int {
+	w := m.width - m.railW()
+	if m.chat != nil && m.chat.open {
+		w -= chatWidth
+	}
+	if m.splitActive() {
+		w /= 2
+	}
+	return maxInt(w-2-gutW-1, 10) // panel edges, gutter, change mark
+}
+
 func markRange(line string, start, end int) string {
 	if start < 0 {
 		return line

@@ -45,6 +45,7 @@ type Buffer struct {
 	crlf     bool      // the file's lines end in \r\n; Save writes them back that way
 	diskPath string    // the file last read or written ("" for a scratch buffer)
 	disk     diskStamp // what that file held then (F-115 conflict check)
+	newFile  bool      // opened empty: the first save adds the final newline
 }
 
 type snapshot struct {
@@ -83,6 +84,7 @@ func Open(path string) (*Buffer, error) {
 	}
 	b := New(string(data))
 	b.diskPath, b.disk = path, st
+	b.newFile = len(data) == 0 // an empty file is new: its first save ends in a newline
 	return b, nil
 }
 
@@ -104,7 +106,7 @@ func (b *Buffer) Save(path string) error {
 
 // SaveForce writes like Save without the changed-on-disk check.
 func (b *Buffer) SaveForce(path string) error {
-	if b.diskPath == "" && b.lines[len(b.lines)-1] != "" {
+	if (b.diskPath == "" || b.newFile) && b.lines[len(b.lines)-1] != "" {
 		b.lines = append(b.lines, "") // POSIX: a new file ends in a newline
 		b.seq++
 	}
@@ -116,6 +118,7 @@ func (b *Buffer) SaveForce(path string) error {
 		b.disk = stampData(fi, data)
 	}
 	b.diskPath = path
+	b.newFile = false
 	b.dirty = false
 	return nil
 }

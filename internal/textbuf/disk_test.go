@@ -151,3 +151,36 @@ func TestEditorWriteBangAndReloadKeepsCursor(t *testing.T) {
 		t.Fatalf(":w! wrote %q", got)
 	}
 }
+
+func TestGotoLine(t *testing.T) {
+	e := NewEditor("a\n  b\nc\nd")
+	feed(e, "3", "G")
+	if c := e.Buffer().Cursor(); c.Line != 2 {
+		t.Fatalf("3G → %+v", c)
+	}
+	feed(e, ":", "2", "enter")
+	if c := e.Buffer().Cursor(); c.Line != 1 || c.Col != 2 {
+		t.Fatalf(":2 → %+v", c)
+	}
+	feed(e, ":", "9", "9", "enter")
+	if c := e.Buffer().Cursor(); c.Line != 3 {
+		t.Fatalf(":99 → %+v", c)
+	}
+	feed(e, "G")
+	if c := e.Buffer().Cursor(); c.Line != 3 {
+		t.Fatalf("G → %+v", c)
+	}
+}
+
+func TestEmptyFileGetsFinalNewlineOnFirstSave(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "new.go")
+	_ = os.WriteFile(path, nil, 0o644)
+	b, _ := Open(path)
+	b.InsertString("package x")
+	if err := b.Save(path); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := os.ReadFile(path); string(got) != "package x\n" {
+		t.Fatalf("got %q", got)
+	}
+}

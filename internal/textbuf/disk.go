@@ -164,5 +164,11 @@ func (b *Buffer) NoteDisk() {
 	}
 }
 
+// NoteMoved follows the buffer's file to path after DHI moved it.
+func (b *Buffer) NoteMoved(path string) {
+	b.diskPath = path
+	b.NoteDisk()
+}
+
 // DiskPath is the file the buffer was read from or last saved to.
 func (b *Buffer) DiskPath() string { return b.diskPath }

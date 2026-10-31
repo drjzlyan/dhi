@@ -31,6 +31,7 @@ type node struct {
 // with the git view (gitignore via go-git).
 var skipNames = map[string]bool{
 	".git":         true,
+	".dhi":         true, // DHI's own state; Settings shows what matters
 	"node_modules": true,
 	".DS_Store":    true,
 }
@@ -82,7 +83,7 @@ func listDir(dir, member string) []*node {
 	var dirs, files []*node
 	for _, e := range entries {
 		name := e.Name()
-		if skipNames[name] || strings.HasPrefix(name, ".") && e.IsDir() {
+		if skipNames[name] { // dot folders (.github, .vscode) show (F-119)
 			continue
 		}
 		child := &node{

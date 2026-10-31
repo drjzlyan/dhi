@@ -125,3 +125,34 @@ func TestPaletteSaveFromInsertMode(t *testing.T) {
 		t.Fatal(":w typed into the buffer")
 	}
 }
+
+// F-119: matches of the last search are marked; esc clears them.
+func TestSearchHighlightAndEsc(t *testing.T) {
+	m, _ := openApp(t)
+	e := m.active()
+	for _, k := range []string{"o", "m", "a", "i", "n", "esc", "g", "g", "/", "m", "a", "i", "n", "enter"} {
+		m.HandleKey(k)
+	}
+	if e.Highlight() != "main" {
+		t.Fatalf("highlight = %q", e.Highlight())
+	}
+	m.HandleKey("esc")
+	if e.Highlight() != "" || !m.bufFocus {
+		t.Fatal("first esc should clear the marks and keep the buffer focused")
+	}
+}
+
+// F-119: a line longer than the pane scrolls so the cursor stays visible.
+func TestHorizontalScrollKeepsCursorVisible(t *testing.T) {
+	m, _ := openApp(t)
+	e := m.active()
+	e.Key("A")
+	for i := 0; i < 150; i++ {
+		e.Key("x")
+	}
+	e.Key("Z")
+	v := plainView(m)
+	if !strings.Contains(v, "xxZ") {
+		t.Fatalf("cursor end of a long line not shown:\n%s", v)
+	}
+}

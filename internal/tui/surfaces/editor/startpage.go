@@ -137,6 +137,10 @@ func (m *Model) startPage(w int) []string {
 		out = append(out, kit.ClipEllipsis(line, w), "")
 	}
 
+	if m.ws != nil { // F-119: pick up where you left off
+		out = append(out, m.recentLines(w, len(out))...)
+	}
+
 	tips := []string{"? help", "^p palette"}
 	if m.start.StartTour != nil {
 		tips = append(tips, "t take the tour")
@@ -207,6 +211,11 @@ func (m *Model) startClick(x, y int) bool {
 	for _, z := range m.startZones {
 		if y != z.line || x < z.from || x >= z.to {
 			continue
+		}
+		if i, ok := strings.CutPrefix(z.key, "recent:"); ok {
+			n, _ := strconv.Atoi(i)
+			m.openRecent(n)
+			return true
 		}
 		if id, ok := strings.CutPrefix(z.key, "step:"); ok {
 			if m.start.RunStep != nil {

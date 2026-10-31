@@ -23,6 +23,7 @@ func (e *Editor) startSearch(dir int) {
 // runSearch records q as the last search and jumps to its next match.
 func (e *Editor) runSearch(q string, dir int) {
 	e.mode = ModeNormal
+	e.hlOff = false
 	if q == "" {
 		q = e.lastSearch // "/" then enter repeats the last search
 	}
@@ -116,6 +117,21 @@ func (e *Editor) wordUnderCursor() string {
 
 // LastSearch is the active search text (the view highlights it).
 func (e *Editor) LastSearch() string { return e.lastSearch }
+
+// Highlight is the search the view marks (F-119): the last one, until esc
+// in normal mode or :noh.
+func (e *Editor) Highlight() string {
+	if e.hlOff {
+		return ""
+	}
+	return e.lastSearch
+}
+
+// ClearHighlight stops marking matches until the next search.
+func (e *Editor) ClearHighlight() { e.hlOff = true }
+
+// VisualLine reports V (whole-line) visual mode.
+func (e *Editor) VisualLine() bool { return e.visualLine }
 
 // SetPageSize tells the editor how many lines one screen shows, for
 // ctrl+d/ctrl+u (half a page) and pgup/pgdown (a page).
