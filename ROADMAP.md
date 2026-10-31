@@ -1132,3 +1132,19 @@ Plan: `~/.claude/plans/all-the-keys-should-playful-hanrahan.md`. Branch `m36`, o
 - [x] P4 Git as the user has it (F-112)
 - [x] P5 The approval boundary for agents (F-113)
 - [x] P6 Doctor, onboarding, docs (F-114) — Linux live checks open
+
+## M37 — Best-in-class audit and fixes (session 63)
+
+Plan: `~/.claude/plans/i-want-dhi-to-dazzling-sky.md`. Branch `m37`, one commit per phase. ADR-0045, F-115–F-121.
+
+- [x] P0 Data safety, crashes, background delivery (F-115) — patch release v0.5.1 pending the user
+- [x] P1 Editor correctness: search jump, completion, UTF-16, gd/gR, problems, live settings, robustness (F-116)
+- [x] P2 Agent chat loop: safe approvals, default routing, stop, progress, per-hunk suggestions, notices (F-117)
+- [x] P3 First run and discoverability (F-118)
+- [x] P4 Editor table stakes: tree file ops, :e/:w path, go to line, smart indent, V, >/<, ., search marks, recent (F-119)
+- [x] P5 Agent context, inline edit, fix with agent, undo a turn (F-120)
+- [x] P6 Git and terminal depth (F-121)
+- [ ] Live with a signed-in CLI: progress line, ctrl+x, :undo-turn; LSP with gopls installed
+- [ ] Later (audit tier S3): AI ghost text / next edit, multi-cursor, folding, block visual, comment toggle,
+      breadcrumbs, inlay hints, workspace symbols, >2 splits, DAP/test runner beyond Go, gated plan mode,
+      inline blame for every line, line-level staging, conflict tools
