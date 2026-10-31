@@ -898,7 +898,7 @@ func (m *Model) HandleKey(key string) bool {
 		m.chat.Toggle()
 		return true
 	}
-	if key == "ctrl+a" && m.chat == nil && !(m.bufFocus && m.active() != nil && m.active().Mode() == textbuf.ModeInsert) {
+	if key == "ctrl+a" && m.chat == nil && (!m.bufFocus || m.active() == nil || m.active().Mode() != textbuf.ModeInsert) {
 		m.askWithoutTeam() // F-118: ctrl+a was silently inert until a team existed
 		return true
 	}

@@ -234,19 +234,6 @@ func (m *Model) finishProposal() {
 	m.lspSync()
 }
 
-// acceptProposal applies proposal i whole (tests, accept-all).
-func (m *Model) acceptProposal(i int) bool {
-	p := m.proposals[i]
-	if err := m.ApplyReplace(p.path, p.old, p.new, false); err != nil {
-		m.rejectProposal(i, "stale: "+err.Error())
-		return false
-	}
-	m.proposals = append(m.proposals[:i], m.proposals[i+1:]...)
-	m.pairNote = "applied " + p.vp + " (undo with u)"
-	m.lspSync()
-	return true
-}
-
 func (m *Model) rejectProposal(i int, why string) {
 	p := m.proposals[i]
 	m.proposals = append(m.proposals[:i], m.proposals[i+1:]...)

@@ -404,7 +404,7 @@ func (m *Model) blameLine() string {
 			author = strings.TrimPrefix(ln, "author ")
 		case strings.HasPrefix(ln, "author-time "):
 			var sec int64
-			fmt.Sscan(strings.TrimPrefix(ln, "author-time "), &sec)
+			_, _ = fmt.Sscan(strings.TrimPrefix(ln, "author-time "), &sec)
 			when = time.Unix(sec, 0)
 		case strings.HasPrefix(ln, "summary "):
 			summary = strings.TrimPrefix(ln, "summary ")

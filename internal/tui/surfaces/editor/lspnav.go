@@ -54,7 +54,7 @@ type compTickMsg struct{ seq int }
 // identifier character or "." in insert mode.
 func (m *Model) autoComplete(key string) {
 	r, size := utf8.DecodeRuneInString(key)
-	if size != len(key) || !(isIdent(r) || r == '.') || m.lspClient() == nil {
+	if size != len(key) || (!isIdent(r) && r != '.') || m.lspClient() == nil {
 		return
 	}
 	m.compSeq++

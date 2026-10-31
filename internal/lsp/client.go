@@ -389,9 +389,10 @@ func StripSnippet(s string) string {
 			depth := 1
 			k := j
 			for k < len(r) && depth > 0 {
-				if r[k] == '{' {
+				switch r[k] {
+				case '{':
 					depth++
-				} else if r[k] == '}' {
+				case '}':
 					depth--
 				}
 				if depth > 0 {
