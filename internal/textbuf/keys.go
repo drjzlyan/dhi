@@ -475,8 +475,12 @@ func (e *Editor) execCommand(cmd string) {
 	switch cmd {
 	case "":
 		return
-	case "w":
-		if err := e.Save(); err != nil {
+	case "w", "w!":
+		save := e.Save
+		if cmd == "w!" {
+			save = e.SaveForce
+		}
+		if err := save(); err != nil {
 			e.message = err.Error()
 		} else {
 			e.message = `"` + e.path + `" written` + e.saveNote
@@ -495,18 +499,18 @@ func (e *Editor) execCommand(cmd string) {
 			return
 		}
 		e.closeReq, e.closeForced = true, false
-	case "e":
+	case "e", "e!":
 		if e.path == "" {
 			e.message = "no file name"
 			return
 		}
-		b, err := Open(e.path)
-		if err != nil {
-			e.message = err.Error()
+		if cmd == "e" && e.buf.Dirty() {
+			e.message = "unsaved changes (:e! discards them)"
 			return
 		}
-		e.buf = b
-		e.reloaded = true
+		if err := e.Reload(); err != nil {
+			e.message = err.Error()
+		}
 	default:
 		if exSubstitute(e, cmd) {
 			return
@@ -583,22 +587,51 @@ func itoa(n int) string {
 	return string(b[i:])
 }
 
-// Save writes to the bound path.
-func (e *Editor) Save() error {
+// Save writes to the bound path; it refuses (ErrChangedOnDisk) when the
+// file changed since the buffer read it.
+func (e *Editor) Save() error { return e.save(false) }
+
+// SaveForce writes to the bound path even when the file changed on disk.
+func (e *Editor) SaveForce() error { return e.save(true) }
+
+func (e *Editor) save(force bool) error {
 	if e.path == "" {
 		e.message = "no file name"
 		return errNoFile
+	}
+	if !force { // check before format-on-save edits the buffer
+		if clash, err := e.buf.conflict(e.path); err != nil {
+			return err
+		} else if clash {
+			return ErrChangedOnDisk
+		}
 	}
 	e.saveNote = ""
 	if e.beforeSave != nil {
 		e.saveNote = e.beforeSave(e)
 	}
-	if err := e.buf.Save(e.path); err != nil {
+	if err := e.buf.SaveForce(e.path); err != nil {
 		return err
 	}
 	if e.afterSave != nil {
 		e.afterSave(e)
 	}
+	return nil
+}
+
+// Reload replaces the buffer with the file's current content, keeping the
+// cursor where it was (clamped) and reporting it through TakeReloaded.
+func (e *Editor) Reload() error {
+	b, err := Open(e.path)
+	if err != nil {
+		return err
+	}
+	cur := e.buf.Cursor()
+	b.seq = e.buf.seq + 1 // render caches keyed on seq must not reuse the old text
+	b.SetCursor(cur)
+	e.buf = b
+	e.reloaded = true
+	e.mode = ModeNormal
 	return nil
 }
 

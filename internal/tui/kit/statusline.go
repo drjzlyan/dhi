@@ -241,11 +241,8 @@ func (s *StatusLine) KeyAt(x int) (key string, global, ok bool) {
 			if len(rows) == 0 {
 				return "", false, false
 			}
-			k := strings.Fields(strings.ReplaceAll(rows[0][0], "/", " "))[0]
-			if k == "space" {
-				k = " "
-			}
-			return k, sp.global, true
+			k, ok := ClickKey(rows[0][0])
+			return k, sp.global, ok
 		}
 	}
 	return "", false, false

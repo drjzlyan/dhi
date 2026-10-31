@@ -228,11 +228,17 @@ func TestCommandModeSaveQuitReload(t *testing.T) {
 		t.Fatal(":q! did not force close")
 	}
 
-	// :e reload discards changes
-	feed(e2, ":")
-	feed(e2, "e", "enter")
+	// :e refuses to discard changes; :e! reloads (F-115)
+	feed(e2, ":", "e", "enter")
+	if e2.TakeReloaded() {
+		t.Fatal(":e discarded unsaved changes")
+	}
+	if !strings.Contains(e2.Message(), ":e!") {
+		t.Fatalf("msg = %q", e2.Message())
+	}
+	feed(e2, ":", "e", "!", "enter")
 	if e2.TakeReloaded() == false {
-		t.Fatal(":e did not reload")
+		t.Fatal(":e! did not reload")
 	}
 	if strings.HasSuffix(e2.Buffer().Text(), "!") {
 		t.Fatalf(":e kept dirty content: %q", e2.Buffer().Text())

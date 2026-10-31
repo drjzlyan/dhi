@@ -2,6 +2,7 @@ package editor
 
 import (
 	"context"
+	"github.com/drjzlyan/dhi/internal/textbuf"
 	"io"
 	"path/filepath"
 
@@ -115,9 +116,23 @@ func (m *Model) syncTermSize() {
 
 // TakesCtrlC implements surfaces.CtrlCTaker: a focused live terminal
 // gets ctrl+c (interrupt), not the shell's quit.
+// A buffer in insert, visual or command mode takes it too: ctrl+c leaves
+// the mode as in vim (F-115), it never quits with the edit in flight.
 func (m *Model) TakesCtrlC() bool {
 	t := m.activeTermTab()
-	return m.drawerOpen && m.termFocus && t != nil && !t.exited
+	if m.drawerOpen && m.termFocus && t != nil && !t.exited {
+		return true
+	}
+	return m.bufCtrlCIsEsc()
+}
+
+// bufCtrlCIsEsc reports a focused buffer outside normal mode.
+func (m *Model) bufCtrlCIsEsc() bool {
+	if m.ws == nil || !m.bufFocus || (m.chat != nil && m.chat.open && m.chat.focus) || (m.gitOpen && m.gitFocus) {
+		return false
+	}
+	e := m.active()
+	return e != nil && e.Mode() != textbuf.ModeNormal
 }
 
 // TakesAltDigits implements surfaces.AltDigitTaker: a focused terminal

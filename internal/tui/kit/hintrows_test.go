@@ -51,3 +51,12 @@ func TestHintKeyAt(t *testing.T) {
 		t.Errorf("with status: %q,%v", got, ok)
 	}
 }
+
+func TestClickKey(t *testing.T) {
+	for spec, want := range map[string]string{"/": "/", "enter/l": "enter", "space": " ", "ctrl+p": "ctrl+p", "1-5": "", "alt+1-5": "", "": ""} {
+		got, ok := ClickKey(spec)
+		if got != want || ok != (want != "") {
+			t.Errorf("ClickKey(%q) = %q,%v want %q", spec, got, ok, want)
+		}
+	}
+}
