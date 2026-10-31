@@ -24,7 +24,9 @@ type Surface interface {
 	// Resize receives the available viewport size for this surface.
 	Resize(width, height int)
 
-	// Update handles non-key messages routed to the active surface.
+	// Update handles non-key messages. Every surface receives every
+	// background message, visible or not (ADR-0045); it ignores types it
+	// does not own.
 	Update(msg tea.Msg) tea.Cmd
 
 	// HandleKey receives keystrokes not consumed by global bindings.
@@ -77,6 +79,13 @@ type HintProvider interface {
 // DHI (ctrl+q still quits).
 type CtrlCTaker interface {
 	TakesCtrlC() bool
+}
+
+// Unsaved (F-115) is implemented by a surface holding the user's unsaved
+// work: the shell lists it and asks before quitting instead of dropping it.
+type Unsaved interface {
+	Unsaved() []string // what is unsaved (buffer names); empty when nothing
+	SaveAll() error    // saves everything Unsaved listed
 }
 
 // AltDigitTaker is implemented by a surface that uses alt+1..9 itself

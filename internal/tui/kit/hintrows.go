@@ -39,3 +39,26 @@ func DedupeHelpRows(rows [][2]string) [][2]string {
 	}
 	return out
 }
+
+// ClickKey is the key a click on a hint presses: the first of "a/b"
+// alternatives, "/" itself, and nothing for a range like "1-5" (F-115:
+// "/ find" crashed the click; "1-5 views" pressed a key nobody handles).
+func ClickKey(spec string) (string, bool) {
+	if spec == "/" {
+		return "/", true
+	}
+	f := strings.Fields(strings.ReplaceAll(spec, "/", " "))
+	if len(f) == 0 {
+		return "", false
+	}
+	k := f[0]
+	if i := strings.LastIndex(k, "-"); i > 0 && i < len(k)-1 && isDigit(k[i-1]) && isDigit(k[i+1]) {
+		return "", false
+	}
+	if k == "space" {
+		k = " "
+	}
+	return k, true
+}
+
+func isDigit(b byte) bool { return b >= '0' && b <= '9' }

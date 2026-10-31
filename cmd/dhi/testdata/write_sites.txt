@@ -48,7 +48,7 @@ internal/settings/patch.go 12
 internal/settings/settings.go 4
 internal/setup/setup.go 4
 internal/tasks/tasks.go 7
-internal/textbuf/buffer.go 1
+internal/textbuf/disk.go 5
 internal/tui/surfaces/editor/editor.go 1
 internal/tui/surfaces/editor/replace.go 1
 internal/tui/surfaces/ideator/export.go 2

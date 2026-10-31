@@ -676,7 +676,11 @@ func (r *Runtime) Reload(roster []*manifest.Agent) error {
 }
 
 // AgentIDs lists rostered agents sorted.
+// A nil runtime (no roster) has none (F-115: never a panic).
 func (r *Runtime) AgentIDs() []string {
+	if r == nil {
+		return nil
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	out := make([]string, 0, len(r.agents))
@@ -722,7 +726,12 @@ const systemAuthor = "dhi"
 // dispatch too (F-036) so @mentions between agents form a delegation
 // chain, bounded per channel by maxAgentHops. It returns immediately
 // after dispatching.
+//
+// A nil runtime (no roster) handles nothing.
 func (r *Runtime) Handle(ctx context.Context, msg bus.Message) {
+	if r == nil {
+		return
+	}
 	fromAgent := r.isAgent(msg.Author)
 	// Ideation round-tables own their routing: the floor protocol hands
 	// the floor on (ordered, moderated, capped at roundTableMaxTurns).
@@ -754,6 +763,9 @@ func (r *Runtime) Handle(ctx context.Context, msg bus.Message) {
 }
 
 func (r *Runtime) isAgent(id string) bool {
+	if r == nil {
+		return false
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	_, ok := r.agents[id]
@@ -1012,6 +1024,9 @@ func sortStrings(s []string) {
 // Satisfies the profile.Roster seam so inspection UIs never need the
 // concrete runtime.
 func (r *Runtime) Manifest(id string) (*manifest.Agent, bool) {
+	if r == nil {
+		return nil, false
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	e, ok := r.agents[id]
