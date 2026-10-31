@@ -260,6 +260,11 @@ type Model struct {
 	gitTab       int // 0 status, 1 log
 	gitCursor    int
 	gitRepo      *gitcore.Repo
+	gitCLI       *gitcore.Runner // the user's git for diff, apply, branches, blame (F-121)
+	diff         *diffView
+	branches     *branchPicker
+	commitDone   *textbuf.Editor      // the message buffer that just committed
+	commitRepo   *gitcore.Repo        // the repo a COMMIT_EDITMSG buffer commits to
 	gitIdentity  gitcore.IdentityFunc // F-029 commit identity; nil refuses
 	gitEntries   []gitcore.FileStatus
 	gitLog       []gitcore.CommitEntry
@@ -292,6 +297,7 @@ type Model struct {
 	saving         bool              // format-on-save in progress: shorter formatter waits
 	toast          *kit.Toast        // for the shell's toaster seam (F-117)
 	startNote      string            // why a start-page key did nothing yet (F-118)
+	termSeq        int               // last terminal tab id (F-121)
 	cps            *checkpoint.Store // chat-turn snapshots (F-120)
 	undo           *undoState
 	recent         []string // recently opened files, newest first (F-119)
@@ -412,9 +418,13 @@ func (m *Model) Hints() (string, []string) {
 	case m.chat != nil && m.chat.open && m.chat.focus:
 		return "", []string{"enter send", "@ mention", "^x stop", "^f apply", "[ ] channel", "esc blur"}
 	case m.drawerOpen && m.termFocus:
-		return "", []string{"ctrl+t blur", kit.AltLabel("alt+1..9 tab"), kit.AltLabel("alt+n new tab")}
+		hints := []string{"ctrl+t blur", "shift+pgup scroll back", kit.AltLabel("alt+n new tab"), kit.AltLabel("alt+w close tab"), kit.AltLabel("alt+1..9 tab")}
+		if t := m.activeTermTab(); t != nil && t.exited {
+			hints = append([]string{kit.AltLabel("alt+r restart")}, hints...)
+		}
+		return "", hints
 	case m.gitOpen && m.gitFocus:
-		return "", []string{"s stage", "S all", "u unstage", "c commit", "tab status/log", "esc blur"}
+		return "", []string{"enter diff", "s stage", "S all", "u unstage", "c commit", "C message", "b branch", "p pull", "P push", "tab status/log", "esc blur"}
 	case m.treeOp != nil:
 		return "", nil // the dialog names its keys
 	case m.mode != modeNav:
@@ -519,6 +529,8 @@ func (m *Model) HelpSections() [][2]string {
 	case m.drawerOpen && m.termFocus:
 		out = append(out,
 			[2]string{"ctrl+t", "blur/close the drawer"},
+			[2]string{"shift+pgup · shift+pgdown", "scroll back through the output (any key returns)"},
+			[2]string{kit.AltLabel("alt+n · alt+w · alt+r"), "new tab · close this tab · restart an exited one"},
 			[2]string{kit.AltLabel("alt+1..9"), "switch terminal tab"})
 	case m.gitOpen && m.gitFocus:
 		out = append(out,
@@ -847,6 +859,12 @@ func (m *Model) HandleKey(key string) bool {
 	if m.undo != nil {
 		return m.undoKey(key)
 	}
+	if m.diff != nil {
+		return m.diffKey(key)
+	}
+	if m.branches != nil {
+		return m.branchKey(key)
+	}
 	if m.ws == nil {
 		return m.startVisible() && m.startKey(key)
 	}
@@ -1053,6 +1071,13 @@ func (m *Model) HandleKey(key string) bool {
 		}
 		if e.CloseRequested() && e.TakeClose() {
 			m.closeBuffer()
+		} else if m.commitDone == e { // F-121: :w on the message committed
+			m.closeBuffer()
+		}
+		if m.commitDone == e {
+			m.commitDone = nil
+			m.gitOpen, m.gitFocus = true, true
+			m.loadGit()
 		}
 		m.lspSync()
 		if e.Mode() == textbuf.ModeInsert && was == textbuf.ModeInsert {
@@ -1077,8 +1102,35 @@ func (m *Model) handleTermKey(key string) bool {
 			m.activeTerm = len(m.terms) - 1
 		}
 		return true
+	case "alt+w": // F-121: close this tab (the program is stopped)
+		m.closeTerm(m.activeTerm)
+		return true
+	case "alt+r": // F-121: restart an exited tab in the same folder
+		m.restartTerm(m.activeTerm)
+		return true
 	}
 	t := m.activeTermTab()
+	if t != nil {
+		switch key { // F-121: scroll back through what scrolled away
+		case "shift+pgup", "shift+up":
+			step := 1
+			if key == "shift+pgup" {
+				_, rows := m.termGeom(false)
+				step = max(rows-1, 1)
+			}
+			t.scroll += step
+			return true
+		case "shift+pgdown", "shift+down":
+			step := 1
+			if key == "shift+pgdown" {
+				_, rows := m.termGeom(false)
+				step = max(rows-1, 1)
+			}
+			t.scroll = max(t.scroll-step, 0)
+			return true
+		}
+		t.scroll = 0 // typing returns to the live screen
+	}
 	if t == nil || t.sess == nil || t.exited {
 		return true
 	}
@@ -1264,7 +1316,12 @@ func (m *Model) open(n *node) {
 	be.SetCommandDelegate(m)
 	be.SetIndent(m.indentFor(n.path, be.Buffer().Text())) // F-119
 	be.SetBeforeSave(m.beforeSave)
-	be.SetAfterSave(func(*textbuf.Editor) {
+	be.SetAfterSave(func(ed *textbuf.Editor) {
+		if ed.Path() == m.commitPath() && m.commitRepo != nil { // F-121: :w commits
+			m.gitMessage = m.commitFromBuffer(ed.Buffer().Text())
+			m.commitDone = ed // closed once the key that saved it is handled
+			return
+		}
 		m.act(tutorial.EvEditorSave)
 		m.invalidateTreeGit() // the saved file's status letter may change
 		m.refreshRows()
@@ -1330,6 +1387,12 @@ func (m *Model) View() string {
 	}
 	if m.undo != nil {
 		return m.undoView(m.view())
+	}
+	if m.diff != nil {
+		return m.diffView(m.view())
+	}
+	if m.branches != nil {
+		return m.branchView(m.view())
 	}
 	return m.view()
 }

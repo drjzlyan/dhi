@@ -121,3 +121,22 @@ func (s *Screen) OnClipboard(f func(text string)) {
 		return true
 	})
 }
+
+// History is the scrollback above the screen, oldest first, styled and
+// clipped to width (empty while a full-screen program owns the screen).
+func (s *Screen) History(width int) []string {
+	sb := s.emu.Scrollback()
+	if sb == nil || s.emu.IsAltScreen() {
+		return nil
+	}
+	lines := sb.Lines()
+	out := make([]string, 0, len(lines))
+	for _, l := range lines {
+		r := strings.ReplaceAll(l.Render(), "\t", " ")
+		if ansi.Width(r) > width {
+			r = ansi.Clip(r, width)
+		}
+		out = append(out, r+"\x1b[0m")
+	}
+	return out
+}

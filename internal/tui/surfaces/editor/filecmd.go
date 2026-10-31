@@ -19,6 +19,8 @@ func (m *Model) fileCommand(requester *textbuf.Editor, cmd string) (string, bool
 		return m.openUndoTurn(), true
 	case "fix":
 		return m.fixProblem(), true
+	case "blame":
+		return m.blameLine(), true
 	}
 	if rest, ok := strings.CutPrefix(strings.TrimSpace(cmd), "change "); ok {
 		r, has := m.currentRegion(0)

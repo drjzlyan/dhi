@@ -42,6 +42,9 @@ func (m *Model) loadRecent() {
 // noteRecent moves path to the front and saves the list (best effort:
 // the list is a convenience, a failed write is not worth a message).
 func (m *Model) noteRecent(path string) {
+	if m.ws != nil && within(path, filepath.Join(m.ws.Root, workspace.DHIDir)) {
+		return // DHI's own files (a commit message) are not "recent"
+	}
 	m.loadRecent()
 	out := []string{path}
 	for _, p := range m.recent {

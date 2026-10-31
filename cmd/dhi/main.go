@@ -233,6 +233,9 @@ func runTUI() (relaunch bool) {
 	gitcore.SetNetwork(gitRunner)
 	runRunner = execRunner{envFn: func() []string { return runTmpEnv(hostenv.Env(), ws) }, timeout: 5 * time.Minute, sandbox: guardWorkspace(decision.Sandbox, ws)}
 	edOpts = append(edOpts, editor.WithSearcher(rgSearcher))
+	if gitRunner != nil {
+		edOpts = append(edOpts, editor.WithGit(gitRunner)) // F-121: diff, hunks, branches, blame
+	}
 	if cps := workspaceCheckpoints(ws, gitRunner); cps != nil {
 		edOpts = append(edOpts, editor.WithCheckpoints(cps)) // F-120: undo an agent turn
 	}

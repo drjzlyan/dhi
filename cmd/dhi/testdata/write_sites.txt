@@ -52,6 +52,7 @@ internal/tasks/tasks.go 7
 internal/textbuf/disk.go 5
 internal/tui/surfaces/editor/editor.go 1
 internal/tui/surfaces/editor/filecmd.go 3
+internal/tui/surfaces/editor/gitdepth.go 2
 internal/tui/surfaces/editor/recent.go 2
 internal/tui/surfaces/editor/replace.go 1
 internal/tui/surfaces/editor/treeops.go 7

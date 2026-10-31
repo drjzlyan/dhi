@@ -130,8 +130,7 @@ func (m *Model) runToolInstall(p ToolPlan) {
 	sess, err := term.Start(ctx, term.Options{Dir: dir, Label: "install " + p.Tool, Env: m.env(), Command: p.Argv})
 	t := &termTab{sess: sess, dir: dir, screen: vt.New(m.editorPrefs().Scrollback), tool: p.Tool}
 	t.screen.Feed([]byte("\x1b[2m$ " + p.Command() + "\x1b[0m\r\n"))
-	m.terms = append(m.terms, t)
-	m.cancelTerms = append(m.cancelTerms, cancel)
+	m.addTerm(t, cancel)
 	m.activeTerm = len(m.terms) - 1
 	if err != nil {
 		t.exited = true
@@ -139,7 +138,27 @@ func (m *Model) runToolInstall(p ToolPlan) {
 		return
 	}
 	m.syncTermSize()
-	go m.pumpTerm(len(m.terms)-1, sess, m.termMsgs)
+	go m.pumpTerm(t.id, sess, m.termMsgs)
+}
+
+// runInTab runs argv in a new drawer tab in dir, focused, so its output
+// and any prompt (an ssh passphrase, a credential helper) are the user's
+// to see and answer (F-121: push and pull).
+func (m *Model) runInTab(label, dir string, argv []string) {
+	m.drawerOpen, m.termFocus = true, true
+	ctx, cancel := context.WithCancel(context.Background())
+	sess, err := term.Start(ctx, term.Options{Dir: dir, Label: label, Env: m.env(), Command: argv})
+	t := &termTab{sess: sess, dir: dir, screen: vt.New(m.editorPrefs().Scrollback)}
+	t.screen.Feed([]byte("\x1b[2m$ " + strings.Join(argv, " ") + "\x1b[0m\r\n"))
+	m.addTerm(t, cancel)
+	m.activeTerm = len(m.terms) - 1
+	if err != nil {
+		t.exited = true
+		t.screen.Feed([]byte("\x1b[31m" + err.Error() + "\x1b[0m\r\n"))
+		return
+	}
+	m.syncTermSize()
+	go m.pumpTerm(t.id, sess, m.termMsgs)
 }
 
 // installDir is where install tabs start: the workspace root.

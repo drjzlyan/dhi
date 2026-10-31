@@ -68,6 +68,11 @@ func (r *Runner) WithTimeout(d time.Duration) *Runner {
 // stdout and stderr. A non-zero exit, launch failure, or timeout becomes
 // an error carrying stderr for context.
 func (r *Runner) Run(ctx context.Context, dir string, args ...string) (string, string, error) {
+	return r.RunInput(ctx, dir, "", args...)
+}
+
+// RunInput is Run with stdin (a patch for `git apply`, F-121).
+func (r *Runner) RunInput(ctx context.Context, dir, stdin string, args ...string) (string, string, error) {
 	ctx, cancel := context.WithTimeout(ctx, r.timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, r.bin, args...)
@@ -79,6 +84,9 @@ func (r *Runner) Run(ctx context.Context, dir string, args ...string) (string, s
 	cmd.WaitDelay = 500 * time.Millisecond
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	if stdin != "" {
+		cmd.Stdin = strings.NewReader(stdin)
+	}
 	err := cmd.Run()
 	out, errs := stdout.String(), stderr.String()
 	if err != nil {
