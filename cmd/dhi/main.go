@@ -1474,6 +1474,7 @@ type liveCrew interface {
 	Handle(ctx context.Context, msg bus.Message)
 	AgentIDs() []string
 	Manifest(id string) (*manifest.Agent, bool)
+	CancelChannel(channel string) int
 }
 
 func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cliEnv []string, defaultEngine string, gitRunner *gitcore.Runner, identityFn gitcore.IdentityFunc, sessionStore *ideation.Store, runRunner dhitools.CommandRunner, editor dhitools.EditorAPI, workspaceScopes scopes.Set, taskStore *tasks.Store, reviewSvc *review.Service, kbSearcher search.Searcher, mcpStore *mcpserver.Store, conv conventions.Source, cliLook func(string) (string, error), wt worktrees.Layout, tune func() agentkitRuntime.Tuning) *agentkitRuntime.Runtime {

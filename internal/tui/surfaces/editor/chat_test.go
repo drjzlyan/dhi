@@ -172,9 +172,43 @@ func TestChatApprovalFlow(t *testing.T) {
 	if !strings.Contains(plainView(h.m), "approvals") {
 		t.Fatal("approvals section not rendered")
 	}
-	h.m.HandleKey("y")
+	// F-117: letters type even with an approval pending…
+	typeKeys(h.m, "no thanks")
+	if len(h.apprs.List()) != 1 || !strings.Contains(plainView(h.m), "no thanks") {
+		t.Fatal("typing a message answered the approval")
+	}
+	h.m.HandleKey("ctrl+u")
+	// …and alt+y (or ⌥y's ¥ in an empty box, or /yes) answers it.
+	h.m.HandleKey("alt+y")
 	if err := <-done; err != nil {
 		t.Fatalf("approval errored: %v", err)
+	}
+}
+
+func TestChatApprovalBySlashAndOptionChar(t *testing.T) {
+	h := newChatEditor(t, "ok")
+	for _, answer := range [][]string{{"/", "n", "o", "enter"}, {"¥"}} {
+		done := make(chan error, 1)
+		go func() {
+			done <- h.apprs.Ask(context.Background(), "scout", sandbox.OpWrite, "alpha/docs/n.md", "asks")
+		}()
+		h.openFocused()
+		deadline := time.After(asyncTimeout)
+		for len(h.apprs.List()) == 0 {
+			select {
+			case <-h.apprs.Changes():
+			case <-deadline:
+				t.Fatal("approval never surfaced")
+			}
+		}
+		for _, k := range answer {
+			h.m.HandleKey(k)
+		}
+		select {
+		case <-done:
+		case <-time.After(asyncTimeout):
+			t.Fatalf("%v did not answer", answer)
+		}
 	}
 }
 
@@ -277,7 +311,7 @@ func TestChatGrantAlways(t *testing.T) {
 			t.Fatal("approval never surfaced")
 		}
 	}
-	h.m.HandleKey("a") // grant always
+	h.m.HandleKey("alt+a") // grant always (F-117: alt in a focused composer)
 	if err := <-done; err != nil {
 		t.Fatalf("approval errored: %v", err)
 	}
@@ -321,9 +355,9 @@ func TestChatCollectsAMissingSecretMasked(t *testing.T) {
 			t.Fatal("no ask")
 		}
 	}
-	h.m.HandleKey("y")
+	h.m.HandleKey("alt+y")
 	if h.m.chat.secretForm == nil {
-		t.Fatal("y on a missing secret must open the masked form")
+		t.Fatal("alt+y on a missing secret must open the masked form")
 	}
 	h.m.HandleKey("paste:dt_SENTINEL_42\n")
 	if strings.Contains(plainView(h.m), "dt_SENTINEL") {
@@ -335,5 +369,42 @@ func TestChatCollectsAMissingSecretMasked(t *testing.T) {
 	}
 	if saved[h.ws.Root+"|DEPLOY_TOKEN"] != "dt_SENTINEL_42" {
 		t.Fatalf("saved = %v", saved)
+	}
+}
+
+// F-117: ```python blocks apply without the info string, and a visual
+// selection is replaced rather than appended to.
+func TestApplySuggestionStripsInfoAndReplacesSelection(t *testing.T) {
+	h := newChatEditor(t, "ok")
+	feed(h.m, "/")
+	typeKeys(h.m, "app.go")
+	h.m.HandleKey("enter")
+	if _, err := h.rt.Bus().Post(bus.Message{Channel: "#general", Author: "scout",
+		Text: "```python title=x\npackage zeta\n```"}); err != nil {
+		t.Fatal(err)
+	}
+	e := h.m.active()
+	for _, k := range []string{"v", "$", "h"} { // select "package main"
+		e.Key(k)
+	}
+	h.openFocused()
+	h.m.HandleKey("ctrl+f")
+	if got := e.Buffer().Text(); got != "package zeta\n" {
+		t.Fatalf("buffer = %q", got)
+	}
+}
+
+// F-117: a reply in a channel you are not reading raises a toast.
+func TestReplyElsewhereRaisesToast(t *testing.T) {
+	h := newChatEditor(t, "ok")
+	h.m.chat.noteReply(bus.Message{Channel: "dm:scout", Author: "scout", Text: "done\nmore"})
+	tt, ok := h.m.TakeToast()
+	if !ok || !strings.Contains(tt.Title, "@scout replied") || !strings.Contains(tt.Detail, "done") {
+		t.Fatalf("toast = %+v %v", tt, ok)
+	}
+	h.openFocused() // reading #general: a #general reply is not announced
+	h.m.chat.noteReply(bus.Message{Channel: "#general", Author: "scout", Text: "hi"})
+	if _, ok := h.m.TakeToast(); ok {
+		t.Fatal("toast for the channel on screen")
 	}
 }

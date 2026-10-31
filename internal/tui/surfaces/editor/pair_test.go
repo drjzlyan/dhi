@@ -85,6 +85,13 @@ func TestReviewAcceptAppliesAsOneUndoStep(t *testing.T) {
 	if err := m.Propose(abs, "bar", "qux", "rename", "ana"); err != nil {
 		t.Fatal(err)
 	}
+	if m.reviewOpen { // F-117: a proposal never takes the keyboard by itself
+		t.Fatal("review opened on its own")
+	}
+	if tt, ok := m.TakeToast(); !ok || !strings.Contains(tt.Title, "@ana suggests") {
+		t.Fatalf("toast = %+v", tt)
+	}
+	m.HandleKey("ctrl+y")
 	out := ansi.Strip(m.View())
 	for _, want := range []string{"ana suggests a change", "- bar", "+ qux", "rename", "y accept"} {
 		if !strings.Contains(out, want) {
@@ -113,6 +120,7 @@ func TestReviewAcceptAppliesAsOneUndoStep(t *testing.T) {
 func TestReviewRejectAndDefer(t *testing.T) {
 	m, abs := pairFile(t, "foo bar\n")
 	_ = m.Propose(abs, "bar", "qux", "", "ana")
+	m.HandleKey("ctrl+y")
 	m.HandleKey("esc") // decide later
 	if m.reviewOpen || m.ProposalCount() != 1 {
 		t.Fatalf("esc should defer, open=%v n=%d", m.reviewOpen, m.ProposalCount())
@@ -137,6 +145,7 @@ func TestReviewStaleProposalIsDroppedNamed(t *testing.T) {
 	if _, err := m.active().Buffer().ReplaceText("bar", "zzz", false); err != nil {
 		t.Fatal(err)
 	}
+	m.HandleKey("ctrl+y")
 	m.HandleKey("y")
 	if m.ProposalCount() != 0 {
 		t.Fatal("stale proposal must be dropped")
@@ -154,6 +163,7 @@ func TestAcceptAllAppliesEveryProposal(t *testing.T) {
 	_ = m.Propose(abs, "one", "1", "", "ana")
 	_ = m.Propose(abs, "two", "2", "", "ana")
 	_ = m.Propose(abs, "three", "3", "", "ana")
+	m.HandleKey("ctrl+y")
 	m.HandleKey("A")
 	if got := m.active().Buffer().Text(); got != "1\n2\n3\n" {
 		t.Fatalf("buffer = %q", got)
@@ -238,5 +248,25 @@ func TestPairCommandRefusals(t *testing.T) {
 	m.HandleKey("enter")
 	if got := m.active().Message(); !strings.Contains(got, "no crew") {
 		t.Fatalf("no-crew msg = %q", got)
+	}
+}
+
+// F-117: a multi-line suggestion is reviewed change by change.
+func TestReviewPerHunk(t *testing.T) {
+	m, abs := pairFile(t, "a\nb\nc\nd\ne\n")
+	if err := m.Propose(abs, "a\nb\nc\nd\ne", "a\nB\nc\nd\nE", "", "ana"); err != nil {
+		t.Fatal(err)
+	}
+	m.HandleKey("ctrl+y")
+	if out := ansi.Strip(m.View()); !strings.Contains(out, "change 1 of 2") || !strings.Contains(out, "- b") || strings.Contains(out, "- e") {
+		t.Fatalf("first hunk view:\n%s", out)
+	}
+	m.HandleKey("n") // drop b→B
+	m.HandleKey("y") // keep e→E
+	if got := m.active().Buffer().Text(); got != "a\nb\nc\nd\nE\n" {
+		t.Fatalf("buffer = %q", got)
+	}
+	if !strings.Contains(m.pairNote, "1 of 2") {
+		t.Fatalf("note = %q", m.pairNote)
 	}
 }

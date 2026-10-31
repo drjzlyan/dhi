@@ -122,3 +122,10 @@ func TestNonKeySwitchArmsTransition(t *testing.T) {
 		t.Fatalf("still dimmed: %d frames left", a.transLeft)
 	}
 }
+
+func TestOSC9IsSafe(t *testing.T) {
+	got := osc9("@ana replied", "done\x07\x1b]9;evil")
+	if strings.Count(got, "\x07") != 1 || strings.Count(got, "\x1b") != 1 || !strings.Contains(got, "@ana replied — done") {
+		t.Fatalf("%q", got)
+	}
+}

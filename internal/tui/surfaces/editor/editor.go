@@ -286,6 +286,7 @@ type Model struct {
 	lspNoted       map[string]bool    // languages already told about a missing server (F-011, F-050)
 	prefs          func() Prefs
 	saving         bool                 // format-on-save in progress: shorter formatter waits
+	toast          *kit.Toast           // for the shell's toaster seam (F-117)
 	lspStarting    map[string]bool      // a server start is in flight (F-116)
 	lspWaiting     map[string][]string  // files to open once their server is up
 	lspPumped      map[*lsp.Client]bool // clients whose events are already read
@@ -397,7 +398,7 @@ func (m *Model) Hints() (string, []string) {
 	case m.reviewOpen && len(m.proposals) > 0:
 		return "", nil // the suggestion card names its own keys
 	case m.chat != nil && m.chat.open && m.chat.focus:
-		return "", []string{"enter send", "@ mention", "[ ] channel", "^f apply", "esc blur"}
+		return "", []string{"enter send", "@ mention", "^x stop", "^f apply", "[ ] channel", "esc blur"}
 	case m.drawerOpen && m.termFocus:
 		return "", []string{"ctrl+t blur", kit.AltLabel("alt+1..9 tab"), kit.AltLabel("alt+n new tab")}
 	case m.gitOpen && m.gitFocus:
@@ -747,6 +748,9 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 	case chatEvent:
 		if msg.roster && m.chat != nil && !m.chat.closed() {
 			m.chat.refreshRoster()
+		}
+		if msg.any && m.chat != nil {
+			m.chat.noteReply(msg.msg)
 		}
 		// Transcript renders straight from bus history; just re-arm.
 		if m.chat != nil && !m.chat.closed() {
@@ -1972,6 +1976,14 @@ func (m *Model) applySuggestion(text string) {
 		return
 	}
 	b := e.Buffer()
+	// F-117: a visual selection is replaced, as in an inline edit; with
+	// none the block goes in at the cursor as whole lines.
+	if _, from, to, ok := e.Selection(); ok {
+		b.ApplyEdit(from, to, text)
+		e.Key("esc")
+		m.lspSync()
+		return
+	}
 	b.BeginUndoGroup()
 	for _, line := range strings.Split(text, "\n") {
 		b.InsertString(line)

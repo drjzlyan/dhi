@@ -2,6 +2,7 @@ package editor
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"time"
 
@@ -26,6 +27,7 @@ type chatEvent struct {
 	msg    bus.Message
 	ping   bool
 	roster bool
+	any    bool // from the all-channels watch (reply notifications, F-117)
 }
 
 // chatModel is the crew sidebar (F-007 component 7): transcript of the
@@ -54,6 +56,8 @@ type chatModel struct {
 	secretAsk  *tools.Approval
 	secretAns  string
 	note       string // the last secret outcome, shown under approvals
+
+	toast *kit.Toast // an agent replied where you are not looking (F-117)
 }
 
 var secretScopes = []string{"this workspace", "every workspace"}
@@ -79,8 +83,80 @@ func (c *chatModel) start() tea.Cmd {
 	if c.cancel == nil {
 		go c.pumpApprovals()
 		go c.pumpRoster()
+		go c.pumpAll()
 	}
 	return c.listen()
+}
+
+// pumpAll watches every channel so a reply elsewhere can be announced.
+func (c *chatModel) pumpAll() {
+	if c.bus == nil {
+		return
+	}
+	sub, _ := c.bus.Subscribe(bus.AllChannels)
+	for m := range sub {
+		select {
+		case c.events <- chatEvent{msg: m, any: true}:
+		default:
+		}
+	}
+}
+
+// noteReply raises a toast for an agent's answer the user is not looking
+// at: another channel, or the sidebar closed (F-117).
+func (c *chatModel) noteReply(m bus.Message) {
+	if m.Author == bus.Human || !bus.Conversational(m) || c.rt == nil || !slices.Contains(c.agents, m.Author) {
+		return
+	}
+	if c.open && m.Channel == c.channelName() {
+		if strings.HasPrefix(c.note, "@"+m.Author+" is on it") {
+			c.note = "" // answered: the routing note has done its job
+		}
+		return
+	}
+	first, _, _ := strings.Cut(strings.TrimSpace(m.Text), "\n")
+	c.toast = &kit.Toast{Kind: kit.ToastInfo, Title: "@" + m.Author + " replied in " + channelLabel(m.Channel),
+		Detail: kit.ClipEllipsis(first, 60) + "  · ctrl+a to read"}
+}
+
+// stop cancels the turns running in the active channel (ctrl+x).
+func (c *chatModel) stop() {
+	if c.rt == nil {
+		return
+	}
+	if n := c.rt.CancelChannel(c.channelName()); n > 0 {
+		c.note = "stopped " + kit.Count(n, "turn")
+	} else {
+		c.note = "nothing is running here"
+	}
+}
+
+// workingLine is the live status of the channel's turns: the latest
+// progress the agent relayed, and how many wait behind it (F-117).
+func (c *chatModel) workingLine() string {
+	if c.rt == nil {
+		return ""
+	}
+	running, queued := c.rt.Busy(c.channelName())
+	if running == 0 && queued == 0 {
+		return ""
+	}
+	what := "working…"
+	h := c.bus.History(c.channelName(), 0)
+	for i := len(h) - 1; i >= 0 && i >= len(h)-20; i-- {
+		if bus.Conversational(h[i]) {
+			break
+		}
+		if h[i].Author != bus.Human && strings.TrimSpace(h[i].Text) != "" {
+			what = "@" + h[i].Author + ": " + strings.Join(strings.Fields(h[i].Text), " ")
+			break
+		}
+	}
+	if queued > 0 {
+		what += " · " + itoa(queued) + " queued"
+	}
+	return theme.AccentText().Render(theme.GlyphBusy+" ") + theme.TextDim().Render(kit.ClipEllipsis(what, chatWidth-14)) +
+		theme.Hint().Render("  ^x stop")
 }
 
 func (c *chatModel) listen() tea.Cmd {
@@ -255,6 +331,9 @@ func (c *chatModel) handleKey(key string, apply func(string)) bool {
 	case "esc":
 		c.focus = false
 		return true
+	case "ctrl+x":
+		c.stop()
+		return true
 	case "[", "]":
 		if c.input.Value != "" { // mid-message they are text (F-102)
 			return c.input.HandleKey(key)
@@ -289,34 +368,69 @@ func (c *chatModel) composerKey(key string, apply func(string)) bool {
 			}
 		}
 		return true
-	case "y", "n", "a", "o", "g":
-		// Approval answers only when one is pending (tools.DecideKeys);
-		// otherwise these are ordinary composer letters.
-		list := c.apprs.List()
-		if len(list) == 0 || c.input.Value != "" { // mid-message: text
-			return c.input.HandleKey(key)
-		}
-		ap, choice := list[0], tools.DecideKeys[key]
-		if ap.IsSecret() && ap.Missing && key != "n" {
-			c.openSecretForm(ap, choice)
-			return true
-		}
-		c.apprs.Decide(ap, choice)
-		return true
 	case "enter":
 		text := strings.TrimSpace(c.input.Value)
+		if choice, ok := tools.SlashDecide(text); ok && c.answer(choice) {
+			c.input = kit.Input{}
+			return true
+		}
 		if text != "" {
 			// Dispatch the post (F-036 follow-up): without Handle the
 			// sidebar only wrote to the bus and no agent ever answered.
-			if posted, err := c.bus.Post(bus.Message{Channel: c.channelName(), Author: bus.Human, Text: text}); err == nil && c.rt != nil {
+			posted, err := c.bus.Post(bus.Message{Channel: c.channelName(), Author: bus.Human, Text: text})
+			if err != nil { // F-117: keep the text and say why
+				c.note = "not sent: " + err.Error()
+				return true
+			}
+			if c.rt != nil {
 				c.rt.Handle(context.Background(), posted)
 			}
-			c.input = kit.Input{}
+			c.input, c.note = kit.Input{}, ""
+			if c.channelName() == runtime.GeneralChannel && len(bus.Mentions(text)) == 0 && c.rt != nil {
+				if id := c.rt.DefaultAgent(); id != "" { // F-117: say who picked it up
+					c.note = "@" + id + " is on it · @name asks someone else"
+				}
+			}
 			c.markChannelRead() // posting reads the channel (F-017)
 		}
 		return true
 	}
+	// F-117: letters always type. alt+y/o/a/g/n (or ⌥'s ¥ ø å © in an
+	// empty box) answer the pending approval; "no, try…" stays a message.
+	if choice, ok := tools.ComposerDecide(key, c.input.Value == ""); ok && c.answer(choice) {
+		return true
+	}
 	return c.input.HandleKey(key)
+}
+
+// pendingAsk is the approval this channel answers: in a DM, that agent's;
+// in a shared channel, the oldest.
+func (c *chatModel) pendingAsk() *tools.Approval {
+	if c.apprs == nil {
+		return nil
+	}
+	dm, isDM := strings.CutPrefix(c.channelName(), "dm:")
+	for _, ap := range c.apprs.List() {
+		if !isDM || ap.Agent == dm {
+			return ap
+		}
+	}
+	return nil
+}
+
+// answer decides the pending approval (false when none is pending).
+func (c *chatModel) answer(choice string) bool {
+	ap := c.pendingAsk()
+	if ap == nil {
+		return false
+	}
+	if ap.IsSecret() && ap.Missing && choice != "no" {
+		c.openSecretForm(ap, choice)
+		return true
+	}
+	c.apprs.Decide(ap, choice)
+	c.note = choice + ": " + ap.Agent + " " + ap.Describe()
+	return true
 }
 
 // lastSuggestion extracts the final fenced code block from the latest
@@ -333,7 +447,12 @@ func (c *chatModel) lastSuggestion() string {
 			continue
 		}
 		block := parts[len(parts)-2] // last opened fence
-		block = strings.TrimPrefix(strings.TrimPrefix(block, "go\n"), "\n")
+		// F-117: the fence's first line is its info string (```python,
+		// ```ts title=x, or nothing); it used to land in the buffer as code
+		// for anything but go.
+		if nl := strings.IndexByte(block, '\n'); nl >= 0 {
+			block = block[nl+1:]
+		}
 		return strings.Trim(block, "\n")
 	}
 	return ""
@@ -364,7 +483,7 @@ func (c *chatModel) view(h int) string {
 	lines = append(lines, c.transcript(transcriptH)...)
 
 	if list := c.apprs.List(); len(list) > 0 {
-		lines = append(lines, "", theme.DangerText().Render("approvals — "+tools.DecideHint))
+		lines = append(lines, "", theme.DangerText().Render("approvals — "+tools.ComposerDecideHint))
 		for i, a := range list {
 			if i >= 3 {
 				lines = append(lines, theme.TextDim().Render(itoa(len(list)-i)+" more…"))
@@ -374,6 +493,9 @@ func (c *chatModel) view(h int) string {
 		}
 	}
 
+	if wl := c.workingLine(); wl != "" {
+		lines = append(lines, wl)
+	}
 	if c.note != "" {
 		lines = append(lines, theme.TextDim().Render(c.note))
 	}
@@ -382,7 +504,7 @@ func (c *chatModel) view(h int) string {
 		lines = append(lines, c.secretForm.ViewWidth(chatWidth-4)...)
 		return strings.Join(lines, "\n")
 	}
-	lines = append(lines, "", kit.Composer(c.input, "message the crew — @mention to wake an agent", c.focus))
+	lines = append(lines, "", kit.Composer(c.input, "ask the crew · @name picks who", c.focus))
 	return strings.Join(lines, "\n")
 }
 
@@ -476,4 +598,19 @@ func (c *chatModel) secretKey(key string) bool {
 		c.secretForm, c.secretAsk = nil, nil
 	}
 	return true
+}
+
+// TakeToast implements the shell's toaster seam (F-117 reply notices).
+func (m *Model) TakeToast() (kit.Toast, bool) {
+	if m.toast != nil {
+		t := *m.toast
+		m.toast = nil
+		return t, true
+	}
+	if m.chat == nil || m.chat.toast == nil {
+		return kit.Toast{}, false
+	}
+	t := *m.chat.toast
+	m.chat.toast = nil
+	return t, true
 }

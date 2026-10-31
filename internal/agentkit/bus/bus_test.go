@@ -205,3 +205,25 @@ func TestRecentKeepsThreadRootPastTheWindow(t *testing.T) {
 		t.Fatalf("reply count = %d, want 1 (stream lines excluded)", n)
 	}
 }
+
+func TestSubscribeAllChannels(t *testing.T) {
+	b, err := Open(fixtureWS(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	all, cancel := b.Subscribe(AllChannels)
+	defer cancel()
+	for _, ch := range []string{"#general", "dm:ana"} {
+		if _, err := b.Post(Message{Channel: ch, Author: Human, Text: "hi"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, want := range []string{"#general", "dm:ana"} {
+		if m := <-all; m.Channel != want {
+			t.Fatalf("got %q, want %q", m.Channel, want)
+		}
+	}
+	if _, err := b.Post(Message{Channel: AllChannels, Author: Human, Text: "x"}); err == nil {
+		t.Fatal("posting to * must be refused")
+	}
+}

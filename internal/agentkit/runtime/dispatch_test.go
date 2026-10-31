@@ -63,7 +63,9 @@ func TestTargetsMentionsAndLead(t *testing.T) {
 		{"agent mention wakes addressee", bus.Message{Channel: "#web", Author: "ana", Text: "@bo take this"}, "bo"},
 		{"self mention ignored", bus.Message{Channel: "#web", Author: "ana", Text: "@ana"}, ""},
 		{"unknown agent ignored", bus.Message{Channel: "#web", Author: "ana", Text: "@ghost"}, ""},
-		{"non-team channel bare post wakes nobody", bus.Message{Channel: "#general", Author: "you", Text: "hi"}, ""},
+		{"bare human post in #general goes to the default agent", bus.Message{Channel: "#general", Author: "you", Text: "hi"}, "ana"},
+		{"agent bare post in #general wakes nobody", bus.Message{Channel: "#general", Author: "bo", Text: "done"}, ""},
+		{"other non-team channel bare post wakes nobody", bus.Message{Channel: "#random", Author: "you", Text: "hi"}, ""},
 	}
 	for _, c := range cases {
 		got := strings.Join(rt.targets(c.msg), ",")
@@ -276,5 +278,17 @@ func TestSessionChannelAgentMentionIsNotDoubleDispatched(t *testing.T) {
 	time.Sleep(600 * time.Millisecond)
 	if got := spawns(); got != 1 {
 		t.Fatalf("spawns = %d, want exactly 1: the runtime must not dispatch @bo inside a session", got)
+	}
+}
+
+// F-117: with no team lead, the default agent is the first by name.
+func TestDefaultAgentWithoutTeams(t *testing.T) {
+	rt, _, _ := dispatchRT(t, "zed", "amy")
+	if got := rt.DefaultAgent(); got != "amy" {
+		t.Fatalf("default = %q, want amy", got)
+	}
+	var none *Runtime
+	if none.DefaultAgent() != "" {
+		t.Fatal("nil runtime has no default agent")
 	}
 }

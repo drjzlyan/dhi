@@ -222,6 +222,7 @@ type Runtime struct {
 	work    map[string]int
 	cancels map[string]map[int]context.CancelFunc // workKey → in-flight turns (F-073)
 	nextCxl int
+	waiting map[string]int // channel → turns queued behind a busy agent (F-117)
 
 	// prepared remembers each verify directory's dependency install by
 	// lockfile fingerprint (F-076), so prepare runs once per change.
@@ -295,6 +296,66 @@ func (r *Runtime) CancelThread(channel string, thread int64) int {
 		c()
 	}
 	return len(fns)
+}
+
+// CancelChannel stops every turn in flight on any thread of channel (the
+// chat's stop key, F-117) and reports how many it stopped.
+func (r *Runtime) CancelChannel(channel string) int {
+	if r == nil {
+		return 0
+	}
+	prefix := channel + "#"
+	r.workMu.Lock()
+	var fns []context.CancelFunc
+	for k, cs := range r.cancels {
+		if strings.HasPrefix(k, prefix) {
+			for _, c := range cs {
+				fns = append(fns, c)
+			}
+		}
+	}
+	r.workMu.Unlock()
+	for _, c := range fns {
+		c()
+	}
+	return len(fns)
+}
+
+// Busy reports the turns running on channel and those queued behind a
+// busy agent, for the chat's "working… · 2 queued" line (F-117).
+func (r *Runtime) Busy(channel string) (running, queued int) {
+	if r == nil {
+		return 0, 0
+	}
+	prefix := channel + "#"
+	r.workMu.Lock()
+	defer r.workMu.Unlock()
+	for k, n := range r.work {
+		if strings.HasPrefix(k, prefix) {
+			running += n
+		}
+	}
+	return running, r.waiting[channel]
+}
+
+func (r *Runtime) waitStart(channel string) {
+	r.workMu.Lock()
+	if r.waiting == nil {
+		r.waiting = map[string]int{}
+	}
+	r.waiting[channel]++
+	r.workMu.Unlock()
+}
+
+func (r *Runtime) waitDone(channel string) {
+	r.workMu.Lock()
+	if r.waiting[channel] > 0 {
+		r.waiting[channel]--
+		if r.waiting[channel] == 0 {
+			delete(r.waiting, channel)
+		}
+	}
+	r.workMu.Unlock()
 }
 
 // agentKey is the work-map key for an agent's own presence.
@@ -844,7 +905,37 @@ func (r *Runtime) targets(msg bus.Message) []string {
 			out = append(out, lead)
 		}
 	}
+	// A bare human post in #general goes to the default agent (F-117): it
+	// used to wake no one and say nothing. Human posts only, so an agent's
+	// unmentioned reply never wakes another agent.
+	if len(out) == 0 && msg.Author == bus.Human && msg.Channel == GeneralChannel {
+		if id := r.DefaultAgent(); id != "" {
+			out = append(out, id)
+		}
+	}
 	return out
+}
+
+// GeneralChannel is the workspace-wide channel.
+const GeneralChannel = "#general"
+
+// DefaultAgent answers what nobody was asked by name: the first team lead
+// that is a rostered agent, else the only agent, else the first by name.
+func (r *Runtime) DefaultAgent() string {
+	if r == nil {
+		return ""
+	}
+	if r.cfg.Org != nil {
+		for _, t := range r.cfg.Org.Teams() { // sorted by name
+			if r.isAgent(t.Lead) {
+				return t.Lead
+			}
+		}
+	}
+	if ids := r.AgentIDs(); len(ids) > 0 {
+		return ids[0]
+	}
+	return ""
 }
 
 // Turn executes one full conversational turn for agentID in response to
@@ -857,7 +948,9 @@ func (r *Runtime) Turn(ctx context.Context, agentID string, trigger bus.Message)
 	if !ok {
 		return fmt.Errorf("runtime: unknown agent %q", agentID)
 	}
+	r.waitStart(trigger.Channel)
 	e.turnMu.Lock()
+	r.waitDone(trigger.Channel)
 	defer e.turnMu.Unlock()
 
 	// Strict (F-011): malformed standards refuse the turn with the

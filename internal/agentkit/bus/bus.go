@@ -298,7 +298,12 @@ func (b *Bus) Channels() []string {
 	return out
 }
 
-// Subscribe receives every subsequently posted message for channel.
+// AllChannels subscribes to every channel at once (notifications, F-117).
+// It is not a valid channel to post to.
+const AllChannels = "*"
+
+// Subscribe receives every subsequently posted message for channel
+// (AllChannels: every message on the bus).
 // Delivery is best-effort (a full subscriber buffer drops messages);
 // call the returned cancel func when done.
 func (b *Bus) Subscribe(channel string) (<-chan Message, func()) {
@@ -347,10 +352,12 @@ func (b *Bus) Post(m Message) (Message, error) {
 		return Message{}, fmt.Errorf("bus: persist: %w", err)
 	}
 	b.mu.Lock()
-	for _, sub := range b.subs[m.Channel] {
-		select {
-		case sub <- m:
-		default:
+	for _, ch := range []string{m.Channel, AllChannels} {
+		for _, sub := range b.subs[ch] {
+			select {
+			case sub <- m:
+			default:
+			}
 		}
 	}
 	b.mu.Unlock()
