@@ -9,6 +9,10 @@ import (
 // run only on yes, in a terminal tab.
 func (m *Model) lspCommand(cmd string) (string, bool) {
 	f := strings.Fields(cmd)
+	if len(f) == 1 && (f[0] == "diag" || f[0] == "problems") { // F-116
+		m.showProblems()
+		return "", true
+	}
 	if len(f) == 0 || f[0] != "lsp" {
 		return "", false
 	}

@@ -86,8 +86,13 @@ func (m *Model) bufferView() string {
 	}
 	end := min(top+rows, b.LineCount())
 
+	prefs := m.editorPrefs()
+	tabStop = prefs.TabWidth
 	gut := strconv.Itoa(end)
 	gutW := len(gut) + 1
+	if !prefs.LineNumbers {
+		gutW = 1 // a one-cell column keeps problem colors and git marks
+	}
 	if !m.renderingSplit {
 		// Where the text starts and which line is on top, so a click maps
 		// back to a buffer position (F-103).
@@ -109,6 +114,9 @@ func (m *Model) bufferView() string {
 	curCol := visCol(b.Line(curLine), b.Cursor().Col)
 	for l := top; l < end; l++ {
 		num := strconv.Itoa(l + 1)
+		if !prefs.LineNumbers {
+			num = " "
+		}
 		plain := padLeft(num, gutW-len(num))
 		gutter := m.gutterFor(path, l, plain)
 		if l == curLine && gutter == theme.Hint().Render(plain) {
@@ -167,7 +175,9 @@ func (m *Model) bufferView() string {
 	case m.renameMode:
 		cmd = theme.Brand().Render("rename: " + m.renameOld + " → " + string(m.renameInput) + "▌")
 	case cmd == "":
-		// The keymap lives on the shell status row (ADR-0040).
+		// The keymap lives on the shell status row (ADR-0040); the line
+		// shows the cursor line's problem instead (F-116).
+		cmd = m.diagLine(e)
 	default:
 		cmd = theme.TabActive().Render(cmd)
 	}
@@ -400,8 +410,9 @@ func tabStrip(bufs []*bufTab, active, avail int) string {
 	}
 }
 
-// tabStop is the display width of a tab in the buffer view.
-const tabStop = 4
+// tabStop is the display width of a tab in the buffer view: the
+// editor.tab_width setting, applied at each render (F-116).
+var tabStop = 4
 
 // expandTabs replaces each tab with spaces up to the next tab stop,
 // counting visible cells (escape sequences in styled lines are skipped).

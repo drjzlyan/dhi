@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"strings"
 	"testing"
 	"time"
@@ -117,11 +118,16 @@ func TestChannelsComposerVisibleWhenBlurred(t *testing.T) {
 }
 
 func TestChannelsTranscriptStamps(t *testing.T) {
-	m, _, _ := newSurfaceWithBus(t)
+	m, _, b := newSurfaceWithBus(t)
 	m.sec = secChannels
+	for _, text := range []string{"first", "second"} { // the fixture starts empty
+		if _, err := b.Post(bus.Message{Channel: m.pane.channelName(), Author: bus.Human, Text: text}); err != nil {
+			t.Fatal(err)
+		}
+	}
 	history := m.pane.visibleHistory()
 	if len(history) == 0 {
-		t.Skip("no transcript rows in fixture")
+		t.Fatal("no transcript rows in fixture")
 	}
 	body := strings.Join(m.pane.transcriptRender(history, 60, 20), "\n")
 	stripped := ansi.Strip(body)
@@ -177,7 +183,7 @@ func TestTranscriptEmptyStateNamed(t *testing.T) {
 func TestReposOpenInEditorSeam(t *testing.T) {
 	m, ws := newSurface(t)
 	if len(ws.Members()) == 0 {
-		t.Skip("no members in fixture")
+		t.Fatal("no members in fixture")
 	}
 	opened := false
 	m.openEditor = func(paths []string) bool { opened = true; return true }

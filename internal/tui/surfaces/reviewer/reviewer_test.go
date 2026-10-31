@@ -439,7 +439,7 @@ func TestReviewerDiffPaneScrollbar(t *testing.T) {
 	}
 	segs, _ := m.diffSegmentsView(80, m.viewedSet())
 	if len(segs) < 4 {
-		t.Skipf("diff too small to overflow (segments=%d)", len(segs))
+		t.Fatalf("diff too small to overflow (segments=%d)", len(segs))
 	}
 	m.Resize(100, 40)
 	if strings.Contains(m.View(), "█") {

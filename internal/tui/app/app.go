@@ -338,6 +338,15 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if tc := a.armTransition(); tc != nil {
 		cmd = tea.Batch(cmd, tc)
 	}
+	// Work a surface queued outside a key (an agent's open request, a
+	// cross-view jump) starts now rather than at the next keypress.
+	for _, s := range a.surfaces {
+		if cs, ok := s.(surfaces.CmdSource); ok {
+			if qc := cs.TakeCmd(); qc != nil {
+				cmd = tea.Batch(cmd, qc)
+			}
+		}
+	}
 	if ac := a.activityCmd(); ac != nil {
 		if cmd == nil {
 			return m, ac
@@ -755,8 +764,6 @@ func (a *App) openPalette() {
 	add("", "Show keyboard help", "?", func() tea.Cmd { a.openHelp(); return nil })
 	add("", "Select text with the mouse", "", func() tea.Cmd { a.selecting = true; return nil })
 	a.coachCommands(add)
-	add("Theme", "Dark", "", func() tea.Cmd { theme.Current = theme.Dark(); return nil })
-	add("Theme", "Light", "", func() tea.Cmd { theme.Current = theme.Light(); return nil })
 	add("", "Quit DHI", "ctrl+c", a.requestQuit)
 	a.palette = kit.NewPalette(items)
 	a.observe("palette")

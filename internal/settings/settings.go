@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/BurntSushi/toml"
 
@@ -376,6 +377,42 @@ func LiveConventions(userPath, wsPath string, initial conventions.Config) *conve
 		c, err := Load(userPath, wsPath)
 		return c.Conventions, err
 	})
+}
+
+// Live returns the merged config, re-read whenever one of its files
+// changed (a stat per call; the last good config while a file is
+// invalid). The editor reads tab width, line numbers and scrollback
+// through it, so a change in Settings shows at once (F-116).
+func Live(userPath, wsPath string, initial Config) func() Config {
+	var (
+		mu   sync.Mutex
+		last = initial
+		fp   string
+	)
+	stamp := func() string {
+		var b strings.Builder
+		for _, p := range []string{userPath, wsPath} {
+			if p == "" {
+				continue
+			}
+			if st, err := os.Stat(p); err == nil {
+				fmt.Fprintf(&b, "%s|%d|%d;", p, st.Size(), st.ModTime().UnixNano())
+			}
+		}
+		return b.String()
+	}
+	fp = stamp()
+	return func() Config {
+		mu.Lock()
+		defer mu.Unlock()
+		if now := stamp(); now != fp {
+			fp = now
+			if c, err := Load(userPath, wsPath); err == nil {
+				last = c
+			}
+		}
+		return last
+	}
 }
 
 // validate rejects invalid merged values by name — no silent

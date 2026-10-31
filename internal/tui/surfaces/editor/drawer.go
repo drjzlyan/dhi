@@ -17,7 +17,6 @@ import (
 const (
 	gitPanelHeight = 12
 	drawerHeight   = 10
-	scrollbackCap  = 1000
 )
 
 // termTab is one drawer tab bound to a working directory.
@@ -60,7 +59,7 @@ func (m *Model) ensureTermTabs() {
 func (m *Model) newTermTab(dir, label string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	sess, err := term.Start(ctx, term.Options{Dir: dir, Label: label, Env: m.env()})
-	t := &termTab{sess: sess, dir: dir, screen: vt.New(scrollbackCap)}
+	t := &termTab{sess: sess, dir: dir, screen: vt.New(m.editorPrefs().Scrollback)}
 	// A program copying through OSC 52 (tmux, vim over SSH) reaches the
 	// system clipboard (F-103); Feed runs on the UI loop, so no lock.
 	t.screen.OnClipboard(func(text string) { m.termCopy = text })

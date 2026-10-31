@@ -28,6 +28,9 @@ type Diagnostic struct {
 type CompletionItem struct {
 	Label  string
 	Detail string
+	Insert string // text to insert (textEdit/insertText, snippets made plain); Label when the server gave none
+	Filter string // filterText, when it differs from Label
+	Range  *Range // the range Insert replaces (UTF-16 columns); nil = the word before the cursor
 }
 
 // EventKind discriminates async server pushes.
@@ -301,15 +304,9 @@ var docVersions atomic.Int64
 
 func (c *Client) version() int64 { return docVersions.Add(1) }
 
-// Completion requests candidates at a 0-based line/col.
+// Completion requests candidates at a 0-based line and UTF-16 column.
+// The result may be CompletionItem[] or a CompletionList.
 func (c *Client) Completion(path string, line, col int) ([]CompletionItem, error) {
-	var result struct {
-		Items []struct {
-			Label  string `json:"label"`
-			Detail string `json:"detail"`
-		} `json:"items"`
-		Raw []CompletionItem
-	}
 	var raw json.RawMessage
 	params := map[string]any{
 		"textDocument": map[string]any{"uri": pathToURI(path)},
@@ -318,34 +315,96 @@ func (c *Client) Completion(path string, line, col int) ([]CompletionItem, error
 	if err := c.call("textDocument/completion", params, &raw); err != nil {
 		return nil, err
 	}
-	// result may be Item[] or {items:[…]}
-	var list []map[string]any
-	if err := json.Unmarshal(raw, &list); err == nil && list != nil {
-		return itemsFrom(list), nil
-	}
-	if err := json.Unmarshal(raw, &result); err == nil {
-		out := make([]CompletionItem, 0, len(result.Items))
-		for _, it := range result.Items {
-			out = append(out, CompletionItem{Label: it.Label, Detail: it.Detail})
-		}
-		return out, nil
-	}
-	return nil, nil
+	return decodeCompletion(raw), nil
 }
 
-func itemsFrom(list []map[string]any) []CompletionItem {
+type wireCompletion struct {
+	Label      string `json:"label"`
+	Detail     string `json:"detail"`
+	InsertText string `json:"insertText"`
+	FilterText string `json:"filterText"`
+	Format     int    `json:"insertTextFormat"` // 2 = snippet
+	TextEdit   *struct {
+		NewText string `json:"newText"`
+		Range   *Range `json:"range"`
+		Replace *Range `json:"replace"` // InsertReplaceEdit
+	} `json:"textEdit"`
+}
+
+func decodeCompletion(raw json.RawMessage) []CompletionItem {
+	var list []wireCompletion
+	if err := json.Unmarshal(raw, &list); err != nil || list == nil {
+		var cl struct {
+			Items []wireCompletion `json:"items"`
+		}
+		if json.Unmarshal(raw, &cl) != nil {
+			return nil
+		}
+		list = cl.Items
+	}
 	out := make([]CompletionItem, 0, len(list))
-	for _, m := range list {
-		item := CompletionItem{}
-		if l, ok := m["label"].(string); ok {
-			item.Label = l
+	for _, w := range list {
+		it := CompletionItem{Label: w.Label, Detail: w.Detail, Insert: w.InsertText, Filter: w.FilterText}
+		if w.TextEdit != nil {
+			it.Insert = w.TextEdit.NewText
+			if r := w.TextEdit.Range; r != nil {
+				it.Range = r
+			} else if r := w.TextEdit.Replace; r != nil {
+				it.Range = r
+			}
 		}
-		if d, ok := m["detail"].(string); ok {
-			item.Detail = d
+		if it.Insert == "" {
+			it.Insert = w.Label
 		}
-		out = append(out, item)
+		if w.Format == 2 {
+			it.Insert = StripSnippet(it.Insert)
+		}
+		out = append(out, it)
 	}
 	return out
+}
+
+// StripSnippet turns snippet syntax ($1, ${1:name}, $0) into plain text,
+// keeping placeholders' default text.
+func StripSnippet(s string) string {
+	var b strings.Builder
+	r := []rune(s)
+	for i := 0; i < len(r); i++ {
+		switch {
+		case r[i] == '\\' && i+1 < len(r):
+			i++
+			b.WriteRune(r[i])
+		case r[i] == '$' && i+1 < len(r) && r[i+1] >= '0' && r[i+1] <= '9':
+			for i+1 < len(r) && r[i+1] >= '0' && r[i+1] <= '9' {
+				i++
+			}
+		case r[i] == '$' && i+1 < len(r) && r[i+1] == '{':
+			j := i + 2
+			for j < len(r) && r[j] >= '0' && r[j] <= '9' {
+				j++
+			}
+			if j < len(r) && r[j] == ':' {
+				j++
+			}
+			depth := 1
+			k := j
+			for k < len(r) && depth > 0 {
+				if r[k] == '{' {
+					depth++
+				} else if r[k] == '}' {
+					depth--
+				}
+				if depth > 0 {
+					k++
+				}
+			}
+			b.WriteString(StripSnippet(string(r[j:min(k, len(r))])))
+			i = k
+		default:
+			b.WriteRune(r[i])
+		}
+	}
+	return b.String()
 }
 
 // Shutdown performs the polite two-step teardown.

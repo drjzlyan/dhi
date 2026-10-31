@@ -234,7 +234,7 @@ func TestClickAndDragInTheBuffer(t *testing.T) {
 	for ; line < e.Buffer().LineCount() && len([]rune(e.Buffer().Line(line))) < 6; line++ {
 	}
 	if line == e.Buffer().LineCount() {
-		t.Skip("fixture has no line long enough")
+		t.Fatal("fixture has no line long enough")
 	}
 	x, y := g.ox+g.textX+4, g.oy+line-g.top
 	screen := []rune(strings.Split(ansi.Strip(m.View()), "\n")[y])

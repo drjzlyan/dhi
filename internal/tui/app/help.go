@@ -46,7 +46,7 @@ func (a *App) helpSections() []helpSection {
 		{kit.AltLabel(fmt.Sprintf("alt+1-%d", len(a.surfaces))), "jump between views while typing"},
 		{"ctrl+p", "command palette (search every action)"},
 		{"?", "toggle this help"},
-		{"ctrl+c", "quit DHI"},
+		{"ctrl+c / ctrl+q", "quit DHI (asks about unsaved files; ctrl+q also works while the terminal has focus)"},
 	}}}
 	secs = append(secs, helpSection{title: "Keyboard — Mac and PC", rows: [][2]string{
 		{"Option as Meta", "makes Option work as alt everywhere. Terminal.app: Settings → Profiles → Keyboard → Use Option as Meta key. iTerm2: Profiles → Keys → Left Option key: Esc+. Ghostty: macos-option-as-alt = true"},

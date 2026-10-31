@@ -203,7 +203,7 @@ DHI uses the formats every coding agent reads, so nothing is DHI-only:
 | `cmd+v` / `ctrl+shift+v` | paste into the focused field, buffer or terminal (secret fields stay masked) |
 | `y` (buffer), `Y` (chat, trace) | copy to the system clipboard |
 | `alt+←/→`, `ctrl+w`, `ctrl+u` | move by word, delete a word, clear to the start, in any text field |
-| `ctrl+c` | quit |
+| `ctrl+c`, `ctrl+q` | quit — DHI asks first when a file is unsaved; `ctrl+q` also quits from a focused terminal |
 
 On a Mac, turn on **Option as Meta** in your terminal for every `alt` key (Terminal.app: Settings →
 Profiles → Keyboard; iTerm2: Profiles → Keys → Left Option key: Esc+). Without it, `⌥1`–`⌥5` still

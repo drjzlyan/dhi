@@ -128,7 +128,7 @@ func (m *Model) runToolInstall(p ToolPlan) {
 	m.drawerOpen, m.termFocus = true, true
 	ctx, cancel := context.WithCancel(context.Background())
 	sess, err := term.Start(ctx, term.Options{Dir: dir, Label: "install " + p.Tool, Env: m.env(), Command: p.Argv})
-	t := &termTab{sess: sess, dir: dir, screen: vt.New(scrollbackCap), tool: p.Tool}
+	t := &termTab{sess: sess, dir: dir, screen: vt.New(m.editorPrefs().Scrollback), tool: p.Tool}
 	t.screen.Feed([]byte("\x1b[2m$ " + p.Command() + "\x1b[0m\r\n"))
 	m.terms = append(m.terms, t)
 	m.cancelTerms = append(m.cancelTerms, cancel)

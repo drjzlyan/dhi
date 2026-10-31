@@ -282,12 +282,14 @@ func (c *Client) CodeAction(path string, rng Range, diags []Diagnostic) ([]CodeA
 	return actions, nil
 }
 
-// ExecuteCommand runs a server-side command from a code action.
+// ExecuteCommand runs a server-side command from a code action. It is a
+// request (the spec's), so the server's error comes back to the user.
 func (c *Client) ExecuteCommand(cmd Command) error {
-	return c.notify("workspace/executeCommand", map[string]any{
+	var raw json.RawMessage
+	return c.call("workspace/executeCommand", map[string]any{
 		"command":   cmd.Command,
 		"arguments": cmd.Arguments,
-	})
+	}, &raw)
 }
 
 // decodeApplyEdit parses workspace/applyEdit params.

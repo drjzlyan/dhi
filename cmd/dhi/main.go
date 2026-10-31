@@ -101,9 +101,16 @@ func main() {
 		case "version", "--version", "-v":
 			fmt.Println(version.String())
 			return
+		case "help", "--help", "-h":
+			fmt.Println("usage: dhi [doctor [--json] | version | help]")
+			fmt.Println()
+			fmt.Println("  dhi            open the IDE in the current folder")
+			fmt.Println("  dhi doctor     check this machine and workspace (--json for scripts)")
+			fmt.Println("  dhi version    print the build")
+			return
 		default:
 			fmt.Fprintf(os.Stderr, "dhi: unknown command %q\n", os.Args[1])
-			fmt.Fprintln(os.Stderr, "usage: dhi [doctor [--json] | version]")
+			fmt.Fprintln(os.Stderr, "usage: dhi [doctor [--json] | version | help]")
 			os.Exit(2)
 		}
 	}
@@ -174,6 +181,11 @@ func runTUI() (relaunch bool) {
 	// overrides. Problems are surfaced by `dhi doctor`, never fatal here.
 	langs, _ := langserver.Resolve(cfg.Editor.LanguageOverrides())
 	edOpts = append(edOpts, editor.WithLanguages(langs))
+	liveCfg := settings.Live(userCfg, wsCfg, cfg)
+	edOpts = append(edOpts, editor.WithPrefs(func() editor.Prefs { // F-116: Settings apply live
+		c := liveCfg()
+		return editor.Prefs{TabWidth: c.Editor.TabWidth, LineNumbers: c.Editor.LineNumbers, Scrollback: c.Terminal.Scrollback}
+	}))
 	var rgSearcher search.Searcher
 	var termEnv []string
 	var agentEnv []string // termEnv + redirected build caches (F-076)
@@ -305,7 +317,9 @@ func runTUI() (relaunch bool) {
 	var cliRegistry *clirun.Registry
 	if ws != nil {
 		company, oerr := agentkitOrg.Load(ws.Root)
-		if oerr == nil {
+		// Settings loads everything else when .dhi/org.toml is broken and
+		// names the error (F-116: it used to lose most sections silently).
+		{
 			// One autopilot store shared by the workspace (execution:
 			// catch-up + ticks, ADR-0014 §5) and Settings (management UI).
 			autoStore, aerr := autopilot.Open(ws)
@@ -317,7 +331,6 @@ func runTUI() (relaunch bool) {
 			cliRegistry = clirun.NewRegistry(cliLook)
 			settingsDeps = settingsview.Deps{
 				WS:         ws,
-				Org:        company,
 				CLIs:       cliRegistry.Names(),
 				Detect:     cliRegistry.Detect,
 				Library:    library.Open(ws),
@@ -326,6 +339,11 @@ func runTUI() (relaunch bool) {
 				Bus:        messageBus,
 				Tasks:      taskStore,
 				Ext:        newExtensions(ws.Root),
+			}
+			if oerr == nil {
+				settingsDeps.Org = company
+			} else {
+				settingsDeps.OrgErr = oerr.Error()
 			}
 			if agentRT != nil {
 				// Only a live runtime: a typed-nil one inside the interface
@@ -419,6 +437,7 @@ func runTUI() (relaunch bool) {
 		}
 		return resetSetup()
 	}
+	settingsSurface := settingsview.New(cfg, savePath, settingsDeps)
 	// crewRT is agentRT as an interface that is nil when there is no
 	// runtime: a typed-nil *Runtime would pass the surfaces' nil checks
 	// (F-115: Ideator n, Reviewer A, channel posts crashed with no roster).
@@ -516,7 +535,7 @@ func runTUI() (relaunch bool) {
 				return appRef.OpenInEditor(paths)
 			},
 		}),
-		settingsview.New(cfg, savePath, settingsDeps),
+		settingsSurface,
 	)
 	appRef = a
 	if agentRT != nil {
@@ -546,7 +565,9 @@ func runTUI() (relaunch bool) {
 			if p, err := setup.UserStatePath(); err == nil {
 				st, _ := setup.LoadState(p)
 				st.Mark("tutorial:"+slug, time.Now())
-				_ = setup.SaveState(p, st)
+				if err := setup.SaveState(p, st); err != nil && appRef != nil {
+					appRef.Toast(kit.Toast{Kind: kit.ToastWarning, Title: "Lesson progress not saved", Detail: err.Error()})
+				}
 			}
 		},
 	})
@@ -642,6 +663,14 @@ func runTUI() (relaunch bool) {
 	a.SetSetup(func() []kit.ChecklistItem { return checklist }, runStep)
 	// A tool installed in another terminal, or a changed shell profile,
 	// reaches DHI without a restart (F-109).
+	for _, name := range settings.ThemeNames() { // saved like the Settings row (F-116)
+		name := name
+		a.AddCommand(surfaces.Command{Group: "Theme", Title: name, Run: func() tea.Cmd {
+			note := settingsSurface.SetTheme(name)
+			a.Toast(kit.Toast{Kind: kit.ToastInfo, Title: "Theme " + name, Detail: note})
+			return nil
+		}})
+	}
 	a.AddCommand(surfaces.Command{Group: "Tools", Title: "Reload shell environment", Run: func() tea.Cmd {
 		return func() tea.Msg {
 			s := hostenv.Reload()

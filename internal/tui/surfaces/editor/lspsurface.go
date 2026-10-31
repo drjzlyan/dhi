@@ -1,10 +1,13 @@
 package editor
 
 import (
+	tea "charm.land/bubbletea/v2"
 	"context"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/drjzlyan/dhi/internal/langserver"
 	"github.com/drjzlyan/dhi/internal/lsp"
@@ -25,21 +28,106 @@ func (m *Model) lspOpenDoc(path, text string) {
 	if !ok {
 		return
 	}
-	c, err := m.lspMgr.EnsureServer(context.Background(), l.ID, l.Server, l.Args, m.currentGitRootOrFirst())
-	if err != nil {
-		if !m.lspNoted[l.ID] {
-			m.lspNoted[l.ID] = true
-			if e := m.active(); e != nil {
-				e.SetMessage(missingServerNote(l, err))
-			}
+	if c := m.lspMgr.ClientFor(l.ID); c != nil && alive(c) {
+		m.didOpen(c, path, text, langID)
+		return
+	}
+	if _, found := m.lspMgr.Locate(l.Server); !found { // cheap: say so now
+		m.noteMissing(l, fmt.Errorf("lsp: %s is not installed", l.Server))
+		return
+	}
+	// Start the server off the UI loop (F-116): a slow or stuck server
+	// used to freeze the editor on the first file it opened.
+	m.lspWaiting[l.ID] = append(m.lspWaiting[l.ID], path)
+	if m.lspStarting[l.ID] {
+		return
+	}
+	m.lspStarting[l.ID] = true
+	mgr, root := m.lspMgr, m.currentGitRootOrFirst()
+	id := l.ID
+	m.queue(func() tea.Msg {
+		c, err := mgr.EnsureServer(context.Background(), l.ID, l.Server, l.Args, root)
+		return lspReadyMsg{lang: id, c: c, err: err}
+	})
+	m.queue(tea.Tick(lspStartWait, func(time.Time) tea.Msg { return lspSlowMsg{lang: id} }))
+}
+
+// lspStartWait is how long a server may take to start before the user is
+// told (it keeps starting in the background).
+const lspStartWait = 10 * time.Second
+
+type lspReadyMsg struct {
+	lang string
+	c    *lsp.Client
+	err  error
+}
+
+type lspSlowMsg struct{ lang string }
+
+func alive(c *lsp.Client) bool {
+	select {
+	case <-c.Done():
+		return false
+	default:
+		return true
+	}
+}
+
+// onLSPReady opens every buffer that waited for the server.
+func (m *Model) onLSPReady(msg lspReadyMsg) {
+	m.lspStarting[msg.lang] = false
+	waiting := m.lspWaiting[msg.lang]
+	delete(m.lspWaiting, msg.lang)
+	l, ok := m.langs.ByID(msg.lang)
+	if msg.err != nil || msg.c == nil {
+		if ok {
+			m.noteMissing(l, msg.err)
 		}
 		return
 	}
-	if len(c.Events) == 0 && m.termMsgs != nil {
-		go m.pumpLSPEvents(c)
+	for _, p := range waiting {
+		for _, t := range m.bufs {
+			if t.ed != nil && t.path == p {
+				_, langID, _ := m.langs.For(p)
+				m.didOpenTab(msg.c, t, langID)
+			}
+		}
 	}
+}
+
+func (m *Model) onLSPSlow(msg lspSlowMsg) {
+	if !m.lspStarting[msg.lang] {
+		return
+	}
+	if l, ok := m.langs.ByID(msg.lang); ok {
+		if e := m.active(); e != nil {
+			e.SetMessage(l.Name + " language server is slow to start — still trying in the background")
+		}
+	}
+}
+
+// didOpen announces the active buffer's file to c.
+func (m *Model) didOpen(c *lsp.Client, path, text, langID string) {
+	m.pump(c)
 	_ = c.DidOpen(path, text, langID)
 	m.lspSent[m.openVPath] = text
+}
+
+func (m *Model) didOpenTab(c *lsp.Client, t *bufTab, langID string) {
+	m.pump(c)
+	text := t.ed.Buffer().Text()
+	_ = c.DidOpen(t.path, text, langID)
+	m.lspSent[t.vp] = text
+}
+
+// pump starts the one event reader a client gets (it used to start one
+// per file opened).
+func (m *Model) pump(c *lsp.Client) {
+	if m.lspPumped[c] || m.termMsgs == nil {
+		return
+	}
+	m.lspPumped[c] = true
+	go m.pumpLSPEvents(c)
 }
 
 // missingServerNote tells the user exactly how to get the server.
@@ -97,9 +185,9 @@ func (m *Model) requestCompletion() {
 		return
 	}
 	cur := e.Buffer().Cursor()
-	path := e.Path()
+	path, col := e.Path(), u16(e, cur.Line, cur.Col)
 	go func() {
-		items, err := c.Completion(path, cur.Line, cur.Col)
+		items, err := c.Completion(path, cur.Line, col)
 		if err != nil {
 			items = nil
 		}
@@ -197,7 +285,7 @@ func (m *Model) requestHover() {
 		e.SetMessage("lsp: no identifier under cursor")
 		return
 	}
-	path := e.Path()
+	path, start := e.Path(), u16(e, cur.Line, start)
 	go func() {
 		h, err := c.Hover(path, cur.Line, start)
 		text := ""
@@ -262,6 +350,7 @@ func (m *Model) dispatchRename(newName string) {
 	}
 	cur := e.Buffer().Cursor()
 	_, clientStart := wordAt(e.Buffer().Line(cur.Line), cur.Col)
+	clientStart = u16(e, cur.Line, clientStart)
 	path := e.Path()
 	go func() {
 		// Validate and anchor the edit with the server (F-009): a range
@@ -281,7 +370,15 @@ func (m *Model) dispatchRename(newName string) {
 		}
 		edit, err := c.Rename(path, cur.Line, start, newName)
 		if err != nil || edit == nil {
-			return // silent like completion failures
+			note := "lsp: rename found nothing to change"
+			if err != nil {
+				note = "lsp: rename failed: " + err.Error()
+			}
+			select {
+			case m.termMsgs <- teaMsg{kind: lspMsgNote, note: note}:
+			default:
+			}
+			return
 		}
 		select {
 		case m.termMsgs <- teaMsg{kind: lspMsgEdit, edit: edit}:
@@ -299,9 +396,10 @@ func (m *Model) requestCodeActions() {
 	}
 	cur := e.Buffer().Cursor()
 	path := e.Path()
-	rng := lsp.Range{
+	line := e.Buffer().Line(cur.Line)
+	rng := lsp.Range{ // the whole cursor line, so a fix anywhere on it is offered
 		Start: lsp.Position{Line: cur.Line},
-		End:   lsp.Position{Line: cur.Line},
+		End:   lsp.Position{Line: cur.Line, Character: lsp.UTF16Col(line, len([]rune(line)))},
 	}
 	diags := m.lspDiags[path]
 	go func() {
@@ -357,13 +455,21 @@ func (m *Model) applyAction(a lsp.CodeAction) {
 		return
 	}
 	if c := m.lspClient(); c != nil && a.Command != nil {
-		_ = c.ExecuteCommand(*a.Command)
+		cmd := *a.Command
+		go func() { // a request: the server may answer slowly (F-116)
+			if err := c.ExecuteCommand(cmd); err != nil {
+				select {
+				case m.termMsgs <- teaMsg{kind: lspMsgNote, note: "lsp: " + a.Title + ": " + err.Error()}:
+				default:
+				}
+			}
+		}()
 	}
 }
 
-// applyWorkspaceEdit folds a server WorkspaceEdit into open buffers.
-// Edits for closed files are skipped with a note; each open file's
-// edits apply bottom-up inside one undo group.
+// applyWorkspaceEdit applies a server WorkspaceEdit: open files in their
+// buffer (one undo group each), files that are not open straight on disk
+// (F-116: a rename used to skip them while the server believed it done).
 func (m *Model) applyWorkspaceEdit(edit *lsp.WorkspaceEdit) {
 	if edit == nil {
 		return
@@ -374,42 +480,68 @@ func (m *Model) applyWorkspaceEdit(edit *lsp.WorkspaceEdit) {
 			byPath[b.ed.Path()] = b
 		}
 	}
-	skipped := 0
+	written, failed := 0, []string{}
 	for _, f := range edit.Files {
-		b, ok := byPath[f.PathFor()]
-		if !ok {
-			skipped++
+		path := f.PathFor()
+		if b, ok := byPath[path]; ok {
+			applyTextEdits(b.ed.Buffer(), f.Edits)
 			continue
 		}
-		applyTextEdits(b.ed.Buffer(), f.Edits)
-	}
-	if skipped > 0 {
-		if e := m.active(); e != nil {
-			e.SetMessage("lsp: " + kit.Count(skipped, "file") + " not open — edits skipped")
+		if err := editFileOnDisk(path, f.Edits); err != nil {
+			failed = append(failed, filepath.Base(path)+": "+err.Error())
+			continue
 		}
+		written++
+	}
+	if e := m.active(); e != nil {
+		switch {
+		case len(failed) > 0:
+			e.SetMessage("lsp: not applied to " + strings.Join(failed, "; "))
+		case written > 0:
+			e.SetMessage("lsp: also changed " + kit.Count(written, "file") + " that " +
+				map[bool]string{true: "was", false: "were"}[written == 1] + " not open (saved)")
+		}
+	}
+	if written > 0 {
+		m.invalidateTreeGit()
 	}
 	m.lspSync()
 }
 
+// editFileOnDisk applies edits to a file no buffer holds and saves it.
+func editFileOnDisk(path string, edits []lsp.TextEdit) error {
+	b, err := textbuf.Open(path)
+	if err != nil {
+		return err
+	}
+	applyTextEdits(b, edits)
+	return b.Save(path)
+}
+
 // applyTextEdits folds server edits into buf bottom-up inside one undo
 // group, so earlier ranges stay valid and a single `u` reverts them all.
+// Columns arrive in UTF-16 units and are converted on each line's text
+// before it changes (bottom-up keeps earlier text untouched).
 func applyTextEdits(buf *textbuf.Buffer, in []lsp.TextEdit) {
 	edits := make([]lsp.TextEdit, len(in))
 	copy(edits, in)
-	sort.Slice(edits, func(i, j int) bool {
+	sort.SliceStable(edits, func(i, j int) bool {
 		a, z := edits[i].Range.Start, edits[j].Range.Start
 		if a.Line != z.Line {
 			return a.Line > z.Line
 		}
 		return a.Character > z.Character
 	})
+	col := func(p lsp.Position) textbuf.Pos {
+		if p.Line >= buf.LineCount() {
+			last := buf.LineCount() - 1
+			return textbuf.Pos{Line: last, Col: len([]rune(buf.Line(last)))}
+		}
+		return textbuf.Pos{Line: p.Line, Col: lsp.RuneCol(buf.Line(p.Line), p.Character)}
+	}
 	buf.BeginUndoGroup()
 	for _, te := range edits {
-		buf.ApplyEdit(
-			textbuf.Pos{Line: te.Range.Start.Line, Col: te.Range.Start.Character},
-			textbuf.Pos{Line: te.Range.End.Line, Col: te.Range.End.Character},
-			te.NewText,
-		)
+		buf.ApplyEdit(col(te.Range.Start), col(te.Range.End), te.NewText)
 	}
 	buf.EndUndoGroup()
 }
@@ -420,21 +552,18 @@ func (m *Model) handleCompletionKey(key string) bool {
 	case "esc":
 		m.dismissCompletion()
 		return true
-	case "enter":
-		item, ok := m.selectedCompletion()
-		if ok {
-			e := m.active()
-			e.Buffer().InsertString(item.Label)
-			m.lspSync()
+	case "enter", "tab":
+		if item, ok := m.selectedCompletion(); ok {
+			m.acceptCompletion(item)
 		}
 		m.dismissCompletion()
 		return true
-	case "down", "j":
+	case "down", "ctrl+n": // j/k type: the popup opens while typing (F-116)
 		if m.compCur < len(m.compItems)-1 {
 			m.compCur++
 		}
 		return true
-	case "up", "k":
+	case "up", "ctrl+p":
 		if m.compCur > 0 {
 			m.compCur--
 		}
@@ -522,9 +651,9 @@ func (m *Model) currentGitRootOrFirst() string {
 // returning a text result (ADR-0023). rename and code_action have
 // effects; the tool layer gates them with approvals.
 func (m *Model) LSPCall(_ context.Context, op, abs string, line, col int, arg string) (string, error) {
-	c := m.lspClient()
+	c := m.clientFor(abs)
 	if c == nil {
-		return "", fmt.Errorf("LSP unavailable (gopls not running)")
+		return "", fmt.Errorf("LSP unavailable: no language server is running for %s", filepath.Base(abs))
 	}
 	switch op {
 	case "hover":
@@ -584,5 +713,16 @@ func (m *Model) LSPCall(_ context.Context, op, abs string, line, col int, arg st
 		return b.String(), nil
 	default:
 		return "", fmt.Errorf("unknown LSP op %q", op)
+	}
+}
+
+// noteMissing tells the user once per language why it has no server.
+func (m *Model) noteMissing(l langserver.Language, err error) {
+	if m.lspNoted[l.ID] {
+		return
+	}
+	m.lspNoted[l.ID] = true
+	if e := m.active(); e != nil {
+		e.SetMessage(missingServerNote(l, err))
 	}
 }

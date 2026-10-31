@@ -399,8 +399,11 @@ func (m *Model) takeCard(tk tasks.Task) {
 		m.reassign(tk.Slug, bus.Human)
 	}
 	if tk.Status == tasks.Backlog {
-		_ = m.taskStore.SetStatusAs(tk.Slug, tasks.Active, bus.Human)
-		m.followCardIntoLane(tk.Slug)
+		if err := m.taskStore.SetStatusAs(tk.Slug, tasks.Active, bus.Human); err != nil {
+			m.flashErr("could not move the card to active: " + err.Error())
+		} else {
+			m.followCardIntoLane(tk.Slug)
+		}
 	}
 	if len(tk.ChangeSets) > 0 {
 		m.openTakenWorktree(tk.Slug)

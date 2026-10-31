@@ -1371,7 +1371,9 @@ func (m *Model) submitForm() {
 				ev.err = err.Error()
 			} else {
 				ev.prNum = meta.Number
-				_ = m.taskStore.SetPR(slug, meta.Number, meta.URL)
+				if serr := m.taskStore.SetPR(slug, meta.Number, meta.URL); serr != nil {
+					ev.err = "PR #" + itoa(meta.Number) + " created, but the card could not record it: " + serr.Error()
+				}
 			}
 			m.send(ev)
 		}()

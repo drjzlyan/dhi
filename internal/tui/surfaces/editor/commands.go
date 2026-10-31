@@ -40,7 +40,13 @@ func (m *Model) Commands() []surfaces.Command {
 		add("Toggle crew chat", "ctrl+a", m.chat.Toggle)
 	}
 	if e := m.active(); e != nil {
-		add("Save file", ":w", func() { e.Key(":"); e.Key("w"); e.Key("enter") })
+		add("Save file", ":w", func() { // direct: typing ":w" landed as text in insert mode (F-116)
+			if err := e.Save(); err != nil {
+				e.SetMessage(err.Error())
+			} else {
+				e.SetMessage(`"` + m.relToWorkspace(e.Path()) + `" written`)
+			}
+		})
 		if p := e.Path(); p != "" { // F-103: paths for a PR, a chat, a shell
 			out = append(out,
 				surfaces.Command{Group: "Editor", Title: "Copy file path", Run: func() tea.Cmd { return kit.Copy(p) }},

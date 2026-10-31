@@ -180,9 +180,12 @@ type TurnHandler interface {
 // Deps wires workspace-scoped services. Zero fields degrade the managed
 // sections to visible "unavailable" rows rather than errors (F-011).
 type Deps struct {
-	WS   *workspace.Workspace
-	Org  *org.Org
-	CLIs []string // registered runtime names (form toggle options)
+	WS  *workspace.Workspace
+	Org *org.Org
+	// OrgErr is why .dhi/org.toml did not load (teams, agents and
+	// assignments are unavailable until it is fixed); "" when it did.
+	OrgErr string
+	CLIs   []string // registered runtime names (form toggle options)
 	// Detect probes the registered CLIs on PATH (name → version, ""
 	// = not installed). The AGENTS runtime picker is detection-driven
 	// (F-027 P2): detected first, undetected last; nil = all dimmed.
@@ -266,12 +269,16 @@ type GrantStore interface {
 // New wires the surface to a loaded config, its persistence target,
 // and (optionally) the workspace services behind agent management.
 func New(cfg settings.Config, savePath string, d Deps) *Model {
-	return &Model{cfg: cfg, savePath: savePath, d: d,
+	m := &Model{cfg: cfg, savePath: savePath, d: d,
 		events:         make(chan settingsEvent, 4),
 		now:            time.Now,
 		saved:          settings.Snapshot(cfg),
 		saveEverywhere: d.WorkspaceConfig == "",
 	}
+	if d.OrgErr != "" {
+		m.flash = "teams and agents unavailable — fix .dhi/org.toml: " + d.OrgErr
+	}
+	return m
 }
 
 // scopeHint names where CONFIG edits are going, and the key to switch.
@@ -769,6 +776,18 @@ func (m *Model) cycle(dir int) {
 	m.applyAndPersist()
 }
 
+// SetTheme picks a theme by name the way the theme row does: applied at
+// once and saved (the palette's theme commands, F-116). It returns what
+// happened, for a toast.
+func (m *Model) SetTheme(name string) string {
+	cur := m.cursor
+	m.cursor = rowTheme
+	defer func() { m.cursor = cur }()
+	m.cfg.Theme, m.cfg.ThemeSet = name, true
+	m.applyAndPersist()
+	return m.flash
+}
+
 func (m *Model) applyAndPersist() {
 	m.cfg.Apply()
 	if m.cursor >= rowBranchTask && m.cursor <= rowMaxSubject {
@@ -810,17 +829,23 @@ func (m *Model) applyAndPersist() {
 		m.flash = "save failed: " + err.Error()
 		return
 	}
+	var rmErr error
 	if everywhere && m.d.WorkspaceConfig != "" {
 		// "Every workspace" must win here too: drop this workspace's own
 		// value for the same keys.
-		_ = settings.RemoveKeys(m.d.WorkspaceConfig, keys)
+		rmErr = settings.RemoveKeys(m.d.WorkspaceConfig, keys)
 	}
 	m.saved = settings.Snapshot(m.cfg)
-	where := " for this workspace"
-	if everywhere {
-		where = " for every workspace"
+	where := " for every workspace"
+	if !everywhere {
+		where = " for this workspace"
 	}
-	defer func() { m.flash = strings.Replace(m.flash, "saved", "saved"+where, 1) }()
+	defer func() {
+		m.flash = strings.Replace(m.flash, "saved", "saved"+where, 1)
+		if rmErr != nil { // F-116: never claim a win the workspace value still beats
+			m.flash += " — but this workspace's own value still applies: " + rmErr.Error()
+		}
+	}()
 	// Conventions are a separate, tracked file shared with the team and
 	// are re-read while DHI runs (F-052), so say so.
 	switch {
@@ -1747,9 +1772,9 @@ func tokensText(n int) string {
 // boolValue renders a boolean setting as a colored mark plus the word.
 func boolValue(b bool) string {
 	if b {
-		return theme.SuccessText().Render(theme.GlyphCheck + " true")
+		return theme.SuccessText().Render(theme.GlyphCheck + " on")
 	}
-	return theme.TextMuted().Render(theme.GlyphCross + " false")
+	return theme.TextMuted().Render("○ off")
 }
 
 // leader pads name to w cells with a dotted leader ("name ·······").

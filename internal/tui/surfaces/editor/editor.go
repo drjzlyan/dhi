@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -103,6 +104,36 @@ func (m *Model) act(event string) {
 // [editor.languages] overrides). Without it the built-ins apply.
 func WithLanguages(r langserver.Registry) Option {
 	return func(m *Model) { m.langs = r }
+}
+
+// Prefs are the editor and terminal settings the view reads live (F-116).
+type Prefs struct {
+	TabWidth    int
+	LineNumbers bool
+	Scrollback  int
+}
+
+// DefaultPrefs match the settings defaults.
+var DefaultPrefs = Prefs{TabWidth: 4, LineNumbers: true, Scrollback: 1000}
+
+// WithPrefs reads the editor settings at each render, so a change in
+// Settings shows at once.
+func WithPrefs(fn func() Prefs) Option {
+	return func(m *Model) { m.prefs = fn }
+}
+
+func (m *Model) editorPrefs() Prefs {
+	p := DefaultPrefs
+	if m.prefs != nil {
+		p = m.prefs()
+	}
+	if p.TabWidth <= 0 || p.TabWidth > 16 {
+		p.TabWidth = DefaultPrefs.TabWidth
+	}
+	if p.Scrollback < 100 {
+		p.Scrollback = DefaultPrefs.Scrollback
+	}
+	return p
 }
 
 // WithChat attaches the agent runtime powering the crew sidebar (F-007).
@@ -250,26 +281,34 @@ type Model struct {
 	replace        *replaceState
 	replaceNote    string
 
-	lspMgr      *lsp.Manager
-	emit        func(event string) // tutorial action events (F-051); nil = not wired
-	lspNoted    map[string]bool    // languages already told about a missing server (F-011, F-050)
-	langs       langserver.Registry
-	tools       HostTools         // finds and installs host tools (F-110)
-	toolCard    *ToolPlan         // the open install card
-	lspSent     map[string]string // vpath → last pushed text
-	lspDiags    map[string][]lsp.Diagnostic
-	compOpen    bool
-	compItems   []lsp.CompletionItem
-	compCur     int
-	lspPendingG bool // `g` prefix armed (F-009 sequences)
-	hoverOpen   bool
-	hoverLines  []string
-	renameMode  bool
-	renameOld   string
-	renameInput []rune
-	actionOpen  bool
-	actionItems []lsp.CodeAction
-	actionCur   int
+	lspMgr         *lsp.Manager
+	emit           func(event string) // tutorial action events (F-051); nil = not wired
+	lspNoted       map[string]bool    // languages already told about a missing server (F-011, F-050)
+	prefs          func() Prefs
+	saving         bool                 // format-on-save in progress: shorter formatter waits
+	lspStarting    map[string]bool      // a server start is in flight (F-116)
+	lspWaiting     map[string][]string  // files to open once their server is up
+	lspPumped      map[*lsp.Client]bool // clients whose events are already read
+	langs          langserver.Registry
+	tools          HostTools         // finds and installs host tools (F-110)
+	toolCard       *ToolPlan         // the open install card
+	lspSent        map[string]string // vpath → last pushed text
+	lspDiags       map[string][]lsp.Diagnostic
+	compOpen       bool
+	compItems      []lsp.CompletionItem
+	compCur        int
+	lspPendingG    bool   // `g` prefix armed (F-009 sequences)
+	pendingBracket string // "]" or "[" armed for ]d / [d (F-116)
+	compSeq        int    // completion debounce generation (F-116)
+	resultsTitle   string // results pane holds a list (references, problems), not a search
+	hoverOpen      bool
+	hoverLines     []string
+	renameMode     bool
+	renameOld      string
+	renameInput    []rune
+	actionOpen     bool
+	actionItems    []lsp.CodeAction
+	actionCur      int
 
 	chat *chatModel
 }
@@ -285,13 +324,16 @@ var _ surfaces.Surface = (*Model)(nil)
 // New builds the editor for a workspace; nil ws renders the empty state.
 func New(version string, ws *workspace.Workspace, opts ...Option) *Model {
 	m := &Model{
-		version:   version,
-		ws:        ws,
-		termMsgs:  make(chan teaMsg, 128),
-		memEvents: make(chan struct{}, 8),
-		lspSent:   map[string]string{},
-		lspNoted:  map[string]bool{},
-		lspDiags:  map[string][]lsp.Diagnostic{},
+		version:     version,
+		ws:          ws,
+		termMsgs:    make(chan teaMsg, 128),
+		memEvents:   make(chan struct{}, 8),
+		lspSent:     map[string]string{},
+		lspNoted:    map[string]bool{},
+		lspStarting: map[string]bool{},
+		lspWaiting:  map[string][]string{},
+		lspPumped:   map[*lsp.Client]bool{},
+		lspDiags:    map[string][]lsp.Diagnostic{},
 
 		formatOnSave: true,
 	}
@@ -366,7 +408,7 @@ func (m *Model) Hints() (string, []string) {
 		if m.active().Mode() == textbuf.ModeInsert {
 			return "", []string{"esc normal"}
 		}
-		return "", []string{"i insert", ": cmd", "esc tree", "K hover", "gr refs", "ga actions"}
+		return "", []string{"i insert", ": cmd", "esc tree", "gd definition", "gR references", "K hover", "]d problem", "gr rename", "ga actions"}
 	}
 	hints := []string{"enter open", "/ find", "s search"}
 	if m.drawerOpen && !m.termFocus {
@@ -669,6 +711,18 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 	case diskTickMsg:
 		m.checkDisk()
 		return diskTick()
+	case compTickMsg:
+		m.onCompTick(msg)
+		return m.TakeCmd()
+	case navMsg:
+		m.onNav(msg)
+		return m.TakeCmd()
+	case lspReadyMsg:
+		m.onLSPReady(msg)
+		return nil
+	case lspSlowMsg:
+		m.onLSPSlow(msg)
+		return nil
 	case teaMsg:
 		switch msg.kind {
 		case termMsgOut:
@@ -876,6 +930,12 @@ func (m *Model) HandleKey(key string) bool {
 				case "r":
 					m.startRename()
 					return true
+				case "d": // F-116: definition
+					m.requestNav(false)
+					return true
+				case "R": // F-116: references
+					m.requestNav(true)
+					return true
 				case "a":
 					m.requestCodeActions()
 					return true
@@ -894,6 +954,17 @@ func (m *Model) HandleKey(key string) bool {
 		}
 		if e.Mode() == textbuf.ModeNormal && key == "K" {
 			m.requestHover()
+			return true
+		}
+		// ]d / [d: next / previous problem (F-116).
+		if b := m.pendingBracket; b != "" {
+			m.pendingBracket = ""
+			if e.Mode() == textbuf.ModeNormal && key == "d" {
+				m.jumpDiag(map[string]int{"]": 1, "[": -1}[b])
+				return true
+			}
+		} else if e.Mode() == textbuf.ModeNormal && (key == "]" || key == "[") {
+			m.pendingBracket = key
 			return true
 		}
 
@@ -922,6 +993,9 @@ func (m *Model) HandleKey(key string) bool {
 			m.closeBuffer()
 		}
 		m.lspSync()
+		if e.Mode() == textbuf.ModeInsert && was == textbuf.ModeInsert {
+			m.autoComplete(key)
+		}
 		return true
 	}
 	return m.handleNavKey(key)
@@ -1674,6 +1748,7 @@ func (m *Model) startSearch(q string) {
 	m.hitList = kit.List{Width: m.hitList.Width, Height: m.hitList.Height}
 	m.lastQueryText = q
 	m.lastQueryRegex = m.searchRegex
+	m.resultsTitle = ""
 	m.replace, m.replaceNote = nil, ""
 	m.mode = modeResults
 
@@ -1730,7 +1805,9 @@ func (m *Model) handleResultsKey(key string) bool {
 	case "enter", "l":
 		return m.jumpHit()
 	case "r":
-		m.openReplace()
+		if m.resultsTitle == "" { // a list (references, problems) has nothing to replace
+			m.openReplace()
+		}
 		return true
 	}
 	return m.hitList.HandleKey(key)
@@ -1757,7 +1834,18 @@ func (m *Model) jumpHit() bool {
 		}
 	}
 	m.open(&node{kind: nodeFile, path: abs, name: filepath.Base(abs)})
+	if e := m.active(); e != nil && row.hit.Line > 0 { // land on the hit (F-116)
+		e.Buffer().SetCursor(textbuf.Pos{Line: row.hit.Line - 1, Col: hitCol(row.hit)})
+	}
 	return true
+}
+
+// hitCol converts a hit's byte column to the rune column the buffer uses.
+func hitCol(h search.Hit) int {
+	if h.Column <= 0 || h.Column > len(h.Text) {
+		return 0
+	}
+	return utf8.RuneCountInString(h.Text[:h.Column])
 }
 
 func (m *Model) resultsBlock() string {
@@ -1765,6 +1853,9 @@ func (m *Model) resultsBlock() string {
 		return m.replaceBlock(maxInt(m.width-m.railW()-8, 20))
 	}
 	head := theme.TabActive().Render("results for " + strconv.Quote(m.lastQueryText))
+	if m.resultsTitle != "" {
+		head = theme.TabActive().Render(m.resultsTitle)
+	}
 	if m.lastQueryRegex {
 		head += theme.Hint().Render(" (regex)")
 	}
