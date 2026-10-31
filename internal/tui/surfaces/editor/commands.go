@@ -31,6 +31,13 @@ func (m *Model) Commands() []surfaces.Command {
 		}
 	}
 	add("Find and open a file", "/", m.openFind)
+	if m.cps != nil {
+		add("Undo the last agent turn…", ":undo-turn", func() {
+			if msg := m.openUndoTurn(); msg != "" {
+				m.toast = &kit.Toast{Kind: kit.ToastInfo, Title: "Undo turn", Detail: msg}
+			}
+		})
+	}
 	if len(m.closed) > 0 {
 		add("Reopen closed file", ":reopen", func() {
 			if msg := m.reopenClosed(); msg != "" && m.active() != nil {
@@ -49,6 +56,12 @@ func (m *Model) Commands() []surfaces.Command {
 		add("Search the workspace", "s", m.openSearch)
 	}
 	add("Toggle terminal", "ctrl+t", m.ToggleDrawer)
+	if len(m.terms) > 0 && m.chat != nil {
+		add("Ask an agent about the terminal output", "", func() {
+			msg := m.askAboutTerminal()
+			m.toast = &kit.Toast{Kind: kit.ToastInfo, Title: "Terminal", Detail: msg}
+		})
+	}
 	add("Toggle git panel", "ctrl+j", m.ToggleGitPanel)
 	if m.chat != nil {
 		add("Ask an agent (open chat)", "ctrl+a", m.chat.Focus)
@@ -69,6 +82,10 @@ func (m *Model) Commands() []surfaces.Command {
 				surfaces.Command{Group: "Editor", Title: "Copy relative path", Run: func() tea.Cmd { return kit.Copy(m.relToWorkspace(p)) }})
 		}
 		add("Format document", ":fmt", ex("fmt"))
+		add("Change the selection with an agent…", "ctrl+k", func() { m.startAgentEdit() })
+		if _, ok := m.diagAtLine(e.Path(), e.Buffer().Cursor().Line); ok {
+			add("Fix this problem with an agent", ":fix", ex("fix"))
+		}
 		add("Go to symbol", ":sym", ex("sym"))
 		add("Run tests in this package", ":test", ex("test"))
 		add("Run all tests in this repo", ":test all", ex("test all"))

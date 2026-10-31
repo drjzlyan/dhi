@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/drjzlyan/dhi/internal/agentkit/assign"
+	"github.com/drjzlyan/dhi/internal/checkpoint"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -129,6 +130,9 @@ type Config struct {
 	// Git is the user's git CLI runner backing git_diff (M15 P1); nil
 	// makes the diff tool refuse by name (never a host fallback).
 	Git *gitcore.Runner
+	// Checkpoints snapshots the repos around a chat turn that is not on a
+	// card, so the turn can be undone (F-120); nil turns it off.
+	Checkpoints *checkpoint.Store
 	// Identity resolves the user's git identity for git_commit (F-029);
 	// nil makes the commit tool refuse by name.
 	Identity gitcore.IdentityFunc

@@ -153,7 +153,9 @@ changes nothing outside its own folders and your workspace without a yes:
   (through your ssh-agent and ssh config), git credential helpers and your
   `gh` login. Clone, fetch and push run your own `git`.
 - **Written by DHI:** `~/.config/dhi` (settings, credentials you add, grants)
-  and the workspace's `.dhi/` folder.
+  and the workspace's `.dhi/` folder. That includes `.dhi/checkpoints/`: snapshots
+  of your repos around an agent's chat turn, kept in a separate git directory so
+  `:undo-turn` can put the files back. Your repos' own `.git` is never touched.
 - **Only after you say yes:**
   - installing a tool (the exact `brew`/`apt`/`npm` command runs in a terminal you watch);
   - your git identity (`~/.gitconfig`, or only this workspace's repos);
@@ -199,6 +201,12 @@ DHI uses the formats every coding agent reads, so nothing is DHI-only:
 | `n` | new task / session / review, depending on the view |
 | `s`, `ctrl+r` | search the workspace; toggle regex |
 | `ctrl+w v` | split the editor |
+| `ctrl+s`, `:w` | save (DHI refuses to overwrite a file changed outside it: `:e!` reloads, `:w!` overwrites) |
+| `ctrl+k` | ask an agent to change the selection; the answer comes back as a diff you accept hunk by hunk |
+| `gd`, `gR`, `]d` | go to definition, list references, next problem |
+| `a`, `r`, `d` (file tree) | new file or folder, rename/move, delete to `.dhi/tmp/trash` |
+| `@file`, `@selection`, `@problems` | in the chat: attach what you're looking at |
+| `ctrl+x` (chat) | stop the agent's turn |
 | `ctrl+t` | terminal drawer — vim, htop and friends run full screen |
 | `cmd+v` / `ctrl+shift+v` | paste into the focused field, buffer or terminal (secret fields stay masked) |
 | `y` (buffer), `Y` (chat, trace) | copy to the system clipboard |
@@ -209,7 +217,7 @@ On a Mac, turn on **Option as Meta** in your terminal for every `alt` key (Termi
 Profiles → Keyboard; iTerm2: Profiles → Keys → Left Option key: Esc+). Without it, `⌥1`–`⌥5` still
 switch views. To select text with the mouse, `ctrl+p` → *Select text with the mouse*.
 
-Remap any key in `config.toml` (`[keys] "ctrl+k" = "ctrl+p"`); hints and help follow your keys.
+Remap any key in `config.toml` (`[keys] "ctrl+o" = "ctrl+p"`); hints and help follow your keys.
 `dhi version` prints the build; `dhi doctor` diagnoses an install.
 
 ## Docs

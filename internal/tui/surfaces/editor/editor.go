@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/drjzlyan/dhi/internal/checkpoint"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -139,7 +140,10 @@ func (m *Model) editorPrefs() Prefs {
 // WithChat attaches the agent runtime powering the crew sidebar (F-007).
 // nil leaves ctrl+a inert.
 func WithChat(rt *runtime.Runtime) Option {
-	return func(m *Model) { m.chat = newChat(rt) }
+	return func(m *Model) {
+		m.chat = newChat(rt)
+		m.chat.expand, m.chat.suggest = m.expandMentions, m.mentionSuggestions // F-120
+	}
 }
 
 // SecretSaver stores a secret an agent asked for (F-089); the editor's
@@ -285,10 +289,12 @@ type Model struct {
 	emit           func(event string) // tutorial action events (F-051); nil = not wired
 	lspNoted       map[string]bool    // languages already told about a missing server (F-011, F-050)
 	prefs          func() Prefs
-	saving         bool       // format-on-save in progress: shorter formatter waits
-	toast          *kit.Toast // for the shell's toaster seam (F-117)
-	startNote      string     // why a start-page key did nothing yet (F-118)
-	recent         []string   // recently opened files, newest first (F-119)
+	saving         bool              // format-on-save in progress: shorter formatter waits
+	toast          *kit.Toast        // for the shell's toaster seam (F-117)
+	startNote      string            // why a start-page key did nothing yet (F-118)
+	cps            *checkpoint.Store // chat-turn snapshots (F-120)
+	undo           *undoState
+	recent         []string // recently opened files, newest first (F-119)
 	recentLoaded   bool
 	closed         []string             // closed tabs, for reopen
 	treeOp         *treeOp              // the open file-operation dialog (F-119)
@@ -838,6 +844,9 @@ func (m *Model) HandleKey(key string) bool {
 	if m.treeOp != nil {
 		return m.treeOpKey(key)
 	}
+	if m.undo != nil {
+		return m.undoKey(key)
+	}
 	if m.ws == nil {
 		return m.startVisible() && m.startKey(key)
 	}
@@ -915,6 +924,9 @@ func (m *Model) HandleKey(key string) bool {
 		e := m.active()
 		if key == "ctrl+c" { // vim: leave insert/visual/command (F-115)
 			key = "esc"
+		}
+		if key == "ctrl+k" && e.Mode() != textbuf.ModeInsert { // F-120: inline edit with an agent
+			return m.startAgentEdit()
 		}
 		if key == "ctrl+s" { // F-119: save in any mode, staying in it
 			if err := e.Save(); err != nil {
@@ -1315,6 +1327,9 @@ func (m *Model) View() string {
 	}
 	if m.treeOp != nil {
 		return m.treeOpView(m.view())
+	}
+	if m.undo != nil {
+		return m.undoView(m.view())
 	}
 	return m.view()
 }

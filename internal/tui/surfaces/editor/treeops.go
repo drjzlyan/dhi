@@ -23,15 +23,17 @@ const (
 	opNew treeOpKind = iota + 1
 	opRename
 	opDelete
-	opCommand // ":" with the tree focused: ex commands that need no buffer
+	opCommand   // ":" with the tree focused: ex commands that need no buffer
+	opAgentEdit // ctrl+k: tell an agent how to change the selection (F-120)
 )
 
 type treeOp struct {
-	kind  treeOpKind
-	dir   string // opNew: the folder the new path is relative to
-	node  *node  // opRename/opDelete: the target
-	input kit.Input
-	err   string
+	kind   treeOpKind
+	dir    string // opNew: the folder the new path is relative to
+	node   *node  // opRename/opDelete: the target
+	input  kit.Input
+	err    string
+	region region // opAgentEdit: what to change
 }
 
 // startTreeOp opens the dialog for kind on the tree's cursor row.
@@ -125,6 +127,13 @@ func (m *Model) runTreeOp(op *treeOp) error {
 		return m.renamePath(op)
 	case opDelete:
 		return m.trashPath(op.node)
+	case opAgentEdit:
+		msg := m.agentChange(op.input.Value, op.region)
+		m.treeOp = nil
+		if e := m.active(); e != nil {
+			e.SetMessage(msg)
+		}
+		return nil
 	case opCommand:
 		cmd := strings.TrimSpace(op.input.Value)
 		if cmd == "" {
@@ -347,6 +356,12 @@ func (m *Model) treeOpView(base string) string {
 		lines = append(lines, theme.TextMuted().Render("path inside "+filepath.Base(m.memberRootOf(op.node.path))+"/"))
 		lines = append(lines, op.input.View(56)...)
 		lines = append(lines, "", theme.Hint().Render("enter move · esc cancel"))
+	case opAgentEdit:
+		who, _ := m.helper()
+		title = "change with @" + who
+		lines = append(lines, theme.TextMuted().Render(fmt.Sprintf("lines %d-%d — the answer comes back as a diff you review", op.region.from+1, op.region.to+1)))
+		lines = append(lines, op.input.View(56)...)
+		lines = append(lines, "", theme.Hint().Render("enter ask · esc cancel"))
 	case opCommand:
 		title = "command"
 		lines = append(lines, op.input.View(56)...)

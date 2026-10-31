@@ -12,8 +12,20 @@ import (
 
 // fileCommand handles :e <path> and :w <path> / :w! <path> (F-119).
 func (m *Model) fileCommand(requester *textbuf.Editor, cmd string) (string, bool) {
-	if strings.TrimSpace(cmd) == "reopen" {
+	switch strings.TrimSpace(cmd) {
+	case "reopen":
 		return m.reopenClosed(), true
+	case "undo-turn", "undoturn":
+		return m.openUndoTurn(), true
+	case "fix":
+		return m.fixProblem(), true
+	}
+	if rest, ok := strings.CutPrefix(strings.TrimSpace(cmd), "change "); ok {
+		r, has := m.currentRegion(0)
+		if !has {
+			return "open a file first", true
+		}
+		return m.agentChange(rest, r), true
 	}
 	verb, arg, ok := strings.Cut(strings.TrimSpace(cmd), " ")
 	arg = strings.TrimSpace(arg)

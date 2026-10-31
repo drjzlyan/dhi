@@ -125,6 +125,14 @@ func (m *Model) handleTestKey(key string) bool {
 		if st.cur < n {
 			m.jumpToFailure(st.rep.Failures[st.cur])
 		}
+	case "f": // F-120: an agent fixes it
+		if st.cur < n {
+			msg := m.fixTest(st.rep.Failures[st.cur])
+			m.mode = modeNav
+			if e := m.active(); e != nil {
+				e.SetMessage(msg)
+			}
+		}
 	}
 	return true
 }
@@ -191,7 +199,7 @@ func (m *Model) testsView() string {
 	box.SetContent(body...)
 	box.Width = 82
 	box.Height = min(len(body)+2, m.height)
-	hint := theme.Hint().Render("enter jump · j/k move · r rerun · esc close")
+	hint := theme.Hint().Render("enter jump · f fix with an agent · j/k move · r rerun · esc close")
 	return kit.Center(joinV(box.View(), "", hint), m.width, m.height)
 }
 

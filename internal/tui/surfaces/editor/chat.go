@@ -58,6 +58,10 @@ type chatModel struct {
 	note       string // the last secret outcome, shown under approvals
 
 	toast *kit.Toast // an agent replied where you are not looking (F-117)
+
+	// F-120 context mentions, supplied by the editor.
+	expand  func(text string, agents []string) (string, []string)
+	suggest func(prefix string, agents []string) []string
 }
 
 var secretScopes = []string{"this workspace", "every workspace"}
@@ -375,6 +379,9 @@ func (c *chatModel) composerKey(key string, apply func(string)) bool {
 			return true
 		}
 		if text != "" {
+			if c.expand != nil { // @file, @selection, @problems, @path (F-120)
+				text, _ = c.expand(text, c.agents)
+			}
 			// Dispatch the post (F-036 follow-up): without Handle the
 			// sidebar only wrote to the bus and no agent ever answered.
 			posted, err := c.bus.Post(bus.Message{Channel: c.channelName(), Author: bus.Human, Text: text})
@@ -392,6 +399,15 @@ func (c *chatModel) composerKey(key string, apply func(string)) bool {
 				}
 			}
 			c.markChannelRead() // posting reads the channel (F-017)
+		}
+		return true
+	}
+	if key == "tab" { // complete the @word being typed (F-120)
+		if word := c.mentionPrefix(); word != "" && c.suggest != nil {
+			if s := c.suggest(word, c.agents); len(s) > 0 {
+				v := c.input.Value
+				c.input.SetValue(v[:len(v)-len(word)] + s[0] + " ")
+			}
 		}
 		return true
 	}
@@ -505,6 +521,9 @@ func (c *chatModel) view(h int) string {
 		return strings.Join(lines, "\n")
 	}
 	lines = append(lines, "", kit.Composer(c.input, "ask the crew · @name picks who", c.focus))
+	if extra := c.composerExtra(); extra != "" {
+		lines = append(lines, extra)
+	}
 	return strings.Join(lines, "\n")
 }
 
@@ -613,4 +632,34 @@ func (m *Model) TakeToast() (kit.Toast, bool) {
 	t := *m.chat.toast
 	m.chat.toast = nil
 	return t, true
+}
+
+// mentionPrefix is the "@word" being typed at the end of the input
+// (without the @), or "".
+func (c *chatModel) mentionPrefix() string {
+	v := c.input.Value
+	i := strings.LastIndexAny(v, " \n")
+	word := v[i+1:]
+	if !strings.HasPrefix(word, "@") {
+		return ""
+	}
+	return word[1:]
+}
+
+// composerExtra is the line under the composer: completions for a half
+// typed @word, else what the message will carry (F-120).
+func (c *chatModel) composerExtra() string {
+	if !c.focus {
+		return ""
+	}
+	if w := c.mentionPrefix(); c.input.Value != "" && strings.HasSuffix(c.input.Value, "@"+w) && c.suggest != nil {
+		if s := c.suggest(w, c.agents); len(s) > 0 {
+			return theme.Hint().Render("tab ") + theme.TextDim().Render(kit.ClipEllipsis("@"+strings.Join(s, "  @"), chatWidth-8))
+		}
+	}
+	if c.expand != nil && strings.Contains(c.input.Value, "@") {
+		_, chips := c.expand(c.input.Value, c.agents)
+		return kit.ClipEllipsis(chipLine(chips), chatWidth-4)
+	}
+	return ""
 }

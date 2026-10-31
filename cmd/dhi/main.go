@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/drjzlyan/dhi/internal/checkpoint"
 	"github.com/drjzlyan/dhi/internal/hostenv"
 	"github.com/drjzlyan/dhi/internal/hosttools"
 	"os"
@@ -232,6 +233,9 @@ func runTUI() (relaunch bool) {
 	gitcore.SetNetwork(gitRunner)
 	runRunner = execRunner{envFn: func() []string { return runTmpEnv(hostenv.Env(), ws) }, timeout: 5 * time.Minute, sandbox: guardWorkspace(decision.Sandbox, ws)}
 	edOpts = append(edOpts, editor.WithSearcher(rgSearcher))
+	if cps := workspaceCheckpoints(ws, gitRunner); cps != nil {
+		edOpts = append(edOpts, editor.WithCheckpoints(cps)) // F-120: undo an agent turn
+	}
 
 	// Message bus + tasks store exist for every workspace; the worktree
 	// seam lights up only when git is installed.
@@ -1556,10 +1560,11 @@ func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cl
 		// identity resolver (git_commit), the shared ideation store
 		// (ideation_*), and the allowlisted command runner (`run`). A nil
 		// seam makes its tool refuse by name — never a host fallback.
-		Git:        gitRunner,
-		Identity:   identityFn,
-		Sessions:   sessionStore,
-		MCPServers: mcpStore,
+		Git:         gitRunner,
+		Checkpoints: workspaceCheckpoints(ws, gitRunner), // F-120: undo a chat turn
+		Identity:    identityFn,
+		Sessions:    sessionStore,
+		MCPServers:  mcpStore,
 		MCPLoad: func() *mcpserver.Store { // ADR-0043: servers added in Settings reach the next run
 			return mcpserver.OpenWith(ws.Root, ws.Members())
 		},
@@ -1753,6 +1758,33 @@ func composeOptions(w *workspace.Workspace, o *agentkitOrg.Org) starter.Options 
 }
 
 // memberDirs lists the workspace's member repositories.
+// workspaceCheckpoints is the undo store for chat turns (F-120); nil
+// without git.
+func workspaceCheckpoints(ws *workspace.Workspace, git *gitcore.Runner) *checkpoint.Store {
+	if ws == nil || git == nil {
+		return nil
+	}
+	cpMu.Lock() // one store per workspace: the runtime records, the editor undoes
+	defer cpMu.Unlock()
+	if s, ok := cpStores[ws.Root]; ok {
+		return s
+	}
+	s := checkpoint.Open(ws.Root, git.WithTimeout(30*time.Second), func() []checkpoint.Member {
+		var out []checkpoint.Member
+		for _, mb := range ws.Members() {
+			out = append(out, checkpoint.Member{Name: mb.Name, Path: mb.Path})
+		}
+		return out
+	})
+	cpStores[ws.Root] = s
+	return s
+}
+
+var (
+	cpMu     sync.Mutex
+	cpStores = map[string]*checkpoint.Store{}
+)
+
 func memberDirs(ws *workspace.Workspace) []string {
 	var dirs []string
 	for _, mb := range ws.Members() {
