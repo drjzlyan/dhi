@@ -287,6 +287,7 @@ type Model struct {
 	prefs          func() Prefs
 	saving         bool                 // format-on-save in progress: shorter formatter waits
 	toast          *kit.Toast           // for the shell's toaster seam (F-117)
+	startNote      string               // why a start-page key did nothing yet (F-118)
 	lspStarting    map[string]bool      // a server start is in flight (F-116)
 	lspWaiting     map[string][]string  // files to open once their server is up
 	lspPumped      map[*lsp.Client]bool // clients whose events are already read
@@ -410,6 +411,13 @@ func (m *Model) Hints() (string, []string) {
 			return "", []string{"esc normal"}
 		}
 		return "", []string{"i insert", ": cmd", "esc tree", "gd definition", "gR references", "K hover", "]d problem", "gr rename", "ga actions"}
+	}
+	if m.ws == nil { // F-118: only what works here
+		hints := []string{"c create a workspace"}
+		if m.start.StartTour != nil {
+			hints = append(hints, "t tour")
+		}
+		return "", hints
 	}
 	hints := []string{"enter open", "/ find", "s search"}
 	if m.drawerOpen && !m.termFocus {
@@ -839,6 +847,10 @@ func (m *Model) HandleKey(key string) bool {
 	}
 	if key == "ctrl+a" && m.chat != nil && (!m.chat.open || !m.chat.focus) { // typing: line start
 		m.chat.Toggle()
+		return true
+	}
+	if key == "ctrl+a" && m.chat == nil && !(m.bufFocus && m.active() != nil && m.active().Mode() == textbuf.ModeInsert) {
+		m.askWithoutTeam() // F-118: ctrl+a was silently inert until a team existed
 		return true
 	}
 	if m.chat != nil && m.chat.open && m.chat.focus {
@@ -1553,7 +1565,25 @@ func (m *Model) ExecEx(requester *textbuf.Editor, cmd string) bool {
 
 // Finder (file names).
 
+// askWithoutTeam answers ctrl+a before any agent exists: it opens the
+// team step (DHI relaunches with the crew in a few seconds) or says how.
+func (m *Model) askWithoutTeam() {
+	m.toast = &kit.Toast{Kind: kit.ToastInfo, Title: "No agents yet",
+		Detail: "pick a team — agents then answer in the chat (ctrl+a)"}
+	if m.start.RunStep != nil {
+		m.start.RunStep("team")
+		return
+	}
+	if e := m.active(); e != nil {
+		e.SetMessage("no agents yet — ctrl+p → Set up: Pick a team")
+	}
+}
+
 func (m *Model) openFind() {
+	if m.ws == nil {
+		m.startNote = "Create a workspace first — press c (about 10 seconds)."
+		return
+	}
 	if m.items == nil {
 		m.items = fuzzy.NewIndex(indexFiles(m.roots, indexCap))
 	}

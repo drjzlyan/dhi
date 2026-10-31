@@ -30,14 +30,19 @@ func (m *Model) Commands() []surfaces.Command {
 			}
 		}
 	}
-	add("Find file", "/", m.openFind)
+	add("Find and open a file", "/", m.openFind)
+	if m.ws != nil && m.start.NewTask != nil {
+		add("New task", "n", m.start.NewTask)
+	}
 	if m.searcher != nil {
 		add("Search the workspace", "s", m.openSearch)
 	}
 	add("Toggle terminal", "ctrl+t", m.ToggleDrawer)
 	add("Toggle git panel", "ctrl+j", m.ToggleGitPanel)
 	if m.chat != nil {
-		add("Toggle crew chat", "ctrl+a", m.chat.Toggle)
+		add("Ask an agent (open chat)", "ctrl+a", m.chat.Focus)
+	} else if m.ws != nil {
+		add("Ask an agent (pick a team first)", "ctrl+a", m.askWithoutTeam)
 	}
 	if e := m.active(); e != nil {
 		add("Save file", ":w", func() { // direct: typing ":w" landed as text in insert mode (F-116)

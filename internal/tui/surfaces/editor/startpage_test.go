@@ -157,3 +157,35 @@ func TestStartPageKeepsSetupReachableWhenAllDone(t *testing.T) {
 		t.Fatalf("opened=%d ran=%v", opened, spy.ran)
 	}
 }
+
+// F-118: ctrl+a before any agent exists opens the team step.
+func TestCtrlAWithoutTeamOpensTeamStep(t *testing.T) {
+	m, spy := newStartEditor(t)
+	m.HandleKey("ctrl+a")
+	if strings.Join(spy.ran, ",") != "team" {
+		t.Fatalf("ran = %v", spy.ran)
+	}
+	if tt, ok := m.TakeToast(); !ok || tt.Title != "No agents yet" {
+		t.Fatalf("toast = %+v", tt)
+	}
+}
+
+// F-118: outside a workspace, / and s say what to do instead of entering
+// a mode that shows nothing.
+func TestNoWorkspaceKeysExplain(t *testing.T) {
+	theme.SwapForTest(t, theme.Dark())
+	spy := &startSpy{}
+	m := New("test", nil, WithStart(spy.deps()))
+	m.Resize(120, 30)
+	for _, k := range []string{"/", "s"} {
+		if !m.HandleKey(k) || m.mode != modeNav {
+			t.Fatalf("%s: mode %v", k, m.mode)
+		}
+	}
+	if !strings.Contains(plainView(m), "Create a workspace first") {
+		t.Fatalf("no explanation:\n%s", plainView(m))
+	}
+	if _, hints := m.Hints(); strings.Join(hints, ",") != "c create a workspace,t tour" {
+		t.Fatalf("hints = %v", hints)
+	}
+}

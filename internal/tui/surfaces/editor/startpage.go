@@ -84,7 +84,7 @@ func (m *Model) startPage(w int) []string {
 			bs = append(bs, kit.Button{Key: "s", Label: "Search code", Variant: theme.ButtonSecondary})
 		}
 		bs = append(bs, kit.Button{Key: "^t", Label: "Terminal", Variant: theme.ButtonSecondary})
-		if m.chat != nil {
+		if m.chat != nil || m.start.RunStep != nil { // F-118: without a team, ^a sets one up
 			bs = append(bs, kit.Button{Key: "^a", Label: "Ask an agent", Variant: theme.ButtonSecondary})
 		}
 		if m.start.NewTask != nil {
@@ -105,6 +105,10 @@ func (m *Model) startPage(w int) []string {
 		}
 		out = append(out, lines...)
 		out = append(out, "")
+	}
+
+	if m.startNote != "" {
+		out = append(out, theme.WarningText().Render(m.startNote), "")
 	}
 
 	items, next := m.pendingSteps()
@@ -167,6 +171,13 @@ func progressLine(cl kit.Checklist) string {
 // startKey handles the start page's own keys; false leaves the key to
 // the tree.
 func (m *Model) startKey(key string) bool {
+	if m.ws == nil { // F-118: the keys that need a workspace say so, never a dead mode
+		switch key {
+		case "/", "s", "enter", "ctrl+a", "n":
+			m.startNote = "Create a workspace first — press c (about 10 seconds)."
+			return true
+		}
+	}
 	switch key {
 	case "c":
 		if _, next := m.pendingSteps(); next != "" && m.start.RunStep != nil {
