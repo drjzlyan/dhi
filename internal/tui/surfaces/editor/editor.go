@@ -294,11 +294,12 @@ type Model struct {
 	emit           func(event string) // tutorial action events (F-051); nil = not wired
 	lspNoted       map[string]bool    // languages already told about a missing server (F-011, F-050)
 	prefs          func() Prefs
-	saving         bool              // format-on-save in progress: shorter formatter waits
-	toast          *kit.Toast        // for the shell's toaster seam (F-117)
-	startNote      string            // why a start-page key did nothing yet (F-118)
-	termSeq        int               // last terminal tab id (F-121)
-	cps            *checkpoint.Store // chat-turn snapshots (F-120)
+	saving         bool                 // format-on-save in progress: shorter formatter waits
+	toast          *kit.Toast           // for the shell's toaster seam (F-117)
+	startNote      string               // why a start-page key did nothing yet (F-118)
+	savedAt        map[string]time.Time // when you last saved each file (F-120)
+	termSeq        int                  // last terminal tab id (F-121)
+	cps            *checkpoint.Store    // chat-turn snapshots (F-120)
 	undo           *undoState
 	recent         []string // recently opened files, newest first (F-119)
 	recentLoaded   bool
@@ -1322,6 +1323,10 @@ func (m *Model) open(n *node) {
 			m.commitDone = ed // closed once the key that saved it is handled
 			return
 		}
+		if m.savedAt == nil {
+			m.savedAt = map[string]time.Time{}
+		}
+		m.savedAt[ed.Path()] = time.Now() // F-120: undo-turn never reverts your own save
 		m.act(tutorial.EvEditorSave)
 		m.invalidateTreeGit() // the saved file's status letter may change
 		m.refreshRows()

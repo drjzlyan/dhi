@@ -1148,3 +1148,7 @@ Plan: `~/.claude/plans/i-want-dhi-to-dazzling-sky.md`. Branch `m37`, one commit 
 - [ ] Later (audit tier S3): AI ghost text / next edit, multi-cursor, folding, block visual, comment toggle,
       breadcrumbs, inlay hints, workspace symbols, >2 splits, DAP/test runner beyond Go, gated plan mode,
       inline blame for every line, line-level staging, conflict tools
+- [ ] Audit S2 items not built in M37: per-chat cost and context display, model picker per chat, "new
+      conversation" in a DM, LSP signature help, didClose/didSave, a large-file size warning, the git gutter
+      past 2000 lines, regex in buffer `:s`, word wrap, `f`/`t`/`%`, block visual (ctrl+v), an OSC 9 setting
+- [ ] Re-record the README GIFs (`make record`): they predate the M37 start page, hints and keys

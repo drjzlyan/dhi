@@ -101,6 +101,8 @@ func (m *Model) editPath(requester *textbuf.Editor, p string) string {
 			return err.Error()
 		}
 		m.refreshTree()
+		m.open(&node{kind: nodeFile, path: target, name: filepath.Base(target)})
+		return "new file " + m.agentPath(target) + " (it did not exist)"
 	}
 	m.open(&node{kind: nodeFile, path: target, name: filepath.Base(target)})
 	return ""

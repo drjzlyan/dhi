@@ -3,6 +3,7 @@ package editor
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -22,6 +23,7 @@ type undoState struct {
 	turn      checkpoint.Turn
 	changes   []checkpoint.Change
 	conflicts map[string]bool // member/path edited after the turn
+	yours     map[string]bool // member/path you saved while the agent worked
 	err       string
 }
 
@@ -47,9 +49,22 @@ func (m *Model) openUndoTurn() string {
 	if err != nil {
 		return "undo turn: " + err.Error()
 	}
-	u := &undoState{turn: t, changes: cs, conflicts: map[string]bool{}}
+	u := &undoState{turn: t, changes: cs, conflicts: map[string]bool{}, yours: map[string]bool{}}
 	for _, c := range conf {
 		u.conflicts[changeKey(c)] = true
+	}
+	// A file you saved during the turn changed between the snapshots too,
+	// but not by the agent: keep it unless you say f.
+	for _, c := range cs {
+		for _, mem := range m.members {
+			if mem.name != c.Member {
+				continue
+			}
+			at, ok := m.savedAt[filepath.Join(mem.path, filepath.FromSlash(c.Path))]
+			if ok && !at.Before(t.Before.At) && !at.After(t.After.At) {
+				u.conflicts[changeKey(c)], u.yours[changeKey(c)] = true, true
+			}
+		}
 	}
 	m.undo = u
 	return ""
@@ -90,7 +105,7 @@ func (m *Model) undoKey(key string) bool {
 
 func (m *Model) undoView(base string) string {
 	u := m.undo
-	lines := []string{theme.TextStyle().Render(fmt.Sprintf("@%s's turn %s changed:", u.turn.Agent, ago(u.turn.At)))}
+	lines := []string{theme.TextStyle().Render(fmt.Sprintf("changed while @%s worked (%s):", u.turn.Agent, ago(u.turn.At)))}
 	for i, c := range u.changes {
 		if i == 12 {
 			lines = append(lines, theme.TextDim().Render(fmt.Sprintf("  … and %d more", len(u.changes)-i)))
@@ -98,7 +113,10 @@ func (m *Model) undoView(base string) string {
 		}
 		mark := map[string]string{"A": "+ added   ", "M": "~ changed ", "D": "- deleted "}[c.Status]
 		row := "  " + mark + c.Member + "/" + c.Path
-		if u.conflicts[changeKey(c)] {
+		if u.yours[changeKey(c)] {
+			row += "  (you saved it during the turn — kept)"
+			lines = append(lines, theme.WarningText().Render(row))
+		} else if u.conflicts[changeKey(c)] {
 			row += "  (you edited it since — kept)"
 			lines = append(lines, theme.WarningText().Render(row))
 		} else {

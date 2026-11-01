@@ -39,7 +39,7 @@ func TestUndoAgentTurn(t *testing.T) {
 		t.Fatal(msg)
 	}
 	v := plainView(m)
-	if !strings.Contains(v, "@ana's turn") || !strings.Contains(v, "added.go") {
+	if !strings.Contains(v, "while @ana worked") || !strings.Contains(v, "added.go") {
 		t.Fatalf("dialog:\n%s", v)
 	}
 	m.HandleKey("y")
@@ -54,5 +54,36 @@ func TestUndoAgentTurn(t *testing.T) {
 	}
 	if len(cps.Turns()) != 0 {
 		t.Fatal("an undone turn stays listed")
+	}
+}
+
+// A file you saved while the agent worked is kept by y.
+func TestUndoTurnKeepsYourOwnSave(t *testing.T) {
+	bin, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("git not installed")
+	}
+	m, path := openApp(t)
+	alpha := filepath.Dir(path)
+	cps := checkpoint.Open(m.ws.Root, gitcore.NewRunner(bin, os.Environ()), func() []checkpoint.Member {
+		return []checkpoint.Member{{Name: "alpha", Path: alpha}}
+	})
+	m.cps = cps
+	ctx := context.Background()
+	before, _ := cps.Snapshot(ctx, "before")
+	for _, k := range []string{"A", "!", "esc", ":", "w", "enter"} { // you save during the turn
+		m.HandleKey(k)
+	}
+	after, _ := cps.Snapshot(ctx, "after")
+	_ = cps.Record(ctx, checkpoint.Turn{Agent: "ana", Before: before, After: after, At: after.At})
+	if msg := m.openUndoTurn(); msg != "" {
+		t.Fatal(msg)
+	}
+	if !strings.Contains(plainView(m), "you saved it during the turn") {
+		t.Fatalf("dialog:\n%s", plainView(m))
+	}
+	m.HandleKey("y")
+	if b, _ := os.ReadFile(path); string(b) != "package main!\n" {
+		t.Fatalf("your save was reverted: %q", b)
 	}
 }

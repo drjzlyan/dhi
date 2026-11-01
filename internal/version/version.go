@@ -22,7 +22,7 @@ var (
 func init() {
 	// A `go install …@vX` or source build carries no ldflags: take the
 	// module version and VCS stamp Go records instead of claiming 0.1.0.
-	if Commit != "unknown" {
+	if Version != "0.1.0" || Commit != "unknown" { // stamped by a release build: keep it
 		return
 	}
 	bi, ok := debug.ReadBuildInfo()

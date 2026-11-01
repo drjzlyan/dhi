@@ -36,6 +36,15 @@ var skipNames = map[string]bool{
 	".DS_Store":    true,
 }
 
+// dotDirsShown are the dot folders worth editing (F-119); others (.venv,
+// .next, .cache, .terraform) stay hidden so they never flood the tree or
+// the file finder's index.
+var dotDirsShown = map[string]bool{
+	".github": true, ".gitlab": true, ".circleci": true, ".vscode": true, ".devcontainer": true,
+	".husky": true, ".storybook": true, ".changeset": true, ".config": true, ".claude": true,
+	".agents": true, ".cursor": true,
+}
+
 // buildRoots constructs the repo-level nodes for each workspace member.
 func buildRoots(members []memberRef) []*node {
 	roots := make([]*node, 0, len(members))
@@ -83,7 +92,7 @@ func listDir(dir, member string) []*node {
 	var dirs, files []*node
 	for _, e := range entries {
 		name := e.Name()
-		if skipNames[name] { // dot folders (.github, .vscode) show (F-119)
+		if skipNames[name] || e.IsDir() && strings.HasPrefix(name, ".") && !dotDirsShown[name] {
 			continue
 		}
 		child := &node{
