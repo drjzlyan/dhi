@@ -84,6 +84,9 @@ type App struct {
 	showHelp      bool
 	help          helpState
 	quitting      bool
+	transArmed    bool     // a fade frame tick is in flight
+	quitAsk       []string // unsaved work listed by the quit guard (F-115); nil = closed
+	quitErr       string   // why "save all" failed
 
 	// activity reports in-flight agent turns for the presence chip;
 	// nil hides the chip. spin advances the spinner frame; armed marks a
@@ -332,6 +335,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmd = tea.Batch(cmd, kit.Copy(text))
 		}
 	}
+	if tc := a.armTransition(); tc != nil {
+		cmd = tea.Batch(cmd, tc)
+	}
 	if ac := a.activityCmd(); ac != nil {
 		if cmd == nil {
 			return m, ac
@@ -385,8 +391,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if a.gateActive() {
 			switch key {
 			case "ctrl+c", "ctrl+q":
-				a.quitting = true
-				return a, tea.Quit
+				return a, a.requestQuit()
 			}
 			a.gate.HandleKey(key) // the gate owns all other input
 			// A key may START work (bootgate confirm → install): gates
@@ -401,6 +406,9 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// would be no later message to notice it.
 			return a, a.releaseGate(cmd)
 		}
+		if a.quitAsk != nil {
+			return a, a.quitKey(key)
+		}
 		if a.coachActive() && a.coachKey(key) {
 			return a, nil
 		}
@@ -410,8 +418,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if a.showHelp {
 			switch key {
 			case "ctrl+c", "ctrl+q":
-				a.quitting = true
-				return a, tea.Quit
+				return a, a.requestQuit()
 			}
 			a.helpKey(key) // the overlay is modal while open
 			return a, nil
@@ -502,6 +509,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, a.drainSurfaceCmd() // a click can act like a key (hint bar)
 
 	case transitionMsg:
+		a.transArmed = false
 		if a.transLeft > 0 {
 			a.transLeft--
 			return a, a.transitionCmd()
@@ -509,10 +517,19 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	default:
+		// Every surface gets every background message (ADR-0045): each
+		// re-arms its own listener only in its own Update, so delivering
+		// to the visible one alone ended the others' event chains for the
+		// session (F-115). Message types are package-private, so a surface
+		// ignores what is not its own.
+		cmds := make([]tea.Cmd, 0, len(a.surfaces)+1)
 		if a.gateActive() {
-			return a, a.releaseGate(a.gate.Update(msg))
+			cmds = append(cmds, a.releaseGate(a.gate.Update(msg)))
 		}
-		return a, a.Active().Update(msg)
+		for _, s := range a.surfaces {
+			cmds = append(cmds, s.Update(msg))
+		}
+		return a, tea.Batch(cmds...)
 	}
 }
 
@@ -647,8 +664,7 @@ func (a *App) handleGlobal(key string, capturing bool) (tea.Cmd, bool) {
 	}
 	switch key {
 	case "ctrl+c", "ctrl+q":
-		a.quitting = true
-		return tea.Quit, true
+		return a.requestQuit(), true
 	}
 	// alt+1..9 switch views from anywhere, even mid-typing in a buffer,
 	// unless the surface uses them itself (ADR-0041).
@@ -741,7 +757,7 @@ func (a *App) openPalette() {
 	a.coachCommands(add)
 	add("Theme", "Dark", "", func() tea.Cmd { theme.Current = theme.Dark(); return nil })
 	add("Theme", "Light", "", func() tea.Cmd { theme.Current = theme.Light(); return nil })
-	add("", "Quit DHI", "ctrl+c", func() tea.Cmd { a.quitting = true; return tea.Quit })
+	add("", "Quit DHI", "ctrl+c", a.requestQuit)
 	a.palette = kit.NewPalette(items)
 	a.observe("palette")
 }
@@ -763,11 +779,22 @@ func (a *App) startTransition() {
 	}
 }
 
+// armTransition is the frame tick for a fade no path armed yet: every
+// way of switching views (click, agent request, cross-view jump) starts
+// one, and without a tick the view stayed dimmed (F-115).
+func (a *App) armTransition() tea.Cmd {
+	if a.transArmed {
+		return nil
+	}
+	return a.transitionCmd()
+}
+
 // transitionCmd arms the next fade frame while one is in flight.
 func (a *App) transitionCmd() tea.Cmd {
 	if a.transLeft <= 0 {
 		return nil
 	}
+	a.transArmed = true
 	return tea.Tick(transitionInterval, func(time.Time) tea.Msg { return transitionMsg{} })
 }
 
@@ -1102,7 +1129,9 @@ func (a *App) compose() string {
 	if !a.gateActive() {
 		out = a.overlayToast(out)
 	}
-	if a.palette != nil {
+	if a.quitAsk != nil {
+		out = kit.Overlay(strings.Split(out, "\n"), a.quitView(), a.width, a.height)
+	} else if a.palette != nil {
 		box := a.palette.View(min(70, max(a.width-4, 40)))
 		out = kit.Overlay(strings.Split(out, "\n"), box, a.width, a.height)
 	} else if a.showHelp {

@@ -79,11 +79,7 @@ func HintKeyAt(width int, status string, x int, hints ...string) (string, bool) 
 			if len(rows) == 0 {
 				return "", false
 			}
-			k := strings.Fields(strings.ReplaceAll(rows[0][0], "/", " "))[0]
-			if k == "space" {
-				k = " "
-			}
-			return k, true
+			return ClickKey(rows[0][0])
 		}
 		col += w
 	}

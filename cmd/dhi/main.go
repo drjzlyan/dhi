@@ -419,6 +419,13 @@ func runTUI() (relaunch bool) {
 		}
 		return resetSetup()
 	}
+	// crewRT is agentRT as an interface that is nil when there is no
+	// runtime: a typed-nil *Runtime would pass the surfaces' nil checks
+	// (F-115: Ideator n, Reviewer A, channel posts crashed with no roster).
+	var crewRT liveCrew
+	if agentRT != nil {
+		crewRT = agentRT
+	}
 	// The Editor is view 1 (ADR-0041): DHI opens where you write code.
 	a := app.New(version.Version,
 		editor.New(version.Version, ws, edOpts...),
@@ -426,9 +433,9 @@ func runTUI() (relaunch bool) {
 			Episodes:     openEpisodes(ws), // F-067 card pane: plan, verify, spend
 			WorktreeHint: worktreeHint(decision.Worktrees),
 			Bus:          messageBus,
-			Runtime:      agentRT,
+			Runtime:      crewRT,
 			Tasks:        taskStore,
-			Roster:       agentRT,
+			Roster:       crewRT,
 			ReviewSvc:    reviewSvc,
 			Approvals:    approvals,
 			Secrets:      secretSaver(),
@@ -488,7 +495,7 @@ func runTUI() (relaunch bool) {
 		ideator.New(version.Version, ws, ideator.Deps{
 			Store: sessionStore,
 			Bus:   messageBus,
-			Crew:  agentRT,
+			Crew:  crewRT,
 			Tasks: taskStore,
 			OpenInEditor: func(paths []string) bool {
 				if appRef == nil {
@@ -500,7 +507,7 @@ func runTUI() (relaunch bool) {
 		reviewer.New(version.Version, ws, reviewer.Deps{
 			Service: reviewSvc,
 			Bus:     messageBus,
-			Crew:    agentRT,
+			Crew:    crewRT,
 			Tasks:   taskStore,
 			OpenInEditor: func(paths []string) bool {
 				if appRef == nil {
@@ -1431,6 +1438,13 @@ func liveTuning(userCfg, wsCfg string, boot settings.Config, identityFn gitcore.
 			},
 		}
 	}
+}
+
+// liveCrew is what the views need from the agent runtime.
+type liveCrew interface {
+	Handle(ctx context.Context, msg bus.Message)
+	AgentIDs() []string
+	Manifest(id string) (*manifest.Agent, bool)
 }
 
 func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cliEnv []string, defaultEngine string, gitRunner *gitcore.Runner, identityFn gitcore.IdentityFunc, sessionStore *ideation.Store, runRunner dhitools.CommandRunner, editor dhitools.EditorAPI, workspaceScopes scopes.Set, taskStore *tasks.Store, reviewSvc *review.Service, kbSearcher search.Searcher, mcpStore *mcpserver.Store, conv conventions.Source, cliLook func(string) (string, error), wt worktrees.Layout, tune func() agentkitRuntime.Tuning) *agentkitRuntime.Runtime {

@@ -479,7 +479,7 @@ func (m *Model) HelpSections() [][2]string {
 // Init starts the terminal and chat message pumps plus the workspace
 // roster watcher (live re-resolution without restart, P1).
 func (m *Model) Init() tea.Cmd {
-	cmds := []tea.Cmd{m.listenTerm()}
+	cmds := []tea.Cmd{m.listenTerm(), diskTick()}
 	if m.ws != nil {
 		ch, cancel := m.ws.Subscribe()
 		m.memCancel = cancel
@@ -666,6 +666,9 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 	case membersChangedMsg:
 		m.reloadMembers()
 		return m.listenMembers()
+	case diskTickMsg:
+		m.checkDisk()
+		return diskTick()
 	case teaMsg:
 		switch msg.kind {
 		case termMsgOut:
@@ -818,6 +821,9 @@ func (m *Model) HandleKey(key string) bool {
 
 	if m.bufFocus && m.active() != nil {
 		e := m.active()
+		if key == "ctrl+c" { // vim: leave insert/visual/command (F-115)
+			key = "esc"
+		}
 
 		// completion popup intercepts navigation/accept keys
 		if m.compOpen {
@@ -1075,6 +1081,8 @@ type bufTab struct {
 	path   string
 	syntax *highlighter // per-tab buffer colorizer (F-026 P4)
 	gutter gutterState  // git change markers (F-040)
+
+	diskWarned bool // the current on-disk change was already reported (F-115)
 }
 
 // active returns the focused tab's editor, or nil.

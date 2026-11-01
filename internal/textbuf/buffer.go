@@ -41,6 +41,10 @@ type Buffer struct {
 
 	groupDepth  int  // >0 while an undo group is open (one insert session)
 	groupMarked bool // a snapshot was already taken inside the current group
+
+	crlf     bool      // the file's lines end in \r\n; Save writes them back that way
+	diskPath string    // the file last read or written ("" for a scratch buffer)
+	disk     diskStamp // what that file held then (F-115 conflict check)
 }
 
 type snapshot struct {
@@ -50,37 +54,68 @@ type snapshot struct {
 }
 
 // New creates a buffer from content; a trailing newline yields a final
-// empty line like real editors.
+// empty line like real editors. A file whose line endings are mostly
+// \r\n keeps them on save (F-115).
 func New(content string) *Buffer {
+	crlf := false
+	if n := strings.Count(content, "\n"); n > 0 {
+		crlf = strings.Count(content, "\r\n")*2 > n
+	}
 	content = strings.ReplaceAll(content, "\r\n", "\n")
 	lines := strings.Split(content, "\n")
-	b := &Buffer{lines: lines}
+	b := &Buffer{lines: lines, crlf: crlf}
 	b.clampCursor()
 	return b
 }
 
-// Open reads path into a new buffer.
+// Open reads path into a new buffer. A binary file is refused
+// (ErrBinary): saving it as lines would corrupt it.
 func Open(path string) (*Buffer, error) {
-	data, err := os.ReadFile(path)
+	st, data, err := readStamp(path)
 	if err != nil {
 		return nil, err
 	}
-	return New(string(data)), nil
+	if !st.ok {
+		return nil, &os.PathError{Op: "open", Path: path, Err: os.ErrNotExist}
+	}
+	if isBinary(data) {
+		return nil, ErrBinary
+	}
+	b := New(string(data))
+	b.diskPath, b.disk = path, st
+	return b, nil
 }
 
-// Save writes the buffer to path with a trailing newline.
+// Save writes the buffer to path byte for byte (its own line endings, a
+// trailing newline only when the buffer has one). It refuses with
+// ErrChangedOnDisk when the file changed since the buffer read it; use
+// SaveForce to overwrite. A scratch buffer's first save ends the file
+// with a newline.
 func (b *Buffer) Save(path string) error {
-	var sb strings.Builder
-	for i, l := range b.lines {
-		if i > 0 {
-			sb.WriteByte('\n')
-		}
-		sb.WriteString(l)
-	}
-	sb.WriteByte('\n')
-	if err := os.WriteFile(path, []byte(sb.String()), 0o644); err != nil {
+	clash, err := b.conflict(path)
+	if err != nil {
 		return err
 	}
+	if clash {
+		return ErrChangedOnDisk
+	}
+	return b.SaveForce(path)
+}
+
+// SaveForce writes like Save without the changed-on-disk check.
+func (b *Buffer) SaveForce(path string) error {
+	if b.diskPath == "" && b.lines[len(b.lines)-1] != "" {
+		b.lines = append(b.lines, "") // POSIX: a new file ends in a newline
+		b.seq++
+	}
+	data := b.encode()
+	if err := writeAtomic(path, data); err != nil {
+		return err
+	}
+	if fi, err := os.Stat(path); err == nil {
+		b.disk = stampData(fi, data)
+	}
+	b.diskPath = path
 	b.dirty = false
 	return nil
 }
