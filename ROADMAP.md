@@ -1144,11 +1144,12 @@ Plan: `~/.claude/plans/i-want-dhi-to-dazzling-sky.md`. Branch `m37`, one commit 
 - [x] P4 Editor table stakes: tree file ops, :e/:w path, go to line, smart indent, V, >/<, ., search marks, recent (F-119)
 - [x] P5 Agent context, inline edit, fix with agent, undo a turn (F-120)
 - [x] P6 Git and terminal depth (F-121)
-- [ ] Live with a signed-in CLI: progress line, ctrl+x, :undo-turn; LSP with gopls installed
+- [x] Live with a signed-in claude: default routing, progress line, ctrl+x, :undo-turn (found and fixed: hidden thread replies, stop reported as timeout)
+- [ ] LSP gd/rename live with gopls installed
 - [ ] Later (audit tier S3): AI ghost text / next edit, multi-cursor, folding, block visual, comment toggle,
       breadcrumbs, inlay hints, workspace symbols, >2 splits, DAP/test runner beyond Go, gated plan mode,
       inline blame for every line, line-level staging, conflict tools
 - [ ] Audit S2 items not built in M37: per-chat cost and context display, model picker per chat, "new
       conversation" in a DM, LSP signature help, didClose/didSave, a large-file size warning, the git gutter
       past 2000 lines, regex in buffer `:s`, word wrap, `f`/`t`/`%`, block visual (ctrl+v), an OSC 9 setting
-- [ ] Re-record the README GIFs (`make record`): they predate the M37 start page, hints and keys
+- [x] README GIFs re-recorded for M37
