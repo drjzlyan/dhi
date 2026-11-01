@@ -65,6 +65,7 @@ func TestTargetsMentionsAndLead(t *testing.T) {
 		{"unknown agent ignored", bus.Message{Channel: "#web", Author: "ana", Text: "@ghost"}, ""},
 		{"bare human post in #general goes to the default agent", bus.Message{Channel: "#general", Author: "you", Text: "hi"}, "ana"},
 		{"agent bare post in #general wakes nobody", bus.Message{Channel: "#general", Author: "bo", Text: "done"}, ""},
+		{"#general post naming a non-agent wakes nobody", bus.Message{Channel: "#general", Author: "you", Text: "@ghost hi"}, ""},
 		{"other non-team channel bare post wakes nobody", bus.Message{Channel: "#random", Author: "you", Text: "hi"}, ""},
 	}
 	for _, c := range cases {

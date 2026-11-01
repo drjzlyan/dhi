@@ -911,8 +911,9 @@ func (r *Runtime) targets(msg bus.Message) []string {
 	}
 	// A bare human post in #general goes to the default agent (F-117): it
 	// used to wake no one and say nothing. Human posts only, so an agent's
-	// unmentioned reply never wakes another agent.
-	if len(out) == 0 && msg.Author == bus.Human && msg.Channel == GeneralChannel {
+	// unmentioned reply never wakes another agent; a post naming someone
+	// else (even a name that is no agent) is not the default agent's.
+	if len(out) == 0 && msg.Author == bus.Human && msg.Channel == GeneralChannel && len(bus.Mentions(msg.Text)) == 0 {
 		if id := r.DefaultAgent(); id != "" {
 			out = append(out, id)
 		}
