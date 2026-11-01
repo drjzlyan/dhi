@@ -198,6 +198,8 @@ type Model struct {
 	// that step and never marks setup finished. onDone runs on close.
 	single bool
 	onDone func()
+
+	saveErr string // the progress file could not be written (F-116)
 }
 
 // New builds the wizard over the given steps (in order) with prior state.
@@ -431,7 +433,11 @@ func (m *Model) markApplied(id string) {
 
 func (m *Model) persist() {
 	if m.env.Persist != nil {
-		_ = m.env.Persist(m.env.Root, m.state)
+		if err := m.env.Persist(m.env.Root, m.state); err != nil {
+			m.saveErr = "progress not saved (steps may come back): " + err.Error()
+		} else {
+			m.saveErr = ""
+		}
 	}
 }
 
@@ -496,6 +502,9 @@ func (m *Model) View() string {
 		title = "set up"
 	}
 	lines = append(lines, body...)
+	if m.saveErr != "" {
+		lines = append(lines, "", theme.DangerText().Render(theme.GlyphCross+" "+m.saveErr))
+	}
 	card := kit.NewPanel(title, true)
 	card.Boxed = true
 	card.Width = w + 4

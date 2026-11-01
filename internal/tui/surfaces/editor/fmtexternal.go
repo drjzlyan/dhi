@@ -32,7 +32,11 @@ func (m *Model) formatExternal(ed *textbuf.Editor, l langserver.Language) string
 	}
 	buf := ed.Buffer()
 	text := buf.Text()
-	ctx, cancel := context.WithTimeout(context.Background(), formatTimeout)
+	wait := formatTimeout
+	if m.saving {
+		wait = saveFormatExternal
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), wait)
 	defer cancel()
 	args := make([]string, 0, len(l.Format)-1)
 	for _, a := range l.Format[1:] {
@@ -48,7 +52,7 @@ func (m *Model) formatExternal(ed *textbuf.Editor, l langserver.Language) string
 	if err := cmd.Run(); err != nil {
 		detail := strings.TrimSpace(errb.String())
 		if ctx.Err() != nil {
-			detail = "timed out after " + formatTimeout.String()
+			detail = "timed out after " + wait.String()
 		} else if detail == "" {
 			detail = err.Error()
 		}

@@ -14,7 +14,7 @@ func TestBackgroundIntegrity(t *testing.T) {
 	feed(m, "enter", "j", "enter") // expand the first repo, open a file
 	golden.AssertBgIntegrity(t, "tree + buffer", m.View())
 	feed(m, "ctrl+t")
-	m.Update(teaMsg{kind: termMsgOut, tab: 0, chunk: []byte("\x1b[1;32mok\x1b[0m build\r\n$ ls\r\na  b\r\n$ ")})
+	m.Update(teaMsg{kind: termMsgOut, tab: m.terms[0].id, chunk: []byte("\x1b[1;32mok\x1b[0m build\r\n$ ls\r\na  b\r\n$ ")})
 	golden.AssertBgIntegrity(t, "drawer", m.View())
 	feed(m, "ctrl+t")
 	m.Resize(140, 36)

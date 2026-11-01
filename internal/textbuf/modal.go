@@ -61,6 +61,17 @@ type Editor struct {
 	closeForced bool
 	reloaded    bool
 	delegate    CommandDelegate
+
+	indent string // what Tab inserts ("" = a tab) (F-119)
+	noPair bool   // bracket/quote pairing off
+
+	visualLine bool     // V: whole lines (F-119)
+	pendShift  string   // ">" or "<" waiting for its double (>>, <<)
+	rec        []string // keys of the change being made, for "."
+	recSeq     uint64   // buffer seq when it started
+	lastChange []string // the last change's keys
+	replaying  bool
+	hlOff      bool // matches of the last search are not marked
 }
 
 type op uint8

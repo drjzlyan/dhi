@@ -331,3 +331,42 @@ func (a *Approvals) remove(id int) {
 	}
 	a.pending = kept
 }
+
+// optionDecide maps what Option+key types on a US Mac layout without
+// "Option as Meta" to the approval key (⌥y ¥, ⌥o ø, ⌥a å, ⌥g ©; ⌥n is a
+// dead key, so "no" goes through /no or the buttons).
+var optionDecide = map[string]string{"¥": "y", "ø": "o", "å": "a", "©": "g"}
+
+// ComposerDecide is how a focused chat composer answers a pending
+// approval without stealing letters (F-117): alt+y/o/a/g/n always, and
+// the Option characters above only while the box is empty. Letters on
+// their own always type.
+func ComposerDecide(key string, empty bool) (string, bool) {
+	if k, ok := strings.CutPrefix(key, "alt+"); ok {
+		c, ok := DecideKeys[k]
+		return c, ok
+	}
+	if k, ok := optionDecide[key]; ok && empty {
+		return DecideKeys[k], true
+	}
+	return "", false
+}
+
+// SlashDecide reads "/yes", "/once", "/always", "/everywhere" or "/no"
+// (or their first letter) typed as a whole message: a way to answer that
+// works on any keyboard.
+func SlashDecide(text string) (string, bool) {
+	t, ok := strings.CutPrefix(strings.ToLower(strings.TrimSpace(text)), "/")
+	if !ok || t == "" {
+		return "", false
+	}
+	for _, c := range []string{"yes", "once", "always", "everywhere", "no"} {
+		if t == c || t == c[:1] {
+			return c, true
+		}
+	}
+	return "", false
+}
+
+// ComposerDecideHint is the legend for a focused composer.
+const ComposerDecideHint = "alt+y yes · alt+o once · alt+a always · alt+n no · or type /yes, /no"

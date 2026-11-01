@@ -1,5 +1,51 @@
 # STATE — current position
 
+### Session 63 (M37: best-in-class audit, then the fixes, branch `m37`)
+
+- User asked: a complete, user's-eye audit to make DHI best-in-class, then the changes. Audit =
+  live tmux run in a sandboxed HOME plus three code audits (editor, agent loop, shell
+  robustness). Plan `~/.claude/plans/i-want-dhi-to-dazzling-sky.md`. User chose all of P0–P6,
+  approvals on alt+keys, and the default agent answering bare #general posts. ADR-0045; F-115–F-121.
+  Commits on `m37`: P0 c582606, P1 1c96d61, P2 c55175d, P3 90d6c21, P4 1172458, P5 c7294b1,
+  P6 (this one + docs). Not pushed, no PR, not released.
+- **Data loss fixed (P0, F-115):**
+  - Saving added a newline at the end of the file on every save; it is now byte-exact and keeps
+    CRLF.
+  - ctrl+c quit with unsaved buffers; there is now a quit guard (`surfaces.Unsaved`).
+  - `:w` overwrote changes made outside DHI; it now checks a hash first (`:w!` and `:e!` decide).
+  - Also: a crash with no roster (typed-nil runtime), a crash on clicking a `/` hint, background
+    messages going only to the visible view (ADR-0045: now to all), and views left dimmed after
+    a switch.
+  - **Released as v0.5.1 (2026-11-01, PR #15, tap updated). P1–P6 go out as v0.6.0.**
+- P1 (F-116): search enter lands on the hit; completion replaces the prefix and opens as you
+  type; UTF-16 LSP columns; rename edits files that aren't open; gd/gR/]d/:diag; LSP starts
+  async; Settings tab width, line numbers and scrollback now apply live; plus robustness fixes.
+- P2 (F-117): approvals via alt+y/n/a, `/yes` `/no`, and ¥/å in an empty box (letters always
+  type); bare #general posts go to `Runtime.DefaultAgent` (human posts only); ctrl+x stop;
+  live progress and queue; suggestions reviewed per hunk with no focus steal; reply toasts and
+  OSC 9 notices.
+- P3 (F-118): keys outside a workspace explain themselves; ctrl+a with no team opens the team
+  step; palette names fixed.
+- P4 (F-119): tree a/r/d (trash in `.dhi/tmp/trash`), `:` in the tree, `:e`/`:w` with a path,
+  ctrl+s, `:42`/`42G`, smart indent and pairs, `V`, `>`/`<`, `.`, search marks, sideways
+  scroll, recent files, `:reopen`.
+- P5 (F-120): @file/@selection/@problems; ctrl+k inline edit; `:fix`, `f` on a failing test,
+  terminal ask; undo an agent's chat turn (`internal/checkpoint`, `.dhi/checkpoints/<member>.git`
+  with the member as work tree; the member's .git is never written).
+- P6 (F-121): hunk diff and staging, branches, push/pull in a tab, a commit message buffer,
+  `:blame`, terminal scrollback and alt+w/alt+r; terminal output routed by stable tab id; the
+  git panel scrolls.
+- Not run live (needs the user's signed-in CLI): a real agent turn's progress line, ctrl+x, and
+  `:undo-turn` after a real turn; LSP gd and rename with gopls (gopls is not installed here;
+  covered by the fake server).
+- Gotchas:
+  - `textbuf.Buffer.Save` checks the file hash. Anything DHI writes outside the buffer must call
+    `NoteDisk`/`NoteMoved`.
+  - The chat composer's `tab` completes `@words`.
+  - Editor messages that start async work go through `m.queue`. The shell drains every
+    surface's queued commands after each message.
+  - The tests drive terminal tabs by `m.terms[i].id`, not by index.
+
 ### Session 62 (M36: the user's system behind an approval boundary, branch `m36`)
 
 - User asked: use the user's configuration without modifying it, drop the hermetic toolchain for

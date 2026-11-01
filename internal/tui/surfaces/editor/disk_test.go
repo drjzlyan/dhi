@@ -88,3 +88,71 @@ func TestUnsavedListsDirtyBuffersAndCtrlCLeavesInsert(t *testing.T) {
 		t.Fatalf("saved %q", b)
 	}
 }
+
+// F-116: tab width and line numbers come from Settings, live.
+func TestPrefsApplyToTheBufferView(t *testing.T) {
+	m, path := openApp(t)
+	_ = path
+	prefs := Prefs{TabWidth: 8, LineNumbers: true, Scrollback: 1000}
+	m.prefs = func() Prefs { return prefs }
+	e := m.active()
+	for _, k := range []string{"O", "tab", "x", "esc"} {
+		e.Key(k)
+	}
+	if !strings.Contains(plainView(m), "1         x") { // "1 " gutter + 8-cell tab
+		t.Fatalf("tab width 8 not applied:\n%s", plainView(m))
+	}
+	prefs.LineNumbers = false
+	if strings.Contains(plainView(m), " 1 ") || strings.Contains(plainView(m), " 2 package") {
+		t.Fatalf("line numbers still shown:\n%s", plainView(m))
+	}
+}
+
+// F-116: the palette's Save saves even from insert mode.
+func TestPaletteSaveFromInsertMode(t *testing.T) {
+	m, path := openApp(t)
+	m.HandleKey("i")
+	m.HandleKey("z")
+	for _, c := range m.Commands() {
+		if c.Title == "Save file" {
+			c.Run()
+		}
+	}
+	if b, _ := os.ReadFile(path); string(b) != "zpackage main\n" {
+		t.Fatalf("saved %q", b)
+	}
+	if strings.Contains(m.active().Buffer().Text(), ":w") {
+		t.Fatal(":w typed into the buffer")
+	}
+}
+
+// F-119: matches of the last search are marked; esc clears them.
+func TestSearchHighlightAndEsc(t *testing.T) {
+	m, _ := openApp(t)
+	e := m.active()
+	for _, k := range []string{"o", "m", "a", "i", "n", "esc", "g", "g", "/", "m", "a", "i", "n", "enter"} {
+		m.HandleKey(k)
+	}
+	if e.Highlight() != "main" {
+		t.Fatalf("highlight = %q", e.Highlight())
+	}
+	m.HandleKey("esc")
+	if e.Highlight() != "" || !m.bufFocus {
+		t.Fatal("first esc should clear the marks and keep the buffer focused")
+	}
+}
+
+// F-119: a line longer than the pane scrolls so the cursor stays visible.
+func TestHorizontalScrollKeepsCursorVisible(t *testing.T) {
+	m, _ := openApp(t)
+	e := m.active()
+	e.Key("A")
+	for i := 0; i < 150; i++ {
+		e.Key("x")
+	}
+	e.Key("Z")
+	v := plainView(m)
+	if !strings.Contains(v, "xxZ") {
+		t.Fatalf("cursor end of a long line not shown:\n%s", v)
+	}
+}

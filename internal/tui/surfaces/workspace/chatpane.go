@@ -174,7 +174,7 @@ func (p *chatPane) hints() []string {
 		return []string{"type to filter", "enter open", "esc clear"}
 	}
 	if p.focus {
-		return []string{"enter send", "esc blur"}
+		return []string{"enter send", "^x stop", "esc blur"}
 	}
 	if p.railFocus {
 		return []string{"j/k select", "enter open", "/ find", "ctrl+g jump", "v profile", "tab transcript"}
@@ -365,16 +365,12 @@ func (p *chatPane) handleKey(key string) bool {
 		return true
 	}
 	if !p.focus && !p.searching && !p.reactPick {
-		if choice, ok := tools.DecideKeys[key]; ok {
-			if ap := p.pendingAsk(); ap != nil {
-				if p.decide != nil {
-					p.note = p.decide(ap, choice)
-				} else {
-					p.approvals.Decide(ap, choice)
-					p.note = choice + ": " + ap.Agent + " " + ap.Describe()
-				}
-				return true
-			}
+		if choice, ok := tools.DecideKeys[key]; ok && p.answerAsk(choice) {
+			return true
+		}
+		if key == "ctrl+x" {
+			p.stopTurns()
+			return true
 		}
 	}
 	if p.searching {
@@ -584,7 +580,38 @@ func (p *chatPane) openNamed(ch string) {
 	}
 }
 
+// stopper is the runtime's stop for a channel's turns (F-117).
+type stopper interface{ CancelChannel(channel string) int }
+
+// stopTurns cancels the channel's running turns (ctrl+x).
+func (p *chatPane) stopTurns() {
+	s, ok := p.rt.(stopper)
+	if !ok {
+		return
+	}
+	if n := s.CancelChannel(p.channelName()); n > 0 {
+		p.note = "stopped " + kit.Count(n, "turn")
+	} else {
+		p.note = "nothing is running here"
+	}
+}
+
 func (p *chatPane) composerKey(key string) bool {
+	if key == "ctrl+x" {
+		p.stopTurns()
+		return true
+	}
+	// F-117: a focused composer answers with alt+key or /yes, /no; letters
+	// always type.
+	if choice, ok := tools.ComposerDecide(key, p.input.Value == "" && p.editID == 0); ok && p.answerAsk(choice) {
+		return true
+	}
+	if key == "enter" && p.editID == 0 {
+		if choice, ok := tools.SlashDecide(p.input.Value); ok && p.answerAsk(choice) {
+			p.input = kit.Input{}
+			return true
+		}
+	}
 	switch key {
 	case "esc":
 		p.focus = false
@@ -842,6 +869,21 @@ func (p *chatPane) pendingAsk() *tools.Approval {
 	return nil
 }
 
+// answerAsk decides the channel's pending ask (false when none).
+func (p *chatPane) answerAsk(choice string) bool {
+	ap := p.pendingAsk()
+	if ap == nil {
+		return false
+	}
+	if p.decide != nil {
+		p.note = p.decide(ap, choice)
+	} else {
+		p.approvals.Decide(ap, choice)
+		p.note = choice + ": " + ap.Agent + " " + ap.Describe()
+	}
+	return true
+}
+
 // askLines renders the pending ask above the status line, with its keys
 // (answered while the composer is not focused).
 func (p *chatPane) askLines(width int) []string {
@@ -855,8 +897,16 @@ func (p *chatPane) askLines(width int) []string {
 	}
 	return []string{
 		kit.PaintRow(" "+theme.DangerText().Render(theme.GlyphDiamond+" ")+theme.TextStyle().Render(kit.ClipEllipsis(what, width-4)), width, theme.HeaderBg()),
-		kit.PaintRow("   "+theme.Hint().Render(tools.DecideHint+"  (esc the composer first)"), width, theme.HeaderBg()),
+		kit.PaintRow("   "+theme.Hint().Render(p.askHint()), width, theme.HeaderBg()),
 	}
+}
+
+// askHint is the answer legend for where the keyboard is.
+func (p *chatPane) askHint() string {
+	if p.focus {
+		return tools.ComposerDecideHint
+	}
+	return tools.DecideHint
 }
 
 // pinnedCount is the number of pinned messages in the active channel.

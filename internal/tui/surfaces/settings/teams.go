@@ -189,6 +189,9 @@ func (m *Model) agentTaken() func(string) bool {
 
 func (m *Model) teamsView() []string {
 	if m.d.Org == nil {
+		if m.d.OrgErr != "" {
+			return []string{theme.DangerText().Render("team management unavailable — .dhi/org.toml: " + m.d.OrgErr)}
+		}
 		return []string{theme.TextDim().Render(
 			"(team management unavailable — not inside a workspace)")}
 	}

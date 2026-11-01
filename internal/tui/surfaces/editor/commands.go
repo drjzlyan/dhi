@@ -30,23 +30,62 @@ func (m *Model) Commands() []surfaces.Command {
 			}
 		}
 	}
-	add("Find file", "/", m.openFind)
+	add("Find and open a file", "/", m.openFind)
+	if m.cps != nil {
+		add("Undo the last agent turn…", ":undo-turn", func() {
+			if msg := m.openUndoTurn(); msg != "" {
+				m.toast = &kit.Toast{Kind: kit.ToastInfo, Title: "Undo turn", Detail: msg}
+			}
+		})
+	}
+	if len(m.closed) > 0 {
+		add("Reopen closed file", ":reopen", func() {
+			if msg := m.reopenClosed(); msg != "" && m.active() != nil {
+				m.active().SetMessage(msg)
+			}
+		})
+	}
+	for _, p := range m.recentShown(5) {
+		p := p
+		add("Open recent: "+m.relToWorkspace(p), "", func() { m.open(&node{kind: nodeFile, path: p, name: filepath.Base(p)}) })
+	}
+	if m.ws != nil && m.start.NewTask != nil {
+		add("New task", "n", m.start.NewTask)
+	}
 	if m.searcher != nil {
 		add("Search the workspace", "s", m.openSearch)
 	}
 	add("Toggle terminal", "ctrl+t", m.ToggleDrawer)
+	if len(m.terms) > 0 && m.chat != nil {
+		add("Ask an agent about the terminal output", "", func() {
+			msg := m.askAboutTerminal()
+			m.toast = &kit.Toast{Kind: kit.ToastInfo, Title: "Terminal", Detail: msg}
+		})
+	}
 	add("Toggle git panel", "ctrl+j", m.ToggleGitPanel)
 	if m.chat != nil {
-		add("Toggle crew chat", "ctrl+a", m.chat.Toggle)
+		add("Ask an agent (open chat)", "ctrl+a", m.chat.Focus)
+	} else if m.ws != nil {
+		add("Ask an agent (pick a team first)", "ctrl+a", m.askWithoutTeam)
 	}
 	if e := m.active(); e != nil {
-		add("Save file", ":w", func() { e.Key(":"); e.Key("w"); e.Key("enter") })
+		add("Save file", ":w", func() { // direct: typing ":w" landed as text in insert mode (F-116)
+			if err := e.Save(); err != nil {
+				e.SetMessage(err.Error())
+			} else {
+				e.SetMessage(`"` + m.relToWorkspace(e.Path()) + `" written`)
+			}
+		})
 		if p := e.Path(); p != "" { // F-103: paths for a PR, a chat, a shell
 			out = append(out,
 				surfaces.Command{Group: "Editor", Title: "Copy file path", Run: func() tea.Cmd { return kit.Copy(p) }},
 				surfaces.Command{Group: "Editor", Title: "Copy relative path", Run: func() tea.Cmd { return kit.Copy(m.relToWorkspace(p)) }})
 		}
 		add("Format document", ":fmt", ex("fmt"))
+		add("Change the selection with an agent…", "ctrl+k", func() { m.startAgentEdit() })
+		if _, ok := m.diagAtLine(e.Path(), e.Buffer().Cursor().Line); ok {
+			add("Fix this problem with an agent", ":fix", ex("fix"))
+		}
 		add("Go to symbol", ":sym", ex("sym"))
 		add("Run tests in this package", ":test", ex("test"))
 		add("Run all tests in this repo", ":test all", ex("test all"))

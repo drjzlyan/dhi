@@ -8,8 +8,14 @@ import (
 // Key feeds one keystroke (bubbletea msg.String() style: "a", "enter",
 // "esc", "backspace", "up", "down", …). It is the entire modal surface.
 func (e *Editor) Key(key string) {
+	if key == "." && e.mode == ModeNormal && e.pendingOp == opNone && e.pendShift == "" && !e.replaying {
+		e.repeat()
+		return
+	}
+	e.record(key)
 	was := e.mode
 	e.KeyUngrouped(key)
+	e.recordDone()
 	// Insert sessions undo as one step: open the group on entering
 	// insert mode, close it on leaving.
 	if e.mode == ModeInsert && was != ModeInsert {
@@ -38,6 +44,9 @@ func (e *Editor) KeyUngrouped(key string) {
 
 func (e *Editor) keyNormal(key string) {
 	e.message = ""
+	if e.pendShift != "" && key != e.pendShift {
+		e.pendShift = "" // >x: the shift is abandoned, x runs on its own
+	}
 	if text, ok := strings.CutPrefix(key, "paste:"); ok {
 		e.clearPending()
 		e.buf.InsertString(text) // a terminal paste lands at the cursor, one undo step
@@ -94,9 +103,12 @@ func (e *Editor) keyNormal(key string) {
 	case "y":
 		e.beginOp(opYank)
 	case "esc":
-		// nothing pending; ignore
+		e.hlOff = true // like :noh
 	default:
-		if isMotion {
+		if isMotion && motion == motEOF && len(e.cntDigits) > 0 { // 42G (F-119)
+			e.GotoLine(count)
+			e.cntDigits = nil
+		} else if isMotion {
 			e.buf.move(motion, count)
 		} else if len(e.cntDigits) > 0 {
 			e.message = ""
@@ -290,9 +302,20 @@ func (e *Editor) normalAction(key string, count int) bool {
 		if !e.buf.Redo() {
 			e.message = "already at newest change"
 		}
-	case "v":
+	case "v", "V":
 		e.mode = ModeVisual
+		e.visualLine = key == "V"
 		e.visualStart = e.buf.Cursor()
+	case ">", "<": // >> / << shift count lines (F-119)
+		if e.pendShift == key {
+			line := e.buf.Cursor().Line
+			e.shiftLines(line, min(line+count, e.buf.LineCount())-1, key == ">")
+			e.pendShift = ""
+			e.cntDigits = nil
+			return true
+		}
+		e.pendShift = key
+		return true
 	case ":":
 		e.mode = ModeCommand
 		e.cmdline = nil
@@ -318,6 +341,7 @@ func (e *Editor) normalAction(key string, count int) bool {
 	case "?":
 		e.startSearch(-1)
 	case "n", "N":
+		e.hlOff = false
 		dir := e.lastDir
 		if dir == 0 {
 			dir = 1
@@ -395,12 +419,19 @@ func (e *Editor) keyVisual(key string) {
 		e.mode = ModeCommand
 		e.cmdline = nil
 		e.cmdPrefix = ':'
+	case ">", "<":
+		lo, hi := order(e.visualStart, e.buf.Cursor())
+		e.shiftLines(lo.Line, hi.Line, key == ">")
+		e.mode = ModeNormal
 	case "d", "x":
-		e.register, e.registerLW = e.buf.yankRange(a, z), false
+		e.register, e.registerLW = e.buf.yankRange(a, z), e.visualLine
+		if e.visualLine && !strings.HasSuffix(e.register, "\n") {
+			e.register = strings.TrimPrefix(e.register, "\n") + "\n"
+		}
 		e.buf.deleteRange(a, z)
 		e.mode = ModeNormal
 	case "y":
-		e.register, e.registerLW = e.buf.yankRange(a, z), false
+		e.register, e.registerLW = e.buf.yankRange(a, z), e.visualLine
 		e.yanked = &e.register
 		e.buf.SetCursor(a)
 		e.mode = ModeNormal
@@ -421,6 +452,16 @@ func (e *Editor) keyVisual(key string) {
 func (e *Editor) visualSpan() (Pos, Pos) {
 	cur := e.buf.Cursor()
 	a, z := order(e.visualStart, cur)
+	if e.visualLine { // whole lines: from the first line's start to the next line's start
+		a.Col = 0
+		if z.Line+1 < e.buf.LineCount() {
+			return a, Pos{Line: z.Line + 1}
+		}
+		if a.Line > 0 { // the last line: take the newline before it instead
+			return Pos{Line: a.Line - 1, Col: len(e.buf.runes(a.Line - 1))}, Pos{Line: z.Line, Col: len(e.buf.runes(z.Line))}
+		}
+		return a, Pos{Line: z.Line, Col: len(e.buf.runes(z.Line))}
+	}
 	// include the character under the cursor like real visual mode
 	max := len(e.buf.runes(z.Line))
 	if z.Col < max {
@@ -512,6 +553,14 @@ func (e *Editor) execCommand(cmd string) {
 			e.message = err.Error()
 		}
 	default:
+		if cmd == "noh" || cmd == "nohlsearch" {
+			e.hlOff = true
+			return
+		}
+		if n, err := strconv.Atoi(cmd); err == nil { // :42 (F-119)
+			e.GotoLine(n)
+			return
+		}
 		if exSubstitute(e, cmd) {
 			return
 		}
@@ -585,6 +634,13 @@ func itoa(n int) string {
 		b[i] = '-'
 	}
 	return string(b[i:])
+}
+
+// GotoLine puts the cursor on the first non-blank of 1-based line n,
+// clamped to the buffer.
+func (e *Editor) GotoLine(n int) {
+	line := min(max(n-1, 0), e.buf.LineCount()-1)
+	e.buf.SetCursor(Pos{Line: line, Col: firstNonSpaceRune(e.buf.Line(line))})
 }
 
 // Save writes to the bound path; it refuses (ErrChangedOnDisk) when the

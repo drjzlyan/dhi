@@ -1,7 +1,9 @@
 package editor
 
 import (
+	"context"
 	"fmt"
+	"github.com/drjzlyan/dhi/internal/linediff"
 	"os"
 	"strings"
 
@@ -27,6 +29,11 @@ type proposal struct {
 	new  string
 	note string
 	from string // proposing agent
+
+	// F-117: per-hunk review. hunks diff old→new; accept holds the
+	// decisions made so far (len = hunks decided).
+	hunks  []linediff.Hunk
+	accept []bool
 }
 
 // tabFor returns the open buffer for an absolute path.
@@ -139,8 +146,17 @@ func (m *Model) Propose(abs, old, new, note, from string) error {
 	if v, verr := m.ws.VPathFor(abs); verr == nil {
 		vp = v.String()
 	}
-	m.proposals = append(m.proposals, proposal{path: abs, vp: vp, old: old, new: new, note: note, from: from})
-	m.reviewOpen = true
+	hs, _ := linediff.Hunks(strings.Split(old, "\n"), strings.Split(new, "\n"))
+	m.proposals = append(m.proposals, proposal{path: abs, vp: vp, old: old, new: new, note: note, from: from, hunks: hs})
+	// F-117: never take the keyboard mid-typing; the buffer chip and a
+	// toast say it is waiting, ctrl+y opens it.
+	who := from
+	if who == "" {
+		who = "an agent"
+	} else {
+		who = "@" + who
+	}
+	m.toast = &kit.Toast{Kind: kit.ToastInfo, Title: who + " suggests a change", Detail: vp + " · ctrl+y to review"}
 	return nil
 }
 
@@ -148,25 +164,41 @@ func (m *Model) Propose(abs, old, new, note, from string) error {
 func (m *Model) ProposalCount() int { return len(m.proposals) }
 
 // handleReviewKey drives the proposal review overlay; it owns every key
-// while open so a stray keystroke cannot edit the buffer underneath.
+// while open so a stray keystroke cannot edit the buffer underneath. y/n
+// decide the current hunk (F-117); A and N decide the rest at once.
 func (m *Model) handleReviewKey(key string) bool {
 	if len(m.proposals) == 0 {
 		m.reviewOpen = false
 		return false
 	}
+	p := &m.proposals[0]
 	switch key {
 	case "y", "enter":
-		m.acceptProposal(0)
+		p.accept = append(p.accept, true)
 	case "n", "x":
-		m.rejectProposal(0, "rejected")
-	case "A":
+		p.accept = append(p.accept, false)
+	case "A": // keep everything: this suggestion and every queued one
 		for len(m.proposals) > 0 {
-			if !m.acceptProposal(0) {
-				break // a stale proposal stops the batch, named
+			q := &m.proposals[0]
+			for len(q.accept) < len(q.hunks) {
+				q.accept = append(q.accept, true)
 			}
+			m.finishProposal()
+		}
+		m.reviewOpen = false
+		return true
+	case "N": // drop the rest of this suggestion
+		for len(p.accept) < len(p.hunks) {
+			p.accept = append(p.accept, false)
 		}
 	case "esc", "q":
 		m.reviewOpen = false // decide later; ctrl+y reopens
+		return true
+	default:
+		return true
+	}
+	if len(p.accept) >= len(p.hunks) {
+		m.finishProposal()
 	}
 	if len(m.proposals) == 0 {
 		m.reviewOpen = false
@@ -174,61 +206,96 @@ func (m *Model) handleReviewKey(key string) bool {
 	return true
 }
 
-// acceptProposal applies proposal i through the live-buffer path (one
-// undo step). A stale proposal (the text moved on) is dropped with the
-// reason shown; false reports it.
-func (m *Model) acceptProposal(i int) bool {
-	p := m.proposals[i]
-	if err := m.ApplyReplace(p.path, p.old, p.new, false); err != nil {
-		m.rejectProposal(i, "stale: "+err.Error())
-		return false
+// finishProposal applies the accepted hunks of the first proposal (one
+// undo step) and tells the agent what was kept.
+func (m *Model) finishProposal() {
+	p := m.proposals[0]
+	kept := 0
+	for _, a := range p.accept {
+		if a {
+			kept++
+		}
 	}
-	m.proposals = append(m.proposals[:i], m.proposals[i+1:]...)
+	if kept == 0 {
+		m.rejectProposal(0, "rejected")
+		return
+	}
+	text := strings.Join(linediff.Apply(strings.Split(p.old, "\n"), p.hunks, p.accept), "\n")
+	if err := m.ApplyReplace(p.path, p.old, text, false); err != nil {
+		m.rejectProposal(0, "stale: "+err.Error())
+		return
+	}
+	m.proposals = m.proposals[1:]
 	m.pairNote = "applied " + p.vp + " (undo with u)"
+	if kept < len(p.hunks) {
+		m.pairNote = fmt.Sprintf("applied %d of %d changes to %s (undo with u)", kept, len(p.hunks), p.vp)
+		m.tellAgent(p, fmt.Sprintf("(editor) kept %d of %d changes of your proposal for %s; the others were rejected", kept, len(p.hunks), p.vp))
+	}
 	m.lspSync()
-	return true
 }
 
 func (m *Model) rejectProposal(i int, why string) {
 	p := m.proposals[i]
 	m.proposals = append(m.proposals[:i], m.proposals[i+1:]...)
 	m.pairNote = why + ": " + p.vp
-	if m.chat != nil && m.chat.bus != nil && p.from != "" {
-		// Tell the proposing agent so it can adjust (visible, one line).
-		_, _ = m.chat.bus.Post(bus.Message{
-			Channel: "dm:" + p.from, Author: bus.Human,
-			Text: fmt.Sprintf("(editor) proposal for %s %s", p.vp, why),
-		})
+	m.tellAgent(p, fmt.Sprintf("(editor) proposal for %s %s", p.vp, why))
+}
+
+// tellAgent DMs the proposing agent and wakes it, so it can adjust
+// (F-117: the rejection used to be posted without dispatch).
+func (m *Model) tellAgent(p proposal, text string) {
+	if m.chat == nil || m.chat.bus == nil || p.from == "" {
+		return
+	}
+	posted, err := m.chat.bus.Post(bus.Message{Channel: "dm:" + p.from, Author: bus.Human, Text: text})
+	if err != nil {
+		m.pairNote += " (could not tell " + p.from + ": " + err.Error() + ")"
+		return
+	}
+	if m.chat.rt != nil {
+		m.chat.rt.Handle(context.Background(), posted)
 	}
 }
 
-// reviewView renders the first pending proposal as a diff.
+// reviewView renders the first pending proposal's current hunk with
+// context, as a real diff.
 func (m *Model) reviewView() string {
 	p := m.proposals[0]
-	var body []string
 	who := p.from
 	if who == "" {
 		who = "agent"
 	}
-	body = append(body, theme.Brand().Render(fmt.Sprintf("%s suggests a change", who))+
-		theme.TextDim().Render(fmt.Sprintf("  (%d of %d)", 1, len(m.proposals))),
-		theme.TextDim().Render(p.vp))
+	cur := min(len(p.accept), max(len(p.hunks)-1, 0))
+	body := []string{theme.Brand().Render(fmt.Sprintf("%s suggests a change", who)) +
+		theme.TextDim().Render(fmt.Sprintf("  (%d of %d · change %d of %d)", 1, len(m.proposals), cur+1, len(p.hunks))),
+		theme.TextDim().Render(p.vp)}
 	if p.note != "" {
 		body = append(body, "")
 		body = append(body, kit.WrapWords(p.note, 70)...)
 	}
 	body = append(body, "")
-	for _, l := range strings.Split(p.old, "\n") {
-		body = append(body, theme.DelWash().Render("- "+truncateRunes(l, 72)))
-	}
-	for _, l := range strings.Split(p.new, "\n") {
-		body = append(body, theme.AddWash().Render("+ "+truncateRunes(l, 72)))
+	old := strings.Split(p.old, "\n")
+	if len(p.hunks) > 0 {
+		h := p.hunks[cur]
+		for _, l := range old[max(h.OldAt-2, 0):h.OldAt] {
+			body = append(body, theme.TextDim().Render("  "+truncateRunes(l, 72)))
+		}
+		for _, l := range h.Old {
+			body = append(body, theme.DelWash().Render("- "+truncateRunes(l, 72)))
+		}
+		for _, l := range h.New {
+			body = append(body, theme.AddWash().Render("+ "+truncateRunes(l, 72)))
+		}
+		end := h.OldAt + len(h.Old)
+		for _, l := range old[end:min(end+2, len(old))] {
+			body = append(body, theme.TextDim().Render("  "+truncateRunes(l, 72)))
+		}
 	}
 	box := kit.NewPanel("review suggestion", true)
 	box.SetContent(body...)
 	box.Width = 80
 	box.Height = min(len(body)+2, m.height)
-	hint := theme.Hint().Render("y accept · n reject · A accept all · esc decide later (ctrl+y reopens)")
+	hint := theme.Hint().Render("y accept this change · n drop it · N drop the rest · A accept all · esc later (ctrl+y)")
 	return kit.Center(joinV(box.View(), "", hint), m.width, m.height)
 }
 

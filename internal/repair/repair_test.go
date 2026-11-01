@@ -185,7 +185,7 @@ func TestLocalIdentityReachesNewMembers(t *testing.T) {
 	in.SetLocalIdentity = func(dir string) error { set = append(set, dir); return nil }
 	ms := in.WS.Members()
 	if len(ms) == 0 {
-		t.Skip("fixture has no members")
+		t.Fatal("fixture has no members")
 	}
 	os.MkdirAll(filepath.Join(ms[0].Path, ".git"), 0o755)
 	os.WriteFile(filepath.Join(ms[0].Path, ".git", "config"), []byte("[core]\n\tbare = false\n"), 0o644)
@@ -209,7 +209,7 @@ func TestDefaultRefRepairAsks(t *testing.T) {
 	in := fixture(t)
 	ms := in.WS.Members()
 	if len(ms) == 0 {
-		t.Skip("fixture has no members")
+		t.Fatal("fixture has no members")
 	}
 	git := filepath.Join(ms[0].Path, ".git")
 	os.MkdirAll(filepath.Join(git, "refs", "heads"), 0o755)

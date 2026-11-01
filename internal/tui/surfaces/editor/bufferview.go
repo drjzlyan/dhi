@@ -86,29 +86,51 @@ func (m *Model) bufferView() string {
 	}
 	end := min(top+rows, b.LineCount())
 
+	prefs := m.editorPrefs()
+	tabStop = prefs.TabWidth
 	gut := strconv.Itoa(end)
 	gutW := len(gut) + 1
+	if !prefs.LineNumbers {
+		gutW = 1 // a one-cell column keeps problem colors and git marks
+	}
 	if !m.renderingSplit {
 		// Where the text starts and which line is on top, so a click maps
 		// back to a buffer position (F-103).
 		m.bufGeom = bufGeom{top: top, rows: end - top, textX: gutW + 1}
 	}
 
+	curLine := b.Cursor().Line
+	curCol := visCol(b.Line(curLine), b.Cursor().Col)
 	var a, z textbuf.Pos
 	visual := e.Mode() == textbuf.ModeVisual
 	if visual {
 		a, z = textbuf.Order(e.VisualStart(), b.Cursor())
-		z.Col++ // inclusive of cursor rune like real visual mode
+		z.Col++             // inclusive of cursor rune like real visual mode
+		if e.VisualLine() { // V: whole lines (F-119)
+			a.Col, z.Col = 0, len([]rune(b.Line(z.Line)))+1
+		}
+	}
+	hl := e.Highlight()
+	// Horizontal scroll (F-119): long lines shift left so the cursor stays
+	// in view instead of running off the panel.
+	textW := m.bufTextWidth(gutW)
+	left := 0
+	if curCol >= textW-1 {
+		left = curCol - textW + 2
+	}
+	if !m.renderingSplit {
+		m.bufGeom.left = left
 	}
 
 	var out []string
 	path := e.Path()
 	syntax := m.syntaxFor(e)
 	marks := m.gutterMarks(m.bufs[m.activeTab])
-	curLine := b.Cursor().Line
-	curCol := visCol(b.Line(curLine), b.Cursor().Col)
 	for l := top; l < end; l++ {
 		num := strconv.Itoa(l + 1)
+		if !prefs.LineNumbers {
+			num = " "
+		}
 		plain := padLeft(num, gutW-len(num))
 		gutter := m.gutterFor(path, l, plain)
 		if l == curLine && gutter == theme.Hint().Render(plain) {
@@ -135,6 +157,8 @@ func (m *Model) bufferView() string {
 			text = markRange(text, selStart, selEnd)
 		} else if l == curLine {
 			text = withCursor(text, curCol)
+		} else if hl != "" && strings.Contains(raw, hl) {
+			text = markMatches(text, expandTabs(hl)) // plain, so the marks stay exact
 		} else if syntax != nil {
 			// Colorized lines keep the raw text underneath (F-026 P4);
 			// cursor and selection lines render plain so the rune-level
@@ -142,6 +166,9 @@ func (m *Model) bufferView() string {
 			if st := syntax.styled(l); st != "" {
 				text = expandTabs(st) // escapes never contain a tab
 			}
+		}
+		if left > 0 || ansi.Width(text) > textW {
+			text = ansi.Slice(text, left, left+textW)
 		}
 		marker := gitMarkGlyph(marks, l)
 		if g, ok := m.debugGutter(path, l); ok {
@@ -167,7 +194,9 @@ func (m *Model) bufferView() string {
 	case m.renameMode:
 		cmd = theme.Brand().Render("rename: " + m.renameOld + " → " + string(m.renameInput) + "▌")
 	case cmd == "":
-		// The keymap lives on the shell status row (ADR-0040).
+		// The keymap lives on the shell status row (ADR-0040); the line
+		// shows the cursor line's problem instead (F-116).
+		cmd = m.diagLine(e)
 	default:
 		cmd = theme.TabActive().Render(cmd)
 	}
@@ -287,6 +316,39 @@ func withCursor(line string, col int) string {
 }
 
 // markRange inverts [start,end) within line; -1,-1 means no selection.
+// searchStyle marks matches of the last search (F-119).
+var searchStyle = lipgloss.NewStyle().Underline(true).Bold(true)
+
+// markMatches underlines every occurrence of pat in a plain line.
+func markMatches(line, pat string) string {
+	if pat == "" {
+		return line
+	}
+	var b strings.Builder
+	for {
+		i := strings.Index(line, pat)
+		if i < 0 {
+			b.WriteString(line)
+			return b.String()
+		}
+		b.WriteString(line[:i])
+		b.WriteString(searchStyle.Foreground(theme.Current.Warning).Render(pat))
+		line = line[i+len(pat):]
+	}
+}
+
+// bufTextWidth is how many cells of text a buffer row shows.
+func (m *Model) bufTextWidth(gutW int) int {
+	w := m.width - m.railW()
+	if m.chat != nil && m.chat.open {
+		w -= chatWidth
+	}
+	if m.splitActive() {
+		w /= 2
+	}
+	return maxInt(w-2-gutW-1, 10) // panel edges, gutter, change mark
+}
+
 func markRange(line string, start, end int) string {
 	if start < 0 {
 		return line
@@ -400,8 +462,9 @@ func tabStrip(bufs []*bufTab, active, avail int) string {
 	}
 }
 
-// tabStop is the display width of a tab in the buffer view.
-const tabStop = 4
+// tabStop is the display width of a tab in the buffer view: the
+// editor.tab_width setting, applied at each render (F-116).
+var tabStop = 4
 
 // expandTabs replaces each tab with spaces up to the next tab stop,
 // counting visible cells (escape sequences in styled lines are skipped).

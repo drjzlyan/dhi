@@ -13,6 +13,14 @@ import (
 // on explicit user commands (format, outline).
 var lspTimeout = 3 * time.Second
 
+// Format-on-save waits less than an explicit :fmt, as VS Code does: a slow
+// formatter must not hold the save (F-116); the file saves unformatted
+// with a note instead.
+var (
+	saveFormatLSP      = 1 * time.Second
+	saveFormatExternal = 2 * time.Second
+)
+
 // clientFor returns the language-server client for path, or nil.
 func (m *Model) clientFor(path string) *lsp.Client {
 	if m.lspMgr == nil {
@@ -28,6 +36,10 @@ func (m *Model) clientFor(path string) *lsp.Client {
 // withTimeout runs fn and gives up after lspTimeout so a wedged server
 // can never freeze the UI loop.
 func withTimeout[T any](fn func() (T, error)) (T, error) {
+	return withTimeoutOf(lspTimeout, fn)
+}
+
+func withTimeoutOf[T any](d time.Duration, fn func() (T, error)) (T, error) {
 	type res struct {
 		v   T
 		err error
@@ -40,9 +52,9 @@ func withTimeout[T any](fn func() (T, error)) (T, error) {
 	select {
 	case r := <-ch:
 		return r.v, r.err
-	case <-time.After(lspTimeout):
+	case <-time.After(d):
 		var zero T
-		return zero, fmt.Errorf("language server timed out after %s", lspTimeout)
+		return zero, fmt.Errorf("language server timed out after %s", d)
 	}
 }
 
@@ -80,7 +92,11 @@ func (m *Model) formatEditor(ed *textbuf.Editor) string {
 	if width <= 0 {
 		width = 4
 	}
-	edits, err := withTimeout(func() ([]lsp.TextEdit, error) { return c.Formatting(path, width, !l.UseTabs) })
+	wait := lspTimeout
+	if m.saving {
+		wait = saveFormatLSP
+	}
+	edits, err := withTimeoutOf(wait, func() ([]lsp.TextEdit, error) { return c.Formatting(path, width, !l.UseTabs) })
 	if err != nil {
 		return "format failed: " + err.Error()
 	}
@@ -110,6 +126,8 @@ func (m *Model) beforeSave(ed *textbuf.Editor) string {
 			return ""
 		}
 	}
+	m.saving = true
+	defer func() { m.saving = false }()
 	if note := m.formatEditor(ed); note != "" {
 		return " — saved unformatted (" + note + ")"
 	}

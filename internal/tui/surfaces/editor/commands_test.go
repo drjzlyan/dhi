@@ -29,7 +29,7 @@ func has(list []string, want string) bool {
 func TestPaletteCommandsReflectEditorState(t *testing.T) {
 	m := newEditor(t)
 	base := titles(m)
-	for _, want := range []string{"Find file", "Toggle terminal", "Toggle git panel"} {
+	for _, want := range []string{"Find and open a file", "Toggle terminal", "Toggle git panel"} {
 		if !has(base, want) {
 			t.Errorf("tree state missing %q: %v", want, base)
 		}

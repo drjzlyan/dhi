@@ -1,7 +1,6 @@
 package ideator
 
 import (
-	"crypto/sha256"
 	"os"
 	"strings"
 
@@ -17,8 +16,13 @@ type previewEntry struct {
 	isMermaid bool
 }
 
-// previewCache maps "path\x00hash\x00width" → rendered lines.
+// previewCache maps "path\x00size\x00mtime\x00width" → rendered lines.
 var previewCache = map[string]previewEntry{}
+
+const (
+	maxPreviewCache = 32
+	maxPreviewBytes = 1 << 20
+)
 
 // loadPreview renders the artifact under the CANVAS cursor. Markdown
 // gets the GitHub-style glamour treatment; mermaid diagrams get the
@@ -29,14 +33,25 @@ func (m *Model) loadPreview(width int) previewEntry {
 		return previewEntry{}
 	}
 	abs := m.store.ArtifactPath(m.openID, rel)
+	// Keyed by size and mtime: View runs every frame, and reading and
+	// hashing the file each time made the canvas slow (F-116).
+	st, err := os.Stat(abs)
+	if err != nil {
+		return previewEntry{lines: []string{theme.DangerText().Render("unreadable: " + err.Error())}}
+	}
+	if st.Size() > maxPreviewBytes {
+		return previewEntry{lines: []string{theme.TextDim().Render("too large to preview (" + itoa(int(st.Size()>>10)) + " KB) — open it in the editor")}}
+	}
+	key := abs + "\x00" + itoa(int(st.Size())) + "\x00" + itoa(int(st.ModTime().UnixNano())) + "\x00" + itoa(width)
+	if e, ok := previewCache[key]; ok {
+		return e
+	}
 	data, err := os.ReadFile(abs)
 	if err != nil {
 		return previewEntry{lines: []string{theme.DangerText().Render("unreadable: " + err.Error())}}
 	}
-	sum := sha256.Sum256(data)
-	key := abs + "\x00" + string(sum[:]) + "\x00" + itoa(width)
-	if e, ok := previewCache[key]; ok {
-		return e
+	if len(previewCache) >= maxPreviewCache { // bounded: stale versions never pile up
+		clear(previewCache)
 	}
 	text := string(data)
 	var lines []string

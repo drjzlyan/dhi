@@ -2,6 +2,7 @@ package kit
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/drjzlyan/dhi/internal/ansi"
@@ -141,7 +142,11 @@ func (p *Palette) View(width int) string {
 	if title == "" {
 		title, noun, verb = "command palette", "commands", "run"
 	}
-	lines = append(lines, "", theme.Hint().Render(fmt.Sprintf("%d %s · enter %s · ↑/↓ move · esc close", len(p.rank), noun, verb)))
+	count := strconv.Itoa(len(p.rank)) + " " + noun
+	if len(p.rank) == 1 { // "1 command", not "1 commands" (F-118)
+		count = "1 " + strings.TrimSuffix(noun, "s")
+	}
+	lines = append(lines, "", theme.Hint().Render(fmt.Sprintf("%s · enter %s · ↑/↓ move · esc close", count, verb)))
 	m := Modal{Title: title, Lines: lines, Width: width}
 	return m.View()
 }

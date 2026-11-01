@@ -68,9 +68,9 @@ func TestHighlighterUnknownLexerStaysPlain(t *testing.T) {
 
 func TestBufferViewCursorLineStaysPlain(t *testing.T) {
 	theme.SwapForTest(t, theme.Dark())
-	m := newEditor(t)
+	m, _ := openApp(t)
 	if m.active() == nil {
-		t.Skip("no buffer in fixture")
+		t.Fatal("no buffer in fixture")
 	}
 	e := m.active()
 	e.Buffer().SetCursor(textbuf.Pos{Line: 0, Col: 0})

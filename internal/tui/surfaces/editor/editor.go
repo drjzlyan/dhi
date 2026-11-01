@@ -9,11 +9,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/drjzlyan/dhi/internal/checkpoint"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -105,10 +107,43 @@ func WithLanguages(r langserver.Registry) Option {
 	return func(m *Model) { m.langs = r }
 }
 
+// Prefs are the editor and terminal settings the view reads live (F-116).
+type Prefs struct {
+	TabWidth    int
+	LineNumbers bool
+	Scrollback  int
+}
+
+// DefaultPrefs match the settings defaults.
+var DefaultPrefs = Prefs{TabWidth: 4, LineNumbers: true, Scrollback: 1000}
+
+// WithPrefs reads the editor settings at each render, so a change in
+// Settings shows at once.
+func WithPrefs(fn func() Prefs) Option {
+	return func(m *Model) { m.prefs = fn }
+}
+
+func (m *Model) editorPrefs() Prefs {
+	p := DefaultPrefs
+	if m.prefs != nil {
+		p = m.prefs()
+	}
+	if p.TabWidth <= 0 || p.TabWidth > 16 {
+		p.TabWidth = DefaultPrefs.TabWidth
+	}
+	if p.Scrollback < 100 {
+		p.Scrollback = DefaultPrefs.Scrollback
+	}
+	return p
+}
+
 // WithChat attaches the agent runtime powering the crew sidebar (F-007).
 // nil leaves ctrl+a inert.
 func WithChat(rt *runtime.Runtime) Option {
-	return func(m *Model) { m.chat = newChat(rt) }
+	return func(m *Model) {
+		m.chat = newChat(rt)
+		m.chat.expand, m.chat.suggest = m.expandMentions, m.mentionSuggestions // F-120
+	}
 }
 
 // SecretSaver stores a secret an agent asked for (F-089); the editor's
@@ -225,6 +260,11 @@ type Model struct {
 	gitTab       int // 0 status, 1 log
 	gitCursor    int
 	gitRepo      *gitcore.Repo
+	gitCLI       *gitcore.Runner // the user's git for diff, apply, branches, blame (F-121)
+	diff         *diffView
+	branches     *branchPicker
+	commitDone   *textbuf.Editor      // the message buffer that just committed
+	commitRepo   *gitcore.Repo        // the repo a COMMIT_EDITMSG buffer commits to
 	gitIdentity  gitcore.IdentityFunc // F-029 commit identity; nil refuses
 	gitEntries   []gitcore.FileStatus
 	gitLog       []gitcore.CommitEntry
@@ -250,26 +290,45 @@ type Model struct {
 	replace        *replaceState
 	replaceNote    string
 
-	lspMgr      *lsp.Manager
-	emit        func(event string) // tutorial action events (F-051); nil = not wired
-	lspNoted    map[string]bool    // languages already told about a missing server (F-011, F-050)
-	langs       langserver.Registry
-	tools       HostTools         // finds and installs host tools (F-110)
-	toolCard    *ToolPlan         // the open install card
-	lspSent     map[string]string // vpath → last pushed text
-	lspDiags    map[string][]lsp.Diagnostic
-	compOpen    bool
-	compItems   []lsp.CompletionItem
-	compCur     int
-	lspPendingG bool // `g` prefix armed (F-009 sequences)
-	hoverOpen   bool
-	hoverLines  []string
-	renameMode  bool
-	renameOld   string
-	renameInput []rune
-	actionOpen  bool
-	actionItems []lsp.CodeAction
-	actionCur   int
+	lspMgr         *lsp.Manager
+	emit           func(event string) // tutorial action events (F-051); nil = not wired
+	lspNoted       map[string]bool    // languages already told about a missing server (F-011, F-050)
+	prefs          func() Prefs
+	saving         bool                 // format-on-save in progress: shorter formatter waits
+	toast          *kit.Toast           // for the shell's toaster seam (F-117)
+	startNote      string               // why a start-page key did nothing yet (F-118)
+	savedAt        map[string]time.Time // when you last saved each file (F-120)
+	termSeq        int                  // last terminal tab id (F-121)
+	cps            *checkpoint.Store    // chat-turn snapshots (F-120)
+	undo           *undoState
+	recent         []string // recently opened files, newest first (F-119)
+	recentLoaded   bool
+	closed         []string             // closed tabs, for reopen
+	treeOp         *treeOp              // the open file-operation dialog (F-119)
+	treeNote       string               // the last file operation, on the status row
+	lspStarting    map[string]bool      // a server start is in flight (F-116)
+	lspWaiting     map[string][]string  // files to open once their server is up
+	lspPumped      map[*lsp.Client]bool // clients whose events are already read
+	langs          langserver.Registry
+	tools          HostTools         // finds and installs host tools (F-110)
+	toolCard       *ToolPlan         // the open install card
+	lspSent        map[string]string // vpath → last pushed text
+	lspDiags       map[string][]lsp.Diagnostic
+	compOpen       bool
+	compItems      []lsp.CompletionItem
+	compCur        int
+	lspPendingG    bool   // `g` prefix armed (F-009 sequences)
+	pendingBracket string // "]" or "[" armed for ]d / [d (F-116)
+	compSeq        int    // completion debounce generation (F-116)
+	resultsTitle   string // results pane holds a list (references, problems), not a search
+	hoverOpen      bool
+	hoverLines     []string
+	renameMode     bool
+	renameOld      string
+	renameInput    []rune
+	actionOpen     bool
+	actionItems    []lsp.CodeAction
+	actionCur      int
 
 	chat *chatModel
 }
@@ -285,13 +344,16 @@ var _ surfaces.Surface = (*Model)(nil)
 // New builds the editor for a workspace; nil ws renders the empty state.
 func New(version string, ws *workspace.Workspace, opts ...Option) *Model {
 	m := &Model{
-		version:   version,
-		ws:        ws,
-		termMsgs:  make(chan teaMsg, 128),
-		memEvents: make(chan struct{}, 8),
-		lspSent:   map[string]string{},
-		lspNoted:  map[string]bool{},
-		lspDiags:  map[string][]lsp.Diagnostic{},
+		version:     version,
+		ws:          ws,
+		termMsgs:    make(chan teaMsg, 128),
+		memEvents:   make(chan struct{}, 8),
+		lspSent:     map[string]string{},
+		lspNoted:    map[string]bool{},
+		lspStarting: map[string]bool{},
+		lspWaiting:  map[string][]string{},
+		lspPumped:   map[*lsp.Client]bool{},
+		lspDiags:    map[string][]lsp.Diagnostic{},
 
 		formatOnSave: true,
 	}
@@ -355,20 +417,33 @@ func (m *Model) Hints() (string, []string) {
 	case m.reviewOpen && len(m.proposals) > 0:
 		return "", nil // the suggestion card names its own keys
 	case m.chat != nil && m.chat.open && m.chat.focus:
-		return "", []string{"enter send", "@ mention", "[ ] channel", "^f apply", "esc blur"}
+		return "", []string{"enter send", "@ mention", "^x stop", "^f apply", "[ ] channel", "esc blur"}
 	case m.drawerOpen && m.termFocus:
-		return "", []string{"ctrl+t blur", kit.AltLabel("alt+1..9 tab"), kit.AltLabel("alt+n new tab")}
+		hints := []string{"ctrl+t blur", "shift+pgup scroll back", kit.AltLabel("alt+n new tab"), kit.AltLabel("alt+w close tab"), kit.AltLabel("alt+1..9 tab")}
+		if t := m.activeTermTab(); t != nil && t.exited {
+			hints = append([]string{kit.AltLabel("alt+r restart")}, hints...)
+		}
+		return "", hints
 	case m.gitOpen && m.gitFocus:
-		return "", []string{"s stage", "S all", "u unstage", "c commit", "tab status/log", "esc blur"}
+		return "", []string{"enter diff", "s stage", "S all", "u unstage", "c commit", "C message", "b branch", "p pull", "P push", "tab status/log", "esc blur"}
+	case m.treeOp != nil:
+		return "", nil // the dialog names its keys
 	case m.mode != modeNav:
 		return "", nil // finder, search, symbols, tests: their prompts say it
 	case m.bufFocus && m.active() != nil:
 		if m.active().Mode() == textbuf.ModeInsert {
 			return "", []string{"esc normal"}
 		}
-		return "", []string{"i insert", ": cmd", "esc tree", "K hover", "gr refs", "ga actions"}
+		return "", []string{"i insert", ": cmd", "esc tree", "gd definition", "gR references", "K hover", "]d problem", "gr rename", "ga actions"}
 	}
-	hints := []string{"enter open", "/ find", "s search"}
+	if m.ws == nil { // F-118: only what works here
+		hints := []string{"c create a workspace"}
+		if m.start.StartTour != nil {
+			hints = append(hints, "t tour")
+		}
+		return "", hints
+	}
+	hints := []string{"enter open", "/ find", "s search", "a new", "r rename", "d delete"}
 	if m.drawerOpen && !m.termFocus {
 		hints = append(hints, "ctrl+t terminal")
 	}
@@ -380,7 +455,7 @@ func (m *Model) Hints() (string, []string) {
 			hints = append(hints, "t tour")
 		}
 	}
-	return "", hints
+	return m.treeNote, hints
 }
 
 // CapturesInput implements surfaces.InputCapturer. A focused buffer owns
@@ -442,15 +517,21 @@ func (m *Model) HelpSections() [][2]string {
 		{"enter", "open the selected file"},
 		{"/", "find a file"},
 		{"s", "search the workspace (ripgrep)"},
+		{"a · r · d", "new file or folder · rename/move · delete to DHI's trash (in the tree)"},
+		{": in the tree", "commands without a file: :e path · :reopen · :diag"},
 	}
 	switch {
 	case m.chat != nil && m.chat.open && m.chat.focus:
 		out = append(out,
-			[2]string{"enter", "send to the crew"},
-			[2]string{"ctrl+f", "apply the suggestion block"})
+			[2]string{"enter", "send to the crew (no @name: the default agent answers)"},
+			[2]string{"ctrl+x", "stop the turns running in this channel"},
+			[2]string{"alt+y · alt+n · /yes /no", "answer an agent's approval"},
+			[2]string{"ctrl+f", "apply the suggestion block (replaces a visual selection)"})
 	case m.drawerOpen && m.termFocus:
 		out = append(out,
 			[2]string{"ctrl+t", "blur/close the drawer"},
+			[2]string{"shift+pgup · shift+pgdown", "scroll back through the output (any key returns)"},
+			[2]string{kit.AltLabel("alt+n · alt+w · alt+r"), "new tab · close this tab · restart an exited one"},
 			[2]string{kit.AltLabel("alt+1..9"), "switch terminal tab"})
 	case m.gitOpen && m.gitFocus:
 		out = append(out,
@@ -458,9 +539,17 @@ func (m *Model) HelpSections() [][2]string {
 			[2]string{"c", "commit"})
 	case m.bufFocus && m.active() != nil:
 		out = append(out,
-			[2]string{"i / esc", "insert · back to normal"},
-			[2]string{":w :q :wq :e", "save · quit · reload"},
-			[2]string{"K gr ga", "hover · rename · code actions"},
+			[2]string{"i / esc", "insert · back to normal (ctrl+c too)"},
+			[2]string{":w :q :wq · ctrl+s", "save · quit · save and quit · save in any mode"},
+			[2]string{":e path · :w path · :reopen", "open · save as · reopen the last closed file"},
+			[2]string{":e! · :w!", "reload from disk · overwrite an outside change"},
+			[2]string{":42 · 42G", "go to line"},
+			[2]string{"v · V · > <", "select · select lines · indent / outdent (>> << on a line)"},
+			[2]string{".", "repeat the last change"},
+			[2]string{"gd · gR · K", "go to definition · references · hover"},
+			[2]string{"]d · [d · :diag", "next / previous problem · all problems"},
+			[2]string{"gr · ga", "rename · code actions"},
+			[2]string{"ctrl+space", "completions (they also open as you type)"},
 			[2]string{":pair <agent>", "invite an agent to pair (:ask · :unpair)"},
 			[2]string{":break · :debug", "breakpoint · start debugging (:cont :next :step :out :stop :eval)"},
 			[2]string{":test [all|name]", "run Go tests · failures list jumps to the line"},
@@ -669,6 +758,18 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 	case diskTickMsg:
 		m.checkDisk()
 		return diskTick()
+	case compTickMsg:
+		m.onCompTick(msg)
+		return m.TakeCmd()
+	case navMsg:
+		m.onNav(msg)
+		return m.TakeCmd()
+	case lspReadyMsg:
+		m.onLSPReady(msg)
+		return nil
+	case lspSlowMsg:
+		m.onLSPSlow(msg)
+		return nil
 	case teaMsg:
 		switch msg.kind {
 		case termMsgOut:
@@ -693,6 +794,9 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 	case chatEvent:
 		if msg.roster && m.chat != nil && !m.chat.closed() {
 			m.chat.refreshRoster()
+		}
+		if msg.any && m.chat != nil {
+			m.chat.noteReply(msg.msg)
 		}
 		// Transcript renders straight from bus history; just re-arm.
 		if m.chat != nil && !m.chat.closed() {
@@ -750,6 +854,18 @@ func (m *Model) HandleKey(key string) bool {
 	if m.toolCard != nil {
 		return m.handleToolCardKey(key)
 	}
+	if m.treeOp != nil {
+		return m.treeOpKey(key)
+	}
+	if m.undo != nil {
+		return m.undoKey(key)
+	}
+	if m.diff != nil {
+		return m.diffKey(key)
+	}
+	if m.branches != nil {
+		return m.branchKey(key)
+	}
 	if m.ws == nil {
 		return m.startVisible() && m.startKey(key)
 	}
@@ -781,6 +897,10 @@ func (m *Model) HandleKey(key string) bool {
 	}
 	if key == "ctrl+a" && m.chat != nil && (!m.chat.open || !m.chat.focus) { // typing: line start
 		m.chat.Toggle()
+		return true
+	}
+	if key == "ctrl+a" && m.chat == nil && (!m.bufFocus || m.active() == nil || m.active().Mode() != textbuf.ModeInsert) {
+		m.askWithoutTeam() // F-118: ctrl+a was silently inert until a team existed
 		return true
 	}
 	if m.chat != nil && m.chat.open && m.chat.focus {
@@ -823,6 +943,17 @@ func (m *Model) HandleKey(key string) bool {
 		e := m.active()
 		if key == "ctrl+c" { // vim: leave insert/visual/command (F-115)
 			key = "esc"
+		}
+		if key == "ctrl+k" && e.Mode() != textbuf.ModeInsert { // F-120: inline edit with an agent
+			return m.startAgentEdit()
+		}
+		if key == "ctrl+s" { // F-119: save in any mode, staying in it
+			if err := e.Save(); err != nil {
+				e.SetMessage(err.Error())
+			} else {
+				e.SetMessage(`"` + m.openVPath + `" written`)
+			}
+			return true
 		}
 
 		// completion popup intercepts navigation/accept keys
@@ -876,6 +1007,12 @@ func (m *Model) HandleKey(key string) bool {
 				case "r":
 					m.startRename()
 					return true
+				case "d": // F-116: definition
+					m.requestNav(false)
+					return true
+				case "R": // F-116: references
+					m.requestNav(true)
+					return true
 				case "a":
 					m.requestCodeActions()
 					return true
@@ -896,9 +1033,24 @@ func (m *Model) HandleKey(key string) bool {
 			m.requestHover()
 			return true
 		}
+		// ]d / [d: next / previous problem (F-116).
+		if b := m.pendingBracket; b != "" {
+			m.pendingBracket = ""
+			if e.Mode() == textbuf.ModeNormal && key == "d" {
+				m.jumpDiag(map[string]int{"]": 1, "[": -1}[b])
+				return true
+			}
+		} else if e.Mode() == textbuf.ModeNormal && (key == "]" || key == "[") {
+			m.pendingBracket = key
+			return true
+		}
 
 		// esc in normal mode hands focus back to the tree
 		if key == "esc" && e.Mode() == textbuf.ModeNormal {
+			if e.Highlight() != "" { // first esc clears the search marks, the next leaves
+				e.ClearHighlight()
+				return true
+			}
 			m.bufFocus = false
 			return true
 		}
@@ -920,8 +1072,18 @@ func (m *Model) HandleKey(key string) bool {
 		}
 		if e.CloseRequested() && e.TakeClose() {
 			m.closeBuffer()
+		} else if m.commitDone == e { // F-121: :w on the message committed
+			m.closeBuffer()
+		}
+		if m.commitDone == e {
+			m.commitDone = nil
+			m.gitOpen, m.gitFocus = true, true
+			m.loadGit()
 		}
 		m.lspSync()
+		if e.Mode() == textbuf.ModeInsert && was == textbuf.ModeInsert {
+			m.autoComplete(key)
+		}
 		return true
 	}
 	return m.handleNavKey(key)
@@ -941,8 +1103,35 @@ func (m *Model) handleTermKey(key string) bool {
 			m.activeTerm = len(m.terms) - 1
 		}
 		return true
+	case "alt+w": // F-121: close this tab (the program is stopped)
+		m.closeTerm(m.activeTerm)
+		return true
+	case "alt+r": // F-121: restart an exited tab in the same folder
+		m.restartTerm(m.activeTerm)
+		return true
 	}
 	t := m.activeTermTab()
+	if t != nil {
+		switch key { // F-121: scroll back through what scrolled away
+		case "shift+pgup", "shift+up":
+			step := 1
+			if key == "shift+pgup" {
+				_, rows := m.termGeom(false)
+				step = max(rows-1, 1)
+			}
+			t.scroll += step
+			return true
+		case "shift+pgdown", "shift+down":
+			step := 1
+			if key == "shift+pgdown" {
+				_, rows := m.termGeom(false)
+				step = max(rows-1, 1)
+			}
+			t.scroll = max(t.scroll-step, 0)
+			return true
+		}
+		t.scroll = 0 // typing returns to the live screen
+	}
 	if t == nil || t.sess == nil || t.exited {
 		return true
 	}
@@ -1034,7 +1223,16 @@ func (m *Model) handleNavKey(key string) bool {
 	if m.startVisible() && m.startKey(key) {
 		return true
 	}
+	m.treeNote = ""
 	switch key {
+	case ":": // F-119: ex commands from the tree
+		return m.startTreeOp(opCommand)
+	case "a": // F-119 file operations
+		return m.startTreeOp(opNew)
+	case "r":
+		return m.startTreeOp(opRename)
+	case "d":
+		return m.startTreeOp(opDelete)
 	case "/":
 		m.openFind()
 		return true
@@ -1117,8 +1315,18 @@ func (m *Model) open(n *node) {
 		return
 	}
 	be.SetCommandDelegate(m)
+	be.SetIndent(m.indentFor(n.path, be.Buffer().Text())) // F-119
 	be.SetBeforeSave(m.beforeSave)
-	be.SetAfterSave(func(*textbuf.Editor) {
+	be.SetAfterSave(func(ed *textbuf.Editor) {
+		if ed.Path() == m.commitPath() && m.commitRepo != nil { // F-121: :w commits
+			m.gitMessage = m.commitFromBuffer(ed.Buffer().Text())
+			m.commitDone = ed // closed once the key that saved it is handled
+			return
+		}
+		if m.savedAt == nil {
+			m.savedAt = map[string]time.Time{}
+		}
+		m.savedAt[ed.Path()] = time.Now() // F-120: undo-turn never reverts your own save
 		m.act(tutorial.EvEditorSave)
 		m.invalidateTreeGit() // the saved file's status letter may change
 		m.refreshRows()
@@ -1128,6 +1336,7 @@ func (m *Model) open(n *node) {
 	m.activeTab = len(m.bufs) - 1
 	m.bufFocus = true
 	m.lspOpenDoc(n.path, be.Buffer().Text())
+	m.noteRecent(n.path)
 	m.act(tutorial.EvEditorOpen)
 }
 
@@ -1139,10 +1348,12 @@ func (m *Model) closeBuffer() {
 		return
 	}
 	closing := m.activeTab
+	m.closed = append(m.closed, m.bufs[closing].path) // F-119: :reopen
 	m.bufs = append(m.bufs[:m.activeTab], m.bufs[m.activeTab+1:]...)
 	switch {
 	case len(m.bufs) == 0:
 		m.bufFocus = false
+		m.openPath, m.openVPath = "", "" // the start page comes back (F-119)
 	case m.activeTab >= len(m.bufs):
 		m.activeTab = len(m.bufs) - 1
 	}
@@ -1175,6 +1386,18 @@ func (m *Model) refreshRows() {
 func (m *Model) View() string {
 	if m.toolCard != nil {
 		return m.toolCardView(m.view())
+	}
+	if m.treeOp != nil {
+		return m.treeOpView(m.view())
+	}
+	if m.undo != nil {
+		return m.undoView(m.view())
+	}
+	if m.diff != nil {
+		return m.diffView(m.view())
+	}
+	if m.branches != nil {
+		return m.branchView(m.view())
 	}
 	return m.view()
 }
@@ -1424,6 +1647,10 @@ func (m *Model) ExecEx(requester *textbuf.Editor, cmd string) bool {
 		}
 		return true
 	}
+	if msg, ok := m.fileCommand(requester, cmd); ok {
+		requester.SetMessage(msg)
+		return true
+	}
 	if msg, ok := m.symCommand(cmd); ok {
 		requester.SetMessage(msg)
 		return true
@@ -1475,7 +1702,25 @@ func (m *Model) ExecEx(requester *textbuf.Editor, cmd string) bool {
 
 // Finder (file names).
 
+// askWithoutTeam answers ctrl+a before any agent exists: it opens the
+// team step (DHI relaunches with the crew in a few seconds) or says how.
+func (m *Model) askWithoutTeam() {
+	m.toast = &kit.Toast{Kind: kit.ToastInfo, Title: "No agents yet",
+		Detail: "pick a team — agents then answer in the chat (ctrl+a)"}
+	if m.start.RunStep != nil {
+		m.start.RunStep("team")
+		return
+	}
+	if e := m.active(); e != nil {
+		e.SetMessage("no agents yet — ctrl+p → Set up: Pick a team")
+	}
+}
+
 func (m *Model) openFind() {
+	if m.ws == nil {
+		m.startNote = "Create a workspace first — press c (about 10 seconds)."
+		return
+	}
 	if m.items == nil {
 		m.items = fuzzy.NewIndex(indexFiles(m.roots, indexCap))
 	}
@@ -1674,6 +1919,7 @@ func (m *Model) startSearch(q string) {
 	m.hitList = kit.List{Width: m.hitList.Width, Height: m.hitList.Height}
 	m.lastQueryText = q
 	m.lastQueryRegex = m.searchRegex
+	m.resultsTitle = ""
 	m.replace, m.replaceNote = nil, ""
 	m.mode = modeResults
 
@@ -1730,7 +1976,9 @@ func (m *Model) handleResultsKey(key string) bool {
 	case "enter", "l":
 		return m.jumpHit()
 	case "r":
-		m.openReplace()
+		if m.resultsTitle == "" { // a list (references, problems) has nothing to replace
+			m.openReplace()
+		}
 		return true
 	}
 	return m.hitList.HandleKey(key)
@@ -1757,7 +2005,18 @@ func (m *Model) jumpHit() bool {
 		}
 	}
 	m.open(&node{kind: nodeFile, path: abs, name: filepath.Base(abs)})
+	if e := m.active(); e != nil && row.hit.Line > 0 { // land on the hit (F-116)
+		e.Buffer().SetCursor(textbuf.Pos{Line: row.hit.Line - 1, Col: hitCol(row.hit)})
+	}
 	return true
+}
+
+// hitCol converts a hit's byte column to the rune column the buffer uses.
+func hitCol(h search.Hit) int {
+	if h.Column <= 0 || h.Column > len(h.Text) {
+		return 0
+	}
+	return utf8.RuneCountInString(h.Text[:h.Column])
 }
 
 func (m *Model) resultsBlock() string {
@@ -1765,6 +2024,9 @@ func (m *Model) resultsBlock() string {
 		return m.replaceBlock(maxInt(m.width-m.railW()-8, 20))
 	}
 	head := theme.TabActive().Render("results for " + strconv.Quote(m.lastQueryText))
+	if m.resultsTitle != "" {
+		head = theme.TabActive().Render(m.resultsTitle)
+	}
 	if m.lastQueryRegex {
 		head += theme.Hint().Render(" (regex)")
 	}
@@ -1881,6 +2143,14 @@ func (m *Model) applySuggestion(text string) {
 		return
 	}
 	b := e.Buffer()
+	// F-117: a visual selection is replaced, as in an inline edit; with
+	// none the block goes in at the cursor as whole lines.
+	if _, from, to, ok := e.Selection(); ok {
+		b.ApplyEdit(from, to, text)
+		e.Key("esc")
+		m.lspSync()
+		return
+	}
 	b.BeginUndoGroup()
 	for _, line := range strings.Split(text, "\n") {
 		b.InsertString(line)
@@ -1909,6 +2179,7 @@ type bufGeom struct {
 	ox, oy    int // surface cell of the first text row's gutter
 	textX     int // cells of gutter before the text
 	top, rows int // first buffer line shown, and how many
+	left      int // columns scrolled off the left (F-119)
 }
 
 // bufferPos maps a surface cell to a buffer position (false outside the
@@ -1923,7 +2194,7 @@ func (m *Model) bufferPos(x, y int) (textbuf.Pos, bool) {
 	if line >= e.Buffer().LineCount() {
 		return textbuf.Pos{}, false
 	}
-	vc := max(x-g.ox-g.textX, 0)
+	vc := max(x-g.ox-g.textX, 0) + g.left
 	return textbuf.Pos{Line: line, Col: runeCol(e.Buffer().Line(line), vc)}, true
 }
 

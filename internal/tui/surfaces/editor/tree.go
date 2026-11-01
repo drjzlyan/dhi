@@ -31,8 +31,18 @@ type node struct {
 // with the git view (gitignore via go-git).
 var skipNames = map[string]bool{
 	".git":         true,
+	".dhi":         true, // DHI's own state; Settings shows what matters
 	"node_modules": true,
 	".DS_Store":    true,
+}
+
+// dotDirsShown are the dot folders worth editing (F-119); others (.venv,
+// .next, .cache, .terraform) stay hidden so they never flood the tree or
+// the file finder's index.
+var dotDirsShown = map[string]bool{
+	".github": true, ".gitlab": true, ".circleci": true, ".vscode": true, ".devcontainer": true,
+	".husky": true, ".storybook": true, ".changeset": true, ".config": true, ".claude": true,
+	".agents": true, ".cursor": true,
 }
 
 // buildRoots constructs the repo-level nodes for each workspace member.
@@ -82,7 +92,7 @@ func listDir(dir, member string) []*node {
 	var dirs, files []*node
 	for _, e := range entries {
 		name := e.Name()
-		if skipNames[name] || strings.HasPrefix(name, ".") && e.IsDir() {
+		if skipNames[name] || e.IsDir() && strings.HasPrefix(name, ".") && !dotDirsShown[name] {
 			continue
 		}
 		child := &node{

@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/drjzlyan/dhi/internal/conventions"
 	"github.com/drjzlyan/dhi/internal/tui/theme"
@@ -710,5 +711,31 @@ func TestProfileLayersAndValidates(t *testing.T) {
 	os.WriteFile(ws, []byte("schema = 1\n[profile.writing]\ntone = \"snarky\"\n"), 0o644)
 	if _, err := Load(user, ws); err == nil || !strings.Contains(err.Error(), "profile.writing.tone") {
 		t.Fatalf("bad tone: %v", err)
+	}
+}
+
+func TestLiveRereadsOnChange(t *testing.T) {
+	dir := t.TempDir()
+	user := filepath.Join(dir, "config.toml")
+	if err := os.WriteFile(user, []byte("schema = 1\n[editor]\ntab_width = 2\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load(user, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	live := Live(user, "", c)
+	if live().Editor.TabWidth != 2 {
+		t.Fatal(live().Editor.TabWidth)
+	}
+	_ = os.WriteFile(user, []byte("schema = 1\n[editor]\ntab_width = 8\n"), 0o644)
+	_ = os.Chtimes(user, time.Now().Add(time.Second), time.Now().Add(time.Second))
+	if live().Editor.TabWidth != 8 {
+		t.Fatal("change not picked up")
+	}
+	_ = os.WriteFile(user, []byte("schema = 1\n[editor]\ntab_width = 99\n"), 0o644) // invalid
+	_ = os.Chtimes(user, time.Now().Add(2*time.Second), time.Now().Add(2*time.Second))
+	if live().Editor.TabWidth != 8 {
+		t.Fatal("an invalid file must keep the last good config")
 	}
 }

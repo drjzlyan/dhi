@@ -6,6 +6,8 @@ package version
 import (
 	"fmt"
 	"runtime"
+	"runtime/debug"
+	"strings"
 )
 
 // Version is the semantic version of this build.
@@ -16,6 +18,35 @@ var (
 	Commit = "unknown"
 	Date   = "unknown"
 )
+
+func init() {
+	// A `go install …@vX` or source build carries no ldflags: take the
+	// module version and VCS stamp Go records instead of claiming 0.1.0.
+	if Version != "0.1.0" || Commit != "unknown" { // stamped by a release build: keep it
+		return
+	}
+	bi, ok := debug.ReadBuildInfo()
+	if !ok {
+		return
+	}
+	if v := bi.Main.Version; v != "" && v != "(devel)" {
+		Version = strings.TrimPrefix(v, "v")
+	} else {
+		Version += "-dev"
+	}
+	for _, s := range bi.Settings {
+		switch s.Key {
+		case "vcs.revision":
+			if len(s.Value) > 12 {
+				Commit = s.Value[:12]
+			} else {
+				Commit = s.Value
+			}
+		case "vcs.time":
+			Date = s.Value
+		}
+	}
+}
 
 // String is the one-line identity printed by `dhi version`.
 func String() string {

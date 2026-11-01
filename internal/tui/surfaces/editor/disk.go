@@ -22,6 +22,7 @@ func diskTick() tea.Cmd {
 // checkDisk reloads clean buffers whose file changed on disk and warns,
 // once per change, on dirty ones.
 func (m *Model) checkDisk() {
+	m.refreshTree() // files made or removed outside DHI appear (F-119)
 	for _, t := range m.bufs {
 		if t.ed == nil {
 			continue

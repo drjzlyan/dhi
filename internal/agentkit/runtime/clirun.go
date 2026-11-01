@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/drjzlyan/dhi/internal/checkpoint"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -63,6 +64,9 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message, tl
 		task = r.provisionWorktree(e.m.ID, trigger, task)
 	}
 	workdir := r.cliWorkdir(trigger)
+	if !hasTask { // F-120: a chat turn edits the repos in place — make it undoable
+		defer r.checkpointTurn(ctx, e.m.ID, trigger)()
+	}
 	tune := r.tuning()
 	ep := r.openEpisode(e.m.ID, task.Slug, trigger)
 	if wfText != "" && len(task.ChangeSets) > 0 {
@@ -1294,4 +1298,30 @@ func missingState(c *clirun.CLI, sb sandbox.Sandbox) string {
 		}
 	}
 	return ""
+}
+
+// checkpointTurn snapshots the repos before a chat turn and returns what
+// to run after it: a second snapshot and, when files changed, a record the
+// editor offers to undo (F-120). A failed snapshot is reported in the
+// thread once and the turn goes on.
+func (r *Runtime) checkpointTurn(ctx context.Context, agentID string, trigger bus.Message) func() {
+	cp := r.cfg.Checkpoints
+	if cp == nil {
+		return func() {}
+	}
+	before, err := cp.Snapshot(ctx, "before @"+agentID)
+	if err != nil {
+		r.notice(trigger, agentID, "undo is not available for this turn: "+err.Error())
+		return func() {}
+	}
+	return func() {
+		bg := context.WithoutCancel(ctx) // a stopped turn's edits are still undoable
+		after, err := cp.Snapshot(bg, "after @"+agentID)
+		if err != nil {
+			return
+		}
+		if cs, err := cp.Diff(bg, before, after); err == nil && len(cs) > 0 {
+			_ = cp.Record(bg, checkpoint.Turn{Agent: agentID, Channel: trigger.Channel, At: after.At, Before: before, After: after})
+		}
+	}
 }

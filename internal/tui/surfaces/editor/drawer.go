@@ -2,6 +2,7 @@ package editor
 
 import (
 	"context"
+	"fmt"
 	"github.com/drjzlyan/dhi/internal/textbuf"
 	"io"
 	"path/filepath"
@@ -17,16 +18,17 @@ import (
 const (
 	gitPanelHeight = 12
 	drawerHeight   = 10
-	scrollbackCap  = 1000
 )
 
 // termTab is one drawer tab bound to a working directory.
 type termTab struct {
+	id     int // stable across closes: output is routed by it (F-121)
 	sess   *term.Session
 	dir    string
 	screen *vt.Screen // emulated terminal sized to the pane (F-061)
 	exited bool
 	tool   string // an approved install of this host tool runs here (F-110)
+	scroll int    // rows scrolled back into history (0 = live) (F-121)
 }
 
 // ToggleDrawer opens/closes/focus-blurs the terminal drawer (ctrl+t):
@@ -60,12 +62,11 @@ func (m *Model) ensureTermTabs() {
 func (m *Model) newTermTab(dir, label string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	sess, err := term.Start(ctx, term.Options{Dir: dir, Label: label, Env: m.env()})
-	t := &termTab{sess: sess, dir: dir, screen: vt.New(scrollbackCap)}
+	t := &termTab{sess: sess, dir: dir, screen: vt.New(m.editorPrefs().Scrollback)}
 	// A program copying through OSC 52 (tmux, vim over SSH) reaches the
 	// system clipboard (F-103); Feed runs on the UI loop, so no lock.
 	t.screen.OnClipboard(func(text string) { m.termCopy = text })
-	m.terms = append(m.terms, t)
-	m.cancelTerms = append(m.cancelTerms, cancel)
+	m.addTerm(t, cancel)
 	if err != nil {
 		t.exited = true
 		t.screen.Feed([]byte("\x1b[31m" + err.Error() + "\x1b[0m\n"))
@@ -75,7 +76,7 @@ func (m *Model) newTermTab(dir, label string) {
 	// position, attributes); those replies are the program's input.
 	go func() { _, _ = io.Copy(writerFunc(sess.Write), t.screen.Replies()) }()
 	m.syncTermSize()
-	go m.pumpTerm(len(m.terms)-1, sess, m.termMsgs)
+	go m.pumpTerm(t.id, sess, m.termMsgs)
 }
 
 // writerFunc adapts a write method to io.Writer.
@@ -161,8 +162,27 @@ func (m *Model) takeTermCopy() string {
 	return c
 }
 
-func (m *Model) ingestTermChunk(idx int, chunk []byte) {
-	if idx < 0 || idx >= len(m.terms) {
+// termIndex finds the tab with id (-1 when it was closed).
+func (m *Model) termIndex(id int) int {
+	for i, t := range m.terms {
+		if t.id == id {
+			return i
+		}
+	}
+	return -1
+}
+
+// addTerm registers a new tab with the next id.
+func (m *Model) addTerm(t *termTab, cancel context.CancelFunc) {
+	m.termSeq++
+	t.id = m.termSeq
+	m.terms = append(m.terms, t)
+	m.cancelTerms = append(m.cancelTerms, cancel)
+}
+
+func (m *Model) ingestTermChunk(id int, chunk []byte) {
+	idx := m.termIndex(id)
+	if idx < 0 {
 		return
 	}
 	t := m.terms[idx]
@@ -176,8 +196,8 @@ func (m *Model) ingestTermChunk(idx int, chunk []byte) {
 	}
 }
 
-func (m *Model) termExited(idx int) {
-	if idx >= 0 && idx < len(m.terms) && !m.terms[idx].exited {
+func (m *Model) termExited(id int) {
+	if idx := m.termIndex(id); idx >= 0 && !m.terms[idx].exited {
 		t := m.terms[idx]
 		t.exited = true
 		code := -1
@@ -233,6 +253,16 @@ func (m *Model) termBody(cols, rows int) []string {
 		return make([]string, rows)
 	}
 	body := t.screen.Lines(cols, rows)
+	if t.scroll > 0 { // F-121: looking back through the scrollback
+		all := append(t.screen.History(cols), body...)
+		t.scroll = min(t.scroll, max(len(all)-rows, 0))
+		end := len(all) - t.scroll
+		view := append([]string(nil), all[max(end-rows, 0):end]...)
+		if len(view) > 0 {
+			view[len(view)-1] = theme.Hint().Render(fmt.Sprintf("↑ %d lines back · shift+pgdown or any key returns", t.scroll))
+		}
+		return view
+	}
 	if t.exited || !m.termFocus {
 		return body
 	}
@@ -275,4 +305,44 @@ func termStrip(m *Model) string {
 		}
 	}
 	return out
+}
+
+// closeTerm stops and removes tab i; the drawer closes with the last one.
+func (m *Model) closeTerm(i int) {
+	if i < 0 || i >= len(m.terms) {
+		return
+	}
+	if m.cancelTerms[i] != nil {
+		m.cancelTerms[i]()
+	}
+	m.terms = append(m.terms[:i], m.terms[i+1:]...)
+	m.cancelTerms = append(m.cancelTerms[:i], m.cancelTerms[i+1:]...)
+	if m.activeTerm >= len(m.terms) {
+		m.activeTerm = max(len(m.terms)-1, 0)
+	}
+	if len(m.terms) == 0 {
+		m.drawerOpen, m.termFocus = false, false
+	}
+}
+
+// restartTerm replaces an exited tab with a fresh shell in its folder.
+func (m *Model) restartTerm(i int) {
+	if i < 0 || i >= len(m.terms) || !m.terms[i].exited {
+		return
+	}
+	dir := m.terms[i].dir
+	label := filepath.Base(dir)
+	if s := m.terms[i].sess; s != nil {
+		label = s.Label()
+	}
+	m.closeTerm(i)
+	m.newTermTab(dir, label)
+	// keep its place in the strip
+	last := len(m.terms) - 1
+	t, c := m.terms[last], m.cancelTerms[last]
+	copy(m.terms[i+1:], m.terms[i:last])
+	copy(m.cancelTerms[i+1:], m.cancelTerms[i:last])
+	m.terms[i], m.cancelTerms[i] = t, c
+	m.activeTerm = i
+	m.drawerOpen, m.termFocus = true, true
 }

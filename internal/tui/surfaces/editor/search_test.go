@@ -106,6 +106,9 @@ func TestSearchFlow(t *testing.T) {
 	if m.openVPath != "beta/README.md" {
 		t.Errorf("openVPath = %q, want beta/README.md", m.openVPath)
 	}
+	if c := m.active().Buffer().Cursor(); c.Line != 0 || c.Col != 4 { // F-116: on the hit
+		t.Errorf("cursor = %+v, want the hit at 0:4", c)
+	}
 	if !strings.Contains(plainView(m), "README.md") {
 		t.Error("tree did not reveal jumped file")
 	}

@@ -83,8 +83,8 @@ func TestTerminalStreamingRender(t *testing.T) {
 	m := liveEditor(t)
 	feed(m, "ctrl+t")
 
-	m.Update(teaMsg{kind: termMsgOut, tab: 0, chunk: []byte("build ok\r\n$ ")})
-	m.Update(teaMsg{kind: termMsgOut, tab: 0, chunk: []byte("more")})
+	m.Update(teaMsg{kind: termMsgOut, tab: m.terms[0].id, chunk: []byte("build ok\r\n$ ")})
+	m.Update(teaMsg{kind: termMsgOut, tab: m.terms[0].id, chunk: []byte("more")})
 
 	v := plainView(m)
 	for _, want := range []string{"build ok", "$ more"} {
@@ -97,7 +97,7 @@ func TestTerminalStreamingRender(t *testing.T) {
 		t.Error("cursor cell not drawn after the prompt text")
 	}
 
-	m.Update(teaMsg{kind: termMsgClosed, tab: 0})
+	m.Update(teaMsg{kind: termMsgClosed, tab: m.terms[0].id})
 	if !strings.Contains(plainView(m), "[process exited]") {
 		t.Error("exit marker missing")
 	}
@@ -145,7 +145,7 @@ func TestFullScreenProgramTakesTheBody(t *testing.T) {
 	m := liveEditor(t)
 	m.Resize(100, 30)
 	feed(m, "ctrl+t")
-	m.Update(teaMsg{kind: termMsgOut, tab: 0, chunk: []byte("\x1b[?1049h\x1b[2J\x1b[H~ vim buffer\x1b[30;1H-- INSERT --")})
+	m.Update(teaMsg{kind: termMsgOut, tab: m.terms[0].id, chunk: []byte("\x1b[?1049h\x1b[2J\x1b[H~ vim buffer\x1b[30;1H-- INSERT --")})
 	if !m.fullScreenTerm() {
 		t.Fatal("alt screen did not go full screen")
 	}
@@ -164,7 +164,7 @@ func TestFullScreenProgramTakesTheBody(t *testing.T) {
 	if v := plainView(m); !strings.Contains(v, "~ vim buffer") || !strings.Contains(v, "full screen") {
 		t.Fatalf("full-screen view:\n%s", v)
 	}
-	m.Update(teaMsg{kind: termMsgOut, tab: 0, chunk: []byte("\x1b[?1049l")})
+	m.Update(teaMsg{kind: termMsgOut, tab: m.terms[0].id, chunk: []byte("\x1b[?1049l")})
 	if m.fullScreenTerm() || !strings.Contains(plainView(m), "terminal") {
 		t.Fatal("leaving the alt screen must return to the drawer")
 	}
@@ -234,7 +234,7 @@ func TestClickAndDragInTheBuffer(t *testing.T) {
 	for ; line < e.Buffer().LineCount() && len([]rune(e.Buffer().Line(line))) < 6; line++ {
 	}
 	if line == e.Buffer().LineCount() {
-		t.Skip("fixture has no line long enough")
+		t.Fatal("fixture has no line long enough")
 	}
 	x, y := g.ox+g.textX+4, g.oy+line-g.top
 	screen := []rune(strings.Split(ansi.Strip(m.View()), "\n")[y])
@@ -259,5 +259,37 @@ func TestClickAndDragInTheBuffer(t *testing.T) {
 	}
 	if m.Click(g.ox+g.textX, g.oy+g.rows+5) {
 		t.Fatal("a click below the text must not move the cursor")
+	}
+}
+
+// F-121: output that scrolled away can be read again; tabs close.
+func TestTerminalScrollbackAndClose(t *testing.T) {
+	m := liveEditor(t)
+	feed(m, "ctrl+t")
+	var b strings.Builder
+	for i := 0; i < 60; i++ {
+		b.WriteString("line-" + itoa(i) + "\r\n")
+	}
+	m.Update(teaMsg{kind: termMsgOut, tab: m.terms[0].id, chunk: []byte(b.String())})
+	if strings.Contains(plainView(m), "line-3\n") || strings.Contains(plainView(m), "line-3 ") {
+		t.Fatal("old output still on screen; the test needs more lines")
+	}
+	for i := 0; i < 10; i++ {
+		m.HandleKey("shift+pgup")
+	}
+	if v := plainView(m); !strings.Contains(v, "line-0") || !strings.Contains(v, "lines back") {
+		t.Fatalf("scrollback not shown:\n%s", v)
+	}
+	m.HandleKey("shift+pgdown")
+	for i := 0; i < 20; i++ {
+		m.HandleKey("shift+pgdown")
+	}
+	if strings.Contains(plainView(m), "lines back") {
+		t.Fatal("did not return to the live screen")
+	}
+	n := len(m.terms)
+	m.HandleKey("alt+w")
+	if len(m.terms) != n-1 {
+		t.Fatalf("tabs = %d, want %d", len(m.terms), n-1)
 	}
 }

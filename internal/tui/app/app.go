@@ -85,6 +85,7 @@ type App struct {
 	help          helpState
 	quitting      bool
 	transArmed    bool     // a fade frame tick is in flight
+	blurred       bool     // the terminal window lost focus (focus reporting, F-117)
 	quitAsk       []string // unsaved work listed by the quit guard (F-115); nil = closed
 	quitErr       string   // why "save all" failed
 
@@ -338,6 +339,15 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if tc := a.armTransition(); tc != nil {
 		cmd = tea.Batch(cmd, tc)
 	}
+	// Work a surface queued outside a key (an agent's open request, a
+	// cross-view jump) starts now rather than at the next keypress.
+	for _, s := range a.surfaces {
+		if cs, ok := s.(surfaces.CmdSource); ok {
+			if qc := cs.TakeCmd(); qc != nil {
+				cmd = tea.Batch(cmd, qc)
+			}
+		}
+	}
 	if ac := a.activityCmd(); ac != nil {
 		if cmd == nil {
 			return m, ac
@@ -356,6 +366,13 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case EditorRequest:
 		a.handleEditorRequest(msg)
+		return a, nil
+
+	case tea.FocusMsg:
+		a.blurred = false
+		return a, nil
+	case tea.BlurMsg:
+		a.blurred = true
 		return a, nil
 
 	case tea.BackgroundColorMsg:
@@ -755,8 +772,6 @@ func (a *App) openPalette() {
 	add("", "Show keyboard help", "?", func() tea.Cmd { a.openHelp(); return nil })
 	add("", "Select text with the mouse", "", func() tea.Cmd { a.selecting = true; return nil })
 	a.coachCommands(add)
-	add("Theme", "Dark", "", func() tea.Cmd { theme.Current = theme.Dark(); return nil })
-	add("Theme", "Light", "", func() tea.Cmd { theme.Current = theme.Light(); return nil })
 	add("", "Quit DHI", "ctrl+c", a.requestQuit)
 	a.palette = kit.NewPalette(items)
 	a.observe("palette")
@@ -1019,6 +1034,7 @@ func (a *App) View() tea.View {
 	// (F-026 P2); the shell routes them to the tab bar and the active
 	// surface via narrow seams.
 	v.MouseMode = tea.MouseModeCellMotion
+	v.ReportFocus = true // a toast while you are elsewhere becomes a desktop notice (F-117)
 	if a.selecting {
 		// Select mode (F-103): the terminal owns the mouse, so drag
 		// selects text and cmd+c / ctrl+shift+c copies it, anywhere.

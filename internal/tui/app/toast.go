@@ -42,15 +42,35 @@ func (a *App) pollToasts() tea.Cmd {
 	if got == nil {
 		return nil
 	}
+	var notify tea.Cmd
+	if a.blurred { // F-117: OSC 9 — iTerm2, Ghostty, WezTerm, kitty show it as a notification
+		notify = tea.Raw(osc9(got.Title, got.Detail))
+	}
 	a.toastSeq++
 	a.toast, a.toastFrame = got, toastFrames
 	seq := a.toastSeq
 	expire := tea.Tick(toastTTL, func(time.Time) tea.Msg { return toastExpireMsg{seq} })
 	if !theme.Motion {
-		return expire
+		return tea.Batch(expire, notify)
 	}
 	a.toastFrame = 1
-	return tea.Batch(expire, tea.Tick(toastInterval, func(time.Time) tea.Msg { return toastFrameMsg{seq} }))
+	return tea.Batch(expire, notify, tea.Tick(toastInterval, func(time.Time) tea.Msg { return toastFrameMsg{seq} }))
+}
+
+// osc9 is a desktop-notification escape: "dhi: title — detail", with
+// control characters dropped so the text cannot end the sequence early.
+func osc9(title, detail string) string {
+	text := "dhi: " + title
+	if detail != "" {
+		text += " — " + detail
+	}
+	clean := strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return -1
+		}
+		return r
+	}, text)
+	return "\x1b]9;" + clean + "\x07"
 }
 
 // toastMsg advances or clears the toast; false = not a toast message.

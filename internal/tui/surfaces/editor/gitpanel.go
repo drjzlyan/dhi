@@ -129,7 +129,24 @@ func (m *Model) handleGitKey(key string) bool {
 			m.gitInputMode = true
 			m.gitInput = nil
 			return true
+		case "enter", "d": // F-121: the file's diff, hunk by hunk
+			m.openDiff()
+			return true
+		case "C": // F-121: a multi-line message in a buffer
+			m.openCommitBuffer()
+			return true
 		}
+	}
+	switch key { // F-121, either tab
+	case "b":
+		m.openBranches()
+		return true
+	case "p":
+		m.pushPull(false)
+		return true
+	case "P":
+		m.pushPull(true)
+		return true
 	}
 	return true // panel swallows everything while focused
 }
@@ -280,6 +297,7 @@ func (m *Model) gitRepoLabel() string {
 func (m *Model) gitBody(h int) []string {
 	var rows []string
 	rows = append(rows, kit.TabPills([]string{"status", "log"}, m.gitTab))
+	cursorRow := -1 // where the cursor's row lands, to keep it in view (F-121)
 
 	switch {
 	case m.gitErr != "":
@@ -295,6 +313,7 @@ func (m *Model) gitBody(h int) []string {
 				marker := " "
 				if idx == m.gitCursor {
 					marker = theme.GlyphCursor
+					cursorRow = len(rows)
 				}
 				letter := theme.WarningText().Render(f.Letter + " ")
 				if isStaged {
@@ -332,6 +351,11 @@ func (m *Model) gitBody(h int) []string {
 
 	if msg := m.gitMessage; msg != "" {
 		rows = append(rows, theme.SuccessText().Render(msg))
+	}
+	if room := h - 3; len(rows) > room && cursorRow >= room-1 {
+		// Scroll: keep the tab pills, then the window that holds the cursor.
+		start := min(cursorRow-(room-2), len(rows)-(room-1))
+		rows = append([]string{rows[0]}, rows[start:start+room-1]...)
 	}
 	for len(rows) < h-3 {
 		rows = append(rows, "")

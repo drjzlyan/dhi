@@ -37,6 +37,10 @@ type goplusFake struct {
 	// makes the server omit documentFormattingProvider like pyright does.
 	lastLang string
 	noFormat bool
+	// F-116: definition/references replies (nil = none) and an extra,
+	// not-open file a rename also edits.
+	locs        []map[string]any
+	renameExtra string
 }
 
 func startFakeServer(t *testing.T) (*goplusFake, *lsp.Manager) {
@@ -135,14 +139,29 @@ func (f *goplusFake) serve() {
 				NewName string `json:"newName"`
 			}
 			json.Unmarshal(msg.Params, &p)
-			f.reply(*msg.ID, map[string]any{"changes": map[string]any{
+			changes := map[string]any{
 				p.TextDocument.URI: []map[string]any{
 					{"range": map[string]any{
 						"start": map[string]any{"line": 0, "character": 0},
 						"end":   map[string]any{"line": 0, "character": 7},
 					}, "newText": p.NewName},
 				},
-			}})
+			}
+			f.mu.Lock()
+			if f.renameExtra != "" {
+				changes[f.renameExtra] = []map[string]any{{"range": map[string]any{
+					"start": map[string]any{"line": 0, "character": 8},
+					"end":   map[string]any{"line": 0, "character": 12},
+				}, "newText": p.NewName}}
+			}
+			f.mu.Unlock()
+			f.reply(*msg.ID, map[string]any{"changes": changes})
+
+		case "textDocument/definition", "textDocument/references":
+			f.mu.Lock()
+			locs := f.locs
+			f.mu.Unlock()
+			f.reply(*msg.ID, locs)
 
 		case "textDocument/didChange":
 			var p struct {
