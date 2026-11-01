@@ -87,7 +87,15 @@ for tape in "$ROOT"/scripts/tapes/*.tape; do
 	[ -z "$WANT" ] || [ "$WANT" = "$name" ] || continue
 	sed -e "s|{{OUT}}|$OUT|g" -e "s|{{WORK}}|$WORK|g" "$tape" >"$WORK/tapes/$name.tape"
 	echo "recording ${name}…"
+	touch "$WORK/.before-$name"
 	(cd "$WORK" && vhs "tapes/$name.tape" >/dev/null)
+	# vhs can stop on a ttyd error ("error: EOF") and still exit 0: only a
+	# GIF written by this run counts.
+	if [ ! "$OUT/$name.gif" -nt "$WORK/.before-$name" ]; then
+		echo "  $name FAILED: no new GIF (vhs stopped early) — run scripts/record.sh $name again" >&2
+		status=1
+		continue
+	fi
 	size=$(wc -c <"$OUT/$name.gif" | tr -d ' ')
 	mb=$((size / 1048576))
 	echo "  $OUT/$name.gif (${mb} MB) and $name.mp4"

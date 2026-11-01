@@ -29,7 +29,7 @@ Enter
 Sleep 2s
 # Insert a line in vim style, then back to normal mode.
 Type "o"
-Type "	// Rate limits apply per client."
+Type "// Rate limits apply per client."
 Escape
 Sleep 1.5s
 # Split the pane and open the README beside it.

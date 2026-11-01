@@ -255,20 +255,15 @@ func (e *Editor) normalAction(key string, count int) bool {
 	case "A":
 		e.buf.cursor.Col = len(e.buf.runes(e.buf.Cursor().Line))
 		e.mode = ModeInsert
-	case "o":
+	case "o": // open a line below, keeping the indent (one more after an opener)
 		e.buf.cursor.Col = len(e.buf.runes(e.buf.Cursor().Line))
-		e.buf.BreakLine()
+		e.newline()
 		e.mode = ModeInsert
-	case "O":
-		if e.buf.Cursor().Line == 0 {
-			e.buf.cursor = Pos{}
-			e.buf.insertAt(Pos{}, "\n")
-			e.buf.cursor = Pos{Line: 0, Col: 0}
-		} else {
-			e.buf.cursor.Line--
-			e.buf.cursor.Col = len(e.buf.runes(e.buf.Cursor().Line))
-			e.buf.BreakLine()
-		}
+	case "O": // open a line above with this line's indent
+		l := e.buf.Cursor().Line
+		lead := leadingSpace(e.buf.lines[l])
+		e.buf.insertAt(Pos{Line: l}, lead+"\n")
+		e.buf.cursor = Pos{Line: l, Col: len([]rune(lead))}
 		e.mode = ModeInsert
 	case "x", "delete":
 		for i := 0; i < count; i++ {

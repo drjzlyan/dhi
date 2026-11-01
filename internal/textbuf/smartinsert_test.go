@@ -109,3 +109,11 @@ func TestDotRepeatsInsertAndDelete(t *testing.T) {
 		t.Fatalf("u after . = %q", got)
 	}
 }
+
+func TestOpenLineKeepsIndent(t *testing.T) {
+	e := NewEditor("func f() {\n\tx := 1\n}")
+	feed(e, "j", "o", "y", "esc", "O", "w", "esc")
+	if got := e.Buffer().Text(); got != "func f() {\n\tx := 1\n\tw\n\ty\n}" {
+		t.Fatalf("o/O = %q", got)
+	}
+}
