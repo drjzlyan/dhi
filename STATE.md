@@ -16,8 +16,7 @@
   - Also: a crash with no roster (typed-nil runtime), a crash on clicking a `/` hint, background
     messages going only to the visible view (ADR-0045: now to all), and views left dimmed after
     a switch.
-  - **These bugs are live in v0.5.0. Offer the user a v0.5.1 patch release (lint and green CI
-    first, tap by hand). Ask before pushing or tagging.**
+  - **Released as v0.5.1 (2026-11-01, PR #15, tap updated). P1–P6 go out as v0.6.0.**
 - P1 (F-116): search enter lands on the hit; completion replaces the prefix and opens as you
   type; UTF-16 LSP columns; rename edits files that aren't open; gd/gR/]d/:diag; LSP starts
   async; Settings tab width, line numbers and scrollback now apply live; plus robustness fixes.

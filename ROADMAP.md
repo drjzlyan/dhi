@@ -1137,7 +1137,7 @@ Plan: `~/.claude/plans/all-the-keys-should-playful-hanrahan.md`. Branch `m36`, o
 
 Plan: `~/.claude/plans/i-want-dhi-to-dazzling-sky.md`. Branch `m37`, one commit per phase. ADR-0045, F-115–F-121.
 
-- [x] P0 Data safety, crashes, background delivery (F-115) — patch release v0.5.1 pending the user
+- [x] P0 Data safety, crashes, background delivery (F-115) — released as v0.5.1
 - [x] P1 Editor correctness: search jump, completion, UTF-16, gd/gR, problems, live settings, robustness (F-116)
 - [x] P2 Agent chat loop: safe approvals, default routing, stop, progress, per-hunk suggestions, notices (F-117)
 - [x] P3 First run and discoverability (F-118)
