@@ -40,6 +40,8 @@ func humanFailure(fail clirun.Failure, c *clirun.CLI) string {
 		return "I couldn't finish: the conversation got too long for " + name + ", even compacted. Start a fresh thread with the essentials."
 	case clirun.FailTimeout:
 		return "I couldn't finish: the turn ran past its time limit."
+	case clirun.FailStopped:
+		return "Stopped — the turn was stopped before it finished. Ask again when you're ready."
 	case clirun.FailStall:
 		return "I couldn't finish: " + name + " stopped responding and was stopped."
 	case clirun.FailNoFinal:

@@ -408,3 +408,20 @@ func TestReplyElsewhereRaisesToast(t *testing.T) {
 		t.Fatal("toast for the channel on screen")
 	}
 }
+
+// Live finding: an agent that moves to a task worktree answers in a
+// thread; the flat sidebar must show it.
+func TestSidebarShowsThreadReplies(t *testing.T) {
+	h := newChatEditor(t, "ok")
+	root, err := h.rt.Bus().Post(bus.Message{Channel: "#general", Author: bus.Human, Text: "do it"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.rt.Bus().Post(bus.Message{Channel: "#general", Thread: root.ID, Author: "scout", Text: "done in the worktree"}); err != nil {
+		t.Fatal(err)
+	}
+	h.openFocused()
+	if v := plainView(h.m); !strings.Contains(v, "done in the worktree") {
+		t.Fatalf("thread reply hidden:\n%s", v)
+	}
+}
