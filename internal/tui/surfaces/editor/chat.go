@@ -146,7 +146,7 @@ func (c *chatModel) workingLine() string {
 		return ""
 	}
 	what := "working…"
-	h := c.bus.History(c.channelName(), 0)
+	h := c.bus.All(c.channelName())
 	for i := len(h) - 1; i >= 0 && i >= len(h)-20; i-- {
 		if bus.Conversational(h[i]) {
 			break
@@ -277,7 +277,7 @@ func (c *chatModel) markChannelRead() {
 	if c.unread == nil {
 		return
 	}
-	top := c.bus.History(c.channelName(), 0)
+	top := c.bus.All(c.channelName())
 	if len(top) == 0 {
 		return
 	}
@@ -452,7 +452,7 @@ func (c *chatModel) answer(choice string) bool {
 // lastSuggestion extracts the final fenced code block from the latest
 // agent message in the channel ("" when none).
 func (c *chatModel) lastSuggestion() string {
-	h := c.bus.History(c.channelName(), 0)
+	h := c.bus.All(c.channelName())
 	for i := len(h) - 1; i >= 0; i-- {
 		m := h[i]
 		if m.Author == bus.Human || !bus.Conversational(m) || !strings.Contains(m.Text, "```") {
@@ -535,7 +535,7 @@ func channelLabel(ch string) string { return bus.ChannelLabel(ch) }
 // diffs and code — raw fences never render well).
 func (c *chatModel) transcript(maxRows int) []string {
 	var history []bus.Message
-	for _, m := range c.bus.History(c.channelName(), 0) {
+	for _, m := range c.bus.All(c.channelName()) {
 		if bus.Conversational(m) { // tool lines live in the trace (F-072)
 			history = append(history, m)
 		}
@@ -544,7 +544,7 @@ func (c *chatModel) transcript(maxRows int) []string {
 		history = history[n-chatTranscriptN:]
 	}
 	if len(history) == 0 {
-		return kit.EmptyInline("No messages yet", "Say hi, or @mention an agent to put it to work.", chatWidth-4)
+		return kit.EmptyInline("No messages yet", "Ask anything — the default agent answers; @name picks someone else.", chatWidth-4)
 	}
 	tr := &kit.Transcript{
 		// The panel's inner width (edges + padding) — the transcript
@@ -553,7 +553,9 @@ func (c *chatModel) transcript(maxRows int) []string {
 		Markdown: kit.ChatMarkdown,
 	}
 	for _, m := range history {
-		row := kit.TrnRow{Author: m.Author, Text: m.Text, At: m.At, Kind: kit.TrnAgent, Markdown: true}
+		// Thread replies show inline, marked ↳: an agent that moves to a
+		// task worktree answers in a thread, and the sidebar is flat.
+		row := kit.TrnRow{Author: m.Author, Text: m.Text, At: m.At, Kind: kit.TrnAgent, Markdown: true, Thread: m.Thread != 0}
 		switch {
 		case m.Author == bus.Human:
 			row.Kind = kit.TrnHuman

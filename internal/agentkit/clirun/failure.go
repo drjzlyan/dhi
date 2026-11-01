@@ -12,13 +12,14 @@ const (
 	FailRateLimit Failure = "rate_limit" // 429 / overloaded / usage limit: back off longer
 	FailOverflow  Failure = "overflow"   // prompt or context too long: retry compacted
 	FailTimeout   Failure = "timeout"    // the turn's deadline is spent
+	FailStopped   Failure = "stopped"    // someone stopped the turn (ctrl+x, a reassigned card)
 	FailNoFinal   Failure = "no_final"   // the stream ended without a terminal line
 	FailStall     Failure = "stall"      // the watchdog killed a silent spawn (F-067)
 	FailCrash     Failure = "crash"      // anything else
 )
 
 // Retryable reports whether another attempt can change the outcome.
-func (f Failure) Retryable() bool { return f != FailAuth && f != FailTimeout }
+func (f Failure) Retryable() bool { return f != FailAuth && f != FailTimeout && f != FailStopped }
 
 // failurePatterns are matched lower-cased against the run error and the
 // stream's error lines, first class wins. Order matters: overflow text
@@ -49,6 +50,9 @@ var failurePatterns = []struct {
 // agent's own failed tool commands (a `git push` printing "Authentication
 // failed", test output mentioning 429), which say nothing about the CLI.
 func Classify(timedOut bool, errText string) Failure {
+	if strings.Contains(errText, "context canceled") { // a stop, not a deadline
+		return FailStopped
+	}
 	if timedOut {
 		return FailTimeout
 	}

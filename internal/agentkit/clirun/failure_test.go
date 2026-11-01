@@ -43,3 +43,13 @@ func TestFailureRetryable(t *testing.T) {
 		}
 	}
 }
+
+// A stop (ctrl+x) is not a timeout and is never retried.
+func TestClassifyStopped(t *testing.T) {
+	if f := Classify(true, "run interrupted: context canceled"); f != FailStopped || f.Retryable() {
+		t.Fatalf("got %v", f)
+	}
+	if f := Classify(true, "run interrupted: context deadline exceeded"); f != FailTimeout {
+		t.Fatalf("got %v", f)
+	}
+}

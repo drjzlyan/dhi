@@ -231,6 +231,12 @@ func (b *Bus) History(channel string, thread int64) []Message {
 	return out
 }
 
+// All is every message of channel, top level and thread replies, in the
+// order they were posted (the editor sidebar's flat view, F-117).
+func (b *Bus) All(channel string) []Message {
+	return append([]Message(nil), b.all(channel).msgs...)
+}
+
 // ReplyCount is how many conversational replies thread root has
 // (relayed stream lines excluded) — the chat's "↳ N replies" without a
 // scan per message (F-072).
