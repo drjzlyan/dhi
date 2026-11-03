@@ -28,7 +28,7 @@ no daemon.
       Wrap `kb_search`, `channel_read`, task comments, journals/notes/digests and bridged MCP results in an
       `<untrusted_data source=…>` fence plus a standing operating rule. Add injection eval fixtures.
       Files: `internal/agentkit/dhitools`, `mcpbridge`, `runtime/clirun.go`. Absorbs **G-B5**, the web half of **G-C9**.
-- [x] **G-C1** `done` for claude/codex/opencode/copilot/antigravity (F-123); cursor cannot be restricted (its `--force` skips deny rules); an open decision is whether `deny` should refuse to run it. Native-tool containment (**verified**: `claude.go:45,53` `bypassPermissions`, `codex.go:79`, `antigravity.go:66`; no deny flags).
+- [x] **G-C1** `done` for claude/codex/opencode/copilot/antigravity (F-123); cursor cannot be restricted (its `--force` skips deny rules); decided: it runs with the doctor warning, `deny` does not refuse it. Native-tool containment (**verified**: `claude.go:45,53` `bypassPermissions`, `codex.go:79`, `antigravity.go:66`; no deny flags).
       Per CLI, verify and pass tool restrictions where one exists (e.g. claude `--disallowedTools`); where none exists,
       `dhi doctor` and Settings say so. Absorbs the native web fetch/search half of **G-C9**.
 - [x] **G-A2** `done` (F-124) — Carry the AGENTS.md of member repos the CLI does not load from its cwd. Canary runs showed claude, codex,
