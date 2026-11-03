@@ -226,8 +226,13 @@ func (m *Model) effectiveBlock(id string) string {
 	if b, ok, err := brief.Load(m.d.WS.Root); err == nil && ok && !b.Empty() {
 		out = b.Render() + "\n\n"
 	}
-	return out + standards.Resolve(m.d.WS.Root, id, m.teamLookup()) +
-		"\n\n" + m.cfg.Conventions.Guidance()
+	out += standards.Resolve(m.d.WS.Root, id, m.teamLookup())
+	// F-124: as a chat turn at the workspace root carries it for a CLI
+	// that loads AGENTS.md itself; a task turn dedupes its own worktree.
+	if ri := standards.RepoInstructions(m.d.WS.Members(), nil, m.d.WS.Root, true); ri != "" {
+		out += "\n\n" + ri
+	}
+	return out + "\n\n" + m.cfg.Conventions.Guidance()
 }
 
 func (m *Model) teamLookup() standards.TeamLookup {

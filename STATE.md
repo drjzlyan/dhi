@@ -1,5 +1,14 @@
 # STATE — current position
 
+### Session 66 (G-A2, branch `g-a2-agents-md`, third in the stack G-A1 → G-C1 → G-A2)
+
+- G-A2 done in code (F-124): `standards.RepoInstructions` + `CLI.ReadsAgentsMD` + prompt section
+  `repo-instructions` + Settings preview + doctor row. Canary runs (F-124 table) showed the CLI
+  already reads AGENTS.md in its cwd, so no suppression; the gap was the other members' files.
+- Not run: live `make eval` (existing fixtures are single-repo; section empty). antigravity not
+  installed, so its AGENTS.md behaviour is unverified and it gets every member's file.
+- Open from G-C1: should `native_web = deny` refuse to run cursor (cannot comply)? Next gap: G-A3.
+
 ### Session 64 (gap analysis, planning only)
 
 - User asked for a comparison of DHI with Claude Code, opencode and VS Code, including prompt, memory

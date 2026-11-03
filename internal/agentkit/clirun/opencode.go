@@ -66,6 +66,9 @@ var OpenCode = &CLI{
 		args = append(args, PromptWithSystem(in.System, in.Prompt))
 		return args
 	},
+	// ReadsAgentsMD: a canary in AGENTS.md reached the model in an empty git
+	// dir on 1.19.0 (F-124).
+	ReadsAgentsMD: true,
 	// WebDenyOK: OPENCODE_PERMISSION resolves into the config's
 	// permission table (`opencode debug config`) and webfetch left the
 	// tool list (live-verified on 1.19.0).

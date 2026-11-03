@@ -100,6 +100,9 @@ var Codex = &CLI{
 		args = append(args, PromptWithSystem(in.System, in.Prompt))
 		return args
 	},
+	// ReadsAgentsMD: a canary in AGENTS.md reached the model in an empty git
+	// dir on 0.162.1 (F-124).
+	ReadsAgentsMD: true,
 	// WebDenyOK: web_search=disabled (live-verified on 0.162.1: asked
 	// whether it has a web search tool, "live" answered YES, "disabled" NO).
 	WebDenyOK:   true,

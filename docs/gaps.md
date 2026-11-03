@@ -31,8 +31,9 @@ no daemon.
 - [x] **G-C1** `done` for claude/codex/opencode/copilot/antigravity (F-123); cursor cannot be restricted (its `--force` skips deny rules); an open decision is whether `deny` should refuse to run it. Native-tool containment (**verified**: `claude.go:45,53` `bypassPermissions`, `codex.go:79`, `antigravity.go:66`; no deny flags).
       Per CLI, verify and pass tool restrictions where one exists (e.g. claude `--disallowedTools`); where none exists,
       `dhi doctor` and Settings say so. Absorbs the native web fetch/search half of **G-C9**.
-- [ ] **G-A2** Read AGENTS.md as a prompt section; decide whether to suppress the CLI's own copy (e.g. claude
-      `--setting-sources`); show both in the Settings preview.
+- [x] **G-A2** `done` (F-124) — Carry the AGENTS.md of member repos the CLI does not load from its cwd. Canary runs showed claude, codex,
+      opencode, copilot and cursor already read AGENTS.md in their cwd, so the CLI's copy is kept (no suppression) and only the
+      other members' files are added. Shown in the Settings preview and doctor.
 - [ ] **G-A3** Golden snapshots of the assembled prompt (`behavior.Compose`, `cliPromptAt`) per engine.
 - [ ] **G-A4** Over-size prompt delivery (above 96 KiB the system block moves into stdin): record it in the run
       record and doctor, or trim earlier.

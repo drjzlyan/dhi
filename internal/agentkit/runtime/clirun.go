@@ -942,6 +942,14 @@ func (r *Runtime) cliPromptAt(ctx context.Context, e *entry, trigger bus.Message
 	if r.cfg.Standards {
 		sys = append(sys, section{name: "standards", text: "\n\n" + standards.Resolve(r.cfg.WS.Root, e.m.ID, r.teamLookup()), prio: 2, floor: 600})
 	}
+	// F-124: the AGENTS.md of repos the CLI will not load from its cwd.
+	var roots map[string]string
+	if t, ok := r.boundTask(trigger); ok {
+		roots = r.memberRoots(t)
+	}
+	if ri := standards.RepoInstructions(r.cfg.WS.Members(), roots, r.cliWorkdir(trigger), e.cli.ReadsAgentsMD); ri != "" {
+		sys = append(sys, section{name: "repo-instructions", text: "\n\n" + ri, prio: 2, floor: 600})
+	}
 	if r.cfg.Conventions != nil {
 		if cv := r.cfg.Conventions(); cv != nil {
 			sys = append(sys, section{name: "conventions", text: "\n\n" + cv.Guidance(), prio: 2, floor: 400})

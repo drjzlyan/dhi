@@ -71,6 +71,9 @@ var Claude = &CLI{
 		}
 		return args
 	},
+	// ReadsAgentsMD: a canary in AGENTS.md reached the model in an empty git
+	// dir on 2.1.285 (F-124).
+	ReadsAgentsMD: true,
 	// WebDenyOK: --disallowedTools removes both tools from the session's
 	// tool list even under bypassPermissions (live-verified on 2.1.285:
 	// init listed WebFetch and WebSearch without the flag, neither with it).

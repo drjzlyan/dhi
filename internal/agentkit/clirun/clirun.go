@@ -170,6 +170,11 @@ type CLI struct {
 	// RunInput.DenyWeb or DenyWebEnv carries it. Adapters without one
 	// cannot be restricted, and doctor and Settings say so by name.
 	WebDenyOK bool
+	// ReadsAgentsMD reports that the CLI itself loads AGENTS.md from its
+	// working directory (F-124). Only a live canary run sets it; the
+	// runtime then leaves that one file out of the prompt so it is never
+	// shown twice. Members below the cwd are still the prompt's job.
+	ReadsAgentsMD bool
 	// DenyWebEnv is the env that does it for CLIs that take it there
 	// (opencode: OPENCODE_PERMISSION). Set after the pass-through, so the
 	// user's own value never wins.

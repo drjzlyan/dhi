@@ -96,6 +96,9 @@ var Copilot = &CLI{
 		}
 		return args
 	},
+	// ReadsAgentsMD: a canary in AGENTS.md reached the model in an empty git
+	// dir on 1.0.88 (F-124).
+	ReadsAgentsMD: true,
 	// WebDenyOK: web_fetch and fetch_copilot_cli_documentation are the
 	// network tools in its tool list; --excluded-tools removes both
 	// (live-verified on 1.0.88: listed before, absent after). The CLI has

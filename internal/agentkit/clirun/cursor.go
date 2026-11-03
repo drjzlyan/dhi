@@ -96,6 +96,9 @@ var CursorAgent = &CLI{
 		return fmt.Sprintf(`{"mcpServers":{"dhi":{"url":%q}}}`, endpoint)
 	},
 	MCPProjectFile: ".cursor/mcp.json",
+	// ReadsAgentsMD: a canary in AGENTS.md reached the model in an empty git
+	// dir on 2026.10.12 (F-124).
+	ReadsAgentsMD: true,
 	// No WebDenyOK (F-123). Read from the shipped 2026.10.12 source: with
 	// --force its web fetch and web search approvals return approved
 	// before any permission rule is consulted, a deny rule in cli.json or

@@ -371,6 +371,14 @@ func Runtimes() []Check {
 			checks = append(checks, Check{Name: "runtime/" + c.Name + "/web", Status: Warn,
 				Detail: "no verified way to switch off " + c.Bin + "'s own web fetch/search tools; they stay available to its agents (the sandbox still applies)" + why})
 		}
+		// F-124: which repos' AGENTS.md reach the agent by which route.
+		if c.ReadsAgentsMD {
+			checks = append(checks, Check{Name: "runtime/" + c.Name + "/agents-md", Status: OK,
+				Detail: c.Bin + " loads AGENTS.md from its working directory (verified); DHI adds the other members' files to the prompt"})
+		} else {
+			checks = append(checks, Check{Name: "runtime/" + c.Name + "/agents-md", Status: OK,
+				Detail: "not verified that " + c.Bin + " loads AGENTS.md itself; DHI adds every member's file to the prompt"})
+		}
 		for _, k := range c.EnvPass {
 			if k == "HOME" {
 				continue // always set; not worth a row
