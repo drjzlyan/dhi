@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"fmt"
+	"github.com/drjzlyan/dhi/internal/agentkit/untrusted"
 	"math/rand/v2"
 	"strings"
 	"time"
@@ -90,13 +91,17 @@ func (r *Runtime) historyBlock(agentID string, trigger bus.Message, lim promptLi
 	}
 	for _, m := range msgs {
 		prefix := m.Author
+		text := truncateRunes(m.Text, lim.msgRunes)
 		switch m.Author {
 		case bus.Human:
 			prefix = "you (the human)"
 		case agentID:
 			prefix = "you (earlier)"
+		default:
+			// Another agent's words may carry what it read elsewhere (F-122).
+			text = untrusted.Wrap("message from "+m.Author, text)
 		}
-		b.WriteString("\n- " + prefix + ": " + truncateRunes(m.Text, lim.msgRunes))
+		b.WriteString("\n- " + prefix + ": " + text)
 	}
 	return h.String(), b.String()
 }
@@ -133,10 +138,11 @@ func (r *Runtime) taskBlock(agentID string, trigger bus.Message, lim promptLimit
 	}
 	b.WriteString(r.teamBlock(agentID, t))
 	if c := lastN(t.Comments, lim.comments); len(c) > 0 {
-		b.WriteString("\n- recent comments:")
+		var cb strings.Builder
 		for _, cm := range c {
-			b.WriteString("\n  - " + cm.Author + ": " + truncateRunes(cm.Text, 200))
+			cb.WriteString("- " + cm.Author + ": " + truncateRunes(cm.Text, 200) + "\n")
 		}
+		b.WriteString("\n- recent comments:\n" + untrusted.Wrap("task-comments", cb.String()))
 	}
 	if rs := lastN(t.Runs, lim.runs); len(rs) > 0 {
 		b.WriteString("\n- earlier runs:")

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/drjzlyan/dhi/internal/agentkit/untrusted"
 	"os"
 	"path/filepath"
 	"strings"
@@ -67,7 +68,7 @@ func (d Deps) ideationTools() []tool {
 				if err != nil {
 					return "", fmt.Errorf("%s: %w", p.rel, err)
 				}
-				return string(data), nil
+				return untrusted.Wrap("ideation", string(data)), nil
 			},
 		},
 		{
@@ -93,7 +94,7 @@ func (d Deps) ideationTools() []tool {
 				return sess, nil
 			},
 			exec: func(_ context.Context, dec any) (string, error) {
-				return renderSession(dec.(ideation.Session)), nil
+				return untrusted.Wrap("ideation", renderSession(dec.(ideation.Session))), nil
 			},
 		},
 		{

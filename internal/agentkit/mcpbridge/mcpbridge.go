@@ -17,6 +17,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/drjzlyan/dhi/internal/agentkit/untrusted"
 	"net/http"
 	"os"
 	"os/exec"
@@ -199,7 +200,8 @@ func (b *Bridge) Call(ctx context.Context, name string, args []byte) (string, bo
 	if err != nil {
 		return "", true, err
 	}
-	return out, isErr, nil
+	// A server's reply is a third party's text (F-122).
+	return untrusted.Wrap("mcp:"+slug, out), isErr, nil
 }
 
 // dialDefault opens a production server: stdio under the sandbox, http

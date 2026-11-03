@@ -28,6 +28,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/scopes"
 	"github.com/drjzlyan/dhi/internal/agentkit/setprop"
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
+	"github.com/drjzlyan/dhi/internal/agentkit/untrusted"
 	"github.com/drjzlyan/dhi/internal/conventions"
 	"github.com/drjzlyan/dhi/internal/gitcore"
 	"github.com/drjzlyan/dhi/internal/ideation"
@@ -423,7 +424,7 @@ func (d Deps) taskTools() []tool {
 			if b.Len() == 0 {
 				return "(no tasks)\n", nil
 			}
-			return b.String(), nil
+			return untrusted.Wrap("tasks", b.String()), nil
 		},
 	})
 	out = append(out, tool{
@@ -679,7 +680,7 @@ func (d Deps) kbTools() []tool {
 			for _, h := range hits {
 				fmt.Fprintf(&b, "- %s: %s\n", h.Entry.Title, h.Snippet)
 			}
-			return b.String(), nil
+			return untrusted.Wrap("kb", b.String()), nil
 		},
 	})
 	out = append(out, tool{
@@ -786,7 +787,7 @@ func (d Deps) memoryTools() []tool {
 			if strings.TrimSpace(notes) == "" {
 				return "(notes empty)\n", nil
 			}
-			return notesPage(notes, dec.([2]int)[0], dec.([2]int)[1]), nil
+			return untrusted.Wrap("notes", notesPage(notes, dec.([2]int)[0], dec.([2]int)[1])), nil
 		},
 	})
 	out = append(out, tool{
@@ -864,7 +865,7 @@ func (d Deps) channelTools() []tool {
 				}
 				fmt.Fprintf(&b, "%s: %s\n", who, m.Text)
 			}
-			return b.String(), nil
+			return untrusted.Wrap("channel "+ch, b.String()), nil
 		},
 	})
 	out = append(out, tool{

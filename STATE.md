@@ -1,5 +1,16 @@
 # STATE — current position
 
+### Session 64 (gap analysis, planning only)
+
+- User asked for a comparison of DHI with Claude Code, opencode and VS Code, including prompt, memory
+  and agent engineering. Result: `docs/gaps.md` (tracker) and ROADMAP M38. No code changed.
+- Next: pick the first gap (suggested G-A1), set it `in progress` here, write its spec, implement.
+  Verified in code: no content-trust fencing (ADR-0022 is install trust only); no adapter passes a
+  tool deny flag (`clirun/claude.go:45,53`, `codex.go:79`, `antigravity.go:66`).
+- Currently in progress: none. G-A1 done in session 65 (F-122, ADR-0046): `internal/agentkit/untrusted`
+  fences tool results and prompt sections; live injection eval waits on G-C7. Next: G-C1.
+- Plan file from this session: `~/.claude/plans/analyse-the-dhi-ide-composed-twilight.md`.
+
 ### Session 63 (M37: best-in-class audit, then the fixes, branch `m37`)
 
 - User asked: a complete, user's-eye audit to make DHI best-in-class, then the changes. Audit =

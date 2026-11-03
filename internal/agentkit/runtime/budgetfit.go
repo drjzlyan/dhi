@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"fmt"
+	"github.com/drjzlyan/dhi/internal/agentkit/untrusted"
 	"strings"
 )
 
@@ -135,7 +136,7 @@ func joinTagged(secs []section) string {
 	var b strings.Builder
 	open := ""
 	for _, s := range secs {
-		text := strings.Trim(s.text, "\n")
+		text := untrusted.Balance(strings.Trim(s.text, "\n"))
 		if strings.TrimSpace(text) == "" {
 			continue
 		}

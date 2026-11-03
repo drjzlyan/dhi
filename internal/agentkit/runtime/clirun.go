@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/drjzlyan/dhi/internal/agentkit/untrusted"
 	"github.com/drjzlyan/dhi/internal/checkpoint"
 	"os"
 	"os/exec"
@@ -913,6 +914,7 @@ func (r *Runtime) cliPromptAt(ctx context.Context, e *entry, trigger bus.Message
 	grounding += "\n3. Before changing code outside a task worktree, call work_branch: DHI makes the card, branch and worktree and continues you there. The default branch is locked, so a commit to it fails — and the human reviews work per branch."
 	grounding += "\n4. If the sandbox blocks you (\"Operation not permitted\"), call permission_request for exactly what you need. Do not give up or work around it: the human decides access, and a workaround hides what you needed."
 	grounding += "\n5. Finish by saying what changed, how you checked it (the command you ran and what it showed), and what is still open or blocked. The human decides what to review from that, so an unchecked change must say it is unchecked."
+	grounding += "\n6. " + untrusted.Rule
 	grounding += r.secretsLine(e.m.ID)
 	// Stable sections first (they cache), volatile after (F-065); each
 	// carries its priority for the prompt budget (F-078).
@@ -995,7 +997,7 @@ func (r *Runtime) memoryBlock(agentID string, lim promptLimits) string {
 	} else if len(journal) > 0 {
 		b.WriteString("\nRecent journal:")
 		for _, en := range journal {
-			b.WriteString("\n- [" + en.Kind + "] " + truncateRunes(en.Text, lim.journalRunes))
+			b.WriteString("\n- [" + en.Kind + "] " + untrusted.Wrap("journal", truncateRunes(en.Text, lim.journalRunes)))
 		}
 	} else {
 		b.WriteString("\n- (journal empty — record durable lessons as you learn them)")
@@ -1005,11 +1007,11 @@ func (r *Runtime) memoryBlock(agentID string, lim promptLimits) string {
 		b.WriteString("\n- notes unavailable: " + err.Error())
 	} else if strings.TrimSpace(notes) != "" {
 		// Head and tail (F-078): what was added last is visible too.
-		b.WriteString("\nNotes:\n" + shrinkRunes(strings.TrimSpace(notes), lim.notes, false))
+		b.WriteString("\nNotes:\n" + untrusted.Wrap("notes", shrinkRunes(strings.TrimSpace(notes), lim.notes, false)))
 	}
 	if digest, err := r.cfg.Memory.Digest(agentID); err == nil && strings.TrimSpace(digest) != "" && lim.journal > 0 {
 		// The rolled-up journal: older memory in brief, newest last.
-		b.WriteString("\nOlder journal (digest):\n" + shrinkRunes(strings.TrimSpace(digest), lim.notes/2, true))
+		b.WriteString("\nOlder journal (digest):\n" + untrusted.Wrap("journal-digest", shrinkRunes(strings.TrimSpace(digest), lim.notes/2, true)))
 	}
 	return b.String()
 }
@@ -1029,9 +1031,11 @@ func (r *Runtime) knowledgeBlock(ctx context.Context, query string, lim promptLi
 	}
 	var b strings.Builder
 	b.WriteString("\n\nRelevant knowledge base entries:")
+	var hb strings.Builder
 	for _, h := range hits {
-		b.WriteString("\n- " + truncateRunes(h.Snippet, lim.kbRunes))
+		hb.WriteString("- " + truncateRunes(h.Snippet, lim.kbRunes) + "\n")
 	}
+	b.WriteString("\n" + untrusted.Wrap("kb", hb.String()))
 	return b.String()
 }
 
