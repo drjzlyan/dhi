@@ -17,7 +17,7 @@ for the word with tools off. Plain headless runs, no permission flags.
 | opencode | 1.19.0 | read | read |
 | copilot | 1.0.88 | read | read |
 | cursor | 2026.10.12 | read | read |
-| antigravity | not installed | not verified | not verified |
+| antigravity (`agy`) | 1.4.12 | read | not read |
 
 So the CLI already sees AGENTS.md in its cwd. The gap that remains is every other member.
 
@@ -27,7 +27,7 @@ So the CLI already sees AGENTS.md in its cwd. The gap that remains is every othe
   skipped. Symlinks are followed (AGENTS.md → CLAUDE.md is common).
 - `clirun.CLI.ReadsAgentsMD` marks a canary-verified adapter. For those, the member whose
   directory is the cwd is left out so no file shows twice. Adapters without the flag
-  (antigravity) get every member's file.
+  get every member's file.
 - On a task-bound turn a member's directory is its worktree (`memberRoots`), so the branch's copy
   is the one carried.
 - Section `repo-instructions`, tag `<repo_instructions>`, priority 2, floor 600, after standards.

@@ -5,9 +5,8 @@
 - G-A2 done in code (F-124): `standards.RepoInstructions` + `CLI.ReadsAgentsMD` + prompt section
   `repo-instructions` + Settings preview + doctor row. Canary runs (F-124 table) showed the CLI
   already reads AGENTS.md in its cwd, so no suppression; the gap was the other members' files.
-- Not run: live `make eval` (existing fixtures are single-repo; section empty). antigravity not
-  installed, so its AGENTS.md behaviour is unverified and it gets every member's file.
-- Open from G-C1: should `native_web = deny` refuse to run cursor (cannot comply)? Next gap: G-A3.
+- Not run: live `make eval` (existing fixtures are single-repo; section empty). agy 1.4.12 checked too: reads AGENTS.md, not CLAUDE.md.
+- G-C1 decision (user): cursor runs with the doctor warning; `deny` does not refuse it. Next gap: G-A3.
 
 ### Session 64 (gap analysis, planning only)
 

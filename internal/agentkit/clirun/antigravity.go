@@ -76,6 +76,9 @@ var Antigravity = &CLI{
 	ParseStream: antigravityParseStream,
 	Finalize:    antigravityFinalize,
 	Version:     antigravityVersion,
+	// ReadsAgentsMD: a canary in AGENTS.md reached the model in an empty git
+	// dir on 1.4.12; a canary in CLAUDE.md did not (F-124).
+	ReadsAgentsMD: true,
 	// WebDenyOK: a PreToolUse hook in the per-turn gemini dir's
 	// config/hooks.json denies the web tools (live-verified on agy 1.3.4:
 	// the step failed with "tool call denied by pre-tool hook"). The hook
