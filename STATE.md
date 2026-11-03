@@ -1,5 +1,14 @@
 # STATE — current position
 
+### Session 69 (Phase 1 review, branch `g-a4-oversize-prompt`, one fix commit on top of the stack)
+
+- Reviewed G-A1…G-A4. Fixed:
+  - `untrusted.defuse` lowercased the whole string, then indexed it with `s`'s byte offsets. ẞ and İ change byte length when lowercased, so content could close the fence or panic Wrap (a channel post was enough). It now matches the tag in `s` with an ASCII fold. Added a `FuzzWrap` test.
+  - With `native_web = deny` (the default), antigravity refused every spawn that had no IDE-tools mirror. That covered every reflection run (`learn.go`), so agy never learned from a turn. Such spawns now get a deny-only mirror: an empty config body keeps the user's own `mcp_config.json`. The guard also checks `serveSession.webDenied`, not "a directory exists", so switching native_web to deny mid-turn refuses instead of running agy with web on.
+  - Imports regrouped (the untrusted/clirun/checkpoint lines had landed in the stdlib group).
+- Checked, no change: nothing truncates tool output after `Wrap`; the prompt goldens did not move.
+- Next: Phase 2, suggested G-B1.
+
 ### Session 68 (G-A4, branch `g-a4-oversize-prompt`, fifth in the stack, on `g-a3-prompt-goldens`)
 
 - G-A4 done (F-126): `Run.Delivery = "stdin"` and a doctor `prompt-size` row per CLI. Chose record-and-report over trimming. Phase 1 is complete; next: Phase 2, suggested G-B1.

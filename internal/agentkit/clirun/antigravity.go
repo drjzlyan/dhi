@@ -154,7 +154,9 @@ func antigravityMCPGeminiDir(realGeminiDir, baseDir, configBody string, denyWeb 
 		cleanup()
 		return "", nil, err
 	}
-	skip := map[string]bool{"mcp_config.json": true}
+	// An empty configBody keeps the user's own servers: a turn with no
+	// IDE tools still needs the mirror for the web-deny hook.
+	skip := map[string]bool{"mcp_config.json": configBody != ""}
 	if denyWeb {
 		skip["hooks.json"] = true // merged below, never edited in place
 	}
@@ -177,6 +179,9 @@ func antigravityMCPGeminiDir(realGeminiDir, baseDir, configBody string, denyWeb 
 			cleanup()
 			return "", nil, err
 		}
+	}
+	if configBody == "" {
+		return dir, cleanup, nil
 	}
 	if err := os.WriteFile(filepath.Join(cfg, "mcp_config.json"), []byte(configBody), 0o644); err != nil {
 		cleanup()

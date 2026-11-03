@@ -100,3 +100,42 @@ func TestAntigravityTurnWithoutAMirrorIsRefusedWhenDenying(t *testing.T) {
 		}
 	}
 }
+
+// hookStub copies the hooks.json of the --gemini_dir it was given into
+// the dump dir, so a test can see what agy would have read.
+const hookStub = `#!/bin/sh
+for a in "$@"; do
+  case "$a" in --gemini_dir=*) cp "${a#--gemini_dir=}/config/hooks.json" "$DUMPDIR/hooks.json" ;; esac
+done
+printf '%s\n' '{"type":"system","subtype":"init"}'
+printf '%s\n' '{"type":"result","subtype":"success","is_error":false,"result":"ok","total_cost_usd":0}'
+exit 0
+`
+
+// TestAntigravitySpawnWithoutToolsStillDeniesWeb pins the review fix: a
+// spawn with no IDE-tools mirror (reflection, or an agent with no served
+// tools) gets a deny-only mirror instead of being refused.
+func TestAntigravitySpawnWithoutToolsStillDeniesWeb(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	doc := strings.Replace(baseDoc(), `runtime = "claude"`, `runtime = "antigravity"`, 1)
+	h := newHarnessMulti(t, doc, map[string]string{"agy": hookStub})
+	h.rt.cfg.Tuning = func() Tuning { return Tuning{MaxIterations: 3} }
+	h.rt.mu.Lock()
+	e := h.rt.agents["scout"]
+	h.rt.mu.Unlock()
+	trig := mustPost(t, h, bus.Message{Channel: "#general", Author: bus.Human, Text: "@scout hi"})
+	run, _ := h.rt.cliSpawnOnce(context.Background(), e, trig, spawnInput{
+		prompt: "reflect", workdir: h.ws.Root, maxTurns: 1, quiet: true,
+	})
+	// The stub's stream is not agy's shape; only the refusal matters here.
+	if strings.Contains(run.Error, "cannot be switched off") {
+		t.Fatalf("spawn refused: %s", run.Error)
+	}
+	body, err := os.ReadFile(filepath.Join(h.dumpDir, "hooks.json"))
+	if err != nil || !strings.Contains(string(body), "dhi-deny-native-web") {
+		t.Fatalf("agy ran without the deny hook: %q %v", body, err)
+	}
+	if ents, _ := os.ReadDir(filepath.Join(h.ws.Root, ".dhi", "mcp")); len(ents) != 0 {
+		t.Fatalf("deny-only mirror not cleaned up: %v", ents)
+	}
+}

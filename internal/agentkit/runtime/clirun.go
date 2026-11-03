@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/drjzlyan/dhi/internal/agentkit/untrusted"
-	"github.com/drjzlyan/dhi/internal/checkpoint"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -24,7 +22,9 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/mcpbridge"
 	"github.com/drjzlyan/dhi/internal/agentkit/standards"
 	"github.com/drjzlyan/dhi/internal/agentkit/trace"
+	"github.com/drjzlyan/dhi/internal/agentkit/untrusted"
 	"github.com/drjzlyan/dhi/internal/agentkit/workflow"
+	"github.com/drjzlyan/dhi/internal/checkpoint"
 	"github.com/drjzlyan/dhi/internal/gitcore"
 	"github.com/drjzlyan/dhi/internal/mcp"
 	"github.com/drjzlyan/dhi/internal/sandbox"
@@ -101,10 +101,10 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message, tl
 	}
 	level := 0
 	prompt, system := r.cliPromptAt(ctx, e, trigger, wfText, level, &ep, resume != "")
-	mcpConfig, mcpEndpoint, mcpGeminiDir := "", "", ""
+	mcpConfig, mcpEndpoint, mcpGeminiDir, webDenied := "", "", "", false
 	if serve != nil {
 		defer serve.stop()
-		mcpConfig, mcpEndpoint, mcpGeminiDir = serve.configPath, serve.endpoint, serve.geminiDir
+		mcpConfig, mcpEndpoint, mcpGeminiDir, webDenied = serve.configPath, serve.endpoint, serve.geminiDir, serve.webDenied
 	}
 
 	if e.m.Timeout > 0 {
@@ -137,7 +137,7 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message, tl
 			prompt: prompt + brief, system: system, workdir: workdir, attempt: attempt,
 			resume: resume, maxTurns: tune.MaxTurns, stall: tune.Stall,
 			mcpConfig: mcpConfig, mcpEndpoint: mcpEndpoint, mcpGeminiDir: mcpGeminiDir,
-			relaunch: rl,
+			webDenied: webDenied, relaunch: rl,
 		})
 		r.recordRun(trigger, run)
 		r.recordSpend(run, task.Slug)
@@ -316,6 +316,7 @@ type spawnInput struct {
 	quiet                                bool          // don't relay the stream (reflection)
 	relaunch                             *relaunch     // set mid-run: stop this spawn, the work moved
 	mcpConfig, mcpEndpoint, mcpGeminiDir string
+	webDenied                            bool // mcpGeminiDir carries the web-deny hook
 }
 
 func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Message, in spawnInput) (tasks.Run, []clirun.StreamEvent) {
@@ -359,16 +360,24 @@ func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Messag
 	// claude that turned the sandbox invocation itself into the prompt
 	// and the reply came back as plain text (no stream-json at all).
 	denyWeb := e.cli.WebDenyOK && !r.tuning().AllowNativeWeb
-	if denyWeb && e.cli.DenyWebDir && in.mcpGeminiDir == "" {
-		// The denial rides the per-turn directory; without it the CLI would
-		// run with its web tools on, which is the silent widening ADR-0011
-		// forbids. Name it and stop the turn.
-		msg := e.cli.Name + ": native web tools cannot be switched off this turn (no per-turn config was built); " +
-			"not starting. Retry, or set agents.native_web = \"allow\" in Settings."
-		run.Status = tasks.RunError
-		run.Error = msg
-		r.notice(trigger, e.m.ID, msg)
-		return run, nil
+	if denyWeb && e.cli.DenyWebDir && !in.webDenied {
+		// The denial rides the per-turn directory. A turn without IDE
+		// tools (or a reflection spawn) gets a deny-only mirror; without
+		// one the CLI would run with its web tools on, the silent
+		// widening ADR-0011 forbids, so the spawn stops by name.
+		dir, cleanup, err := r.denyWebDir(e, in.mcpGeminiDir)
+		if err != nil {
+			msg := e.cli.Name + ": native web tools cannot be switched off this turn (" + err.Error() + "); " +
+				"not starting. Retry, or set agents.native_web = \"allow\" in Settings."
+			run.Status = tasks.RunError
+			run.Error = msg
+			if !in.quiet {
+				r.notice(trigger, e.m.ID, msg)
+			}
+			return run, nil
+		}
+		defer cleanup()
+		in.mcpGeminiDir = dir
 	}
 	argv := append([]string{e.cliPath}, e.cli.BuildArgs(clirun.RunInput{
 		Prompt: prompt, System: system,
@@ -610,6 +619,20 @@ func (r *Runtime) saveTranscript(tr transcript, run tasks.Run) string {
 	return p
 }
 
+// denyWebDir builds a per-turn mirror that only adds the web-deny hook
+// and keeps the user's own MCP config (F-123). It refuses when the turn
+// already has a mirror without the hook (native_web flipped to deny
+// mid-turn): replacing it would drop the IDE tools.
+func (r *Runtime) denyWebDir(e *entry, existing string) (string, func(), error) {
+	switch {
+	case existing != "":
+		return "", nil, errors.New("this turn's config was built before native_web became deny")
+	case e.cli.MCPGeminiDir == nil || r.cfg.WS == nil:
+		return "", nil, errors.New("no per-turn config directory")
+	}
+	return e.cli.MCPGeminiDir(filepath.Join(r.cfg.WS.Root, ".dhi", "mcp"), "", true)
+}
+
 // serveSession is one per-turn IDE-tools server (nil when the agent
 // allowlist carries no served tools, or the adapter has no verified
 // MCP wiring).
@@ -617,6 +640,7 @@ type serveSession struct {
 	configPath string // temp MCP config file ("" for inline adapters)
 	endpoint   string // the loopback URL the adapter must reach
 	geminiDir  string // per-turn --gemini_dir mirror ("" for other adapters)
+	webDenied  bool   // geminiDir carries the web-deny hook (F-123)
 	stop       func()
 }
 
@@ -718,7 +742,8 @@ func (r *Runtime) serveToolsFor(e *entry, trigger bus.Message, tt turnTools) *se
 	// dir so OAuth/state survive (ADR-0012 §4 read pass-through).
 	if e.cli.MCPGeminiDir != nil {
 		base := filepath.Join(r.cfg.WS.Root, ".dhi", "mcp")
-		dir, cleanup, derr := e.cli.MCPGeminiDir(base, e.cli.MCPConfigFile(endpoint), e.cli.WebDenyOK && !r.tuning().AllowNativeWeb)
+		deny := e.cli.WebDenyOK && !r.tuning().AllowNativeWeb
+		dir, cleanup, derr := e.cli.MCPGeminiDir(base, e.cli.MCPConfigFile(endpoint), deny)
 		if derr != nil {
 			stopAll()
 			r.notice(trigger, e.m.ID, "IDE tools unavailable this turn: "+derr.Error())
@@ -726,6 +751,7 @@ func (r *Runtime) serveToolsFor(e *entry, trigger bus.Message, tt turnTools) *se
 		}
 		sess.configPath = dir
 		sess.geminiDir = dir
+		sess.webDenied = deny
 		sess.stop = func() {
 			cleanup()
 			stopAll()

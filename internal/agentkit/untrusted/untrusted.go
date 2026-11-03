@@ -26,23 +26,29 @@ func Wrap(source, text string) string {
 }
 
 // defuse breaks every opening or closing form of the tag, in any case.
+// It compares bytes of s itself with an ASCII fold: lowercasing the whole
+// string first shifts byte offsets (ẞ, İ change length), which let a
+// closing tag through and could index past the end.
 func defuse(s string) string {
-	low := strings.ToLower(s)
 	var b strings.Builder
-	for i := 0; i < len(s); {
-		if s[i] == '<' {
-			rest := low[i+1:]
-			rest = strings.TrimPrefix(rest, "/")
-			if strings.HasPrefix(rest, Tag) {
-				b.WriteString("<\\")
-				i++
-				continue
-			}
+	for i := 0; i < len(s); i++ {
+		if s[i] == '<' && opensTag(s[i+1:]) {
+			b.WriteString("<\\")
+			continue
 		}
 		b.WriteByte(s[i])
-		i++
 	}
 	return b.String()
+}
+
+// opensTag reports whether rest (the text after a '<') names the tag:
+// optional spaces, an optional '/', optional spaces, then Tag in any
+// ASCII case.
+func opensTag(rest string) bool {
+	rest = strings.TrimLeft(rest, " \t")
+	rest = strings.TrimPrefix(rest, "/")
+	rest = strings.TrimLeft(rest, " \t")
+	return len(rest) >= len(Tag) && strings.EqualFold(rest[:len(Tag)], Tag)
 }
 
 // cleanSource keeps a label to letters, digits and _ - . : so it cannot

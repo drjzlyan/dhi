@@ -7,7 +7,6 @@ package settings
 import (
 	"context"
 	"fmt"
-	"github.com/drjzlyan/dhi/internal/agentkit/clirun"
 	"os"
 	"path/filepath"
 	"sort"
@@ -19,6 +18,7 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
+	"github.com/drjzlyan/dhi/internal/agentkit/clirun"
 	"github.com/drjzlyan/dhi/internal/agentkit/forge"
 	"github.com/drjzlyan/dhi/internal/agentkit/install"
 	"github.com/drjzlyan/dhi/internal/agentkit/lessons"

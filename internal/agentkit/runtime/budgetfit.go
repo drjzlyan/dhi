@@ -2,8 +2,9 @@ package runtime
 
 import (
 	"fmt"
-	"github.com/drjzlyan/dhi/internal/agentkit/untrusted"
 	"strings"
+
+	"github.com/drjzlyan/dhi/internal/agentkit/untrusted"
 )
 
 // F-078: one token budget for the whole prompt. Every block — persona,

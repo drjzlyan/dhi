@@ -215,7 +215,8 @@ type CLI struct {
 	// --gemini_dir). It receives a writable base dir and the rendered
 	// config body, returning the dir and a cleanup. Optional; when set
 	// it supersedes the temp-file/env delivery.
-	// denyWeb adds the CLI's web-tool block to the same directory (F-123).
+	// denyWeb adds the CLI's web-tool block to the same directory (F-123);
+	// an empty configBody keeps the user's own MCP config.
 	MCPGeminiDir func(baseDir, configBody string, denyWeb bool) (dir string, cleanup func(), err error)
 	// MCPGeminiDirFlag is the argv flag that takes that directory.
 	MCPGeminiDirFlag string

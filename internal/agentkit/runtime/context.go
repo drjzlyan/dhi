@@ -2,13 +2,13 @@ package runtime
 
 import (
 	"fmt"
-	"github.com/drjzlyan/dhi/internal/agentkit/untrusted"
 	"math/rand/v2"
 	"strings"
 	"time"
 
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/agentkit/clirun"
+	"github.com/drjzlyan/dhi/internal/agentkit/untrusted"
 	"github.com/drjzlyan/dhi/internal/tasks"
 )
 
