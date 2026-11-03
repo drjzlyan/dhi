@@ -184,8 +184,9 @@ type CLI struct {
 	// adapter that cannot deny, so "unsupported" is never unexplained.
 	WebDenyWhy string
 	// DenyWebDir marks a denial that rides the per-turn MCPGeminiDir
-	// (antigravity: a PreToolUse hook), so it needs that directory to
-	// exist. The runtime refuses a denying turn without one, by name.
+	// (antigravity: a PreToolUse hook). A spawn without an IDE-tools
+	// mirror gets a deny-only one; one that cannot be built is refused by
+	// name.
 	DenyWebDir bool
 	// MCPOK reports whether the adapter has a verified MCP-server
 	// wiring (F-028): the runtime serves DHI's IDE tools to these

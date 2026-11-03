@@ -68,7 +68,7 @@ func TestDenyWebEnvFollowsTheSetting(t *testing.T) {
 
 // TestAntigravityTurnWithoutAMirrorIsRefusedWhenDenying pins the ADR-0011
 // edge of F-123: antigravity's denial rides its per-turn config dir, so a
-// turn that would run without one stops by name instead of running with
+// turn whose mirror cannot be built stops by name instead of running with
 // the web tools on.
 func TestAntigravityTurnWithoutAMirrorIsRefusedWhenDenying(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
@@ -137,5 +137,19 @@ func TestAntigravitySpawnWithoutToolsStillDeniesWeb(t *testing.T) {
 	}
 	if ents, _ := os.ReadDir(filepath.Join(h.ws.Root, ".dhi", "mcp")); len(ents) != 0 {
 		t.Fatalf("deny-only mirror not cleaned up: %v", ents)
+	}
+}
+
+// TestDenyWebDirRefusesAMirrorWithoutTheHook: native_web flipped to deny
+// after the turn's tools mirror was built; replacing that mirror would
+// drop the IDE tools, so the spawn is refused instead.
+func TestDenyWebDirRefusesAMirrorWithoutTheHook(t *testing.T) {
+	doc := strings.Replace(baseDoc(), `runtime = "claude"`, `runtime = "antigravity"`, 1)
+	h := newHarnessMulti(t, doc, map[string]string{"agy": silentStub})
+	h.rt.mu.Lock()
+	e := h.rt.agents["scout"]
+	h.rt.mu.Unlock()
+	if _, _, err := h.rt.denyWebDir(e, "/x/gemini"); err == nil {
+		t.Fatal("a mirror without the hook must be refused")
 	}
 }
