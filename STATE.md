@@ -1,5 +1,9 @@
 # STATE — current position
 
+### Session 68 (G-A4, branch `g-a4-oversize-prompt`, fifth in the stack, on `g-a3-prompt-goldens`)
+
+- G-A4 done (F-126): `Run.Delivery = "stdin"` and a doctor `prompt-size` row per CLI. Chose record-and-report over trimming. Phase 1 is complete; next: Phase 2, suggested G-B1.
+
 ### Session 67 (G-A3, branch `g-a3-prompt-goldens`, fourth in the stack, on `g-a2-agents-md`)
 
 - G-A3 done (F-125): `TestPromptGoldens` snapshots the assembled system block and prompt (fresh and compacted); all six adapters assemble the same prompt today. Not in the fixture: memory, KB, lessons, episode. Next gap: G-A4.

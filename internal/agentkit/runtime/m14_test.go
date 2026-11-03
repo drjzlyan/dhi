@@ -408,3 +408,19 @@ func TestServeToolsProjectFileExcluded(t *testing.T) {
 		t.Fatalf("exclude line should stay, once:\n%s", ex2)
 	}
 }
+
+// TestRunRecordsStdinDelivery pins G-A4: a prompt over the argv budget
+// leaves a trace in the run record; a normal one does not.
+func TestRunRecordsStdinDelivery(t *testing.T) {
+	h := newHarnessMulti(t, baseDoc(), map[string]string{"claude": stdinStub})
+	trig := mustPost(t, h, bus.Message{Channel: "#general", Author: bus.Human, Text: "@scout go"})
+	e := h.rt.agents["scout"]
+	for _, c := range []struct {
+		prompt, want string
+	}{{"small", ""}, {strings.Repeat("y", 200<<10), "stdin"}} {
+		run, _ := h.rt.cliSpawnOnce(context.Background(), e, trig, spawnInput{prompt: c.prompt, workdir: h.ws.Root})
+		if run.Delivery != c.want {
+			t.Fatalf("prompt of %d bytes: delivery = %q, want %q (err %q)", len(c.prompt), run.Delivery, c.want, run.Error)
+		}
+	}
+}

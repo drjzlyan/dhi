@@ -229,6 +229,10 @@ type Run struct {
 	Exit     int       `toml:"exit,omitempty"` // CLI process exit code (0 = success, 0 on timeout/cancel)
 	Summary  string    `toml:"summary"`
 	Error    string    `toml:"error,omitempty"` // failure detail on error/timeout runs
+	// Delivery is "stdin" when the assembled prompt was over the argv
+	// budget and went to the CLI's stdin as one tagged block (G-A4);
+	// empty for the normal argv delivery.
+	Delivery string `toml:"delivery,omitempty"`
 
 	// Transcript is the path to the persisted event JSONL under
 	// .dhi/agents/<id>/runs/ (F-013 step 4); empty when the run could

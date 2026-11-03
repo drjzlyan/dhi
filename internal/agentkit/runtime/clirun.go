@@ -347,6 +347,7 @@ func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Messag
 			return run, nil
 		}
 		stdin = clirun.PromptWithSystem(system, prompt)
+		run.Delivery = "stdin"
 		prompt, system = "", ""
 	}
 

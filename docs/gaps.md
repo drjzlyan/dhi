@@ -35,7 +35,7 @@ no daemon.
       opencode, copilot and cursor already read AGENTS.md in their cwd, so the CLI's copy is kept (no suppression) and only the
       other members' files are added. Shown in the Settings preview and doctor.
 - [x] **G-A3** `done` (F-125) — Golden snapshots of the assembled prompt (`cliPromptAt`, which calls `behavior.Compose`). One golden for fresh and one for compacted; every engine must match, and one that differs gets its own golden.
-- [ ] **G-A4** Over-size prompt delivery (above 96 KiB the system block moves into stdin): record it in the run
+- [x] **G-A4** `done` (F-126) — Over-size prompt delivery (above 96 KiB the system block moves into stdin): record it in the run
       record and doctor, or trim earlier.
 
 ## Phase 2 — Context and memory
@@ -135,3 +135,4 @@ budgets, a Go DAP debugger, LSP for six languages.
 G-A1 — F-122 — 2026-11-03 (live injection eval moved to G-C7)
 G-C1 — F-123 — 2026-11-03 (five of six CLIs; cursor cannot be restricted, reason in F-123)
 G-A3 — F-125 — 2026-11-03 (memory/KB/lessons sections not in the fixture)
+G-A4 — F-126 — 2026-11-03 (recorded and shown, not trimmed)

@@ -69,6 +69,11 @@ func TestRuntimes(t *testing.T) {
 		t.Errorf("claude web row = %+v", c)
 	}
 
+	// G-A4: the prompt-size row says what a prompt over the argv budget does.
+	if c, ok := statusOf(checks, "runtime/claude/prompt-size"); !ok || c.Status != OK || !strings.Contains(c.Detail, "stdin") {
+		t.Errorf("claude prompt-size row = %+v", c)
+	}
+
 	// untested version present: strict fail
 	bad := t.TempDir()
 	writeExecutable(t, bad, "claude", "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo \"9.9.9 (Claude Code)\"; fi\n")

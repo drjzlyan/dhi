@@ -379,6 +379,15 @@ func Runtimes() []Check {
 			checks = append(checks, Check{Name: "runtime/" + c.Name + "/agents-md", Status: OK,
 				Detail: "not verified that " + c.Bin + " loads AGENTS.md itself; DHI adds every member's file to the prompt"})
 		}
+		// G-A4: what happens to a prompt over the argv budget.
+		limit := fmt.Sprintf("%d KiB", clirun.MaxPromptArg()>>10)
+		if c.StdinOK {
+			checks = append(checks, Check{Name: "runtime/" + c.Name + "/prompt-size", Status: OK,
+				Detail: "a prompt over " + limit + " is sent on stdin as one block (system block first, no system-prompt slot); the run record shows delivery = \"stdin\""})
+		} else {
+			checks = append(checks, Check{Name: "runtime/" + c.Name + "/prompt-size", Status: Warn,
+				Detail: c.Bin + " has no verified stdin delivery: a prompt over " + limit + " refuses the turn by name; lower memory.prompt_tokens to keep prompts under it"})
+		}
 		for _, k := range c.EnvPass {
 			if k == "HOME" {
 				continue // always set; not worth a row
