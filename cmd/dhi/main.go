@@ -1454,15 +1454,16 @@ func liveTuning(userCfg, wsCfg string, boot settings.Config, identityFn gitcore.
 		}
 		who := identity()
 		return agentkitRuntime.Tuning{
-			Principal:     c.Profile.Principal(who.Name, who.Email),
-			MaxTurns:      c.Agents.MaxTurns,
-			Resume:        c.Agents.Resume,
-			Autonomy:      c.Agents.Autonomy,
-			MaxIterations: c.Agents.MaxIterations,
-			Stall:         time.Duration(c.Agents.StallSeconds) * time.Second,
-			Reflect:       c.Agents.Reflect,
-			ReflectModel:  c.Agents.ReflectModel,
-			TracePrompts:  c.Agents.TracePrompts,
+			Principal:      c.Profile.Principal(who.Name, who.Email),
+			MaxTurns:       c.Agents.MaxTurns,
+			Resume:         c.Agents.Resume,
+			Autonomy:       c.Agents.Autonomy,
+			AllowNativeWeb: c.Agents.NativeWeb == settings.WebAllow,
+			MaxIterations:  c.Agents.MaxIterations,
+			Stall:          time.Duration(c.Agents.StallSeconds) * time.Second,
+			Reflect:        c.Agents.Reflect,
+			ReflectModel:   c.Agents.ReflectModel,
+			TracePrompts:   c.Agents.TracePrompts,
 			Memory: agentkitRuntime.MemoryTuning{
 				PromptTokens: c.Memory.PromptTokens, SessionTokens: c.Memory.SessionTokens,
 				JournalMax: c.Memory.JournalMax, LessonsMax: c.Memory.LessonsMax,

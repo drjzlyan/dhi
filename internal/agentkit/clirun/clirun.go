@@ -99,6 +99,10 @@ type RunInput struct {
 	// StdinOK; adapters without verified stdin delivery refuse by name
 	// (ADR-0011) instead of dying on E2BIG.
 	Stdin string
+	// DenyWeb switches the CLI's own web fetch/search tools off (F-123).
+	// Only adapters with WebDenyOK honor it; the runtime sets it from
+	// agents.native_web.
+	DenyWeb bool
 }
 
 // maxPromptArg is the largest single argv element DHI will build
@@ -161,6 +165,23 @@ type CLI struct {
 	// adapter honors RunInput.Resume and Finalize reports SessionID.
 	// Unverified adapters always start fresh, and doctor says so.
 	ResumeOK bool
+	// WebDenyOK reports a live-verified way to switch the CLI's own web
+	// fetch/search tools off (F-123): either BuildArgs honors
+	// RunInput.DenyWeb or DenyWebEnv carries it. Adapters without one
+	// cannot be restricted, and doctor and Settings say so by name.
+	WebDenyOK bool
+	// DenyWebEnv is the env that does it for CLIs that take it there
+	// (opencode: OPENCODE_PERMISSION). Set after the pass-through, so the
+	// user's own value never wins.
+	DenyWebEnv []string
+	// WebDenyWhy says why an adapter has no WebDenyOK, in the evidence's
+	// own terms (cursor). Doctor prints it; a test requires one for every
+	// adapter that cannot deny, so "unsupported" is never unexplained.
+	WebDenyWhy string
+	// DenyWebDir marks a denial that rides the per-turn MCPGeminiDir
+	// (antigravity: a PreToolUse hook), so it needs that directory to
+	// exist. The runtime refuses a denying turn without one, by name.
+	DenyWebDir bool
 	// MCPOK reports whether the adapter has a verified MCP-server
 	// wiring (F-028): the runtime serves DHI's IDE tools to these
 	// adapters over a per-turn loopback endpoint. Adapters without it
@@ -189,7 +210,8 @@ type CLI struct {
 	// --gemini_dir). It receives a writable base dir and the rendered
 	// config body, returning the dir and a cleanup. Optional; when set
 	// it supersedes the temp-file/env delivery.
-	MCPGeminiDir func(baseDir, configBody string) (dir string, cleanup func(), err error)
+	// denyWeb adds the CLI's web-tool block to the same directory (F-123).
+	MCPGeminiDir func(baseDir, configBody string, denyWeb bool) (dir string, cleanup func(), err error)
 	// MCPGeminiDirFlag is the argv flag that takes that directory.
 	MCPGeminiDirFlag string
 }
@@ -248,6 +270,19 @@ func (r *Registry) All() []*CLI {
 	out := make([]*CLI, 0, len(r.order))
 	for _, n := range r.order {
 		out = append(out, r.byName[n])
+	}
+	return out
+}
+
+// CannotDenyWeb names the adapters with no verified way to switch the
+// CLI's own web tools off (F-123), sorted. Doctor and Settings print it,
+// so what they say cannot drift from the adapters.
+func (r *Registry) CannotDenyWeb() []string {
+	var out []string
+	for _, n := range r.order {
+		if !r.byName[n].WebDenyOK {
+			out = append(out, n)
+		}
 	}
 	return out
 }

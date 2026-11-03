@@ -80,6 +80,11 @@ var Copilot = &CLI{
 			// the OS sandbox is the boundary (ADR-0012 §3).
 			"--allow-all-tools",
 		}
+		if in.DenyWeb {
+			// --excluded-tools removes the tools from the model's view, so
+			// --allow-all-tools above cannot bring them back.
+			args = append(args, "--excluded-tools=web_fetch,fetch_copilot_cli_documentation")
+		}
 		if in.Model != "" {
 			args = append(args, "--model", in.Model)
 		}
@@ -91,6 +96,11 @@ var Copilot = &CLI{
 		}
 		return args
 	},
+	// WebDenyOK: web_fetch and fetch_copilot_cli_documentation are the
+	// network tools in its tool list; --excluded-tools removes both
+	// (live-verified on 1.0.88: listed before, absent after). The CLI has
+	// no web search tool of its own.
+	WebDenyOK:   true,
 	ParseStream: copilotParseStream,
 	Finalize:    copilotFinalize,
 	Version:     copilotVersion,

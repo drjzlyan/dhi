@@ -80,6 +80,10 @@ var Codex = &CLI{
 		// IDE tools (F-028): register DHI's loopback endpoint inline via
 		// `-c mcp_servers.dhi.url=...` (no config file needed).
 		args = append(args, CodexMCPArgs(in.MCPConfig, in.MCPURL)...)
+		if in.DenyWeb {
+			// Also accepted by `exec resume` (0.162.1).
+			args = append(args, "-c", "web_search=disabled")
+		}
 		if in.Resume != "" {
 			args = append(args, in.Resume)
 		}
@@ -96,6 +100,9 @@ var Codex = &CLI{
 		args = append(args, PromptWithSystem(in.System, in.Prompt))
 		return args
 	},
+	// WebDenyOK: web_search=disabled (live-verified on 0.162.1: asked
+	// whether it has a web search tool, "live" answered YES, "disabled" NO).
+	WebDenyOK:   true,
 	ParseStream: codexParseStream,
 	Finalize:    codexFinalize,
 	Version:     codexVersion,

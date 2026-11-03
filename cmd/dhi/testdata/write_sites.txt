@@ -4,7 +4,7 @@
 cmd/dhi/main.go 5
 internal/agentkit/brief/brief.go 1
 internal/agentkit/channelmeta/channelmeta.go 3
-internal/agentkit/clirun/antigravity.go 6
+internal/agentkit/clirun/antigravity.go 7
 internal/agentkit/dhitools/fs.go 3
 internal/agentkit/dhitools/ideation.go 2
 internal/agentkit/episode/episode.go 2

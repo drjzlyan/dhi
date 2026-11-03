@@ -27,6 +27,10 @@ type Tuning struct {
 	Reflect      bool   // reflect on turns that carried a signal
 	ReflectModel string // "" = the agent's model
 
+	// F-123: leave the CLI's own web fetch/search tools on. The zero
+	// value denies them, so a missing tuning never widens the surface.
+	AllowNativeWeb bool
+
 	// F-074: save full prompts into run transcripts.
 	TracePrompts bool
 

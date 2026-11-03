@@ -282,6 +282,11 @@ func TestServeToolsGeminiDirForAntigravity(t *testing.T) {
 	if err != nil || !strings.Contains(string(body), "127.0.0.1") {
 		t.Fatalf("mirror mcp_config = %q err=%v", body, err)
 	}
+	// F-123: with the default (deny), the mirror carries the web-tool block.
+	if hooks, err := os.ReadFile(filepath.Join(serve.geminiDir, "config", "hooks.json")); err != nil ||
+		!strings.Contains(string(hooks), "search_web") {
+		t.Fatalf("mirror hooks.json = %q err=%v", hooks, err)
+	}
 	dir := serve.geminiDir
 	serve.stop()
 	if _, err := os.Stat(dir); !os.IsNotExist(err) {

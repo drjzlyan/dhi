@@ -739,3 +739,18 @@ func TestLiveRereadsOnChange(t *testing.T) {
 		t.Fatal("an invalid file must keep the last good config")
 	}
 }
+
+func TestNativeWebDefaultsToDenyAndIsValidated(t *testing.T) {
+	cfg := Defaults()
+	if cfg.Agents.NativeWeb != WebDeny {
+		t.Fatalf("default = %q, want deny", cfg.Agents.NativeWeb)
+	}
+	cfg.Agents.NativeWeb = "sometimes"
+	if err := Check(cfg); err == nil || !strings.Contains(err.Error(), "agents.native_web") {
+		t.Fatalf("invalid value accepted: %v", err)
+	}
+	cfg.Agents.NativeWeb = WebAllow
+	if err := Check(cfg); err != nil {
+		t.Fatal(err)
+	}
+}

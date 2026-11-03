@@ -45,7 +45,8 @@ var Claude = &CLI{
 				"--permission-mode", "bypassPermissions", // OS sandbox is the boundary (ADR-0012 §3)
 				"--max-turns", claudeMaxTurns(in.MaxTurns),
 			)
-			return append(args, claudeResumeArgs(in.Resume)...)
+			args = append(args, claudeResumeArgs(in.Resume)...)
+			return append(args, claudeDenyWeb(in)...)
 		}
 		args = append(args, in.Prompt,
 			"--output-format", "stream-json",
@@ -54,6 +55,7 @@ var Claude = &CLI{
 			"--max-turns", claudeMaxTurns(in.MaxTurns),
 		)
 		args = append(args, claudeResumeArgs(in.Resume)...)
+		args = append(args, claudeDenyWeb(in)...)
 		if in.System != "" {
 			args = append(args, "--append-system-prompt", in.System)
 		}
@@ -69,6 +71,10 @@ var Claude = &CLI{
 		}
 		return args
 	},
+	// WebDenyOK: --disallowedTools removes both tools from the session's
+	// tool list even under bypassPermissions (live-verified on 2.1.285:
+	// init listed WebFetch and WebSearch without the flag, neither with it).
+	WebDenyOK:   true,
 	ParseStream: claudeParseStream,
 	Finalize:    claudeFinalize,
 	Version:     claudeVersion,
@@ -320,4 +326,12 @@ func reencode(m map[string]any) string {
 		return "{}"
 	}
 	return string(b)
+}
+
+// claudeDenyWeb is the flag that removes claude's native web tools (F-123).
+func claudeDenyWeb(in RunInput) []string {
+	if !in.DenyWeb {
+		return nil
+	}
+	return []string{"--disallowedTools", "WebFetch,WebSearch"}
 }

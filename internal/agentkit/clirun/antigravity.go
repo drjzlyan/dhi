@@ -76,6 +76,12 @@ var Antigravity = &CLI{
 	ParseStream: antigravityParseStream,
 	Finalize:    antigravityFinalize,
 	Version:     antigravityVersion,
+	// WebDenyOK: a PreToolUse hook in the per-turn gemini dir's
+	// config/hooks.json denies the web tools (live-verified on agy 1.3.4:
+	// the step failed with "tool call denied by pre-tool hook"). The hook
+	// is merged into the user's own hooks.json, which is never edited.
+	WebDenyOK:  true,
+	DenyWebDir: true,
 	// MCP: agy reads servers only from <gemini_dir>/config/mcp_config.json
 	// and offers no config-path flag — the runtime points --gemini_dir at
 	// a per-turn mirror (MCPGeminiDir) holding this file.
@@ -87,12 +93,12 @@ var Antigravity = &CLI{
 
 // antigravityMCPGeminiDirForHome resolves the user's real ~/.gemini and
 // builds the per-turn mirror from it.
-func antigravityMCPGeminiDirForHome(baseDir, configBody string) (string, func(), error) {
+func antigravityMCPGeminiDirForHome(baseDir, configBody string, denyWeb bool) (string, func(), error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", nil, err
 	}
-	return antigravityMCPGeminiDir(filepath.Join(home, ".gemini"), baseDir, configBody)
+	return antigravityMCPGeminiDir(filepath.Join(home, ".gemini"), baseDir, configBody, denyWeb)
 }
 
 // antigravityMCPConfig renders agy's mcp_config.json for DHI's loopback
@@ -106,7 +112,7 @@ func antigravityMCPConfig(endpoint string) string {
 // conversation state keep working) except config/mcp_config.json,
 // which is replaced with DHI's rendered config. The mirror lives under
 // baseDir (an admitted runtime path); cleanup removes it.
-func antigravityMCPGeminiDir(realGeminiDir, baseDir, configBody string) (string, func(), error) {
+func antigravityMCPGeminiDir(realGeminiDir, baseDir, configBody string, denyWeb bool) (string, func(), error) {
 	real := realGeminiDir
 	if err := os.MkdirAll(baseDir, 0o755); err != nil {
 		return "", nil, err
@@ -116,7 +122,7 @@ func antigravityMCPGeminiDir(realGeminiDir, baseDir, configBody string) (string,
 		return "", nil, err
 	}
 	cleanup := func() { _ = os.RemoveAll(dir) }
-	linkAllExcept := func(src, dst, skip string) error {
+	linkAllExcept := func(src, dst string, skip map[string]bool) error {
 		ents, err := os.ReadDir(src)
 		if os.IsNotExist(err) {
 			// A fresh install (no ~/.gemini yet, or no config/ in it) mirrors
@@ -127,7 +133,7 @@ func antigravityMCPGeminiDir(realGeminiDir, baseDir, configBody string) (string,
 			return err
 		}
 		for _, e := range ents {
-			if e.Name() == skip {
+			if skip[e.Name()] {
 				continue
 			}
 			if err := os.Symlink(filepath.Join(src, e.Name()), filepath.Join(dst, e.Name())); err != nil {
@@ -136,7 +142,7 @@ func antigravityMCPGeminiDir(realGeminiDir, baseDir, configBody string) (string,
 		}
 		return nil
 	}
-	if err := linkAllExcept(real, dir, "config"); err != nil {
+	if err := linkAllExcept(real, dir, map[string]bool{"config": true}); err != nil {
 		cleanup()
 		return "", nil, err
 	}
@@ -145,9 +151,29 @@ func antigravityMCPGeminiDir(realGeminiDir, baseDir, configBody string) (string,
 		cleanup()
 		return "", nil, err
 	}
-	if err := linkAllExcept(filepath.Join(real, "config"), cfg, "mcp_config.json"); err != nil {
+	skip := map[string]bool{"mcp_config.json": true}
+	if denyWeb {
+		skip["hooks.json"] = true // merged below, never edited in place
+	}
+	if err := linkAllExcept(filepath.Join(real, "config"), cfg, skip); err != nil {
 		cleanup()
 		return "", nil, err
+	}
+	if denyWeb {
+		user, rerr := os.ReadFile(filepath.Join(real, "config", "hooks.json"))
+		if rerr != nil && !os.IsNotExist(rerr) {
+			cleanup()
+			return "", nil, rerr
+		}
+		merged, merr := antigravityDenyWebHooks(user)
+		if merr != nil {
+			cleanup()
+			return "", nil, merr
+		}
+		if err := os.WriteFile(filepath.Join(cfg, "hooks.json"), merged, 0o644); err != nil {
+			cleanup()
+			return "", nil, err
+		}
 	}
 	if err := os.WriteFile(filepath.Join(cfg, "mcp_config.json"), []byte(configBody), 0o644); err != nil {
 		cleanup()
@@ -285,4 +311,38 @@ func antigravityVersion(ctx context.Context, path string) (string, error) {
 		return v, nil
 	}
 	return "", fmt.Errorf("clirun/antigravity: no version in %q", truncate(out, 60))
+}
+
+// antigravityWebTools matches agy's own web tools by name (the hook
+// matcher is a regex over the tool name).
+const antigravityWebTools = "search_web|read_url_content|open_browser_url|browser_.*"
+
+const antigravityDenyHook = "dhi-deny-native-web"
+
+// antigravityDenyWebHooks adds DHI's deny hook to the user's hooks.json
+// body (nil = none). The hook is an inline `sh -c` that answers every
+// matching call with a deny and a reason the agent can read. A user's
+// hooks.json that is not a JSON object is an error, not overwritten.
+func antigravityDenyWebHooks(user []byte) ([]byte, error) {
+	hooks := map[string]json.RawMessage{}
+	if len(strings.TrimSpace(string(user))) > 0 {
+		if err := json.Unmarshal(user, &hooks); err != nil {
+			return nil, fmt.Errorf("antigravity: ~/.gemini/config/hooks.json is not a JSON object (%v); fix it or set agents.native_web = \"allow\"", err)
+		}
+	}
+	mine, err := json.Marshal(map[string]any{
+		"PreToolUse": []any{map[string]any{
+			"matcher": antigravityWebTools,
+			"hooks": []any{map[string]any{
+				"type":    "command",
+				"command": `echo '{"decision":"deny","reason":"native web tools are off in DHI (agents.native_web = deny)"}'`,
+				"timeout": 10,
+			}},
+		}},
+	})
+	if err != nil {
+		return nil, err
+	}
+	hooks[antigravityDenyHook] = mine
+	return json.MarshalIndent(hooks, "", "  ")
 }

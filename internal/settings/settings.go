@@ -111,6 +111,11 @@ type Agents struct {
 	// "envelope" lets DHI tools act without asking inside the task's own
 	// worktree; "ask" keeps every mutation behind an approval.
 	Autonomy string `toml:"autonomy"`
+	// NativeWeb is whether the agent CLI's own web fetch/search tools
+	// stay on (F-123): "deny" (default) switches them off where the CLI
+	// has a verified way to; "allow" leaves them on. DHI's own tools and
+	// the sandbox are unaffected.
+	NativeWeb string `toml:"native_web"`
 	// MaxIterations caps the verify → fix rounds of one task turn.
 	MaxIterations int `toml:"max_iterations"`
 	// StallSeconds kills a spawn that emits nothing for this long
@@ -131,6 +136,10 @@ type Agents struct {
 const (
 	AutonomyEnvelope = "envelope"
 	AutonomyAsk      = "ask"
+
+	// Native web modes (F-123).
+	WebDeny  = "deny"
+	WebAllow = "allow"
 )
 
 // Memory bounds what an agent carries and keeps (F-078), so a long-lived
@@ -241,7 +250,7 @@ func Defaults() Config {
 		Editor:      Editor{TabWidth: 4, LineNumbers: true},
 		Terminal:    Terminal{Scrollback: 1000},
 		Security:    Security{Sandbox: SandboxAuto},
-		Agents:      Agents{Resume: true, Autonomy: AutonomyEnvelope, MaxIterations: 3, StallSeconds: 900, Reflect: true},
+		Agents:      Agents{Resume: true, Autonomy: AutonomyEnvelope, NativeWeb: WebDeny, MaxIterations: 3, StallSeconds: 900, Reflect: true},
 		Memory:      DefaultMemory(),
 		Conventions: conventions.Defaults(),
 	}
@@ -259,7 +268,7 @@ func Known() []string {
 		"terminal", "security", "editor.tab_width", "editor.line_numbers",
 		"worktrees", "worktrees.root",
 		"terminal.scrollback", "security.sandbox",
-		"agents", "agents.max_turns", "agents.resume", "agents.autonomy",
+		"agents", "agents.max_turns", "agents.resume", "agents.autonomy", "agents.native_web",
 		"agents.max_iterations", "agents.stall_seconds", "agents.reflect", "agents.reflect_model", "agents.trace_prompts",
 		"memory", "memory.prompt_tokens", "memory.session_tokens", "memory.journal_max",
 		"memory.lessons_max", "memory.pinned_max", "memory.decay_days",
@@ -455,6 +464,11 @@ func validate(c Config) error {
 			return fmt.Errorf("settings: keys.%s: ctrl+c always quits and cannot be remapped", k)
 		}
 	}
+	switch c.Agents.NativeWeb {
+	case WebDeny, WebAllow:
+	default:
+		return fmt.Errorf("settings: agents.native_web %q (want %q or %q)", c.Agents.NativeWeb, WebDeny, WebAllow)
+	}
 	if c.Agents.MaxTurns < 0 || c.Agents.MaxTurns > 500 {
 		return fmt.Errorf("settings: agents.max_turns %d out of range 0..500 (0 = the CLI default)", c.Agents.MaxTurns)
 	}
@@ -555,6 +569,7 @@ type fileLayer struct {
 		MaxTurns      *int    `toml:"max_turns"`
 		Resume        *bool   `toml:"resume"`
 		Autonomy      *string `toml:"autonomy"`
+		NativeWeb     *string `toml:"native_web"`
 		MaxIterations *int    `toml:"max_iterations"`
 		StallSeconds  *int    `toml:"stall_seconds"`
 		Reflect       *bool   `toml:"reflect"`
@@ -690,6 +705,7 @@ func (f fileLayer) mergeInto(dst *Config) {
 	setPtr(&dst.Agents.MaxTurns, f.Agents.MaxTurns)
 	setPtr(&dst.Agents.Resume, f.Agents.Resume)
 	setPtr(&dst.Agents.Autonomy, f.Agents.Autonomy)
+	setPtr(&dst.Agents.NativeWeb, f.Agents.NativeWeb)
 	setPtr(&dst.Agents.MaxIterations, f.Agents.MaxIterations)
 	setPtr(&dst.Agents.StallSeconds, f.Agents.StallSeconds)
 	setPtr(&dst.Agents.Reflect, f.Agents.Reflect)

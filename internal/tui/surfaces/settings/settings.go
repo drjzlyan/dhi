@@ -7,6 +7,7 @@ package settings
 import (
 	"context"
 	"fmt"
+	"github.com/drjzlyan/dhi/internal/agentkit/clirun"
 	"os"
 	"path/filepath"
 	"sort"
@@ -563,6 +564,7 @@ const (
 	rowEngine
 	rowResume
 	rowAutonomy
+	rowNativeWeb
 	rowMaxTurns
 	rowMaxIter
 	rowStall
@@ -726,6 +728,9 @@ func (m *Model) cycle(dir int) {
 	case rowAutonomy:
 		m.cfg.Agents.Autonomy = cycleString(m.cfg.Agents.Autonomy,
 			[]string{settings.AutonomyEnvelope, settings.AutonomyAsk}, dir)
+	case rowNativeWeb:
+		m.cfg.Agents.NativeWeb = cycleString(m.cfg.Agents.NativeWeb,
+			[]string{settings.WebDeny, settings.WebAllow}, dir)
 	case rowMaxTurns:
 		m.cfg.Agents.MaxTurns = cycleNum(m.cfg.Agents.MaxTurns, maxTurnPresets, dir)
 	case rowMaxIter:
@@ -1689,6 +1694,7 @@ func (m *Model) configView(w, budget int) []string {
 	add(rowEngine, "engine", orMuted(m.cfg.Engine == "", "none — pick a coding CLI", strings.TrimPrefix(m.cfg.Engine, "cli:")))
 	add(rowResume, "agents.resume", boolValue(m.cfg.Agents.Resume))
 	add(rowAutonomy, "agents.autonomy", autonomyValue(m.cfg.Agents.Autonomy))
+	add(rowNativeWeb, "agents.native_web", nativeWebValue(m.cfg.Agents.NativeWeb))
 	add(rowMaxTurns, "agents.max_turns", orMuted(m.cfg.Agents.MaxTurns == 0, "CLI default", itoa(m.cfg.Agents.MaxTurns)))
 	add(rowMaxIter, "agents.max_iterations", itoa(m.cfg.Agents.MaxIterations))
 	add(rowStall, "agents.stall_seconds", orMuted(m.cfg.Agents.StallSeconds == 0, "off", stallText(m.cfg.Agents.StallSeconds)))
@@ -1735,6 +1741,19 @@ func autonomyValue(mode string) string {
 		return "ask"
 	}
 	return theme.SuccessText().Render("envelope")
+}
+
+// nativeWebValue says what the setting does and which CLIs it cannot
+// reach, from the adapters' own declarations (F-123).
+func nativeWebValue(mode string) string {
+	if mode == settings.WebAllow {
+		return "allow — CLIs may fetch and search the web"
+	}
+	out := theme.SuccessText().Render("deny")
+	if no := clirun.NewRegistry(nil).CannotDenyWeb(); len(no) > 0 {
+		out += theme.TextMuted().Render(" · cannot restrict " + strings.Join(no, ", "))
+	}
+	return out
 }
 
 // stallText renders the watchdog window ("15m", "90s").
@@ -1926,7 +1945,7 @@ var settingLabels = map[string]string{
 	"conventions.commit.format": "commit format", "conventions.commit.co_author": "co-author trailer",
 	"conventions.copyright": "copyright header", "conventions.copyright.license": "license",
 	"conventions.commit.max_subject": "commit subject limit",
-	"engine":                         "default coding CLI", "agents.resume": "resume CLI sessions", "agents.autonomy": "autonomy",
+	"engine":                         "default coding CLI", "agents.resume": "resume CLI sessions", "agents.autonomy": "autonomy", "agents.native_web": "CLI web tools",
 	"agents.max_turns": "CLI turns per run", "agents.max_iterations": "verify → fix rounds",
 	"agents.stall_seconds": "stall watchdog", "agents.reflect": "learn from turns",
 	"agents.reflect_model": "reflection model", "agents.trace_prompts": "save full prompts",

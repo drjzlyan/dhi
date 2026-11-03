@@ -8,7 +8,7 @@
   Verified in code: no content-trust fencing (ADR-0022 is install trust only); no adapter passes a
   tool deny flag (`clirun/claude.go:45,53`, `codex.go:79`, `antigravity.go:66`).
 - Currently in progress: none. G-A1 done in session 65 (F-122, ADR-0046): `internal/agentkit/untrusted`
-  fences tool results and prompt sections; live injection eval waits on G-C7. Next: G-C1.
+  fences tool results and prompt sections; live injection eval waits on G-C7. G-C1 done in code (session 65, branch `g-c1-native-web`, stacked on `g-a1-untrusted-fence`, F-123): `agents.native_web` deny by default; verified live for claude, codex, opencode, copilot (`--excluded-tools`) and antigravity (PreToolUse hook in the per-turn gemini dir). cursor investigated: its 2026.10.12 source approves web fetch/search under `--force` before reading any deny rule, so it is unrestrictable and says why in doctor (`WebDenyWhy`). Open decision: should `native_web = deny` refuse to run a CLI that cannot comply? Two live runs were blocked by the auto-mode classifier (`--allow-all-tools`, `--dangerously-skip-permissions`), so those exact flag combinations are checked by the CLIs' docs and the unit tests only.
 - Plan file from this session: `~/.claude/plans/analyse-the-dhi-ide-composed-twilight.md`.
 
 ### Session 63 (M37: best-in-class audit, then the fixes, branch `m37`)

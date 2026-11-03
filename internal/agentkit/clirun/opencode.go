@@ -66,6 +66,11 @@ var OpenCode = &CLI{
 		args = append(args, PromptWithSystem(in.System, in.Prompt))
 		return args
 	},
+	// WebDenyOK: OPENCODE_PERMISSION resolves into the config's
+	// permission table (`opencode debug config`) and webfetch left the
+	// tool list (live-verified on 1.19.0).
+	WebDenyOK:   true,
+	DenyWebEnv:  []string{`OPENCODE_PERMISSION={"webfetch":"deny","websearch":"deny"}`},
 	ParseStream: opencodeParseStream,
 	Finalize:    opencodeFinalize,
 	Version:     opencodeVersion,

@@ -96,6 +96,12 @@ var CursorAgent = &CLI{
 		return fmt.Sprintf(`{"mcpServers":{"dhi":{"url":%q}}}`, endpoint)
 	},
 	MCPProjectFile: ".cursor/mcp.json",
+	// No WebDenyOK (F-123). Read from the shipped 2026.10.12 source: with
+	// --force its web fetch and web search approvals return approved
+	// before any permission rule is consulted, a deny rule in cli.json or
+	// cli-config.json is never looked at, and headless runs need --force
+	// for shell and writes. Re-check on a new version.
+	WebDenyWhy: "--force auto-approves its web fetch and search before any deny rule is read (2026.10.12), and headless runs need --force",
 }
 
 // cursorItem is the union shape of one stream-json line. Live-verified

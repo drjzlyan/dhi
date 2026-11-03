@@ -1,6 +1,7 @@
 package doctor
 
 import (
+	"github.com/drjzlyan/dhi/internal/agentkit/clirun"
 	"os"
 	"path/filepath"
 	"strings"
@@ -63,6 +64,11 @@ func TestRuntimes(t *testing.T) {
 		t.Errorf("claude resume row = %+v", c)
 	}
 
+	// F-123: the web row says whether the CLI's own web tools can be switched off.
+	if c, ok := statusOf(checks, "runtime/claude/web"); !ok || c.Status != OK || !strings.Contains(c.Detail, "switched off") {
+		t.Errorf("claude web row = %+v", c)
+	}
+
 	// untested version present: strict fail
 	bad := t.TempDir()
 	writeExecutable(t, bad, "claude", "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo \"9.9.9 (Claude Code)\"; fi\n")
@@ -87,3 +93,25 @@ func TestRuntimes(t *testing.T) {
 }
 
 // A CLI DHI installed into its managed folder is found when it is not on PATH.
+
+// TestWebRowWarnsForCLIsThatCannotBeRestricted: a CLI without a verified
+// switch is named in doctor, never reported as restricted (F-123).
+func TestWebRowWarnsForCLIsThatCannotBeRestricted(t *testing.T) {
+	orig := lookPath
+	t.Cleanup(func() { lookPath = orig })
+	no := clirun.NewRegistry(nil).CannotDenyWeb()
+	if len(no) == 0 {
+		t.Skip("every adapter can deny native web tools")
+	}
+	c, _ := clirun.NewRegistry(nil).Get(no[0])
+	dir := t.TempDir()
+	lookPath = stubLook(dir)
+	writeExecutable(t, dir, c.Bin, "#!/bin/sh\necho \""+c.Tested+"\"\n")
+	got, ok := statusOf(Runtimes(), "runtime/"+c.Name+"/web")
+	if !ok {
+		t.Fatalf("no web row for %s", c.Name)
+	}
+	if got.Status != Warn || !strings.Contains(got.Detail, "no verified way") {
+		t.Fatalf("%s web row = %+v", c.Name, got)
+	}
+}

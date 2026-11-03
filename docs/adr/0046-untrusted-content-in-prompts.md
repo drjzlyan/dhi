@@ -24,3 +24,9 @@ results as if the human had written them.
 Prompts grow by a few tokens per fenced block. Prompt goldens that include these blocks change.
 Wrapping at the source (tool or section builder), not in the dispatcher, keeps DHI's own results
 unfenced.
+
+## Addendum (F-123, gap G-C1): the CLIs' own web tools
+Fencing treats text as data; it does not close the door. Where an agent CLI has a verified switch
+for its own web fetch/search tools (claude, codex, opencode, copilot, antigravity), DHI turns them off by default
+(`agents.native_web = deny`). The user can allow them. A CLI with no switch (cursor: its `--force` approves web fetch and search before any deny rule is read) is named in doctor and Settings, never reported as restricted. Shell commands
+and a CLI's own MCP servers are outside this switch.

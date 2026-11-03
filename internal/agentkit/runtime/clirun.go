@@ -357,11 +357,24 @@ func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Messag
 	// the wrapper's `--` land in the CLI's lap as positional args — for
 	// claude that turned the sandbox invocation itself into the prompt
 	// and the reply came back as plain text (no stream-json at all).
+	denyWeb := e.cli.WebDenyOK && !r.tuning().AllowNativeWeb
+	if denyWeb && e.cli.DenyWebDir && in.mcpGeminiDir == "" {
+		// The denial rides the per-turn directory; without it the CLI would
+		// run with its web tools on, which is the silent widening ADR-0011
+		// forbids. Name it and stop the turn.
+		msg := e.cli.Name + ": native web tools cannot be switched off this turn (no per-turn config was built); " +
+			"not starting. Retry, or set agents.native_web = \"allow\" in Settings."
+		run.Status = tasks.RunError
+		run.Error = msg
+		r.notice(trigger, e.m.ID, msg)
+		return run, nil
+	}
 	argv := append([]string{e.cliPath}, e.cli.BuildArgs(clirun.RunInput{
 		Prompt: prompt, System: system,
 		Model: model, Workdir: workdir, Stdin: stdin,
 		Resume: in.resume, MaxTurns: in.maxTurns,
 		MCPConfig: in.mcpConfig, MCPURL: in.mcpEndpoint, MCPGeminiDir: in.mcpGeminiDir,
+		DenyWeb: denyWeb,
 	})...)
 	if msg := missingState(e.cli, r.spawnSandbox(e)); msg != "" {
 		run.Status = tasks.RunError
@@ -704,7 +717,7 @@ func (r *Runtime) serveToolsFor(e *entry, trigger bus.Message, tt turnTools) *se
 	// dir so OAuth/state survive (ADR-0012 §4 read pass-through).
 	if e.cli.MCPGeminiDir != nil {
 		base := filepath.Join(r.cfg.WS.Root, ".dhi", "mcp")
-		dir, cleanup, derr := e.cli.MCPGeminiDir(base, e.cli.MCPConfigFile(endpoint))
+		dir, cleanup, derr := e.cli.MCPGeminiDir(base, e.cli.MCPConfigFile(endpoint), e.cli.WebDenyOK && !r.tuning().AllowNativeWeb)
 		if derr != nil {
 			stopAll()
 			r.notice(trigger, e.m.ID, "IDE tools unavailable this turn: "+derr.Error())
@@ -1084,6 +1097,11 @@ func (r *Runtime) cliEnv(c *clirun.CLI, agentID, mcpConfig string) []string {
 	}
 	if r.cfg.PushGuard != "" {
 		env = gitcore.PushGuardEnv(env, r.cfg.PushGuard)
+	}
+	if !r.tuning().AllowNativeWeb {
+		for _, kv := range c.DenyWebEnv {
+			env = setEnv(env, kv)
+		}
 	}
 	for _, k := range c.WaitEnv {
 		env = setEnv(env, k+"="+strconv.Itoa(int(humanWait/time.Millisecond)))

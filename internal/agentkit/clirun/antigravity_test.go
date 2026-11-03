@@ -126,7 +126,7 @@ func TestAntigravityGeminiDirMirror(t *testing.T) {
 	must(os.MkdirAll(filepath.Join(realGemini, "antigravity-cli"), 0o755))
 
 	base := t.TempDir()
-	dir, cleanup, err := antigravityMCPGeminiDir(realGemini, base, Antigravity.MCPConfigFile("http://127.0.0.1:9/mcp"))
+	dir, cleanup, err := antigravityMCPGeminiDir(realGemini, base, Antigravity.MCPConfigFile("http://127.0.0.1:9/mcp"), false)
 	if err != nil {
 		t.Fatalf("mirror: %v", err)
 	}
@@ -163,7 +163,7 @@ func TestAntigravityGeminiDirMirror(t *testing.T) {
 // to fail, silently dropping served tools for the turn).
 func TestAntigravityGeminiDirMirrorFreshInstall(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "no-such-gemini")
-	dir, cleanup, err := antigravityMCPGeminiDir(missing, t.TempDir(), Antigravity.MCPConfigFile("http://127.0.0.1:9/mcp"))
+	dir, cleanup, err := antigravityMCPGeminiDir(missing, t.TempDir(), Antigravity.MCPConfigFile("http://127.0.0.1:9/mcp"), false)
 	if err != nil {
 		t.Fatalf("mirror of a missing dir: %v", err)
 	}

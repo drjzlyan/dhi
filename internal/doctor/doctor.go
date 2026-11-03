@@ -358,6 +358,19 @@ func Runtimes() []Check {
 			checks = append(checks, Check{Name: "runtime/" + c.Name + "/resume", Status: OK,
 				Detail: "no verified session resume; each turn starts fresh with DHI's episode summary"})
 		}
+		// F-123: say plainly whether the CLI's own web tools can be
+		// switched off; never imply a restriction that is not verified.
+		if c.WebDenyOK {
+			checks = append(checks, Check{Name: "runtime/" + c.Name + "/web", Status: OK,
+				Detail: "native web fetch/search tools are switched off unless agents.native_web = \"allow\" (verified)"})
+		} else {
+			why := ""
+			if c.WebDenyWhy != "" {
+				why = ": " + c.WebDenyWhy
+			}
+			checks = append(checks, Check{Name: "runtime/" + c.Name + "/web", Status: Warn,
+				Detail: "no verified way to switch off " + c.Bin + "'s own web fetch/search tools; they stay available to its agents (the sandbox still applies)" + why})
+		}
 		for _, k := range c.EnvPass {
 			if k == "HOME" {
 				continue // always set; not worth a row
