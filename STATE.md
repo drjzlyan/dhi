@@ -1,5 +1,9 @@
 # STATE — current position
 
+### Session 67 (G-A3, branch `g-a3-prompt-goldens`, fourth in the stack, on `g-a2-agents-md`)
+
+- G-A3 done (F-125): `TestPromptGoldens` snapshots the assembled system block and prompt (fresh and compacted); all six adapters assemble the same prompt today. Not in the fixture: memory, KB, lessons, episode. Next gap: G-A4.
+
 ### Session 66 (G-A2, branch `g-a2-agents-md`, third in the stack G-A1 → G-C1 → G-A2)
 
 - G-A2 done in code (F-124): `standards.RepoInstructions` + `CLI.ReadsAgentsMD` + prompt section
