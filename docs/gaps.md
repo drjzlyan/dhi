@@ -97,7 +97,7 @@ no daemon.
       (no new file format, ADR-0043)
 - [ ] **G-G1** Merge-conflict tools (ROADMAP M37 S3)
 - [ ] **G-G2** Line-level staging (ROADMAP M37 S3)
-- [ ] **G-G3** Inline blame on every line (ROADMAP M37 S3)
+- [x] **G-G3** `done` (F-143) — Inline blame on every line (ROADMAP M37 S3)
 - [x] **G-G4** `done` (F-129) — Stash
 - [x] **G-G5** `done` (F-140) — File history and timeline
 - [ ] **G-G6** Interactive rebase through a terminal tab
@@ -150,3 +150,4 @@ G-E4 — F-136 — 2026-11-04 (editor.wrap + :set wrap; ctrl-d/u and wheel stay 
 G-B2 — F-135 — 2026-11-04 (calibrated ratio (claude reports per-call context); /compact; reflect_model reused; prompt change — live eval pending)
 G-M1 — F-141 — 2026-11-04 (alt+s split, alt+o focus)
 G-R1 — F-142 — 2026-11-04 (off/delay/focus; focus mode ignores surface switches)
+G-G3 — F-143 — 2026-11-04 (cursor-line blame; :e! does not refetch)
