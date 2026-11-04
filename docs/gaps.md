@@ -85,7 +85,7 @@ no daemon.
 - [x] **G-E19** `done` (F-167) — Selection expand and shrink
 - [x] **G-E20** `done` (F-168) — Search results buffer ("search editor")
 - [x] **G-E21** `done` (F-160) — EditorConfig
-- [ ] **G-E22** LSP semantic tokens, call hierarchy, peek popup
+- [x] **G-E22** `done` (F-173) — LSP semantic tokens, call hierarchy, peek popup
 
 ## Phase 6 — Reliability, git, terminal, tasks
 
@@ -183,3 +183,4 @@ G-E16 — F-169 — 2026-11-04 (editor.inlay_hints / :set inlayhints; virtual ce
 G-E13 — F-174 — 2026-11-04 (gb/alt+n next occurrence, gB skip, alt+up/down or :cursor; per-cursor edits, one undo step)
 G-C7 — F-172 — 2026-11-04 (injection x3, lesson, tool-forge fixtures 3/3 live; full suite 13/13 on claude 2.1.311 validates F-135/F-144/F-152; orchestration skipped (no multi-agent harness))
 G-E18 — F-171 — 2026-11-04 (LSP snippets + tab stops + .vscode/*.code-snippets; call snippet opens signature help; live suite green)
+G-E22 — F-173 — 2026-11-04 (:calls tree, gp/:peek popup, editor.semantic_tokens (gopls started with semanticTokens init option); live)
