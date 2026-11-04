@@ -15,13 +15,6 @@ const (
 	motWordEnd   // e
 	motBOF       // gg
 	motEOF       // G
-	motFind      // f (set by findForward; not used directly)
-	motFindRev   // F
-	motUntil     // t
-	motUntilRev  // T
-	motMatchBr   // %
-	motRepeatF   // ;
-	motRepeatRev // ,
 )
 
 // linewise reports whether the motion spans whole lines (affects d/c/y).
@@ -216,132 +209,39 @@ func (b *Buffer) untilChar(ch rune, count int, forward bool) int {
 	return col
 }
 
-// matchBracket finds the matching bracket pair. Returns the column or -1
-// if not found. The current position must be on a bracket.
+// bracketPairs maps each bracket to its partner and scan direction.
+var bracketPairs = map[rune]struct {
+	match rune
+	step  int
+}{'(': {')', 1}, '[': {']', 1}, '{': {'}', 1}, ')': {'(', -1}, ']': {'[', -1}, '}': {'{', -1}}
+
+// matchBracket is %: the column of the bracket matching the one under the
+// cursor, or, off a bracket, of the one matching the first bracket ahead
+// on the line. -1 when there is none.
 func (b *Buffer) matchBracket() int {
 	line := b.runes(b.cursor.Line)
-	if b.cursor.Col >= len(line) {
-		return -1
-	}
-
-	ch := line[b.cursor.Col]
-	var target rune
-	var forward bool
-
-	switch ch {
-	case '(':
-		target = ')'
-		forward = true
-	case ')':
-		target = '('
-		forward = false
-	case '[':
-		target = ']'
-		forward = true
-	case ']':
-		target = '['
-		forward = false
-	case '{':
-		target = '}'
-		forward = true
-	case '}':
-		target = '{'
-		forward = false
-	default:
-		// Not on a bracket; search forward for one
-		for i := b.cursor.Col + 1; i < len(line); i++ {
-			r := line[i]
-			if r == '(' || r == ')' || r == '[' || r == ']' || r == '{' || r == '}' {
-				col := b.matchBracketFrom(i, line)
-				if col >= 0 {
-					return col
-				}
-			}
-		}
-		return -1
-	}
-
-	// Count nesting and find the matching bracket
-	depth := 1
-	if forward {
-		for i := b.cursor.Col + 1; i < len(line); i++ {
-			if line[i] == ch {
-				depth++
-			} else if line[i] == target {
-				depth--
-				if depth == 0 {
-					return i
-				}
-			}
-		}
-	} else {
-		for i := b.cursor.Col - 1; i >= 0; i-- {
-			if line[i] == ch {
-				depth++
-			} else if line[i] == target {
-				depth--
-				if depth == 0 {
-					return i
-				}
-			}
+	for i := b.cursor.Col; i < len(line); i++ {
+		if _, ok := bracketPairs[line[i]]; ok {
+			return matchBracketFrom(i, line)
 		}
 	}
 	return -1
 }
 
-// matchBracketFrom is a helper for matchBracket when starting from a position.
-func (b *Buffer) matchBracketFrom(col int, line []rune) int {
-	if col >= len(line) {
-		return -1
-	}
-	ch := line[col]
-	var target rune
-	var forward bool
-
-	switch ch {
-	case '(':
-		target = ')'
-		forward = true
-	case ')':
-		target = '('
-		forward = false
-	case '[':
-		target = ']'
-		forward = true
-	case ']':
-		target = '['
-		forward = false
-	case '{':
-		target = '}'
-		forward = true
-	case '}':
-		target = '{'
-		forward = false
-	default:
-		return -1
-	}
-
-	depth := 1
-	if forward {
-		for i := col + 1; i < len(line); i++ {
-			if line[i] == ch {
-				depth++
-			} else if line[i] == target {
-				depth--
-				if depth == 0 {
-					return i
-				}
-			}
-		}
-	} else {
-		for i := col - 1; i >= 0; i-- {
-			if line[i] == ch {
-				depth++
-			} else if line[i] == target {
-				depth--
-				if depth == 0 {
-					return i
-				}
+// matchBracketFrom scans from the bracket at col for its partner,
+// counting nested pairs of the same kind.
+func matchBracketFrom(col int, line []rune) int {
+	open := line[col]
+	p := bracketPairs[open]
+	depth := 0
+	for i := col; i >= 0 && i < len(line); i += p.step {
+		switch line[i] {
+		case open:
+			depth++
+		case p.match:
+			depth--
+			if depth == 0 {
+				return i
 			}
 		}
 	}
@@ -395,7 +295,7 @@ func (b *Buffer) spanFor(m motion, count int) (Pos, Pos) {
 // spanForFind returns the half-open rune range for a find motion.
 // kind is 'f', 'F', 't', or 'T'; col is the target column found by findChar/untilChar.
 // f and t are inclusive (end.Col++); F and T are exclusive.
-func (b *Buffer) spanForFind(kind rune, col int, count int) (Pos, Pos) {
+func (b *Buffer) spanForFind(kind rune, col int) (Pos, Pos) {
 	// Clamp the cursor to within the line bounds for span computation
 	line := b.runes(b.cursor.Line)
 	from := b.cursor

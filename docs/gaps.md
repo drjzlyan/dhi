@@ -99,7 +99,7 @@ no daemon.
 - [ ] **G-G2** Line-level staging (ROADMAP M37 S3)
 - [ ] **G-G3** Inline blame on every line (ROADMAP M37 S3)
 - [x] **G-G4** `done` (F-129) — Stash
-- [ ] **G-G5** File history and timeline
+- [x] **G-G5** `done` (F-140) — File history and timeline
 - [ ] **G-G6** Interactive rebase through a terminal tab
 - [ ] **G-G7** Branch graph and cherry-pick
 - [ ] **G-M1** Split terminals
@@ -144,3 +144,4 @@ G-E2 — F-132 — 2026-11-04 (fake LSP only; rename in the tree does not send d
 G-C4 — F-131 — 2026-11-04 (loop: claude/codex/opencode only; in-flight USD only for opencode, tokens elsewhere)
 G-E3 — F-133 — 2026-11-04 (Haiku draft; coordinator fixed d% d; d,)
 G-B4 — F-134 — 2026-11-04 (/fork drops the CLI session, rebuilds from the summary; /new)
+G-G5 — F-140 — 2026-11-04 (:history and h in the git panel; read-only diff)

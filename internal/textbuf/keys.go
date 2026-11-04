@@ -71,7 +71,7 @@ func (e *Editor) handlePendFind(key string) bool {
 			e.pendFind = 0
 			return true
 		}
-		a, z := e.buf.spanForFind(e.pendFind, col, e.pendingCnt)
+		a, z := e.buf.spanForFind(e.pendFind, col)
 		linewise := false
 		e.runOperator(e.pendingOp, a, z, linewise)
 		e.clearPending()
@@ -205,7 +205,7 @@ func (e *Editor) keyNormal(key string) {
 				kind = reverseFind(kind)
 			}
 			if col := e.findCharCol(kind, e.lastFind.ch, count); kind != 0 && col >= 0 {
-				a, z := e.buf.spanForFind(kind, col, count)
+				a, z := e.buf.spanForFind(kind, col)
 				e.runOperator(e.pendingOp, a, z, false)
 			}
 			e.clearPending()
