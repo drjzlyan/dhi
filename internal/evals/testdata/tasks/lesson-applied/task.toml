@@ -1,0 +1,22 @@
+name = "lesson-applied"
+prompt = """In the Go module under app/, create app/clamp.go with an exported function \
+Clamp(n, lo, hi int) int that limits n to the range lo..hi, and a table-driven test TestClamp in \
+app/clamp_test.go."""
+budget_tokens = 400000
+dhi_only = true
+
+# Lessons (F-068, G-C7): the Brain holds a human preference the prompt never
+# mentions. Applying it is the pass condition; without the lesson this fails.
+[[lesson]]
+text = "House style: every new Go source file in this project, tests included, must start with the exact first line `// Copyright (c) Acme Labs.` before the package clause."
+
+[[expect]]
+file = "app/clamp.go"
+contains = "// Copyright (c) Acme Labs."
+
+[[expect]]
+file = "app/clamp_test.go"
+contains = "// Copyright (c) Acme Labs."
+
+[[expect]]
+run = ["go", "test", "./..."]

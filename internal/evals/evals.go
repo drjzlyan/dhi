@@ -23,6 +23,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 
+	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/jsonl"
 )
 
@@ -52,7 +53,35 @@ type Task struct {
 	// reported against the actual rounds, never scored.
 	ExpectRounds int `toml:"expect_verify_rounds"`
 
+	// DHI-only context (F-172): state the DHI arm is seeded with before
+	// the run. The raw CLI never sees it, so a fixture that depends on it
+	// sets DHIOnly and live runs skip the raw arm.
+	KB      []KBSeed     `toml:"kb"`     // knowledge-base entries (published)
+	Posts   []PostSeed   `toml:"post"`   // earlier channel posts, before the trigger
+	Lessons []LessonSeed `toml:"lesson"` // Brain lessons (user scope)
+	Forge   bool         `toml:"forge"`  // open the tool forge (tool_propose)
+	DHIOnly bool         `toml:"dhi_only"`
+
 	dir string // fixture directory (holds seed/)
+}
+
+// KBSeed is one knowledge-base entry written before the run.
+type KBSeed struct {
+	Title string   `toml:"title"`
+	Body  string   `toml:"body"`
+	Tags  []string `toml:"tags"`
+}
+
+// PostSeed is one channel post that precedes the human's prompt; Author
+// is anyone but the human (e.g. "ci-bot").
+type PostSeed struct {
+	Author string `toml:"author"`
+	Text   string `toml:"text"`
+}
+
+// LessonSeed is one Brain lesson the agent should apply.
+type LessonSeed struct {
+	Text string `toml:"text"`
 }
 
 // Expect is one post-condition on a workspace-relative file.
@@ -89,6 +118,16 @@ func LoadTasks(dir string) ([]Task, error) {
 		for _, x := range t.Expect {
 			if (x.File == "") == (len(x.Run) == 0) {
 				return nil, fmt.Errorf("evals: %s: each expect names exactly one of file or run", p)
+			}
+		}
+		for _, k := range t.KB {
+			if strings.TrimSpace(k.Title) == "" || strings.TrimSpace(k.Body) == "" {
+				return nil, fmt.Errorf("evals: %s: each kb seed needs a title and body", p)
+			}
+		}
+		for _, po := range t.Posts {
+			if po.Author == "" || po.Author == bus.Human || strings.TrimSpace(po.Text) == "" {
+				return nil, fmt.Errorf("evals: %s: each post seed needs a non-human author and text", p)
 			}
 		}
 		if t.Name == "" || strings.TrimSpace(t.Prompt) == "" || len(t.Expect) == 0 {
@@ -333,6 +372,69 @@ func Table(sums []ArmSummary) string {
 		fmt.Fprintf(&b, "%-4s %3d/%-3d %12d %6d%% %9s %8d %5d %6d %7.1fs\n",
 			s.Arm, s.OK, s.Runs, s.TokensPerOK, s.CacheShare, fmt.Sprintf("$%.4f", s.CostUSD),
 			s.Attempts, s.Asks, s.VerifyRounds, float64(s.MeanWallMs)/1e3)
+	}
+	return b.String()
+}
+
+// FixtureSummary is one fixture's multi-run score on one arm (F-172):
+// pass rate over its repeats and the mean tokens and cost of a run.
+type FixtureSummary struct {
+	Task, Arm  string
+	Runs, OK   int
+	MeanTokens int // whole prompt + out, over runs that reported usage
+	MeanCost   float64
+}
+
+// SummarizeFixtures folds results per (task, arm): tasks in name order,
+// raw before dhi.
+func SummarizeFixtures(results []Result) []FixtureSummary {
+	type key struct{ task, arm string }
+	by := map[key]*FixtureSummary{}
+	tok := map[key][2]int{} // tokens sum, runs with usage
+	var order []key
+	for _, r := range results {
+		k := key{r.Task, r.Arm}
+		s := by[k]
+		if s == nil {
+			s = &FixtureSummary{Task: r.Task, Arm: r.Arm}
+			by[k] = s
+			order = append(order, k)
+		}
+		s.Runs++
+		s.MeanCost += r.CostUSD
+		if r.OK {
+			s.OK++
+		}
+		if r.TokensIn >= 0 {
+			t := tok[k]
+			tok[k] = [2]int{t[0] + r.promptTokens() + r.TokensOut, t[1] + 1}
+		}
+	}
+	var out []FixtureSummary
+	for _, k := range order {
+		s := by[k]
+		s.MeanCost /= float64(s.Runs)
+		if t := tok[k]; t[1] > 0 {
+			s.MeanTokens = t[0] / t[1]
+		}
+		out = append(out, *s)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].Task != out[j].Task {
+			return out[i].Task < out[j].Task
+		}
+		return out[i].Arm > out[j].Arm
+	})
+	return out
+}
+
+// FixtureTable renders per-fixture pass rates and mean tokens/cost.
+func FixtureTable(sums []FixtureSummary) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "%-22s %-4s %7s %6s %12s %9s\n", "fixture", "arm", "passed", "rate", "mean tokens", "mean cost")
+	for _, s := range sums {
+		fmt.Fprintf(&b, "%-22s %-4s %3d/%-3d %5d%% %12d %9s\n",
+			s.Task, s.Arm, s.OK, s.Runs, s.OK*100/s.Runs, s.MeanTokens, fmt.Sprintf("$%.4f", s.MeanCost))
 	}
 	return b.String()
 }

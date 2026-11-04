@@ -68,6 +68,9 @@ func TestLive(t *testing.T) {
 				if arm := os.Getenv("DHI_EVAL_ARM"); arm != "" && armName(run) != arm {
 					continue
 				}
+				if task.DHIOnly && armName(run) == "raw" {
+					continue // the fixture's context is seeded into DHI only
+				}
 				dir := t.TempDir()
 				if os.Getenv("DHI_EVAL_KEEP") == "1" {
 					if dir, err = os.MkdirTemp("", "dhi-eval-"+task.Name+"-"); err != nil {
@@ -91,7 +94,7 @@ func TestLive(t *testing.T) {
 	if err := AppendScorecard(out, results); err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("scorecard: %s\n%s", out, Table(Summarize(results)))
+	t.Logf("scorecard: %s\n%s", out, Table(Summarize(results))+"\n"+FixtureTable(SummarizeFixtures(results)))
 }
 
 // armName names an arm function ("dhi" or "raw") for DHI_EVAL_ARM.
