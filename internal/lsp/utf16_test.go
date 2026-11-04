@@ -22,11 +22,8 @@ func TestDecodeCompletion(t *testing.T) {
 		{"label":"Println","insertText":"Println"},
 		{"label":"Printf","textEdit":{"newText":"Printf(${1:format})","range":{"start":{"line":0,"character":4},"end":{"line":0,"character":7}}},"insertTextFormat":2},
 		{"label":"x"}]}`))
-	if len(items) != 3 || items[0].Insert != "Println" || items[1].Insert != "Printf(format)" ||
+	if len(items) != 3 || items[0].Insert != "Println" || items[1].Insert != "Printf(${1:format})" || !items[1].Snippet || items[0].Snippet ||
 		items[1].Range == nil || items[1].Range.Start.Character != 4 || items[2].Insert != "x" {
 		t.Fatalf("%+v", items)
-	}
-	if StripSnippet(`a${1:b${2:c}}$0\$`) != "abc$" {
-		t.Fatal(StripSnippet(`a${1:b${2:c}}$0\$`))
 	}
 }

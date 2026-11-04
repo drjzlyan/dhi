@@ -379,10 +379,12 @@ type Model struct {
 	compOpen       bool
 	compItems      []lsp.CompletionItem
 	compCur        int
-	lspPendingG    bool   // `g` prefix armed (F-009 sequences)
-	pendingBracket string // "]" or "[" armed for ]d / [d (F-116)
-	compSeq        int    // completion debounce generation (F-116)
-	resultsTitle   string // results pane holds a list (references, problems), not a search
+	snip           *textbuf.SnippetSession // live tab-stop session (F-171)
+	userSnips      map[string]userSnipSet  // member root → its .vscode snippets, cached (F-171)
+	lspPendingG    bool                    // `g` prefix armed (F-009 sequences)
+	pendingBracket string                  // "]" or "[" armed for ]d / [d (F-116)
+	compSeq        int                     // completion debounce generation (F-116)
+	resultsTitle   string                  // results pane holds a list (references, problems), not a search
 	hoverOpen      bool
 	hoverLines     []string
 	sigHelp        *lsp.SignatureHelp // the open signature-help popup (F-128)
@@ -634,6 +636,7 @@ func (m *Model) HelpSections() [][2]string {
 			[2]string{"gr · ga · :organize", "rename · code actions (quick fixes first; visual: selection) · organize imports"},
 			[2]string{"]x · [x · :conflict ours|theirs|both|base", "next / previous merge conflict · accept a side (one undo step)"},
 			[2]string{"ctrl+space", "completions (they also open as you type)"},
+			[2]string{"tab · shift+tab (insert, in a snippet)", "next / previous snippet stop (snippets: server items and .vscode/*.code-snippets)"},
 			[2]string{":pair <agent>", "invite an agent to pair (:ask · :unpair)"},
 			[2]string{":break · :debug", "breakpoint · start debugging (:cont :next :step :out :stop :eval)"},
 			[2]string{":test [all|name]", "run Go tests · failures list jumps to the line"},
@@ -1273,6 +1276,9 @@ func (m *Model) handleKey(key string) bool {
 			return true
 		}
 
+		if m.snipKey(e, key) { // F-171: tab / shift+tab walk the snippet's stops
+			return true
+		}
 		was := e.Mode()
 		e.SetPageSize(m.height - 4) // ctrl+d/u and pgup/pgdown step by the visible rows
 		e.Key(key)
@@ -1293,6 +1299,7 @@ func (m *Model) handleKey(key string) bool {
 			m.loadGit()
 		}
 		m.offerConflictStage(e)
+		m.snipAfterKey(e)
 		m.lspSync()
 		if e.Mode() == textbuf.ModeInsert && was == textbuf.ModeInsert {
 			m.autoComplete(key)

@@ -53,6 +53,10 @@ type goplusFake struct {
 	didCloseUris []string
 	// F-158: codeAction replies per context.only ("" = any), resolve support,
 	// the resolved action, and the executeCommand requests seen.
+	// F-171: compItems replaces the default completion reply; initCaps is the
+	// client capabilities of the initialize request.
+	compItems    []map[string]any
+	initCaps     string
 	actionsFor   map[string][]map[string]any
 	resolveCaps  bool
 	resolved     map[string]any
@@ -122,6 +126,9 @@ func (f *goplusFake) serve() {
 		}
 		switch msg.Method {
 		case "initialize":
+			f.mu.Lock()
+			f.initCaps = string(msg.Params)
+			f.mu.Unlock()
 			res := map[string]any{"serverInfo": map[string]any{"name": "fake-gopls"}}
 			if f.noFormat {
 				res["capabilities"] = map[string]any{"hoverProvider": true}
@@ -182,6 +189,13 @@ func (f *goplusFake) serve() {
 			f.reply(*msg.ID, hints)
 
 		case "textDocument/completion":
+			f.mu.Lock()
+			custom := f.compItems
+			f.mu.Unlock()
+			if custom != nil {
+				f.reply(*msg.ID, custom)
+				break
+			}
 			f.reply(*msg.ID, []map[string]any{
 				{"label": "Println", "detail": "func(a ...any) (n int, err error)"},
 				{"label": "Printf"},

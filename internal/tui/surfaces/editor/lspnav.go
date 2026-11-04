@@ -54,7 +54,7 @@ type compTickMsg struct{ seq int }
 // identifier character or "." in insert mode.
 func (m *Model) autoComplete(key string) {
 	r, size := utf8.DecodeRuneInString(key)
-	if size != len(key) || (!isIdent(r) && r != '.') || m.lspClient() == nil {
+	if size != len(key) || (!isIdent(r) && r != '.') || (m.lspClient() == nil && !m.hasUserSnippets()) {
 		return
 	}
 	m.compSeq++
@@ -97,7 +97,13 @@ func (m *Model) acceptCompletion(item lsp.CompletionItem) {
 	if start > cur.Col {
 		start = cur.Col
 	}
-	b.ApplyEdit(textbuf.Pos{Line: cur.Line, Col: start}, textbuf.Pos{Line: cur.Line, Col: end}, item.Insert)
+	from, to := textbuf.Pos{Line: cur.Line, Col: start}, textbuf.Pos{Line: cur.Line, Col: end}
+	if item.Snippet {
+		m.expandSnippet(e, from, to, item.Insert)
+	} else {
+		b.ApplyEdit(from, to, item.Insert)
+		m.snipAfterKey(e) // a plain item accepted inside a live snippet stop
+	}
 	m.lspSync()
 }
 

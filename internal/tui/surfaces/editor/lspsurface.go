@@ -241,16 +241,21 @@ func (m *Model) requestCompletion() {
 		return
 	}
 	c := m.lspClient()
-	if c == nil {
+	snips := m.userSnippetItems(e) // F-171: .vscode snippets by prefix, with or without a server
+	if c == nil && len(snips) == 0 {
 		return
 	}
 	cur := e.Buffer().Cursor()
 	path, col := e.Path(), u16(e, cur.Line, cur.Col)
 	go func() {
-		items, err := c.Completion(path, cur.Line, col)
-		if err != nil {
-			items = nil
+		var items []lsp.CompletionItem
+		if c != nil {
+			var err error
+			if items, err = c.Completion(path, cur.Line, col); err != nil {
+				items = nil
+			}
 		}
+		items = append(snips, items...)
 		select {
 		case m.termMsgs <- teaMsg{kind: lspMsgComp, compItems: items}:
 		default:

@@ -28,9 +28,11 @@ type Diagnostic struct {
 type CompletionItem struct {
 	Label  string
 	Detail string
-	Insert string // text to insert (textEdit/insertText, snippets made plain); Label when the server gave none
-	Filter string // filterText, when it differs from Label
-	Range  *Range // the range Insert replaces (UTF-16 columns); nil = the word before the cursor
+	Insert string // text to insert (textEdit/insertText); Label when the server gave none
+	// Snippet: Insert is snippet syntax ($1, ${1:x}, $0), expanded by the editor (F-171).
+	Snippet bool
+	Filter  string // filterText, when it differs from Label
+	Range   *Range // the range Insert replaces (UTF-16 columns); nil = the word before the cursor
 }
 
 // EventKind discriminates async server pushes.
@@ -98,7 +100,7 @@ func (c *Client) initialize(rootDir string) error {
 		"rootUri":   pathToURI(rootDir),
 		"capabilities": map[string]any{
 			"textDocument": map[string]any{
-				"completion": map[string]any{"completionItem": map[string]any{}},
+				"completion": map[string]any{"completionItem": map[string]any{"snippetSupport": true}},
 				"hover":      map[string]any{"contentFormat": []string{"plaintext", "markdown"}},
 				"signatureHelp": map[string]any{"signatureInformation": map[string]any{
 					"documentationFormat":    []string{"plaintext", "markdown"},
@@ -452,56 +454,10 @@ func decodeCompletion(raw json.RawMessage) []CompletionItem {
 		if it.Insert == "" {
 			it.Insert = w.Label
 		}
-		if w.Format == 2 {
-			it.Insert = StripSnippet(it.Insert)
-		}
+		it.Snippet = w.Format == 2
 		out = append(out, it)
 	}
 	return out
-}
-
-// StripSnippet turns snippet syntax ($1, ${1:name}, $0) into plain text,
-// keeping placeholders' default text.
-func StripSnippet(s string) string {
-	var b strings.Builder
-	r := []rune(s)
-	for i := 0; i < len(r); i++ {
-		switch {
-		case r[i] == '\\' && i+1 < len(r):
-			i++
-			b.WriteRune(r[i])
-		case r[i] == '$' && i+1 < len(r) && r[i+1] >= '0' && r[i+1] <= '9':
-			for i+1 < len(r) && r[i+1] >= '0' && r[i+1] <= '9' {
-				i++
-			}
-		case r[i] == '$' && i+1 < len(r) && r[i+1] == '{':
-			j := i + 2
-			for j < len(r) && r[j] >= '0' && r[j] <= '9' {
-				j++
-			}
-			if j < len(r) && r[j] == ':' {
-				j++
-			}
-			depth := 1
-			k := j
-			for k < len(r) && depth > 0 {
-				switch r[k] {
-				case '{':
-					depth++
-				case '}':
-					depth--
-				}
-				if depth > 0 {
-					k++
-				}
-			}
-			b.WriteString(StripSnippet(string(r[j:min(k, len(r))])))
-			i = k
-		default:
-			b.WriteRune(r[i])
-		}
-	}
-	return b.String()
 }
 
 // Shutdown performs the polite two-step teardown.
