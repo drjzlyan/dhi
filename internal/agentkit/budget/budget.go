@@ -36,8 +36,17 @@ type Entry struct {
 	CostUSD float64   `json:"cost_usd"`
 }
 
+// LedgerSegmentBytes is the size at which the active ledger file rotates
+// into a numbered segment (F-153). Entries reads every segment, so task
+// and day totals are unaffected by the boundary.
+const LedgerSegmentBytes int64 = 1 << 20
+
 // Ledger is the append-only spend log.
-type Ledger struct{ path string }
+type Ledger struct {
+	path string
+	// SegmentBytes overrides LedgerSegmentBytes (tests); 0 = default.
+	SegmentBytes int64
+}
 
 // Open returns the ledger under wsRoot.
 func Open(wsRoot string) *Ledger {
@@ -46,15 +55,22 @@ func Open(wsRoot string) *Ledger {
 
 // Append records one run.
 func (l *Ledger) Append(e Entry) error {
+	seg := LedgerSegmentBytes
+	if l.SegmentBytes > 0 {
+		seg = l.SegmentBytes
+	}
+	if _, err := jsonl.Rotate(l.path, seg); err != nil {
+		return fmt.Errorf("budget: ledger: %w", err)
+	}
 	if err := jsonl.Append(l.path, e); err != nil {
 		return fmt.Errorf("budget: ledger: %w", err)
 	}
 	return nil
 }
 
-// Entries reads the whole ledger (missing = empty).
+// Entries reads the whole ledger, segments first (missing = empty).
 func (l *Ledger) Entries() ([]Entry, error) {
-	es, err := jsonl.ReadAll[Entry](l.path)
+	es, err := jsonl.ReadAllSegments[Entry](l.path)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil
 	}

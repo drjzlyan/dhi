@@ -41,6 +41,7 @@ internal/gitcore/pushguard.go 2
 internal/ideation/ideation.go 8
 internal/ideation/proposals.go 6
 internal/jsonl/jsonl.go 6
+internal/jsonl/segments.go 2
 internal/repair/repair.go 4
 internal/repair/standards.go 5
 internal/review/gh.go 2

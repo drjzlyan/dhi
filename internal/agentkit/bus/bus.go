@@ -19,6 +19,10 @@ import (
 	"github.com/drjzlyan/dhi/internal/workspace"
 )
 
+// ChannelSegmentBytes is the size at which a channel's active file is
+// rotated into a numbered segment (F-153). Reads span all segments.
+const ChannelSegmentBytes int64 = 8 << 20
+
 // Author is the human.
 const Human = "you"
 
@@ -120,6 +124,9 @@ type Bus struct {
 	// text before it is persisted or delivered (F-088).
 	Redact func(string) string
 
+	// SegmentBytes overrides ChannelSegmentBytes (tests); 0 = default.
+	SegmentBytes int64
+
 	// Now stamps message timestamps; nil = wall clock. Tests pin it so
 	// transcript renders (HH:MM stamps, day dividers) stay deterministic.
 	Now func() time.Time
@@ -150,25 +157,27 @@ func Open(ws *workspace.Workspace) (*Bus, error) {
 			if e.IsDir() || !strings.HasSuffix(e.Name(), ".jsonl") {
 				continue
 			}
-			p := filepath.Join(dir, e.Name())
-			msgs, skipped, err := jsonl.ReadTolerant[Message](p)
-			if err != nil {
-				return err
-			}
-			if skipped > 0 {
-				// A corrupt line is quarantined, never a lost channel
-				// (F-078): the rest of the history stays readable.
-				if n, rerr := jsonl.Repair[Message](p); rerr == nil && n > 0 {
-					b.repaired = append(b.repaired, fmt.Sprintf("%s: %s moved to %s.corrupt", p, plural(n, "corrupt line"), filepath.Base(p)))
+			// Every segment counts: the ID counter must clear them all.
+			for _, p := range jsonl.Files(filepath.Join(dir, e.Name())) {
+				msgs, skipped, err := jsonl.ReadTolerant[Message](p)
+				if err != nil {
+					return err
 				}
-			}
-			b.mu.Lock()
-			for _, m := range msgs {
-				if m.ID > b.nextID {
-					b.nextID = m.ID
+				if skipped > 0 {
+					// A corrupt line is quarantined, never a lost channel
+					// (F-078): the rest of the history stays readable.
+					if n, rerr := jsonl.Repair[Message](p); rerr == nil && n > 0 {
+						b.repaired = append(b.repaired, fmt.Sprintf("%s: %s moved to %s.corrupt", p, plural(n, "corrupt line"), filepath.Base(p)))
+					}
 				}
+				b.mu.Lock()
+				for _, m := range msgs {
+					if m.ID > b.nextID {
+						b.nextID = m.ID
+					}
+				}
+				b.mu.Unlock()
 			}
-			b.mu.Unlock()
 		}
 		return nil
 	}
@@ -180,8 +189,9 @@ func Open(ws *workspace.Workspace) (*Bus, error) {
 
 // fileCache is one parsed channel file.
 type fileCache struct {
+	files   int // active file plus segments (F-153)
 	size    int64
-	mod     time.Time
+	mod     int64
 	msgs    []Message
 	replies map[int64]int // thread root → conversational replies
 }
@@ -193,20 +203,20 @@ func (b *Bus) all(channel string) fileCache {
 	if err != nil {
 		return fileCache{}
 	}
-	st, err := os.Stat(path)
-	if err != nil {
+	files, size, mod := jsonl.Stamp(path)
+	if files == 0 {
 		return fileCache{}
 	}
 	b.cacheMu.Lock()
 	defer b.cacheMu.Unlock()
-	if c, ok := b.cache[path]; ok && c.size == st.Size() && c.mod.Equal(st.ModTime()) {
+	if c, ok := b.cache[path]; ok && c.files == files && c.size == size && c.mod == mod {
 		return c
 	}
-	msgs, _, err := jsonl.ReadTolerant[Message](path)
+	msgs, _, err := jsonl.ReadTolerantSegments[Message](path)
 	if err != nil {
 		return fileCache{}
 	}
-	c := fileCache{size: st.Size(), mod: st.ModTime(), msgs: msgs, replies: map[int64]int{}}
+	c := fileCache{files: files, size: size, mod: mod, msgs: msgs, replies: map[int64]int{}}
 	for _, m := range msgs {
 		if m.Thread != 0 && Conversational(m) {
 			c.replies[m.Thread]++
@@ -253,7 +263,7 @@ func (b *Bus) Recent(channel string, thread int64, window int) []Message {
 	if err != nil {
 		return nil
 	}
-	msgs, err := jsonl.Tail[Message](path, window)
+	msgs, err := jsonl.TailSegments[Message](path, window)
 	if err != nil {
 		return nil
 	}
@@ -354,6 +364,13 @@ func (b *Bus) Post(m Message) (Message, error) {
 	m.At = b.now()
 	b.mu.Unlock()
 
+	segBytes := ChannelSegmentBytes
+	if b.SegmentBytes > 0 {
+		segBytes = b.SegmentBytes
+	}
+	if _, err := jsonl.Rotate(path, segBytes); err != nil {
+		return Message{}, fmt.Errorf("bus: rotate: %w", err)
+	}
 	if err := jsonl.Append(path, m); err != nil {
 		return Message{}, fmt.Errorf("bus: persist: %w", err)
 	}

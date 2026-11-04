@@ -1,0 +1,2 @@
+{"id":1,"channel":"#general","author":"you","text":"hello","at":"2026-10-13T09:00:00Z"}
+{"id":2,"channel":"#general","thread":1,"author":"dev","text":"hi","at":"2026-10-13T09:01:00Z","kind":"reply"}

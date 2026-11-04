@@ -25,15 +25,27 @@ func Append(path string, v any) error {
 	if err != nil {
 		return fmt.Errorf("jsonl: marshal: %w", err)
 	}
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-	if err != nil {
-		return fmt.Errorf("jsonl: open %s: %w", path, err)
+	// A Rotate may swap the file between our open and our lock, leaving
+	// the handle on a segment; then reopen the active file (F-153).
+	var f *os.File
+	for try := 0; ; try++ {
+		f, err = os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+		if err != nil {
+			return fmt.Errorf("jsonl: open %s: %w", path, err)
+		}
+		// Locked so an append never lands inside a Repair's rewrite (F-078).
+		if err := fsx.LockFile(f); err != nil {
+			_ = f.Close()
+			return fmt.Errorf("jsonl: lock %s: %w", path, err)
+		}
+		held, err1 := f.Stat()
+		cur, err2 := os.Stat(path)
+		if err1 == nil && err2 == nil && os.SameFile(held, cur) || try >= 5 {
+			break
+		}
+		_ = f.Close()
 	}
 	defer func() { _ = f.Close() }()
-	// Locked so an append never lands inside a Repair's rewrite (F-078).
-	if err := fsx.LockFile(f); err != nil {
-		return fmt.Errorf("jsonl: lock %s: %w", path, err)
-	}
 	if _, err := f.Write(append(b, '\n')); err != nil {
 		return fmt.Errorf("jsonl: append %s: %w", path, err)
 	}
