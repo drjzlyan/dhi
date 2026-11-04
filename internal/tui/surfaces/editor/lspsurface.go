@@ -708,6 +708,9 @@ func (m *Model) currentGitRootOrFirst() string {
 // returning a text result (ADR-0023). rename and code_action have
 // effects; the tool layer gates them with approvals.
 func (m *Model) LSPCall(_ context.Context, op, abs string, line, col int, arg string) (string, error) {
+	if op == "symbols_document" || op == "symbols_workspace" {
+		return m.symbolsCall(op, abs, arg)
+	}
 	c := m.clientFor(abs)
 	if c == nil {
 		return "", fmt.Errorf("LSP unavailable: no language server is running for %s", filepath.Base(abs))

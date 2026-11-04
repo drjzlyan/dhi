@@ -1242,6 +1242,11 @@ func (b *editorBridge) DebugState(ctx context.Context) (string, error) {
 }
 
 func (b *editorBridge) LSP(ctx context.Context, op, path string, line, col int, arg string) (string, error) {
+	// A workspace-wide symbol query names no file (F-145).
+	if op == "symbols_workspace" && path == "" {
+		r, err := b.request(ctx, app.EditorRequest{Op: "lsp", LSPOp: op, Arg: arg})
+		return r.Text, err
+	}
 	abs, err := b.resolve([]string{path})
 	if err != nil {
 		return "", err

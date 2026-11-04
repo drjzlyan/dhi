@@ -106,3 +106,48 @@ func (c *Client) DocumentSymbols(path string) ([]Symbol, error) {
 	walk(items, 0)
 	return out, nil
 }
+
+// WorkspaceSymbol is one workspace/symbol hit: where a named thing is
+// defined, anywhere the server indexes.
+type WorkspaceSymbol struct {
+	Name      string
+	Kind      string
+	Container string
+	Path      string
+	Line, Col int // 0-based; 0,0 when the server sent only a file
+}
+
+// WorkspaceSymbols asks the server for symbols matching query across its
+// workspace. Both result shapes are read: SymbolInformation (location
+// with a range) and WorkspaceSymbol (location may be a bare uri).
+func (c *Client) WorkspaceSymbols(query string) ([]WorkspaceSymbol, error) {
+	var raw json.RawMessage
+	if err := c.call("workspace/symbol", map[string]any{"query": query}, &raw); err != nil {
+		return nil, err
+	}
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil, nil
+	}
+	var items []struct {
+		Name          string `json:"name"`
+		Kind          int    `json:"kind"`
+		ContainerName string `json:"containerName"`
+		Location      struct {
+			URI   string `json:"uri"`
+			Range *Range `json:"range"`
+		} `json:"location"`
+	}
+	if err := json.Unmarshal(raw, &items); err != nil {
+		return nil, fmt.Errorf("lsp: workspace/symbol result: %w", err)
+	}
+	out := make([]WorkspaceSymbol, 0, len(items))
+	for _, it := range items {
+		s := WorkspaceSymbol{Name: it.Name, Kind: symbolKind(it.Kind), Container: it.ContainerName,
+			Path: uriToPath(it.Location.URI)}
+		if it.Location.Range != nil {
+			s.Line, s.Col = it.Location.Range.Start.Line, it.Location.Range.Start.Character
+		}
+		out = append(out, s)
+	}
+	return out, nil
+}

@@ -234,6 +234,7 @@ var servedSlugs = []string{
 	"run", "ask_human", "skill_run",
 	"editor_open", "editor_reveal", "editor_apply_edit",
 	"lsp_hover", "lsp_definition", "lsp_references", "lsp_rename", "lsp_code_action",
+	"code_symbols",
 	"task_list", "task_create", "task_status", "task_assign", "task_comment", "pr_open",
 	"editor_context", "editor_propose_edit", "debug_state",
 	"kb_search", "kb_contribute",
@@ -274,6 +275,7 @@ func (d Deps) Handler() mcp.Handler {
 	all = append(all, d.miscTools()...)
 	all = append(all, d.editorTools()...)
 	all = append(all, d.lspTools()...)
+	all = append(all, d.symbolsTools()...)
 	all = append(all, d.taskTools()...)
 	all = append(all, d.kbTools()...)
 	all = append(all, d.memoryTools()...)

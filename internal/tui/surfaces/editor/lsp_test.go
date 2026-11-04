@@ -41,6 +41,8 @@ type goplusFake struct {
 	// not-open file a rename also edits.
 	locs        []map[string]any
 	renameExtra string
+	// wsSyms is the workspace/symbol reply (F-145).
+	wsSyms []map[string]any
 	// didSaveOpts controls server capabilities for save (F-132).
 	// nil = default (no explicit capability); otherwise {}, {includeText: true}, etc.
 	didSaveOpts any
@@ -235,6 +237,12 @@ func (f *goplusFake) serve() {
 				break
 			}
 			f.reply(*msg.ID, edits)
+
+		case "workspace/symbol":
+			f.mu.Lock()
+			syms := f.wsSyms
+			f.mu.Unlock()
+			f.reply(*msg.ID, syms)
 
 		case "textDocument/documentSymbol":
 			sel := func(l int) map[string]any {

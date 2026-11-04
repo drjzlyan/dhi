@@ -20,6 +20,7 @@ func TestToolScope(t *testing.T) {
 		"read": Read, "list": Read, "glob": Read, "workspace_search": Read,
 		"git_status": Read, "git_log": Read, "git_branch": Read, "git_diff": Read,
 		"lsp_hover": Read, "lsp_definition": Read, "lsp_references": Read, "lsp_code_action": Read,
+		"code_symbols":  Read,
 		"ideation_list": Read, "ideation_read": Read, "ask_human": Read,
 		"task_list": Read, "kb_search": Read, "channel_read": Read,
 		"memory_append": Read, "memory_read_notes": Read, "memory_write_notes": Read,

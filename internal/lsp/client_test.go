@@ -402,6 +402,28 @@ func TestFormattingEditsAndNull(t *testing.T) {
 	}
 }
 
+func TestWorkspaceSymbolsShapes(t *testing.T) {
+	c := startFake(t, func(method string, _ json.RawMessage) (any, bool) {
+		if method != "workspace/symbol" {
+			return nil, false
+		}
+		return []map[string]any{
+			{"name": "Run", "kind": 12, "containerName": "main", "location": map[string]any{
+				"uri": "file:///ws/a.go", "range": map[string]any{
+					"start": map[string]any{"line": 3, "character": 5}, "end": map[string]any{"line": 3, "character": 8}}}},
+			{"name": "Bare", "kind": 23, "location": map[string]any{"uri": "file:///ws/b.go"}},
+		}, true
+	})
+	got, err := c.WorkspaceSymbols("R")
+	if err != nil || len(got) != 2 {
+		t.Fatalf("got = %+v err=%v", got, err)
+	}
+	if got[0] != (WorkspaceSymbol{Name: "Run", Kind: "func", Container: "main", Path: "/ws/a.go", Line: 3, Col: 5}) ||
+		got[1] != (WorkspaceSymbol{Name: "Bare", Kind: "struct", Path: "/ws/b.go"}) {
+		t.Fatalf("got = %+v", got)
+	}
+}
+
 func TestDocumentSymbolsBothShapes(t *testing.T) {
 	pos := func(l, ch int) map[string]any { return map[string]any{"line": l, "character": ch} }
 	rng := func(l int) map[string]any { return map[string]any{"start": pos(l, 5), "end": pos(l, 9)} }

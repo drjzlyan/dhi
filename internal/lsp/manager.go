@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"sync"
 )
 
@@ -91,6 +92,29 @@ func (m *Manager) ClientFor(lang string) *Client {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.clients[lang]
+}
+
+// LangClient pairs a language id with its running client.
+type LangClient struct {
+	Lang   string
+	Client *Client
+}
+
+// Live returns the running clients in language-id order; an exited
+// client is left out.
+func (m *Manager) Live() []LangClient {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []LangClient
+	for lang, c := range m.clients {
+		select {
+		case <-c.Done():
+		default:
+			out = append(out, LangClient{Lang: lang, Client: c})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Lang < out[j].Lang })
+	return out
 }
 
 // ShutdownAll politely tears every client down.

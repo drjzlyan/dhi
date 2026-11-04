@@ -90,6 +90,7 @@ var BuiltinTools = []string{
 	"run", "ask_human",
 	"editor_open", "editor_reveal", "editor_apply_edit", "editor_context", "editor_propose_edit", "debug_state",
 	"lsp_hover", "lsp_definition", "lsp_references", "lsp_rename", "lsp_code_action",
+	"code_symbols",
 }
 
 // IsBuiltinTool reports whether name is one of the native tools.
