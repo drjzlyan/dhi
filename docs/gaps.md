@@ -108,13 +108,13 @@ no daemon.
 
 ## Phase 7 — Needs a decision first (**ADR**) or research
 
-- [ ] **G-C3** Lifecycle hooks, reading the vendor hooks format from installed plugins. No DHI-only format (ADR-0043). **ADR**
-- [ ] **G-C5** Engine failover as an explicit user-set per-agent `fallback_engine`; per-task model routing. **ADR** (ADR-0011)
-- [ ] **G-C6** Headless/CI mode (e.g. `dhi run <task>`) and a GitHub Action. **ADR** (ADR-0004)
-- [ ] **G-C10** ACP client engine (research first)
-- [ ] **G-X1** DAP and test runner beyond Go (ROADMAP M37 S3)
-- [ ] **G-X2** AI ghost text and next-edit prediction (ROADMAP M37 S3)
-- [ ] **G-X3** Chat extras: image attachments, session export, user-invocable skills as slash commands
+- [ ] **G-C3** `blocked (ADR)` — proposed ADR-0047, awaiting decision. Lifecycle hooks, reading the vendor hooks format from installed plugins. No DHI-only format (ADR-0043). **ADR**
+- [ ] **G-C5** `blocked (ADR)` — proposed ADR-0048, awaiting decision. Engine failover as an explicit user-set per-agent `fallback_engine`; per-task model routing. **ADR** (ADR-0011)
+- [ ] **G-C6** `blocked (ADR)` — proposed ADR-0049, awaiting decision. Headless/CI mode (e.g. `dhi run <task>`) and a GitHub Action. **ADR** (ADR-0004)
+- [ ] **G-C10** `blocked (ADR)` — proposed ADR-0050, awaiting decision. ACP client engine (research first)
+- [ ] **G-X1** (no ADR needed; approach: per-language runner table, pytest+debugpy first) DAP and test runner beyond Go (ROADMAP M37 S3)
+- [ ] **G-X2** `blocked (ADR)` — proposed ADR-0051, awaiting decision. AI ghost text and next-edit prediction (ROADMAP M37 S3)
+- [ ] **G-X3** (no ADR needed; images only where the CLI accepts them, export via redact+fence, `user-invocable` skills as slash commands) Chat extras: image attachments, session export, user-invocable skills as slash commands
 
 ## Not pursued
 

@@ -45,4 +45,4 @@ for implementation" needs two agents.
    served; record an `engine_failover` event (`internal/agentkit/trace`).
 4. `internal/agentkit/workflow`: per-step `model`/`engine` overrides, validated at load.
 5. `internal/settings`, `internal/doctor`: Settings field and doctor row; table-driven tests.
-6. Spec F-128.
+6. Spec F-TBD (next free number).

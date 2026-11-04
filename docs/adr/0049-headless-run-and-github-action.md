@@ -48,5 +48,5 @@ sandbox (ADR-0019, ADR-0044) assume a human who can answer a card.
 3. `internal/agentkit/scopes` and the approvals queue: a non-interactive resolver (deny or explicit
    grants).
 4. `internal/doctor`: a headless readiness check (reuses `--json`).
-5. `.github/workflows/release.yml` publishes checksums; the Action repo; spec F-129; ADR-0004
+5. `.github/workflows/release.yml` publishes checksums; the Action repo; spec F-TBD (next free number); ADR-0004
    amended by reference.

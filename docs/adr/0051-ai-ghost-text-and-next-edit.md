@@ -44,4 +44,4 @@ feature as VS Code or Cursor does it conflicts with two accepted ADRs.
 3. `internal/agentkit/runtime`: a one-shot read-only suggest call with a bounded prompt; fence
    file content (ADR-0046) and meter it in `internal/agentkit/budget`.
 4. `internal/settings`: opt-in and trigger mode; `internal/doctor`: row for engine and LSP support.
-5. Regenerate editor goldens; spec F-131.
+5. Regenerate editor goldens; spec F-TBD (next free number).

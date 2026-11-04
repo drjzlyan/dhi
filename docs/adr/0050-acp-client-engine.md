@@ -54,4 +54,4 @@ subprocess.
 2. `internal/agentkit/acp` (new): JSON-RPC stdio client, capability negotiation, update mapping.
 3. `internal/agentkit/clirun`: `transport` field on the adapter declaration; ACP path in the runner.
 4. Approvals queue: map permission requests to cards; `internal/agentkit/mcpbridge`: pass loopback.
-5. `internal/doctor`: ACP handshake row; fake-agent tests; spec F-130.
+5. `internal/doctor`: ACP handshake row; fake-agent tests; spec F-TBD (next free number).

@@ -49,4 +49,4 @@ host CLI's own native tools.
    tool calls; Stop and SessionStart at run boundaries.
 4. `internal/agentkit/scopes`: hooks run with the agent's scopes; exec scope required to enable.
 5. `internal/agentkit/untrusted` (fence output), `internal/doctor` (coverage row), Settings toggle.
-6. Spec F-127; ADR-0043 §3 amended by reference.
+6. Spec F-TBD (next free number); ADR-0043 §3 amended by reference.
