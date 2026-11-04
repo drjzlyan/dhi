@@ -26,7 +26,9 @@ type Input struct {
 	Skills         []library.Skill  // in manifest order
 	// Mode is the turn's working mode (F-144): "" is the normal write turn
 	// and adds nothing, so its prompt is unchanged.
-	Mode  string
+	Mode string
+	// Files are the paths the turn concerns (F-152); a skill with
+	// `paths:` globs enters the catalog only when one of them matches.
 	Files []string
 }
 
@@ -77,9 +79,8 @@ func Compose(in Input) string {
 	// Skills are disclosed progressively (agentskills.io, ADR-0043): a
 	// catalog of the assigned skills; the agent loads one when a task
 	// matches, instead of every body riding in every prompt.
-	add(skills.Catalog(in.Skills))
-	add(modeText[in.Mode])
 	add(skills.Catalog(scoped(in.Skills, in.Files)))
+	add(modeText[in.Mode])
 	return strings.Join(parts, "\n\n")
 }
 
