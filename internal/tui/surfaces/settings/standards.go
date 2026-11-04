@@ -227,6 +227,11 @@ func (m *Model) effectiveBlock(id string) string {
 		out = b.Render() + "\n\n"
 	}
 	out += standards.Resolve(m.d.WS.Root, id, m.teamLookup())
+	// F-152: every member's .claude/rules file, scoped ones with their globs (a turn carries
+	// only those matching the files it names).
+	if rb := standards.RulesBlock(standards.RepoRules(m.d.WS.Members(), nil, m.d.WS.Root, true), nil, true); rb != "" {
+		out += "\n\n" + rb
+	}
 	// F-124: as a chat turn at the workspace root carries it for a CLI
 	// that loads AGENTS.md itself; a task turn dedupes its own worktree.
 	if ri := standards.RepoInstructions(m.d.WS.Members(), nil, m.d.WS.Root, true); ri != "" {

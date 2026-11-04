@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
@@ -80,5 +81,36 @@ func TestPromptGoldens(t *testing.T) {
 			continue
 		}
 		golden.Snapshot(t, "prompt_fresh_"+c.Name, got)
+	}
+}
+
+// TestPathScopedRules (F-152): a rule with `paths:` rides only when the
+// turn names a matching file; an unscoped rule always rides.
+func TestPathScopedRules(t *testing.T) {
+	h, _ := promptFixture(t)
+	dir := filepath.Join(h.ws.Root, "api", ".claude", "rules")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write := func(name, text string) {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(text), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("go-style.md", "---\npaths:\n  - \"**/*.go\"\n---\nWrap errors with %w.\n")
+	write("always.md", "Say what you checked.\n")
+	system := func(text string) string {
+		trig := mustPost(t, h, bus.Message{Channel: "#general", Author: bus.Human, Text: text})
+		_, sys := h.rt.cliPromptAt(context.Background(), h.rt.agents["scout"], trig, "", 0, nil, false)
+		return sys
+	}
+
+	with := system("@scout fix `api/pkg/x.go`")
+	if !strings.Contains(with, "api/.claude/rules/go-style.md (applies to **/*.go):\nWrap errors with %w.") || !strings.Contains(with, "Say what you checked.") {
+		t.Fatalf("matching file: scoped and unscoped rules should ride:\n%s", with)
+	}
+	without := system("@scout tidy the docs in api/README.md")
+	if strings.Contains(without, "Wrap errors") || !strings.Contains(without, "Say what you checked.") {
+		t.Fatalf("no matching file: scoped rule must stay out, unscoped stay:\n%s", without)
 	}
 }

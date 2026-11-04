@@ -117,3 +117,21 @@ func TestCatalogAndActivation(t *testing.T) {
 		}
 	}
 }
+
+func TestPathsFrontmatter(t *testing.T) {
+	for _, front := range []string{"paths:\n  - \"src/**/*.go\"\n  - docs/*.md", "paths: src/**/*.go, docs/*.md"} {
+		s, err := Parse("x", []byte("---\nname: x\ndescription: d\n"+front+"\n---\nbody\n"))
+		if err != nil || len(s.Paths) != 2 || s.Paths[0] != "src/**/*.go" || s.Paths[1] != "docs/*.md" {
+			t.Fatalf("%q: %v %v", front, s, err)
+		}
+	}
+	s := &Skill{Slug: "x", Name: "x", Description: "d", Body: "b", Paths: []string{"a/**"}}
+	text, err := Render(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	back, err := Parse("x", []byte(text))
+	if err != nil || len(back.Paths) != 1 || back.Paths[0] != "a/**" {
+		t.Fatalf("round trip: %q %v", text, err)
+	}
+}

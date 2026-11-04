@@ -41,9 +41,10 @@ type Skill struct {
 	License       string
 	Compatibility string
 	Metadata      map[string]string
-	AllowedTools  string // space-separated, experimental in the spec
-	Body          string // Markdown after the frontmatter
-	Dir           string // absolute skill directory ("" for an unmaterialized builtin)
+	AllowedTools  string   // space-separated, experimental in the spec
+	Paths         []string // globs (F-152): the skill is offered only when the turn concerns a matching file; none = always
+	Body          string   // Markdown after the frontmatter
+	Dir           string   // absolute skill directory ("" for an unmaterialized builtin)
 	Warnings      []string
 }
 
@@ -96,6 +97,8 @@ func Parse(dirName string, data []byte) (*Skill, error) {
 			s.Compatibility = scalar(v)
 		case "allowed-tools":
 			s.AllowedTools = scalar(v)
+		case "paths":
+			s.Paths = pathList(v)
 		case "metadata":
 			if m, ok := v.(map[string]any); ok {
 				s.Metadata = map[string]string{}
@@ -157,6 +160,27 @@ func decodeFront(front string) (map[string]any, error) {
 
 func strconvQuote(s string) string {
 	return `"` + strings.ReplaceAll(strings.ReplaceAll(s, `\`, `\\`), `"`, `\"`) + `"`
+}
+
+// pathList reads `paths:` as Claude Code does: a YAML list, or one
+// comma-separated string.
+func pathList(v any) []string {
+	var raw []string
+	switch t := v.(type) {
+	case []any:
+		for _, x := range t {
+			raw = append(raw, scalar(x))
+		}
+	default:
+		raw = strings.Split(scalar(v), ",")
+	}
+	var out []string
+	for _, g := range raw {
+		if g = strings.TrimSpace(g); g != "" {
+			out = append(out, g)
+		}
+	}
+	return out
 }
 
 func scalar(v any) string {
@@ -287,10 +311,13 @@ func Render(s *Skill) (string, error) {
 	if s.AllowedTools != "" {
 		front["allowed-tools"] = s.AllowedTools
 	}
+	if len(s.Paths) > 0 {
+		front["paths"] = s.Paths
+	}
 	// name and description first, then the rest in a fixed order.
 	var b strings.Builder
 	b.WriteString("---\n")
-	for _, k := range []string{"name", "description", "license", "compatibility", "allowed-tools", "metadata"} {
+	for _, k := range []string{"name", "description", "license", "compatibility", "allowed-tools", "paths", "metadata"} {
 		v, ok := front[k]
 		if !ok {
 			continue

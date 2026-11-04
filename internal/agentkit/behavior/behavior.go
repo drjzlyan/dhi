@@ -11,6 +11,7 @@ import (
 
 	"github.com/drjzlyan/dhi/internal/agentkit/library"
 	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
+	"github.com/drjzlyan/dhi/internal/agentkit/pathscope"
 	"github.com/drjzlyan/dhi/internal/agentkit/skills"
 )
 
@@ -25,7 +26,8 @@ type Input struct {
 	Skills         []library.Skill  // in manifest order
 	// Mode is the turn's working mode (F-144): "" is the normal write turn
 	// and adds nothing, so its prompt is unchanged.
-	Mode string
+	Mode  string
+	Files []string
 }
 
 // Turn modes (F-144). plan, review and ask run read-only.
@@ -77,7 +79,19 @@ func Compose(in Input) string {
 	// matches, instead of every body riding in every prompt.
 	add(skills.Catalog(in.Skills))
 	add(modeText[in.Mode])
+	add(skills.Catalog(scoped(in.Skills, in.Files)))
 	return strings.Join(parts, "\n\n")
+}
+
+// scoped drops the skills whose `paths:` globs match none of files.
+func scoped(list []library.Skill, files []string) []library.Skill {
+	var out []library.Skill
+	for _, k := range list {
+		if len(k.Paths) == 0 || pathscope.Any(k.Paths, files) {
+			out = append(out, k)
+		}
+	}
+	return out
 }
 
 // substitute expands the role template tokens.

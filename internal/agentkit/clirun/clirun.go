@@ -205,7 +205,8 @@ type CLI struct {
 	ReadOnlyOK bool
 	// ReadOnlyWhy says why an adapter has no ReadOnlyOK. A test requires
 	// one for every adapter without it.
-	ReadOnlyWhy string
+	ReadOnlyWhy      string
+	ReadsClaudeRules bool
 	// DenyWebEnv is the env that does it for CLIs that take it there
 	// (opencode: OPENCODE_PERMISSION). Set after the pass-through, so the
 	// user's own value never wins.

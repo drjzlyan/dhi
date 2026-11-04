@@ -21,6 +21,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/episode"
 	"github.com/drjzlyan/dhi/internal/agentkit/lessons"
 	"github.com/drjzlyan/dhi/internal/agentkit/mcpbridge"
+	"github.com/drjzlyan/dhi/internal/agentkit/pathscope"
 	"github.com/drjzlyan/dhi/internal/agentkit/standards"
 	"github.com/drjzlyan/dhi/internal/agentkit/trace"
 	"github.com/drjzlyan/dhi/internal/agentkit/untrusted"
@@ -1001,6 +1002,9 @@ func (r *Runtime) cliPromptMode(ctx context.Context, e *entry, trigger bus.Messa
 	role, skills := behavior.Resolve(e.m, r.lib())
 	persona := behavior.ResolvePersona(e.m, r.lib())
 	wsName := filepath.Base(r.cfg.WS.Root)
+	// F-152: the files the turn names (an @file mention expands to its
+	// path) decide which path-scoped skills and rules ride.
+	files := pathscope.Files(trigger.Text)
 	identity := behavior.Compose(behavior.Input{
 		AgentID:        e.m.ID,
 		Workspace:      wsName,
@@ -1009,6 +1013,7 @@ func (r *Runtime) cliPromptMode(ctx context.Context, e *entry, trigger bus.Messa
 		Persona:        persona,
 		Skills:         skills,
 		Mode:           mode,
+		Files:          files,
 	})
 	var members []string
 	for _, m := range r.cfg.WS.Members() {
@@ -1037,11 +1042,17 @@ func (r *Runtime) cliPromptMode(ctx context.Context, e *entry, trigger bus.Messa
 	if r.cfg.Standards {
 		sys = append(sys, section{name: "standards", text: "\n\n" + standards.Resolve(r.cfg.WS.Root, e.m.ID, r.teamLookup()), prio: 2, floor: 600})
 	}
-	// F-124: the AGENTS.md of repos the CLI will not load from its cwd.
+	// F-152: the repos' .claude/rules the CLI will not load from its cwd.
 	var roots map[string]string
 	if t, ok := r.boundTask(trigger); ok {
 		roots = r.memberRoots(t)
 	}
+	if rules := standards.RepoRules(r.cfg.WS.Members(), roots, r.cliWorkdir(trigger), e.cli.ReadsClaudeRules); len(rules) > 0 {
+		if rb := standards.RulesBlock(rules, files, false); rb != "" {
+			sys = append(sys, section{name: "rules", text: "\n\n" + rb, prio: 2, floor: 400})
+		}
+	}
+	// F-124: the AGENTS.md of repos the CLI will not load from its cwd.
 	if ri := standards.RepoInstructions(r.cfg.WS.Members(), roots, r.cliWorkdir(trigger), e.cli.ReadsAgentsMD); ri != "" {
 		sys = append(sys, section{name: "repo-instructions", text: "\n\n" + ri, prio: 2, floor: 600})
 	}
