@@ -81,12 +81,19 @@ var CursorAgent = &CLI{
 		if in.Workdir != "" {
 			args = append(args, "--workspace", in.Workdir)
 		}
+		if in.Resume != "" {
+			args = append(args, "--resume", in.Resume)
+		}
 		if in.MCPURL != "" {
 			// Auto-approve the served MCP server without a prompt.
 			args = append(args, "--approve-mcps")
 		}
 		return args
 	},
+	// ResumeOK: `--resume <chatId>` continues the session_id the first
+	// system line and the result line carry; live-verified on 2026.10.12
+	// (F-170): a word told in turn 1 was recalled in turn 2.
+	ResumeOK:    true,
 	ParseStream: cursorParseStream,
 	Finalize:    cursorFinalize,
 	Version:     cursorVersion,
@@ -118,6 +125,7 @@ type cursorItem struct {
 	Subtype string `json:"subtype"`
 	IsError bool   `json:"is_error"`
 	Result  string `json:"result"`
+	Session string `json:"session_id"`
 	Text    string `json:"text"`
 	Message struct {
 		Role    string `json:"role"`
@@ -145,6 +153,7 @@ type cursorStop struct {
 	Type        string `json:"type"` // "cursor.result"
 	LastMessage string `json:"last_message"`
 	IsError     bool   `json:"is_error"`
+	SessionID   string `json:"session_id"`
 	TokensIn    int    `json:"tokens_in"`
 	TokensOut   int    `json:"tokens_out"`
 }
@@ -153,12 +162,16 @@ func cursorParseStream(r io.Reader) <-chan StreamEvent {
 	ch := make(chan StreamEvent)
 	go func() {
 		defer close(ch)
-		var lastText string
+		var lastText, session string
 		for line := range lineStream(r) {
 			var it cursorItem
 			if err := json.Unmarshal([]byte(line), &it); err != nil {
 				ch <- StreamEvent{Kind: EventError, Detail: truncate(err.Error(), 120)}
 				continue
+			}
+			if session == "" && it.Session != "" {
+				session = it.Session
+				ch <- StreamEvent{Kind: EventSession, Session: session}
 			}
 			switch it.Type {
 			case "result":
@@ -167,7 +180,7 @@ func cursorParseStream(r io.Reader) <-chan StreamEvent {
 					msg = lastText
 				}
 				stop := cursorStop{
-					Type: "cursor.result", LastMessage: msg, IsError: it.IsError,
+					Type: "cursor.result", LastMessage: msg, IsError: it.IsError, SessionID: session,
 					TokensIn: it.Usage.InputTokens, TokensOut: it.Usage.OutputTokens,
 				}
 				b, err := json.Marshal(stop)
@@ -282,7 +295,7 @@ func cursorFinalize(final string) (string, Usage, error) {
 	if stop.IsError {
 		return "", Usage{}, fmt.Errorf("clirun/cursor-agent: run ended with an error")
 	}
-	u := Usage{TokensIn: stop.TokensIn, TokensOut: stop.TokensOut}
+	u := Usage{TokensIn: stop.TokensIn, TokensOut: stop.TokensOut, SessionID: stop.SessionID}
 	if stop.TokensIn == 0 {
 		u.TokensIn = -1
 	}
