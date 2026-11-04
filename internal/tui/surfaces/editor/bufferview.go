@@ -171,6 +171,7 @@ func (m *Model) bufferView() string {
 	path := e.Path()
 	syntax := m.syntaxFor(e)
 	marks := m.gutterMarks(m.bufs[m.activeTab])
+	m.semanticWant(m.bufs[m.activeTab], prefs) // F-173
 	blame := ""
 	if m.blameEnabled(prefs) {
 		tab := m.bufs[m.activeTab]
@@ -227,6 +228,7 @@ func (m *Model) bufferView() string {
 			if st := syntax.styled(l); st != "" {
 				text = expandTabs(st) // escapes never contain a tab
 			}
+			text = m.semanticLine(m.bufs[m.activeTab], prefs, l, raw, text) // F-173
 		}
 		if cols := extra[l]; len(cols) > 0 { // F-174, before inlay hints shift the cells
 			text = markSecondary(text, raw, cols)
@@ -338,6 +340,9 @@ func (m *Model) bufferView() string {
 // popupRows picks the one open LSP popup (completions > code actions >
 // hover — the key interceptors make them mutually exclusive in practice).
 func (m *Model) popupRows() []string {
+	if rows := m.peekView(); len(rows) > 0 { // F-173
+		return rows
+	}
 	if rows := m.completionView(); len(rows) > 0 {
 		return rows
 	}

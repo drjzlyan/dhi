@@ -131,6 +131,17 @@ func (m *Manager) ShutdownAll() {
 	}
 }
 
+// serverInitOptions are the initializationOptions a server needs to offer
+// a feature the editor implements (F-173). gopls ships semantic tokens off
+// and advertises them only when asked; the request itself is made only
+// when editor.semantic_tokens is on.
+func serverInitOptions(bin string) map[string]any {
+	if filepath.Base(bin) == "gopls" {
+		return map[string]any{"semanticTokens": true}
+	}
+	return nil
+}
+
 // StartProcess spawns a server binary with stdio wired to the client.
 func StartProcess(ctx context.Context, bin string, args, env []string, rootDir string) (*Client, error) {
 	cmd := exec.Command(bin, args...)
@@ -151,7 +162,7 @@ func StartProcess(ctx context.Context, bin string, args, env []string, rootDir s
 		return nil, fmt.Errorf("lsp: start %s: %w", filepath.Base(bin), err)
 	}
 	conn := &processConn{cmd: cmd, r: stdout, w: stdin}
-	c, err := New(ctx, conn, rootDir)
+	c, err := NewWithOptions(ctx, conn, rootDir, serverInitOptions(bin))
 	if err != nil {
 		_ = cmd.Process.Kill()
 		return nil, err

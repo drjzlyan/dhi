@@ -129,6 +129,19 @@ func TestInlayHintsToggle(t *testing.T) {
 	}
 }
 
+// F-173: semantic token colours are a Settings toggle, off by default.
+func TestSemanticTokensToggle(t *testing.T) {
+	m, _ := newSurface(t)
+	if m.cfg.Editor.SemanticTokens {
+		t.Fatal("semantic tokens must default off")
+	}
+	m.cursor = rowSemanticTokens
+	feed(m, "enter")
+	if !m.cfg.Editor.SemanticTokens {
+		t.Fatal("toggle no-op")
+	}
+}
+
 // F-136: wrap long lines is a Settings toggle, off by default.
 func TestWrapToggle(t *testing.T) {
 	m, _ := newSurface(t)

@@ -4,12 +4,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/drjzlyan/dhi/internal/ansi"
 	"github.com/drjzlyan/dhi/internal/lsp"
 	"github.com/drjzlyan/dhi/internal/textbuf"
 	"github.com/drjzlyan/dhi/internal/workspace"
@@ -297,6 +299,63 @@ func TestLiveGopls(t *testing.T) {
 		if strings.Contains(plainView(m), "Add(a: 1") {
 			t.Fatal("hints still drawn after :set noinlayhints")
 		}
+	})
+
+	// F-173: call hierarchy. Use (b.go) calls Add (a.go).
+	t.Run("call hierarchy", func(t *testing.T) {
+		names := func() []string {
+			var out []string
+			if m.calls != nil {
+				for _, r := range m.calls.rows() {
+					out = append(out, r.item.Name)
+				}
+			}
+			return out
+		}
+		h.open("a.go")
+		h.at(3, 5)
+		h.keys(":", "c", "a", "l", "l", "s", "enter")
+		h.wait(func() bool { return m.mode == modeCalls && len(names()) >= 2 }, "incoming calls of Add")
+		t.Logf("incoming: %v", names())
+		got := names()
+		if got[0] != "Add" || !slices.Contains(got, "Use") {
+			t.Fatalf("incoming calls = %v, want Add and Use among its callers", got)
+		}
+		for i, n := range got { // select Use (other files may call Add too) and jump
+			if n == "Use" {
+				for j := 0; j < i; j++ {
+					h.keys("j")
+				}
+			}
+		}
+		h.keys("enter")
+		if m.active().Path() != h.path("b.go") {
+			t.Fatalf("enter landed in %s", m.active().Path())
+		}
+		h.at(2, 5)
+		h.keys(":", "c", "a", "l", "l", "s", " ", "o", "u", "t", "enter")
+		h.wait(func() bool { return m.mode == modeCalls && len(names()) >= 2 }, "outgoing calls of Use")
+		t.Logf("outgoing: %v", names())
+		if got := names(); got[0] != "Use" || got[1] != "Add" {
+			t.Fatalf("outgoing calls = %v, want Use then Add", got)
+		}
+		h.keys("esc")
+	})
+
+	// F-173: semantic tokens from gopls, layered over the syntax colours.
+	t.Run("semantic tokens", func(t *testing.T) {
+		h.open("a.go")
+		h.keys(":", "s", "e", "t", " ", "s", "e", "m", "a", "n", "t", "i", "c", "enter")
+		tab := m.bufs[m.activeTab]
+		h.wait(func() bool { _ = m.View(); return len(tab.sem.lines[3].toks) > 0 }, "semantic tokens for Add's declaration")
+		raw := m.active().Buffer().Line(3)
+		base := expandTabs(raw)
+		got := m.semanticLine(tab, Prefs{}, 3, raw, base)
+		t.Logf("line 3 spans: %d", len(tab.sem.lines[3].toks))
+		if got == base || ansi.Strip(got) != base {
+			t.Fatalf("semantic overlay missing or lossy: %q", got)
+		}
+		h.keys(":", "s", "e", "t", " ", "n", "o", "s", "e", "m", "a", "n", "t", "i", "c", "enter")
 	})
 
 	// Completion and signature help in a scratch buffer that is never saved.

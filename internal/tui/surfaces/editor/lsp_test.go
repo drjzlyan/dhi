@@ -63,6 +63,12 @@ type goplusFake struct {
 	onlySeen     []string
 	execCommands []string
 	execEdit     map[string]any // sent as workspace/applyEdit while executing
+	// F-173: extra server capabilities, the semantic token data, and the
+	// requests seen ("semanticTokens", "prepareCallHierarchy", ...).
+	extraCaps map[string]any
+	semData   []int
+	outerURI  string // the file call-hierarchy item "outer" lives in
+	seen      []string
 	// F-167: selectionRange capability, the reply chain (ranges, innermost
 	// first), a forced error, and how many requests arrived.
 	selCap   bool
@@ -149,6 +155,9 @@ func (f *goplusFake) serve() {
 				if f.selCap {
 					caps["selectionRangeProvider"] = true
 				}
+				for k, v := range f.extraCaps {
+					caps[k] = v
+				}
 				if len(caps) > 0 {
 					res["capabilities"] = caps
 				}
@@ -187,6 +196,9 @@ func (f *goplusFake) serve() {
 			hints := f.inlayHints
 			f.mu.Unlock()
 			f.reply(*msg.ID, hints)
+
+		case "textDocument/prepareCallHierarchy", "callHierarchy/incomingCalls", "callHierarchy/outgoingCalls", "textDocument/semanticTokens/full":
+			f.serveF173(msg.ID, msg.Method, msg.Params)
 
 		case "textDocument/completion":
 			f.mu.Lock()

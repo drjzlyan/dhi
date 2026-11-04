@@ -76,6 +76,11 @@ type Client struct {
 
 // New wraps an established connection and runs the handshake.
 func New(ctx context.Context, conn io.ReadWriteCloser, rootDir string) (*Client, error) {
+	return NewWithOptions(ctx, conn, rootDir, nil)
+}
+
+// NewWithOptions is New with the server's initializationOptions (nil = none).
+func NewWithOptions(ctx context.Context, conn io.ReadWriteCloser, rootDir string, opts map[string]any) (*Client, error) {
 	c := &Client{
 		conn:    conn,
 		reader:  bufio.NewReader(conn),
@@ -87,14 +92,14 @@ func New(ctx context.Context, conn io.ReadWriteCloser, rootDir string) (*Client,
 	// The reader must run BEFORE the handshake: responses are routed by
 	// the read loop and would otherwise deadlock initialize.
 	go c.readLoop()
-	if err := c.initialize(rootDir); err != nil {
+	if err := c.initialize(rootDir, opts); err != nil {
 		c.cancel()
 		return nil, err
 	}
 	return c, nil
 }
 
-func (c *Client) initialize(rootDir string) error {
+func (c *Client) initialize(rootDir string, opts map[string]any) error {
 	params := map[string]any{
 		"processId": nil,
 		"rootUri":   pathToURI(rootDir),
@@ -123,6 +128,14 @@ func (c *Client) initialize(rootDir string) error {
 				"formatting":     map[string]any{},
 				"selectionRange": map[string]any{},
 				"inlayHint":      map[string]any{},
+				// F-173: call hierarchy and semantic tokens (full requests).
+				"callHierarchy": map[string]any{},
+				"semanticTokens": map[string]any{
+					"requests":       map[string]any{"full": true},
+					"tokenTypes":     SemanticTypes,
+					"tokenModifiers": SemanticModifiers,
+					"formats":        []string{"relative"},
+				},
 			},
 			"workspace": map[string]any{
 				"applyEdit":              true,
@@ -131,6 +144,9 @@ func (c *Client) initialize(rootDir string) error {
 				"inlayHint":              map[string]any{"refreshSupport": true},
 			},
 		},
+	}
+	if opts != nil {
+		params["initializationOptions"] = opts
 	}
 	var result struct {
 		ServerInfo *struct {

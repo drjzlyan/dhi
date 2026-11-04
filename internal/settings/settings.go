@@ -54,6 +54,9 @@ type Editor struct {
 	Autosave   string `toml:"autosave"`
 	Blame      bool   `toml:"blame"`       // inline blame on the cursor line (F-143)
 	InlayHints bool   `toml:"inlay_hints"` // LSP inlay hints, dimmed inline (F-169)
+	// SemanticTokens layers the language server's semantic token colours
+	// over the syntax highlighting; off by default (F-173).
+	SemanticTokens bool `toml:"semantic_tokens"`
 	// RestoreSession reopens the last session's tabs and split on launch;
 	// on unless turned off (F-149).
 	RestoreSession bool `toml:"restore_session"`
@@ -286,7 +289,7 @@ func DefaultMemory() Memory {
 // Known reports the accepted top-level keys (for doctor warnings).
 func Known() []string {
 	return []string{"schema", "theme", "reduced_motion", "desktop_notifications", "engine", "editor",
-		"terminal", "security", "editor.tab_width", "editor.line_numbers", "editor.wrap", "editor.autosave", "editor.blame", "editor.inlay_hints", "editor.restore_session",
+		"terminal", "security", "editor.tab_width", "editor.line_numbers", "editor.wrap", "editor.autosave", "editor.blame", "editor.inlay_hints", "editor.semantic_tokens", "editor.restore_session",
 		"worktrees", "worktrees.root",
 		"terminal.scrollback", "security.sandbox",
 		"agents", "agents.max_turns", "agents.resume", "agents.autonomy", "agents.native_web",
@@ -586,6 +589,7 @@ type fileLayer struct {
 		Autosave       string                    `toml:"autosave"`
 		Blame          *bool                     `toml:"blame"`
 		InlayHints     *bool                     `toml:"inlay_hints"`
+		SemanticTokens *bool                     `toml:"semantic_tokens"`
 		RestoreSession *bool                     `toml:"restore_session"`
 		Languages      map[string]LanguageConfig `toml:"languages"`
 	} `toml:"editor"`
@@ -731,6 +735,9 @@ func (f fileLayer) mergeInto(dst *Config) {
 	}
 	if f.Editor.InlayHints != nil {
 		dst.Editor.InlayHints = *f.Editor.InlayHints
+	}
+	if f.Editor.SemanticTokens != nil {
+		dst.Editor.SemanticTokens = *f.Editor.SemanticTokens
 	}
 	if f.Editor.RestoreSession != nil {
 		dst.Editor.RestoreSession = *f.Editor.RestoreSession

@@ -98,6 +98,20 @@ func TestEditorInlayHintsLayer(t *testing.T) {
 	}
 }
 
+// F-173: editor.semantic_tokens defaults off and a layer can turn it on.
+func TestEditorSemanticTokensLayer(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "c.toml")
+	os.WriteFile(p, []byte("[editor]\nsemantic_tokens = true\n"), 0o644)
+	cfg, err := Load(p, "")
+	if err != nil || !cfg.Editor.SemanticTokens {
+		t.Fatalf("semantic_tokens = %v err=%v", cfg.Editor.SemanticTokens, err)
+	}
+	def, _ := Load(filepath.Join(t.TempDir(), "none"), "")
+	if def.Editor.SemanticTokens {
+		t.Fatal("semantic_tokens must default off")
+	}
+}
+
 // F-149: editor.restore_session defaults on and a layer can turn it off.
 func TestEditorRestoreSessionLayer(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "c.toml")

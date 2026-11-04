@@ -70,6 +70,7 @@ const (
 	modeDebug
 	modeTasks
 	modeWorkspaceSyms
+	modeCalls // :calls call-hierarchy tree (F-173)
 )
 
 // Option configures optional editor capabilities.
@@ -130,6 +131,8 @@ type Prefs struct {
 	Autosave    string // "off", "delay" or "focus" (F-142)
 	Blame       bool   // inline blame on the cursor line (F-143)
 	InlayHints  bool   // LSP inlay hints, dimmed inline (F-169)
+	// SemanticTokens layers the server's semantic colours over syntax (F-173).
+	SemanticTokens bool
 	// RestoreSession saves the open tabs and split on quit and reopens them
 	// on launch (F-149).
 	RestoreSession bool
@@ -267,6 +270,9 @@ type Model struct {
 	inlayOverride *bool                       // :set inlayhints|noinlayhints for this session; nil follows Settings (F-169)
 	inlay         map[string]*inlayState      // per file: cached LSP inlay hints (F-169)
 	inlayCfg      map[*lsp.Client]bool        // clients last told whether to emit hints
+	calls         *callPicker                 // :calls tree (modeCalls, F-173)
+	peek          *peekState                  // gp / :peek popup (F-173)
+	semOverride   *bool                       // :set semantic|nosemantic for this session; nil follows Settings (F-173)
 	blameOverride *bool                       // :set blame|noblame for this session; nil follows Settings (F-143)
 	nowFn         func() time.Time            // blame ages; nil = time.Now (tests pin it)
 	ec            *editorconfig.Resolver      // .editorconfig lookups, cached per folder (F-160)
@@ -461,6 +467,8 @@ func (m *Model) StatusContext() (string, string) {
 		return "symbols", "SYMBOLS"
 	case m.mode == modeWorkspaceSyms:
 		return "workspace symbols", "SYMBOLS"
+	case m.mode == modeCalls:
+		return "call hierarchy", "CALLS"
 	case m.mode == modeTests:
 		return "tests", "TESTS"
 	case m.mode == modeTasks:
@@ -546,7 +554,7 @@ func (m *Model) CapturesInput() bool {
 		m.chat != nil && m.chat.open && m.chat.focus,
 		m.gitOpen && m.gitFocus:
 		return true
-	case m.mode == modeFind, m.mode == modeSearchQuery, m.mode == modeSymbols, m.mode == modeWorkspaceSyms, m.mode == modeTasks:
+	case m.mode == modeFind, m.mode == modeSearchQuery, m.mode == modeSymbols, m.mode == modeWorkspaceSyms, m.mode == modeCalls, m.mode == modeTasks:
 		return true
 	case m.mode == modeResults && m.replace != nil:
 		return true
@@ -633,6 +641,8 @@ func (m *Model) HelpSections() [][2]string {
 			[2]string{".", "repeat the last change"},
 			[2]string{"f F t T · ; , · %", "find/until char on line · repeat/reverse · match bracket"},
 			[2]string{"gd · gR · K", "go to definition · references · hover"},
+			[2]string{"gp · :peek refs", "peek the definition (or references) in a popup under the cursor: enter jumps, esc closes, ↑/↓ step through several"},
+			[2]string{":calls · :calls out", "call hierarchy tree: who calls this function · what it calls (→ opens a level, enter jumps)"},
 			[2]string{"]d · [d · :diag", "next / previous problem · all problems"},
 			[2]string{"gr · ga · :organize", "rename · code actions (quick fixes first; visual: selection) · organize imports"},
 			[2]string{"]x · [x · :conflict ours|theirs|both|base", "next / previous merge conflict · accept a side (one undo step)"},
@@ -803,6 +813,7 @@ type teaMsg struct {
 	lang      string // toolMsgInstalled: the tool
 	installOK bool   // toolMsgInstalled: the tool is now found
 	blame     *blameResult
+	sem       *semMsg // semMsgTick / semMsgDone (F-173)
 	testRep   *testrun.Report
 	dbgStart  *dbgStarted
 	editReq   *editshim.Request // editMsgOpen
@@ -830,6 +841,8 @@ const (
 	toolMsgInstalled   // an approved install tab exited (lang: the tool; note: the outcome)
 	testMsgDone
 	blameMsgDone // git blame for a tab finished (F-143)
+	semMsgTick   // semantic tokens: the debounce after an edit elapsed (F-173)
+	semMsgDone   // semantic tokens: the server answered (F-173)
 	dbgMsgStarted
 	dbgMsgUpdate
 	editMsgOpen // a program asks for a file to be edited (F-165)
@@ -880,6 +893,12 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 	case navMsg:
 		m.onNav(msg)
 		return m.TakeCmd()
+	case peekMsg:
+		m.onPeek(msg)
+		return m.TakeCmd()
+	case callsMsg:
+		m.onCalls(msg)
+		return m.TakeCmd()
 	case grepDoneMsg:
 		m.onGrepDone(msg)
 		return m.TakeCmd()
@@ -911,6 +930,10 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 			m.applyTestDone(msg.testRep)
 		case blameMsgDone:
 			m.applyBlame(msg.blame)
+		case semMsgTick:
+			m.onSemanticTick(msg.sem)
+		case semMsgDone:
+			m.onSemanticDone(msg.sem)
 		case dbgMsgStarted:
 			m.applyDebugStarted(msg.dbgStart)
 		case dbgMsgUpdate:
@@ -1099,6 +1122,8 @@ func (m *Model) handleKey(key string) bool {
 		return m.handleSymbolKey(key)
 	case modeWorkspaceSyms:
 		return m.handleWsymKey(key)
+	case modeCalls:
+		return m.handleCallsKey(key)
 	case modeTests:
 		return m.handleTestKey(key)
 	case modeTasks:
@@ -1144,6 +1169,9 @@ func (m *Model) handleKey(key string) bool {
 			if handled := m.handleActionKey(key); handled || key == "esc" {
 				return true
 			}
+		}
+		if m.peek != nil { // F-173: esc closes, enter jumps
+			return m.handlePeekKey(key)
 		}
 		if m.hoverOpen {
 			m.hoverOpen = false
@@ -1222,6 +1250,9 @@ func (m *Model) handleKey(key string) bool {
 					return true
 				case "R": // F-116: references
 					m.requestNav(true)
+					return true
+				case "p": // F-173: peek the definition (vim's gp, put-and-move, is not implemented)
+					m.requestPeek(false)
 					return true
 				case "a":
 					m.requestCodeActions(false)
@@ -1531,6 +1562,7 @@ type bufTab struct {
 	syntax *highlighter // per-tab buffer colorizer (F-026 P4)
 	gutter gutterState  // git change markers (F-040)
 	blame  blameState   // inline blame, loaded off the UI goroutine (F-143)
+	sem    semState     // semantic tokens from the language server (F-173)
 
 	tabWidth    int       // .editorconfig tab_width for this buffer; 0 = the setting (F-160)
 	diskWarned  bool      // the current on-disk change was already reported (F-115)
@@ -1724,6 +1756,9 @@ func (m *Model) view() string {
 	}
 	if m.mode == modeWorkspaceSyms && m.wsym != nil {
 		return m.wsymView()
+	}
+	if m.mode == modeCalls && m.calls != nil {
+		return m.callsView()
 	}
 	if m.mode == modeTasks && m.taskPick != nil {
 		return m.taskPickView()
@@ -1967,6 +2002,18 @@ func (m *Model) ExecEx(requester *textbuf.Editor, cmd string) bool {
 		return true
 	}
 	if msg, ok := m.blameCommand(cmd); ok {
+		requester.SetMessage(msg)
+		return true
+	}
+	if msg, ok := m.semanticCommand(cmd); ok {
+		requester.SetMessage(msg)
+		return true
+	}
+	if msg, ok := m.callsCommand(cmd); ok {
+		requester.SetMessage(msg)
+		return true
+	}
+	if msg, ok := m.peekCommand(cmd); ok {
 		requester.SetMessage(msg)
 		return true
 	}
