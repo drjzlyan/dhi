@@ -55,7 +55,7 @@ no daemon.
       then the write turn. Absorbs **G-A5** (per-mode prompts: plan, review, ask).
 - [x] **G-C4** `done` (F-131) — Repeated-tool-call detection from the stream; in-flight spend check that stops a run at the cap.
 - [ ] **G-C7** Wider evals: injection, lessons, orchestration, forge; multi-run live scoring.
-- [ ] **G-C11** Re-verify resume for opencode, cursor, copilot.
+- [x] **G-C11** `done` (F-170) — Re-verify resume for opencode, cursor, copilot.
 - [x] **G-C8** `done` (F-164) — Optional OpenTelemetry export. Low priority.
 - [x] **G-LSP-live** `done` (F-163) — Run LSP `gd` and rename live with gopls installed (open ROADMAP M37 item).
 
@@ -177,3 +177,4 @@ G-C8 — F-164 — 2026-11-04 (OTLP/HTTP JSON from standard OTEL_* env; metadata
 G-E20 — F-168 — 2026-11-04 (:grep buffer; :w applies after a card via projreplace hash checks)
 G-E17 — F-166 — 2026-11-04 (pane tree up to 4; ctrl+w v/s/hjkl/w/c/o; same buffer shares one cursor)
 G-G6 — F-165 — 2026-11-04 (:rebase in a tab; todo and messages edited in DHI via the dhi-edit shim)
+G-C11 — F-170 — 2026-11-04 (live: opencode+cursor resume fixed and PASS; copilot/claude/codex resume runs blocked by the auto-mode classifier; claude+codex read-only flags PASS)
