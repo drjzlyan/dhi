@@ -57,7 +57,7 @@ no daemon.
 - [ ] **G-C7** Wider evals: injection, lessons, orchestration, forge; multi-run live scoring.
 - [ ] **G-C11** Re-verify resume for opencode, cursor, copilot.
 - [ ] **G-C8** Optional OpenTelemetry export. Low priority.
-- [ ] **G-LSP-live** Run LSP `gd` and rename live with gopls installed (open ROADMAP M37 item).
+- [x] **G-LSP-live** `done` (F-163) — Run LSP `gd` and rename live with gopls installed (open ROADMAP M37 item).
 
 ## Phase 4 — Editor, already on the roadmap (S2)
 
@@ -77,7 +77,7 @@ no daemon.
 - [x] **G-E11** `done` (F-154) — Workspace symbols
 - [ ] **G-E12** LSP code actions and quick fix
 - [ ] **G-E13** Multi-cursor
-- [ ] **G-E14** Block visual (`ctrl+v`)
+- [x] **G-E14** `done` (F-159) — Block visual (`ctrl+v`)
 - [ ] **G-E15** Breadcrumbs and sticky scroll
 - [ ] **G-E16** Inlay hints
 - [ ] **G-E17** More than 2 splits
@@ -169,3 +169,5 @@ G-G1 — F-156 — 2026-11-04 (]x/[x, :conflict, panel UU marks, stage offer)
 G-M2 — F-157 — 2026-11-04 (OSC 133/7; alt+k/j prompts; alt+enter or :send)
 G-E21 — F-160 — 2026-11-04 (editorconfig > detected > settings; bare indent_size means spaces (deviation, documented))
 G-R2 — F-161 — 2026-11-04 (swap 2s debounce in .dhi/tmp/swap; recover card; quit guard k = keep for next time)
+G-E14 — F-159 — 2026-11-04 (ctrl+v; block ops/register; suggestion/agent-edit guarded)
+G-LSP-live — F-163 — 2026-11-04 (TestLiveGopls (DHI_LIVE_LSP=1), gopls 0.24: all features pass)
