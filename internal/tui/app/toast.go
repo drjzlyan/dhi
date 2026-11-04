@@ -42,10 +42,7 @@ func (a *App) pollToasts() tea.Cmd {
 	if got == nil {
 		return nil
 	}
-	var notify tea.Cmd
-	if a.blurred { // F-117: OSC 9 — iTerm2, Ghostty, WezTerm, kitty show it as a notification
-		notify = tea.Raw(osc9(got.Title, got.Detail))
-	}
+	notify := a.notifyCmd(got)
 	a.toastSeq++
 	a.toast, a.toastFrame = got, toastFrames
 	seq := a.toastSeq
@@ -55,6 +52,16 @@ func (a *App) pollToasts() tea.Cmd {
 	}
 	a.toastFrame = 1
 	return tea.Batch(expire, notify, tea.Tick(toastInterval, func(time.Time) tea.Msg { return toastFrameMsg{seq} }))
+}
+
+// notifyCmd is the OSC 9 desktop notification for a toast: only while the
+// terminal is blurred (F-117) and the setting is on (F-139); nil otherwise.
+// iTerm2, Ghostty, WezTerm and kitty show it as a notification.
+func (a *App) notifyCmd(t *kit.Toast) tea.Cmd {
+	if !a.blurred || !theme.Notify {
+		return nil
+	}
+	return tea.Raw(osc9(t.Title, t.Detail))
 }
 
 // osc9 is a desktop-notification escape: "dhi: title — detail", with

@@ -76,8 +76,8 @@ func TestReducedMotionTogglesLiveAndPersists(t *testing.T) {
 func TestTabWidthCyclesAndPersists(t *testing.T) {
 	m, path := newSurface(t)
 	m.cursor = rowTheme
-	feed(m, "j", "j") // tab_width
-	feed(m, "l")      // 4 → 8
+	feed(m, "j", "j", "j") // tab_width (after theme, reduced_motion, desktop_notifications)
+	feed(m, "l")           // 4 → 8
 
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -95,7 +95,7 @@ func TestTabWidthCyclesAndPersists(t *testing.T) {
 func TestLineNumbersToggle(t *testing.T) {
 	m, _ := newSurface(t)
 	m.cursor = rowTheme
-	feed(m, "j", "j", "j") // line_numbers
+	feed(m, "j", "j", "j", "j") // line_numbers (after tab_width)
 	was := m.cfg.Editor.LineNumbers
 	feed(m, "enter")
 	if m.cfg.Editor.LineNumbers == was {
@@ -126,6 +126,35 @@ func TestWrapToggle(t *testing.T) {
 	feed(m, "enter")
 	if !m.cfg.Editor.Wrap {
 		t.Fatal("toggle no-op")
+	}
+}
+
+func TestDesktopNotificationsToggle(t *testing.T) {
+	theme.NotifyForTest(t, true)
+	m, path := newSurface(t)
+	m.cursor = rowTheme
+	feed(m, "j", "j") // reduced_motion, then desktop_notifications
+	if !m.cfg.DesktopNotifications || !theme.Notify {
+		t.Fatal("default must be on")
+	}
+	feed(m, "enter")
+	if m.cfg.DesktopNotifications || theme.Notify {
+		t.Fatal("toggle did not turn it off live")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "desktop_notifications = false") {
+		t.Errorf("persisted file:\n%s", data)
+	}
+	back, err := settings.Load(path, "")
+	if err != nil || back.DesktopNotifications {
+		t.Errorf("reload = %v err=%v, want off", back.DesktopNotifications, err)
+	}
+	feed(m, "enter")
+	if !theme.Notify {
+		t.Fatal("toggle back on did not apply")
 	}
 }
 

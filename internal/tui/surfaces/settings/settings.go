@@ -538,6 +538,7 @@ const (
 	// Appearance, editor and terminal.
 	rowTheme
 	rowReducedMotion
+	rowDesktopNotifications
 	rowTabWidth
 	rowLineNumbers
 	rowWrap
@@ -693,6 +694,8 @@ func (m *Model) cycle(dir int) {
 		}
 	case rowReducedMotion:
 		m.cfg.ReducedMotion = !m.cfg.ReducedMotion
+	case rowDesktopNotifications:
+		m.cfg.DesktopNotifications = !m.cfg.DesktopNotifications
 	case rowTabWidth:
 		widths := []int{2, 4, 8}
 		for i, w := range widths {
@@ -1681,6 +1684,7 @@ func (m *Model) configView(w, budget int) []string {
 	head("appearance")
 	add(rowTheme, "theme", m.themeValue())
 	add(rowReducedMotion, "reduced_motion", boolValue(m.cfg.ReducedMotion))
+	add(rowDesktopNotifications, "desktop_notifications", boolValue(m.cfg.DesktopNotifications))
 	head("editor & terminal")
 	add(rowTabWidth, "editor.tab_width", itoa(m.cfg.Editor.TabWidth))
 	add(rowLineNumbers, "editor.line_numbers", boolValue(m.cfg.Editor.LineNumbers))
@@ -1960,7 +1964,7 @@ var settingLabels = map[string]string{
 	"profile.writing.emoji": "emoji in writing", "profile.writing.language": "writing language",
 	"profile.reading.order": "replies start with", "profile.reading.format": "reply format",
 	"profile.reading.detail": "reply detail",
-	"reduced_motion":         "reduce motion", "editor.tab_width": "tab width", "editor.line_numbers": "line numbers", "editor.wrap": "wrap long lines", "editor.autosave": "autosave", "editor.blame": "inline blame",
+	"reduced_motion":         "reduce motion", "desktop_notifications": "desktop notifications", "editor.tab_width": "tab width", "editor.line_numbers": "line numbers", "editor.wrap": "wrap long lines", "editor.autosave": "autosave", "editor.blame": "inline blame",
 	"terminal.scrollback": "terminal scrollback", "editor.languages": "editor languages",
 	"scopes.read": "may read files", "scopes.write": "may write files", "scopes.exec": "may run commands",
 	"scopes.network": "may use the network", "scopes.git": "may use git", "scopes.push": "may push",

@@ -227,6 +227,9 @@ type Config struct {
 	Schema        int    `toml:"schema"`
 	Theme         string `toml:"theme,omitempty"`
 	ReducedMotion bool   `toml:"reduced_motion"`
+	// DesktopNotifications: OSC 9 notifications while the terminal is
+	// blurred (F-117); on unless turned off (F-139).
+	DesktopNotifications bool `toml:"desktop_notifications"`
 	// ThemeSet reports that a config layer named the theme. When none
 	// did, the app follows the terminal's background (light terminals
 	// get the light theme). Never written.
@@ -258,14 +261,15 @@ type Config struct {
 // Defaults returns the built-in baseline every layer merges onto.
 func Defaults() Config {
 	return Config{
-		Schema:      SchemaVersion,
-		Theme:       theme.Dark().Name,
-		Editor:      Editor{TabWidth: 4, LineNumbers: true, Autosave: AutosaveOff},
-		Terminal:    Terminal{Scrollback: 1000},
-		Security:    Security{Sandbox: SandboxAuto},
-		Agents:      Agents{Resume: true, Autonomy: AutonomyEnvelope, NativeWeb: WebDeny, MaxIterations: 3, StallSeconds: 900, Reflect: true},
-		Memory:      DefaultMemory(),
-		Conventions: conventions.Defaults(),
+		Schema:               SchemaVersion,
+		Theme:                theme.Dark().Name,
+		DesktopNotifications: true,
+		Editor:               Editor{TabWidth: 4, LineNumbers: true, Autosave: AutosaveOff},
+		Terminal:             Terminal{Scrollback: 1000},
+		Security:             Security{Sandbox: SandboxAuto},
+		Agents:               Agents{Resume: true, Autonomy: AutonomyEnvelope, NativeWeb: WebDeny, MaxIterations: 3, StallSeconds: 900, Reflect: true},
+		Memory:               DefaultMemory(),
+		Conventions:          conventions.Defaults(),
 	}
 }
 
@@ -277,7 +281,7 @@ func DefaultMemory() Memory {
 
 // Known reports the accepted top-level keys (for doctor warnings).
 func Known() []string {
-	return []string{"schema", "theme", "reduced_motion", "engine", "editor",
+	return []string{"schema", "theme", "reduced_motion", "desktop_notifications", "engine", "editor",
 		"terminal", "security", "editor.tab_width", "editor.line_numbers", "editor.wrap", "editor.autosave", "editor.blame",
 		"worktrees", "worktrees.root",
 		"terminal.scrollback", "security.sandbox",
@@ -564,13 +568,14 @@ func LoadBestEffort(userPath, wsPath string) (Config, error) {
 // fileLayer decodes one TOML document; pointers distinguish "unset"
 // from false/zero so later layers only override what they set.
 type fileLayer struct {
-	Schema        int               `toml:"schema"`
-	Theme         string            `toml:"theme"`
-	ReducedMotion *bool             `toml:"reduced_motion"`
-	Engine        string            `toml:"engine"`
-	Scopes        map[string]string `toml:"scopes"`
-	Keys          map[string]string `toml:"keys"`
-	Editor        struct {
+	Schema               int               `toml:"schema"`
+	Theme                string            `toml:"theme"`
+	ReducedMotion        *bool             `toml:"reduced_motion"`
+	DesktopNotifications *bool             `toml:"desktop_notifications"`
+	Engine               string            `toml:"engine"`
+	Scopes               map[string]string `toml:"scopes"`
+	Keys                 map[string]string `toml:"keys"`
+	Editor               struct {
 		TabWidth    int                       `toml:"tab_width"`
 		LineNumbers *bool                     `toml:"line_numbers"`
 		Wrap        *bool                     `toml:"wrap"`
@@ -679,6 +684,9 @@ func (f fileLayer) mergeInto(dst *Config) {
 	}
 	if f.ReducedMotion != nil {
 		dst.ReducedMotion = *f.ReducedMotion
+	}
+	if f.DesktopNotifications != nil {
+		dst.DesktopNotifications = *f.DesktopNotifications
 	}
 	if f.Engine != "" {
 		dst.Engine = strings.TrimSpace(f.Engine)
@@ -826,6 +834,7 @@ func (c Config) Apply() {
 		theme.Current = fn()
 	}
 	theme.SetMotion(!c.ReducedMotion)
+	theme.SetNotify(c.DesktopNotifications)
 }
 
 // FollowBackground picks the live theme from the terminal background when

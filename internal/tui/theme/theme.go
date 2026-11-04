@@ -213,6 +213,11 @@ var Current = Dark()
 // effect immediately (F-012).
 var Motion = true
 
+// Notify gates OSC 9 desktop notifications while the terminal is blurred
+// (F-117). Set by settings.Apply from desktop_notifications; the app reads
+// it at emit time, so a live Settings toggle takes effect at once (F-139).
+var Notify = true
+
 // Motion knobs (F-026 P1): one place for animated-effect cadence so
 // reduced-motion and tuning never touch component code.
 var (
@@ -231,6 +236,16 @@ const (
 
 // SetMotion flips the reduced-motion switch (production path: settings).
 func SetMotion(on bool) { Motion = on }
+
+// SetNotify flips the desktop-notification switch (production path: settings).
+func SetNotify(on bool) { Notify = on }
+
+// NotifyForTest installs on for the duration of the test.
+func NotifyForTest(t interface{ Cleanup(func()) }, on bool) {
+	old := Notify
+	Notify = on
+	t.Cleanup(func() { Notify = old })
+}
 
 // MotionForTest installs on for the duration of the test.
 func MotionForTest(t interface{ Cleanup(func()) }, on bool) {

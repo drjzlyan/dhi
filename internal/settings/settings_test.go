@@ -800,3 +800,28 @@ func TestAutosaveSetting(t *testing.T) {
 		t.Fatalf("bad value accepted: %v", err)
 	}
 }
+
+// F-139: desktop_notifications defaults on, a layer can turn it off, and
+// Apply drives the live theme.Notify switch.
+func TestDesktopNotificationsDefaultAndApply(t *testing.T) {
+	theme.NotifyForTest(t, true)
+	if !Defaults().DesktopNotifications {
+		t.Fatal("default must be on")
+	}
+	user := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(user, []byte("desktop_notifications = false\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(user, "")
+	if err != nil || cfg.DesktopNotifications {
+		t.Fatalf("layer off lost: %+v err=%v", cfg.DesktopNotifications, err)
+	}
+	cfg.Apply()
+	if theme.Notify {
+		t.Fatal("Apply must switch theme.Notify off")
+	}
+	Defaults().Apply()
+	if !theme.Notify {
+		t.Fatal("Apply must switch theme.Notify on")
+	}
+}
