@@ -49,6 +49,29 @@ type diffView struct {
 	note   string
 	rev    string // F-140: a commit's patch for this file, read-only
 	dir    string // F-140: where to run git for rev
+	// F-151: V marks a line range inside the hunk (anchor..row, body
+	// lines counted from the line after @@); s/u then act on those lines.
+	lineMode    bool
+	row, anchor int
+}
+
+// hunkBody is the current hunk's lines after its @@ header.
+func (d *diffView) hunkBody() []string {
+	ls := strings.Split(strings.TrimRight(d.hunks[d.cur], "\n"), "\n")
+	return ls[1:]
+}
+
+// selection is the changed (+/-) body lines between anchor and row.
+func (d *diffView) selection() map[int]bool {
+	body := d.hunkBody()
+	lo, hi := min(d.anchor, d.row), max(d.anchor, d.row)
+	sel := map[int]bool{}
+	for i := lo; i <= hi && i < len(body); i++ {
+		if strings.HasPrefix(body[i], "+") || strings.HasPrefix(body[i], "-") {
+			sel[i] = true
+		}
+	}
+	return sel
 }
 
 // splitPatch cuts one file's patch into its header and raw hunks.
@@ -126,6 +149,21 @@ func prefixLines(s, p string) string {
 
 func (m *Model) diffKey(key string) bool {
 	d := m.diff
+	if d.lineMode {
+		switch key {
+		case "esc", "q", "V":
+			d.lineMode = false
+			return true
+		case "j", "down":
+			d.row = min(d.row+1, max(len(d.hunkBody())-1, 0))
+			return true
+		case "k", "up":
+			d.row = max(d.row-1, 0)
+			return true
+		case "n", "p":
+			d.lineMode = false // moving to another hunk ends the line range
+		}
+	}
 	switch key {
 	case "esc", "q":
 		m.diff = nil
@@ -134,6 +172,26 @@ func (m *Model) diffKey(key string) bool {
 		d.cur = min(d.cur+1, max(len(d.hunks)-1, 0))
 	case "k", "up", "p":
 		d.cur = max(d.cur-1, 0)
+	case "V": // F-151: mark lines inside this hunk
+		if d.rev != "" {
+			d.err = "a past commit is read-only"
+			return true
+		}
+		if len(d.hunks) == 0 {
+			return true
+		}
+		if d.note == "untracked" {
+			d.err = "a new file stages whole — s"
+			return true
+		}
+		first := 0
+		for i, l := range d.hunkBody() {
+			if strings.HasPrefix(l, "+") || strings.HasPrefix(l, "-") {
+				first = i
+				break
+			}
+		}
+		d.lineMode, d.row, d.anchor, d.err = true, first, first, ""
 	case "s", "u": // stage (work tree) / unstage (index) this hunk
 		if d.rev != "" {
 			d.err = "a past commit is read-only"
@@ -148,7 +206,14 @@ func (m *Model) diffKey(key string) bool {
 		}
 		root := m.gitRepo.Path()
 		var err error
-		if d.note == "untracked" {
+		if d.lineMode {
+			var patch string
+			patch, err = gitcore.PartialPatch(d.head, d.hunks[d.cur], d.selection(), d.staged)
+			if err == nil {
+				err = m.gitApplyPartial(root, patch, d.staged)
+			}
+			d.lineMode = false
+		} else if d.note == "untracked" {
 			_, err = m.gitRun(root, "add", "--", d.path)
 		} else {
 			args := []string{"apply", "--cached", "--recount"}
@@ -173,12 +238,25 @@ func (m *Model) diffKey(key string) bool {
 	return true
 }
 
+// gitApplyPartial applies a line-level patch to the index (F-151).
+func (m *Model) gitApplyPartial(dir, patch string, reverse bool) error {
+	if m.gitCLI == nil {
+		return fmt.Errorf("git is not available")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	return m.gitCLI.ApplyPartial(ctx, dir, patch, reverse)
+}
+
 func (m *Model) diffView(base string) string {
 	d := m.diff
 	side := "changes"
-	keys := "s stage this hunk"
+	keys := "s stage this hunk · V lines"
 	if d.staged {
-		side, keys = "staged changes", "u unstage this hunk"
+		side, keys = "staged changes", "u unstage this hunk · V lines"
+	}
+	if d.lineMode {
+		keys = map[bool]string{true: "u unstage", false: "s stage"}[d.staged] + " the marked lines · j/k extend · V/esc cancel"
 	}
 	if d.rev != "" {
 		side, keys = "at "+shortHash(d.rev), "read-only"
@@ -187,19 +265,46 @@ func (m *Model) diffView(base string) string {
 	if len(d.hunks) == 0 {
 		lines = append(lines, theme.TextDim().Render("no changes"))
 	} else {
-		for _, l := range strings.Split(strings.TrimRight(d.hunks[d.cur], "\n"), "\n") {
+		sel := map[int]bool{}
+		if d.lineMode {
+			sel = d.selection()
+		}
+		var hunk []string
+		for i, l := range strings.Split(strings.TrimRight(d.hunks[d.cur], "\n"), "\n") {
 			l = expandTabs(l)
+			bi := i - 1 // body index; the @@ line is -1
+			pre := ""
+			if d.lineMode { // a two-column gutter holds the cursor
+				pre = "  "
+				if bi == d.row {
+					pre = theme.GlyphCursor + " "
+				}
+			}
 			switch {
 			case strings.HasPrefix(l, "@@"):
-				lines = append(lines, theme.Hint().Render(l))
+				hunk = append(hunk, pre+theme.Hint().Render(l))
 			case strings.HasPrefix(l, "+"):
-				lines = append(lines, theme.AddWash().Render(l))
+				w := theme.AddWash()
+				if sel[bi] {
+					w = theme.AddWashStrong()
+				}
+				hunk = append(hunk, pre+w.Render(l))
 			case strings.HasPrefix(l, "-"):
-				lines = append(lines, theme.DelWash().Render(l))
+				w := theme.DelWash()
+				if sel[bi] {
+					w = theme.DelWashStrong()
+				}
+				hunk = append(hunk, pre+w.Render(l))
 			default:
-				lines = append(lines, theme.TextDim().Render(l))
+				hunk = append(hunk, pre+theme.TextDim().Render(l))
 			}
 		}
+		// in line mode a long hunk scrolls to keep the cursor in view
+		room := max(m.height-4, 8) - 4 - len(lines)
+		if d.lineMode && len(hunk) > room {
+			hunk = hunk[min(max(d.row+3-room, 0), len(hunk)-room):]
+		}
+		lines = append(lines, hunk...)
 	}
 	h := max(m.height-4, 8)
 	if len(lines) > h-4 {
