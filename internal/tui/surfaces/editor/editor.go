@@ -65,6 +65,7 @@ const (
 	modeSymbols
 	modeTests
 	modeDebug
+	modeTasks
 )
 
 // Option configures optional editor capabilities.
@@ -246,14 +247,16 @@ type Model struct {
 	pairNote      string
 	breakpoints   map[string][]int // abs path → sorted 1-based lines (F-039)
 	dbg           *dbgState
-	dapStart      dapStarter       // adapter launcher; nil = delve (tests inject)
-	testing       *testState       // :test results (modeTests)
-	syms          *symbolPicker    // :sym outline picker (modeSymbols)
-	wrapOverride  *bool            // :set wrap|nowrap for this session; nil follows Settings (F-136)
-	blameOverride *bool            // :set blame|noblame for this session; nil follows Settings (F-143)
-	nowFn         func() time.Time // blame ages; nil = time.Now (tests pin it)
-	formatOnSave  bool             // :set fmt|nofmt; default on (Go + live server only)
-	pairAgent     string           // pairing partner (F-038); "" = no session
+	dapStart      dapStarter                  // adapter launcher; nil = delve (tests inject)
+	testing       *testState                  // :test results (modeTests)
+	syms          *symbolPicker               // :sym outline picker (modeSymbols)
+	wrapOverride  *bool                       // :set wrap|nowrap for this session; nil follows Settings (F-136)
+	blameOverride *bool                       // :set blame|noblame for this session; nil follows Settings (F-143)
+	nowFn         func() time.Time            // blame ages; nil = time.Now (tests pin it)
+	formatOnSave  bool                        // :set fmt|nofmt; default on (Go + live server only)
+	pairAgent     string                      // pairing partner (F-038); "" = no session
+	taskPick      *kit.Palette                // :task picker (modeTasks, F-146)
+	taskDiags     map[string][]lsp.Diagnostic // problems from the last task's output (F-146)
 
 	drawerOpen  bool
 	termCopy    string // text a terminal program copied (OSC 52), not yet sent
@@ -416,6 +419,8 @@ func (m *Model) StatusContext() (string, string) {
 		return "symbols", "SYMBOLS"
 	case m.mode == modeTests:
 		return "tests", "TESTS"
+	case m.mode == modeTasks:
+		return "tasks", "TASKS"
 	case m.mode == modeDebug:
 		return "debugger", "DEBUG"
 	case m.drawerOpen && m.termFocus:
@@ -494,7 +499,7 @@ func (m *Model) CapturesInput() bool {
 		m.chat != nil && m.chat.open && m.chat.focus,
 		m.gitOpen && m.gitFocus:
 		return true
-	case m.mode == modeFind, m.mode == modeSearchQuery, m.mode == modeSymbols:
+	case m.mode == modeFind, m.mode == modeSearchQuery, m.mode == modeSymbols, m.mode == modeTasks:
 		return true
 	case m.mode == modeResults && m.replace != nil:
 		return true
@@ -580,6 +585,7 @@ func (m *Model) HelpSections() [][2]string {
 			[2]string{":pair <agent>", "invite an agent to pair (:ask · :unpair)"},
 			[2]string{":break · :debug", "breakpoint · start debugging (:cont :next :step :out :stop :eval)"},
 			[2]string{":test [all|name]", "run Go tests · failures list jumps to the line"},
+			[2]string{":task [name]", "run a package.json script, make target or just recipe in a terminal tab · its errors join :diag"},
 			[2]string{":fmt · :sym", "format · outline / go to symbol (format on save: :set nofmt)"},
 			[2]string{"ctrl+y", "review agent suggestions"},
 			[2]string{"ctrl+g", "markdown preview"},
@@ -993,6 +999,8 @@ func (m *Model) handleKey(key string) bool {
 		return m.handleSymbolKey(key)
 	case modeTests:
 		return m.handleTestKey(key)
+	case modeTasks:
+		return m.handleTaskKey(key)
 	case modeDebug:
 		return m.handleDebugKey(key)
 	}
@@ -1513,6 +1521,9 @@ func (m *Model) view() string {
 	if m.mode == modeSymbols && m.syms != nil {
 		return m.symbolsView()
 	}
+	if m.mode == modeTasks && m.taskPick != nil {
+		return m.taskPickView()
+	}
 	if m.mode == modeTests && m.testing != nil {
 		return m.testsView()
 	}
@@ -1755,6 +1766,10 @@ func (m *Model) ExecEx(requester *textbuf.Editor, cmd string) bool {
 		return true
 	}
 	if msg, ok := m.symCommand(cmd); ok {
+		requester.SetMessage(msg)
+		return true
+	}
+	if msg, ok := m.taskCommand(cmd); ok {
 		requester.SetMessage(msg)
 		return true
 	}

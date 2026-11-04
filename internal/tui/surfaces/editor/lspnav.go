@@ -207,7 +207,7 @@ func (m *Model) showList(title string, hits []search.Hit) {
 
 // sortedDiags is the active file's problems in line order.
 func (m *Model) sortedDiags(path string) []lsp.Diagnostic {
-	ds := append([]lsp.Diagnostic(nil), m.lspDiags[path]...)
+	ds := m.allDiags(path)
 	sort.SliceStable(ds, func(i, j int) bool {
 		if ds[i].Line != ds[j].Line {
 			return ds[i].Line < ds[j].Line
@@ -221,7 +221,7 @@ func (m *Model) sortedDiags(path string) []lsp.Diagnostic {
 func (m *Model) diagAtLine(path string, line int) (lsp.Diagnostic, bool) {
 	var best lsp.Diagnostic
 	found := false
-	for _, d := range m.lspDiags[path] {
+	for _, d := range m.allDiags(path) {
 		if d.Line == line && (!found || (d.Severity != 0 && d.Severity < best.Severity)) {
 			best, found = d, true
 		}
@@ -288,9 +288,13 @@ func (m *Model) jumpDiag(dir int) {
 // showProblems lists every problem the servers reported (:diag).
 func (m *Model) showProblems() {
 	var paths []string
-	for p, ds := range m.lspDiags {
-		if len(ds) > 0 {
-			paths = append(paths, p)
+	seen := map[string]bool{}
+	for _, set := range []map[string][]lsp.Diagnostic{m.lspDiags, m.taskDiags} {
+		for p, ds := range set {
+			if len(ds) > 0 && !seen[p] {
+				seen[p] = true
+				paths = append(paths, p)
+			}
 		}
 	}
 	sort.Strings(paths)

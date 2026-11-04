@@ -55,6 +55,13 @@ func (m *Model) Commands() []surfaces.Command {
 	if m.searcher != nil {
 		add("Search the workspace", "s", m.openSearch)
 	}
+	add("Run a task…", ":task", func() {
+		if e := m.active(); e != nil {
+			m.ExecEx(e, "task")
+		} else if msg, _ := m.taskCommand("task"); msg != "" {
+			m.toast = &kit.Toast{Kind: kit.ToastInfo, Title: "Tasks", Detail: msg}
+		}
+	})
 	add("Toggle terminal", "ctrl+t", m.ToggleDrawer)
 	if len(m.terms) > 0 && m.chat != nil {
 		add("Ask an agent about the terminal output", "", func() {

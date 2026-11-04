@@ -645,7 +645,7 @@ func (m *Model) selectedCompletion() (lsp.CompletionItem, bool) {
 
 // diagCount returns (errors, warnings) for the active buffer.
 func (m *Model) diagCount(e *textbuf.Editor) (int, int) {
-	diags := m.lspDiags[e.Path()]
+	diags := m.allDiags(e.Path())
 	errs, warns := 0, 0
 	for _, d := range diags {
 		switch d.Severity {
@@ -660,7 +660,7 @@ func (m *Model) diagCount(e *textbuf.Editor) (int, int) {
 
 // gutterStyle colors the line number when the line has problems.
 func (m *Model) gutterFor(path string, line int, plain string) string {
-	for _, d := range m.lspDiags[path] {
+	for _, d := range m.allDiags(path) {
 		if d.Line != line {
 			continue
 		}

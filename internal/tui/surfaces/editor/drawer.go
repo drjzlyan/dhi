@@ -27,8 +27,9 @@ type termTab struct {
 	dir    string
 	screen *vt.Screen // emulated terminal sized to the pane (F-061)
 	exited bool
-	tool   string // an approved install of this host tool runs here (F-110)
-	scroll int    // rows scrolled back into history (0 = live) (F-121)
+	tool   string       // an approved install of this host tool runs here (F-110)
+	scroll int          // rows scrolled back into history (0 = live) (F-121)
+	task   *taskCapture // a task run's output, scanned for problems on exit (F-146)
 }
 
 // ToggleDrawer opens/closes/focus-blurs the terminal drawer (ctrl+t):
@@ -189,6 +190,9 @@ func (m *Model) ingestTermChunk(id int, chunk []byte) {
 		return
 	}
 	t := m.terms[idx]
+	if t.task != nil {
+		t.task.add(chunk)
+	}
 	wasAlt := t.screen.AltScreen()
 	t.screen.Feed(chunk)
 	if t.screen.AltScreen() != wasAlt {
@@ -211,6 +215,9 @@ func (m *Model) termExited(id int) {
 		t.screen.Close()
 		if t.tool != "" {
 			m.toolInstallDone(t.tool, code)
+		}
+		if t.task != nil {
+			m.taskFinished(t.task, code)
 		}
 	}
 }
