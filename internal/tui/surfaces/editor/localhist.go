@@ -239,17 +239,7 @@ func (m *Model) lhOverlay(base string) string {
 		title += " · snapshot → buffer"
 		end := min(h.scroll+lhRows, len(h.compare))
 		for _, l := range h.compare[h.scroll:end] {
-			l = expandTabs(l)
-			switch {
-			case strings.HasPrefix(l, "@@"):
-				lines = append(lines, theme.Hint().Render(l))
-			case strings.HasPrefix(l, "+"):
-				lines = append(lines, theme.AddWash().Render(l))
-			case strings.HasPrefix(l, "-"):
-				lines = append(lines, theme.DelWash().Render(l))
-			default:
-				lines = append(lines, theme.TextDim().Render(l))
-			}
+			lines = append(lines, styleUnified(expandTabs(l)))
 		}
 		lines = append(lines, "", theme.Hint().Render("r restore into the buffer · ↑/↓ scroll · esc back"))
 	} else {
@@ -271,6 +261,19 @@ func (m *Model) lhOverlay(base string) string {
 	}
 	md := kit.Modal{Title: title, Lines: lines, Width: min(m.width-4, 100)}
 	return kit.Overlay(strings.Split(base, "\n"), md.View(), m.width, m.height)
+}
+
+// styleUnified colors one line of a unified comparison.
+func styleUnified(l string) string {
+	switch {
+	case strings.HasPrefix(l, "@@"):
+		return theme.Hint().Render(l)
+	case strings.HasPrefix(l, "+"):
+		return theme.AddWash().Render(l)
+	case strings.HasPrefix(l, "-"):
+		return theme.DelWash().Render(l)
+	}
+	return theme.TextDim().Render(l)
 }
 
 func byteSize(n int) string {

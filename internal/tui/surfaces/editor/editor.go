@@ -28,6 +28,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/lsp"
 	"github.com/drjzlyan/dhi/internal/preview"
 	"github.com/drjzlyan/dhi/internal/search"
+	"github.com/drjzlyan/dhi/internal/swapfile"
 	"github.com/drjzlyan/dhi/internal/testrun"
 	"github.com/drjzlyan/dhi/internal/textbuf"
 	"github.com/drjzlyan/dhi/internal/tui/branding"
@@ -297,6 +298,10 @@ type Model struct {
 	hist          *fileHistory         // F-140
 	lh            *localHist           // F-155
 	lhStore       *localhistory.Store  // F-155
+	swaps         *swapfile.Store      // F-161
+	swapCard      *swapCard            // F-161: recovery card for a file opened with a dead DHI's swap
+	pid           int                  // F-161: id written into swaps; 0 = this process
+	pidAlive      func(int) bool       // F-161: nil = swapfile.PIDAlive
 	commitDone    *textbuf.Editor      // the message buffer that just committed
 	commitRepo    *gitcore.Repo        // the repo a COMMIT_EDITMSG buffer commits to
 	gitIdentity   gitcore.IdentityFunc // F-029 commit identity; nil refuses
@@ -824,6 +829,7 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 		return diskTick()
 	case autosaveTickMsg:
 		m.autosaveDelayed()
+		m.swapTick() // F-161
 		return autosaveTick()
 	case compTickMsg:
 		m.onCompTick(msg)
@@ -962,6 +968,9 @@ func (m *Model) handleKey(key string) bool {
 	}
 	if m.hist != nil {
 		return m.histKey(key)
+	}
+	if m.swapCard != nil {
+		return m.swapKey(key)
 	}
 	if m.lh != nil {
 		return m.lhKey(key)
@@ -1434,9 +1443,17 @@ type bufTab struct {
 	gutter gutterState  // git change markers (F-040)
 	blame  blameState   // inline blame, loaded off the UI goroutine (F-143)
 
-	tabWidth   int  // .editorconfig tab_width for this buffer; 0 = the setting (F-160)
-	diskWarned bool // the current on-disk change was already reported (F-115)
-	noAutosave bool // autosave hit a changed-on-disk or write error; off until the buffer is clean (F-142)
+	tabWidth    int       // .editorconfig tab_width for this buffer; 0 = the setting (F-160)
+	diskWarned  bool      // the current on-disk change was already reported (F-115)
+	noAutosave  bool      // autosave hit a changed-on-disk or write error; off until the buffer is clean (F-142)
+	baseHash    string    // hash of the disk text this tab loaded or last saved (F-161)
+	baseMTime   int64     // that file's mtime, unix nanoseconds
+	swapSeen    string    // text at the last change the swap saw
+	swapAt      time.Time // when it changed
+	swapKnown   bool
+	swapPending bool // changed since the last swap write
+	swapWritten bool // a swap exists for this tab's edits
+	noSwap      bool // another DHI owns the swap, or the recovery card is undecided
 }
 
 // active returns the focused tab's editor, or nil.
@@ -1487,6 +1504,7 @@ func (m *Model) openNode(n *node, confirmed bool) {
 	be.SetAfterSave(func(ed *textbuf.Editor) {
 		m.snapshotSave(ed.Path(), ed.Buffer().Text())           // F-155: local history
 		m.editorConfigSaved(ed.Path())                          // F-160: a saved .editorconfig applies now
+		m.savedSwap(ed.Path())                                  // F-161: the swap is stale now
 		m.lspDidSave(ed)                                        // F-132: notify LSP of save
 		m.invalidateBlame(ed.Path())                            // F-143: lines moved
 		if ed.Path() == m.commitPath() && m.commitRepo != nil { // F-121: :w commits
@@ -1508,6 +1526,7 @@ func (m *Model) openNode(n *node, confirmed bool) {
 	m.activeTab = len(m.bufs) - 1
 	m.bufFocus = true
 	m.lspOpenDoc(n.path, be.Buffer().Text())
+	m.swapOnOpen(tab) // F-161
 	m.noteRecent(n.path)
 	m.act(tutorial.EvEditorOpen)
 }
@@ -1520,6 +1539,7 @@ func (m *Model) closeBuffer() {
 		return
 	}
 	closing := m.activeTab
+	m.dropSwap(m.bufs[closing])                             // F-161
 	m.lspDidClose(m.bufs[closing].vp, m.bufs[closing].path) // F-132: notify LSP of close
 	m.closed = append(m.closed, m.bufs[closing].path)       // F-119: :reopen
 	m.bufs = append(m.bufs[:m.activeTab], m.bufs[m.activeTab+1:]...)
@@ -1583,6 +1603,9 @@ func (m *Model) View() string {
 	}
 	if m.hist != nil {
 		return m.histOverlay(m.view())
+	}
+	if m.swapCard != nil {
+		return m.swapOverlay(m.view())
 	}
 	if m.lh != nil {
 		return m.lhOverlay(m.view())

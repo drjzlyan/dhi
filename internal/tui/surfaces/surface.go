@@ -88,6 +88,14 @@ type Unsaved interface {
 	SaveAll() error    // saves everything Unsaved listed
 }
 
+// HotExit (F-161) is implemented by a surface that can keep its unsaved work
+// as swap files: the quit guard offers "keep for next time", and "quit
+// without saving" drops the swaps along with the edits.
+type HotExit interface {
+	KeepForNextTime() error
+	DiscardSwaps()
+}
+
 // SessionSaver (F-149) is implemented by a surface with a session worth
 // reopening: the shell calls SaveSession as DHI quits.
 type SessionSaver interface {

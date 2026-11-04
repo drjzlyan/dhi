@@ -15,7 +15,7 @@ import (
 // split are written to the workspace's .dhi/tmp/session.json (per user,
 // ignored by git, next to the recent-files list); on the next launch in
 // the same workspace they reopen. Unsaved text is not part of it (hot
-// exit is G-R2). The scroll position is not stored: the buffer view
+// exit keeps it in swap files, F-161). The scroll position is not stored: the buffer view
 // derives it from the cursor, so restoring the cursor restores the view.
 
 const sessionVersion = 1
