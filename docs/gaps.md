@@ -64,7 +64,7 @@ no daemon.
 - [x] **G-E1** `done` (F-128) — LSP signature help
 - [x] **G-E2** `done` (F-132) — LSP `didSave` and `didClose`
 - [x] **G-E3** `done` (F-133) — `f`/`t`/`%` motions
-- [ ] **G-E4** Word wrap
+- [x] **G-E4** `done` (F-136) — Word wrap
 - [x] **G-E5** `done` (F-137) — Regex in buffer `:s`
 - [ ] **G-E6** Large-file size warning
 - [ ] **G-E7** Git gutter past 2000 lines
@@ -146,3 +146,4 @@ G-E3 — F-133 — 2026-11-04 (Haiku draft; coordinator fixed d% d; d,)
 G-B4 — F-134 — 2026-11-04 (/fork drops the CLI session, rebuilds from the summary; /new)
 G-G5 — F-140 — 2026-11-04 (:history and h in the git panel; read-only diff)
 G-E5 — F-137 — 2026-11-04 (vim magic → RE2; no c flag; '<,'> not prefilled on :)
+G-E4 — F-136 — 2026-11-04 (editor.wrap + :set wrap; ctrl-d/u and wheel stay logical)
