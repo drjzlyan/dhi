@@ -19,7 +19,7 @@ while [ $i -lt 10 ]; do
   echo '{"type":"assistant","message":{"id":"m1","content":[{"type":"tool_use","name":"Bash","input":{"command":"go test ./...","description":"x"}}]}}'
   i=$((i+1))
 done
-sleep 5
+sleep 30
 echo '{"type":"result","subtype":"success","is_error":false,"result":"late"}'
 `
 
@@ -39,7 +39,7 @@ func TestRepeatedToolCallStopsTheRunByName(t *testing.T) {
 	trig := mustPost(t, h, bus.Message{Channel: "#general", Author: bus.Human, Text: "@scout go"})
 	start := time.Now()
 	run, _ := h.rt.cliSpawnOnce(context.Background(), e, trig, spawnInput{prompt: "p", workdir: h.ws.Root})
-	if time.Since(start) > 4*time.Second {
+	if time.Since(start) > 20*time.Second { // the stub sleeps 30s; slack for a loaded machine
 		t.Fatal("the looping spawn was not stopped")
 	}
 	if run.Status != tasks.RunError || run.StopReason != "loop" {
@@ -66,7 +66,7 @@ const spendStub = `#!/bin/sh
 echo '{"type":"assistant","message":{"id":"a","usage":{"input_tokens":600,"output_tokens":100},"content":[{"type":"text","text":"one"}]}}'
 echo '{"type":"assistant","message":{"id":"a","usage":{"input_tokens":600,"output_tokens":100},"content":[{"type":"text","text":"same message again"}]}}'
 echo '{"type":"assistant","message":{"id":"b","usage":{"input_tokens":700,"output_tokens":100},"content":[{"type":"text","text":"two"}]}}'
-sleep 5
+sleep 30
 echo '{"type":"result","subtype":"success","is_error":false,"result":"late"}'
 `
 
@@ -81,7 +81,7 @@ func TestInFlightSpendStopsAtTheCap(t *testing.T) {
 		prompt: "p", workdir: h.ws.Root, taskSlug: "t1",
 		budgets: budget.Limits{TaskTokens: 1200},
 	})
-	if time.Since(start) > 4*time.Second {
+	if time.Since(start) > 20*time.Second { // the stub sleeps 30s
 		t.Fatal("the spawn was not stopped at the cap")
 	}
 	if run.Status != tasks.RunError || run.StopReason != "budget" {

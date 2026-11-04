@@ -41,7 +41,7 @@ no daemon.
 ## Phase 2 — Context and memory
 
 - [x] **G-B1** `done` (F-127) — Per-chat context and cost meter (ROADMAP M37 S2). Data is in `Episode.LastContext` and `Usage`.
-- [ ] **G-B2** Calibrate the 4-runes-per-token budget from CLI usage events; optional model summary via
+- [x] **G-B2** `done` (F-135) — Calibrate the 4-runes-per-token budget from CLI usage events; optional model summary via
       `agents.reflect_model`; user `:compact`.
 - [x] **G-B4** `done` (F-134) — Fork a conversation (episode) by key. Also "new conversation" in a DM (ROADMAP M37 S2).
 - [ ] **G-B3** Agent-facing symbols tool backed by LSP (repo-map-lite). Embeddings stay out of scope.
@@ -147,3 +147,4 @@ G-B4 — F-134 — 2026-11-04 (/fork drops the CLI session, rebuilds from the su
 G-G5 — F-140 — 2026-11-04 (:history and h in the git panel; read-only diff)
 G-E5 — F-137 — 2026-11-04 (vim magic → RE2; no c flag; '<,'> not prefilled on :)
 G-E4 — F-136 — 2026-11-04 (editor.wrap + :set wrap; ctrl-d/u and wheel stay logical)
+G-B2 — F-135 — 2026-11-04 (calibrated ratio (claude reports per-call context); /compact; reflect_model reused; prompt change — live eval pending)
