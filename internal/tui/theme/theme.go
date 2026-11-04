@@ -635,6 +635,17 @@ func AuthorColor(name string) color.Color {
 	return ramp[h%uint32(len(ramp))]
 }
 
+// GraphLane is the color of commit-graph lane i (F-162): the accent ramp
+// cycled, so neighbouring lanes stay apart.
+func GraphLane(i int) color.Color {
+	ramp := []color.Color{Current.Accent2, Current.Accent3, Current.Accent, Current.Accent4,
+		Current.Success, Current.Info, Current.Warning}
+	return ramp[((i%len(ramp))+len(ramp))%len(ramp)]
+}
+
+// GraphLaneText styles lane i's glyphs.
+func GraphLaneText(i int) lipgloss.Style { return lipgloss.NewStyle().Foreground(GraphLane(i)) }
+
 // FileKind is the glyph and color a file tree shows for a file name.
 // Plain Unicode only (no Nerd Font): the glyph shape is shared and the
 // color tells kinds apart.

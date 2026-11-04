@@ -25,6 +25,10 @@ func (m *Model) fileCommand(requester *textbuf.Editor, cmd string) (string, bool
 		return m.openLocalHistory(), true
 	case "history":
 		return m.openHistory(""), true
+	case "graph":
+		return m.openGraph(), true
+	case "cherrypick", "cherrypick abort":
+		return m.cherryPickCmd(strings.TrimSpace(cmd) == "cherrypick abort"), true
 	case "blame":
 		return m.blameLine(), true
 	}

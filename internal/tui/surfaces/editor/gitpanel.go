@@ -156,6 +156,11 @@ func (m *Model) handleGitKey(key string) bool {
 			m.gitErr = msg
 		}
 		return true
+	case "g": // F-162: the branch graph
+		if msg := m.openGraph(); msg != "" {
+			m.gitErr = msg
+		}
+		return true
 	case "p":
 		m.pushPull(false)
 		return true

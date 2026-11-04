@@ -48,6 +48,7 @@ type diffView struct {
 	err    string
 	note   string
 	rev    string // F-140: a commit's patch for this file, read-only
+	whole  bool   // F-162: rev's whole commit; each hunk's first line names its file
 	dir    string // F-140: where to run git for rev
 	// F-151: V marks a line range inside the hunk (anchor..row, body
 	// lines counted from the line after @@); s/u then act on those lines.
@@ -281,7 +282,7 @@ func (m *Model) diffView(base string) string {
 				}
 			}
 			switch {
-			case strings.HasPrefix(l, "@@"):
+			case strings.HasPrefix(l, "@@") || (d.whole && i == 0):
 				hunk = append(hunk, pre+theme.Hint().Render(l))
 			case strings.HasPrefix(l, "+"):
 				w := theme.AddWash()

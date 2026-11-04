@@ -296,6 +296,7 @@ type Model struct {
 	branches      *branchPicker
 	stash         *stashView           // F-129
 	hist          *fileHistory         // F-140
+	graph         *graphView           // F-162
 	lh            *localHist           // F-155
 	lhStore       *localhistory.Store  // F-155
 	swaps         *swapfile.Store      // F-161
@@ -981,6 +982,9 @@ func (m *Model) handleKey(key string) bool {
 	if m.swapCard != nil {
 		return m.swapKey(key)
 	}
+	if m.graph != nil {
+		return m.graphKey(key)
+	}
 	if m.lh != nil {
 		return m.lhKey(key)
 	}
@@ -1620,6 +1624,9 @@ func (m *Model) View() string {
 	}
 	if m.swapCard != nil {
 		return m.swapOverlay(m.view())
+	}
+	if m.graph != nil {
+		return m.graphOverlay(m.view())
 	}
 	if m.lh != nil {
 		return m.lhOverlay(m.view())

@@ -55,6 +55,15 @@ func (m *Model) openHistory(abs string) string {
 
 // loadCommitDiff fills d with the commit's patch for the file.
 func (m *Model) loadCommitDiff(d *diffView) {
+	if d.whole { // F-162: every file the commit touched
+		out, err := m.gitRun(d.dir, "show", "--no-color", "--no-ext-diff", "-M", "--format=", d.rev)
+		if err != nil {
+			d.err = err.Error()
+			return
+		}
+		d.hunks = splitCommitPatch(out)
+		return
+	}
 	out, err := m.gitRun(d.dir, "show", "--no-color", "--no-ext-diff", "-M", "--format=", d.rev, "--", ":(top)"+d.path)
 	if err != nil {
 		d.err = err.Error()

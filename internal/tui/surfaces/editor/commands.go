@@ -105,6 +105,7 @@ func (m *Model) Commands() []surfaces.Command {
 		}
 		add("Organize imports", ":organize", ex("organize"))
 		add("Local history of this file", ":localhistory", ex("localhistory"))
+		add("Commit graph of the branches", ":graph", ex("graph"))
 		add("Go to symbol", ":sym", ex("sym"))
 		out = append(out, surfaces.Command{Group: "Editor", Title: "Go to symbol in workspace", Hint: ":wsym", Run: func() tea.Cmd {
 			ex("wsym")()
