@@ -136,6 +136,7 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message, tl
 		run, events := r.cliSpawnOnce(ctx, e, trigger, spawnInput{
 			prompt: prompt + brief, system: system, workdir: workdir, attempt: attempt,
 			resume: resume, maxTurns: tune.MaxTurns, stall: tune.Stall,
+			model:     ep.Model, // F-130: the conversation's override, "" = the agent's
 			mcpConfig: mcpConfig, mcpEndpoint: mcpEndpoint, mcpGeminiDir: mcpGeminiDir,
 			webDenied: webDenied, relaunch: rl,
 		})
@@ -328,7 +329,7 @@ func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Messag
 	started := time.Now().UTC()
 	run := tasks.Run{
 		ID: runID(started), Agent: e.m.ID,
-		Runtime: "cli:" + e.m.Runtime, Model: e.m.CLIModel(), Attempt: in.attempt,
+		Runtime: "cli:" + e.m.Runtime, Model: model, Attempt: in.attempt,
 		Started: started, Finished: time.Now().UTC(),
 		TokensIn: -1, TokensOut: -1,
 	}

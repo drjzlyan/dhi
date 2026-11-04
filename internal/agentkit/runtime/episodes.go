@@ -106,9 +106,9 @@ func (r *Runtime) saveEpisode(ep episode.Episode) {
 		return
 	}
 	_ = r.cfg.Episodes.Update(ep.Agent, ep.Key, func(cur *episode.Episode) {
-		plan := cur.Plan
+		plan, model := cur.Plan, cur.Model // the chat owns the model override (F-130)
 		*cur = ep
-		cur.Plan = plan
+		cur.Plan, cur.Model = plan, model
 	})
 }
 

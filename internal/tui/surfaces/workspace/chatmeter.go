@@ -70,7 +70,10 @@ func (c *chatMeter) forChat(ch string, thread int64, now time.Time) (full, compa
 		if c.limits != nil {
 			prompt, session = c.limits()
 		}
-		c.text = [2]string{meterText(ep, prompt, session, true), meterText(ep, prompt, session, false)}
+		c.text = [2]string{
+			joinMeter(modelChip(ep.Model), meterText(ep, prompt, session, true)),
+			joinMeter(modelChip(ep.Model), meterText(ep, prompt, session, false)),
+		}
 	}
 	return c.text[0], c.text[1]
 }
@@ -134,4 +137,26 @@ func withMeter(header, full, compact string, width int) string {
 		}
 	}
 	return header
+}
+
+// modelChip marks a conversation running on a model override (F-130).
+func modelChip(model string) string {
+	if model == "" {
+		return ""
+	}
+	return theme.AccentText().Render("model " + model)
+}
+
+func joinMeter(a, b string) string {
+	if a == "" || b == "" {
+		return a + b
+	}
+	return a + theme.Hint().Render(" · ") + b
+}
+
+// forget drops the cached text so the next draw re-reads the episode.
+func (c *chatMeter) forget() {
+	if c != nil {
+		c.key = ""
+	}
 }

@@ -66,6 +66,11 @@ type Episode struct {
 	// (F-078). 0 = unknown.
 	LastContext int `json:"last_context,omitempty"`
 
+	// Model is the user's per-conversation model override (F-130): the
+	// agent's turns in this episode run on it instead of the manifest
+	// model. The chat owns it; a turn's save keeps whatever is stored.
+	Model string `json:"model,omitempty"`
+
 	Started time.Time `json:"started"`
 	Updated time.Time `json:"updated"`
 }
@@ -233,6 +238,11 @@ func (s *Store) Update(agent, key string, fn func(*Episode)) error {
 	}
 	fn(&e)
 	return s.write(p, e)
+}
+
+// SetModel sets (or, with "", clears) the episode's model override.
+func (s *Store) SetModel(agent, key, model string) error {
+	return s.Update(agent, key, func(e *Episode) { e.Model = model })
 }
 
 // List returns an agent's episodes, most recently updated first.

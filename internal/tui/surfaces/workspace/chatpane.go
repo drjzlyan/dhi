@@ -609,6 +609,10 @@ func (p *chatPane) composerKey(key string) bool {
 	if choice, ok := tools.ComposerDecide(key, p.input.Value == "" && p.editID == 0); ok && p.answerAsk(choice) {
 		return true
 	}
+	if key == "enter" && p.editID == 0 && p.modelCommand(p.input.Value) {
+		p.input = kit.Input{}
+		return true
+	}
 	if key == "enter" && p.editID == 0 {
 		if choice, ok := tools.SlashDecide(p.input.Value); ok && p.answerAsk(choice) {
 			p.input = kit.Input{}

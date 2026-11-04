@@ -182,3 +182,40 @@ func TestWorkflowOnlyForTaskTurns(t *testing.T) {
 		t.Fatal("a task turn must carry the feature workflow")
 	}
 }
+
+// F-130: a conversation's model override rides the next spawn, survives
+// the turn's own episode save, and clearing it returns to the agent's model.
+func TestEpisodeModelOverrideReachesCLI(t *testing.T) {
+	h := episodeHarness(t)
+	root := mustPost(t, h, bus.Message{Channel: "#general", Author: bus.Human, Text: "@scout one"})
+	if err := h.rt.Turn(context.Background(), "scout", root); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(spawnArgs(t, h, 1), "opus-x") {
+		t.Fatal("no override yet")
+	}
+	st, key := h.rt.cfg.Episodes, episode.Key("", "#general", root.ID)
+	if err := st.SetModel("scout", key, "opus-x"); err != nil {
+		t.Fatal(err)
+	}
+	next := mustPost(t, h, bus.Message{Channel: "#general", Thread: root.ID, Author: bus.Human, Text: "@scout two"})
+	if err := h.rt.Turn(context.Background(), "scout", next); err != nil {
+		t.Fatal(err)
+	}
+	if args := spawnArgs(t, h, 2); !strings.Contains(args, "--model\nopus-x\n") {
+		t.Fatalf("override missing from argv:\n%s", args)
+	}
+	if ep, _, _ := st.Get("scout", key); ep.Model != "opus-x" || ep.Turns != 2 {
+		t.Fatalf("turn save lost the override: %+v", ep)
+	}
+	if err := st.SetModel("scout", key, ""); err != nil {
+		t.Fatal(err)
+	}
+	third := mustPost(t, h, bus.Message{Channel: "#general", Thread: root.ID, Author: bus.Human, Text: "@scout three"})
+	if err := h.rt.Turn(context.Background(), "scout", third); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(spawnArgs(t, h, 3), "opus-x") {
+		t.Fatal("cleared override must not reach the CLI")
+	}
+}
