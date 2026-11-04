@@ -90,7 +90,7 @@ func (m *Model) autosaveTab(t *bufTab) {
 		t.noAutosave = false
 		return
 	}
-	if t.noAutosave || t.path == "" || t.ed.Path() == "" || (m.ws != nil && t.path == m.commitPath()) {
+	if t.noAutosave || t.path == "" || t.ed.Path() == "" || (m.ws != nil && (t.path == m.commitPath() || t.path == m.searchBufPath())) {
 		return
 	}
 	err := t.ed.Save()

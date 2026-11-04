@@ -7,7 +7,6 @@ package editor
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"github.com/drjzlyan/dhi/internal/checkpoint"
 	"github.com/drjzlyan/dhi/internal/editorconfig"
@@ -346,11 +345,16 @@ type Model struct {
 	undo           *undoState
 	recent         []string // recently opened files, newest first (F-119)
 	recentLoaded   bool
-	restoring      bool                 // reopening the saved session: not a "recent" event (F-149)
-	closed         []string             // closed tabs, for reopen
-	treeOp         *treeOp              // the open file-operation dialog (F-119)
-	treeNote       string               // the last file operation, on the status row
-	pendingOpen    *pendingFileOpen     // pending large-file open confirmation (F-138)
+	restoring      bool             // reopening the saved session: not a "recent" event (F-149)
+	closed         []string         // closed tabs, for reopen
+	treeOp         *treeOp          // the open file-operation dialog (F-119)
+	treeNote       string           // the last file operation, on the status row
+	pendingOpen    *pendingFileOpen // pending large-file open confirmation (F-138)
+	sbuf           *searchBuf       // the search results buffer's listing (F-168)
+	sbApply        *searchApply     // the card before :w writes its edits
+	grepLast       *grepArgs        // what :grep! repeats
+	grepCancel     context.CancelFunc
+	grepGen        int
 	lspStarting    map[string]bool      // a server start is in flight (F-116)
 	lspWaiting     map[string][]string  // files to open once their server is up
 	lspPumped      map[*lsp.Client]bool // clients whose events are already read
@@ -627,10 +631,12 @@ func (m *Model) HelpSections() [][2]string {
 			[2]string{"ctrl+y", "review agent suggestions"},
 			[2]string{"ctrl+g", "markdown preview"},
 			[2]string{":s/old/new/[g]", "replace"},
+			[2]string{":grep [-C n] pat [glob]", "search results buffer: enter / gd opens a row, :w applies edited rows after a card, :grep! refreshes"},
 			[2]string{"ctrl+w v · ctrl+w w", "split side by side · switch pane (:vs · :only)"})
 	case m.mode == modeResults:
 		out = append(out, [2]string{"enter", "jump to the hit"},
-			[2]string{"r", "replace across every hit (preview, then enter)"})
+			[2]string{"r", "replace across every hit (preview, then enter)"},
+			[2]string{"o", "open the hits as an editable buffer (:w asks before writing rows back)"})
 	}
 	return out
 }
@@ -846,6 +852,9 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 	case navMsg:
 		m.onNav(msg)
 		return m.TakeCmd()
+	case grepDoneMsg:
+		m.onGrepDone(msg)
+		return m.TakeCmd()
 	case wsymTickMsg:
 		return m.onWsymTick(msg)
 	case wsymMsg:
@@ -960,6 +969,9 @@ func (m *Model) handleKey(key string) bool {
 	}
 	if m.pendingOpen != nil {
 		return m.pendingOpenKey(key)
+	}
+	if m.sbApply != nil {
+		return m.searchApplyKey(key)
 	}
 	if m.treeOp != nil {
 		return m.treeOpKey(key)
@@ -1162,6 +1174,10 @@ func (m *Model) handleKey(key string) bool {
 					m.startRename()
 					return true
 				case "d": // F-116: definition
+					if m.isSearchBuf(e) { // F-168: gd on a result row opens it
+						m.openSearchRow(e)
+						return true
+					}
 					m.requestNav(false)
 					return true
 				case "R": // F-116: references
@@ -1201,6 +1217,11 @@ func (m *Model) handleKey(key string) bool {
 			}
 		} else if e.Mode() == textbuf.ModeNormal && (key == "]" || key == "[") && !e.AwaitingChar() {
 			m.pendingBracket = key
+			return true
+		}
+
+		if key == "enter" && e.Mode() == textbuf.ModeNormal && m.isSearchBuf(e) { // F-168
+			m.openSearchRow(e)
 			return true
 		}
 
@@ -1520,10 +1541,14 @@ func (m *Model) openNode(n *node, confirmed bool) {
 	m.applyEditorConfigOpen(be)                           // F-160
 	be.SetBeforeSave(m.beforeSave)
 	be.SetAfterSave(func(ed *textbuf.Editor) {
-		m.snapshotSave(ed.Path(), ed.Buffer().Text())           // F-155: local history
-		m.editorConfigSaved(ed.Path())                          // F-160: a saved .editorconfig applies now
-		m.savedSwap(ed.Path())                                  // F-161: the swap is stale now
-		m.lspDidSave(ed)                                        // F-132: notify LSP of save
+		m.snapshotSave(ed.Path(), ed.Buffer().Text()) // F-155: local history
+		m.editorConfigSaved(ed.Path())                // F-160: a saved .editorconfig applies now
+		m.savedSwap(ed.Path())                        // F-161: the swap is stale now
+		m.lspDidSave(ed)                              // F-132: notify LSP of save
+		if m.isSearchBuf(ed) {                        // F-168: :w on the search buffer asks before writing rows back
+			m.searchBufSaved(ed)
+			return
+		}
 		m.invalidateBlame(ed.Path())                            // F-143: lines moved
 		if ed.Path() == m.commitPath() && m.commitRepo != nil { // F-121: :w commits
 			m.gitMessage = m.commitFromBuffer(ed.Buffer().Text())
@@ -1603,6 +1628,9 @@ func (m *Model) View() string {
 	}
 	if m.pendingOpen != nil {
 		return m.pendingOpenView(m.view())
+	}
+	if m.sbApply != nil {
+		return m.searchApplyView(m.view())
 	}
 	if m.treeOp != nil {
 		return m.treeOpView(m.view())
@@ -1895,6 +1923,10 @@ func (m *Model) ExecEx(requester *textbuf.Editor, cmd string) bool {
 		if strings.TrimSpace(cmd) == "fmt" && msg == "formatted" {
 			m.act(tutorial.EvEditorFormat)
 		}
+		return true
+	}
+	if msg, ok := m.grepCommand(cmd); ok {
+		requester.SetMessage(msg)
 		return true
 	}
 	if msg, ok := m.fileCommand(requester, cmd); ok {
@@ -2204,11 +2236,7 @@ func (m *Model) startSearch(q string) {
 	if err != nil {
 		m.searching = false
 		m.hitsCh = nil
-		m.searchErr = err.Error()
-		var missing *search.MissingToolError
-		if errors.As(err, &missing) && m.askInstall(missing.Tool) {
-			m.searchErr = "search needs ripgrep (" + missing.Tool + ") — install it, then search again"
-		}
+		m.searchErr = m.searchFailure(err)
 		return
 	}
 	m.searchErr = ""
@@ -2237,6 +2265,9 @@ func (m *Model) handleResultsKey(key string) bool {
 		return true
 	case "enter", "l":
 		return m.jumpHit()
+	case "o": // F-168: the hits as an editable buffer
+		m.openResultsAsBuffer()
+		return true
 	case "r":
 		if m.resultsTitle == "" { // a list (references, problems) has nothing to replace
 			m.openReplace()
@@ -2305,7 +2336,7 @@ func (m *Model) resultsBlock() string {
 	}
 	count := theme.Hint().Render(kit.Count(len(m.hits), "hit") + searchStateSuffix(m.searching))
 	lines := append([]string{head + "  " + count, ""}, splitLines(m.hitList.View())...)
-	lines = append(lines, "", theme.Hint().Render("⏎ jump · r replace · esc back"))
+	lines = append(lines, "", theme.Hint().Render("⏎ jump · r replace · o as buffer · esc back"))
 	return strings.Join(lines, "\n")
 }
 

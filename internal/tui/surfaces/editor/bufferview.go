@@ -198,6 +198,8 @@ func (m *Model) bufferView() string {
 			text = withCursor(text, curCol)
 		} else if hl != "" && strings.Contains(raw, hl) {
 			text = markMatches(text, expandTabs(hl)) // plain, so the marks stay exact
+		} else if styled, ok := m.searchBufStyled(e, text); ok {
+			text = styled // F-168: the search buffer colors its own rows
 		} else if st, ok := conflictStyle(e.ConflictRegionAt(l)); ok {
 			// Merge-conflict regions (F-026-style washes, F-156) render plain
 			// so the background runs unbroken to the edge.
