@@ -66,9 +66,9 @@ no daemon.
 - [x] **G-E3** `done` (F-133) — `f`/`t`/`%` motions
 - [x] **G-E4** `done` (F-136) — Word wrap
 - [x] **G-E5** `done` (F-137) — Regex in buffer `:s`
-- [ ] **G-E6** Large-file size warning
-- [ ] **G-E7** Git gutter past 2000 lines
-- [ ] **G-E8** OSC 9 setting
+- [x] **G-E6** `done` (F-138) — Large-file size warning
+- [x] **G-E7** `done` (F-147) — Git gutter past 2000 lines
+- [x] **G-E8** `done` (F-139) — OSC 9 setting
 
 ## Phase 5 — Editor depth (S3 and new)
 
@@ -93,7 +93,7 @@ no daemon.
 - [ ] **G-R2** Hot exit with swap recovery
 - [ ] **G-R3** Local history (snapshot per save, restore, compare)
 - [ ] **G-R4** Session restore of tabs and splits
-- [ ] **G-T1** Task runner reading existing `package.json`, `Makefile`, `justfile` targets, with problem matchers
+- [x] **G-T1** `done` (F-146) — Task runner reading existing `package.json`, `Makefile`, `justfile` targets, with problem matchers
       (no new file format, ADR-0043)
 - [ ] **G-G1** Merge-conflict tools (ROADMAP M37 S3)
 - [ ] **G-G2** Line-level staging (ROADMAP M37 S3)
@@ -152,3 +152,7 @@ G-M1 — F-141 — 2026-11-04 (alt+s split, alt+o focus)
 G-R1 — F-142 — 2026-11-04 (off/delay/focus; focus mode ignores surface switches)
 G-G3 — F-143 — 2026-11-04 (cursor-line blame; :e! does not refetch)
 G-B3 — F-145 — 2026-11-04 (code_symbols tool; only servers already started by the human (on-demand start is a product decision))
+G-E7 — F-147 — 2026-11-04 (Myers diff; Hunks still quadratic)
+G-E6 — F-138 — 2026-11-04 (5 MiB prompt; reads 8 KiB to sniff binary)
+G-E8 — F-139 — 2026-11-04 (desktop_notifications; theme.Notify)
+G-T1 — F-146 — 2026-11-04 (npm/pnpm/yarn, make, just; two problem regexes)

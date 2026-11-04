@@ -417,7 +417,7 @@ func largeTextFile(path string) (int64, bool) {
 	if err != nil {
 		return 0, false
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	head := make([]byte, binarySniff)
 	n, _ := io.ReadFull(f, head)
 	return fi.Size(), bytes.IndexByte(head[:n], 0) < 0
