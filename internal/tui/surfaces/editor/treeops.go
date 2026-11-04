@@ -268,6 +268,8 @@ func (m *Model) trashPath(n *node) error {
 	for _, t := range m.bufs {
 		if !within(t.path, n.path) {
 			keep = append(keep, t)
+		} else {
+			m.lspDidClose(t.vp, t.path) // F-132: notify LSP of close
 		}
 	}
 	m.bufs = keep

@@ -650,6 +650,7 @@ func (m *Model) reloadMembers() {
 		if member == "" || aliveName[member] {
 			bufs = append(bufs, b)
 		} else if b.ed != nil {
+			m.lspDidClose(b.vp, b.path) // F-132: notify LSP of close
 			b.ed.SetCommandDelegate(nil)
 		}
 	}
@@ -1329,6 +1330,7 @@ func (m *Model) open(n *node) {
 	be.SetIndent(m.indentFor(n.path, be.Buffer().Text())) // F-119
 	be.SetBeforeSave(m.beforeSave)
 	be.SetAfterSave(func(ed *textbuf.Editor) {
+		m.lspDidSave(ed)                                        // F-132: notify LSP of save
 		if ed.Path() == m.commitPath() && m.commitRepo != nil { // F-121: :w commits
 			m.gitMessage = m.commitFromBuffer(ed.Buffer().Text())
 			m.commitDone = ed // closed once the key that saved it is handled
@@ -1359,7 +1361,8 @@ func (m *Model) closeBuffer() {
 		return
 	}
 	closing := m.activeTab
-	m.closed = append(m.closed, m.bufs[closing].path) // F-119: :reopen
+	m.lspDidClose(m.bufs[closing].vp, m.bufs[closing].path) // F-132: notify LSP of close
+	m.closed = append(m.closed, m.bufs[closing].path)       // F-119: :reopen
 	m.bufs = append(m.bufs[:m.activeTab], m.bufs[m.activeTab+1:]...)
 	switch {
 	case len(m.bufs) == 0:

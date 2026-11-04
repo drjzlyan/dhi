@@ -1,6 +1,6 @@
 // Package lsp is DHI's minimal Language Server Protocol client
 // (F-002 §7, F-009): JSON-RPC 2.0 over stdio with the flows the editor
-// needs — initialize handshake, full-text didOpen/didChange, streamed
+// needs — initialize handshake, full-text didOpen/didChange/didSave/didClose, streamed
 // publishDiagnostics, completion, hover, rename, code actions, and
 // workspace/applyEdit routing. Servers come from the user's system
 // (F-110); tests drive an in-process fake server over net.Pipe.

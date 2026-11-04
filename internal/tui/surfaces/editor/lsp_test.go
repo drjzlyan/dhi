@@ -29,8 +29,8 @@ type goplusFake struct {
 	// answers with a JSON-RPC error instead (F-040).
 	formatEdits []map[string]any
 	formatFail  bool
-	// events records didChange/formatting in arrival order; lastChange is
-	// the text of the latest didChange (what the "server" believes).
+	// events records didChange/formatting/didSave/didClose in arrival order;
+	// lastChange is the text of the latest didChange (what the "server" believes).
 	events     []string
 	lastChange string
 	// lastLang is the languageId of the latest didOpen (F-050); noFormat
@@ -41,6 +41,13 @@ type goplusFake struct {
 	// not-open file a rename also edits.
 	locs        []map[string]any
 	renameExtra string
+	// didSaveOpts controls server capabilities for save (F-132).
+	// nil = default (no explicit capability); otherwise {}, {includeText: true}, etc.
+	didSaveOpts any
+	// didSaveEvents records (uri, hasText) pairs for each didSave received.
+	didSaveEvents []map[string]any
+	// didCloseUris records URIs for each didClose received.
+	didCloseUris []string
 }
 
 func startFakeServer(t *testing.T) (*goplusFake, *lsp.Manager) {
@@ -85,6 +92,17 @@ func (f *goplusFake) serve() {
 			res := map[string]any{"serverInfo": map[string]any{"name": "fake-gopls"}}
 			if f.noFormat {
 				res["capabilities"] = map[string]any{"hoverProvider": true}
+			} else {
+				f.mu.Lock()
+				opts := f.didSaveOpts
+				f.mu.Unlock()
+				caps := map[string]any{}
+				if opts != nil {
+					caps["textDocumentSync"] = map[string]any{"save": opts}
+				}
+				if len(caps) > 0 {
+					res["capabilities"] = caps
+				}
 			}
 			f.reply(*msg.ID, res)
 
@@ -247,6 +265,34 @@ func (f *goplusFake) serve() {
 					},
 				}}},
 			})
+
+		case "textDocument/didSave":
+			var p struct {
+				TextDocument struct {
+					URI string `json:"uri"`
+				} `json:"textDocument"`
+				Text *string `json:"text"`
+			}
+			json.Unmarshal(msg.Params, &p)
+			f.mu.Lock()
+			f.events = append(f.events, "didSave")
+			f.didSaveEvents = append(f.didSaveEvents, map[string]any{
+				"uri":     p.TextDocument.URI,
+				"hasText": p.Text != nil,
+			})
+			f.mu.Unlock()
+
+		case "textDocument/didClose":
+			var p struct {
+				TextDocument struct {
+					URI string `json:"uri"`
+				} `json:"textDocument"`
+			}
+			json.Unmarshal(msg.Params, &p)
+			f.mu.Lock()
+			f.events = append(f.events, "didClose")
+			f.didCloseUris = append(f.didCloseUris, p.TextDocument.URI)
+			f.mu.Unlock()
 
 		default:
 			if msg.ID != nil {

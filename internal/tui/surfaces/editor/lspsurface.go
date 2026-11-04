@@ -174,6 +174,61 @@ func (m *Model) lspSync() {
 	}
 }
 
+// lspDidSave sends didSave after a buffer is saved, with any pending changes first.
+func (m *Model) lspDidSave(ed *textbuf.Editor) {
+	if m.lspMgr == nil {
+		return
+	}
+	// Find the tab containing this editor.
+	var tab *bufTab
+	for _, t := range m.bufs {
+		if t.ed == ed {
+			tab = t
+			break
+		}
+	}
+	if tab == nil {
+		return
+	}
+	l, _, ok := m.langs.For(tab.path)
+	if !ok {
+		return
+	}
+	c := m.lspMgr.ClientFor(l.ID)
+	if c == nil {
+		return
+	}
+	// Send any unsent changes first.
+	text := ed.Buffer().Text()
+	if prev, ok := m.lspSent[tab.vp]; ok && prev != text {
+		_ = c.DidChange(tab.path, text)
+	}
+	// Now send didSave with the current text.
+	_ = c.DidSave(tab.path, text)
+	m.lspSent[tab.vp] = text
+}
+
+// lspDidClose sends didClose for a buffer that was opened to LSP.
+func (m *Model) lspDidClose(vp, path string) {
+	if m.lspMgr == nil {
+		return
+	}
+	// Only send if this tab had received a didOpen (i.e., it's in lspSent).
+	if _, wasOpened := m.lspSent[vp]; !wasOpened {
+		return
+	}
+	l, _, ok := m.langs.For(path)
+	if !ok {
+		return
+	}
+	c := m.lspMgr.ClientFor(l.ID)
+	if c == nil {
+		return
+	}
+	_ = c.DidClose(path)
+	delete(m.lspSent, vp)
+}
+
 // requestCompletion fires an async completion request at the cursor.
 func (m *Model) requestCompletion() {
 	e := m.active()

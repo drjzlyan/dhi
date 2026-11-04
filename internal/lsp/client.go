@@ -102,6 +102,9 @@ func (c *Client) initialize(rootDir string) error {
 					"parameterInformation":   map[string]any{"labelOffsetSupport": true},
 					"activeParameterSupport": true,
 				}},
+				"synchronization": map[string]any{
+					"didSave": true,
+				},
 				"rename":     map[string]any{},
 				"codeAction": map[string]any{},
 				"formatting": map[string]any{},
@@ -302,6 +305,67 @@ func (c *Client) DidChange(path, text string) error {
 	return c.notify("textDocument/didChange", map[string]any{
 		"textDocument":   map[string]any{"uri": pathToURI(path), "version": c.version()},
 		"contentChanges": []map[string]any{{"text": text}},
+	})
+}
+
+// SaveOptions reports whether the server wants didSave notifications and
+// whether it wants the full text included. A server that reports no
+// capabilities at all is given the benefit of the doubt (test doubles); one
+// that reports capabilities but omits save is not asked (ADR-0011).
+func (c *Client) SaveOptions() (send, includeText bool) {
+	if c.caps == nil {
+		return true, false // test doubles benefit of doubt
+	}
+	raw, ok := c.caps["textDocumentSync"]
+	if !ok {
+		return false, false
+	}
+	var s any
+	_ = json.Unmarshal(raw, &s)
+	switch t := s.(type) {
+	case map[string]any:
+		// Object with optional `save` field.
+		save, ok := t["save"]
+		if !ok {
+			return false, false
+		}
+		// `save: true` or `save: {}` means send didSave without text.
+		switch sv := save.(type) {
+		case bool:
+			return sv, false
+		case map[string]any:
+			// Check for `includeText: true`.
+			if it, ok := sv["includeText"].(bool); ok {
+				return true, it
+			}
+			return true, false
+		}
+		return false, false
+	}
+	// Plain number or other type: no save capability.
+	return false, false
+}
+
+// DidSave announces that a document was saved. The server's SaveOptions
+// determines whether this is sent and whether text is included.
+func (c *Client) DidSave(path, text string) error {
+	send, includeText := c.SaveOptions()
+	if !send {
+		return nil
+	}
+	params := map[string]any{
+		"textDocument": map[string]any{"uri": pathToURI(path)},
+	}
+	if includeText {
+		params["text"] = text
+	}
+	return c.notify("textDocument/didSave", params)
+}
+
+// DidClose announces that a document was closed.
+func (c *Client) DidClose(path string) error {
+	return c.notify("textDocument/didClose", map[string]any{
+		"textDocument": map[string]any{"uri": pathToURI(path)},
 	})
 }
 
