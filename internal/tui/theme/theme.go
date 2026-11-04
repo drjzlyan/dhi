@@ -525,6 +525,13 @@ func DialogTitle() lipgloss.Style {
 // dialog title rows (F-064) — one shade above the panel.
 func HeaderBg() lipgloss.Style { return lipgloss.NewStyle().Background(Current.BgHeader) }
 
+// SecondaryCursor marks the extra cursors of a multi-cursor edit (F-174):
+// the selection wash plus an underline, so they read apart from the
+// primary's inverted block.
+func SecondaryCursor() lipgloss.Style {
+	return lipgloss.NewStyle().Background(Current.BgSelection).Underline(true)
+}
+
 // SelectionBg paints a selected row's background.
 func SelectionBg() lipgloss.Style { return lipgloss.NewStyle().Background(Current.BgSelection) }
 

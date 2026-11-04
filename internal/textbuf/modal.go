@@ -88,6 +88,9 @@ type Editor struct {
 	cfBlocks     []Conflict // parsed merge conflicts, valid while cfSeq == buf.seq+1 (F-156)
 	cfSeq        uint64
 
+	mc      *multi // secondary cursors (F-174); nil = the single-cursor path
+	inMulti bool   // a key is running at each cursor: Key must not fan out again
+
 	pendObj  rune   // 'i' or 'a' waiting for its object character (F-167)
 	objLast  [2]Pos // anchor and cursor after the last visual text object
 	objSel   bool

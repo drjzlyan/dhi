@@ -628,6 +628,7 @@ func (m *Model) HelpSections() [][2]string {
 			[2]string{"ctrl+v", "select a block by column: motions and $ extend it, o O swap corners; d y c I A r > < ~ u U act on every line, p pastes the block"},
 			[2]string{"gcc · gc{motion} · ctrl+/", "comment / uncomment lines (counts and visual gc work; ctrl+/ also in insert)"},
 			[2]string{kit.AltLabel("alt+o · alt+i"), "expand / shrink the selection (language server's syntax tree, else word → quotes → brackets → line → paragraph → buffer; the status line names which)"},
+			[2]string{kit.AltLabel("gb · gB · alt+n · alt+up/down"), "multi-cursor: add the next occurrence of the word (or selection) · skip it · a cursor above / below (:cursor next|skip|above|below|off); edits, motions, d c y and text objects run at every cursor, esc collapses"},
 			[2]string{"iw aw i( a( i[ i{ i\" i' ip ap", "text objects after d c y gc, or in visual mode (b and B for ( and {)"},
 			[2]string{".", "repeat the last change"},
 			[2]string{"f F t T · ; , · %", "find/until char on line · repeat/reverse · match bracket"},
@@ -1196,6 +1197,10 @@ func (m *Model) handleKey(key string) bool {
 				m.lspSync()
 				return true
 			}
+			if key == "b" { // F-174: the selection becomes a cursor, and the next match another
+				e.Key("gb")
+				return true
+			}
 		} else if m.lspPendingG {
 			if e.Mode() == textbuf.ModeNormal {
 				m.lspPendingG = false
@@ -1220,6 +1225,9 @@ func (m *Model) handleKey(key string) bool {
 					return true
 				case "a":
 					m.requestCodeActions(false)
+					return true
+				case "b", "B": // F-174: add the next occurrence as a cursor / skip it
+					e.Key("g" + key)
 					return true
 				case "g": // gg: first line (F-102)
 					e.Key("gg")
@@ -1261,6 +1269,10 @@ func (m *Model) handleKey(key string) bool {
 		}
 
 		// esc in normal mode hands focus back to the tree
+		if key == "esc" && e.Mode() == textbuf.ModeNormal && e.CursorCount() > 1 {
+			e.Key("esc") // F-174: the first esc collapses the extra cursors
+			return true
+		}
 		if key == "esc" && e.Mode() == textbuf.ModeNormal {
 			if e.Highlight() != "" { // first esc clears the search marks, the next leaves
 				e.ClearHighlight()

@@ -12,9 +12,16 @@ func (e *Editor) Key(key string) {
 		e.repeat()
 		return
 	}
+	if (e.mc != nil || isMCKey(key)) && e.mcKey(key) {
+		return // add / skip / collapse a cursor (F-174)
+	}
 	e.record(key)
 	was := e.mode
-	e.KeyUngrouped(key)
+	if e.mc != nil && !e.inMulti {
+		e.keyMulti(key)
+	} else {
+		e.KeyUngrouped(key)
+	}
 	e.recordDone()
 	// Insert sessions undo as one step: open the group on entering
 	// insert mode, close it on leaving.
@@ -873,6 +880,10 @@ func (e *Editor) execCommand(cmd string) {
 	default:
 		if cmd == "noh" || cmd == "nohlsearch" {
 			e.hlOff = true
+			return
+		}
+		if arg, ok := strings.CutPrefix(cmd, "cursor "); ok { // F-174
+			e.mcCommand(strings.TrimSpace(arg))
 			return
 		}
 		if arg, ok := strings.CutPrefix(cmd, "conflict"); ok && (arg == "" || arg[0] == ' ') { // F-156

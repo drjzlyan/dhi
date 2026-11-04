@@ -35,7 +35,11 @@ func bufferTitle(e *textbuf.Editor) string {
 	if e.Buffer().Dirty() {
 		dot = " " + theme.WarningText().Render("●")
 	}
-	return name + dot + "  " + modePill(e.Mode(), e.VisualBlock())
+	pill := modePill(e.Mode(), e.VisualBlock())
+	if n := e.CursorCount(); n > 1 {
+		pill += " " + kit.Pill(itoa(n)+" CURSORS", theme.Current.Accent)
+	}
+	return name + dot + "  " + pill
 }
 
 // modePill colors the editing mode (F-064): normal in the editor's
@@ -154,6 +158,13 @@ func (m *Model) bufferView() string {
 	var geomInlay map[int][]inlayCell
 	m.bufGeom.left = left
 
+	var extra map[int][]int // F-174: the secondary cursors' columns by line
+	for _, c := range e.Cursors() {
+		if extra == nil {
+			extra = map[int][]int{}
+		}
+		extra[c.Line] = append(extra[c.Line], c.Col)
+	}
 	var out []string
 	var rowLine, rowStart []int
 	curRow, curCell := 0, 0
@@ -216,6 +227,9 @@ func (m *Model) bufferView() string {
 			if st := syntax.styled(l); st != "" {
 				text = expandTabs(st) // escapes never contain a tab
 			}
+		}
+		if cols := extra[l]; len(cols) > 0 { // F-174, before inlay hints shift the cells
+			text = markSecondary(text, raw, cols)
 		}
 		cells := m.inlayCells(e, l)
 		if len(cells) > 0 {
@@ -497,6 +511,23 @@ func markCells(line string, start, end int) string {
 		return line
 	}
 	return ansi.Slice(line, 0, start) + cursorStyle.Render(ansi.Slice(line, start, end)) + ansi.Slice(line, end, w)
+}
+
+// markSecondary paints the extra cursors of a multi-cursor edit (F-174) on
+// one rendered line: the display cell at each column, or a blank one past
+// the end. text may carry styling.
+func markSecondary(text, raw string, cols []int) string {
+	for _, c := range cols {
+		cell := visCol(raw, c)
+		w := ansi.Width(text)
+		if cell >= w {
+			text += strings.Repeat(" ", cell-w) + theme.SecondaryCursor().Render(" ")
+			continue
+		}
+		under := ansi.Strip(ansi.Slice(text, cell, cell+1)) // the style gets the bare rune, not its escapes
+		text = ansi.Slice(text, 0, cell) + theme.SecondaryCursor().Render(under) + ansi.Slice(text, cell+1, w)
+	}
+	return text
 }
 
 func padLeft(s string, n int) string {
