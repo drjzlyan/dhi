@@ -209,6 +209,8 @@ func (m *Model) applyLSPUpdate(msg teaMsg) {
 		m.compItems = msg.compItems
 		m.compCur = 0
 		m.compOpen = len(msg.compItems) > 0
+	case lspMsgSig:
+		m.applySignature(msg)
 	case lspMsgHover:
 		m.hoverOpen = msg.hoverOK && len(strings.Split(msg.hoverText, "\n")) > 0
 		if m.hoverOpen {

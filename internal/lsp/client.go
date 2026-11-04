@@ -97,6 +97,11 @@ func (c *Client) initialize(rootDir string) error {
 			"textDocument": map[string]any{
 				"completion": map[string]any{"completionItem": map[string]any{}},
 				"hover":      map[string]any{"contentFormat": []string{"plaintext", "markdown"}},
+				"signatureHelp": map[string]any{"signatureInformation": map[string]any{
+					"documentationFormat":    []string{"plaintext", "markdown"},
+					"parameterInformation":   map[string]any{"labelOffsetSupport": true},
+					"activeParameterSupport": true,
+				}},
 				"rename":     map[string]any{},
 				"codeAction": map[string]any{},
 				"formatting": map[string]any{},

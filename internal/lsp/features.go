@@ -302,3 +302,99 @@ func decodeApplyEdit(params json.RawMessage) (*WorkspaceEdit, bool) {
 	}
 	return &p.Edit, true
 }
+
+// SignatureHelp is the active signature of a call, flattened for the
+// popup: Label is the signature text, [ParamStart,ParamEnd) the active
+// parameter in rune offsets of Label (equal when none is active).
+type SignatureHelp struct {
+	Label                string
+	ParamStart, ParamEnd int
+	Doc                  string
+}
+
+// SignatureTriggers reports the characters that should request signature
+// help. A server that reports no capabilities at all (test doubles) gets
+// the conventional "(" and ","; one that reports some and omits
+// signatureHelpProvider is never asked (ADR-0011: no guessing).
+func (c *Client) SignatureTriggers() []string {
+	if c.caps == nil {
+		return []string{"(", ","}
+	}
+	raw, ok := c.caps["signatureHelpProvider"]
+	if !ok {
+		return nil
+	}
+	var p struct {
+		Trigger   []string `json:"triggerCharacters"`
+		Retrigger []string `json:"retriggerCharacters"`
+	}
+	_ = json.Unmarshal(raw, &p) // `true` (no options) leaves both empty
+	return append(p.Trigger, p.Retrigger...)
+}
+
+// SignatureHelp asks for the signature of the call around a position and
+// resolves its active signature and parameter. Nil when the server has
+// none (null result or no signatures).
+func (c *Client) SignatureHelp(path string, line, col int) (*SignatureHelp, error) {
+	var raw json.RawMessage
+	params := map[string]any{
+		"textDocument": map[string]any{"uri": pathToURI(path)},
+		"position":     map[string]any{"line": line, "character": col},
+	}
+	if err := c.call("textDocument/signatureHelp", params, &raw); err != nil {
+		return nil, err
+	}
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil, nil
+	}
+	var res struct {
+		Signatures []struct {
+			Label           string          `json:"label"`
+			Documentation   json.RawMessage `json:"documentation"`
+			ActiveParameter *int            `json:"activeParameter"`
+			Parameters      []struct {
+				Label json.RawMessage `json:"label"`
+			} `json:"parameters"`
+		} `json:"signatures"`
+		ActiveSignature *int `json:"activeSignature"`
+		ActiveParameter *int `json:"activeParameter"`
+	}
+	if err := json.Unmarshal(raw, &res); err != nil {
+		return nil, fmt.Errorf("lsp: signatureHelp result: %w", err)
+	}
+	if len(res.Signatures) == 0 {
+		return nil, nil
+	}
+	si := 0
+	if res.ActiveSignature != nil && *res.ActiveSignature >= 0 && *res.ActiveSignature < len(res.Signatures) {
+		si = *res.ActiveSignature
+	}
+	sig := res.Signatures[si]
+	out := &SignatureHelp{Label: sig.Label}
+	if len(sig.Documentation) > 0 {
+		out.Doc = flattenContents(sig.Documentation)
+	}
+	pi := -1 // the signature's own activeParameter beats the response's
+	switch {
+	case sig.ActiveParameter != nil:
+		pi = *sig.ActiveParameter
+	case res.ActiveParameter != nil:
+		pi = *res.ActiveParameter
+	}
+	if pi < 0 || pi >= len(sig.Parameters) {
+		return out, nil
+	}
+	var name string
+	var span []int
+	pl := sig.Parameters[pi].Label
+	if json.Unmarshal(pl, &name) == nil {
+		// A substring of the signature label (first occurrence).
+		if i := strings.Index(sig.Label, name); i >= 0 && name != "" {
+			out.ParamStart = len([]rune(sig.Label[:i]))
+			out.ParamEnd = out.ParamStart + len([]rune(name))
+		}
+	} else if json.Unmarshal(pl, &span) == nil && len(span) == 2 && span[0] <= span[1] {
+		out.ParamStart, out.ParamEnd = RuneCol(sig.Label, span[0]), RuneCol(sig.Label, span[1])
+	}
+	return out, nil
+}

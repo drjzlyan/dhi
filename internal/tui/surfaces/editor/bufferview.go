@@ -213,7 +213,10 @@ func (m *Model) popupRows() []string {
 	if rows := m.actionView(); len(rows) > 0 {
 		return rows
 	}
-	return m.hoverView()
+	if rows := m.hoverView(); len(rows) > 0 {
+		return rows
+	}
+	return m.signatureView()
 }
 
 // floatPopup paints a bordered dialog over the buffer rows: x = anchor

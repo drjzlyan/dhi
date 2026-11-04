@@ -323,6 +323,9 @@ type Model struct {
 	resultsTitle   string // results pane holds a list (references, problems), not a search
 	hoverOpen      bool
 	hoverLines     []string
+	sigHelp        *lsp.SignatureHelp // the open signature-help popup (F-128)
+	sigSeq         int                // signature request generation; stale answers are dropped
+	sigPath        string             // the file the popup belongs to
 	renameMode     bool
 	renameOld      string
 	renameInput    []rune
@@ -698,6 +701,8 @@ type teaMsg struct {
 	diagPath  string
 	compItems []lsp.CompletionItem
 	hoverText string
+	sig       *lsp.SignatureHelp
+	sigSeq    int
 	hoverOK   bool
 	edit      *lsp.WorkspaceEdit
 	actions   []lsp.CodeAction
@@ -717,6 +722,7 @@ const (
 	lspMsgEdit
 	lspMsgAction
 	lspMsgNote
+	lspMsgSig
 	toolMsgInstalled // an approved install tab exited (lang: the tool; note: the outcome)
 	testMsgDone
 	dbgMsgStarted
@@ -779,7 +785,7 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 			}
 		case termMsgClosed:
 			m.termExited(msg.tab)
-		case lspMsgDiag, lspMsgComp, lspMsgHover, lspMsgEdit, lspMsgAction, lspMsgNote:
+		case lspMsgDiag, lspMsgComp, lspMsgHover, lspMsgEdit, lspMsgAction, lspMsgNote, lspMsgSig:
 			m.applyLSPUpdate(msg)
 		case toolMsgInstalled:
 			m.applyToolInstalled(msg)
@@ -1084,6 +1090,7 @@ func (m *Model) HandleKey(key string) bool {
 		if e.Mode() == textbuf.ModeInsert && was == textbuf.ModeInsert {
 			m.autoComplete(key)
 		}
+		m.signatureKey(e, key, was)
 		return true
 	}
 	return m.handleNavKey(key)

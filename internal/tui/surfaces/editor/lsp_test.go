@@ -177,6 +177,33 @@ func (f *goplusFake) serve() {
 			}
 			f.mu.Unlock()
 
+		case "textDocument/signatureHelp":
+			// F-128: activeParameter = commas before the cursor on its line.
+			var p struct {
+				Position struct {
+					Line, Character int
+				} `json:"position"`
+			}
+			json.Unmarshal(msg.Params, &p)
+			f.mu.Lock()
+			lines := strings.Split(f.lastChange, "\n")
+			f.events = append(f.events, "signatureHelp")
+			f.mu.Unlock()
+			active := 0
+			if p.Position.Line < len(lines) {
+				r := []rune(lines[p.Position.Line])
+				active = strings.Count(string(r[:min(p.Position.Character, len(r))]), ",")
+			}
+			f.reply(*msg.ID, map[string]any{
+				"signatures": []map[string]any{{
+					"label":         "func Add(a int, b int) int",
+					"documentation": "Add sums two ints.\nmore",
+					"parameters":    []map[string]any{{"label": "a int"}, {"label": []int{16, 21}}},
+				}},
+				"activeSignature": 0,
+				"activeParameter": active,
+			})
+
 		case "textDocument/formatting":
 			f.mu.Lock()
 			f.events = append(f.events, "formatting")
