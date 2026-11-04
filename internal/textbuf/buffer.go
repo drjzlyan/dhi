@@ -167,6 +167,20 @@ func (b *Buffer) ReplaceText(old, new string, all bool) (int, error) {
 	return count, nil
 }
 
+// SetText replaces the whole buffer with text as one undo step, keeping
+// the cursor where it was (clamped). It reports whether anything changed.
+func (b *Buffer) SetText(text string) bool {
+	if text == b.Text() {
+		return false
+	}
+	b.snapshotBefore()
+	b.lines = strings.Split(text, "\n")
+	b.clampCursor()
+	b.dirty = true
+	b.seq++
+	return true
+}
+
 // ReplaceLines sets the given 0-based lines (out-of-range ones are
 // ignored) as one undo step; it returns how many lines changed (F-056).
 func (b *Buffer) ReplaceLines(edits map[int]string) int {

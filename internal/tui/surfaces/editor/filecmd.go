@@ -19,6 +19,8 @@ func (m *Model) fileCommand(requester *textbuf.Editor, cmd string) (string, bool
 		return m.openUndoTurn(), true
 	case "fix":
 		return m.fixProblem(), true
+	case "localhistory":
+		return m.openLocalHistory(), true
 	case "history":
 		return m.openHistory(""), true
 	case "blame":
@@ -126,6 +128,7 @@ func (m *Model) saveAs(e *textbuf.Editor, p string, force bool) string {
 	if err := e.Buffer().SaveForce(target); err != nil {
 		return err.Error()
 	}
+	m.snapshotSave(target, e.Buffer().Text()) // F-155
 	t := m.activeTabRef()
 	t.path = target
 	e.SetPath(target)

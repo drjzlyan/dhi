@@ -23,6 +23,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/fuzzy"
 	"github.com/drjzlyan/dhi/internal/gitcore"
 	"github.com/drjzlyan/dhi/internal/langserver"
+	"github.com/drjzlyan/dhi/internal/localhistory"
 	"github.com/drjzlyan/dhi/internal/lsp"
 	"github.com/drjzlyan/dhi/internal/preview"
 	"github.com/drjzlyan/dhi/internal/search"
@@ -292,6 +293,8 @@ type Model struct {
 	branches     *branchPicker
 	stash        *stashView           // F-129
 	hist         *fileHistory         // F-140
+	lh           *localHist           // F-155
+	lhStore      *localhistory.Store  // F-155
 	commitDone   *textbuf.Editor      // the message buffer that just committed
 	commitRepo   *gitcore.Repo        // the repo a COMMIT_EDITMSG buffer commits to
 	gitIdentity  gitcore.IdentityFunc // F-029 commit identity; nil refuses
@@ -952,6 +955,9 @@ func (m *Model) handleKey(key string) bool {
 	if m.hist != nil {
 		return m.histKey(key)
 	}
+	if m.lh != nil {
+		return m.lhKey(key)
+	}
 	if m.ws == nil {
 		return m.startVisible() && m.startKey(key)
 	}
@@ -1443,6 +1449,7 @@ func (m *Model) openNode(n *node, confirmed bool) {
 	be.SetIndent(m.indentFor(n.path, be.Buffer().Text())) // F-119
 	be.SetBeforeSave(m.beforeSave)
 	be.SetAfterSave(func(ed *textbuf.Editor) {
+		m.snapshotSave(ed.Path(), ed.Buffer().Text())           // F-155: local history
 		m.lspDidSave(ed)                                        // F-132: notify LSP of save
 		m.invalidateBlame(ed.Path())                            // F-143: lines moved
 		if ed.Path() == m.commitPath() && m.commitRepo != nil { // F-121: :w commits
@@ -1538,6 +1545,9 @@ func (m *Model) View() string {
 	}
 	if m.hist != nil {
 		return m.histOverlay(m.view())
+	}
+	if m.lh != nil {
+		return m.lhOverlay(m.view())
 	}
 	return m.view()
 }
