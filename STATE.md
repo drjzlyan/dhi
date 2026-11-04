@@ -3,13 +3,11 @@
 ### Session 70 (M38 gap closure with subagents, branch `m38` off `g-a4-oversize-prompt`)
 
 - Coordinator merges one commit per gap (cherry-pick from agent worktrees); tracker rows and STATE are coordinator-only.
-- Done: G-B1 F-127, G-E1 F-128, G-G4 F-129, G-B8 F-130, G-C4 F-131, G-E2 F-132, G-E3 F-133, G-B4 F-134. Phase 7: proposed ADR-0047..0051 (user decides).
-- Also done: G-B2 F-135, G-E4 F-136, G-E5 F-137, G-G5 F-140, G-M1 F-141, G-R1 F-142, G-G3 F-143.
-- Unmerged agent branches (session stopped at the usage limit; review before cherry-picking): G-E6/G-E8 fix (F-138/F-139; Haiku draft on `worktree-agent-a834d56d59ec36187` has defects: reads whole file, duplicated open(), settings imports tui/app), G-C2 F-144, G-B3 F-145, G-T1 F-146 — look in `git worktree list`.
-- Not yet run: live `make eval` for the prompt changes (F-135), `make lint` on m38, final audit of all gaps.
-- Settings conflicts between parallel agents: scratchpad union.py resolved them; expect more when merging.
-- Gotchas: agent worktrees live in `.claude/worktrees/` (the write-site audit now skips `.claude`); `make verify` under parallel agents shows timeouts (10s/20s/30s) — rerun the package alone.
-- User said: live runs (make eval, real CLIs) allowed; ask before installing gopls.
+- Done (32): B1 B2 B3 B4 B6 B7 B8 C2 C4 E1–E8 E10 E11 G1 G2 G3 G4 G5 M1 M2 R1 R3 R4 S1 T1 — F-127…F-157 (see gaps.md done log). Phase 7: proposed ADR-0047..0051 (user decides).
+- In flight: G-E12 F-158, G-E14 F-159, G-E21 F-160, G-R2 F-161, G-LSP-live F-163 (gopls 0.24 installed via brew, user-approved).
+- Left: E9 E13 E15–E20 E22, G6 G7, C8; live: C7 evals, C11 resume, `make eval` for prompt changes (F-135, F-144, F-152) and the claude/codex read-only flags (F-144).
+- Gotchas: agent worktrees live in `.claude/worktrees/` (write-site audit skips `.claude`); parallel agents make `make verify` time out — rerun the package alone; settings/editor.go conflicts between lanes — scratchpad union.py only for pure appends, review every other hunk (it duplicated a block once in behavior.go).
+- User said: live runs (make eval, real CLIs) allowed; gopls install approved.
 
 ### Session 69 (Phase 1 review, branch `g-a4-oversize-prompt`, one fix commit on top of the stack)
 
