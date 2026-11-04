@@ -210,6 +210,8 @@ type Runtime struct {
 
 	cons consolidator // daily lesson consolidation (F-068)
 
+	cal *calibration // runes-per-token fit per CLI and model (F-135)
+
 	// offering dedupes the access cards raised from sandbox denials
 	// (F-087): agent|path → a card is pending.
 	offerMu  sync.Mutex
@@ -448,7 +450,7 @@ func New(cfg Config, roster []*manifest.Agent) (*Runtime, error) {
 	if cfg.Sandbox == nil {
 		return nil, fmt.Errorf("runtime: config.Sandbox is required (pass sandbox.Noop{} to opt out explicitly)")
 	}
-	r := &Runtime{cfg: cfg, agents: map[string]*entry{}, roster: make(chan struct{}, 1)}
+	r := &Runtime{cfg: cfg, agents: map[string]*entry{}, roster: make(chan struct{}, 1), cal: newCalibration(cfg.WS.Root)}
 	// Admit each rostered CLI's state + binary roots into the OS sandbox
 	// BEFORE guards capture the adapter: claude lives under ~/.local and
 	// writes ~/.claude — the workspace jail alone denies its exec (exit

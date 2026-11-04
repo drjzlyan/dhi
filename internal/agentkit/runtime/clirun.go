@@ -144,6 +144,7 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message, tl
 		})
 		r.recordRun(trigger, run)
 		r.recordSpend(run, task.Slug)
+		r.calibrate(trigger, e, ep, run, resume == "", runeLen(prompt+brief)+runeLen(system))
 		tl.runs = append(tl.runs, run.ID)
 		tl.outcome = run.Summary
 		if run.Status != tasks.RunOK {
@@ -1069,6 +1070,7 @@ func (r *Runtime) cliPromptAt(ctx context.Context, e *entry, trigger bus.Message
 	if ep != nil && resumed {
 		seen = ep.SeenID
 	} else if ep != nil {
+		seen = ep.SummaryUpTo // F-135: a compacted conversation replays only what came after
 		pr = append(pr, section{name: "episode", text: ep.Render(), prio: 3, floor: 300})
 	}
 	// The history's header and brief of dropped messages stay whole; its
@@ -1080,7 +1082,11 @@ func (r *Runtime) cliPromptAt(ctx context.Context, e *entry, trigger bus.Message
 
 	// One budget for both halves: the system part is fitted in what the
 	// prompt part leaves, the prompt part in what the system part leaves.
-	budget := int(float64(r.tuning().memoryTuning().PromptTokens*runesPerToken) * compactionFactor[min(max(level, 0), len(compactionFactor)-1)])
+	model := e.m.CLIModel()
+	if ep != nil && ep.Model != "" {
+		model = ep.Model
+	}
+	budget := int(float64(r.tuning().memoryTuning().PromptTokens) * r.cal.Ratio(e.cli.Name, model) * compactionFactor[min(max(level, 0), len(compactionFactor)-1)])
 	all := append(append([]section{}, sys...), pr...)
 	// Tags wrap the fitted sections (F-099): their room comes off the
 	// budget first, so the fit stays honest.

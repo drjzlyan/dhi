@@ -125,7 +125,8 @@ type Agents struct {
 	// Reflect lets an agent learn from a turn that failed, needed fixing
 	// or was corrected (F-068): one short, tool-less, budgeted spawn.
 	Reflect bool `toml:"reflect"`
-	// ReflectModel runs reflection on a cheaper model ("" = the agent's).
+	// ReflectModel runs reflection and the /compact summary (F-135) on a
+	// cheaper model ("" = the agent's).
 	ReflectModel string `toml:"reflect_model"`
 	// TracePrompts saves each spawn's full prompt and system text into
 	// its run transcript for the trace view (F-074). Off by default:

@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/drjzlyan/dhi/internal/agentkit/untrusted"
 	"github.com/drjzlyan/dhi/internal/fsx"
 	"io/fs"
 	"os"
@@ -65,6 +66,12 @@ type Episode struct {
 	// cache reads + cache writes): how full a resumed CLI session is
 	// (F-078). 0 = unknown.
 	LastContext int `json:"last_context,omitempty"`
+
+	// Summary is a model-written digest of the conversation up to bus
+	// message SummaryUpTo (F-135, /compact). A fresh turn carries it
+	// instead of replaying those messages.
+	Summary     string `json:"summary,omitempty"`
+	SummaryUpTo int64  `json:"summary_up_to,omitempty"`
 
 	// Model is the user's per-conversation model override (F-130): the
 	// agent's turns in this episode run on it instead of the manifest
@@ -154,6 +161,10 @@ func (e Episode) Render() string {
 		}
 	}
 	b.WriteString(".")
+	if e.Summary != "" {
+		// Model-written from the conversation, so data, not instructions.
+		b.WriteString("\n\nSummary of the conversation so far (compacted):\n" + untrusted.Wrap("episode summary", e.Summary))
+	}
 	return b.String()
 }
 
@@ -244,6 +255,17 @@ func (s *Store) Update(agent, key string, fn func(*Episode)) error {
 	return s.write(p, e)
 }
 
+// Compacted records a compaction (F-135): summary stands for the
+// conversation up to message upTo, and the kept CLI session is dropped so
+// the next turn starts fresh from the summary instead of resuming the
+// long session.
+func (s *Store) Compacted(agent, key, summary string, upTo int64) error {
+	return s.Update(agent, key, func(e *Episode) {
+		e.Summary, e.SummaryUpTo = summary, upTo
+		e.Session, e.LastContext = "", 0
+	})
+}
+
 // SetModel sets (or, with "", clears) the episode's model override.
 func (s *Store) SetModel(agent, key, model string) error {
 	return s.Update(agent, key, func(e *Episode) { e.Model = model })
@@ -260,6 +282,7 @@ func Forked(src Episode, dstKey string, now time.Time) Episode {
 	return Episode{
 		Key: dstKey, Agent: src.Agent, Goal: src.Goal,
 		Turns: src.Turns, LastStatus: src.LastStatus, LastSummary: src.LastSummary,
+		Summary:    src.Summary, // SummaryUpTo is not carried: the fork's thread has its own messages
 		Plan:       append([]PlanStep(nil), src.Plan...),
 		Model:      src.Model,
 		ForkedFrom: src.Key,

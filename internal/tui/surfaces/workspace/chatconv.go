@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"context"
 	"strings"
 	"time"
 
@@ -29,6 +30,11 @@ func parseConvCmd(text string) (cmd, rest string, ok bool) {
 		return "fork", "", true
 	case "/new":
 		return "new", strings.TrimSpace(tail), true
+	case "/compact": // F-135
+		if strings.TrimSpace(tail) != "" {
+			return "", "", false
+		}
+		return "compact", "", true
 	}
 	return "", "", false
 }
@@ -56,8 +62,44 @@ func (p *chatPane) conversationCommand(text string) bool {
 		p.note = "next message starts a new conversation with " + agent
 		return true
 	}
+	if cmd == "compact" {
+		p.compact(ch, agent)
+		return true
+	}
 	p.fork(ch, agent)
 	return true
+}
+
+// compacter is the runtime's compaction of one conversation (F-135).
+type compacter interface {
+	Compact(ctx context.Context, agent, channel string, thread int64) error
+}
+
+// compact asks the runtime to summarise the open conversation into its
+// episode. A summary is a model call, so it runs in the background and the
+// runtime posts the outcome (done, or why not) into the thread.
+func (p *chatPane) compact(ch, agent string) {
+	c, ok := p.rt.(compacter)
+	if !ok {
+		p.flash = "/compact needs the crew running"
+		return
+	}
+	if p.threadID == 0 {
+		p.flash = "open the conversation to compact first (t on a message), then /compact"
+		return
+	}
+	if p.meter == nil || p.meter.episodes == nil {
+		p.flash = "/compact needs a workspace"
+		return
+	}
+	if _, ok, err := p.meter.episodes.Get(agent, episode.Key("", ch, p.threadID)); err != nil || !ok {
+		p.flash = "no conversation to compact yet: " + agent + " has not replied in this thread"
+		return
+	}
+	thread := p.threadID
+	go func() { _ = c.Compact(context.Background(), agent, ch, thread) }()
+	p.meter.forget()
+	p.note = "compacting this conversation (" + agent + " summarises it; the next reply starts fresh from the summary)"
 }
 
 // fork starts a new thread from the open one: a root message (the
