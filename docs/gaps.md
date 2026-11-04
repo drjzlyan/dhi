@@ -54,7 +54,7 @@ no daemon.
 - [x] **G-C2** `done` (F-144) — Gated plan mode (ROADMAP M37 S3): read-only turn that publishes `plan_update`, human approval card,
       then the write turn. Absorbs **G-A5** (per-mode prompts: plan, review, ask).
 - [x] **G-C4** `done` (F-131) — Repeated-tool-call detection from the stream; in-flight spend check that stops a run at the cap.
-- [ ] **G-C7** Wider evals: injection, lessons, orchestration, forge; multi-run live scoring.
+- [x] **G-C7** `done` (F-172) — Wider evals: injection, lessons, orchestration, forge; multi-run live scoring.
 - [x] **G-C11** `done` (F-170) — Re-verify resume for opencode, cursor, copilot.
 - [x] **G-C8** `done` (F-164) — Optional OpenTelemetry export. Low priority.
 - [x] **G-LSP-live** `done` (F-163) — Run LSP `gd` and rename live with gopls installed (open ROADMAP M37 item).
@@ -181,3 +181,4 @@ G-C11 — F-170 — 2026-11-04 (live: opencode+cursor resume fixed and PASS; cop
 G-E19 — F-167 — 2026-11-04 (alt+o/alt+i expand/shrink (LSP or named ladder); vim text objects; fixed dj/cip data loss)
 G-E16 — F-169 — 2026-11-04 (editor.inlay_hints / :set inlayhints; virtual cells per pane; live gopls passes)
 G-E13 — F-174 — 2026-11-04 (gb/alt+n next occurrence, gB skip, alt+up/down or :cursor; per-cursor edits, one undo step)
+G-C7 — F-172 — 2026-11-04 (injection x3, lesson, tool-forge fixtures 3/3 live; full suite 13/13 on claude 2.1.311 validates F-135/F-144/F-152; orchestration skipped (no multi-agent harness))
