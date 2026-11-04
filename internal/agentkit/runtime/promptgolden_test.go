@@ -65,6 +65,14 @@ func TestPromptGoldens(t *testing.T) {
 	golden.Snapshot(t, "prompt_fresh", render(base, 0, "Workflow: review before merge."))
 	golden.Snapshot(t, "prompt_compacted", render(base, 1, ""))
 
+	// F-144: the read-only modes add one block to the system part; the
+	// default mode's goldens above stay as they were.
+	for _, mode := range []string{"plan", "review", "ask"} {
+		e := h.rt.agents["scout"]
+		prompt, system := h.rt.cliPromptMode(ctx, e, trig, "", 0, nil, false, mode)
+		golden.Snapshot(t, "prompt_mode_"+mode, "=== SYSTEM ===\n"+system+"\n\n=== PROMPT ===\n"+prompt)
+	}
+
 	want := render(base, 0, "Workflow: review before merge.")
 	for _, c := range h.rt.cfg.CLIs.All() {
 		got := render(c, 0, "Workflow: review before merge.")

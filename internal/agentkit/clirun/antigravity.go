@@ -40,9 +40,11 @@ import (
 // Antigravity is the Antigravity CLI adapter. Registered under the
 // runtime value "antigravity".
 var Antigravity = &CLI{
-	Name:   "antigravity",
-	Bin:    "agy",
-	Tested: "1.2.11", // live-verified 2026-09-26
+	Name: "antigravity",
+	// No ReadOnlyOK (F-144): no verified switch for its file-changing tools.
+	ReadOnlyWhy: "no verified way to switch off its file and shell tools",
+	Bin:         "agy",
+	Tested:      "1.2.11", // live-verified 2026-09-26
 	// EXACT declared pass-through: HOME/XDG so the CLI reaches its own
 	// OAuth state; nothing else crosses (ADR-0012 §4).
 	EnvPass: []string{

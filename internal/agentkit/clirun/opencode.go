@@ -35,9 +35,11 @@ import (
 // OpenCode is the OpenCode adapter. Registered under the runtime value
 // "opencode".
 var OpenCode = &CLI{
-	Name:   "opencode",
-	Bin:    "opencode",
-	Tested: "1.18.25",
+	Name: "opencode",
+	// No ReadOnlyOK (F-144): OPENCODE_PERMISSION edit/bash deny is not live-verified.
+	ReadOnlyWhy: "its edit and bash permission denial is not verified",
+	Bin:         "opencode",
+	Tested:      "1.18.25",
 	// EXACT declared pass-through: opencode's config + the provider
 	// keys it reads for hosted models. Nothing else crosses
 	// (ADR-0012 §4).

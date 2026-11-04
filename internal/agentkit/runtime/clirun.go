@@ -325,6 +325,7 @@ type spawnInput struct {
 	relaunch                             *relaunch     // set mid-run: stop this spawn, the work moved
 	mcpConfig, mcpEndpoint, mcpGeminiDir string
 	webDenied                            bool // mcpGeminiDir carries the web-deny hook
+	readOnly                             bool // F-144: no write tools (plan, review, ask)
 	// G-C4: the caps the running spawn is checked against as it streams,
 	// and the card they are charged to ("" = card-less).
 	budgets  budget.Limits
@@ -396,7 +397,7 @@ func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Messag
 		Model: model, Workdir: workdir, Stdin: stdin,
 		Resume: in.resume, MaxTurns: in.maxTurns,
 		MCPConfig: in.mcpConfig, MCPURL: in.mcpEndpoint, MCPGeminiDir: in.mcpGeminiDir,
-		DenyWeb: denyWeb,
+		DenyWeb: denyWeb, ReadOnly: in.readOnly,
 	})...)
 	if msg := missingState(e.cli, r.spawnSandbox(e)); msg != "" {
 		run.Status = tasks.RunError
@@ -893,7 +894,7 @@ func (r *Runtime) toolDeps(e *entry, trigger bus.Message, tt turnTools, gate fun
 		Run:         r.runFor(e), // live (M32): never wired — `run` always said "runner unavailable"
 		Sessions:    r.cfg.Sessions,
 		Editor:      r.cfg.Editor,
-		Scopes:      r.agentScopes(e.m),
+		Scopes:      r.turnScopes(e, tt),
 		Gate:        gate,
 		OnRun:       onRun,
 		PR:          r.cfg.PR,
@@ -986,6 +987,12 @@ func (r *Runtime) cliPrompt(ctx context.Context, e *entry, trigger bus.Message, 
 // messages after ep.SeenID are replayed. A fresh spawn of an ongoing
 // episode carries the episode summary instead.
 func (r *Runtime) cliPromptAt(ctx context.Context, e *entry, trigger bus.Message, wfText string, level int, ep *episode.Episode, resumed bool) (prompt, system string) {
+	return r.cliPromptMode(ctx, e, trigger, wfText, level, ep, resumed, "")
+}
+
+// cliPromptMode is cliPromptAt for a working mode (F-144): "" is the
+// normal turn, whose prompt it leaves exactly as it was.
+func (r *Runtime) cliPromptMode(ctx context.Context, e *entry, trigger bus.Message, wfText string, level int, ep *episode.Episode, resumed bool, mode string) (prompt, system string) {
 	lim := limitsAt(level)
 	// F-027: the effective persona comes from the behaviour composer —
 	// manifest system + role template + attached skills — with the
@@ -1001,6 +1008,7 @@ func (r *Runtime) cliPromptAt(ctx context.Context, e *entry, trigger bus.Message
 		Role:           role,
 		Persona:        persona,
 		Skills:         skills,
+		Mode:           mode,
 	})
 	var members []string
 	for _, m := range r.cfg.WS.Members() {

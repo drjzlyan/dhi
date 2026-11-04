@@ -221,6 +221,22 @@ type turnTools struct {
 	lesson         func(text, scope string, tags []string) (string, error)                           // lesson_record seam; nil = none
 	workBranch     func(ctx context.Context, slug, title, member string, carry bool) (string, error) // work_branch seam (F-086); nil = none
 	access         func(ctx context.Context, kind, target, reason string) (string, error)            // permission_request seam (F-087); nil = none
+	readOnly       bool                                                                              // F-144: DHI's tools keep read scope only
+}
+
+// turnScopes is the capability set a turn's served tools run under: the
+// agent's own, or read-only for a plan, review or ask turn (F-144).
+func (r *Runtime) turnScopes(e *entry, tt turnTools) scopes.Set {
+	set := r.agentScopes(e.m)
+	if !tt.readOnly {
+		return set
+	}
+	out := scopes.Set{}
+	for sc := range set {
+		out[sc] = scopes.Deny
+	}
+	out[scopes.Read] = scopes.Auto
+	return out
 }
 
 // envelopeFor decides the autonomy envelope (F-067, ADR-0032): only a

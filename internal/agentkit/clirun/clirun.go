@@ -123,6 +123,10 @@ type RunInput struct {
 	// Only adapters with WebDenyOK honor it; the runtime sets it from
 	// agents.native_web.
 	DenyWeb bool
+	// ReadOnly runs the turn without any write tool (F-144 plan, review
+	// and ask modes). Only adapters with ReadOnlyOK honor it; the runtime
+	// refuses the mode by name for the rest.
+	ReadOnly bool
 }
 
 // maxPromptArg is the largest single argv element DHI will build
@@ -195,6 +199,13 @@ type CLI struct {
 	// runtime then leaves that one file out of the prompt so it is never
 	// shown twice. Members below the cwd are still the prompt's job.
 	ReadsAgentsMD bool
+	// ReadOnlyOK reports a way to run a turn with no write tools
+	// (F-144): BuildArgs honors RunInput.ReadOnly. Adapters without one
+	// are refused by name in the read-only modes, with ReadOnlyWhy.
+	ReadOnlyOK bool
+	// ReadOnlyWhy says why an adapter has no ReadOnlyOK. A test requires
+	// one for every adapter without it.
+	ReadOnlyWhy string
 	// DenyWebEnv is the env that does it for CLIs that take it there
 	// (opencode: OPENCODE_PERMISSION). Set after the pass-through, so the
 	// user's own value never wins.

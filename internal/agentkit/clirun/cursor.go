@@ -43,9 +43,11 @@ import (
 // CursorAgent is the Cursor agent adapter. Registered under the runtime
 // value "cursor-agent".
 var CursorAgent = &CLI{
-	Name:   "cursor-agent",
-	Bin:    "cursor-agent",
-	Tested: "2026.09.26", // live-verified 2026-09-26
+	Name: "cursor-agent",
+	// No ReadOnlyOK (F-144): headless runs need --force, which approves writes.
+	ReadOnlyWhy: "headless runs need --force, which auto-approves its writes",
+	Bin:         "cursor-agent",
+	Tested:      "2026.09.26", // live-verified 2026-09-26
 	// EXACT declared pass-through: the Cursor API key + standard config
 	// roots. Nothing else crosses (ADR-0012 §4).
 	EnvPass: []string{

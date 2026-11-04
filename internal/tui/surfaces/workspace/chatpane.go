@@ -178,7 +178,7 @@ func (p *chatPane) hints() []string {
 	}
 	if p.focus {
 		if bus.IsDM(p.channelName()) { // F-130: only a DM conversation takes an override
-			return []string{"enter send", "^x stop", "/model", "/fork", "/compact", "/new", "esc blur"}
+			return []string{"enter send", "^x stop", "/plan", "/model", "/fork", "/compact", "/new", "esc blur"}
 		}
 		return []string{"enter send", "^x stop", "esc blur"}
 	}
@@ -612,6 +612,10 @@ func (p *chatPane) composerKey(key string) bool {
 	if choice, ok := tools.ComposerDecide(key, p.input.Value == "" && p.editID == 0); ok && p.answerAsk(choice) {
 		return true
 	}
+	if key == "enter" && p.editID == 0 && p.modeCommand(p.input.Value) {
+		p.input = kit.Input{}
+		return true
+	}
 	if key == "enter" && p.editID == 0 && p.modelCommand(p.input.Value) {
 		p.input = kit.Input{}
 		return true
@@ -919,6 +923,12 @@ func (p *chatPane) askLines(width int) []string {
 
 // askHint is the answer legend for where the keyboard is.
 func (p *chatPane) askHint() string {
+	if ap := p.pendingAsk(); ap != nil && ap.IsPlan() {
+		if p.focus {
+			return "alt+y approve the plan · alt+n reject (keeps the draft)"
+		}
+		return "y approve the plan · n reject (keeps the draft)"
+	}
 	if p.focus {
 		return tools.ComposerDecideHint
 	}

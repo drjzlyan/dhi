@@ -71,12 +71,17 @@ var Codex = &CLI{
 		if in.Model != "" {
 			args = append(args, "-m", in.Model)
 		}
-		if in.Resume == "" {
+		if in.Resume == "" && in.ReadOnly {
+			// F-144: codex's own read-only sandbox, and no bypass flag.
+			args = append(args, "--sandbox", "read-only")
+		} else if in.Resume == "" {
 			// OS sandbox is the boundary; codex's own sandbox must not
 			// double-wrap or pause on interactive approval prompts.
 			args = append(args, "--sandbox", "danger-full-access")
 		}
-		args = append(args, "--dangerously-bypass-approvals-and-sandbox")
+		if !in.ReadOnly {
+			args = append(args, "--dangerously-bypass-approvals-and-sandbox")
+		}
 		// IDE tools (F-028): register DHI's loopback endpoint inline via
 		// `-c mcp_servers.dhi.url=...` (no config file needed).
 		args = append(args, CodexMCPArgs(in.MCPConfig, in.MCPURL)...)
@@ -105,7 +110,11 @@ var Codex = &CLI{
 	ReadsAgentsMD: true,
 	// WebDenyOK: web_search=disabled (live-verified on 0.162.1: asked
 	// whether it has a web search tool, "live" answered YES, "disabled" NO).
-	WebDenyOK:   true,
+	WebDenyOK: true,
+	// ReadOnlyOK: --sandbox read-only without the bypass flag (F-144;
+	// documented, live check pending). A resumed session takes no
+	// --sandbox, so the runtime never resumes a read-only turn.
+	ReadOnlyOK:  true,
 	ParseStream: codexParseStream,
 	Finalize:    codexFinalize,
 	Version:     codexVersion,

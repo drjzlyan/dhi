@@ -77,7 +77,10 @@ var Claude = &CLI{
 	// WebDenyOK: --disallowedTools removes both tools from the session's
 	// tool list even under bypassPermissions (live-verified on 2.1.285:
 	// init listed WebFetch and WebSearch without the flag, neither with it).
-	WebDenyOK:   true,
+	WebDenyOK: true,
+	// ReadOnlyOK: the same --disallowedTools list, with the edit, write and
+	// shell tools (F-144; documented, live check pending).
+	ReadOnlyOK:  true,
 	ParseStream: claudeParseStream,
 	Finalize:    claudeFinalize,
 	Version:     claudeVersion,
@@ -336,8 +339,17 @@ func reencode(m map[string]any) string {
 
 // claudeDenyWeb is the flag that removes claude's native web tools (F-123).
 func claudeDenyWeb(in RunInput) []string {
-	if !in.DenyWeb {
+	var deny []string
+	if in.DenyWeb {
+		deny = append(deny, "WebFetch", "WebSearch")
+	}
+	if in.ReadOnly {
+		// F-144: the tool list also loses every file-changing and shell
+		// tool; DHI's own tools are limited by scope in the runtime.
+		deny = append(deny, "Edit", "Write", "MultiEdit", "NotebookEdit", "Bash")
+	}
+	if len(deny) == 0 {
 		return nil
 	}
-	return []string{"--disallowedTools", "WebFetch,WebSearch"}
+	return []string{"--disallowedTools", strings.Join(deny, ",")}
 }
