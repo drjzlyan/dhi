@@ -44,7 +44,7 @@ no daemon.
 - [x] **G-B2** `done` (F-135) — Calibrate the 4-runes-per-token budget from CLI usage events; optional model summary via
       `agents.reflect_model`; user `:compact`.
 - [x] **G-B4** `done` (F-134) — Fork a conversation (episode) by key. Also "new conversation" in a DM (ROADMAP M37 S2).
-- [ ] **G-B3** Agent-facing symbols tool backed by LSP (repo-map-lite). Embeddings stay out of scope.
+- [x] **G-B3** `done` (F-145) — Agent-facing symbols tool backed by LSP (repo-map-lite). Embeddings stay out of scope.
 - [ ] **G-B7** Path-scoped rules (`paths:` frontmatter on standards/skills). Low priority.
 - [ ] **G-B6** Open ADR-0037 items: channel file segmentation, KB index cache, spend-ledger rotation.
 - [x] **G-B8** `done` (F-130) — Per-chat model picker (ROADMAP M37 S2).
@@ -151,3 +151,4 @@ G-B2 — F-135 — 2026-11-04 (calibrated ratio (claude reports per-call context
 G-M1 — F-141 — 2026-11-04 (alt+s split, alt+o focus)
 G-R1 — F-142 — 2026-11-04 (off/delay/focus; focus mode ignores surface switches)
 G-G3 — F-143 — 2026-11-04 (cursor-line blame; :e! does not refetch)
+G-B3 — F-145 — 2026-11-04 (code_symbols tool; only servers already started by the human (on-demand start is a product decision))
