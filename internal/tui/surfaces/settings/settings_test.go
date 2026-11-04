@@ -103,6 +103,19 @@ func TestLineNumbersToggle(t *testing.T) {
 	}
 }
 
+// F-136: wrap long lines is a Settings toggle, off by default.
+func TestWrapToggle(t *testing.T) {
+	m, _ := newSurface(t)
+	if m.cfg.Editor.Wrap {
+		t.Fatal("wrap must default off")
+	}
+	m.cursor = rowWrap
+	feed(m, "enter")
+	if !m.cfg.Editor.Wrap {
+		t.Fatal("toggle no-op")
+	}
+}
+
 func TestScrollbackBounds(t *testing.T) {
 	m, _ := newSurface(t)
 	for i := 0; i < 20; i++ {

@@ -23,7 +23,7 @@ var proposable = map[string]string{
 	"budgets.agent_day_usd": "float", "budgets.workspace_day_usd": "float",
 	"scopes.read": "string", "scopes.write": "string", "scopes.exec": "string", "scopes.network": "string",
 	"scopes.git": "string", "scopes.push": "string", "scopes.admin": "string",
-	"editor.tab_width": "int", "editor.line_numbers": "bool", "terminal.scrollback": "int",
+	"editor.tab_width": "int", "editor.line_numbers": "bool", "editor.wrap": "bool", "terminal.scrollback": "int",
 	"worktrees.root": "string", "engine": "string",
 }
 

@@ -56,6 +56,20 @@ func TestBoolFalseOverride(t *testing.T) {
 	}
 }
 
+// F-136: editor.wrap defaults off and a layer can turn it on.
+func TestEditorWrapLayer(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "c.toml")
+	os.WriteFile(p, []byte("[editor]\nwrap = true\n"), 0o644)
+	cfg, err := Load(p, "")
+	if err != nil || !cfg.Editor.Wrap {
+		t.Fatalf("wrap = %v err=%v", cfg.Editor.Wrap, err)
+	}
+	def, _ := Load(filepath.Join(t.TempDir(), "none"), "")
+	if def.Editor.Wrap {
+		t.Fatal("wrap must default off")
+	}
+}
+
 func TestMissingFilesAreFine(t *testing.T) {
 	cfg, err := Load(filepath.Join(t.TempDir(), "a"), filepath.Join(t.TempDir(), "b"))
 	if err != nil || cfg.Theme != theme.Dark().Name {

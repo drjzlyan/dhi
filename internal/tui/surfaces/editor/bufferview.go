@@ -80,18 +80,28 @@ func (m *Model) bufferView() string {
 	b := e.Buffer()
 	rows := maxInt(m.height-5, 1) // strip + panel padding + command line
 
-	top := 0
-	if b.LineCount() > rows {
-		top = clampIdx(b.Cursor().Line-rows/2, b.LineCount()-rows)
-	}
-	end := min(top+rows, b.LineCount())
-
 	prefs := m.editorPrefs()
 	tabStop = prefs.TabWidth
+	wrap := m.wrapEnabled(prefs)
+	curLine := b.Cursor().Line
+
+	top := 0
+	if b.LineCount() > rows {
+		top = clampIdx(curLine-rows/2, b.LineCount()-rows)
+	}
+	end := min(top+rows, b.LineCount())
 	gut := strconv.Itoa(end)
+	if wrap {
+		gut = strconv.Itoa(b.LineCount()) // a steady gutter: the window is counted in rows
+	}
 	gutW := len(gut) + 1
 	if !prefs.LineNumbers {
 		gutW = 1 // a one-cell column keeps problem colors and git marks
+	}
+	var wl *wrapLayout
+	if wrap {
+		wl = m.layoutWrap(e, rows, m.bufTextWidth(gutW))
+		top, end = wl.top, wl.end
 	}
 	if !m.renderingSplit {
 		// Where the text starts and which line is on top, so a click maps
@@ -99,7 +109,6 @@ func (m *Model) bufferView() string {
 		m.bufGeom = bufGeom{top: top, rows: end - top, textX: gutW + 1}
 	}
 
-	curLine := b.Cursor().Line
 	curCol := visCol(b.Line(curLine), b.Cursor().Col)
 	var a, z textbuf.Pos
 	visual := e.Mode() == textbuf.ModeVisual
@@ -115,7 +124,7 @@ func (m *Model) bufferView() string {
 	// in view instead of running off the panel.
 	textW := m.bufTextWidth(gutW)
 	left := 0
-	if curCol >= textW-1 {
+	if !wrap && curCol >= textW-1 { // wrapped lines never scroll sideways
 		left = curCol - textW + 2
 	}
 	if !m.renderingSplit {
@@ -123,6 +132,8 @@ func (m *Model) bufferView() string {
 	}
 
 	var out []string
+	var rowLine, rowStart []int
+	curRow, curCell := 0, 0
 	path := e.Path()
 	syntax := m.syntaxFor(e)
 	marks := m.gutterMarks(m.bufs[m.activeTab])
@@ -167,14 +178,54 @@ func (m *Model) bufferView() string {
 				text = expandTabs(st) // escapes never contain a tab
 			}
 		}
-		if left > 0 || ansi.Width(text) > textW {
-			text = ansi.Slice(text, left, left+textW)
-		}
 		marker := gitMarkGlyph(marks, l)
 		if g, ok := m.debugGutter(path, l); ok {
 			marker = g // a breakpoint or the stop line beats a git change mark
 		}
+		if wrap {
+			// One row per segment: the number and marks only on the first.
+			segs := wl.segs[l-top]
+			rs := []rune(expandTabs(raw))
+			for i, st := range segs {
+				en := len(rs)
+				if i+1 < len(segs) {
+					en = segs[i+1]
+				}
+				row := text
+				if len(segs) > 1 {
+					c0 := runesWidth(rs[:st])
+					row = ansi.Slice(text, c0, c0+runesWidth(rs[st:en])+boolInt(en == len(rs) && l == curLine))
+				}
+				if i == 0 {
+					out = append(out, gutter+marker+row)
+				} else {
+					out = append(out, strings.Repeat(" ", gutW)+row)
+				}
+				rowLine, rowStart = append(rowLine, l), append(rowStart, st)
+				if l == curLine && curCol >= st && (i+1 == len(segs) || curCol < segs[i+1]) {
+					curRow = len(out) - 1
+					curCell = runesWidth(rs[st:min(curCol, len(rs))])
+				}
+			}
+			continue
+		}
+		if left > 0 || ansi.Width(text) > textW {
+			text = ansi.Slice(text, left, left+textW)
+		}
 		out = append(out, gutter+marker+text)
+	}
+	if wrap {
+		// A cursor line taller than the pane keeps the cursor's row in view.
+		if drop := curRow - rows + 1; drop > 0 {
+			out, rowLine, rowStart, curRow = out[drop:], rowLine[drop:], rowStart[drop:], curRow-drop
+		}
+		if len(out) > rows {
+			out, rowLine, rowStart = out[:rows], rowLine[:rows], rowStart[:rows]
+		}
+		if !m.renderingSplit && len(out) > 0 {
+			m.bufGeom.rowLine, m.bufGeom.rowStart, m.bufGeom.rows = rowLine, rowStart, len(out)
+			m.bufGeom.top = rowLine[0]
+		}
 	}
 
 	if popup := m.popupRows(); len(popup) > 0 && !m.renderingSplit {
@@ -182,7 +233,12 @@ func (m *Model) bufferView() string {
 		// dialog anchored under the cursor cell — not plain rows
 		// appended below the buffer.
 		x := clampIdx(gutW+curCol, maxInt(m.width-m.railW()-5, 20)-10)
-		out = m.floatPopup(out, popup, x, curLine, top)
+		if wrap { // rows, not lines: the popup hangs under the cursor's row
+			x = clampIdx(gutW+curCell, maxInt(m.width-m.railW()-5, 20)-10)
+			out = m.floatPopup(out, popup, x, curRow, 0)
+		} else {
+			out = m.floatPopup(out, popup, x, curLine, top)
+		}
 	}
 
 	cmd := e.CommandLine()

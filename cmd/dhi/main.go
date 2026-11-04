@@ -185,7 +185,7 @@ func runTUI() (relaunch bool) {
 	liveCfg := settings.Live(userCfg, wsCfg, cfg)
 	edOpts = append(edOpts, editor.WithPrefs(func() editor.Prefs { // F-116: Settings apply live
 		c := liveCfg()
-		return editor.Prefs{TabWidth: c.Editor.TabWidth, LineNumbers: c.Editor.LineNumbers, Scrollback: c.Terminal.Scrollback}
+		return editor.Prefs{TabWidth: c.Editor.TabWidth, LineNumbers: c.Editor.LineNumbers, Wrap: c.Editor.Wrap, Scrollback: c.Terminal.Scrollback}
 	}))
 	var rgSearcher search.Searcher
 	var termEnv []string

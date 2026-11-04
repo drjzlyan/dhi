@@ -41,6 +41,7 @@ func DefaultUserPath() (string, error) {
 type Editor struct {
 	TabWidth    int  `toml:"tab_width"`
 	LineNumbers bool `toml:"line_numbers"`
+	Wrap        bool `toml:"wrap"` // soft word wrap in the buffer view (F-136)
 	// Languages overrides (or adds to) the editor's built-in language
 	// servers, keyed by language id (F-050).
 	Languages map[string]LanguageConfig `toml:"languages,omitempty"`
@@ -265,7 +266,7 @@ func DefaultMemory() Memory {
 // Known reports the accepted top-level keys (for doctor warnings).
 func Known() []string {
 	return []string{"schema", "theme", "reduced_motion", "engine", "editor",
-		"terminal", "security", "editor.tab_width", "editor.line_numbers",
+		"terminal", "security", "editor.tab_width", "editor.line_numbers", "editor.wrap",
 		"worktrees", "worktrees.root",
 		"terminal.scrollback", "security.sandbox",
 		"agents", "agents.max_turns", "agents.resume", "agents.autonomy", "agents.native_web",
@@ -554,6 +555,7 @@ type fileLayer struct {
 	Editor        struct {
 		TabWidth    int                       `toml:"tab_width"`
 		LineNumbers *bool                     `toml:"line_numbers"`
+		Wrap        *bool                     `toml:"wrap"`
 		Languages   map[string]LanguageConfig `toml:"languages"`
 	} `toml:"editor"`
 	Worktrees struct {
@@ -685,6 +687,9 @@ func (f fileLayer) mergeInto(dst *Config) {
 	}
 	if f.Editor.LineNumbers != nil {
 		dst.Editor.LineNumbers = *f.Editor.LineNumbers
+	}
+	if f.Editor.Wrap != nil {
+		dst.Editor.Wrap = *f.Editor.Wrap
 	}
 	for id, lc := range f.Editor.Languages { // a later layer replaces a language wholesale
 		if dst.Editor.Languages == nil {

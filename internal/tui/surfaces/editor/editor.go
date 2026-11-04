@@ -111,6 +111,7 @@ func WithLanguages(r langserver.Registry) Option {
 type Prefs struct {
 	TabWidth    int
 	LineNumbers bool
+	Wrap        bool // soft word wrap (F-136)
 	Scrollback  int
 }
 
@@ -234,6 +235,7 @@ type Model struct {
 	dapStart     dapStarter    // adapter launcher; nil = delve (tests inject)
 	testing      *testState    // :test results (modeTests)
 	syms         *symbolPicker // :sym outline picker (modeSymbols)
+	wrapOverride *bool         // :set wrap|nowrap for this session; nil follows Settings (F-136)
 	formatOnSave bool          // :set fmt|nofmt; default on (Go + live server only)
 	pairAgent    string        // pairing partner (F-038); "" = no session
 
@@ -1666,6 +1668,10 @@ func (m *Model) ExecEx(requester *textbuf.Editor, cmd string) bool {
 		requester.SetMessage(msg)
 		return true
 	}
+	if msg, ok := m.wrapCommand(cmd); ok {
+		requester.SetMessage(msg)
+		return true
+	}
 	if msg, ok := m.fmtCommand(cmd); ok {
 		requester.SetMessage(msg)
 		if strings.TrimSpace(cmd) == "fmt" && msg == "formatted" {
@@ -2202,10 +2208,12 @@ func truncateRunes(s string, n int) string {
 // by the last render (F-103).
 type bufGeom struct {
 	ok        bool
-	ox, oy    int // surface cell of the first text row's gutter
-	textX     int // cells of gutter before the text
-	top, rows int // first buffer line shown, and how many
-	left      int // columns scrolled off the left (F-119)
+	rowLine   []int // wrap on: buffer line of each shown row (F-136)
+	rowStart  []int // wrap on: first rune (tab-expanded) of each shown row
+	ox, oy    int   // surface cell of the first text row's gutter
+	textX     int   // cells of gutter before the text
+	top, rows int   // first buffer line shown, and how many
+	left      int   // columns scrolled off the left (F-119)
 }
 
 // bufferPos maps a surface cell to a buffer position (false outside the
@@ -2217,6 +2225,16 @@ func (m *Model) bufferPos(x, y int) (textbuf.Pos, bool) {
 		return textbuf.Pos{}, false
 	}
 	line := g.top + y - g.oy
+	if g.rowLine != nil { // wrapped: rows map to a line and where it starts
+		r := y - g.oy
+		if r >= len(g.rowLine) {
+			return textbuf.Pos{}, false
+		}
+		line = g.rowLine[r]
+		plain := expandTabs(e.Buffer().Line(line))
+		idx := runeAtCell(plain, g.rowStart[r], max(x-g.ox-g.textX, 0))
+		return textbuf.Pos{Line: line, Col: runeCol(e.Buffer().Line(line), idx)}, true
+	}
 	if line >= e.Buffer().LineCount() {
 		return textbuf.Pos{}, false
 	}
