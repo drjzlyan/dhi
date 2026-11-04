@@ -847,6 +847,7 @@ var (
 	GlyphChevron = "›" // breadcrumb separator
 	GlyphCheck   = "✓"
 	GlyphCross   = "✗"
+	GlyphBulb    = "✦" // a quick fix is ready on the cursor line (F-158)
 	GlyphDiamond = "◆" // approval pending
 	GlyphAt      = "@" // mention
 	GlyphBullet  = "•"

@@ -105,8 +105,16 @@ func (c *Client) initialize(rootDir string) error {
 				"synchronization": map[string]any{
 					"didSave": true,
 				},
-				"rename":     map[string]any{},
-				"codeAction": map[string]any{},
+				"rename": map[string]any{},
+				"codeAction": map[string]any{
+					"codeActionLiteralSupport": map[string]any{"codeActionKind": map[string]any{
+						"valueSet": []string{"quickfix", "refactor", "source", "source.organizeImports"},
+					}},
+					"isPreferredSupport": true,
+					"disabledSupport":    true,
+					"dataSupport":        true,
+					"resolveSupport":     map[string]any{"properties": []string{"edit"}},
+				},
 				"formatting": map[string]any{},
 			},
 			"workspace": map[string]any{

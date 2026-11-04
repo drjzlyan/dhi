@@ -20,6 +20,7 @@ type goplusFake struct {
 	conn net.Conn
 	rd   *bufio.Reader
 
+	wmu      sync.Mutex // one frame at a time on the pipe
 	mu       sync.Mutex
 	lastOpen string // file URI seen in the last didOpen
 	// declinePrepare makes prepareRename answer null (symbol not
@@ -50,6 +51,14 @@ type goplusFake struct {
 	didSaveEvents []map[string]any
 	// didCloseUris records URIs for each didClose received.
 	didCloseUris []string
+	// F-158: codeAction replies per context.only ("" = any), resolve support,
+	// the resolved action, and the executeCommand requests seen.
+	actionsFor   map[string][]map[string]any
+	resolveCaps  bool
+	resolved     map[string]any
+	onlySeen     []string
+	execCommands []string
+	execEdit     map[string]any // sent as workspace/applyEdit while executing
 }
 
 func startFakeServer(t *testing.T) (*goplusFake, *lsp.Manager) {
@@ -60,9 +69,18 @@ func startFakeServer(t *testing.T) (*goplusFake, *lsp.Manager) {
 // startFakeServerFor injects the scripted server as the client of lang; with
 // noFormat it reports capabilities that lack documentFormattingProvider.
 func startFakeServerFor(t *testing.T, lang string, noFormat bool) (*goplusFake, *lsp.Manager) {
+	return startFakeServerCfg(t, lang, noFormat, nil)
+}
+
+// startFakeServerCfg is startFakeServerFor with cfg run before the server
+// answers initialize (capabilities are read then).
+func startFakeServerCfg(t *testing.T, lang string, noFormat bool, cfg func(*goplusFake)) (*goplusFake, *lsp.Manager) {
 	t.Helper()
 	clientConn, serverConn := net.Pipe()
 	f := &goplusFake{conn: serverConn, rd: bufio.NewReader(serverConn), noFormat: noFormat}
+	if cfg != nil {
+		cfg(f)
+	}
 	go f.serve()
 
 	mgr := lsp.NewManager(nil, nil)
@@ -101,6 +119,9 @@ func (f *goplusFake) serve() {
 				caps := map[string]any{}
 				if opts != nil {
 					caps["textDocumentSync"] = map[string]any{"save": opts}
+				}
+				if f.resolveCaps {
+					caps["codeActionProvider"] = map[string]any{"resolveProvider": true}
 				}
 				if len(caps) > 0 {
 					res["capabilities"] = caps
@@ -263,6 +284,24 @@ func (f *goplusFake) serve() {
 				} `json:"textDocument"`
 			}
 			json.Unmarshal(msg.Params, &p)
+			var cp struct {
+				Context struct {
+					Only []string `json:"only"`
+				} `json:"context"`
+			}
+			json.Unmarshal(msg.Params, &cp)
+			only := strings.Join(cp.Context.Only, ",")
+			f.mu.Lock()
+			f.onlySeen = append(f.onlySeen, only)
+			custom, has := f.actionsFor[only]
+			if !has {
+				custom, has = f.actionsFor[""]
+			}
+			f.mu.Unlock()
+			if has {
+				f.reply(*msg.ID, custom)
+				break
+			}
 			f.reply(*msg.ID, []map[string]any{
 				{"title": "quickfix boom", "edit": map[string]any{"changes": map[string]any{
 					p.TextDocument.URI: []map[string]any{
@@ -273,6 +312,27 @@ func (f *goplusFake) serve() {
 					},
 				}}},
 			})
+
+		case "codeAction/resolve":
+			f.mu.Lock()
+			r := f.resolved
+			f.events = append(f.events, "resolve")
+			f.mu.Unlock()
+			f.reply(*msg.ID, r)
+
+		case "workspace/executeCommand":
+			var p struct {
+				Command string `json:"command"`
+			}
+			json.Unmarshal(msg.Params, &p)
+			f.mu.Lock()
+			f.execCommands = append(f.execCommands, p.Command)
+			ed := f.execEdit
+			f.mu.Unlock()
+			f.reply(*msg.ID, nil)
+			if ed != nil { // async: the pipe is synchronous and the client answers the request
+				go f.writeJSON(map[string]any{"jsonrpc": "2.0", "id": 900, "method": "workspace/applyEdit", "params": map[string]any{"edit": ed}})
+			}
 
 		case "textDocument/didSave":
 			var p struct {
@@ -320,6 +380,8 @@ func (f *goplusFake) notify(method string, params any) {
 
 func (f *goplusFake) writeJSON(v any) {
 	data, _ := json.Marshal(v)
+	f.wmu.Lock()
+	defer f.wmu.Unlock()
 	fmt.Fprintf(f.conn, "Content-Length: %d\r\n\r\n", len(data))
 	f.conn.Write(data)
 }

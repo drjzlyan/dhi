@@ -379,6 +379,8 @@ type Model struct {
 	actionOpen     bool
 	actionItems    []lsp.CodeAction
 	actionCur      int
+	bulbKey        string // cursor line the quick-fix probe last asked about (F-158)
+	bulbOn         bool   // that probe found a quick fix
 
 	chat *chatModel
 }
@@ -612,7 +614,7 @@ func (m *Model) HelpSections() [][2]string {
 			[2]string{"f F t T · ; , · %", "find/until char on line · repeat/reverse · match bracket"},
 			[2]string{"gd · gR · K", "go to definition · references · hover"},
 			[2]string{"]d · [d · :diag", "next / previous problem · all problems"},
-			[2]string{"gr · ga", "rename · code actions"},
+			[2]string{"gr · ga · :organize", "rename · code actions (quick fixes first; visual: selection) · organize imports"},
 			[2]string{"]x · [x · :conflict ours|theirs|both|base", "next / previous merge conflict · accept a side (one undo step)"},
 			[2]string{"ctrl+space", "completions (they also open as you type)"},
 			[2]string{":pair <agent>", "invite an agent to pair (:ask · :unpair)"},
@@ -789,6 +791,8 @@ const (
 	lspMsgAction
 	lspMsgNote
 	lspMsgSig
+	lspMsgRun        // a resolved code action, ready to apply (F-158)
+	lspMsgBulb       // quick-fix probe result for the cursor line (F-158)
 	toolMsgInstalled // an approved install tab exited (lang: the tool; note: the outcome)
 	testMsgDone
 	blameMsgDone // git blame for a tab finished (F-143)
@@ -861,7 +865,7 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 			}
 		case termMsgClosed:
 			m.termExited(msg.tab)
-		case lspMsgDiag, lspMsgComp, lspMsgHover, lspMsgEdit, lspMsgAction, lspMsgNote, lspMsgSig:
+		case lspMsgDiag, lspMsgComp, lspMsgHover, lspMsgEdit, lspMsgAction, lspMsgNote, lspMsgSig, lspMsgRun, lspMsgBulb:
 			m.applyLSPUpdate(msg)
 		case toolMsgInstalled:
 			m.applyToolInstalled(msg)
@@ -938,6 +942,7 @@ func (m *Model) HandleKey(key string) bool {
 	m.lastKey = m.clock()
 	prev, prevFocus := m.focusedTab(), m.bufFocus
 	handled := m.handleKey(key)
+	m.probeBulb()
 	m.autosaveFocusChange(prev, prevFocus)
 	if t := m.focusedTab(); t != nil && t.ed != nil && !t.ed.Buffer().Dirty() {
 		t.noAutosave = false // :w!/:e! settled it (F-142)
@@ -1131,6 +1136,10 @@ func (m *Model) handleKey(key string) bool {
 		// dead in textbuf so the surface owns the two-key chords).
 		if m.lspPendingG && e.Mode() == textbuf.ModeVisual {
 			m.lspPendingG = false // visual: gc comments the selection (F-150); other keys carry on
+			if key == "a" {       // F-158: code actions for the selection
+				m.requestCodeActions(true)
+				return true
+			}
 			if key == "c" {
 				e.Key("gc")
 				m.lspSync()
@@ -1155,7 +1164,7 @@ func (m *Model) handleKey(key string) bool {
 					m.requestNav(true)
 					return true
 				case "a":
-					m.requestCodeActions()
+					m.requestCodeActions(false)
 					return true
 				case "g": // gg: first line (F-102)
 					e.Key("gg")

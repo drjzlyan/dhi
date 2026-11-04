@@ -103,6 +103,7 @@ func (m *Model) Commands() []surfaces.Command {
 		if _, ok := m.diagAtLine(e.Path(), e.Buffer().Cursor().Line); ok {
 			add("Fix this problem with an agent", ":fix", ex("fix"))
 		}
+		add("Organize imports", ":organize", ex("organize"))
 		add("Local history of this file", ":localhistory", ex("localhistory"))
 		add("Go to symbol", ":sym", ex("sym"))
 		out = append(out, surfaces.Command{Group: "Editor", Title: "Go to symbol in workspace", Hint: ":wsym", Run: func() tea.Cmd {

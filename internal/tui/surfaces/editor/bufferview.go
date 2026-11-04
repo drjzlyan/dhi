@@ -60,8 +60,15 @@ func modePill(md textbuf.Mode, block bool) string {
 // diagChip renders the error/warning count for the active buffer.
 func (m *Model) diagChip(e *textbuf.Editor) string {
 	errs, warns := m.diagCount(e)
+	bulb := ""
+	if m.bulbOn && e == m.active() { // F-158: a quick fix is ready on the cursor line
+		bulb = theme.WarningText().Render(theme.GlyphBulb)
+	}
 	if errs == 0 && warns == 0 {
-		return ""
+		if bulb == "" {
+			return ""
+		}
+		return "  " + bulb
 	}
 	var b strings.Builder
 	b.WriteString("  ")
@@ -73,6 +80,9 @@ func (m *Model) diagChip(e *textbuf.Editor) string {
 			b.WriteString(" ")
 		}
 		b.WriteString(theme.WarningText().Render("⚠" + itoa(warns)))
+	}
+	if bulb != "" {
+		b.WriteString(" " + bulb)
 	}
 	return b.String()
 }

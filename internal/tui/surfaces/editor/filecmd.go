@@ -19,6 +19,8 @@ func (m *Model) fileCommand(requester *textbuf.Editor, cmd string) (string, bool
 		return m.openUndoTurn(), true
 	case "fix":
 		return m.fixProblem(), true
+	case "organize":
+		return m.organizeImports(), true
 	case "localhistory":
 		return m.openLocalHistory(), true
 	case "history":

@@ -31,12 +31,59 @@ type Command struct {
 	Arguments []any  `json:"arguments,omitempty"`
 }
 
-// CodeAction is one quickfix/refactor offering.
+// CodeAction is one quickfix/refactor offering. Data is the server's
+// opaque token that codeAction/resolve needs to fill in a missing Edit.
 type CodeAction struct {
-	Title   string         `json:"title"`
-	Kind    string         `json:"kind,omitempty"`
-	Edit    *WorkspaceEdit `json:"edit,omitempty"`
-	Command *Command       `json:"command,omitempty"`
+	Title     string          `json:"title"`
+	Kind      string          `json:"kind,omitempty"`
+	Edit      *WorkspaceEdit  `json:"edit,omitempty"`
+	Command   *Command        `json:"command,omitempty"`
+	Preferred bool            `json:"isPreferred,omitempty"`
+	Disabled  string          `json:"-"` // reason; non-empty = not applicable (spec: disabled.reason)
+	Data      json.RawMessage `json:"data,omitempty"`
+}
+
+// UnmarshalJSON accepts the two wire shapes of a codeAction result item:
+// a CodeAction literal, or a bare Command (whose "command" is a string).
+func (a *CodeAction) UnmarshalJSON(b []byte) error {
+	var raw struct {
+		Title       string          `json:"title"`
+		Kind        string          `json:"kind"`
+		Edit        *WorkspaceEdit  `json:"edit"`
+		Command     json.RawMessage `json:"command"`
+		IsPreferred bool            `json:"isPreferred"`
+		Disabled    *struct {
+			Reason string `json:"reason"`
+		} `json:"disabled"`
+		Data      json.RawMessage `json:"data"`
+		Arguments []any           `json:"arguments"`
+	}
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return err
+	}
+	*a = CodeAction{Title: raw.Title, Kind: raw.Kind, Edit: raw.Edit, Preferred: raw.IsPreferred, Data: raw.Data}
+	if raw.Disabled != nil {
+		a.Disabled = raw.Disabled.Reason
+		if a.Disabled == "" {
+			a.Disabled = "disabled"
+		}
+	}
+	if len(raw.Command) > 0 && string(raw.Command) != "null" {
+		if raw.Command[0] == '"' { // bare Command: {title, command: "id", arguments}
+			var id string
+			if err := json.Unmarshal(raw.Command, &id); err != nil {
+				return err
+			}
+			a.Command = &Command{Title: raw.Title, Command: id, Arguments: raw.Arguments}
+		} else {
+			var c Command
+			if err := json.Unmarshal(raw.Command, &c); err != nil {
+				return err
+			}
+			a.Command = &c
+		}
+	}
+	return nil
 }
 
 // WorkspaceEdit is a set of per-file edits. The wire allows either a
@@ -69,6 +116,9 @@ func (w *WorkspaceEdit) UnmarshalJSON(b []byte) error {
 		w.Files = append(w.Files, FileEdit{URI: uri, Edits: edits})
 	}
 	for _, d := range raw.DocumentChanges {
+		if d.TextDocument.URI == "" {
+			continue // create/rename/delete file operations are not supported
+		}
 		w.Files = append(w.Files, FileEdit{URI: d.TextDocument.URI, Edits: d.Edits})
 	}
 	return nil
@@ -255,6 +305,12 @@ func (c *Client) Rename(path string, line, col int, newName string) (*WorkspaceE
 // CodeAction requests quickfixes for a range, seeded with the
 // diagnostics the UI already knows about on that line.
 func (c *Client) CodeAction(path string, rng Range, diags []Diagnostic) ([]CodeAction, error) {
+	return c.CodeActionOnly(path, rng, diags, nil)
+}
+
+// CodeActionOnly is CodeAction restricted to the given kinds (context.only,
+// e.g. "quickfix", "source.organizeImports"); nil asks for every kind.
+func (c *Client) CodeActionOnly(path string, rng Range, diags []Diagnostic, only []string) ([]CodeAction, error) {
 	wireDiags := make([]map[string]any, 0, len(diags))
 	for _, d := range diags {
 		wireDiags = append(wireDiags, map[string]any{
@@ -263,11 +319,15 @@ func (c *Client) CodeAction(path string, rng Range, diags []Diagnostic) ([]CodeA
 			"message":  d.Message,
 		})
 	}
+	ctx := map[string]any{"diagnostics": wireDiags}
+	if len(only) > 0 {
+		ctx["only"] = only
+	}
 	var raw json.RawMessage
 	params := map[string]any{
 		"textDocument": map[string]any{"uri": pathToURI(path)},
 		"range":        rng,
-		"context":      map[string]any{"diagnostics": wireDiags},
+		"context":      ctx,
 	}
 	if err := c.call("textDocument/codeAction", params, &raw); err != nil {
 		return nil, err
@@ -280,6 +340,46 @@ func (c *Client) CodeAction(path string, rng Range, diags []Diagnostic) ([]CodeA
 		return nil, fmt.Errorf("lsp: codeAction result: %w", err)
 	}
 	return actions, nil
+}
+
+// CanResolveCodeAction reports whether the server advertised
+// codeActionProvider.resolveProvider, i.e. may return actions whose edit
+// is filled in by codeAction/resolve.
+func (c *Client) CanResolveCodeAction() bool {
+	raw, ok := c.caps["codeActionProvider"]
+	if !ok {
+		return false
+	}
+	var p struct {
+		Resolve bool `json:"resolveProvider"`
+	}
+	return json.Unmarshal(raw, &p) == nil && p.Resolve
+}
+
+// ResolveCodeAction asks the server to complete an action (its edit).
+func (c *Client) ResolveCodeAction(a CodeAction) (CodeAction, error) {
+	wire := map[string]any{"title": a.Title}
+	if a.Kind != "" {
+		wire["kind"] = a.Kind
+	}
+	if len(a.Data) > 0 {
+		wire["data"] = a.Data
+	}
+	var raw json.RawMessage
+	if err := c.call("codeAction/resolve", wire, &raw); err != nil {
+		return a, err
+	}
+	if len(raw) == 0 || string(raw) == "null" {
+		return a, nil
+	}
+	var out CodeAction
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return a, fmt.Errorf("lsp: codeAction/resolve result: %w", err)
+	}
+	if out.Title == "" {
+		out.Title = a.Title
+	}
+	return out, nil
 }
 
 // ExecuteCommand runs a server-side command from a code action. It is a

@@ -263,6 +263,7 @@ func (m *Model) applyLSPUpdate(msg teaMsg) {
 		// Whole-file set per publish; an empty set clears its path
 		// (M2 gap fixed in F-009 — the publish carries the URI).
 		m.lspDiags[msg.diagPath] = msg.diags
+		m.probeBulb() // a problem may have just appeared under the cursor (F-158)
 	case lspMsgComp:
 		m.compItems = msg.compItems
 		m.compCur = 0
@@ -287,6 +288,14 @@ func (m *Model) applyLSPUpdate(msg teaMsg) {
 		}
 	case lspMsgEdit:
 		m.applyWorkspaceEdit(msg.edit)
+	case lspMsgRun:
+		if len(msg.actions) == 1 {
+			m.applyAction(msg.actions[0])
+		}
+	case lspMsgBulb:
+		if msg.note == m.bulbKey {
+			m.bulbOn = msg.hoverOK
+		}
 	case lspMsgNote:
 		if e := m.active(); e != nil {
 			e.SetMessage(msg.note)
@@ -447,33 +456,6 @@ func (m *Model) dispatchRename(newName string) {
 	}()
 }
 
-// requestCodeActions lists quickfixes for the cursor line's diagnostics.
-func (m *Model) requestCodeActions() {
-	c := m.lspClient()
-	e := m.active()
-	if c == nil || e == nil {
-		return
-	}
-	cur := e.Buffer().Cursor()
-	path := e.Path()
-	line := e.Buffer().Line(cur.Line)
-	rng := lsp.Range{ // the whole cursor line, so a fix anywhere on it is offered
-		Start: lsp.Position{Line: cur.Line},
-		End:   lsp.Position{Line: cur.Line, Character: lsp.UTF16Col(line, len([]rune(line)))},
-	}
-	diags := m.lspDiags[path]
-	go func() {
-		actions, err := c.CodeAction(path, rng, diags)
-		if err != nil {
-			actions = nil
-		}
-		select {
-		case m.termMsgs <- teaMsg{kind: lspMsgAction, actions: actions}:
-		default:
-		}
-	}()
-}
-
 // handleActionKey processes keys while the code-action popup is open.
 func (m *Model) handleActionKey(key string) bool {
 	switch key {
@@ -482,7 +464,7 @@ func (m *Model) handleActionKey(key string) bool {
 		return true
 	case "enter":
 		if m.actionCur < len(m.actionItems) {
-			m.applyAction(m.actionItems[m.actionCur])
+			m.runAction(m.actionItems[m.actionCur])
 		}
 		m.dismissActions()
 		return true
@@ -507,26 +489,6 @@ func (m *Model) dismissActions() {
 	m.actionCur = 0
 }
 
-// applyAction runs one code action: inline WorkspaceEdit first, else
-// the server-side command.
-func (m *Model) applyAction(a lsp.CodeAction) {
-	if a.Edit != nil {
-		m.applyWorkspaceEdit(a.Edit)
-		return
-	}
-	if c := m.lspClient(); c != nil && a.Command != nil {
-		cmd := *a.Command
-		go func() { // a request: the server may answer slowly (F-116)
-			if err := c.ExecuteCommand(cmd); err != nil {
-				select {
-				case m.termMsgs <- teaMsg{kind: lspMsgNote, note: "lsp: " + a.Title + ": " + err.Error()}:
-				default:
-				}
-			}
-		}()
-	}
-}
-
 // applyWorkspaceEdit applies a server WorkspaceEdit: open files in their
 // buffer (one undo group each), files that are not open straight on disk
 // (F-116: a rename used to skip them while the server believed it done).
@@ -534,6 +496,7 @@ func (m *Model) applyWorkspaceEdit(edit *lsp.WorkspaceEdit) {
 	if edit == nil {
 		return
 	}
+	m.bulbKey, m.bulbOn = "", false // the text moved; probe the cursor line again
 	byPath := map[string]*bufTab{}
 	for _, b := range m.bufs {
 		if b.ed != nil {
