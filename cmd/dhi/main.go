@@ -1592,6 +1592,7 @@ func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cl
 		Episodes: episode.Open(ws.Root),
 		Spend:    budget.Open(ws.Root),
 		Tuning:   tune,
+		OnRun:    otelOnRun(),           // F-164: optional trace export, off without OTEL_* env
 		Lessons:  lessons.Open(ws.Root), // F-068: learned rules, retrieval + reflection
 		Forge:    forge.Open(ws.Root),   // F-069: agent-made tools, active once approved
 		// F-070: agents propose settings changes; the human applies them.

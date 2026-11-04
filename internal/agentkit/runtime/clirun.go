@@ -144,6 +144,15 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message, tl
 			budgets: tune.Budgets, taskSlug: task.Slug,
 		})
 		r.recordRun(trigger, run)
+		if r.cfg.OnRun != nil {
+			calls := 0
+			for _, ev := range events {
+				if ev.Kind == clirun.EventCommand {
+					calls++
+				}
+			}
+			r.cfg.OnRun(run, calls)
+		}
 		r.recordSpend(run, task.Slug)
 		r.calibrate(trigger, e, ep, run, resume == "", runeLen(prompt+brief)+runeLen(system))
 		tl.runs = append(tl.runs, run.ID)

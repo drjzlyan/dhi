@@ -169,6 +169,9 @@ type Config struct {
 	// Tuning supplies max-turns, resume and budgets per turn; nil = the
 	// defaults (resume on, no caps).
 	Tuning func() Tuning
+	// OnRun, when set, sees every finished CLI run with its tool-call
+	// count (F-164 trace export). It must not block; nil = nothing.
+	OnRun func(run tasks.Run, toolCalls int)
 	// SetProps + SettingCheck serve settings_propose (F-070): agents
 	// propose, the human applies in Settings. nil = no proposals.
 	SetProps     *setprop.Store

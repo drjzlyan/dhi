@@ -30,6 +30,7 @@ import (
 	agentkitStandards "github.com/drjzlyan/dhi/internal/agentkit/standards"
 	agentkitWorkflow "github.com/drjzlyan/dhi/internal/agentkit/workflow"
 	"github.com/drjzlyan/dhi/internal/autopilot"
+	"github.com/drjzlyan/dhi/internal/hostenv"
 	"github.com/drjzlyan/dhi/internal/hosttools"
 	"github.com/drjzlyan/dhi/internal/ideation"
 	"github.com/drjzlyan/dhi/internal/langserver"
@@ -101,6 +102,7 @@ func Run(wsRoot string) Report {
 	r.Checks = append(r.Checks, GH()...)
 	r.Checks = append(r.Checks, Sandbox(sandboxMode(wsRoot))...)
 	r.Checks = append(r.Checks, Secrets(os.Environ())...)
+	r.Checks = append(r.Checks, Telemetry(hostenv.Env())...)
 	r.Healthy = true
 	for _, c := range r.Checks {
 		if c.Status == Fail {
