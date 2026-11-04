@@ -89,7 +89,7 @@ no daemon.
 
 ## Phase 6 — Reliability, git, terminal, tasks
 
-- [ ] **G-R1** Autosave
+- [x] **G-R1** `done` (F-142) — Autosave
 - [ ] **G-R2** Hot exit with swap recovery
 - [ ] **G-R3** Local history (snapshot per save, restore, compare)
 - [ ] **G-R4** Session restore of tabs and splits
@@ -102,7 +102,7 @@ no daemon.
 - [x] **G-G5** `done` (F-140) — File history and timeline
 - [ ] **G-G6** Interactive rebase through a terminal tab
 - [ ] **G-G7** Branch graph and cherry-pick
-- [ ] **G-M1** Split terminals
+- [x] **G-M1** `done` (F-141) — Split terminals
 - [ ] **G-M2** Terminal shell integration (command detection, jump between commands, send selection)
 - [ ] **G-S1** Restricted mode for unknown repos (before an LSP or formatter runs)
 
@@ -148,3 +148,5 @@ G-G5 — F-140 — 2026-11-04 (:history and h in the git panel; read-only diff)
 G-E5 — F-137 — 2026-11-04 (vim magic → RE2; no c flag; '<,'> not prefilled on :)
 G-E4 — F-136 — 2026-11-04 (editor.wrap + :set wrap; ctrl-d/u and wheel stay logical)
 G-B2 — F-135 — 2026-11-04 (calibrated ratio (claude reports per-call context); /compact; reflect_model reused; prompt change — live eval pending)
+G-M1 — F-141 — 2026-11-04 (alt+s split, alt+o focus)
+G-R1 — F-142 — 2026-11-04 (off/delay/focus; focus mode ignores surface switches)
