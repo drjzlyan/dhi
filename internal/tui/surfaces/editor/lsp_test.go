@@ -59,6 +59,12 @@ type goplusFake struct {
 	onlySeen     []string
 	execCommands []string
 	execEdit     map[string]any // sent as workspace/applyEdit while executing
+	// F-167: selectionRange capability, the reply chain (ranges, innermost
+	// first), a forced error, and how many requests arrived.
+	selCap   bool
+	selChain []map[string]any
+	selFail  bool
+	selAsked int
 }
 
 func startFakeServer(t *testing.T) (*goplusFake, *lsp.Manager) {
@@ -122,6 +128,9 @@ func (f *goplusFake) serve() {
 				}
 				if f.resolveCaps {
 					caps["codeActionProvider"] = map[string]any{"resolveProvider": true}
+				}
+				if f.selCap {
+					caps["selectionRangeProvider"] = true
 				}
 				if len(caps) > 0 {
 					res["capabilities"] = caps
@@ -258,6 +267,26 @@ func (f *goplusFake) serve() {
 				break
 			}
 			f.reply(*msg.ID, edits)
+
+		case "textDocument/selectionRange": // F-167
+			f.mu.Lock()
+			chain, fail := f.selChain, f.selFail
+			f.selAsked++
+			f.mu.Unlock()
+			if fail {
+				f.writeJSON(map[string]any{"jsonrpc": "2.0", "id": *msg.ID,
+					"error": map[string]any{"code": -32603, "message": "boom"}})
+				break
+			}
+			var node any // innermost first; build the parent links
+			for i := len(chain) - 1; i >= 0; i-- {
+				n := map[string]any{"range": chain[i]}
+				if node != nil {
+					n["parent"] = node
+				}
+				node = n
+			}
+			f.reply(*msg.ID, []any{node})
 
 		case "workspace/symbol":
 			f.mu.Lock()

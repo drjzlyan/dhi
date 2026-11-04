@@ -149,7 +149,7 @@ func (b *Buffer) deleteRange(a, z Pos) {
 			tail = string(b.runes(z.Line)[z.Col:])
 		}
 		merged := head + tail
-		if merged == "" {
+		if merged == "" && eof { // (not eof: the empty line z sits on stays)
 			newLines := append([]string{}, b.lines[:a.Line]...)
 			b.lines = newLines
 		} else {

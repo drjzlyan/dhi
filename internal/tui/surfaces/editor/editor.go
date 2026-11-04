@@ -621,6 +621,8 @@ func (m *Model) HelpSections() [][2]string {
 			[2]string{"v · V · > <", "select · select lines · indent / outdent (>> << on a line)"},
 			[2]string{"ctrl+v", "select a block by column: motions and $ extend it, o O swap corners; d y c I A r > < ~ u U act on every line, p pastes the block"},
 			[2]string{"gcc · gc{motion} · ctrl+/", "comment / uncomment lines (counts and visual gc work; ctrl+/ also in insert)"},
+			[2]string{kit.AltLabel("alt+o · alt+i"), "expand / shrink the selection (language server's syntax tree, else word → quotes → brackets → line → paragraph → buffer; the status line names which)"},
+			[2]string{"iw aw i( a( i[ i{ i\" i' ip ap", "text objects after d c y gc, or in visual mode (b and B for ( and {)"},
 			[2]string{".", "repeat the last change"},
 			[2]string{"f F t T · ; , · %", "find/until char on line · repeat/reverse · match bracket"},
 			[2]string{"gd · gR · K", "go to definition · references · hover"},
@@ -794,6 +796,9 @@ type teaMsg struct {
 	testRep   *testrun.Report
 	dbgStart  *dbgStarted
 	editReq   *editshim.Request // editMsgOpen
+
+	selRanges      []lsp.Range // lspMsgSel: the server's chain, innermost first (note: its error)
+	selFrom, selTo textbuf.Pos // lspMsgSel: the selection the request was made for
 }
 
 const (
@@ -808,6 +813,7 @@ const (
 	lspMsgSig
 	lspMsgRun        // a resolved code action, ready to apply (F-158)
 	lspMsgBulb       // quick-fix probe result for the cursor line (F-158)
+	lspMsgSel        // selectionRange answer for an expand (F-167)
 	toolMsgInstalled // an approved install tab exited (lang: the tool; note: the outcome)
 	testMsgDone
 	blameMsgDone // git blame for a tab finished (F-143)
@@ -884,7 +890,7 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 			}
 		case termMsgClosed:
 			m.termExited(msg.tab)
-		case lspMsgDiag, lspMsgComp, lspMsgHover, lspMsgEdit, lspMsgAction, lspMsgNote, lspMsgSig, lspMsgRun, lspMsgBulb:
+		case lspMsgDiag, lspMsgComp, lspMsgHover, lspMsgEdit, lspMsgAction, lspMsgNote, lspMsgSig, lspMsgRun, lspMsgBulb, lspMsgSel:
 			m.applyLSPUpdate(msg)
 		case toolMsgInstalled:
 			m.applyToolInstalled(msg)
@@ -1148,6 +1154,12 @@ func (m *Model) handleKey(key string) bool {
 				m.pendingW = true
 				return true
 			}
+		}
+
+		// F-167: alt+o / alt+i grow / shrink the selection (normal and visual).
+		if (key == "alt+o" || key == "alt+i") && (e.Mode() == textbuf.ModeNormal || e.Mode() == textbuf.ModeVisual) {
+			m.selectionKey(key)
+			return true
 		}
 
 		// F-157: alt+enter sends the visual selection to the terminal.

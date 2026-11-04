@@ -88,6 +88,13 @@ type Editor struct {
 	cfBlocks     []Conflict // parsed merge conflicts, valid while cfSeq == buf.seq+1 (F-156)
 	cfSeq        uint64
 
+	pendObj  rune   // 'i' or 'a' waiting for its object character (F-167)
+	objLast  [2]Pos // anchor and cursor after the last visual text object
+	objSel   bool
+	selStack []selFrame // selections to shrink back to (F-167)
+	selLast  [2]Pos     // anchor and cursor the last expand/shrink left
+	selChain bool       // selLast is meaningful
+
 	pendFind rune     // 'f', 'F', 't', 'T' waiting for target char, or 0 (F-133)
 	lastFind struct { // last find motion for ; and , (F-133)
 		kind rune // 'f', 'F', 't', 'T'

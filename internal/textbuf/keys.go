@@ -167,6 +167,10 @@ func (e *Editor) keyNormal(key string) {
 	if e.handlePendFind(key) {
 		return
 	}
+	if e.pendObj != 0 {
+		e.finishObject(key)
+		return
+	}
 	if e.pendShift != "" && key != e.pendShift {
 		e.pendShift = "" // >x: the shift is abandoned, x runs on its own
 	}
@@ -230,6 +234,9 @@ func (e *Editor) keyNormal(key string) {
 				e.runOperator(e.pendingOp, Pos{Line: cur.Line, Col: lo}, Pos{Line: cur.Line, Col: hi + 1}, false)
 			}
 			e.clearPending()
+			return
+		case key == "i" || key == "a": // d/c/y/gc + ip, aw, i( ... (F-167)
+			e.pendObj = []rune(key)[0]
 			return
 		case key == "esc":
 			e.clearPending()
@@ -311,8 +318,12 @@ func (e *Editor) runOperator(o op, a, z Pos, linewise bool) {
 		e.message = opMessage(o, linewise)
 	case opChange:
 		e.register, e.registerLW = text, linewise
+		inner := z.Line < e.buf.LineCount() // lines remain below: the blank to type on is new (a blank line there is the separator)
 		e.buf.deleteRange(a, z)
 		if linewise {
+			if inner && a.Line < e.buf.LineCount() && e.buf.lines[a.Line] == "" {
+				e.buf.lines = append(e.buf.lines[:a.Line+1], e.buf.lines[a.Line:]...)
+			}
 			e.ensureBlankLine(a)
 		}
 		e.mode = ModeInsert
@@ -594,6 +605,10 @@ func (e *Editor) keyVisual(key string) {
 			return
 		}
 	}
+	if e.pendObj != 0 {
+		e.visualObject(key)
+		return
+	}
 	if strings.HasPrefix(key, "paste:") { // leave the selection, paste at the cursor
 		e.mode = ModeNormal
 		e.keyNormal(key)
@@ -706,6 +721,10 @@ func (e *Editor) keyVisual(key string) {
 		s := e.visualStart
 		e.visualStart = e.buf.Cursor()
 		e.buf.SetCursor(s)
+	case "i", "a": // iw, a(, ip ... select the object (F-167)
+		if !e.visualBlock {
+			e.pendObj = []rune(key)[0]
+		}
 	default:
 		// ignore unknowns
 	}

@@ -115,7 +115,8 @@ func (c *Client) initialize(rootDir string) error {
 					"dataSupport":        true,
 					"resolveSupport":     map[string]any{"properties": []string{"edit"}},
 				},
-				"formatting": map[string]any{},
+				"formatting":     map[string]any{},
+				"selectionRange": map[string]any{},
 			},
 			"workspace": map[string]any{
 				"applyEdit": true,

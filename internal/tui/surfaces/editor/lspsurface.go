@@ -292,6 +292,8 @@ func (m *Model) applyLSPUpdate(msg teaMsg) {
 		if len(msg.actions) == 1 {
 			m.applyAction(msg.actions[0])
 		}
+	case lspMsgSel:
+		m.applySelectionRange(msg)
 	case lspMsgBulb:
 		if msg.note == m.bulbKey {
 			m.bulbOn = msg.hoverOK
