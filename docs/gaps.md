@@ -76,7 +76,7 @@ no daemon.
 - [x] **G-E10** `done` (F-150) — Comment toggle
 - [x] **G-E11** `done` (F-154) — Workspace symbols
 - [x] **G-E12** `done` (F-158) — LSP code actions and quick fix
-- [ ] **G-E13** Multi-cursor
+- [x] **G-E13** `done` (F-174) — Multi-cursor
 - [x] **G-E14** `done` (F-159) — Block visual (`ctrl+v`)
 - [ ] **G-E15** Breadcrumbs and sticky scroll
 - [x] **G-E16** `done` (F-169) — Inlay hints
@@ -180,3 +180,4 @@ G-G6 — F-165 — 2026-11-04 (:rebase in a tab; todo and messages edited in DHI
 G-C11 — F-170 — 2026-11-04 (live: opencode+cursor resume fixed and PASS; copilot/claude/codex resume runs blocked by the auto-mode classifier; claude+codex read-only flags PASS)
 G-E19 — F-167 — 2026-11-04 (alt+o/alt+i expand/shrink (LSP or named ladder); vim text objects; fixed dj/cip data loss)
 G-E16 — F-169 — 2026-11-04 (editor.inlay_hints / :set inlayhints; virtual cells per pane; live gopls passes)
+G-E13 — F-174 — 2026-11-04 (gb/alt+n next occurrence, gB skip, alt+up/down or :cursor; per-cursor edits, one undo step)
