@@ -9,6 +9,10 @@ func (e *Editor) Selection() (text string, from, to Pos, ok bool) {
 	if e.mode != ModeVisual {
 		return "", Pos{}, Pos{}, false
 	}
+	if e.visualBlock {
+		text, from, to := e.blockSelection()
+		return text, from, to, true
+	}
 	a, z := e.visualSpan()
 	if a.Line == z.Line {
 		r := e.buf.runes(a.Line)

@@ -19,9 +19,16 @@ func (e *Editor) Key(key string) {
 	// Insert sessions undo as one step: open the group on entering
 	// insert mode, close it on leaving.
 	if e.mode == ModeInsert && was != ModeInsert {
-		e.buf.BeginUndoGroup()
+		if e.preGrouped {
+			e.preGrouped = false // a block c/I/A opened it already
+		} else {
+			e.buf.BeginUndoGroup()
+		}
 	}
 	if was == ModeInsert && e.mode != ModeInsert {
+		if e.blockIns != nil {
+			e.finishBlockInsert()
+		}
 		e.buf.EndUndoGroup()
 	}
 }
@@ -490,9 +497,10 @@ func (e *Editor) normalAction(key string, count int) bool {
 		if !e.buf.Redo() {
 			e.message = "already at newest change"
 		}
-	case "v", "V":
+	case "v", "V", "ctrl+v":
 		e.mode = ModeVisual
 		e.visualLine = key == "V"
+		e.visualBlock, e.blockEOL = key == "ctrl+v", false
 		e.visualStart = e.buf.Cursor()
 	case ">", "<": // >> / << shift count lines (F-119)
 		if e.pendShift == key {
@@ -564,6 +572,10 @@ func (e *Editor) paste(count int, after bool) {
 	if e.register == "" {
 		return
 	}
+	if e.blockRegValid() { // F-159: a block goes back in as a rectangle
+		e.pasteBlock(count, after)
+		return
+	}
 	for i := 0; i < maxInt(count, 1); i++ {
 		end := e.buf.paste(e.register, e.registerLW, after)
 		if e.registerLW {
@@ -587,8 +599,21 @@ func (e *Editor) keyVisual(key string) {
 		e.keyNormal(key)
 		return
 	}
+	if e.visualBlock {
+		if key == "esc" && e.pendRepl {
+			e.pendRepl = false
+			return
+		}
+		if blockHorizontal(key) {
+			e.blockEOL = false
+		}
+		if key != "esc" && e.pendFind == 0 && e.keyBlock(key) {
+			return
+		}
+	}
 	if key == "esc" {
 		e.mode = ModeNormal
+		e.blockEOL = false
 		return
 	}
 	if len(key) == 1 && key[0] >= '0' && key[0] <= '9' {
@@ -605,6 +630,9 @@ func (e *Editor) keyVisual(key string) {
 
 	if motion, ok := normalMotion(key); ok {
 		e.buf.move(motion, count)
+		if e.visualBlock && motion == motLineEnd {
+			e.blockEOL = true // $: to each line's end, kept by j/k
+		}
 		return
 	}
 
@@ -665,6 +693,15 @@ func (e *Editor) keyVisual(key string) {
 		e.register, e.registerLW = e.buf.yankRange(a, z), false
 		e.buf.deleteRange(a, z)
 		e.mode = ModeInsert
+	case "v", "V", "ctrl+v": // switch the kind of selection; the same key leaves visual mode
+		switch {
+		case key == "V" && !e.visualLine, key == "ctrl+v":
+			e.visualLine, e.visualBlock = key == "V", key == "ctrl+v"
+		case key == "v" && e.visualLine:
+			e.visualLine = false
+		default:
+			e.mode = ModeNormal
+		}
 	case "o":
 		s := e.visualStart
 		e.visualStart = e.buf.Cursor()
@@ -672,6 +709,16 @@ func (e *Editor) keyVisual(key string) {
 	default:
 		// ignore unknowns
 	}
+}
+
+// blockHorizontal reports the keys that end a "$" block's reach to each
+// line's end (j and k keep it).
+func blockHorizontal(key string) bool {
+	switch key {
+	case "h", "l", "left", "right", "space", " ", "0", "home", "w", "b", "e", "f", "F", "t", "T", ";", ",", "%":
+		return true
+	}
+	return false
 }
 
 // handlePendFindVisual processes the character input for f/F/t/T motions in visual mode.

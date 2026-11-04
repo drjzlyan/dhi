@@ -68,15 +68,24 @@ type Editor struct {
 	indent string // what Tab inserts ("" = a tab) (F-119)
 	noPair bool   // bracket/quote pairing off
 
-	visualLine bool     // V: whole lines (F-119)
-	pendShift  string   // ">" or "<" waiting for its double (>>, <<)
-	rec        []string // keys of the change being made, for "."
-	recSeq     uint64   // buffer seq when it started
-	lastChange []string // the last change's keys
-	replaying  bool
-	hlOff      bool       // matches of the last search are not marked
-	cfBlocks   []Conflict // parsed merge conflicts, valid while cfSeq == buf.seq+1 (F-156)
-	cfSeq      uint64
+	visualLine   bool // V: whole lines (F-119)
+	visualBlock  bool // ctrl+v: a rectangle by display column (F-159)
+	blockEOL     bool // "$" in a block: each line's end
+	pendRepl     bool // r waiting for its character in block mode
+	preGrouped   bool // an undo group is already open for the insert about to start
+	blockIns     *blockInsert
+	blockReg     []string // the last block yank/delete, one string per line
+	blockRegText string   // register text it matched; a later yank breaks the match
+	blockW       int
+	tabW         int
+	pendShift    string   // ">" or "<" waiting for its double (>>, <<)
+	rec          []string // keys of the change being made, for "."
+	recSeq       uint64   // buffer seq when it started
+	lastChange   []string // the last change's keys
+	replaying    bool
+	hlOff        bool       // matches of the last search are not marked
+	cfBlocks     []Conflict // parsed merge conflicts, valid while cfSeq == buf.seq+1 (F-156)
+	cfSeq        uint64
 
 	pendFind rune     // 'f', 'F', 't', 'T' waiting for target char, or 0 (F-133)
 	lastFind struct { // last find motion for ; and , (F-133)

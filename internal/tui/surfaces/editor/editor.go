@@ -457,6 +457,9 @@ func (m *Model) StatusContext() (string, string) {
 		case textbuf.ModeInsert:
 			return "buffer", "INSERT"
 		case textbuf.ModeVisual:
+			if m.active().VisualBlock() {
+				return "buffer", "V-BLOCK"
+			}
 			return "buffer", "VISUAL"
 		}
 		return "buffer", ""
@@ -603,6 +606,7 @@ func (m *Model) HelpSections() [][2]string {
 			[2]string{kit.AltLabel("alt+enter · :send"), "send the selection (visual) or the line to the terminal, without running it"},
 			[2]string{":42 · 42G", "go to line"},
 			[2]string{"v · V · > <", "select · select lines · indent / outdent (>> << on a line)"},
+			[2]string{"ctrl+v", "select a block by column: motions and $ extend it, o O swap corners; d y c I A r > < ~ u U act on every line, p pastes the block"},
 			[2]string{"gcc · gc{motion} · ctrl+/", "comment / uncomment lines (counts and visual gc work; ctrl+/ also in insert)"},
 			[2]string{".", "repeat the last change"},
 			[2]string{"f F t T · ; , · %", "find/until char on line · repeat/reverse · match bracket"},
@@ -1499,6 +1503,7 @@ func (m *Model) openNode(n *node, confirmed bool) {
 	}
 	be.SetCommandDelegate(m)
 	be.SetIndent(m.indentFor(n.path, be.Buffer().Text())) // F-119
+	be.SetTabWidth(m.editorPrefs().TabWidth)              // F-159
 	m.applyEditorConfigOpen(be)                           // F-160
 	be.SetBeforeSave(m.beforeSave)
 	be.SetAfterSave(func(ed *textbuf.Editor) {

@@ -35,12 +35,12 @@ func bufferTitle(e *textbuf.Editor) string {
 	if e.Buffer().Dirty() {
 		dot = " " + theme.WarningText().Render("●")
 	}
-	return name + dot + "  " + modePill(e.Mode())
+	return name + dot + "  " + modePill(e.Mode(), e.VisualBlock())
 }
 
 // modePill colors the editing mode (F-064): normal in the editor's
 // indigo, insert green, visual amber, command blue.
-func modePill(md textbuf.Mode) string {
+func modePill(md textbuf.Mode, block bool) string {
 	c := theme.Current.Accent2
 	switch md {
 	case textbuf.ModeInsert:
@@ -50,7 +50,11 @@ func modePill(md textbuf.Mode) string {
 	case textbuf.ModeCommand:
 		c = theme.Current.Info
 	}
-	return kit.Pill(md.String(), c)
+	label := md.String()
+	if block {
+		label = "V-BLOCK" // ctrl+v (F-159)
+	}
+	return kit.Pill(label, c)
 }
 
 // diagChip renders the error/warning count for the active buffer.
@@ -85,6 +89,7 @@ func (m *Model) bufferView() string {
 	if t := m.focusedTab(); t != nil && t.tabWidth > 0 {
 		tabStop = min(t.tabWidth, 16) // F-160: .editorconfig beats the setting
 	}
+	e.SetTabWidth(tabStop) // block columns count tabs like the view (F-159)
 	wrap := m.wrapEnabled(prefs)
 	curLine := b.Cursor().Line
 
@@ -162,7 +167,11 @@ func (m *Model) bufferView() string {
 		raw := b.Line(l)
 		text := expandTabs(raw)
 
-		if visual {
+		if bt, bb, bl, br, ok := e.BlockRange(); ok {
+			if l >= bt && l <= bb { // ctrl+v: the same display cells on every line (F-159)
+				text = markCells(text, bl, br)
+			}
+		} else if visual {
 			selStart, selEnd := 0, len([]rune(text))
 			switch {
 			case l < a.Line || l > z.Line:
@@ -438,6 +447,17 @@ func markRange(line string, start, end int) string {
 		return line
 	}
 	return string(r[:start]) + cursorStyle.Render(string(r[start:end])) + string(r[end:])
+}
+
+// markCells inverts display cells [start,end) of a plain line; a start past
+// the line's end marks nothing (a short line has no part in the block).
+func markCells(line string, start, end int) string {
+	w := ansi.Width(line)
+	end = min(end, w)
+	if start >= end {
+		return line
+	}
+	return ansi.Slice(line, 0, start) + cursorStyle.Render(ansi.Slice(line, start, end)) + ansi.Slice(line, end, w)
 }
 
 func padLeft(s string, n int) string {
