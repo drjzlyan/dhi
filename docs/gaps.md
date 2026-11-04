@@ -83,7 +83,7 @@ no daemon.
 - [ ] **G-E17** More than 2 splits
 - [ ] **G-E18** Snippets
 - [ ] **G-E19** Selection expand and shrink
-- [ ] **G-E20** Search results buffer ("search editor")
+- [x] **G-E20** `done` (F-168) — Search results buffer ("search editor")
 - [x] **G-E21** `done` (F-160) — EditorConfig
 - [ ] **G-E22** LSP semantic tokens, call hierarchy, peek popup
 
@@ -174,3 +174,4 @@ G-LSP-live — F-163 — 2026-11-04 (TestLiveGopls (DHI_LIVE_LSP=1), gopls 0.24:
 G-E12 — F-158 — 2026-11-04 (quickfix marker, ranked ga, resolve, command after edit, :organize; live gopls code_actions passes)
 G-G7 — F-162 — 2026-11-04 (:graph / g in panel; cherry-pick with confirm; branch at commit)
 G-C8 — F-164 — 2026-11-04 (OTLP/HTTP JSON from standard OTEL_* env; metadata only; doctor row)
+G-E20 — F-168 — 2026-11-04 (:grep buffer; :w applies after a card via projreplace hash checks)
