@@ -101,7 +101,7 @@ no daemon.
 - [x] **G-G4** `done` (F-129) — Stash
 - [x] **G-G5** `done` (F-140) — File history and timeline
 - [ ] **G-G6** Interactive rebase through a terminal tab
-- [ ] **G-G7** Branch graph and cherry-pick
+- [x] **G-G7** `done` (F-162) — Branch graph and cherry-pick
 - [x] **G-M1** `done` (F-141) — Split terminals
 - [x] **G-M2** `done` (F-157) — Terminal shell integration (command detection, jump between commands, send selection)
 - [x] **G-S1** `done` (F-148) — Restricted mode for unknown repos (before an LSP or formatter runs)
@@ -172,3 +172,4 @@ G-R2 — F-161 — 2026-11-04 (swap 2s debounce in .dhi/tmp/swap; recover card; 
 G-E14 — F-159 — 2026-11-04 (ctrl+v; block ops/register; suggestion/agent-edit guarded)
 G-LSP-live — F-163 — 2026-11-04 (TestLiveGopls (DHI_LIVE_LSP=1), gopls 0.24: all features pass)
 G-E12 — F-158 — 2026-11-04 (quickfix marker, ranked ga, resolve, command after edit, :organize; live gopls code_actions passes)
+G-G7 — F-162 — 2026-11-04 (:graph / g in panel; cherry-pick with confirm; branch at commit)
