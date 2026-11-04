@@ -46,6 +46,7 @@ func (m *Model) checkDisk() {
 			continue
 		}
 		t.ed.TakeReloaded()
+		t.blame.invalidate() // F-143
 		t.ed.SetMessage("reloaded — the file changed on disk")
 		m.lspResync(t)
 	}

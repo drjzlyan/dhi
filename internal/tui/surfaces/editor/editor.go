@@ -113,6 +113,7 @@ type Prefs struct {
 	LineNumbers bool
 	Wrap        bool   // soft word wrap (F-136)
 	Autosave    string // "off", "delay" or "focus" (F-142)
+	Blame       bool   // inline blame on the cursor line (F-143)
 	Scrollback  int
 }
 
@@ -230,17 +231,19 @@ type Model struct {
 	agentEditAt   time.Time
 
 	// Pair programming (F-038): agent suggestions awaiting review.
-	proposals    []proposal
-	reviewOpen   bool
-	pairNote     string
-	breakpoints  map[string][]int // abs path → sorted 1-based lines (F-039)
-	dbg          *dbgState
-	dapStart     dapStarter    // adapter launcher; nil = delve (tests inject)
-	testing      *testState    // :test results (modeTests)
-	syms         *symbolPicker // :sym outline picker (modeSymbols)
-	wrapOverride *bool         // :set wrap|nowrap for this session; nil follows Settings (F-136)
-	formatOnSave bool          // :set fmt|nofmt; default on (Go + live server only)
-	pairAgent    string        // pairing partner (F-038); "" = no session
+	proposals     []proposal
+	reviewOpen    bool
+	pairNote      string
+	breakpoints   map[string][]int // abs path → sorted 1-based lines (F-039)
+	dbg           *dbgState
+	dapStart      dapStarter       // adapter launcher; nil = delve (tests inject)
+	testing       *testState       // :test results (modeTests)
+	syms          *symbolPicker    // :sym outline picker (modeSymbols)
+	wrapOverride  *bool            // :set wrap|nowrap for this session; nil follows Settings (F-136)
+	blameOverride *bool            // :set blame|noblame for this session; nil follows Settings (F-143)
+	nowFn         func() time.Time // blame ages; nil = time.Now (tests pin it)
+	formatOnSave  bool             // :set fmt|nofmt; default on (Go + live server only)
+	pairAgent     string           // pairing partner (F-038); "" = no session
 
 	drawerOpen  bool
 	termCopy    string // text a terminal program copied (OSC 52), not yet sent
@@ -720,6 +723,7 @@ type teaMsg struct {
 	note      string
 	lang      string // toolMsgInstalled: the tool
 	installOK bool   // toolMsgInstalled: the tool is now found
+	blame     *blameResult
 	testRep   *testrun.Report
 	dbgStart  *dbgStarted
 }
@@ -736,6 +740,7 @@ const (
 	lspMsgSig
 	toolMsgInstalled // an approved install tab exited (lang: the tool; note: the outcome)
 	testMsgDone
+	blameMsgDone // git blame for a tab finished (F-143)
 	dbgMsgStarted
 	dbgMsgUpdate
 )
@@ -805,6 +810,8 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 			m.applyToolInstalled(msg)
 		case testMsgDone:
 			m.applyTestDone(msg.testRep)
+		case blameMsgDone:
+			m.applyBlame(msg.blame)
 		case dbgMsgStarted:
 			m.applyDebugStarted(msg.dbgStart)
 		case dbgMsgUpdate:
@@ -1329,6 +1336,7 @@ type bufTab struct {
 	path   string
 	syntax *highlighter // per-tab buffer colorizer (F-026 P4)
 	gutter gutterState  // git change markers (F-040)
+	blame  blameState   // inline blame, loaded off the UI goroutine (F-143)
 
 	diskWarned bool // the current on-disk change was already reported (F-115)
 	noAutosave bool // autosave hit a changed-on-disk or write error; off until the buffer is clean (F-142)
@@ -1370,6 +1378,7 @@ func (m *Model) open(n *node) {
 	be.SetBeforeSave(m.beforeSave)
 	be.SetAfterSave(func(ed *textbuf.Editor) {
 		m.lspDidSave(ed)                                        // F-132: notify LSP of save
+		m.invalidateBlame(ed.Path())                            // F-143: lines moved
 		if ed.Path() == m.commitPath() && m.commitRepo != nil { // F-121: :w commits
 			m.gitMessage = m.commitFromBuffer(ed.Buffer().Text())
 			m.commitDone = ed // closed once the key that saved it is handled
@@ -1700,6 +1709,10 @@ func (m *Model) ExecEx(requester *textbuf.Editor, cmd string) bool {
 		return true
 	}
 	if msg, ok := m.wrapCommand(cmd); ok {
+		requester.SetMessage(msg)
+		return true
+	}
+	if msg, ok := m.blameCommand(cmd); ok {
 		requester.SetMessage(msg)
 		return true
 	}

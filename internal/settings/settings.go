@@ -52,6 +52,7 @@ type Editor struct {
 	// Autosave is "off", "delay" (a quiet second after the last key) or
 	// "focus" (when the buffer loses focus) (F-142).
 	Autosave string `toml:"autosave"`
+	Blame    bool   `toml:"blame"` // inline blame on the cursor line (F-143)
 	// Languages overrides (or adds to) the editor's built-in language
 	// servers, keyed by language id (F-050).
 	Languages map[string]LanguageConfig `toml:"languages,omitempty"`
@@ -277,7 +278,7 @@ func DefaultMemory() Memory {
 // Known reports the accepted top-level keys (for doctor warnings).
 func Known() []string {
 	return []string{"schema", "theme", "reduced_motion", "engine", "editor",
-		"terminal", "security", "editor.tab_width", "editor.line_numbers", "editor.wrap", "editor.autosave",
+		"terminal", "security", "editor.tab_width", "editor.line_numbers", "editor.wrap", "editor.autosave", "editor.blame",
 		"worktrees", "worktrees.root",
 		"terminal.scrollback", "security.sandbox",
 		"agents", "agents.max_turns", "agents.resume", "agents.autonomy", "agents.native_web",
@@ -574,6 +575,7 @@ type fileLayer struct {
 		LineNumbers *bool                     `toml:"line_numbers"`
 		Wrap        *bool                     `toml:"wrap"`
 		Autosave    string                    `toml:"autosave"`
+		Blame       *bool                     `toml:"blame"`
 		Languages   map[string]LanguageConfig `toml:"languages"`
 	} `toml:"editor"`
 	Worktrees struct {
@@ -710,6 +712,9 @@ func (f fileLayer) mergeInto(dst *Config) {
 		dst.Editor.Wrap = *f.Editor.Wrap
 	}
 	setStr(&dst.Editor.Autosave, f.Editor.Autosave)
+	if f.Editor.Blame != nil {
+		dst.Editor.Blame = *f.Editor.Blame
+	}
 	for id, lc := range f.Editor.Languages { // a later layer replaces a language wholesale
 		if dst.Editor.Languages == nil {
 			dst.Editor.Languages = map[string]LanguageConfig{}

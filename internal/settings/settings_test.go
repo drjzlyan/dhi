@@ -70,6 +70,20 @@ func TestEditorWrapLayer(t *testing.T) {
 	}
 }
 
+// F-143: editor.blame defaults off and a layer can turn it on.
+func TestEditorBlameLayer(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "c.toml")
+	os.WriteFile(p, []byte("[editor]\nblame = true\n"), 0o644)
+	cfg, err := Load(p, "")
+	if err != nil || !cfg.Editor.Blame {
+		t.Fatalf("blame = %v err=%v", cfg.Editor.Blame, err)
+	}
+	def, _ := Load(filepath.Join(t.TempDir(), "none"), "")
+	if def.Editor.Blame {
+		t.Fatal("blame must default off")
+	}
+}
+
 func TestMissingFilesAreFine(t *testing.T) {
 	cfg, err := Load(filepath.Join(t.TempDir(), "a"), filepath.Join(t.TempDir(), "b"))
 	if err != nil || cfg.Theme != theme.Dark().Name {

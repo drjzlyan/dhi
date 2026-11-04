@@ -103,6 +103,19 @@ func TestLineNumbersToggle(t *testing.T) {
 	}
 }
 
+// F-143: inline blame is a Settings toggle, off by default.
+func TestBlameToggle(t *testing.T) {
+	m, _ := newSurface(t)
+	if m.cfg.Editor.Blame {
+		t.Fatal("blame must default off")
+	}
+	m.cursor = rowBlame
+	feed(m, "enter")
+	if !m.cfg.Editor.Blame {
+		t.Fatal("toggle no-op")
+	}
+}
+
 // F-136: wrap long lines is a Settings toggle, off by default.
 func TestWrapToggle(t *testing.T) {
 	m, _ := newSurface(t)

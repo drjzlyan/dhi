@@ -137,6 +137,12 @@ func (m *Model) bufferView() string {
 	path := e.Path()
 	syntax := m.syntaxFor(e)
 	marks := m.gutterMarks(m.bufs[m.activeTab])
+	blame := ""
+	if m.blameEnabled(prefs) {
+		tab := m.bufs[m.activeTab]
+		m.startBlame(tab)
+		blame = m.blameText(tab, curLine)
+	}
 	for l := top; l < end; l++ {
 		num := strconv.Itoa(l + 1)
 		if !prefs.LineNumbers {
@@ -196,6 +202,9 @@ func (m *Model) bufferView() string {
 					c0 := runesWidth(rs[:st])
 					row = ansi.Slice(text, c0, c0+runesWidth(rs[st:en])+boolInt(en == len(rs) && l == curLine))
 				}
+				if blame != "" && l == curLine && i+1 == len(segs) {
+					row += blameSuffix(blame, textW-ansi.Width(row)) // last visual row only
+				}
 				if i == 0 {
 					out = append(out, gutter+marker+row)
 				} else {
@@ -211,6 +220,9 @@ func (m *Model) bufferView() string {
 		}
 		if left > 0 || ansi.Width(text) > textW {
 			text = ansi.Slice(text, left, left+textW)
+		}
+		if blame != "" && l == curLine {
+			text += blameSuffix(blame, textW-ansi.Width(text))
 		}
 		out = append(out, gutter+marker+text)
 	}
