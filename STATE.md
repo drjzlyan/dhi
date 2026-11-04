@@ -2,12 +2,11 @@
 
 ### Session 70 (M38 gap closure with subagents, branch `m38` off `g-a4-oversize-prompt`)
 
-- Coordinator merges one commit per gap (cherry-pick from agent worktrees); tracker rows and STATE are coordinator-only.
-- Done (32): B1 B2 B3 B4 B6 B7 B8 C2 C4 E1–E8 E10 E11 G1 G2 G3 G4 G5 M1 M2 R1 R3 R4 S1 T1 — F-127…F-157 (see gaps.md done log). Phase 7: proposed ADR-0047..0051 (user decides).
-- In flight: G-E12 F-158, G-E14 F-159, G-E21 F-160, G-R2 F-161, G-LSP-live F-163 (gopls 0.24 installed via brew, user-approved).
-- Left: E9 E13 E15–E20 E22, G6 G7, C8; live: C7 evals, C11 resume, `make eval` for prompt changes (F-135, F-144, F-152) and the claude/codex read-only flags (F-144).
-- Gotchas: agent worktrees live in `.claude/worktrees/` (write-site audit skips `.claude`); parallel agents make `make verify` time out — rerun the package alone; settings/editor.go conflicts between lanes — scratchpad union.py only for pure appends, review every other hunk (it duplicated a block once in behavior.go).
-- User said: live runs (make eval, real CLIs) allowed; gopls install approved.
+- Coordinator merges one commit per gap (cherry-pick from agent worktrees); tracker rows and STATE are coordinator-only. Brief for workers: scratchpad BRIEF.md (rebase onto current m38 before commit; verify in the foreground).
+- Done (51, F-127…F-175): every Phase 2–6 gap except G-E9 folding (F-176, agent was running in `.claude/worktrees/agent-a90834e5fdff2fb2d`; resume or redo on top of m38). Phase 7: proposed ADR-0047..0051 (user decides); G-X1/G-X3 need no ADR, not started.
+- Live: gopls 0.24 (brew, approved) — `DHI_LIVE_LSP=1 go test -run TestLiveGopls ./internal/tui/surfaces/editor` all green; evals full suite 13/13 on claude 2.1.311 (F-172); opencode + cursor resume fixed and verified (F-170); copilot/claude/codex resume runs blocked by the auto-mode classifier (user to run if wanted).
+- Next: land G-E9; final audit (one read-only Sonnet auditor per phase group: 1–3, 4–5, 6 — both 1–3 and 6 were cut off by the usage limit); then `make verify` + `make lint` on m38; then ask the user about push/PR.
+- Gotchas: worktrees in `.claude/worktrees/` (write-site audit skips `.claude`); parallel agents cause verify timeouts — rerun the package alone; render-path conflicts (bufferview/editor.go) need semantic merges, not union.py; G-E14 block selections refuse ctrl+f suggestions; bare `indent_size` in .editorconfig means spaces (documented deviation).
 
 ### Session 69 (Phase 1 review, branch `g-a4-oversize-prompt`, one fix commit on top of the stack)
 
