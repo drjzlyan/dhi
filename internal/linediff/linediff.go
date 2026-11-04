@@ -1,6 +1,6 @@
 // Package linediff computes per-line change marks between two versions of
-// a text, for editor gutters. It is a plain LCS diff over lines with a
-// size guard, not a patch generator.
+// a text, for editor gutters. It is a Myers O((n+m)·D) diff over
+// lines with an edit-distance guard, not a patch generator.
 package linediff
 
 // Mark classifies one line of the new text.
@@ -15,9 +15,14 @@ const (
 	DeletedBelow
 )
 
-// maxCells bounds the DP table; past it Diff reports ok=false rather than
-// stalling the render loop on a huge file.
+// maxCells bounds the LCS table of Hunks (F-117 proposal review), which
+// still uses the quadratic table; Diff no longer does.
 const maxCells = 4_000_000
+
+// maxEditDistance bounds Myers' D (inserted plus deleted lines) in Diff;
+// past it Diff reports ok=false rather than stalling the render loop. File
+// length alone never trips it (F-147).
+const maxEditDistance = 5000
 
 // Diff returns one Mark per line of newer. ok is false when the inputs
 // are too large to diff cheaply.
@@ -47,46 +52,25 @@ func Diff(older, newer []string) (marks []Mark, ok bool) {
 	if len(a) == 0 && len(b) == 0 {
 		return marks, true
 	}
-	if (len(a)+1)*(len(b)+1) > maxCells {
+	delA, insB, ok := myers(a, b)
+	if !ok {
 		return nil, false
 	}
-	// lcs[i][j] = LCS length of a[i:], b[j:].
-	lcs := make([][]int32, len(a)+1)
-	for i := range lcs {
-		lcs[i] = make([]int32, len(b)+1)
-	}
-	for i := len(a) - 1; i >= 0; i-- {
-		for j := len(b) - 1; j >= 0; j-- {
-			if a[i] == b[j] {
-				lcs[i][j] = lcs[i+1][j+1] + 1
-			} else if lcs[i+1][j] >= lcs[i][j+1] {
-				lcs[i][j] = lcs[i+1][j]
-			} else {
-				lcs[i][j] = lcs[i][j+1]
-			}
-		}
-	}
-	// Walk the table collecting runs of deletions/insertions between
+	// Walk the edit script collecting runs of deletions/insertions between
 	// matched lines; a run with both sides pairs up as Modified.
 	i, j := 0, 0
 	for i < len(a) || j < len(b) {
-		if i < len(a) && j < len(b) && a[i] == b[j] {
+		if i < len(a) && j < len(b) && !delA[i] && !insB[j] {
 			i++
 			j++
 			continue
 		}
 		di, dj := i, j
-		for (i < len(a) || j < len(b)) && (i >= len(a) || j >= len(b) || a[i] != b[j]) {
-			switch {
-			case j >= len(b):
-				i++
-			case i >= len(a):
-				j++
-			case lcs[i+1][j] >= lcs[i][j+1]:
-				i++
-			default:
-				j++
-			}
+		for i < len(a) && delA[i] {
+			i++
+		}
+		for j < len(b) && insB[j] {
+			j++
 		}
 		dels, ins := i-di, j-dj
 		for k := 0; k < ins; k++ {
