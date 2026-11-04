@@ -56,6 +56,9 @@ type chatPane struct {
 	// agentWorking feeds presence dots and the live status line (F-072);
 	// nil renders neither.
 	agentWorking func(id string) bool
+	// meter feeds the DM header's context and cost readout (F-127); nil
+	// renders none.
+	meter *chatMeter
 
 	channels   []string
 	active     int
@@ -790,6 +793,7 @@ func (p *chatPane) renderNarrow(width, height int) []string {
 	if p.threadID != 0 {
 		header += theme.Hint().Render("  · thread (c back)")
 	}
+	header = p.headerMeter(header, width)
 	lines = append(lines, header)
 	if p.switcher != nil {
 		return append(lines, p.switcherLines(width, height-len(lines))...)
@@ -833,6 +837,7 @@ func (p *chatPane) transcriptLines(width, height int, wide bool) []string {
 	if n := p.pinnedCount(); n > 0 {
 		header += theme.TextDim().Render("  · " + itoa(n) + " pinned")
 	}
+	header = p.headerMeter(header, width)
 	lines = append(lines, header)
 	if p.switcher != nil {
 		return append(lines, p.switcherLines(width, height-1)...)

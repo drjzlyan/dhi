@@ -456,7 +456,9 @@ func runTUI() (relaunch bool) {
 	a := app.New(version.Version,
 		editor.New(version.Version, ws, edOpts...),
 		wsview.New(version.Version, ws, wsview.Deps{
-			Episodes:     openEpisodes(ws), // F-067 card pane: plan, verify, spend
+			Episodes: openEpisodes(ws), // F-067 card pane: plan, verify, spend
+			// F-127: the chat's context meter measures against the live budgets.
+			MemoryLimits: func() (int, int) { m := liveCfg().Memory; return m.PromptTokens, m.SessionTokens },
 			WorktreeHint: worktreeHint(decision.Worktrees),
 			Bus:          messageBus,
 			Runtime:      crewRT,

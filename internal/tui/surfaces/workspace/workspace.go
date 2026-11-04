@@ -225,6 +225,10 @@ type Deps struct {
 	// card pane shows the assignee's plan, DHI's verify verdict and the
 	// episode's spend. nil = no episode block.
 	Episodes *episode.Store
+	// MemoryLimits are the live prompt and session token budgets
+	// (memory.prompt_tokens / memory.session_tokens) the chat's context
+	// meter measures against (F-127); nil shows sizes without a limit.
+	MemoryLimits func() (prompt, session int)
 }
 
 // New returns the workspace model. A nil ws renders the not-a-workspace
@@ -285,6 +289,7 @@ func New(version string, ws *workspace.Workspace, d Deps) *Model {
 			m.pane = newChatPane(d.Bus, d.Runtime, m.org)
 			m.pane.profile = m.agentProfileLines
 			m.pane.agentWorking = d.AgentWorking
+			m.pane.meter = &chatMeter{episodes: d.Episodes, limits: d.MemoryLimits}
 			m.pane.approvals = d.Approvals
 			m.pane.decide = m.decideAsk
 			if cm, err := channelmeta.Open(ws.Root); err != nil {
