@@ -82,6 +82,9 @@ func (m *Model) bufferView() string {
 
 	prefs := m.editorPrefs()
 	tabStop = prefs.TabWidth
+	if t := m.focusedTab(); t != nil && t.tabWidth > 0 {
+		tabStop = min(t.tabWidth, 16) // F-160: .editorconfig beats the setting
+	}
 	wrap := m.wrapEnabled(prefs)
 	curLine := b.Cursor().Line
 

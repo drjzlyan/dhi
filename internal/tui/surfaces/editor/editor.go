@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/drjzlyan/dhi/internal/checkpoint"
+	"github.com/drjzlyan/dhi/internal/editorconfig"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -259,6 +260,7 @@ type Model struct {
 	wrapOverride  *bool                       // :set wrap|nowrap for this session; nil follows Settings (F-136)
 	blameOverride *bool                       // :set blame|noblame for this session; nil follows Settings (F-143)
 	nowFn         func() time.Time            // blame ages; nil = time.Now (tests pin it)
+	ec            *editorconfig.Resolver      // .editorconfig lookups, cached per folder (F-160)
 	formatOnSave  bool                        // :set fmt|nofmt; default on (Go + live server only)
 	pairAgent     string                      // pairing partner (F-038); "" = no session
 	taskPick      *kit.Palette                // :task picker (modeTasks, F-146)
@@ -1432,6 +1434,7 @@ type bufTab struct {
 	gutter gutterState  // git change markers (F-040)
 	blame  blameState   // inline blame, loaded off the UI goroutine (F-143)
 
+	tabWidth   int  // .editorconfig tab_width for this buffer; 0 = the setting (F-160)
 	diskWarned bool // the current on-disk change was already reported (F-115)
 	noAutosave bool // autosave hit a changed-on-disk or write error; off until the buffer is clean (F-142)
 }
@@ -1479,9 +1482,11 @@ func (m *Model) openNode(n *node, confirmed bool) {
 	}
 	be.SetCommandDelegate(m)
 	be.SetIndent(m.indentFor(n.path, be.Buffer().Text())) // F-119
+	m.applyEditorConfigOpen(be)                           // F-160
 	be.SetBeforeSave(m.beforeSave)
 	be.SetAfterSave(func(ed *textbuf.Editor) {
 		m.snapshotSave(ed.Path(), ed.Buffer().Text())           // F-155: local history
+		m.editorConfigSaved(ed.Path())                          // F-160: a saved .editorconfig applies now
 		m.lspDidSave(ed)                                        // F-132: notify LSP of save
 		m.invalidateBlame(ed.Path())                            // F-143: lines moved
 		if ed.Path() == m.commitPath() && m.commitRepo != nil { // F-121: :w commits
@@ -1498,6 +1503,7 @@ func (m *Model) openNode(n *node, confirmed bool) {
 		m.refreshRows()
 	})
 	tab := &bufTab{ed: be, vp: m.openVPath, path: n.path, syntax: &highlighter{path: n.path}}
+	tab.tabWidth = m.configFor(n.path).TabWidth
 	m.bufs = append(m.bufs, tab)
 	m.activeTab = len(m.bufs) - 1
 	m.bufFocus = true

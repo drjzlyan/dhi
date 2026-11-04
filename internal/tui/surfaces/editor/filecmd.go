@@ -145,10 +145,13 @@ func (m *Model) saveAs(e *textbuf.Editor, p string, force bool) string {
 	return fmt.Sprintf("%q written — now editing it", t.vp)
 }
 
-// indentFor is what Tab inserts in path (F-119): the file's own style when
-// it has one, else the language's (tabs for Go, Makefiles), else four
-// spaces.
+// indentFor is what Tab inserts in path (F-119): .editorconfig first
+// (F-160), then the file's own style when it has one, else the language's
+// (tabs for Go, Makefiles), else four spaces.
 func (m *Model) indentFor(path, text string) string {
+	if unit := m.configFor(path).IndentUnit(m.editorPrefs().TabWidth); unit != "" {
+		return unit
+	}
 	if unit := textbuf.DetectIndent(text); unit != "" {
 		return unit
 	}
