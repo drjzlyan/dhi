@@ -528,3 +528,18 @@ func TestAutosaveRowCycles(t *testing.T) {
 		t.Fatalf("label = %q", got)
 	}
 }
+
+// F-175: breadcrumbs default on, sticky scroll off; both toggle in Settings.
+func TestBreadcrumbsAndStickyToggle(t *testing.T) {
+	m, _ := newSurface(t)
+	if !m.cfg.Editor.Breadcrumbs || m.cfg.Editor.StickyScroll {
+		t.Fatalf("defaults: breadcrumbs=%v sticky=%v", m.cfg.Editor.Breadcrumbs, m.cfg.Editor.StickyScroll)
+	}
+	m.cursor = rowBreadcrumbs
+	feed(m, "enter")
+	m.cursor = rowStickyScroll
+	feed(m, "enter")
+	if m.cfg.Editor.Breadcrumbs || !m.cfg.Editor.StickyScroll {
+		t.Fatal("toggle no-op")
+	}
+}

@@ -57,6 +57,11 @@ type Editor struct {
 	// SemanticTokens layers the language server's semantic token colours
 	// over the syntax highlighting; off by default (F-173).
 	SemanticTokens bool `toml:"semantic_tokens"`
+	// Breadcrumbs shows the symbol path of the cursor in the buffer title,
+	// on unless turned off; StickyScroll pins the enclosing symbols'
+	// header lines at the top of the pane (F-175).
+	Breadcrumbs  bool `toml:"breadcrumbs"`
+	StickyScroll bool `toml:"sticky_scroll"`
 	// RestoreSession reopens the last session's tabs and split on launch;
 	// on unless turned off (F-149).
 	RestoreSession bool `toml:"restore_session"`
@@ -271,7 +276,7 @@ func Defaults() Config {
 		Schema:               SchemaVersion,
 		Theme:                theme.Dark().Name,
 		DesktopNotifications: true,
-		Editor:               Editor{TabWidth: 4, LineNumbers: true, Autosave: AutosaveOff, RestoreSession: true},
+		Editor:               Editor{TabWidth: 4, LineNumbers: true, Autosave: AutosaveOff, RestoreSession: true, Breadcrumbs: true},
 		Terminal:             Terminal{Scrollback: 1000},
 		Security:             Security{Sandbox: SandboxAuto},
 		Agents:               Agents{Resume: true, Autonomy: AutonomyEnvelope, NativeWeb: WebDeny, MaxIterations: 3, StallSeconds: 900, Reflect: true},
@@ -289,7 +294,7 @@ func DefaultMemory() Memory {
 // Known reports the accepted top-level keys (for doctor warnings).
 func Known() []string {
 	return []string{"schema", "theme", "reduced_motion", "desktop_notifications", "engine", "editor",
-		"terminal", "security", "editor.tab_width", "editor.line_numbers", "editor.wrap", "editor.autosave", "editor.blame", "editor.inlay_hints", "editor.semantic_tokens", "editor.restore_session",
+		"terminal", "security", "editor.tab_width", "editor.line_numbers", "editor.wrap", "editor.autosave", "editor.blame", "editor.inlay_hints", "editor.semantic_tokens", "editor.breadcrumbs", "editor.sticky_scroll", "editor.restore_session",
 		"worktrees", "worktrees.root",
 		"terminal.scrollback", "security.sandbox",
 		"agents", "agents.max_turns", "agents.resume", "agents.autonomy", "agents.native_web",
@@ -590,6 +595,8 @@ type fileLayer struct {
 		Blame          *bool                     `toml:"blame"`
 		InlayHints     *bool                     `toml:"inlay_hints"`
 		SemanticTokens *bool                     `toml:"semantic_tokens"`
+		Breadcrumbs    *bool                     `toml:"breadcrumbs"`
+		StickyScroll   *bool                     `toml:"sticky_scroll"`
 		RestoreSession *bool                     `toml:"restore_session"`
 		Languages      map[string]LanguageConfig `toml:"languages"`
 	} `toml:"editor"`
@@ -738,6 +745,12 @@ func (f fileLayer) mergeInto(dst *Config) {
 	}
 	if f.Editor.SemanticTokens != nil {
 		dst.Editor.SemanticTokens = *f.Editor.SemanticTokens
+	}
+	if f.Editor.Breadcrumbs != nil {
+		dst.Editor.Breadcrumbs = *f.Editor.Breadcrumbs
+	}
+	if f.Editor.StickyScroll != nil {
+		dst.Editor.StickyScroll = *f.Editor.StickyScroll
 	}
 	if f.Editor.RestoreSession != nil {
 		dst.Editor.RestoreSession = *f.Editor.RestoreSession

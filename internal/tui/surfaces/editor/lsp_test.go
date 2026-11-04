@@ -82,6 +82,11 @@ type goplusFake struct {
 	inlayHints  []map[string]any
 	inlayAsks   int
 	inlayRanges []string
+	// F-175: outlineCap advertises documentSymbolProvider; outlineSyms (when
+	// set) is the documentSymbol reply and outlineAsks counts the requests.
+	outlineCap  bool
+	outlineSyms []map[string]any
+	outlineAsks int
 }
 
 func startFakeServer(t *testing.T) (*goplusFake, *lsp.Manager) {
@@ -148,6 +153,9 @@ func (f *goplusFake) serve() {
 				}
 				if f.inlayCap {
 					caps["inlayHintProvider"] = true
+				}
+				if f.outlineCap {
+					caps["documentSymbolProvider"] = true
 				}
 				if f.resolveCaps {
 					caps["codeActionProvider"] = map[string]any{"resolveProvider": true}
@@ -345,6 +353,14 @@ func (f *goplusFake) serve() {
 			f.reply(*msg.ID, syms)
 
 		case "textDocument/documentSymbol":
+			f.mu.Lock()
+			f.outlineAsks++
+			custom := f.outlineSyms
+			f.mu.Unlock()
+			if custom != nil {
+				f.reply(*msg.ID, custom)
+				break
+			}
 			sel := func(l int) map[string]any {
 				return map[string]any{
 					"start": map[string]any{"line": l, "character": 5},

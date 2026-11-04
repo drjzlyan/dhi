@@ -285,6 +285,13 @@ func InsetBg() lipgloss.Style {
 	return lipgloss.NewStyle().Background(Current.BgInset)
 }
 
+// StickyRow paints a header line pinned at the top of the buffer by sticky
+// scroll (F-175): the inset shade, so the pinned rows read as chrome over
+// the text rather than as buffer lines.
+func StickyRow() lipgloss.Style {
+	return lipgloss.NewStyle().Background(Current.BgInset).Foreground(Current.Text)
+}
+
 // AddWash / DelWash paint diff line backgrounds (F-026 P6): kind-first
 // coloring so added/removed blocks read at a glance.
 func AddWash() lipgloss.Style {

@@ -501,11 +501,12 @@ func (m *Model) paneAt(x, y int) *paneRect {
 // bufferPanel renders tab i's buffer view in a w×h panel.
 func (m *Model) bufferPanel(i, w, h int, focused bool) string {
 	e := m.bufs[i].ed
-	title := bufferTitle(e)
+	var title string
 	if focused {
-		title += m.diagChip(e)
+		chips := m.diagChip(e)
+		title = m.bufferTitle(e, m.bufs[i].vp, w, chips) + chips
 	} else {
-		title = kit.Restyle(theme.TextDim(), title) // the mode pill inside keeps its own colors
+		title = kit.Restyle(theme.TextDim(), m.bufferTitle(e, m.bufs[i].vp, w, "")) // the mode pill inside keeps its own colors
 	}
 	body := joinV(tabStrip(m.bufs, i, w-2), m.bufferView())
 	p := kit.NewPanel(title, focused)

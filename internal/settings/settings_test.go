@@ -867,3 +867,17 @@ func TestDesktopNotificationsDefaultAndApply(t *testing.T) {
 		t.Fatal("Apply must switch theme.Notify on")
 	}
 }
+
+// F-175: editor.breadcrumbs defaults on, editor.sticky_scroll off; layers override.
+func TestEditorBreadcrumbsAndStickyLayer(t *testing.T) {
+	def, _ := Load(filepath.Join(t.TempDir(), "none"), "")
+	if !def.Editor.Breadcrumbs || def.Editor.StickyScroll {
+		t.Fatalf("defaults: breadcrumbs=%v sticky=%v", def.Editor.Breadcrumbs, def.Editor.StickyScroll)
+	}
+	p := filepath.Join(t.TempDir(), "c.toml")
+	os.WriteFile(p, []byte("[editor]\nbreadcrumbs = false\nsticky_scroll = true\n"), 0o644)
+	cfg, err := Load(p, "")
+	if err != nil || cfg.Editor.Breadcrumbs || !cfg.Editor.StickyScroll {
+		t.Fatalf("layer: breadcrumbs=%v sticky=%v err=%v", cfg.Editor.Breadcrumbs, cfg.Editor.StickyScroll, err)
+	}
+}

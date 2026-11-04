@@ -309,6 +309,8 @@ func (m *Model) applyLSPUpdate(msg teaMsg) {
 		m.inlayDropAll()
 	case lspMsgInlayDue, lspMsgInlay:
 		m.applyInlayMsg(msg)
+	case lspMsgOutlineDue, lspMsgOutline:
+		m.applyOutlineMsg(msg)
 	case lspMsgNote:
 		if e := m.active(); e != nil {
 			e.SetMessage(msg.note)

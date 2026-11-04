@@ -133,6 +133,9 @@ type Prefs struct {
 	InlayHints  bool   // LSP inlay hints, dimmed inline (F-169)
 	// SemanticTokens layers the server's semantic colours over syntax (F-173).
 	SemanticTokens bool
+	Breadcrumbs    bool // symbol path of the cursor in the buffer title (F-175)
+	// StickyScroll pins the enclosing symbols' headers at the top of the pane (F-175).
+	StickyScroll bool
 	// RestoreSession saves the open tabs and split on quit and reopens them
 	// on launch (F-149).
 	RestoreSession bool
@@ -140,7 +143,7 @@ type Prefs struct {
 }
 
 // DefaultPrefs match the settings defaults.
-var DefaultPrefs = Prefs{TabWidth: 4, LineNumbers: true, RestoreSession: true, Scrollback: 1000}
+var DefaultPrefs = Prefs{TabWidth: 4, LineNumbers: true, Breadcrumbs: true, RestoreSession: true, Scrollback: 1000}
 
 // WithPrefs reads the editor settings at each render, so a change in
 // Settings shows at once.
@@ -257,29 +260,32 @@ type Model struct {
 	agentEditAt   time.Time
 
 	// Pair programming (F-038): agent suggestions awaiting review.
-	proposals     []proposal
-	reviewOpen    bool
-	pairNote      string
-	breakpoints   map[string][]int // abs path → sorted 1-based lines (F-039)
-	dbg           *dbgState
-	dapStart      dapStarter                  // adapter launcher; nil = delve (tests inject)
-	testing       *testState                  // :test results (modeTests)
-	syms          *symbolPicker               // :sym outline picker (modeSymbols)
-	wsym          *wsymPicker                 // :wsym workspace picker (modeWorkspaceSyms, F-154)
-	wrapOverride  *bool                       // :set wrap|nowrap for this session; nil follows Settings (F-136)
-	inlayOverride *bool                       // :set inlayhints|noinlayhints for this session; nil follows Settings (F-169)
-	inlay         map[string]*inlayState      // per file: cached LSP inlay hints (F-169)
-	inlayCfg      map[*lsp.Client]bool        // clients last told whether to emit hints
-	calls         *callPicker                 // :calls tree (modeCalls, F-173)
-	peek          *peekState                  // gp / :peek popup (F-173)
-	semOverride   *bool                       // :set semantic|nosemantic for this session; nil follows Settings (F-173)
-	blameOverride *bool                       // :set blame|noblame for this session; nil follows Settings (F-143)
-	nowFn         func() time.Time            // blame ages; nil = time.Now (tests pin it)
-	ec            *editorconfig.Resolver      // .editorconfig lookups, cached per folder (F-160)
-	formatOnSave  bool                        // :set fmt|nofmt; default on (Go + live server only)
-	pairAgent     string                      // pairing partner (F-038); "" = no session
-	taskPick      *kit.Palette                // :task picker (modeTasks, F-146)
-	taskDiags     map[string][]lsp.Diagnostic // problems from the last task's output (F-146)
+	proposals      []proposal
+	reviewOpen     bool
+	pairNote       string
+	breakpoints    map[string][]int // abs path → sorted 1-based lines (F-039)
+	dbg            *dbgState
+	dapStart       dapStarter                  // adapter launcher; nil = delve (tests inject)
+	testing        *testState                  // :test results (modeTests)
+	syms           *symbolPicker               // :sym outline picker (modeSymbols)
+	wsym           *wsymPicker                 // :wsym workspace picker (modeWorkspaceSyms, F-154)
+	wrapOverride   *bool                       // :set wrap|nowrap for this session; nil follows Settings (F-136)
+	inlayOverride  *bool                       // :set inlayhints|noinlayhints for this session; nil follows Settings (F-169)
+	inlay          map[string]*inlayState      // per file: cached LSP inlay hints (F-169)
+	inlayCfg       map[*lsp.Client]bool        // clients last told whether to emit hints
+	crumbOverride  *bool                       // :set [no]breadcrumbs for this session; nil follows Settings (F-175)
+	stickyOverride *bool                       // :set [no]sticky for this session; nil follows Settings (F-175)
+	outline        map[string]*outlineState    // per file: cached document outline (F-175)
+	calls          *callPicker                 // :calls tree (modeCalls, F-173)
+	peek           *peekState                  // gp / :peek popup (F-173)
+	semOverride    *bool                       // :set semantic|nosemantic for this session; nil follows Settings (F-173)
+	blameOverride  *bool                       // :set blame|noblame for this session; nil follows Settings (F-143)
+	nowFn          func() time.Time            // blame ages; nil = time.Now (tests pin it)
+	ec             *editorconfig.Resolver      // .editorconfig lookups, cached per folder (F-160)
+	formatOnSave   bool                        // :set fmt|nofmt; default on (Go + live server only)
+	pairAgent      string                      // pairing partner (F-038); "" = no session
+	taskPick       *kit.Palette                // :task picker (modeTasks, F-146)
+	taskDiags      map[string][]lsp.Diagnostic // problems from the last task's output (F-146)
 
 	drawerOpen  bool
 	termCopy    string // text a terminal program copied (OSC 52), not yet sent
@@ -806,6 +812,7 @@ type teaMsg struct {
 	sigSeq    int
 	inlay     []lsp.InlayHint // lspMsgInlay: the answer; note = path, sigSeq = request generation, bufSeq = the text it answers
 	bufSeq    uint64
+	outline   []lsp.Symbol // lspMsgOutline: the answer; note = path, sigSeq = request generation, bufSeq = the text it answers (F-175)
 	hoverOK   bool
 	edit      *lsp.WorkspaceEdit
 	actions   []lsp.CodeAction
@@ -838,6 +845,8 @@ const (
 	lspMsgInlay        // inlay hints for a file arrived (F-169)
 	lspMsgInlayRefresh // the server's hints changed: drop the cache (F-169)
 	lspMsgInlayDue     // the inlay debounce elapsed: send the request (F-169)
+	lspMsgOutline      // the document outline for a file arrived (F-175)
+	lspMsgOutlineDue   // the outline debounce elapsed: send the request (F-175)
 	toolMsgInstalled   // an approved install tab exited (lang: the tool; note: the outcome)
 	testMsgDone
 	blameMsgDone // git blame for a tab finished (F-143)
@@ -922,7 +931,7 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 			}
 		case termMsgClosed:
 			m.termExited(msg.tab)
-		case lspMsgDiag, lspMsgComp, lspMsgHover, lspMsgEdit, lspMsgAction, lspMsgNote, lspMsgSig, lspMsgRun, lspMsgBulb, lspMsgSel, lspMsgInlay, lspMsgInlayDue, lspMsgInlayRefresh:
+		case lspMsgDiag, lspMsgComp, lspMsgHover, lspMsgEdit, lspMsgAction, lspMsgNote, lspMsgSig, lspMsgRun, lspMsgBulb, lspMsgSel, lspMsgInlay, lspMsgInlayDue, lspMsgInlayRefresh, lspMsgOutline, lspMsgOutlineDue:
 			m.applyLSPUpdate(msg)
 		case toolMsgInstalled:
 			m.applyToolInstalled(msg)
@@ -1738,6 +1747,20 @@ func (m *Model) View() string {
 	return m.view()
 }
 
+// mainPanelW is the width of the main (buffer) panel: the surface less the
+// rail (flush with the full-width bottom panels, F-064) and the crew
+// panel, which docks right while the buffer gives way.
+func (m *Model) mainPanelW() int {
+	w := m.width - m.railW()
+	if m.railW() == 0 {
+		w = m.width
+	}
+	if m.chat != nil && m.chat.open {
+		w -= chatWidth
+	}
+	return maxInt(w, 10)
+}
+
 func (m *Model) view() string {
 	if m.ws == nil {
 		if m.startVisible() {
@@ -1858,7 +1881,12 @@ func (m *Model) navView() string {
 		title = "preview — " + title
 	case m.active() != nil:
 		e := m.active()
-		title = bufferTitle(e) + m.diagChip(e) + m.agentChip(e) + m.pairBadge() + m.pairChip(e.Path())
+		chips := m.diagChip(e) + m.agentChip(e) + m.pairBadge() + m.pairChip(e.Path())
+		vp := ""
+		if t := m.focusedTab(); t != nil {
+			vp = t.vp
+		}
+		title = m.bufferTitle(e, vp, m.mainPanelW(), chips) + chips
 		main = m.bufferView()
 	case m.openPath != "":
 		main = strings.Join([]string{
@@ -1879,15 +1907,8 @@ func (m *Model) navView() string {
 	if railW >= m.width { // narrow, nothing open: the tree is the view
 		return m.withBottomPanels(rail.View())
 	}
-	mainW := m.width - railW // flush with the full-width bottom panels (F-064)
-	if railW == 0 {
-		mainW = m.width
-	}
+	mainW := m.mainPanelW()
 	chatOpen := m.chat != nil && m.chat.open
-	if chatOpen {
-		mainW -= chatWidth // the crew panel docks right; the buffer gives way
-	}
-	mainW = maxInt(mainW, 10)
 	centered := kit.Center(main, maxInt(mainW-2, 10), maxInt(bodyH-2, 3))
 	if m.startVisible() {
 		// The page's zones are page-relative: record where Center put it
@@ -1994,6 +2015,10 @@ func (m *Model) ExecEx(requester *textbuf.Editor, cmd string) bool {
 		return true
 	}
 	if msg, ok := m.inlayCommand(cmd); ok {
+		requester.SetMessage(msg)
+		return true
+	}
+	if msg, ok := m.outlineCommand(cmd); ok {
 		requester.SetMessage(msg)
 		return true
 	}
@@ -2579,6 +2604,7 @@ type bufGeom struct {
 	top, rows int                 // first buffer line shown, and how many
 	left      int                 // columns scrolled off the left (F-119)
 	inlay     map[int][]inlayCell // shown lines' inlay hints: virtual cells a click skips (F-169)
+	sticky    []int               // buffer line of each pinned top row; a click jumps there (F-175)
 }
 
 // bufferPos maps a surface cell to a buffer position (false outside the
@@ -2590,6 +2616,9 @@ func (m *Model) bufferPos(x, y int) (textbuf.Pos, bool) {
 		return textbuf.Pos{}, false
 	}
 	line := g.top + y - g.oy
+	if r := y - g.oy; r < len(g.sticky) { // a pinned header row: its symbol
+		return textbuf.Pos{Line: g.sticky[r]}, true
+	}
 	if g.rowLine != nil { // wrapped: rows map to a line and where it starts
 		r := y - g.oy
 		if r >= len(g.rowLine) {

@@ -1,6 +1,7 @@
 package editor
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -64,6 +65,13 @@ func newLiveHarness(t *testing.T) *liveHarness {
 	write("a.go", "package live\n\n// Add sums two ints.\nfunc Add(a int, b int) int { return a + b }\n")
 	write("b.go", "package live\n\nfunc Use() int {\n\treturn Add(1, 2)\n}\n")
 	write("h.go", "package live\n\nfunc hinted() int {\n\tv := Add(1, 2)\n\treturn v\n}\n")
+	var long strings.Builder
+	long.WriteString("package live\n\ntype Server struct{}\n\nfunc (s *Server) Run() int {\n\ttotal := 0\n")
+	for i := 0; i < 70; i++ {
+		fmt.Fprintf(&long, "\ttotal += %d\n", i)
+	}
+	long.WriteString("\treturn total\n}\n")
+	write("s.go", long.String())
 	write("d.go", "package live\n\nfunc scratch() {\n\t\n}\n")
 	write("sub/e.go", "package sub\n\nvar _ = strings.ToUpper(\"a\")\n")
 	write("sub/c.go", "package sub\n\nfunc broken() {\n\tx := 1\n}\n")
@@ -356,6 +364,29 @@ func TestLiveGopls(t *testing.T) {
 			t.Fatalf("semantic overlay missing or lossy: %q", got)
 		}
 		h.keys(":", "s", "e", "t", " ", "n", "o", "s", "e", "m", "a", "n", "t", "i", "c", "enter")
+	})
+
+	// F-175: the title carries the symbol path from gopls's outline and, with
+	// sticky scroll on, the scrolled-off method header is pinned.
+	t.Run("breadcrumbs and sticky", func(t *testing.T) {
+		h.open("s.go")
+		m.active().Buffer().SetCursor(textbuf.Pos{Line: 60, Col: 2})
+		h.wait(func() bool {
+			return strings.Contains(plainView(m), "s.go › (*Server).Run")
+		}, "breadcrumbs from gopls")
+		h.keys(":", "s", "e", "t", " ", "s", "t", "i", "c", "k", "y", "enter")
+		h.wait(func() bool { m.View(); return len(m.bufGeom.sticky) > 0 }, "pinned header")
+		if v := plainView(m); !strings.Contains(v, "func (s *Server) Run() int {") {
+			t.Fatalf("method header not pinned:\n%s", v)
+		}
+		if got := m.active().Buffer().Line(4); got != "func (s *Server) Run() int {" {
+			t.Fatalf("buffer changed: %q", got)
+		}
+		h.keys(":", "s", "e", "t", " ", "n", "o", "s", "t", "i", "c", "k", "y", "enter")
+		m.View()
+		if len(m.bufGeom.sticky) != 0 {
+			t.Fatal("still pinned after :set nosticky")
+		}
 	})
 
 	// Completion and signature help in a scratch buffer that is never saved.

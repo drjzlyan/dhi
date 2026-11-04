@@ -23,7 +23,7 @@ var proposable = map[string]string{
 	"budgets.agent_day_usd": "float", "budgets.workspace_day_usd": "float",
 	"scopes.read": "string", "scopes.write": "string", "scopes.exec": "string", "scopes.network": "string",
 	"scopes.git": "string", "scopes.push": "string", "scopes.admin": "string",
-	"editor.tab_width": "int", "editor.line_numbers": "bool", "editor.wrap": "bool", "editor.autosave": "string", "editor.blame": "bool", "editor.inlay_hints": "bool", "editor.semantic_tokens": "bool", "editor.restore_session": "bool", "terminal.scrollback": "int",
+	"editor.tab_width": "int", "editor.line_numbers": "bool", "editor.wrap": "bool", "editor.autosave": "string", "editor.blame": "bool", "editor.inlay_hints": "bool", "editor.semantic_tokens": "bool", "editor.breadcrumbs": "bool", "editor.sticky_scroll": "bool", "editor.restore_session": "bool", "terminal.scrollback": "int",
 	"worktrees.root": "string", "engine": "string",
 }
 

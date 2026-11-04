@@ -33,6 +33,10 @@ type Symbol struct {
 	Kind      string
 	Line, Col int // 0-based start of the symbol's name
 	Depth     int // nesting depth in a hierarchical outline
+	// RangeLine..EndLine is the symbol's whole extent (its range, not just
+	// its name): breadcrumbs and sticky scroll (F-175) find the symbols
+	// around the cursor with it.
+	RangeLine, EndLine int
 }
 
 // symbolKinds names the LSP SymbolKind numbers worth showing.
@@ -65,6 +69,20 @@ type symbolWire struct {
 	Children []symbolWire `json:"children"`
 }
 
+// CanDocumentSymbols reports whether the server provides an outline. A
+// server that reports nothing is not asked (ADR-0011).
+func (c *Client) CanDocumentSymbols() bool {
+	if c.caps == nil {
+		return true
+	}
+	v, ok := c.caps["documentSymbolProvider"]
+	if !ok {
+		return false
+	}
+	s := strings.TrimSpace(string(v))
+	return s != "false" && s != "null" && s != ""
+}
+
 // DocumentSymbols returns the document outline, flattened depth-first.
 func (c *Client) DocumentSymbols(path string) ([]Symbol, error) {
 	var raw json.RawMessage
@@ -83,7 +101,7 @@ func (c *Client) DocumentSymbols(path string) ([]Symbol, error) {
 	var walk func(level []symbolWire, depth int)
 	walk = func(level []symbolWire, depth int) {
 		for _, it := range level {
-			var rng Range
+			var rng, full Range
 			switch {
 			case it.SelectionRange != nil:
 				rng = *it.SelectionRange
@@ -92,6 +110,13 @@ func (c *Client) DocumentSymbols(path string) ([]Symbol, error) {
 			case it.Location != nil:
 				rng = it.Location.Range
 			}
+			full = rng
+			switch {
+			case it.Range != nil:
+				full = *it.Range
+			case it.Location != nil:
+				full = it.Location.Range
+			}
 			name := it.Name
 			if it.ContainerName != "" {
 				name = strings.TrimSpace(it.ContainerName) + "." + name
@@ -99,6 +124,7 @@ func (c *Client) DocumentSymbols(path string) ([]Symbol, error) {
 			out = append(out, Symbol{
 				Name: name, Kind: symbolKind(it.Kind),
 				Line: rng.Start.Line, Col: rng.Start.Character, Depth: depth,
+				RangeLine: min(full.Start.Line, rng.Start.Line), EndLine: max(full.End.Line, rng.End.Line),
 			})
 			walk(it.Children, depth+1)
 		}

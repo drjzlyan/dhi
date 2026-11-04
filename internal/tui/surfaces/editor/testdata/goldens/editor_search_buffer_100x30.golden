@@ -1,4 +1,4 @@
-▏ files ─────────────────── ▏ SEARCH_RESULTS   NORMAL  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
+▏ files ─────────────────── ▏ .dhi › tmp › SEARCH_RESULTS   NORMAL  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
 ▏ ▌ ▸ alpha/                ▏  app.go   SEARCH_RESULTS                                              
 ▏   ▸ beta/                 ▏  1 # :grep "needle" — 2 matches in 1 file · context 2                 
 ▏                           ▏  2 # enter · gd opens the row · edit rows, :w asks before writing th  

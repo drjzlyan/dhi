@@ -1,0 +1,20 @@
+▏ files ─────────────────── ▏ alpha › app.go › Server.Start   NORMAL   ✗1 ━━━━━━━━━━━━━━━━━━━━━━━━━ 
+▏ ▌ ▸ alpha/                ▏  app.go                                                               
+▏   ▸ beta/                 ▏  4 func (s *Server) Start() {                                         
+▏                           ▏ 25     step24()                                                       
+▏                           ▏ 26     step25()                                                       
+▏                           ▏ 27     step26()                                                       
+▏                           ▏ 28     step27()                                                       
+▏                           ▏ 29     step28()                                                       
+▏                           ▏ 30     step29()                                                       
+▏                           ▏ 31     step30()                                                       
+▏                           ▏ 32     step31()                                                       
+▏                           ▏ 33     step32()                                                       
+▏                           ▏ 34     step33()                                                       
+▏                           ▏ 35     step34()                                                       
+▏                           ▏ 36     step35()                                                       
+▏                           ▏ 37     step36()                                                       
+▏                           ▏ 38     step37()                                                       
+▏                           ▏                                                                       
+▏                           ▏                                                                       
+▏                           ▏                                                                       

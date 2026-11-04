@@ -26,22 +26,6 @@ func minInt(a, b int) int {
 // the theme-only rule stays satisfied.
 var cursorStyle = lipgloss.NewStyle().Reverse(true)
 
-func bufferTitle(e *textbuf.Editor) string {
-	name := e.Path()
-	if i := strings.LastIndex(name, "/"); i >= 0 {
-		name = name[i+1:]
-	}
-	dot := ""
-	if e.Buffer().Dirty() {
-		dot = " " + theme.WarningText().Render("●")
-	}
-	pill := modePill(e.Mode(), e.VisualBlock())
-	if n := e.CursorCount(); n > 1 {
-		pill += " " + kit.Pill(itoa(n)+" CURSORS", theme.Current.Accent)
-	}
-	return name + dot + "  " + pill
-}
-
 // modePill colors the editing mode (F-064): normal in the editor's
 // indigo, insert green, visual amber, command blue.
 func modePill(md textbuf.Mode, block bool) string {
@@ -130,6 +114,9 @@ func (m *Model) bufferView() string {
 	}
 	if m.inlayEnabled(prefs) {
 		m.inlayWant(e, top, end) // F-169: ask for the window's hints (debounced, async)
+	}
+	if m.breadcrumbsEnabled(prefs) || m.stickyEnabled(prefs) {
+		m.outlineWant(e) // F-175: the outline both read (debounced, async)
 	}
 	// Where the text starts and which line is on top, so a click maps
 	// back to a buffer position (F-103); each pane copies it out (F-166).
@@ -302,6 +289,21 @@ func (m *Model) bufferView() string {
 		if len(out) > 0 {
 			m.bufGeom.rowLine, m.bufGeom.rowStart, m.bufGeom.rows = rowLine, rowStart, len(out)
 			m.bufGeom.top = rowLine[0]
+		}
+	}
+
+	if m.stickyEnabled(prefs) {
+		// F-175: the enclosing symbols' headers, scrolled off the top, are
+		// pinned over the first rows (never over the cursor's row).
+		cr := curLine - top
+		if wrap {
+			cr = curRow
+		}
+		if hs := m.stickyHeaders(e, m.bufGeom.top, cr); len(hs) > 0 {
+			for i, l := range hs {
+				out[i] = stickyRow(b, l, gutW, textW, prefs.LineNumbers)
+			}
+			m.bufGeom.sticky = hs
 		}
 	}
 
