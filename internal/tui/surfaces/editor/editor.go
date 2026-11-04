@@ -235,12 +235,16 @@ type Model struct {
 	bufFocus  bool
 	now       func() time.Time // test clock (F-142); nil = time.Now
 	lastKey   time.Time        // the last key the editor saw
-	// split panes (F-057): the second pane's tab, the pending ctrl+w
-	// prefix, and a render flag that keeps popups on the focused pane.
-	split          bool
-	splitTab       int
+	// split panes (F-057, F-166): the layout tree (nil = one pane), the
+	// focused leaf, the rects of the last render, the pending ctrl+w
+	// prefix, and the box being rendered (paneW/paneH, 0 = whole area;
+	// renderingSplit keeps popups on the focused pane).
+	layout         *pane
+	focus          *pane
+	panes          []paneRect
 	pendingW       bool
 	renderingSplit bool
+	paneW, paneH   int
 
 	// agentEditPath/agentEditAt mark the last agent-applied edit so the
 	// buffer title can show an active-editing indicator (F-035 Part B).
@@ -632,7 +636,8 @@ func (m *Model) HelpSections() [][2]string {
 			[2]string{"ctrl+g", "markdown preview"},
 			[2]string{":s/old/new/[g]", "replace"},
 			[2]string{":grep [-C n] pat [glob]", "search results buffer: enter / gd opens a row, :w applies edited rows after a card, :grep! refreshes"},
-			[2]string{"ctrl+w v · ctrl+w w", "split side by side · switch pane (:vs · :only)"})
+			[2]string{"ctrl+w v · s · h j k l · w", "split side by side · stacked · focus a pane · cycle (:vs · :sp)"},
+			[2]string{"ctrl+w c · o · =", "close the pane · keep only it · equalize (up to 4 panes; :close · :only)"})
 	case m.mode == modeResults:
 		out = append(out, [2]string{"enter", "jump to the hit"},
 			[2]string{"r", "replace across every hit (preview, then enter)"},
@@ -1593,16 +1598,7 @@ func (m *Model) closeBuffer() {
 	case m.activeTab >= len(m.bufs):
 		m.activeTab = len(m.bufs) - 1
 	}
-	if m.split { // closing a pane's buffer ends the split on the other one
-		m.split = false
-		other := m.splitTab
-		if other > closing {
-			other--
-		}
-		if other >= 0 && other < len(m.bufs) && other != closing {
-			m.activeTab = other
-		}
-	}
+	m.splitActive() // a closed buffer leaves its panes; focus moves to a neighbor (F-166)
 }
 
 // refreshRows re-flattens the tree into list items.
@@ -1704,6 +1700,18 @@ func (m *Model) view() string {
 // selected (and the tree focused); clicking the selected row again opens
 // the file or toggles the folder, like enter.
 func (m *Model) Click(x, y int) bool {
+	if m.splitActive() && m.mode == modeNav && !m.reviewOpen {
+		if r := m.paneAt(x, y); r != nil { // a click focuses the pane under it (F-166)
+			if r.leaf != m.focus {
+				m.focusPane(r.leaf)
+				m.bufGeom = r.geom
+			}
+			m.bufFocus = true
+			if _, ok := m.bufferPos(x, y); !ok {
+				return true
+			}
+		}
+	}
 	if p, ok := m.bufferPos(x, y); ok { // a click in the text places the cursor (F-103)
 		e := m.active()
 		if e.Mode() == textbuf.ModeVisual {
@@ -1737,19 +1745,7 @@ func (m *Model) Click(x, y int) bool {
 }
 
 func (m *Model) navView() string {
-	bodyH := m.height
-	if m.drawerOpen {
-		bodyH = m.height - min(drawerHeight, maxInt(m.height/3, 4)) - 1 // drawer + its hint footer
-		if bodyH < 4 {
-			bodyH = 4
-		}
-	}
-	if m.gitOpen {
-		bodyH = bodyH - min(gitPanelHeight, maxInt(m.height/3, 5))
-		if bodyH < 4 {
-			bodyH = 4
-		}
-	}
+	bodyH := m.bodyHeight()
 	rail := kit.NewPanel("files", false)
 	savedListH := m.list.Height
 	m.list.Width = maxInt(m.railW()-4, 8)
@@ -1824,7 +1820,7 @@ func (m *Model) navView() string {
 		strip := tabStrip(m.bufs, m.activeTab, mainW-2)
 		centered = joinV(strip, centered)
 		mdPrev := m.previewOn && preview.IsMarkdown(m.active().Path())
-		if !mdPrev && !m.splitActive() {
+		if !mdPrev {
 			// Inside the pane: one divider column, one header row, the tabs.
 			m.bufGeom.ok, m.bufGeom.ox, m.bufGeom.oy = true, railW+1, 1+len(splitLines(strip))
 		}

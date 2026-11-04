@@ -93,6 +93,9 @@ func (m *Model) bufferView() string {
 	e := m.active()
 	b := e.Buffer()
 	rows := maxInt(m.height-5, 1) // strip + panel padding + command line
+	if m.paneH > 0 {
+		rows = maxInt(m.paneH-5, 1) // a pane (F-166)
+	}
 
 	prefs := m.editorPrefs()
 	tabStop = prefs.TabWidth
@@ -121,11 +124,9 @@ func (m *Model) bufferView() string {
 		wl = m.layoutWrap(e, rows, m.bufTextWidth(gutW))
 		top, end = wl.top, wl.end
 	}
-	if !m.renderingSplit {
-		// Where the text starts and which line is on top, so a click maps
-		// back to a buffer position (F-103).
-		m.bufGeom = bufGeom{top: top, rows: end - top, textX: gutW + 1}
-	}
+	// Where the text starts and which line is on top, so a click maps
+	// back to a buffer position (F-103); each pane copies it out (F-166).
+	m.bufGeom = bufGeom{top: top, rows: end - top, textX: gutW + 1}
 
 	curCol := visCol(b.Line(curLine), b.Cursor().Col)
 	var a, z textbuf.Pos
@@ -145,9 +146,7 @@ func (m *Model) bufferView() string {
 	if !wrap && curCol >= textW-1 { // wrapped lines never scroll sideways
 		left = curCol - textW + 2
 	}
-	if !m.renderingSplit {
-		m.bufGeom.left = left
-	}
+	m.bufGeom.left = left
 
 	var out []string
 	var rowLine, rowStart []int
@@ -262,7 +261,7 @@ func (m *Model) bufferView() string {
 		if len(out) > rows {
 			out, rowLine, rowStart = out[:rows], rowLine[:rows], rowStart[:rows]
 		}
-		if !m.renderingSplit && len(out) > 0 {
+		if len(out) > 0 {
 			m.bufGeom.rowLine, m.bufGeom.rowStart, m.bufGeom.rows = rowLine, rowStart, len(out)
 			m.bufGeom.top = rowLine[0]
 		}
@@ -272,9 +271,9 @@ func (m *Model) bufferView() string {
 		// F-026 P4: completions/code-actions/hover float as a bordered
 		// dialog anchored under the cursor cell — not plain rows
 		// appended below the buffer.
-		x := clampIdx(gutW+curCol, maxInt(m.width-m.railW()-5, 20)-10)
+		x := clampIdx(gutW+curCol, maxInt(m.surfW()-5, 20)-10)
 		if wrap { // rows, not lines: the popup hangs under the cursor's row
-			x = clampIdx(gutW+curCell, maxInt(m.width-m.railW()-5, 20)-10)
+			x = clampIdx(gutW+curCell, maxInt(m.surfW()-5, 20)-10)
 			out = m.floatPopup(out, popup, x, curRow, 0)
 		} else {
 			out = m.floatPopup(out, popup, x, curLine, top)
@@ -324,7 +323,7 @@ func (m *Model) floatPopup(base []string, rows []string, x, curLine, top int) []
 	if len(rows) == 0 || len(base) == 0 {
 		return base
 	}
-	avail := maxInt(m.width-m.railW()-5, 20)
+	avail := maxInt(m.surfW()-5, 20)
 	w := 0
 	for _, r := range rows {
 		if lw := ansi.Width(ansi.Strip(r)); lw > w {
@@ -390,7 +389,7 @@ func (m *Model) hoverView() []string {
 	rows := make([]string, 0, min(len(m.hoverLines), 6)+1)
 	rows = append(rows, theme.Hint().Render("hover:"))
 	for _, ln := range m.hoverLines[:min(len(m.hoverLines), 6)] {
-		rows = append(rows, "  "+theme.TextDim().Render(truncateRunes(ln, maxInt(m.width-m.railW()-6, 20))))
+		rows = append(rows, "  "+theme.TextDim().Render(truncateRunes(ln, maxInt(m.surfW()-6, 20))))
 	}
 	return rows
 }
@@ -436,14 +435,20 @@ func markMatches(line, pat string) string {
 	}
 }
 
+// surfW is the width the buffer being drawn has: its pane's, else the
+// surface right of the tree.
+func (m *Model) surfW() int {
+	if m.paneW > 0 {
+		return m.paneW
+	}
+	return m.width - m.railW()
+}
+
 // bufTextWidth is how many cells of text a buffer row shows.
 func (m *Model) bufTextWidth(gutW int) int {
-	w := m.width - m.railW()
-	if m.chat != nil && m.chat.open {
+	w := m.surfW()
+	if m.paneW == 0 && m.chat != nil && m.chat.open {
 		w -= chatWidth
-	}
-	if m.splitActive() {
-		w /= 2
 	}
 	return maxInt(w-2-gutW-1, 10) // panel edges, gutter, change mark
 }

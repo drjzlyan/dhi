@@ -200,7 +200,7 @@ DHI uses the formats every coding agent reads, so nothing is DHI-only:
 | `?` | help for where you are; `/` searches it |
 | `n` | new task / session / review, depending on the view |
 | `s`, `ctrl+r` | search the workspace; toggle regex |
-| `ctrl+w v` | split the editor |
+| `ctrl+w v` / `s` | split the editor side by side / stacked (up to 4 panes); `h j k l` focus, `w` cycle, `c` close, `o` only |
 | `ctrl+s`, `:w` | save (DHI refuses to overwrite a file changed outside it: `:e!` reloads, `:w!` overwrites) |
 | `ctrl+k` | ask an agent to change the selection; the answer comes back as a diff you accept hunk by hunk |
 | `gd`, `gR`, `]d` | go to definition, list references, next problem |

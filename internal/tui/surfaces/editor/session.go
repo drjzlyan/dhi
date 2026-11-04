@@ -12,7 +12,7 @@ import (
 )
 
 // Session restore (F-149). On quit the open tabs, the active one and the
-// split are written to the workspace's .dhi/tmp/session.json (per user,
+// pane layout are written to the workspace's .dhi/tmp/session.json (per user,
 // ignored by git, next to the recent-files list); on the next launch in
 // the same workspace they reopen. Unsaved text is not part of it (hot
 // exit keeps it in swap files, F-161). The scroll position is not stored: the buffer view
@@ -30,7 +30,18 @@ type sessionFile struct {
 	Version int          `json:"version"`
 	Tabs    []sessionTab `json:"tabs"`
 	Active  string       `json:"active,omitempty"` // path of the focused tab
-	Split   string       `json:"split,omitempty"`  // path of the other pane's tab; "" = one pane
+	Split   string       `json:"split,omitempty"`  // the old two-pane form: the other pane's tab; read when layout is absent
+	Layout  *sessionPane `json:"layout,omitempty"` // the pane tree (F-166); nil = one pane
+}
+
+// sessionPane is one node of the saved pane tree: a leaf names a tab's
+// file, a node lists its kids and how they are laid out ("cols" side by
+// side, "rows" stacked).
+type sessionPane struct {
+	Dir   string        `json:"dir,omitempty"`
+	Kids  []sessionPane `json:"kids,omitempty"`
+	Path  string        `json:"path,omitempty"`
+	Focus bool          `json:"focus,omitempty"`
 }
 
 func (m *Model) sessionPath() string {
@@ -59,13 +70,106 @@ func (m *Model) SaveSession() {
 		s.Active = m.bufs[m.activeTab].path
 	}
 	if m.splitActive() {
-		s.Split = m.bufs[m.splitTab].path
+		s.Layout = m.sessionLayout(m.layout)
+		if l := m.layout.leaves(); len(l) == 2 { // older DHI reads the two-pane field
+			for _, p := range l {
+				if p != m.focus {
+					s.Split = p.tab.path
+				}
+			}
+		}
 	}
 	data, err := json.MarshalIndent(s, "", "  ")
 	if err != nil || os.MkdirAll(filepath.Dir(path), 0o755) != nil {
 		return
 	}
 	_ = os.WriteFile(path, append(data, '\n'), 0o644)
+}
+
+// sessionLayout copies the pane tree, leaving out panes whose tab is not
+// part of a session. A node left with one kid becomes that kid.
+func (m *Model) sessionLayout(p *pane) *sessionPane {
+	if p.leaf() {
+		if p.tab.path == "" || within(p.tab.path, filepath.Join(m.ws.Root, workspace.DHIDir)) {
+			return nil
+		}
+		return &sessionPane{Path: p.tab.path, Focus: p == m.focus}
+	}
+	n := &sessionPane{Dir: "cols"}
+	if p.dir == paneRows {
+		n.Dir = "rows"
+	}
+	for _, k := range p.kids {
+		if c := m.sessionLayout(k); c != nil {
+			n.Kids = append(n.Kids, *c)
+		}
+	}
+	switch len(n.Kids) {
+	case 0:
+		return nil
+	case 1:
+		return &n.Kids[0]
+	}
+	return n
+}
+
+// restorePanes rebuilds a saved pane tree from the tabs that came back;
+// ok is false when fewer than two panes survive.
+func (m *Model) restorePanes(s sessionFile) (root, focus *pane, ok bool) {
+	var build func(n sessionPane) *pane
+	build = func(n sessionPane) *pane {
+		if len(n.Kids) == 0 {
+			t := m.tabFor(n.Path)
+			if t == nil {
+				return nil
+			}
+			p := &pane{tab: t}
+			if n.Focus {
+				focus = p
+			}
+			return p
+		}
+		p := &pane{dir: paneCols}
+		if n.Dir == "rows" {
+			p.dir = paneRows
+		}
+		for _, k := range n.Kids {
+			if c := build(k); c != nil {
+				p.kids = append(p.kids, c)
+			}
+		}
+		switch len(p.kids) {
+		case 0:
+			return nil
+		case 1:
+			return p.kids[0]
+		}
+		return p
+	}
+	switch {
+	case s.Layout != nil:
+		root = build(*s.Layout)
+	case s.Split != "": // sessions saved before the pane tree
+		a, b := m.tabFor(s.Active), m.tabFor(s.Split)
+		if a != nil && b != nil && a != b {
+			root = &pane{kids: []*pane{{tab: a}, {tab: b}}}
+			focus = root.kids[0]
+		}
+	}
+	leaves := root.leaves()
+	if len(leaves) < 2 || len(leaves) > maxPanes {
+		return nil, nil, false
+	}
+	if focus == nil {
+		focus = leaves[0]
+		for _, l := range leaves {
+			if l.tab == m.tabFor(s.Active) {
+				focus = l
+				break
+			}
+		}
+	}
+	return root, focus, true
 }
 
 // restoreSession reopens the saved tabs. Files that are gone, and files
@@ -134,8 +238,9 @@ func (m *Model) pickRestoredTabs(s sessionFile) {
 	}
 	m.openPath, m.openVPath = m.bufs[m.activeTab].path, m.bufs[m.activeTab].vp
 	m.bufFocus = true
-	if t := m.tabFor(s.Split); t != nil && m.indexOfTab(t) != m.activeTab {
-		m.split, m.splitTab = true, m.indexOfTab(t)
+	if root, focus, ok := m.restorePanes(s); ok {
+		m.layout, m.focus = root, focus
+		m.splitActive() // the focused pane shows the active tab
 	}
 }
 

@@ -51,8 +51,8 @@ func TestSessionRestoreRoundTrip(t *testing.T) {
 	if m.active() != m.tabFor(a).ed {
 		t.Fatal("active tab not restored")
 	}
-	if !m.splitActive() || m.bufs[m.splitTab].path != b {
-		t.Fatalf("split not restored: split=%v tab=%d", m.split, m.splitTab)
+	if !m.splitActive() || len(m.layout.leaves()) != 2 || m.layout.kids[1].tab.path != b {
+		t.Fatalf("split not restored: %+v", m.layout)
 	}
 	if !m.bufFocus || m.toast != nil {
 		t.Fatalf("focus=%v toast=%v", m.bufFocus, m.toast)
