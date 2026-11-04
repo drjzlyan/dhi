@@ -20,6 +20,13 @@ import (
 type Screen struct {
 	emu  *xvt.SafeEmulator
 	w, h int
+
+	// shell integration (F-157)
+	capacity   int
+	dropped    int // lines trimmed off the top of the scrollback so far
+	cmds       []Command
+	cwd        string
+	integrated bool
 }
 
 // New returns an 80x24 screen keeping up to capacity lines of history.
@@ -27,13 +34,19 @@ func New(capacity int) *Screen {
 	if capacity < 10 {
 		capacity = 10
 	}
-	s := &Screen{emu: xvt.NewSafeEmulator(80, 24), w: 80, h: 24}
-	s.emu.SetScrollbackSize(capacity)
+	s := &Screen{emu: xvt.NewSafeEmulator(80, 24), w: 80, h: 24, capacity: capacity}
+	s.emu.SetScrollbackSize(capacity + scrollHeadroom)
+	s.emu.RegisterOscHandler(133, s.onMark)
+	s.emu.RegisterOscHandler(7, s.onCwd)
 	return s
 }
 
 // Feed interprets program output.
-func (s *Screen) Feed(chunk []byte) { _, _ = s.emu.Write(chunk) }
+func (s *Screen) Feed(chunk []byte) {
+	before := s.emu.ScrollbackLen()
+	_, _ = s.emu.Write(chunk)
+	s.settle(before)
+}
 
 // Replies is what the emulated terminal answers to the program (cursor
 // position reports, device attributes, colour queries): the caller

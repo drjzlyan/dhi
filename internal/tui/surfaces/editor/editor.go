@@ -581,6 +581,7 @@ func (m *Model) HelpSections() [][2]string {
 			[2]string{"shift+pgup · shift+pgdown", "scroll back through the output (any key returns)"},
 			[2]string{kit.AltLabel("alt+n · alt+w · alt+r"), "new tab · close this tab · restart an exited one"},
 			[2]string{kit.AltLabel("alt+s · alt+o"), "split the terminal beside a new shell · move focus between the two panes (alt+w closes one)"},
+			[2]string{kit.AltLabel("alt+k · alt+j"), "previous / next command prompt (needs a shell that sends OSC 133 marks; a ✗ marks failed commands)"},
 			[2]string{kit.AltLabel("alt+1..9"), "switch terminal tab"})
 	case m.gitOpen && m.gitFocus:
 		out = append(out,
@@ -592,6 +593,7 @@ func (m *Model) HelpSections() [][2]string {
 			[2]string{":w :q :wq · ctrl+s", "save · quit · save and quit · save in any mode"},
 			[2]string{":e path · :w path · :reopen", "open · save as · reopen the last closed file"},
 			[2]string{":e! · :w!", "reload from disk · overwrite an outside change"},
+			[2]string{kit.AltLabel("alt+enter · :send"), "send the selection (visual) or the line to the terminal, without running it"},
 			[2]string{":42 · 42G", "go to line"},
 			[2]string{"v · V · > <", "select · select lines · indent / outdent (>> << on a line)"},
 			[2]string{"gcc · gc{motion} · ctrl+/", "comment / uncomment lines (counts and visual gc work; ctrl+/ also in insert)"},
@@ -1101,6 +1103,15 @@ func (m *Model) handleKey(key string) bool {
 			}
 		}
 
+		// F-157: alt+enter sends the visual selection to the terminal.
+		if key == "alt+enter" && e.Mode() == textbuf.ModeVisual {
+			if text, _, _, ok := e.Selection(); ok {
+				e.Key("esc")
+				e.SetMessage(m.sendToTerm(text))
+			}
+			return true
+		}
+
 		// `gr`/`ga` sequences and `K` hover (normal mode only; `g` is
 		// dead in textbuf so the surface owns the two-key chords).
 		if m.lspPendingG && e.Mode() == textbuf.ModeVisual {
@@ -1239,6 +1250,11 @@ func (m *Model) handleTermKey(key string) bool {
 	case "alt+r": // F-121: restart an exited tab in the same folder
 		m.restartTerm(m.activeTerm)
 		return true
+	case "alt+k", "alt+j": // F-157: previous / next command prompt (a full-screen program keeps them)
+		if t := m.activeTermTab(); t != nil && !t.screen.AltScreen() {
+			m.jumpPrompt(map[string]int{"alt+k": -1, "alt+j": 1}[key])
+			return true
+		}
 	}
 	t := m.activeTermTab()
 	if t != nil {
@@ -1250,6 +1266,7 @@ func (m *Model) handleTermKey(key string) bool {
 				step = max(rows-1, 1)
 			}
 			t.scroll += step
+			t.hasJump = false
 			return true
 		case "shift+pgdown", "shift+down":
 			step := 1
@@ -1258,9 +1275,10 @@ func (m *Model) handleTermKey(key string) bool {
 				step = max(rows-1, 1)
 			}
 			t.scroll = max(t.scroll-step, 0)
+			t.hasJump = false
 			return true
 		}
-		t.scroll = 0 // typing returns to the live screen
+		t.scroll, t.hasJump = 0, false // typing returns to the live screen
 	}
 	if t == nil || t.sess == nil || t.exited {
 		return true
@@ -1287,7 +1305,7 @@ func (m *Model) activeTermDir() (string, string) {
 		if t.sess == nil { // a refused start keeps no session
 			return t.dir, filepath.Base(t.dir)
 		}
-		return t.dir, t.sess.Label()
+		return t.workDir(), t.sess.Label() // where the shell is now (F-157)
 	}
 	if len(m.members) > 0 {
 		return m.members[0].path, m.members[0].name
@@ -1830,6 +1848,10 @@ func (m *Model) ExecEx(requester *textbuf.Editor, cmd string) bool {
 		return true
 	}
 	if msg, ok := m.fileCommand(requester, cmd); ok {
+		requester.SetMessage(msg)
+		return true
+	}
+	if msg, ok := m.sendCommand(requester, cmd); ok {
 		requester.SetMessage(msg)
 		return true
 	}

@@ -30,6 +30,9 @@ type termTab struct {
 	tool   string       // an approved install of this host tool runs here (F-110)
 	scroll int          // rows scrolled back into history (0 = live) (F-121)
 	task   *taskCapture // a task run's output, scanned for problems on exit (F-146)
+
+	jumpRow int  // absolute row of the prompt alt+k / alt+j last chose (F-157)
+	hasJump bool // jumpRow is valid until the view moves otherwise
 }
 
 // ToggleDrawer opens/closes/focus-blurs the terminal drawer (ctrl+t):
@@ -275,12 +278,15 @@ func (m *Model) termBodyOf(t *termTab, cols, rows int, focused bool) []string {
 		all := append(t.screen.History(cols), body...)
 		t.scroll = min(t.scroll, max(len(all)-rows, 0))
 		end := len(all) - t.scroll
-		view := append([]string(nil), all[max(end-rows, 0):end]...)
+		start := max(end-rows, 0)
+		view := append([]string(nil), all[start:end]...)
+		markFailed(t, view, t.screen.RowBase()-len(all)+len(body)+start, cols)
 		if len(view) > 0 {
 			view[len(view)-1] = theme.Hint().Render(fmt.Sprintf("↑ %d lines back · shift+pgdown or any key returns", t.scroll))
 		}
 		return view
 	}
+	markFailed(t, body, t.screen.RowBase(), cols)
 	if t.exited || !focused {
 		return body
 	}
