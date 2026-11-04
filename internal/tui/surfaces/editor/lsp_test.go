@@ -65,6 +65,13 @@ type goplusFake struct {
 	selChain []map[string]any
 	selFail  bool
 	selAsked int
+	// F-169: inlayCap advertises inlayHintProvider; inlayHints is the reply
+	// and inlayAsks counts the textDocument/inlayHint requests (their ranges
+	// as "start-end" line pairs in inlayRanges).
+	inlayCap    bool
+	inlayHints  []map[string]any
+	inlayAsks   int
+	inlayRanges []string
 }
 
 func startFakeServer(t *testing.T) (*goplusFake, *lsp.Manager) {
@@ -126,6 +133,9 @@ func (f *goplusFake) serve() {
 				if opts != nil {
 					caps["textDocumentSync"] = map[string]any{"save": opts}
 				}
+				if f.inlayCap {
+					caps["inlayHintProvider"] = true
+				}
 				if f.resolveCaps {
 					caps["codeActionProvider"] = map[string]any{"resolveProvider": true}
 				}
@@ -156,6 +166,20 @@ func (f *goplusFake) serve() {
 					{"range": map[string]any{"start": map[string]any{"line": 0, "character": 0}}, "severity": 1, "message": "boom"},
 				},
 			})
+
+		case "textDocument/inlayHint":
+			var p struct {
+				Range struct {
+					Start, End struct{ Line int }
+				} `json:"range"`
+			}
+			json.Unmarshal(msg.Params, &p)
+			f.mu.Lock()
+			f.inlayAsks++
+			f.inlayRanges = append(f.inlayRanges, fmt.Sprintf("%d-%d", p.Range.Start.Line, p.Range.End.Line))
+			hints := f.inlayHints
+			f.mu.Unlock()
+			f.reply(*msg.ID, hints)
 
 		case "textDocument/completion":
 			f.reply(*msg.ID, []map[string]any{

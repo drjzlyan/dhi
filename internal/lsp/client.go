@@ -39,6 +39,7 @@ type EventKind uint8
 const (
 	EvDiagnostics EventKind = iota
 	EvApplyEdit
+	EvInlayRefresh // workspace/inlayHint/refresh: cached hints are stale (F-169)
 )
 
 // Event is one server→client notification routed to the UI.
@@ -67,6 +68,8 @@ type Client struct {
 	initDone   bool
 	serverName string
 	caps       map[string]json.RawMessage // server capabilities; nil = not reported
+	optMu      sync.Mutex
+	options    map[string]any // server settings by section, answered to workspace/configuration (F-169)
 }
 
 // New wraps an established connection and runs the handshake.
@@ -117,9 +120,13 @@ func (c *Client) initialize(rootDir string) error {
 				},
 				"formatting":     map[string]any{},
 				"selectionRange": map[string]any{},
+				"inlayHint":      map[string]any{},
 			},
 			"workspace": map[string]any{
-				"applyEdit": true,
+				"applyEdit":              true,
+				"configuration":          true,
+				"didChangeConfiguration": map[string]any{},
+				"inlayHint":              map[string]any{"refreshSupport": true},
 			},
 		},
 	}
@@ -252,6 +259,17 @@ func (c *Client) readLoop() {
 				case c.events <- Event{Kind: EvApplyEdit, Edit: edit}:
 				default:
 				}
+			}
+		case msg.ID != nil && msg.Method == "workspace/configuration":
+			body, _ := json.Marshal(c.configuration(msg.Params))
+			resp, _ := json.Marshal(rpcMessage{JSONRPC: "2.0", ID: msg.ID, Result: body})
+			_ = c.write(resp)
+		case msg.ID != nil && msg.Method == "workspace/inlayHint/refresh":
+			resp, _ := json.Marshal(rpcMessage{JSONRPC: "2.0", ID: msg.ID, Result: json.RawMessage("null")})
+			_ = c.write(resp)
+			select {
+			case c.events <- Event{Kind: EvInlayRefresh}:
+			default:
 			}
 		case msg.ID != nil && msg.Method != "":
 			// server→client request we don't implement; reply empty so

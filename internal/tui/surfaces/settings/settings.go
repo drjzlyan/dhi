@@ -544,6 +544,7 @@ const (
 	rowWrap
 	rowAutosave // editor.autosave (F-142)
 	rowBlame
+	rowInlayHints     // editor.inlay_hints (F-169)
 	rowRestoreSession // editor.restore_session (F-149)
 	rowScrollback
 	rowLanguages // editor.languages on/off (F-084)
@@ -714,6 +715,8 @@ func (m *Model) cycle(dir int) {
 			[]string{settings.AutosaveOff, settings.AutosaveDelay, settings.AutosaveFocus}, dir)
 	case rowBlame:
 		m.cfg.Editor.Blame = !m.cfg.Editor.Blame
+	case rowInlayHints:
+		m.cfg.Editor.InlayHints = !m.cfg.Editor.InlayHints
 	case rowRestoreSession:
 		m.cfg.Editor.RestoreSession = !m.cfg.Editor.RestoreSession
 	case rowScrollback:
@@ -1694,6 +1697,7 @@ func (m *Model) configView(w, budget int) []string {
 	add(rowWrap, "editor.wrap", boolValue(m.cfg.Editor.Wrap))
 	add(rowAutosave, "editor.autosave", autosaveValue(m.cfg.Editor.Autosave))
 	add(rowBlame, "editor.blame", boolValue(m.cfg.Editor.Blame))
+	add(rowInlayHints, "editor.inlay_hints", boolValue(m.cfg.Editor.InlayHints))
 	add(rowRestoreSession, "editor.restore_session", boolValue(m.cfg.Editor.RestoreSession))
 	add(rowScrollback, "terminal.scrollback", itoa(m.cfg.Terminal.Scrollback))
 	add(rowLanguages, "editor.languages", m.languagesValue())
@@ -1968,7 +1972,7 @@ var settingLabels = map[string]string{
 	"profile.writing.emoji": "emoji in writing", "profile.writing.language": "writing language",
 	"profile.reading.order": "replies start with", "profile.reading.format": "reply format",
 	"profile.reading.detail": "reply detail",
-	"reduced_motion":         "reduce motion", "desktop_notifications": "desktop notifications", "editor.tab_width": "tab width", "editor.line_numbers": "line numbers", "editor.wrap": "wrap long lines", "editor.autosave": "autosave", "editor.blame": "inline blame", "editor.restore_session": "restore session",
+	"reduced_motion":         "reduce motion", "desktop_notifications": "desktop notifications", "editor.tab_width": "tab width", "editor.line_numbers": "line numbers", "editor.wrap": "wrap long lines", "editor.autosave": "autosave", "editor.blame": "inline blame", "editor.inlay_hints": "inlay hints", "editor.restore_session": "restore session",
 	"terminal.scrollback": "terminal scrollback", "editor.languages": "editor languages",
 	"scopes.read": "may read files", "scopes.write": "may write files", "scopes.exec": "may run commands",
 	"scopes.network": "may use the network", "scopes.git": "may use git", "scopes.push": "may push",

@@ -48,13 +48,13 @@ type wrapLayout struct {
 
 // lineSegs breaks buffer line l for the given width. The cursor line
 // reserves a cell for the block when the cursor sits past the last rune.
-func lineSegs(e *textbuf.Editor, l, width int) []int {
+func lineSegs(e *textbuf.Editor, l, width int, cells []inlayCell) []int {
 	b := e.Buffer()
 	plain := expandTabs(b.Line(l))
 	if l == b.Cursor().Line && visCol(b.Line(l), b.Cursor().Col) >= len([]rune(plain)) {
 		plain += " "
 	}
-	return wrapSegments(plain, width)
+	return wrapSegmentsHinted(plain, width, extraWidths(cells, len([]rune(plain))))
 }
 
 // layoutWrap picks the lines to draw so the cursor line sits near the
@@ -69,7 +69,7 @@ func (m *Model) layoutWrap(e *textbuf.Editor, rows, width int) *wrapLayout {
 		if s, ok := cache[l]; ok {
 			return s
 		}
-		s := lineSegs(e, l, width)
+		s := lineSegs(e, l, width, m.inlayCells(e, l))
 		cache[l] = s
 		return s
 	}
@@ -97,13 +97,24 @@ func (m *Model) layoutWrap(e *textbuf.Editor, rows, width int) *wrapLayout {
 // wrapSegments returns the rune index each row starts at (the first is
 // 0). A row breaks after the last space that fits, or mid-word when the
 // word is longer than the row. Wide runes are never split.
-func wrapSegments(plain string, width int) []int {
+func wrapSegments(plain string, width int) []int { return wrapSegmentsHinted(plain, width, nil) }
+
+// wrapSegmentsHinted is wrapSegments for a line carrying inlay hints
+// (F-169): extra[i] is the width of the hints drawn before rune i, which
+// take room in the row but never become break points or text.
+func wrapSegmentsHinted(plain string, width int, extra []int) []int {
 	rs := []rune(plain)
+	hint := func(i int) int {
+		if i < len(extra) {
+			return extra[i]
+		}
+		return 0
+	}
 	starts := []int{0}
 	start, w, lastSpace := 0, 0, -1
 	text := false // the row holds more than indentation: a break there would leave an empty row
 	for i, r := range rs {
-		rw := runewidth.RuneWidth(r)
+		rw := runewidth.RuneWidth(r) + hint(i)
 		if w+rw > width && i > start {
 			brk := i
 			if lastSpace > start {
@@ -112,6 +123,9 @@ func wrapSegments(plain string, width int) []int {
 			starts = append(starts, brk)
 			start = brk
 			w = runesWidth(rs[brk:i])
+			for j := brk; j < i; j++ {
+				w += hint(j)
+			}
 			lastSpace = -1
 			text = strings.TrimSpace(string(rs[brk:i])) != ""
 		}
@@ -136,12 +150,22 @@ func runesWidth(rs []rune) int {
 	return w
 }
 
-// runeAtCell is the rune index (in the tab-expanded line) under cell off
-// of the row that starts at rune start.
-func runeAtCell(plain string, start, off int) int {
+// runeAtCellHinted is the rune index (in the tab-expanded line) under cell
+// off of the row that starts at rune start; the row may show inlay hints
+// (F-169), and a cell on a hint lands on the rune the hint precedes.
+func runeAtCellHinted(plain string, start, off int, cells []inlayCell) int {
 	rs := []rune(plain)
-	w := 0
+	w, hi := 0, 0
 	for i := start; i < len(rs); i++ {
+		for hi < len(cells) && cells[hi].idx < i {
+			hi++
+		}
+		for j := hi; j < len(cells) && cells[j].idx == i; j++ {
+			if off < w+cells[j].w {
+				return i
+			}
+			w += cells[j].w
+		}
 		rw := runewidth.RuneWidth(rs[i])
 		if off < w+rw {
 			return i

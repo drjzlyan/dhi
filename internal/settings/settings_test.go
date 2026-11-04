@@ -84,6 +84,20 @@ func TestEditorBlameLayer(t *testing.T) {
 	}
 }
 
+// F-169: editor.inlay_hints defaults off and a layer can turn it on.
+func TestEditorInlayHintsLayer(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "c.toml")
+	os.WriteFile(p, []byte("[editor]\ninlay_hints = true\n"), 0o644)
+	cfg, err := Load(p, "")
+	if err != nil || !cfg.Editor.InlayHints {
+		t.Fatalf("inlay_hints = %v err=%v", cfg.Editor.InlayHints, err)
+	}
+	def, _ := Load(filepath.Join(t.TempDir(), "none"), "")
+	if def.Editor.InlayHints {
+		t.Fatal("inlay_hints must default off")
+	}
+}
+
 // F-149: editor.restore_session defaults on and a layer can turn it off.
 func TestEditorRestoreSessionLayer(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "c.toml")

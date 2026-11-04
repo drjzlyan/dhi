@@ -61,6 +61,7 @@ func newLiveHarness(t *testing.T) *liveHarness {
 	write("go.mod", "module example.com/live\n\ngo 1.21\n")
 	write("a.go", "package live\n\n// Add sums two ints.\nfunc Add(a int, b int) int { return a + b }\n")
 	write("b.go", "package live\n\nfunc Use() int {\n\treturn Add(1, 2)\n}\n")
+	write("h.go", "package live\n\nfunc hinted() int {\n\tv := Add(1, 2)\n\treturn v\n}\n")
 	write("d.go", "package live\n\nfunc scratch() {\n\t\n}\n")
 	write("sub/e.go", "package sub\n\nvar _ = strings.ToUpper(\"a\")\n")
 	write("sub/c.go", "package sub\n\nfunc broken() {\n\tx := 1\n}\n")
@@ -266,6 +267,36 @@ func TestLiveGopls(t *testing.T) {
 			t.Fatalf("Add not among workspace symbols: %+v", m.wsym.rows)
 		}
 		h.keys("esc")
+	})
+
+	// F-169: with the setting on, gopls is told to emit its standard hints
+	// and they are drawn inline without touching the buffer.
+	t.Run("inlay hints", func(t *testing.T) {
+		h.open("h.go")
+		h.keys(":", "s", "e", "t", " ", "i", "n", "l", "a", "y", "h", "i", "n", "t", "s", "enter")
+		h.wait(func() bool {
+			v := plainView(m)
+			return strings.Contains(v, "Add(a: 1, b: 2)")
+		}, "parameter-name hints")
+		v := plainView(m)
+		t.Logf("hinted line: %q", func() string {
+			for _, r := range strings.Split(v, "\n") {
+				if strings.Contains(r, "Add(") {
+					return r
+				}
+			}
+			return ""
+		}())
+		if !strings.Contains(v, "v int := Add") && !strings.Contains(v, "v: int := Add") {
+			t.Fatalf("no type hint after v:\n%s", v)
+		}
+		if got := m.active().Buffer().Line(3); got != "\tv := Add(1, 2)" {
+			t.Fatalf("buffer changed: %q", got)
+		}
+		h.keys(":", "s", "e", "t", " ", "n", "o", "i", "n", "l", "a", "y", "h", "i", "n", "t", "s", "enter")
+		if strings.Contains(plainView(m), "Add(a: 1") {
+			t.Fatal("hints still drawn after :set noinlayhints")
+		}
 	})
 
 	// Completion and signature help in a scratch buffer that is never saved.

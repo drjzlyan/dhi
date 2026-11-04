@@ -124,6 +124,9 @@ func (m *Model) bufferView() string {
 		wl = m.layoutWrap(e, rows, m.bufTextWidth(gutW))
 		top, end = wl.top, wl.end
 	}
+	if m.inlayEnabled(prefs) {
+		m.inlayWant(e, top, end) // F-169: ask for the window's hints (debounced, async)
+	}
 	// Where the text starts and which line is on top, so a click maps
 	// back to a buffer position (F-103); each pane copies it out (F-166).
 	m.bufGeom = bufGeom{top: top, rows: end - top, textX: gutW + 1}
@@ -143,9 +146,12 @@ func (m *Model) bufferView() string {
 	// in view instead of running off the panel.
 	textW := m.bufTextWidth(gutW)
 	left := 0
-	if !wrap && curCol >= textW-1 { // wrapped lines never scroll sideways
-		left = curCol - textW + 2
+	curCells := m.inlayCells(e, curLine) // F-169: hints are virtual cells in front of the cursor
+	curColV := curCol + hintsUpTo(curCells, curCol)
+	if !wrap && curColV >= textW-1 { // wrapped lines never scroll sideways
+		left = curColV - textW + 2
 	}
+	var geomInlay map[int][]inlayCell
 	m.bufGeom.left = left
 
 	var out []string
@@ -211,6 +217,14 @@ func (m *Model) bufferView() string {
 				text = expandTabs(st) // escapes never contain a tab
 			}
 		}
+		cells := m.inlayCells(e, l)
+		if len(cells) > 0 {
+			text = insertInlay(text, cells)
+			if geomInlay == nil {
+				geomInlay = map[int][]inlayCell{}
+			}
+			geomInlay[l] = cells
+		}
 		marker := gitMarkGlyph(marks, l)
 		if g, ok := m.debugGutter(path, l); ok {
 			marker = g // a breakpoint or the stop line beats a git change mark
@@ -226,8 +240,15 @@ func (m *Model) bufferView() string {
 				}
 				row := text
 				if len(segs) > 1 {
-					c0 := runesWidth(rs[:st])
-					row = ansi.Slice(text, c0, c0+runesWidth(rs[st:en])+boolInt(en == len(rs) && l == curLine))
+					c0 := runesWidth(rs[:st]) + hintsBefore(cells, st)
+					c1 := runesWidth(rs[:en]) + hintsBefore(cells, en)
+					if en == len(rs) {
+						c1 = runesWidth(rs) + hintsBefore(cells, en+1) // hints after the last rune
+					}
+					row = ansi.Slice(text, c0, c1+boolInt(en == len(rs) && l == curLine))
+				}
+				if len(cells) > 0 && ansi.Width(row) > textW {
+					row = ansi.Slice(row, 0, textW)
 				}
 				if blame != "" && l == curLine && i+1 == len(segs) {
 					row += blameSuffix(blame, textW-ansi.Width(row)) // last visual row only
@@ -240,7 +261,7 @@ func (m *Model) bufferView() string {
 				rowLine, rowStart = append(rowLine, l), append(rowStart, st)
 				if l == curLine && curCol >= st && (i+1 == len(segs) || curCol < segs[i+1]) {
 					curRow = len(out) - 1
-					curCell = runesWidth(rs[st:min(curCol, len(rs))])
+					curCell = runesWidth(rs[st:min(curCol, len(rs))]) + hintsBetween(cells, st, curCol)
 				}
 			}
 			continue
@@ -253,6 +274,7 @@ func (m *Model) bufferView() string {
 		}
 		out = append(out, gutter+marker+text)
 	}
+	m.bufGeom.inlay = geomInlay
 	if wrap {
 		// A cursor line taller than the pane keeps the cursor's row in view.
 		if drop := curRow - rows + 1; drop > 0 {
@@ -271,7 +293,7 @@ func (m *Model) bufferView() string {
 		// F-026 P4: completions/code-actions/hover float as a bordered
 		// dialog anchored under the cursor cell — not plain rows
 		// appended below the buffer.
-		x := clampIdx(gutW+curCol, maxInt(m.surfW()-5, 20)-10)
+		x := clampIdx(gutW+curColV, maxInt(m.surfW()-5, 20)-10)
 		if wrap { // rows, not lines: the popup hangs under the cursor's row
 			x = clampIdx(gutW+curCell, maxInt(m.surfW()-5, 20)-10)
 			out = m.floatPopup(out, popup, x, curRow, 0)

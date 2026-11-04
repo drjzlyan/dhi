@@ -116,6 +116,19 @@ func TestBlameToggle(t *testing.T) {
 	}
 }
 
+// F-169: LSP inlay hints are a Settings toggle, off by default.
+func TestInlayHintsToggle(t *testing.T) {
+	m, _ := newSurface(t)
+	if m.cfg.Editor.InlayHints {
+		t.Fatal("inlay hints must default off")
+	}
+	m.cursor = rowInlayHints
+	feed(m, "enter")
+	if !m.cfg.Editor.InlayHints {
+		t.Fatal("toggle no-op")
+	}
+}
+
 // F-136: wrap long lines is a Settings toggle, off by default.
 func TestWrapToggle(t *testing.T) {
 	m, _ := newSurface(t)

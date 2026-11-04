@@ -51,8 +51,9 @@ type Editor struct {
 	Wrap        bool `toml:"wrap"` // soft word wrap in the buffer view (F-136)
 	// Autosave is "off", "delay" (a quiet second after the last key) or
 	// "focus" (when the buffer loses focus) (F-142).
-	Autosave string `toml:"autosave"`
-	Blame    bool   `toml:"blame"` // inline blame on the cursor line (F-143)
+	Autosave   string `toml:"autosave"`
+	Blame      bool   `toml:"blame"`       // inline blame on the cursor line (F-143)
+	InlayHints bool   `toml:"inlay_hints"` // LSP inlay hints, dimmed inline (F-169)
 	// RestoreSession reopens the last session's tabs and split on launch;
 	// on unless turned off (F-149).
 	RestoreSession bool `toml:"restore_session"`
@@ -285,7 +286,7 @@ func DefaultMemory() Memory {
 // Known reports the accepted top-level keys (for doctor warnings).
 func Known() []string {
 	return []string{"schema", "theme", "reduced_motion", "desktop_notifications", "engine", "editor",
-		"terminal", "security", "editor.tab_width", "editor.line_numbers", "editor.wrap", "editor.autosave", "editor.blame", "editor.restore_session",
+		"terminal", "security", "editor.tab_width", "editor.line_numbers", "editor.wrap", "editor.autosave", "editor.blame", "editor.inlay_hints", "editor.restore_session",
 		"worktrees", "worktrees.root",
 		"terminal.scrollback", "security.sandbox",
 		"agents", "agents.max_turns", "agents.resume", "agents.autonomy", "agents.native_web",
@@ -584,6 +585,7 @@ type fileLayer struct {
 		Wrap           *bool                     `toml:"wrap"`
 		Autosave       string                    `toml:"autosave"`
 		Blame          *bool                     `toml:"blame"`
+		InlayHints     *bool                     `toml:"inlay_hints"`
 		RestoreSession *bool                     `toml:"restore_session"`
 		Languages      map[string]LanguageConfig `toml:"languages"`
 	} `toml:"editor"`
@@ -726,6 +728,9 @@ func (f fileLayer) mergeInto(dst *Config) {
 	setStr(&dst.Editor.Autosave, f.Editor.Autosave)
 	if f.Editor.Blame != nil {
 		dst.Editor.Blame = *f.Editor.Blame
+	}
+	if f.Editor.InlayHints != nil {
+		dst.Editor.InlayHints = *f.Editor.InlayHints
 	}
 	if f.Editor.RestoreSession != nil {
 		dst.Editor.RestoreSession = *f.Editor.RestoreSession

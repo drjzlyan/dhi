@@ -129,6 +129,7 @@ type Prefs struct {
 	Wrap        bool   // soft word wrap (F-136)
 	Autosave    string // "off", "delay" or "focus" (F-142)
 	Blame       bool   // inline blame on the cursor line (F-143)
+	InlayHints  bool   // LSP inlay hints, dimmed inline (F-169)
 	// RestoreSession saves the open tabs and split on quit and reopens them
 	// on launch (F-149).
 	RestoreSession bool
@@ -263,6 +264,9 @@ type Model struct {
 	syms          *symbolPicker               // :sym outline picker (modeSymbols)
 	wsym          *wsymPicker                 // :wsym workspace picker (modeWorkspaceSyms, F-154)
 	wrapOverride  *bool                       // :set wrap|nowrap for this session; nil follows Settings (F-136)
+	inlayOverride *bool                       // :set inlayhints|noinlayhints for this session; nil follows Settings (F-169)
+	inlay         map[string]*inlayState      // per file: cached LSP inlay hints (F-169)
+	inlayCfg      map[*lsp.Client]bool        // clients last told whether to emit hints
 	blameOverride *bool                       // :set blame|noblame for this session; nil follows Settings (F-143)
 	nowFn         func() time.Time            // blame ages; nil = time.Now (tests pin it)
 	ec            *editorconfig.Resolver      // .editorconfig lookups, cached per folder (F-160)
@@ -786,6 +790,8 @@ type teaMsg struct {
 	hoverText string
 	sig       *lsp.SignatureHelp
 	sigSeq    int
+	inlay     []lsp.InlayHint // lspMsgInlay: the answer; note = path, sigSeq = request generation, bufSeq = the text it answers
+	bufSeq    uint64
 	hoverOK   bool
 	edit      *lsp.WorkspaceEdit
 	actions   []lsp.CodeAction
@@ -811,10 +817,13 @@ const (
 	lspMsgAction
 	lspMsgNote
 	lspMsgSig
-	lspMsgRun        // a resolved code action, ready to apply (F-158)
-	lspMsgBulb       // quick-fix probe result for the cursor line (F-158)
-	lspMsgSel        // selectionRange answer for an expand (F-167)
-	toolMsgInstalled // an approved install tab exited (lang: the tool; note: the outcome)
+	lspMsgRun          // a resolved code action, ready to apply (F-158)
+	lspMsgBulb         // quick-fix probe result for the cursor line (F-158)
+	lspMsgSel          // selectionRange answer for an expand (F-167)
+	lspMsgInlay        // inlay hints for a file arrived (F-169)
+	lspMsgInlayRefresh // the server's hints changed: drop the cache (F-169)
+	lspMsgInlayDue     // the inlay debounce elapsed: send the request (F-169)
+	toolMsgInstalled   // an approved install tab exited (lang: the tool; note: the outcome)
 	testMsgDone
 	blameMsgDone // git blame for a tab finished (F-143)
 	dbgMsgStarted
@@ -890,7 +899,7 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 			}
 		case termMsgClosed:
 			m.termExited(msg.tab)
-		case lspMsgDiag, lspMsgComp, lspMsgHover, lspMsgEdit, lspMsgAction, lspMsgNote, lspMsgSig, lspMsgRun, lspMsgBulb, lspMsgSel:
+		case lspMsgDiag, lspMsgComp, lspMsgHover, lspMsgEdit, lspMsgAction, lspMsgNote, lspMsgSig, lspMsgRun, lspMsgBulb, lspMsgSel, lspMsgInlay, lspMsgInlayDue, lspMsgInlayRefresh:
 			m.applyLSPUpdate(msg)
 		case toolMsgInstalled:
 			m.applyToolInstalled(msg)
@@ -1930,6 +1939,10 @@ func (m *Model) ExecEx(requester *textbuf.Editor, cmd string) bool {
 		requester.SetMessage(msg)
 		return true
 	}
+	if msg, ok := m.inlayCommand(cmd); ok {
+		requester.SetMessage(msg)
+		return true
+	}
 	if msg, ok := m.rebaseCommand(requester, cmd); ok {
 		requester.SetMessage(msg)
 		return true
@@ -2493,12 +2506,13 @@ func truncateRunes(s string, n int) string {
 // by the last render (F-103).
 type bufGeom struct {
 	ok        bool
-	rowLine   []int // wrap on: buffer line of each shown row (F-136)
-	rowStart  []int // wrap on: first rune (tab-expanded) of each shown row
-	ox, oy    int   // surface cell of the first text row's gutter
-	textX     int   // cells of gutter before the text
-	top, rows int   // first buffer line shown, and how many
-	left      int   // columns scrolled off the left (F-119)
+	rowLine   []int               // wrap on: buffer line of each shown row (F-136)
+	rowStart  []int               // wrap on: first rune (tab-expanded) of each shown row
+	ox, oy    int                 // surface cell of the first text row's gutter
+	textX     int                 // cells of gutter before the text
+	top, rows int                 // first buffer line shown, and how many
+	left      int                 // columns scrolled off the left (F-119)
+	inlay     map[int][]inlayCell // shown lines' inlay hints: virtual cells a click skips (F-169)
 }
 
 // bufferPos maps a surface cell to a buffer position (false outside the
@@ -2517,13 +2531,16 @@ func (m *Model) bufferPos(x, y int) (textbuf.Pos, bool) {
 		}
 		line = g.rowLine[r]
 		plain := expandTabs(e.Buffer().Line(line))
-		idx := runeAtCell(plain, g.rowStart[r], max(x-g.ox-g.textX, 0))
+		idx := runeAtCellHinted(plain, g.rowStart[r], max(x-g.ox-g.textX, 0), g.inlay[line])
 		return textbuf.Pos{Line: line, Col: runeCol(e.Buffer().Line(line), idx)}, true
 	}
 	if line >= e.Buffer().LineCount() {
 		return textbuf.Pos{}, false
 	}
 	vc := max(x-g.ox-g.textX, 0) + g.left
+	if cells := g.inlay[line]; len(cells) > 0 {
+		vc = devirtCell(cells, vc) // hints are not text
+	}
 	return textbuf.Pos{Line: line, Col: runeCol(e.Buffer().Line(line), vc)}, true
 }
 

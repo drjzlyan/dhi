@@ -153,6 +153,8 @@ func (m *Model) pumpLSPEvents(c *lsp.Client) {
 			m.termMsgs <- teaMsg{kind: lspMsgDiag, diagPath: ev.Path, diags: ev.Diags}
 		case lsp.EvApplyEdit:
 			m.termMsgs <- teaMsg{kind: lspMsgEdit, edit: ev.Edit}
+		case lsp.EvInlayRefresh:
+			m.termMsgs <- teaMsg{kind: lspMsgInlayRefresh}
 		}
 	}
 }
@@ -298,6 +300,10 @@ func (m *Model) applyLSPUpdate(msg teaMsg) {
 		if msg.note == m.bulbKey {
 			m.bulbOn = msg.hoverOK
 		}
+	case lspMsgInlayRefresh:
+		m.inlayDropAll()
+	case lspMsgInlayDue, lspMsgInlay:
+		m.applyInlayMsg(msg)
 	case lspMsgNote:
 		if e := m.active(); e != nil {
 			e.SetMessage(msg.note)
