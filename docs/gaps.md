@@ -96,7 +96,7 @@ no daemon.
 - [x] **G-T1** `done` (F-146) — Task runner reading existing `package.json`, `Makefile`, `justfile` targets, with problem matchers
       (no new file format, ADR-0043)
 - [ ] **G-G1** Merge-conflict tools (ROADMAP M37 S3)
-- [ ] **G-G2** Line-level staging (ROADMAP M37 S3)
+- [x] **G-G2** `done` (F-151) — Line-level staging (ROADMAP M37 S3)
 - [x] **G-G3** `done` (F-143) — Inline blame on every line (ROADMAP M37 S3)
 - [x] **G-G4** `done` (F-129) — Stash
 - [x] **G-G5** `done` (F-140) — File history and timeline
@@ -157,3 +157,4 @@ G-E6 — F-138 — 2026-11-04 (5 MiB prompt; reads 8 KiB to sniff binary)
 G-E8 — F-139 — 2026-11-04 (desktop_notifications; theme.Notify)
 G-T1 — F-146 — 2026-11-04 (npm/pnpm/yarn, make, just; two problem regexes)
 G-C2 — F-144 — 2026-11-04 (/plan /review /ask; read-only for claude+codex, others refused; live eval + flag check pending; approved plan reposted as a human message)
+G-G2 — F-151 — 2026-11-04 (V range + s/u; contiguous ranges; git apply --cached)
