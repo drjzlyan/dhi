@@ -1,5 +1,13 @@
 # STATE — current position
 
+### Session 70 (M38 gap closure with subagents, branch `m38` off `g-a4-oversize-prompt`)
+
+- Coordinator merges one commit per gap (cherry-pick from agent worktrees); tracker rows and STATE are coordinator-only.
+- Done: G-B1 F-127, G-E1 F-128, G-G4 F-129, G-B8 F-130, G-C4 F-131, G-E2 F-132, G-E3 F-133, G-B4 F-134. Phase 7: proposed ADR-0047..0051 (user decides).
+- In flight: G-B2 F-135, G-E4 F-136, G-E5 F-137, G-E6 F-138, G-E8 F-139, G-G5 F-140.
+- Gotchas: agent worktrees live in `.claude/worktrees/` (the write-site audit now skips `.claude`); `make verify` under parallel agents shows timeouts (10s/20s/30s) — rerun the package alone.
+- User said: live runs (make eval, real CLIs) allowed; ask before installing gopls.
+
 ### Session 69 (Phase 1 review, branch `g-a4-oversize-prompt`, one fix commit on top of the stack)
 
 - Reviewed G-A1…G-A4. Fixed:
