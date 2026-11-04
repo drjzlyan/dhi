@@ -45,7 +45,7 @@ no daemon.
       `agents.reflect_model`; user `:compact`.
 - [x] **G-B4** `done` (F-134) — Fork a conversation (episode) by key. Also "new conversation" in a DM (ROADMAP M37 S2).
 - [x] **G-B3** `done` (F-145) — Agent-facing symbols tool backed by LSP (repo-map-lite). Embeddings stay out of scope.
-- [ ] **G-B7** Path-scoped rules (`paths:` frontmatter on standards/skills). Low priority.
+- [x] **G-B7** `done` (F-152) — Path-scoped rules (`paths:` frontmatter on standards/skills). Low priority.
 - [ ] **G-B6** Open ADR-0037 items: channel file segmentation, KB index cache, spend-ledger rotation.
 - [x] **G-B8** `done` (F-130) — Per-chat model picker (ROADMAP M37 S2).
 
@@ -161,3 +161,4 @@ G-G2 — F-151 — 2026-11-04 (V range + s/u; contiguous ranges; git apply --cac
 G-E10 — F-150 — 2026-11-04 (gcc/gc{motion}/ctrl+/; also fixed count-before-operator)
 G-R4 — F-149 — 2026-11-04 (tabs+split on quit to .dhi/tmp/session.json; large files skipped)
 G-S1 — F-148 — 2026-11-04 (trust in ~/.config/dhi/trust.json; editor start points only, agent tools not gated (open))
+G-B7 — F-152 — 2026-11-04 (.claude/rules/**/*.md per member with paths:; skills paths:; files from the trigger text only)
