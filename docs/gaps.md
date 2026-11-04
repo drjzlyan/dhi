@@ -75,7 +75,7 @@ no daemon.
 - [ ] **G-E9** Folding
 - [x] **G-E10** `done` (F-150) — Comment toggle
 - [x] **G-E11** `done` (F-154) — Workspace symbols
-- [ ] **G-E12** LSP code actions and quick fix
+- [x] **G-E12** `done` (F-158) — LSP code actions and quick fix
 - [ ] **G-E13** Multi-cursor
 - [x] **G-E14** `done` (F-159) — Block visual (`ctrl+v`)
 - [ ] **G-E15** Breadcrumbs and sticky scroll
@@ -171,3 +171,4 @@ G-E21 — F-160 — 2026-11-04 (editorconfig > detected > settings; bare indent_
 G-R2 — F-161 — 2026-11-04 (swap 2s debounce in .dhi/tmp/swap; recover card; quit guard k = keep for next time)
 G-E14 — F-159 — 2026-11-04 (ctrl+v; block ops/register; suggestion/agent-edit guarded)
 G-LSP-live — F-163 — 2026-11-04 (TestLiveGopls (DHI_LIVE_LSP=1), gopls 0.24: all features pass)
+G-E12 — F-158 — 2026-11-04 (quickfix marker, ranked ga, resolve, command after edit, :organize; live gopls code_actions passes)
