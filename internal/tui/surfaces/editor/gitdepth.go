@@ -47,6 +47,8 @@ type diffView struct {
 	cur    int
 	err    string
 	note   string
+	rev    string // F-140: a commit's patch for this file, read-only
+	dir    string // F-140: where to run git for rev
 }
 
 // splitPatch cuts one file's patch into its header and raw hunks.
@@ -87,6 +89,10 @@ func (m *Model) openDiff() {
 }
 
 func (m *Model) loadDiff(d *diffView) {
+	if d.rev != "" {
+		m.loadCommitDiff(d)
+		return
+	}
 	root := m.gitRepo.Path()
 	args := []string{"diff", "--no-color", "--no-ext-diff"}
 	if d.staged {
@@ -129,6 +135,10 @@ func (m *Model) diffKey(key string) bool {
 	case "k", "up", "p":
 		d.cur = max(d.cur-1, 0)
 	case "s", "u": // stage (work tree) / unstage (index) this hunk
+		if d.rev != "" {
+			d.err = "a past commit is read-only"
+			return true
+		}
 		if len(d.hunks) == 0 {
 			return true
 		}
@@ -169,6 +179,9 @@ func (m *Model) diffView(base string) string {
 	keys := "s stage this hunk"
 	if d.staged {
 		side, keys = "staged changes", "u unstage this hunk"
+	}
+	if d.rev != "" {
+		side, keys = "at "+shortHash(d.rev), "read-only"
 	}
 	lines := []string{theme.TextMuted().Render(fmt.Sprintf("%s · %s · hunk %d of %d", d.path, side, d.cur+1, max(len(d.hunks), 1))), ""}
 	if len(d.hunks) == 0 {

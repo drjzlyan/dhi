@@ -264,6 +264,7 @@ type Model struct {
 	diff         *diffView
 	branches     *branchPicker
 	stash        *stashView           // F-129
+	hist         *fileHistory         // F-140
 	commitDone   *textbuf.Editor      // the message buffer that just committed
 	commitRepo   *gitcore.Repo        // the repo a COMMIT_EDITMSG buffer commits to
 	gitIdentity  gitcore.IdentityFunc // F-029 commit identity; nil refuses
@@ -429,7 +430,7 @@ func (m *Model) Hints() (string, []string) {
 		}
 		return "", hints
 	case m.gitOpen && m.gitFocus:
-		return "", []string{"enter diff", "s stage", "S all", "u unstage", "c commit", "C message", "b branch", "z stash", "p pull", "P push", "tab status/log", "esc blur"}
+		return "", []string{"enter diff", "s stage", "S all", "u unstage", "c commit", "C message", "b branch", "z stash", "h history", "p pull", "P push", "tab status/log", "esc blur"}
 	case m.treeOp != nil:
 		return "", nil // the dialog names its keys
 	case m.mode != modeNav:
@@ -877,6 +878,9 @@ func (m *Model) HandleKey(key string) bool {
 	}
 	if m.stash != nil {
 		return m.stashKey(key)
+	}
+	if m.hist != nil {
+		return m.histKey(key)
 	}
 	if m.ws == nil {
 		return m.startVisible() && m.startKey(key)
@@ -1417,6 +1421,9 @@ func (m *Model) View() string {
 	}
 	if m.stash != nil {
 		return m.stashViewOverlay(m.view())
+	}
+	if m.hist != nil {
+		return m.histOverlay(m.view())
 	}
 	return m.view()
 }

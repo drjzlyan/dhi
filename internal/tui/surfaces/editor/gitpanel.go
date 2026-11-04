@@ -3,6 +3,7 @@ package editor
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -143,6 +144,15 @@ func (m *Model) handleGitKey(key string) bool {
 		return true
 	case "z": // F-129
 		m.openStash()
+		return true
+	case "h": // F-140: the file's commits (the selected change, else the open buffer)
+		abs := ""
+		if rel := m.gitSelectedPath(); rel != "" && m.gitRepo != nil {
+			abs = filepath.Join(m.gitRepo.Path(), rel)
+		}
+		if msg := m.openHistory(abs); msg != "" {
+			m.gitErr = msg
+		}
 		return true
 	case "p":
 		m.pushPull(false)
