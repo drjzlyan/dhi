@@ -80,7 +80,7 @@ no daemon.
 - [x] **G-E14** `done` (F-159) — Block visual (`ctrl+v`)
 - [ ] **G-E15** Breadcrumbs and sticky scroll
 - [ ] **G-E16** Inlay hints
-- [ ] **G-E17** More than 2 splits
+- [x] **G-E17** `done` (F-166) — More than 2 splits
 - [ ] **G-E18** Snippets
 - [ ] **G-E19** Selection expand and shrink
 - [x] **G-E20** `done` (F-168) — Search results buffer ("search editor")
@@ -100,7 +100,7 @@ no daemon.
 - [x] **G-G3** `done` (F-143) — Inline blame on every line (ROADMAP M37 S3)
 - [x] **G-G4** `done` (F-129) — Stash
 - [x] **G-G5** `done` (F-140) — File history and timeline
-- [ ] **G-G6** Interactive rebase through a terminal tab
+- [x] **G-G6** `done` (F-165) — Interactive rebase through a terminal tab
 - [x] **G-G7** `done` (F-162) — Branch graph and cherry-pick
 - [x] **G-M1** `done` (F-141) — Split terminals
 - [x] **G-M2** `done` (F-157) — Terminal shell integration (command detection, jump between commands, send selection)
@@ -175,3 +175,5 @@ G-E12 — F-158 — 2026-11-04 (quickfix marker, ranked ga, resolve, command aft
 G-G7 — F-162 — 2026-11-04 (:graph / g in panel; cherry-pick with confirm; branch at commit)
 G-C8 — F-164 — 2026-11-04 (OTLP/HTTP JSON from standard OTEL_* env; metadata only; doctor row)
 G-E20 — F-168 — 2026-11-04 (:grep buffer; :w applies after a card via projreplace hash checks)
+G-E17 — F-166 — 2026-11-04 (pane tree up to 4; ctrl+w v/s/hjkl/w/c/o; same buffer shares one cursor)
+G-G6 — F-165 — 2026-11-04 (:rebase in a tab; todo and messages edited in DHI via the dhi-edit shim)
