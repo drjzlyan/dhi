@@ -88,6 +88,12 @@ type Unsaved interface {
 	SaveAll() error    // saves everything Unsaved listed
 }
 
+// SessionSaver (F-149) is implemented by a surface with a session worth
+// reopening: the shell calls SaveSession as DHI quits.
+type SessionSaver interface {
+	SaveSession()
+}
+
 // AltDigitTaker is implemented by a surface that uses alt+1..9 itself
 // (the editor's terminal tabs): while it reports true those keys go to
 // the surface instead of switching views (ADR-0041).

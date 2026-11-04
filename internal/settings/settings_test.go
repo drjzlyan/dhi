@@ -84,6 +84,20 @@ func TestEditorBlameLayer(t *testing.T) {
 	}
 }
 
+// F-149: editor.restore_session defaults on and a layer can turn it off.
+func TestEditorRestoreSessionLayer(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "c.toml")
+	os.WriteFile(p, []byte("[editor]\nrestore_session = false\n"), 0o644)
+	cfg, err := Load(p, "")
+	if err != nil || cfg.Editor.RestoreSession {
+		t.Fatalf("restore_session = %v err=%v", cfg.Editor.RestoreSession, err)
+	}
+	def, _ := Load(filepath.Join(t.TempDir(), "none"), "")
+	if !def.Editor.RestoreSession {
+		t.Fatal("restore_session must default on")
+	}
+}
+
 func TestMissingFilesAreFine(t *testing.T) {
 	cfg, err := Load(filepath.Join(t.TempDir(), "a"), filepath.Join(t.TempDir(), "b"))
 	if err != nil || cfg.Theme != theme.Dark().Name {

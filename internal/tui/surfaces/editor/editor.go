@@ -125,11 +125,14 @@ type Prefs struct {
 	Wrap        bool   // soft word wrap (F-136)
 	Autosave    string // "off", "delay" or "focus" (F-142)
 	Blame       bool   // inline blame on the cursor line (F-143)
-	Scrollback  int
+	// RestoreSession saves the open tabs and split on quit and reopens them
+	// on launch (F-149).
+	RestoreSession bool
+	Scrollback     int
 }
 
 // DefaultPrefs match the settings defaults.
-var DefaultPrefs = Prefs{TabWidth: 4, LineNumbers: true, Scrollback: 1000}
+var DefaultPrefs = Prefs{TabWidth: 4, LineNumbers: true, RestoreSession: true, Scrollback: 1000}
 
 // WithPrefs reads the editor settings at each render, so a change in
 // Settings shows at once.
@@ -327,6 +330,7 @@ type Model struct {
 	undo           *undoState
 	recent         []string // recently opened files, newest first (F-119)
 	recentLoaded   bool
+	restoring      bool                 // reopening the saved session: not a "recent" event (F-149)
 	closed         []string             // closed tabs, for reopen
 	treeOp         *treeOp              // the open file-operation dialog (F-119)
 	treeNote       string               // the last file operation, on the status row
@@ -396,6 +400,7 @@ func New(version string, ws *workspace.Workspace, opts ...Option) *Model {
 	for _, opt := range opts {
 		opt(m)
 	}
+	m.restoreSession() // F-149: after the options, which carry the prefs and the language table
 	return m
 }
 

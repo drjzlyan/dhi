@@ -56,6 +56,7 @@ internal/tui/surfaces/editor/filecmd.go 3
 internal/tui/surfaces/editor/gitdepth.go 2
 internal/tui/surfaces/editor/recent.go 2
 internal/tui/surfaces/editor/replace.go 1
+internal/tui/surfaces/editor/session.go 2
 internal/tui/surfaces/editor/treeops.go 7
 internal/tui/surfaces/ideator/export.go 2
 internal/tui/surfaces/settings/settings.go 2

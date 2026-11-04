@@ -21,6 +21,7 @@ func (a *App) requestQuit() tea.Cmd {
 	}
 	if len(names) == 0 {
 		a.quitting = true
+		a.saveSessions()
 		return tea.Quit
 	}
 	a.palette, a.showHelp = nil, false
@@ -42,9 +43,11 @@ func (a *App) quitKey(key string) tea.Cmd {
 			}
 		}
 		a.quitAsk, a.quitting = nil, true
+		a.saveSessions()
 		return tea.Quit
 	case "d", "D":
 		a.quitAsk, a.quitting = nil, true
+		a.saveSessions()
 		return tea.Quit
 	case "esc", "ctrl+c", "n", "N":
 		a.quitAsk, a.quitErr = nil, ""
@@ -70,4 +73,13 @@ func (a *App) quitView() string {
 			theme.Keycap().Render("esc")+theme.TextMuted().Render(" keep working"))
 	md := kit.Modal{Title: "Quit DHI?", Lines: lines, Error: a.quitErr}
 	return md.View()
+}
+
+// saveSessions lets each surface write the session it will reopen (F-149).
+func (a *App) saveSessions() {
+	for _, s := range a.surfaces {
+		if ss, ok := s.(surfaces.SessionSaver); ok {
+			ss.SaveSession()
+		}
+	}
 }

@@ -53,6 +53,9 @@ type Editor struct {
 	// "focus" (when the buffer loses focus) (F-142).
 	Autosave string `toml:"autosave"`
 	Blame    bool   `toml:"blame"` // inline blame on the cursor line (F-143)
+	// RestoreSession reopens the last session's tabs and split on launch;
+	// on unless turned off (F-149).
+	RestoreSession bool `toml:"restore_session"`
 	// Languages overrides (or adds to) the editor's built-in language
 	// servers, keyed by language id (F-050).
 	Languages map[string]LanguageConfig `toml:"languages,omitempty"`
@@ -264,7 +267,7 @@ func Defaults() Config {
 		Schema:               SchemaVersion,
 		Theme:                theme.Dark().Name,
 		DesktopNotifications: true,
-		Editor:               Editor{TabWidth: 4, LineNumbers: true, Autosave: AutosaveOff},
+		Editor:               Editor{TabWidth: 4, LineNumbers: true, Autosave: AutosaveOff, RestoreSession: true},
 		Terminal:             Terminal{Scrollback: 1000},
 		Security:             Security{Sandbox: SandboxAuto},
 		Agents:               Agents{Resume: true, Autonomy: AutonomyEnvelope, NativeWeb: WebDeny, MaxIterations: 3, StallSeconds: 900, Reflect: true},
@@ -282,7 +285,7 @@ func DefaultMemory() Memory {
 // Known reports the accepted top-level keys (for doctor warnings).
 func Known() []string {
 	return []string{"schema", "theme", "reduced_motion", "desktop_notifications", "engine", "editor",
-		"terminal", "security", "editor.tab_width", "editor.line_numbers", "editor.wrap", "editor.autosave", "editor.blame",
+		"terminal", "security", "editor.tab_width", "editor.line_numbers", "editor.wrap", "editor.autosave", "editor.blame", "editor.restore_session",
 		"worktrees", "worktrees.root",
 		"terminal.scrollback", "security.sandbox",
 		"agents", "agents.max_turns", "agents.resume", "agents.autonomy", "agents.native_web",
@@ -576,12 +579,13 @@ type fileLayer struct {
 	Scopes               map[string]string `toml:"scopes"`
 	Keys                 map[string]string `toml:"keys"`
 	Editor               struct {
-		TabWidth    int                       `toml:"tab_width"`
-		LineNumbers *bool                     `toml:"line_numbers"`
-		Wrap        *bool                     `toml:"wrap"`
-		Autosave    string                    `toml:"autosave"`
-		Blame       *bool                     `toml:"blame"`
-		Languages   map[string]LanguageConfig `toml:"languages"`
+		TabWidth       int                       `toml:"tab_width"`
+		LineNumbers    *bool                     `toml:"line_numbers"`
+		Wrap           *bool                     `toml:"wrap"`
+		Autosave       string                    `toml:"autosave"`
+		Blame          *bool                     `toml:"blame"`
+		RestoreSession *bool                     `toml:"restore_session"`
+		Languages      map[string]LanguageConfig `toml:"languages"`
 	} `toml:"editor"`
 	Worktrees struct {
 		Root string `toml:"root"`
@@ -722,6 +726,9 @@ func (f fileLayer) mergeInto(dst *Config) {
 	setStr(&dst.Editor.Autosave, f.Editor.Autosave)
 	if f.Editor.Blame != nil {
 		dst.Editor.Blame = *f.Editor.Blame
+	}
+	if f.Editor.RestoreSession != nil {
+		dst.Editor.RestoreSession = *f.Editor.RestoreSession
 	}
 	for id, lc := range f.Editor.Languages { // a later layer replaces a language wholesale
 		if dst.Editor.Languages == nil {
