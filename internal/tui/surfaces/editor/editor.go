@@ -550,6 +550,7 @@ func (m *Model) HelpSections() [][2]string {
 			[2]string{":42 · 42G", "go to line"},
 			[2]string{"v · V · > <", "select · select lines · indent / outdent (>> << on a line)"},
 			[2]string{".", "repeat the last change"},
+			[2]string{"f F t T · ; , · %", "find/until char on line · repeat/reverse · match bracket"},
 			[2]string{"gd · gR · K", "go to definition · references · hover"},
 			[2]string{"]d · [d · :diag", "next / previous problem · all problems"},
 			[2]string{"gr · ga", "rename · code actions"},
@@ -1045,13 +1046,14 @@ func (m *Model) HandleKey(key string) bool {
 			return true
 		}
 		// ]d / [d: next / previous problem (F-116).
+		// Don't intercept if the buffer is awaiting a character for f/F/t/T (F-133).
 		if b := m.pendingBracket; b != "" {
 			m.pendingBracket = ""
 			if e.Mode() == textbuf.ModeNormal && key == "d" {
 				m.jumpDiag(map[string]int{"]": 1, "[": -1}[b])
 				return true
 			}
-		} else if e.Mode() == textbuf.ModeNormal && (key == "]" || key == "[") {
+		} else if e.Mode() == textbuf.ModeNormal && (key == "]" || key == "[") && !e.AwaitingChar() {
 			m.pendingBracket = key
 			return true
 		}

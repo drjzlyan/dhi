@@ -72,6 +72,12 @@ type Editor struct {
 	lastChange []string // the last change's keys
 	replaying  bool
 	hlOff      bool // matches of the last search are not marked
+
+	pendFind rune     // 'f', 'F', 't', 'T' waiting for target char, or 0 (F-133)
+	lastFind struct { // last find motion for ; and , (F-133)
+		kind rune // 'f', 'F', 't', 'T'
+		ch   rune
+	}
 }
 
 type op uint8
@@ -158,3 +164,7 @@ func (e *Editor) SetCommandDelegate(d CommandDelegate) { e.delegate = d }
 
 // SetMessage sets the status-line text (used by delegates).
 func (e *Editor) SetMessage(msg string) { e.message = msg }
+
+// AwaitingChar reports whether the editor is waiting for a target character
+// after f/F/t/T (F-133).
+func (e *Editor) AwaitingChar() bool { return e.pendFind != 0 }

@@ -8,7 +8,7 @@ import (
 // Key feeds one keystroke (bubbletea msg.String() style: "a", "enter",
 // "esc", "backspace", "up", "down", …). It is the entire modal surface.
 func (e *Editor) Key(key string) {
-	if key == "." && e.mode == ModeNormal && e.pendingOp == opNone && e.pendShift == "" && !e.replaying {
+	if key == "." && e.mode == ModeNormal && e.pendingOp == opNone && e.pendShift == "" && e.pendFind == 0 && !e.replaying {
 		e.repeat()
 		return
 	}
@@ -40,10 +40,126 @@ func (e *Editor) KeyUngrouped(key string) {
 	}
 }
 
+// handlePendFind processes the character input for f/F/t/T motions.
+// Returns true if handled, false to continue normal processing.
+func (e *Editor) handlePendFind(key string) bool {
+	if e.pendFind == 0 {
+		return false
+	}
+	// Consume the key and store it
+	var ch rune
+	if len(key) == 1 {
+		ch = []rune(key)[0]
+	} else if key == "space" {
+		ch = ' '
+	} else {
+		// Multi-char or special key: cancel the find
+		e.pendFind = 0
+		return false
+	}
+
+	e.lastFind.kind = e.pendFind
+	e.lastFind.ch = ch
+	cnt := e.count()
+
+	// If in operator-pending mode, compute the span and run the operator
+	if e.pendingOp != opNone {
+		col := e.findCharCol(e.pendFind, ch, cnt)
+		if col < 0 {
+			// Character not found: cancel the operator
+			e.clearPending()
+			e.pendFind = 0
+			return true
+		}
+		a, z := e.buf.spanForFind(e.pendFind, col, e.pendingCnt)
+		linewise := false
+		e.runOperator(e.pendingOp, a, z, linewise)
+		e.clearPending()
+		e.pendFind = 0
+		return true
+	}
+
+	// Otherwise just move the cursor
+	e.execFind(e.pendFind, ch, cnt)
+	e.cntDigits = nil // clear count after using it
+	e.pendFind = 0
+	return true
+}
+
+// reverseFind flips a find's direction for "," (f↔F, t↔T).
+func reverseFind(kind rune) rune {
+	switch kind {
+	case 'f':
+		return 'F'
+	case 'F':
+		return 'f'
+	case 't':
+		return 'T'
+	case 'T':
+		return 't'
+	}
+	return kind
+}
+
+// findCharCol finds the column of the target character in the current line.
+func (e *Editor) findCharCol(kind rune, ch rune, count int) int {
+	if count < 1 {
+		count = 1
+	}
+	switch kind {
+	case 'f':
+		return e.buf.findChar(ch, count, true)
+	case 'F':
+		return e.buf.findChar(ch, count, false)
+	case 't':
+		return e.buf.untilChar(ch, count, true)
+	case 'T':
+		return e.buf.untilChar(ch, count, false)
+	}
+	return -1
+}
+
+// execFind executes a find/until motion (f/F/t/T) with the given character.
+func (e *Editor) execFind(kind rune, ch rune, count int) {
+	if count < 1 {
+		count = 1
+	}
+	switch kind {
+	case 'f':
+		col := e.buf.findChar(ch, count, true)
+		if col >= 0 {
+			e.buf.cursor.Col = col
+			e.buf.wantCol = col
+		}
+	case 'F':
+		col := e.buf.findChar(ch, count, false)
+		if col >= 0 {
+			e.buf.cursor.Col = col
+			e.buf.wantCol = col
+		}
+	case 't':
+		col := e.buf.untilChar(ch, count, true)
+		if col >= 0 {
+			e.buf.cursor.Col = col
+			e.buf.wantCol = col
+		}
+	case 'T':
+		col := e.buf.untilChar(ch, count, false)
+		if col >= 0 {
+			e.buf.cursor.Col = col
+			e.buf.wantCol = col
+		}
+	}
+}
+
 // ---- normal mode ----
 
 func (e *Editor) keyNormal(key string) {
 	e.message = ""
+	// Check for pending find character (f/F/t/T) first, before count and shift (F-133)
+	if e.handlePendFind(key) {
+		return
+	}
 	if e.pendShift != "" && key != e.pendShift {
 		e.pendShift = "" // >x: the shift is abandoned, x runs on its own
 	}
@@ -82,10 +198,38 @@ func (e *Editor) keyNormal(key string) {
 			e.runOperator(e.pendingOp, a, z, linewise)
 			e.clearPending()
 			return
+		case key == ";" || key == ",":
+			// d; d, : the last find as an operator motion (F-133)
+			kind := e.lastFind.kind
+			if key == "," {
+				kind = reverseFind(kind)
+			}
+			if col := e.findCharCol(kind, e.lastFind.ch, count); kind != 0 && col >= 0 {
+				a, z := e.buf.spanForFind(kind, col, count)
+				e.runOperator(e.pendingOp, a, z, false)
+			}
+			e.clearPending()
+			return
+		case key == "%":
+			// d% : inclusive of both brackets (F-133)
+			if col := e.buf.matchBracket(); col >= 0 {
+				cur := e.buf.cursor
+				lo, hi := min(cur.Col, col), max(cur.Col, col)
+				// from a non-bracket, % first moves to the bracket ahead; span from the cursor
+				e.runOperator(e.pendingOp, Pos{Line: cur.Line, Col: lo}, Pos{Line: cur.Line, Col: hi + 1}, false)
+			}
+			e.clearPending()
+			return
 		case key == "esc":
 			e.clearPending()
 			return
 		}
+	}
+
+	// Handle find motions (f/F/t/T) which need to wait for a character
+	if key == "f" || key == "F" || key == "t" || key == "T" {
+		e.pendFind = []rune(key)[0]
+		return
 	}
 
 	if !isMotion {
@@ -265,6 +409,27 @@ func (e *Editor) normalAction(key string, count int) bool {
 		e.buf.insertAt(Pos{Line: l}, lead+"\n")
 		e.buf.cursor = Pos{Line: l, Col: len([]rune(lead))}
 		e.mode = ModeInsert
+	case ";":
+		// Repeat last find motion (F-133)
+		if e.lastFind.kind != 0 {
+			e.execFind(e.lastFind.kind, e.lastFind.ch, count)
+		}
+		return true
+	case ",":
+		// Reverse last find motion (F-133)
+		if e.lastFind.kind != 0 {
+			// Flip f↔F and t↔T
+			e.execFind(reverseFind(e.lastFind.kind), e.lastFind.ch, count)
+		}
+		return true
+	case "%":
+		// Match bracket motion (F-133)
+		col := e.buf.matchBracket()
+		if col >= 0 {
+			e.buf.cursor.Col = col
+			e.buf.wantCol = col
+		}
+		return true
 	case "x", "delete":
 		for i := 0; i < count; i++ {
 			if !e.buf.DeleteForward() {
@@ -383,6 +548,12 @@ func (e *Editor) paste(count int, after bool) {
 
 func (e *Editor) keyVisual(key string) {
 	e.message = ""
+	// Check for pending find character first (F-133)
+	if e.pendFind != 0 {
+		if e.handlePendFindVisual(key) {
+			return
+		}
+	}
 	if strings.HasPrefix(key, "paste:") { // leave the selection, paste at the cursor
 		e.mode = ModeNormal
 		e.keyNormal(key)
@@ -398,6 +569,12 @@ func (e *Editor) keyVisual(key string) {
 	}
 	count := e.count()
 
+	// Handle find motions in visual mode (F-133)
+	if key == "f" || key == "F" || key == "t" || key == "T" {
+		e.pendFind = []rune(key)[0]
+		return
+	}
+
 	if motion, ok := normalMotion(key); ok {
 		e.buf.move(motion, count)
 		return
@@ -405,6 +582,26 @@ func (e *Editor) keyVisual(key string) {
 
 	a, z := e.visualSpan()
 	switch key {
+	case ";":
+		// Repeat last find motion in visual mode (F-133)
+		if e.lastFind.kind != 0 {
+			e.execFind(e.lastFind.kind, e.lastFind.ch, count)
+		}
+		return
+	case ",":
+		// Reverse last find motion in visual mode (F-133)
+		if e.lastFind.kind != 0 {
+			e.execFind(reverseFind(e.lastFind.kind), e.lastFind.ch, count)
+		}
+		return
+	case "%":
+		// Match bracket in visual mode (F-133)
+		col := e.buf.matchBracket()
+		if col >= 0 {
+			e.buf.cursor.Col = col
+			e.buf.wantCol = col
+		}
+		return
 	case ":":
 		// Like vim, ":" from visual mode opens the command line; the
 		// selection is kept so ex commands (:ask) can still use it.
@@ -441,6 +638,29 @@ func (e *Editor) keyVisual(key string) {
 	default:
 		// ignore unknowns
 	}
+}
+
+// handlePendFindVisual processes the character input for f/F/t/T motions in visual mode.
+func (e *Editor) handlePendFindVisual(key string) bool {
+	if e.pendFind == 0 {
+		return false
+	}
+	var ch rune
+	if len(key) == 1 {
+		ch = []rune(key)[0]
+	} else if key == "space" {
+		ch = ' '
+	} else {
+		// Multi-char or special key: cancel the find
+		e.pendFind = 0
+		return false
+	}
+
+	e.lastFind.kind = e.pendFind
+	e.lastFind.ch = ch
+	e.execFind(e.pendFind, ch, e.count())
+	e.pendFind = 0
+	return true
 }
 
 // visualSpan orders the anchor and cursor into a half-open range.

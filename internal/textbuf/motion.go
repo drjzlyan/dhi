@@ -15,6 +15,13 @@ const (
 	motWordEnd   // e
 	motBOF       // gg
 	motEOF       // G
+	motFind      // f (set by findForward; not used directly)
+	motFindRev   // F
+	motUntil     // t
+	motUntilRev  // T
+	motMatchBr   // %
+	motRepeatF   // ;
+	motRepeatRev // ,
 )
 
 // linewise reports whether the motion spans whole lines (affects d/c/y).
@@ -160,6 +167,187 @@ func (b *Buffer) applyWantCol() {
 	b.cursor.Col = col
 }
 
+// findChar searches the current line for the nth occurrence of ch starting
+// from the cursor position (exclusive). Returns the column of the match or -1
+// if not found. Used for f and F motions.
+func (b *Buffer) findChar(ch rune, count int, forward bool) int {
+	if count < 1 {
+		count = 1
+	}
+	line := b.runes(b.cursor.Line)
+	col := b.cursor.Col
+	found := 0
+
+	if forward {
+		for col++; col < len(line); col++ {
+			if line[col] == ch {
+				found++
+				if found == count {
+					return col
+				}
+			}
+		}
+	} else {
+		for col--; col >= 0; col-- {
+			if line[col] == ch {
+				found++
+				if found == count {
+					return col
+				}
+			}
+		}
+	}
+	return -1
+}
+
+// untilChar is like findChar but stops one position before the character
+// (for t and T motions).
+func (b *Buffer) untilChar(ch rune, count int, forward bool) int {
+	col := b.findChar(ch, count, forward)
+	if col < 0 {
+		return -1
+	}
+	if forward && col > 0 {
+		return col - 1
+	}
+	if !forward && col < len(b.runes(b.cursor.Line))-1 {
+		return col + 1
+	}
+	return col
+}
+
+// matchBracket finds the matching bracket pair. Returns the column or -1
+// if not found. The current position must be on a bracket.
+func (b *Buffer) matchBracket() int {
+	line := b.runes(b.cursor.Line)
+	if b.cursor.Col >= len(line) {
+		return -1
+	}
+
+	ch := line[b.cursor.Col]
+	var target rune
+	var forward bool
+
+	switch ch {
+	case '(':
+		target = ')'
+		forward = true
+	case ')':
+		target = '('
+		forward = false
+	case '[':
+		target = ']'
+		forward = true
+	case ']':
+		target = '['
+		forward = false
+	case '{':
+		target = '}'
+		forward = true
+	case '}':
+		target = '{'
+		forward = false
+	default:
+		// Not on a bracket; search forward for one
+		for i := b.cursor.Col + 1; i < len(line); i++ {
+			r := line[i]
+			if r == '(' || r == ')' || r == '[' || r == ']' || r == '{' || r == '}' {
+				col := b.matchBracketFrom(i, line)
+				if col >= 0 {
+					return col
+				}
+			}
+		}
+		return -1
+	}
+
+	// Count nesting and find the matching bracket
+	depth := 1
+	if forward {
+		for i := b.cursor.Col + 1; i < len(line); i++ {
+			if line[i] == ch {
+				depth++
+			} else if line[i] == target {
+				depth--
+				if depth == 0 {
+					return i
+				}
+			}
+		}
+	} else {
+		for i := b.cursor.Col - 1; i >= 0; i-- {
+			if line[i] == ch {
+				depth++
+			} else if line[i] == target {
+				depth--
+				if depth == 0 {
+					return i
+				}
+			}
+		}
+	}
+	return -1
+}
+
+// matchBracketFrom is a helper for matchBracket when starting from a position.
+func (b *Buffer) matchBracketFrom(col int, line []rune) int {
+	if col >= len(line) {
+		return -1
+	}
+	ch := line[col]
+	var target rune
+	var forward bool
+
+	switch ch {
+	case '(':
+		target = ')'
+		forward = true
+	case ')':
+		target = '('
+		forward = false
+	case '[':
+		target = ']'
+		forward = true
+	case ']':
+		target = '['
+		forward = false
+	case '{':
+		target = '}'
+		forward = true
+	case '}':
+		target = '{'
+		forward = false
+	default:
+		return -1
+	}
+
+	depth := 1
+	if forward {
+		for i := col + 1; i < len(line); i++ {
+			if line[i] == ch {
+				depth++
+			} else if line[i] == target {
+				depth--
+				if depth == 0 {
+					return i
+				}
+			}
+		}
+	} else {
+		for i := col - 1; i >= 0; i-- {
+			if line[i] == ch {
+				depth++
+			} else if line[i] == target {
+				depth--
+				if depth == 0 {
+					return i
+				}
+			}
+		}
+	}
+	return -1
+}
+
 // target computes where motion+count lands without moving.
 func (b *Buffer) target(m motion, count int) Pos {
 	saved := b.cursor
@@ -200,6 +388,42 @@ func (b *Buffer) spanFor(m motion, count int) (Pos, Pos) {
 	a, z := order(from, end)
 	if a == z { // zero-span charwise: widen by one where possible
 		z.Col++
+	}
+	return a, z
+}
+
+// spanForFind returns the half-open rune range for a find motion.
+// kind is 'f', 'F', 't', or 'T'; col is the target column found by findChar/untilChar.
+// f and t are inclusive (end.Col++); F and T are exclusive.
+func (b *Buffer) spanForFind(kind rune, col int, count int) (Pos, Pos) {
+	// Clamp the cursor to within the line bounds for span computation
+	line := b.runes(b.cursor.Line)
+	from := b.cursor
+	if from.Col > len(line) {
+		from.Col = len(line)
+	}
+	to := Pos{Line: b.cursor.Line, Col: col}
+
+	if !to.before(from) && to != from {
+		// Forward: to is at or after from
+		end := to
+		// f and t are inclusive (extend to the next rune)
+		if kind == 'f' || kind == 't' {
+			end.Col++
+			if end.Col > len([]rune(b.lines[end.Line])) {
+				end.Col = len([]rune(b.lines[end.Line]))
+			}
+		}
+		return from, end
+	}
+	// Backward: to is before from
+	a, z := order(from, to)
+	// F and T are exclusive going backward; f and t are inclusive
+	if kind == 'f' || kind == 't' {
+		z.Col++
+		if z.Col > len([]rune(b.lines[z.Line])) {
+			z.Col = len([]rune(b.lines[z.Line]))
+		}
 	}
 	return a, z
 }
