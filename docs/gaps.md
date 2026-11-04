@@ -51,7 +51,7 @@ no daemon.
 
 ## Phase 3 — Agent loop
 
-- [ ] **G-C2** Gated plan mode (ROADMAP M37 S3): read-only turn that publishes `plan_update`, human approval card,
+- [x] **G-C2** `done` (F-144) — Gated plan mode (ROADMAP M37 S3): read-only turn that publishes `plan_update`, human approval card,
       then the write turn. Absorbs **G-A5** (per-mode prompts: plan, review, ask).
 - [x] **G-C4** `done` (F-131) — Repeated-tool-call detection from the stream; in-flight spend check that stops a run at the cap.
 - [ ] **G-C7** Wider evals: injection, lessons, orchestration, forge; multi-run live scoring.
@@ -156,3 +156,4 @@ G-E7 — F-147 — 2026-11-04 (Myers diff; Hunks still quadratic)
 G-E6 — F-138 — 2026-11-04 (5 MiB prompt; reads 8 KiB to sniff binary)
 G-E8 — F-139 — 2026-11-04 (desktop_notifications; theme.Notify)
 G-T1 — F-146 — 2026-11-04 (npm/pnpm/yarn, make, just; two problem regexes)
+G-C2 — F-144 — 2026-11-04 (/plan /review /ask; read-only for claude+codex, others refused; live eval + flag check pending; approved plan reposted as a human message)
