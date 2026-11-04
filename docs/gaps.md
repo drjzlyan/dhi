@@ -84,7 +84,7 @@ no daemon.
 - [ ] **G-E18** Snippets
 - [ ] **G-E19** Selection expand and shrink
 - [ ] **G-E20** Search results buffer ("search editor")
-- [ ] **G-E21** EditorConfig
+- [x] **G-E21** `done` (F-160) — EditorConfig
 - [ ] **G-E22** LSP semantic tokens, call hierarchy, peek popup
 
 ## Phase 6 — Reliability, git, terminal, tasks
@@ -167,3 +167,4 @@ G-B6 — F-153 — 2026-11-04 (channel segments 8 MiB, ledger 1 MiB, in-memory K
 G-R3 — F-155 — 2026-11-04 (.dhi/history; :localhistory compare/restore; project replace not snapshotted)
 G-G1 — F-156 — 2026-11-04 (]x/[x, :conflict, panel UU marks, stage offer)
 G-M2 — F-157 — 2026-11-04 (OSC 133/7; alt+k/j prompts; alt+enter or :send)
+G-E21 — F-160 — 2026-11-04 (editorconfig > detected > settings; bare indent_size means spaces (deviation, documented))
