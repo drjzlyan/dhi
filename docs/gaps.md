@@ -79,7 +79,7 @@ no daemon.
 - [ ] **G-E13** Multi-cursor
 - [x] **G-E14** `done` (F-159) — Block visual (`ctrl+v`)
 - [ ] **G-E15** Breadcrumbs and sticky scroll
-- [ ] **G-E16** Inlay hints
+- [x] **G-E16** `done` (F-169) — Inlay hints
 - [x] **G-E17** `done` (F-166) — More than 2 splits
 - [ ] **G-E18** Snippets
 - [x] **G-E19** `done` (F-167) — Selection expand and shrink
@@ -179,3 +179,4 @@ G-E17 — F-166 — 2026-11-04 (pane tree up to 4; ctrl+w v/s/hjkl/w/c/o; same b
 G-G6 — F-165 — 2026-11-04 (:rebase in a tab; todo and messages edited in DHI via the dhi-edit shim)
 G-C11 — F-170 — 2026-11-04 (live: opencode+cursor resume fixed and PASS; copilot/claude/codex resume runs blocked by the auto-mode classifier; claude+codex read-only flags PASS)
 G-E19 — F-167 — 2026-11-04 (alt+o/alt+i expand/shrink (LSP or named ladder); vim text objects; fixed dj/cip data loss)
+G-E16 — F-169 — 2026-11-04 (editor.inlay_hints / :set inlayhints; virtual cells per pane; live gopls passes)
