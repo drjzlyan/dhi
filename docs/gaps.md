@@ -90,7 +90,7 @@ no daemon.
 ## Phase 6 — Reliability, git, terminal, tasks
 
 - [x] **G-R1** `done` (F-142) — Autosave
-- [ ] **G-R2** Hot exit with swap recovery
+- [x] **G-R2** `done` (F-161) — Hot exit with swap recovery
 - [x] **G-R3** `done` (F-155) — Local history (snapshot per save, restore, compare)
 - [x] **G-R4** `done` (F-149) — Session restore of tabs and splits
 - [x] **G-T1** `done` (F-146) — Task runner reading existing `package.json`, `Makefile`, `justfile` targets, with problem matchers
@@ -168,3 +168,4 @@ G-R3 — F-155 — 2026-11-04 (.dhi/history; :localhistory compare/restore; proj
 G-G1 — F-156 — 2026-11-04 (]x/[x, :conflict, panel UU marks, stage offer)
 G-M2 — F-157 — 2026-11-04 (OSC 133/7; alt+k/j prompts; alt+enter or :send)
 G-E21 — F-160 — 2026-11-04 (editorconfig > detected > settings; bare indent_size means spaces (deviation, documented))
+G-R2 — F-161 — 2026-11-04 (swap 2s debounce in .dhi/tmp/swap; recover card; quit guard k = keep for next time)
