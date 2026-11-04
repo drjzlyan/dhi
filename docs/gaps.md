@@ -81,7 +81,7 @@ no daemon.
 - [ ] **G-E15** Breadcrumbs and sticky scroll
 - [x] **G-E16** `done` (F-169) — Inlay hints
 - [x] **G-E17** `done` (F-166) — More than 2 splits
-- [ ] **G-E18** Snippets
+- [x] **G-E18** `done` (F-171) — Snippets
 - [x] **G-E19** `done` (F-167) — Selection expand and shrink
 - [x] **G-E20** `done` (F-168) — Search results buffer ("search editor")
 - [x] **G-E21** `done` (F-160) — EditorConfig
@@ -182,3 +182,4 @@ G-E19 — F-167 — 2026-11-04 (alt+o/alt+i expand/shrink (LSP or named ladder);
 G-E16 — F-169 — 2026-11-04 (editor.inlay_hints / :set inlayhints; virtual cells per pane; live gopls passes)
 G-E13 — F-174 — 2026-11-04 (gb/alt+n next occurrence, gB skip, alt+up/down or :cursor; per-cursor edits, one undo step)
 G-C7 — F-172 — 2026-11-04 (injection x3, lesson, tool-forge fixtures 3/3 live; full suite 13/13 on claude 2.1.311 validates F-135/F-144/F-152; orchestration skipped (no multi-agent harness))
+G-E18 — F-171 — 2026-11-04 (LSP snippets + tab stops + .vscode/*.code-snippets; call snippet opens signature help; live suite green)
