@@ -47,7 +47,7 @@ no daemon.
 - [ ] **G-B3** Agent-facing symbols tool backed by LSP (repo-map-lite). Embeddings stay out of scope.
 - [ ] **G-B7** Path-scoped rules (`paths:` frontmatter on standards/skills). Low priority.
 - [ ] **G-B6** Open ADR-0037 items: channel file segmentation, KB index cache, spend-ledger rotation.
-- [ ] **G-B8** Per-chat model picker (ROADMAP M37 S2).
+- [x] **G-B8** `done` (F-130) — Per-chat model picker (ROADMAP M37 S2).
 
 ## Phase 3 — Agent loop
 
@@ -139,3 +139,4 @@ G-A4 — F-126 — 2026-11-03 (recorded and shown, not trimmed)
 G-B1 — F-127 — 2026-11-04 (DM header; limit is session_tokens when a CLI session is kept)
 G-E1 — F-128 — 2026-11-04 (fake LSP only; single-line call detection)
 G-G4 — F-129 — 2026-11-04 (tracked changes only, no -u)
+G-B8 — F-130 — 2026-11-04 (/model in a DM; free-text name, no catalogue; reflection keeps the agent's model)

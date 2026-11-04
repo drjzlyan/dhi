@@ -177,6 +177,9 @@ func (p *chatPane) hints() []string {
 		return []string{"type to filter", "enter open", "esc clear"}
 	}
 	if p.focus {
+		if bus.IsDM(p.channelName()) { // F-130: only a DM conversation takes an override
+			return []string{"enter send", "^x stop", "/model", "esc blur"}
+		}
 		return []string{"enter send", "^x stop", "esc blur"}
 	}
 	if p.railFocus {
