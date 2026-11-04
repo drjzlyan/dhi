@@ -151,6 +151,13 @@ func opencodeParseStream(r io.Reader) <-chan StreamEvent {
 			}
 			switch it.Type {
 			case "step_finish":
+				if it.Part.Reason != "stop" {
+					// A mid-run step: its tokens and cost are known now (G-C4).
+					ch <- StreamEvent{Kind: EventUsage, Spend: Spend{
+						Tokens:  it.Part.Tokens.Input + it.Part.Tokens.Output,
+						CostUSD: it.Part.Cost,
+					}}
+				}
 				if it.Part.Reason == "stop" {
 					stop := opencodeStop{Type: "opencode.step_finish", LastMessage: lastText, Cost: it.Part.Cost}
 					stop.Tokens.Input = it.Part.Tokens.Input
@@ -186,7 +193,8 @@ func opencodeParseStream(r io.Reader) <-chan StreamEvent {
 					ch <- StreamEvent{Kind: EventError, Detail: detail, Denied: DeniedPath(why)}
 					continue
 				}
-				ch <- StreamEvent{Kind: EventCommand, Detail: "tool: " + truncate(title, 160)}
+				ch <- StreamEvent{Kind: EventCommand, Detail: "tool: " + truncate(title, 160),
+					Call: ToolCall(it.Part.Tool, title)}
 			}
 		}
 	}()

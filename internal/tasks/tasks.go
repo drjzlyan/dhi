@@ -233,6 +233,10 @@ type Run struct {
 	// budget and went to the CLI's stdin as one tagged block (G-A4);
 	// empty for the normal argv delivery.
 	Delivery string `toml:"delivery,omitempty"`
+	// StopReason is why DHI itself ended the run early (G-C4): "loop"
+	// for a repeated tool call, "budget" for the in-flight spend cap;
+	// empty for a run nobody stopped. Error carries the full sentence.
+	StopReason string `toml:"stop_reason,omitempty"`
 
 	// Transcript is the path to the persisted event JSONL under
 	// .dhi/agents/<id>/runs/ (F-013 step 4); empty when the run could

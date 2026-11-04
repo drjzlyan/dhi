@@ -172,7 +172,9 @@ func claudeAssistantEvents(ev map[string]any) []StreamEvent {
 	if u, ok := msg["usage"].(map[string]any); ok {
 		n := func(k string) int { f, _ := u[k].(float64); return int(f) }
 		if ctx := n("input_tokens") + n("cache_read_input_tokens") + n("cache_creation_input_tokens"); ctx > 0 {
-			out = append(out, StreamEvent{Kind: EventUsage, Context: ctx})
+			id, _ := msg["id"].(string)
+			out = append(out, StreamEvent{Kind: EventUsage, Context: ctx, UsageID: id,
+				Spend: Spend{Tokens: ctx + n("output_tokens")}})
 		}
 	}
 	for _, raw := range content {
@@ -187,7 +189,8 @@ func claudeAssistantEvents(ev map[string]any) []StreamEvent {
 			}
 		case "tool_use":
 			name, _ := b["name"].(string)
-			out = append(out, StreamEvent{Kind: EventCommand, Detail: claudeToolDetail(name, b["input"])})
+			out = append(out, StreamEvent{Kind: EventCommand, Detail: claudeToolDetail(name, b["input"]),
+				Call: ToolCall(name, b["input"])})
 		}
 	}
 	return out

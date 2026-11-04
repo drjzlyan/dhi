@@ -227,7 +227,8 @@ func codexLineEvents(it codexItem) (StreamEvent, bool) {
 				return StreamEvent{}, false
 			}
 			return StreamEvent{Kind: EventCommand, Detail: "command: " +
-				truncate(strings.TrimSpace(it.Item.Command), 160)}, true
+				truncate(strings.TrimSpace(it.Item.Command), 160),
+				Call: ToolCall("command", strings.TrimSpace(it.Item.Command))}, true
 		case "file_change":
 			return StreamEvent{Kind: EventCommand, Detail: "file_change: " + it.Item.Path}, true
 		case "agent_message":

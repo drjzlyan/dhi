@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/drjzlyan/dhi/internal/agentkit/behavior"
+	"github.com/drjzlyan/dhi/internal/agentkit/budget"
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/agentkit/clirun"
 	"github.com/drjzlyan/dhi/internal/agentkit/dhitools"
@@ -139,6 +140,7 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message, tl
 			model:     ep.Model, // F-130: the conversation's override, "" = the agent's
 			mcpConfig: mcpConfig, mcpEndpoint: mcpEndpoint, mcpGeminiDir: mcpGeminiDir,
 			webDenied: webDenied, relaunch: rl,
+			budgets: tune.Budgets, taskSlug: task.Slug,
 		})
 		r.recordRun(trigger, run)
 		r.recordSpend(run, task.Slug)
@@ -259,7 +261,11 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message, tl
 		}
 		if !fail.Retryable() || attempt >= e.m.Retries ||
 			fail == clirun.FailOverflow && level == maxCompaction {
-			r.alert(trigger, e.m.ID, humanFailure(fail, e.cli))
+			msg := humanFailure(fail, e.cli)
+			if run.StopReason != "" {
+				msg = guardAlert(run)
+			}
+			r.alert(trigger, e.m.ID, msg)
 			return fmt.Errorf("%w (%w)", lastErr, errAlerted)
 		}
 		if fail == clirun.FailOverflow {
@@ -318,6 +324,10 @@ type spawnInput struct {
 	relaunch                             *relaunch     // set mid-run: stop this spawn, the work moved
 	mcpConfig, mcpEndpoint, mcpGeminiDir string
 	webDenied                            bool // mcpGeminiDir carries the web-deny hook
+	// G-C4: the caps the running spawn is checked against as it streams,
+	// and the card they are charged to ("" = card-less).
+	budgets  budget.Limits
+	taskSlug string
 }
 
 func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Message, in spawnInput) (tasks.Run, []clirun.StreamEvent) {
@@ -447,6 +457,30 @@ func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Messag
 	var stamps []time.Time // when each event arrived (F-074 trace)
 	relaunched := false
 	sessionSeen := "" // from the CLI's first line, for a run DHI stops
+	// G-C4: a repeated tool call or a spend cap reached mid-run ends the
+	// spawn through the same cancel the watchdog uses; the reason is named
+	// on the run record and to the human, never a silent kill.
+	var loop clirun.LoopGuard
+	var meter budget.Meter
+	var guardKind, guardWhy string
+	var base budget.Spent
+	capped := !in.budgets.None() && r.cfg.Spend != nil
+	if capped {
+		if entries, err := r.cfg.Spend.Entries(); err != nil {
+			capped = false
+			if !in.quiet {
+				r.notice(trigger, e.m.ID, "the spend ledger is unreadable ("+err.Error()+"); budgets are not enforced while this run streams")
+			}
+		} else {
+			base = budget.Tally(entries, e.m.ID, in.taskSlug, budget.DayStart(time.Now()))
+		}
+	}
+	guardStop := func(kind, why string) {
+		if guardKind == "" {
+			guardKind, guardWhy = kind, why
+			stopSpawn()
+		}
+	}
 	var dog *time.Timer
 	if in.stall > 0 {
 		var self atomic.Pointer[time.Timer]
@@ -482,6 +516,20 @@ func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Messag
 		if ev.Kind == clirun.EventUsage {
 			run.Context = ev.Context // the last call's wins
 		}
+		if ev.Kind == clirun.EventUsage && (ev.Spend.Tokens > 0 || ev.Spend.CostUSD > 0) {
+			meter.Add(ev.UsageID, ev.Spend.Tokens, ev.Spend.CostUSD)
+			if capped {
+				tok, usd := meter.Total()
+				if msg, ok := budget.Check(in.budgets, base.Plus(tok, usd, in.taskSlug != ""), in.taskSlug != ""); !ok {
+					guardStop("budget", "the budget was reached mid-run — "+msg)
+				}
+			}
+		}
+		if ev.Kind == clirun.EventCommand {
+			if why := loop.Observe(ev.Call); why != "" {
+				guardStop("loop", why)
+			}
+		}
 		if ev.Kind == clirun.EventSession {
 			sessionSeen = ev.Session
 		}
@@ -508,6 +556,16 @@ func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Messag
 		// Same thread and cwd (a grant) resume this session; a new
 		// worktree is a new episode and starts fresh anyway.
 		run.Session = sessionSeen
+	case guardKind != "":
+		run.Status = tasks.RunError
+		run.Error = clirun.GuardPrefix + guardWhy
+		run.StopReason = guardKind
+		run.Session = sessionSeen
+		// The CLI never reached its final line, so the ledger would see a
+		// free run: charge what was streamed.
+		if tok, usd := meter.Total(); tok > 0 || usd > 0 {
+			run.TokensIn, run.CostUSD, run.HasCost = tok, usd, usd > 0
+		}
 	case stalled.Load():
 		run.Status = tasks.RunError
 		run.Error = fmt.Sprintf("stalled: no output for %s", in.stall)

@@ -107,7 +107,7 @@ func (r *Runtime) reflect(ctx context.Context, e *entry, trigger bus.Message, tl
 	}
 	run, _ := r.cliSpawnOnce(ctx, e, trigger, spawnInput{
 		prompt: prompt, workdir: r.cliWorkdir(trigger), maxTurns: 1, stall: tune.Stall,
-		model: model, quiet: true,
+		model: model, quiet: true, budgets: tune.Budgets, taskSlug: task.Slug,
 	})
 	r.recordSpend(run, task.Slug)
 	if run.Status != tasks.RunOK {

@@ -48,6 +48,26 @@ type StreamEvent struct {
 	// Session is an EventSession's id: known before the run ends, so a
 	// run DHI stops (relaunch) can still be resumed.
 	Session string
+	// Call is an EventCommand's tool name plus its full normalized input
+	// (G-C4), the identity repeated-call detection compares. Detail is a
+	// truncated display line and for some tools names no input at all, so
+	// it cannot tell two different calls apart. "" = the adapter does not
+	// expose one; such calls are never counted.
+	Call string
+	// Spend is an EventUsage's own spend, when the CLI streams it before
+	// the final line (G-C4); the in-flight budget check sums it. UsageID
+	// names the model message it belongs to so a message streamed in
+	// several lines is counted once (the last line wins); "" = always new.
+	Spend   Spend
+	UsageID string
+}
+
+// Spend is what one streamed model call cost so far. Tokens counts the
+// same things the spend ledger does (fresh input, output, cache read and
+// write); CostUSD is only what the CLI itself reported, never a guess.
+type Spend struct {
+	Tokens  int
+	CostUSD float64
 }
 
 // Usage is what a finished run reports about itself. -1 tokens mean the

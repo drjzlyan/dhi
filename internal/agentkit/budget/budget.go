@@ -114,3 +114,47 @@ func DayStart(t time.Time) time.Time {
 	y, m, d := t.Date()
 	return time.Date(y, m, d, 0, 0, 0, 0, t.Location())
 }
+
+// Meter sums one running spawn's streamed spend (G-C4) so the runtime
+// can stop it at the cap instead of after the fact. Each call is keyed:
+// a message streamed over several lines is counted once, at its last
+// value; an empty key is always a new call.
+type Meter struct {
+	calls map[string]Entry
+	anon  Entry
+}
+
+// Add records one streamed call's spend under key.
+func (m *Meter) Add(key string, tokens int, usd float64) {
+	if key == "" {
+		m.anon.Tokens += tokens
+		m.anon.CostUSD += usd
+		return
+	}
+	if m.calls == nil {
+		m.calls = map[string]Entry{}
+	}
+	m.calls[key] = Entry{Tokens: tokens, CostUSD: usd}
+}
+
+// Total is the spawn's spend so far.
+func (m *Meter) Total() (tokens int, usd float64) {
+	tokens, usd = m.anon.Tokens, m.anon.CostUSD
+	for _, e := range m.calls {
+		tokens += e.Tokens
+		usd += e.CostUSD
+	}
+	return tokens, usd
+}
+
+// Plus is s with a running spawn's spend added to every total it counts
+// toward. hasTask mirrors Check: task totals only move for card turns.
+func (s Spent) Plus(tokens int, usd float64, hasTask bool) Spent {
+	if hasTask {
+		s.TaskUSD += usd
+		s.TaskTokens += tokens
+	}
+	s.AgentDayUSD += usd
+	s.WorkspaceDayUSD += usd
+	return s
+}

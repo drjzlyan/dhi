@@ -13,13 +13,20 @@ const (
 	FailOverflow  Failure = "overflow"   // prompt or context too long: retry compacted
 	FailTimeout   Failure = "timeout"    // the turn's deadline is spent
 	FailStopped   Failure = "stopped"    // someone stopped the turn (ctrl+x, a reassigned card)
+	FailGuard     Failure = "guard"      // DHI stopped the run: repeated tool call or spend cap (G-C4)
 	FailNoFinal   Failure = "no_final"   // the stream ended without a terminal line
 	FailStall     Failure = "stall"      // the watchdog killed a silent spawn (F-067)
 	FailCrash     Failure = "crash"      // anything else
 )
 
 // Retryable reports whether another attempt can change the outcome.
-func (f Failure) Retryable() bool { return f != FailAuth && f != FailTimeout && f != FailStopped }
+func (f Failure) Retryable() bool {
+	return f != FailAuth && f != FailTimeout && f != FailStopped && f != FailGuard
+}
+
+// GuardPrefix starts the run error of a run DHI itself stopped (G-C4);
+// the reason follows. A retry would repeat the loop or the spend.
+const GuardPrefix = "stopped by DHI: "
 
 // failurePatterns are matched lower-cased against the run error and the
 // stream's error lines, first class wins. Order matters: overflow text
@@ -29,6 +36,7 @@ var failurePatterns = []struct {
 	class Failure
 	subs  []string
 }{
+	{FailGuard, []string{strings.ToLower(GuardPrefix)}},
 	{FailStall, []string{"stalled: no output for"}},
 	{FailOverflow, []string{
 		"prompt is too long", "context window", "context length", "maximum context",

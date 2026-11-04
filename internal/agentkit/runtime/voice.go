@@ -9,6 +9,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/brief"
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/agentkit/clirun"
+	"github.com/drjzlyan/dhi/internal/tasks"
 )
 
 // alert posts a runtime event the human must act on (F-072): shown in
@@ -24,6 +25,16 @@ func (r *Runtime) alert(trigger bus.Message, author, text string) {
 // errAlerted marks a turn error whose cause was already told to the
 // human, so Turn does not post a second, vaguer alert.
 var errAlerted = errors.New("alerted")
+
+// guardAlert tells the human why DHI itself stopped a run (G-C4), with
+// what to do next.
+func guardAlert(run tasks.Run) string {
+	why := strings.TrimPrefix(run.Error, clirun.GuardPrefix)
+	if run.StopReason == "budget" {
+		return "I stopped: " + why + ". Raise it in Settings → CONFIG, then ask again."
+	}
+	return "I stopped: " + why + ". It looked stuck; tell me what is blocking it, or ask again with another approach."
+}
 
 // humanFailure is the one-line, plain-language reason a turn failed.
 func humanFailure(fail clirun.Failure, c *clirun.CLI) string {
@@ -44,6 +55,8 @@ func humanFailure(fail clirun.Failure, c *clirun.CLI) string {
 		return "Stopped — the turn was stopped before it finished. Ask again when you're ready."
 	case clirun.FailStall:
 		return "I couldn't finish: " + name + " stopped responding and was stopped."
+	case clirun.FailGuard:
+		return "I stopped: DHI ended the run early. The run record has the reason."
 	case clirun.FailNoFinal:
 		return "I couldn't finish: " + name + " ended without an answer."
 	}
