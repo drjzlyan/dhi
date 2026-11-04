@@ -78,7 +78,7 @@ no daemon.
 - [x] **G-E12** `done` (F-158) — LSP code actions and quick fix
 - [x] **G-E13** `done` (F-174) — Multi-cursor
 - [x] **G-E14** `done` (F-159) — Block visual (`ctrl+v`)
-- [ ] **G-E15** Breadcrumbs and sticky scroll
+- [x] **G-E15** `done` (F-175) — Breadcrumbs and sticky scroll
 - [x] **G-E16** `done` (F-169) — Inlay hints
 - [x] **G-E17** `done` (F-166) — More than 2 splits
 - [x] **G-E18** `done` (F-171) — Snippets
@@ -184,3 +184,4 @@ G-E13 — F-174 — 2026-11-04 (gb/alt+n next occurrence, gB skip, alt+up/down o
 G-C7 — F-172 — 2026-11-04 (injection x3, lesson, tool-forge fixtures 3/3 live; full suite 13/13 on claude 2.1.311 validates F-135/F-144/F-152; orchestration skipped (no multi-agent harness))
 G-E18 — F-171 — 2026-11-04 (LSP snippets + tab stops + .vscode/*.code-snippets; call snippet opens signature help; live suite green)
 G-E22 — F-173 — 2026-11-04 (:calls tree, gp/:peek popup, editor.semantic_tokens (gopls started with semanticTokens init option); live)
+G-E15 — F-175 — 2026-11-04 (breadcrumbs on, sticky off by default; LSP outline only; live)
