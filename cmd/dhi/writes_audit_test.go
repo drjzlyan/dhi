@@ -30,7 +30,7 @@ func TestWriteSitesAreReviewed(t *testing.T) {
 		}
 		if d.IsDir() {
 			switch d.Name() {
-			case ".git", ".dhi", "testdata", "scripts", "node_modules":
+			case ".git", ".dhi", ".claude", "testdata", "scripts", "node_modules": // .claude holds agent worktrees
 				return filepath.SkipDir
 			}
 			return nil

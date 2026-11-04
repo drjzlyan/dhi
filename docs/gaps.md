@@ -40,7 +40,7 @@ no daemon.
 
 ## Phase 2 — Context and memory
 
-- [ ] **G-B1** Per-chat context and cost meter (ROADMAP M37 S2). Data is in `Episode.LastContext` and `Usage`.
+- [x] **G-B1** `done` (F-127) — Per-chat context and cost meter (ROADMAP M37 S2). Data is in `Episode.LastContext` and `Usage`.
 - [ ] **G-B2** Calibrate the 4-runes-per-token budget from CLI usage events; optional model summary via
       `agents.reflect_model`; user `:compact`.
 - [ ] **G-B4** Fork a conversation (episode) by key. Also "new conversation" in a DM (ROADMAP M37 S2).
@@ -61,7 +61,7 @@ no daemon.
 
 ## Phase 4 — Editor, already on the roadmap (S2)
 
-- [ ] **G-E1** LSP signature help
+- [x] **G-E1** `done` (F-128) — LSP signature help
 - [ ] **G-E2** LSP `didSave` and `didClose`
 - [ ] **G-E3** `f`/`t`/`%` motions
 - [ ] **G-E4** Word wrap
@@ -98,7 +98,7 @@ no daemon.
 - [ ] **G-G1** Merge-conflict tools (ROADMAP M37 S3)
 - [ ] **G-G2** Line-level staging (ROADMAP M37 S3)
 - [ ] **G-G3** Inline blame on every line (ROADMAP M37 S3)
-- [ ] **G-G4** Stash
+- [x] **G-G4** `done` (F-129) — Stash
 - [ ] **G-G5** File history and timeline
 - [ ] **G-G6** Interactive rebase through a terminal tab
 - [ ] **G-G7** Branch graph and cherry-pick
@@ -136,3 +136,6 @@ G-A1 — F-122 — 2026-11-03 (live injection eval moved to G-C7)
 G-C1 — F-123 — 2026-11-03 (five of six CLIs; cursor cannot be restricted, reason in F-123)
 G-A3 — F-125 — 2026-11-03 (memory/KB/lessons sections not in the fixture)
 G-A4 — F-126 — 2026-11-03 (recorded and shown, not trimmed)
+G-B1 — F-127 — 2026-11-04 (DM header; limit is session_tokens when a CLI session is kept)
+G-E1 — F-128 — 2026-11-04 (fake LSP only; single-line call detection)
+G-G4 — F-129 — 2026-11-04 (tracked changes only, no -u)
