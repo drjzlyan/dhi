@@ -176,6 +176,10 @@ func (m *Model) bufferView() string {
 			text = withCursor(text, curCol)
 		} else if hl != "" && strings.Contains(raw, hl) {
 			text = markMatches(text, expandTabs(hl)) // plain, so the marks stay exact
+		} else if st, ok := conflictStyle(e.ConflictRegionAt(l)); ok {
+			// Merge-conflict regions (F-026-style washes, F-156) render plain
+			// so the background runs unbroken to the edge.
+			text = st.Render(padTo(text, textW, wrap))
 		} else if syntax != nil {
 			// Colorized lines keep the raw text underneath (F-026 P4);
 			// cursor and selection lines render plain so the rune-level
@@ -590,4 +594,28 @@ func visCol(raw string, col int) int {
 		v += col - n // past the end (insert mode after the last rune)
 	}
 	return v
+}
+
+// conflictStyle is the wash for a line inside a merge conflict (F-156).
+func conflictStyle(r textbuf.ConflictRegion) (lipgloss.Style, bool) {
+	switch r {
+	case textbuf.RegionMarker:
+		return theme.ConflictMarker(), true
+	case textbuf.RegionOurs:
+		return theme.ConflictOurs(), true
+	case textbuf.RegionBase:
+		return theme.ConflictBase(), true
+	case textbuf.RegionTheirs:
+		return theme.ConflictTheirs(), true
+	}
+	return lipgloss.Style{}, false
+}
+
+// padTo fills a line to the text width so a wash spans the row; wrapped
+// lines are left as they are (their rows are cut by cell).
+func padTo(s string, w int, wrap bool) string {
+	if n := w - ansi.Width(s); !wrap && n > 0 {
+		return s + strings.Repeat(" ", n)
+	}
+	return s
 }

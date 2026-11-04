@@ -528,6 +528,17 @@ func HeaderBg() lipgloss.Style { return lipgloss.NewStyle().Background(Current.B
 // SelectionBg paints a selected row's background.
 func SelectionBg() lipgloss.Style { return lipgloss.NewStyle().Background(Current.BgSelection) }
 
+// ConflictOurs, ConflictBase, ConflictTheirs and ConflictMarker paint the
+// regions of a merge conflict in the editor (F-156): ours on the add wash,
+// theirs on the delete wash, the diff3 base on the quiet zebra step, and the
+// marker lines on the header shade.
+func ConflictOurs() lipgloss.Style   { return lipgloss.NewStyle().Background(Current.BgAdd) }
+func ConflictBase() lipgloss.Style   { return lipgloss.NewStyle().Background(Current.BgRowAlt) }
+func ConflictTheirs() lipgloss.Style { return lipgloss.NewStyle().Background(Current.BgDel) }
+func ConflictMarker() lipgloss.Style {
+	return lipgloss.NewStyle().Background(Current.BgHeader).Foreground(Current.TextDim).Bold(true)
+}
+
 // RowAltBg paints every other row of a long list (quiet zebra).
 func RowAltBg() lipgloss.Style { return lipgloss.NewStyle().Background(Current.BgRowAlt) }
 

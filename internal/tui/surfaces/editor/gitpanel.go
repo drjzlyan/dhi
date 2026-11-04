@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -67,6 +68,7 @@ func (m *Model) refreshGitData() {
 	if log, err := m.gitRepo.Log(15); err == nil {
 		m.gitLog = log
 	}
+	m.loadConflicts() // F-156
 }
 
 // currentGitRoot picks the active buffer's repo, else the first member
@@ -215,6 +217,15 @@ func (m *Model) stageAt(path string, all bool) {
 	} else {
 		paths = []string{path}
 	}
+	if m.gitConflicts[path] != "" && m.gitCLI != nil { // F-156: go-git cannot resolve an unmerged entry
+		ctx, cancel := m.stashCtx()
+		defer cancel()
+		if err := gitcore.StagePath(ctx, m.gitCLI, m.gitRepo.Path(), path); err != nil {
+			m.gitErr = err.Error()
+		}
+		m.refreshGitData()
+		return
+	}
 	if err := m.gitRepo.Stage(paths...); err != nil {
 		m.gitErr = err.Error()
 	}
@@ -236,7 +247,7 @@ func (m *Model) unstageAt() {
 func (m *Model) gitStagedFiles() []FileEntry {
 	var out []FileEntry
 	for _, f := range m.gitEntries {
-		if f.Staged {
+		if f.Staged && m.gitConflicts[f.Path] == "" {
 			out = append(out, FileEntry{Path: f.Path, Letter: string(f.X)})
 		}
 	}
@@ -246,11 +257,25 @@ func (m *Model) gitStagedFiles() []FileEntry {
 type FileEntry struct {
 	Path   string
 	Letter string
+	// Conflict marks an unmerged file (F-156); Letter is its code, "UU".
+	Conflict bool
 }
 
+// gitUnstagedFiles lists the work-tree changes, unmerged files first.
 func (m *Model) gitUnstagedFiles() []FileEntry {
 	var out []FileEntry
+	paths := make([]string, 0, len(m.gitConflicts))
+	for p := range m.gitConflicts {
+		paths = append(paths, p)
+	}
+	sort.Strings(paths)
+	for _, p := range paths { // from the user's tool: go-git's status does not see them
+		out = append(out, FileEntry{Path: p, Letter: m.gitConflicts[p], Conflict: true})
+	}
 	for _, f := range m.gitEntries {
+		if m.gitConflicts[f.Path] != "" {
+			continue
+		}
 		if (!f.Staged && f.WorktreeDirty()) || f.Y == '?' || f.Y == 'U' {
 			out = append(out, FileEntry{Path: f.Path, Letter: string(f.Y)})
 		}
@@ -329,6 +354,9 @@ func (m *Model) gitBody(h int) []string {
 					cursorRow = len(rows)
 				}
 				letter := theme.WarningText().Render(f.Letter + " ")
+				if f.Conflict {
+					letter = theme.DangerText().Render(f.Letter + " ")
+				}
 				if isStaged {
 					letter = theme.SuccessText().Render(f.Letter + " ")
 				}

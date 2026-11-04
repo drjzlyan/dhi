@@ -283,27 +283,30 @@ type Model struct {
 	previewKey string // content hash of last rendered preview
 	previewDoc string
 
-	gitOpen      bool
-	gitFocus     bool
-	gitTab       int // 0 status, 1 log
-	gitCursor    int
-	gitRepo      *gitcore.Repo
-	gitCLI       *gitcore.Runner // the user's git for diff, apply, branches, blame (F-121)
-	diff         *diffView
-	branches     *branchPicker
-	stash        *stashView           // F-129
-	hist         *fileHistory         // F-140
-	lh           *localHist           // F-155
-	lhStore      *localhistory.Store  // F-155
-	commitDone   *textbuf.Editor      // the message buffer that just committed
-	commitRepo   *gitcore.Repo        // the repo a COMMIT_EDITMSG buffer commits to
-	gitIdentity  gitcore.IdentityFunc // F-029 commit identity; nil refuses
-	gitEntries   []gitcore.FileStatus
-	gitLog       []gitcore.CommitEntry
-	gitErr       string
-	gitInput     []rune
-	gitInputMode bool
-	gitMessage   string
+	gitOpen       bool
+	gitFocus      bool
+	gitTab        int // 0 status, 1 log
+	gitCursor     int
+	gitRepo       *gitcore.Repo
+	gitCLI        *gitcore.Runner // the user's git for diff, apply, branches, blame (F-121)
+	diff          *diffView
+	branches      *branchPicker
+	stash         *stashView           // F-129
+	hist          *fileHistory         // F-140
+	lh            *localHist           // F-155
+	lhStore       *localhistory.Store  // F-155
+	commitDone    *textbuf.Editor      // the message buffer that just committed
+	commitRepo    *gitcore.Repo        // the repo a COMMIT_EDITMSG buffer commits to
+	gitIdentity   gitcore.IdentityFunc // F-029 commit identity; nil refuses
+	gitEntries    []gitcore.FileStatus
+	gitLog        []gitcore.CommitEntry
+	gitErr        string
+	gitInput      []rune
+	gitInputMode  bool
+	gitMessage    string
+	gitConflicts  map[string]string        // unmerged path (repo-relative) -> porcelain code, "UU" (F-156)
+	conflictStage string                   // absolute path whose last conflict was resolved and saved: y stages it
+	conflictSeen  map[*textbuf.Editor]bool // buffers that held conflict markers
 
 	searcher      search.Searcher
 	searchQuery   []rune
@@ -597,6 +600,7 @@ func (m *Model) HelpSections() [][2]string {
 			[2]string{"gd · gR · K", "go to definition · references · hover"},
 			[2]string{"]d · [d · :diag", "next / previous problem · all problems"},
 			[2]string{"gr · ga", "rename · code actions"},
+			[2]string{"]x · [x · :conflict ours|theirs|both|base", "next / previous merge conflict · accept a side (one undo step)"},
 			[2]string{"ctrl+space", "completions (they also open as you type)"},
 			[2]string{":pair <agent>", "invite an agent to pair (:ask · :unpair)"},
 			[2]string{":break · :debug", "breakpoint · start debugging (:cont :next :step :out :stop :eval)"},
@@ -1049,6 +1053,11 @@ func (m *Model) handleKey(key string) bool {
 			} else {
 				e.SetMessage(`"` + m.openVPath + `" written`)
 			}
+			m.offerConflictStage(e)
+			return true
+		}
+
+		if m.conflictStage != "" && m.answerConflictStage(e, key) {
 			return true
 		}
 
@@ -1147,6 +1156,10 @@ func (m *Model) handleKey(key string) bool {
 				m.jumpDiag(map[string]int{"]": 1, "[": -1}[b])
 				return true
 			}
+			if e.Mode() == textbuf.ModeNormal && key == "x" { // F-156: next / previous merge conflict
+				e.Key(b + "x")
+				return true
+			}
 		} else if e.Mode() == textbuf.ModeNormal && (key == "]" || key == "[") && !e.AwaitingChar() {
 			m.pendingBracket = key
 			return true
@@ -1187,6 +1200,7 @@ func (m *Model) handleKey(key string) bool {
 			m.gitOpen, m.gitFocus = true, true
 			m.loadGit()
 		}
+		m.offerConflictStage(e)
 		m.lspSync()
 		if e.Mode() == textbuf.ModeInsert && was == textbuf.ModeInsert {
 			m.autoComplete(key)

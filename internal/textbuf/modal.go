@@ -74,7 +74,9 @@ type Editor struct {
 	recSeq     uint64   // buffer seq when it started
 	lastChange []string // the last change's keys
 	replaying  bool
-	hlOff      bool // matches of the last search are not marked
+	hlOff      bool       // matches of the last search are not marked
+	cfBlocks   []Conflict // parsed merge conflicts, valid while cfSeq == buf.seq+1 (F-156)
+	cfSeq      uint64
 
 	pendFind rune     // 'f', 'F', 't', 'T' waiting for target char, or 0 (F-133)
 	lastFind struct { // last find motion for ; and , (F-133)

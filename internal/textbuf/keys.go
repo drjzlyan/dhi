@@ -250,6 +250,17 @@ func (e *Editor) keyNormal(key string) {
 			return
 		}
 		e.beginOp(opComment)
+	case "]x", "[x": // next / previous merge conflict (F-156); the surface sends the chord whole
+		if e.pendingOp != opNone {
+			e.clearPending() // d]x: no such motion
+			return
+		}
+		dir := 1
+		if key == "[x" {
+			dir = -1
+		}
+		e.jumpConflict(dir, count)
+		e.clearPending()
 	case "ctrl+/", "ctrl+_": // toggle this line (count lines); many terminals send ctrl+_
 		e.toggleCommentHere(count)
 		e.clearPending()
@@ -793,6 +804,10 @@ func (e *Editor) execCommand(cmd string) {
 	default:
 		if cmd == "noh" || cmd == "nohlsearch" {
 			e.hlOff = true
+			return
+		}
+		if arg, ok := strings.CutPrefix(cmd, "conflict"); ok && (arg == "" || arg[0] == ' ') { // F-156
+			e.conflictCommand(strings.TrimSpace(arg))
 			return
 		}
 		if n, err := strconv.Atoi(cmd); err == nil { // :42 (F-119)
