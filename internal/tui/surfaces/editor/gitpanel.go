@@ -141,6 +141,9 @@ func (m *Model) handleGitKey(key string) bool {
 	case "b":
 		m.openBranches()
 		return true
+	case "z": // F-129
+		m.openStash()
+		return true
 	case "p":
 		m.pushPull(false)
 		return true
