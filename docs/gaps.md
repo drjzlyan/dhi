@@ -73,7 +73,7 @@ no daemon.
 ## Phase 5 — Editor depth (S3 and new)
 
 - [ ] **G-E9** Folding
-- [ ] **G-E10** Comment toggle
+- [x] **G-E10** `done` (F-150) — Comment toggle
 - [ ] **G-E11** Workspace symbols
 - [ ] **G-E12** LSP code actions and quick fix
 - [ ] **G-E13** Multi-cursor
@@ -92,7 +92,7 @@ no daemon.
 - [x] **G-R1** `done` (F-142) — Autosave
 - [ ] **G-R2** Hot exit with swap recovery
 - [ ] **G-R3** Local history (snapshot per save, restore, compare)
-- [ ] **G-R4** Session restore of tabs and splits
+- [x] **G-R4** `done` (F-149) — Session restore of tabs and splits
 - [x] **G-T1** `done` (F-146) — Task runner reading existing `package.json`, `Makefile`, `justfile` targets, with problem matchers
       (no new file format, ADR-0043)
 - [ ] **G-G1** Merge-conflict tools (ROADMAP M37 S3)
@@ -104,7 +104,7 @@ no daemon.
 - [ ] **G-G7** Branch graph and cherry-pick
 - [x] **G-M1** `done` (F-141) — Split terminals
 - [ ] **G-M2** Terminal shell integration (command detection, jump between commands, send selection)
-- [ ] **G-S1** Restricted mode for unknown repos (before an LSP or formatter runs)
+- [x] **G-S1** `done` (F-148) — Restricted mode for unknown repos (before an LSP or formatter runs)
 
 ## Phase 7 — Needs a decision first (**ADR**) or research
 
@@ -158,3 +158,6 @@ G-E8 — F-139 — 2026-11-04 (desktop_notifications; theme.Notify)
 G-T1 — F-146 — 2026-11-04 (npm/pnpm/yarn, make, just; two problem regexes)
 G-C2 — F-144 — 2026-11-04 (/plan /review /ask; read-only for claude+codex, others refused; live eval + flag check pending; approved plan reposted as a human message)
 G-G2 — F-151 — 2026-11-04 (V range + s/u; contiguous ranges; git apply --cached)
+G-E10 — F-150 — 2026-11-04 (gcc/gc{motion}/ctrl+/; also fixed count-before-operator)
+G-R4 — F-149 — 2026-11-04 (tabs+split on quit to .dhi/tmp/session.json; large files skipped)
+G-S1 — F-148 — 2026-11-04 (trust in ~/.config/dhi/trust.json; editor start points only, agent tools not gated (open))
