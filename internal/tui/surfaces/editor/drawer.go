@@ -107,6 +107,9 @@ func (m *Model) syncTermSize() {
 			continue
 		}
 		cols, rows := m.termGeom(i == m.activeTerm && t.screen.AltScreen())
+		if w := m.paneWidth(i); w > 0 && (i != m.activeTerm || !t.screen.AltScreen()) {
+			cols = w // a split pane gets its own PTY width (F-141)
+		}
 		if w, h := t.screen.Size(); w == cols && h == rows {
 			continue
 		}
@@ -228,6 +231,9 @@ func (m *Model) drawerView() string {
 	h := min(drawerHeight, maxInt(m.height/3, 4))
 	cols, rows := m.termGeom(false)
 	body := m.termBody(cols, rows)
+	if m.termSplitActive() && !m.fullScreenTerm() {
+		body = m.splitBody(rows)
+	}
 	panel := kit.NewPanel("terminal"+termStrip(m), m.termFocus)
 	panel.SetContent(body...)
 	panel.Width = maxInt(m.width, 20)
@@ -252,6 +258,11 @@ func (m *Model) termBody(cols, rows int) []string {
 	if t == nil {
 		return make([]string, rows)
 	}
+	return m.termBodyOf(t, cols, rows, m.termFocus)
+}
+
+// termBodyOf renders one tab's screen; focused shows its cursor cell.
+func (m *Model) termBodyOf(t *termTab, cols, rows int, focused bool) []string {
 	body := t.screen.Lines(cols, rows)
 	if t.scroll > 0 { // F-121: looking back through the scrollback
 		all := append(t.screen.History(cols), body...)
@@ -263,7 +274,7 @@ func (m *Model) termBody(cols, rows int) []string {
 		}
 		return view
 	}
-	if t.exited || !m.termFocus {
+	if t.exited || !focused {
 		return body
 	}
 	x, y := t.screen.Cursor()
@@ -314,6 +325,9 @@ func (m *Model) closeTerm(i int) {
 	}
 	if m.cancelTerms[i] != nil {
 		m.cancelTerms[i]()
+	}
+	if id := m.terms[i].id; id == m.termSplit[0] || id == m.termSplit[1] {
+		m.termSplit = [2]int{} // closing either pane ends the split
 	}
 	m.terms = append(m.terms[:i], m.terms[i+1:]...)
 	m.cancelTerms = append(m.cancelTerms[:i], m.cancelTerms[i+1:]...)

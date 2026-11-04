@@ -246,6 +246,7 @@ type Model struct {
 	termFocus   bool
 	terms       []*termTab
 	activeTerm  int
+	termSplit   [2]int // tab ids shown side by side, left then right (F-141); 0 = none
 	cancelTerms []context.CancelFunc
 	termMsgs    chan teaMsg
 	termEnv     func() []string
@@ -426,7 +427,7 @@ func (m *Model) Hints() (string, []string) {
 	case m.chat != nil && m.chat.open && m.chat.focus:
 		return "", []string{"enter send", "@ mention", "^x stop", "^f apply", "[ ] channel", "esc blur"}
 	case m.drawerOpen && m.termFocus:
-		hints := []string{"ctrl+t blur", "shift+pgup scroll back", kit.AltLabel("alt+n new tab"), kit.AltLabel("alt+w close tab"), kit.AltLabel("alt+1..9 tab")}
+		hints := []string{"ctrl+t blur", "shift+pgup scroll back", kit.AltLabel("alt+n new tab"), kit.AltLabel("alt+w close tab"), kit.AltLabel("alt+s split"), kit.AltLabel("alt+o other pane"), kit.AltLabel("alt+1..9 tab")}
 		if t := m.activeTermTab(); t != nil && t.exited {
 			hints = append([]string{kit.AltLabel("alt+r restart")}, hints...)
 		}
@@ -539,6 +540,7 @@ func (m *Model) HelpSections() [][2]string {
 			[2]string{"ctrl+t", "blur/close the drawer"},
 			[2]string{"shift+pgup · shift+pgdown", "scroll back through the output (any key returns)"},
 			[2]string{kit.AltLabel("alt+n · alt+w · alt+r"), "new tab · close this tab · restart an exited one"},
+			[2]string{kit.AltLabel("alt+s · alt+o"), "split the terminal beside a new shell · move focus between the two panes (alt+w closes one)"},
 			[2]string{kit.AltLabel("alt+1..9"), "switch terminal tab"})
 	case m.gitOpen && m.gitFocus:
 		out = append(out,
@@ -1113,6 +1115,7 @@ func (m *Model) HandleKey(key string) bool {
 func (m *Model) handleTermKey(key string) bool {
 	if idx := altDigitIndex(key, len(m.terms)); idx >= 0 {
 		m.activeTerm = idx
+		m.syncTermSize() // a split pair shows at pane width, a lone tab at full
 		return true
 	}
 	switch key {
@@ -1121,10 +1124,17 @@ func (m *Model) handleTermKey(key string) bool {
 		if dir != "" {
 			m.newTermTab(dir, label+"-"+itoa(len(m.terms)+1))
 			m.activeTerm = len(m.terms) - 1
+			m.syncTermSize()
 		}
 		return true
 	case "alt+w": // F-121: close this tab (the program is stopped)
-		m.closeTerm(m.activeTerm)
+		m.closeTermPane()
+		return true
+	case "alt+s": // F-141: a new shell beside this one
+		m.splitTerm()
+		return true
+	case "alt+o": // F-141: focus the other pane
+		m.focusOtherPane()
 		return true
 	case "alt+r": // F-121: restart an exited tab in the same folder
 		m.restartTerm(m.activeTerm)
@@ -1174,6 +1184,9 @@ func (m *Model) activeTermTab() *termTab {
 
 func (m *Model) activeTermDir() (string, string) {
 	if t := m.activeTermTab(); t != nil {
+		if t.sess == nil { // a refused start keeps no session
+			return t.dir, filepath.Base(t.dir)
+		}
 		return t.dir, t.sess.Label()
 	}
 	if len(m.members) > 0 {
