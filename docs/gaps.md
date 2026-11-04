@@ -62,7 +62,7 @@ no daemon.
 ## Phase 4 — Editor, already on the roadmap (S2)
 
 - [x] **G-E1** `done` (F-128) — LSP signature help
-- [ ] **G-E2** LSP `didSave` and `didClose`
+- [x] **G-E2** `done` (F-132) — LSP `didSave` and `didClose`
 - [ ] **G-E3** `f`/`t`/`%` motions
 - [ ] **G-E4** Word wrap
 - [ ] **G-E5** Regex in buffer `:s`
@@ -140,3 +140,4 @@ G-B1 — F-127 — 2026-11-04 (DM header; limit is session_tokens when a CLI ses
 G-E1 — F-128 — 2026-11-04 (fake LSP only; single-line call detection)
 G-G4 — F-129 — 2026-11-04 (tracked changes only, no -u)
 G-B8 — F-130 — 2026-11-04 (/model in a DM; free-text name, no catalogue; reflection keeps the agent's model)
+G-E2 — F-132 — 2026-11-04 (fake LSP only; rename in the tree does not send didClose)
