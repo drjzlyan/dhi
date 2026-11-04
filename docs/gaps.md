@@ -82,7 +82,7 @@ no daemon.
 - [ ] **G-E16** Inlay hints
 - [x] **G-E17** `done` (F-166) — More than 2 splits
 - [ ] **G-E18** Snippets
-- [ ] **G-E19** Selection expand and shrink
+- [x] **G-E19** `done` (F-167) — Selection expand and shrink
 - [x] **G-E20** `done` (F-168) — Search results buffer ("search editor")
 - [x] **G-E21** `done` (F-160) — EditorConfig
 - [ ] **G-E22** LSP semantic tokens, call hierarchy, peek popup
@@ -178,3 +178,4 @@ G-E20 — F-168 — 2026-11-04 (:grep buffer; :w applies after a card via projre
 G-E17 — F-166 — 2026-11-04 (pane tree up to 4; ctrl+w v/s/hjkl/w/c/o; same buffer shares one cursor)
 G-G6 — F-165 — 2026-11-04 (:rebase in a tab; todo and messages edited in DHI via the dhi-edit shim)
 G-C11 — F-170 — 2026-11-04 (live: opencode+cursor resume fixed and PASS; copilot/claude/codex resume runs blocked by the auto-mode classifier; claude+codex read-only flags PASS)
+G-E19 — F-167 — 2026-11-04 (alt+o/alt+i expand/shrink (LSP or named ladder); vim text objects; fixed dj/cip data loss)
