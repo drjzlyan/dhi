@@ -62,6 +62,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/settings"
 	"github.com/drjzlyan/dhi/internal/setup"
 	"github.com/drjzlyan/dhi/internal/tasks"
+	"github.com/drjzlyan/dhi/internal/trust"
 	"github.com/drjzlyan/dhi/internal/tui/app"
 	"github.com/drjzlyan/dhi/internal/tui/kit"
 	"github.com/drjzlyan/dhi/internal/tui/surfaces"
@@ -218,6 +219,10 @@ func runTUI() (relaunch bool) {
 	lspMgr := lsp.NewManager(hostFind, hostenv.Env)
 	defer lspMgr.ShutdownAll()
 	edOpts = append(edOpts, editor.WithLSP(lspMgr))
+	// Restricted mode (F-148): a folder runs servers, formatters, tasks, tests
+	// and the debugger only once the user trusted it (kept beside the user
+	// config, never in the repo).
+	edOpts = append(edOpts, editor.WithTrust(userTrust()))
 	// The user's ripgrep, looked up at each search; missing → install card.
 	rgSearcher = search.Host{Look: hostFind}
 	// F-029: one identity resolver, read from the user's own git config.
@@ -767,7 +772,7 @@ func newSetupEnv(cwd string, ws *workspace.Workspace, userCfg string,
 	cliLook func(string) (string, error), startTour func()) *wizard.Env {
 	env := &wizard.Env{
 		Version: version.Version, CWD: cwd,
-		Discover: setup.DiscoverMembers, InitWorkspace: setup.InitWorkspace,
+		Discover: setup.DiscoverMembers, InitWorkspace: initTrustedWorkspace,
 		Identity: identityFn, Conventions: conv, Engine: engine,
 	}
 	if ws != nil {
@@ -1925,4 +1930,26 @@ func nonEmpty(paths ...string) []string {
 		}
 	}
 	return out
+}
+
+// userTrust opens the user's trust record. When its folder cannot be
+// located the store has no path, so nothing is trusted and trusting fails
+// with a message (ADR-0011) instead of running repo code unasked.
+func userTrust() *trust.Store {
+	p, _ := trust.DefaultPath()
+	return trust.New(p)
+}
+
+// initTrustedWorkspace is the setup wizard's workspace creation: a
+// workspace the user just made on purpose counts as trusted (F-148).
+func initTrustedWorkspace(root string, members []setup.MemberSpec) ([]setup.MemberSpec, error) {
+	made, err := setup.InitWorkspace(root, members)
+	if err != nil {
+		return nil, err
+	}
+	st := userTrust()
+	if err := st.Trust(root); err != nil {
+		return nil, fmt.Errorf("workspace created, but trusting it failed: %w", err)
+	}
+	return made, nil
 }

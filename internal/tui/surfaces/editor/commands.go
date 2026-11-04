@@ -62,6 +62,16 @@ func (m *Model) Commands() []surfaces.Command {
 			m.toast = &kit.Toast{Kind: kit.ToastInfo, Title: "Tasks", Detail: msg}
 		}
 	})
+	if m.trust != nil {
+		title, ex := "Trust this folder…", "trust"
+		if m.trust.Trusted(m.trustRoot(m.activeDir())) {
+			title, ex = "Stop trusting this folder (restricted mode)", "untrust"
+		}
+		add(title, ":"+ex, func() {
+			msg, _ := m.trustCommand(ex)
+			m.toast = &kit.Toast{Kind: kit.ToastInfo, Title: "Trust", Detail: msg}
+		})
+	}
 	add("Toggle terminal", "ctrl+t", m.ToggleDrawer)
 	if len(m.terms) > 0 && m.chat != nil {
 		add("Ask an agent about the terminal output", "", func() {

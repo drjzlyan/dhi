@@ -69,6 +69,9 @@ func (m *Model) formatEditor(ed *textbuf.Editor) string {
 	if !known {
 		return "format: no language support for this file type"
 	}
+	if m.restricted(path, "format") {
+		return trustLine("format")
+	}
 	if len(l.Format) > 0 {
 		return m.formatExternal(ed, l)
 	}

@@ -50,6 +50,9 @@ func (m *Model) testCommand(cmd string) (string, bool) {
 	if !strings.HasSuffix(e.Path(), ".go") {
 		return "test: only Go packages are supported", true
 	}
+	if m.restricted(root, "run tests") {
+		return trustLine("run tests"), true
+	}
 	dir, args := filepath.Dir(e.Path()), []string{"."}
 	switch {
 	case len(f) == 2 && f[1] == "all":

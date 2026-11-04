@@ -37,6 +37,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/sandbox"
 	"github.com/drjzlyan/dhi/internal/settings"
 	"github.com/drjzlyan/dhi/internal/tasks"
+	"github.com/drjzlyan/dhi/internal/trust"
 	"github.com/drjzlyan/dhi/internal/unread"
 	"github.com/drjzlyan/dhi/internal/workspace"
 )
@@ -78,6 +79,7 @@ func Run(wsRoot string) Report {
 	r.Checks = append(r.Checks, GitAccess(wsRoot)...)
 	r.Checks = append(r.Checks, Workspace(wsRoot)...)
 	r.Checks = append(r.Checks, Config(wsRoot)...)
+	r.Checks = append(r.Checks, Trust(wsRoot)...)
 	r.Checks = append(r.Checks, Agents(wsRoot)...)
 	r.Checks = append(r.Checks, AgentTools(wsRoot)...)
 	r.Checks = append(r.Checks, Library(wsRoot)...)
@@ -214,6 +216,44 @@ func Workspace(root string) []Check {
 		}
 	}
 	return checks
+}
+
+// trustPath locates the trust record; swappable in tests.
+var trustPath = trust.DefaultPath
+
+// Trust reports which workspace members are trusted to run language
+// servers, formatters, tasks, tests and the debugger (F-148). Restricted
+// members are a Warn that names them and the way out.
+func Trust(wsRoot string) []Check {
+	if wsRoot == "" {
+		return nil
+	}
+	ws, err := workspace.Load(wsRoot)
+	if err != nil {
+		return nil // workspace/config already says why
+	}
+	path, err := trustPath()
+	if err != nil {
+		return []Check{{Name: "workspace/trust", Status: Warn, Detail: err.Error()}}
+	}
+	st := trust.New(path)
+	if err := st.Err(); err != nil {
+		return []Check{{Name: "workspace/trust", Status: Warn,
+			Detail: err.Error() + " — every folder is restricted until it is fixed"}}
+	}
+	var restricted []string
+	for _, m := range ws.Members() {
+		if !st.Trusted(m.Path) {
+			restricted = append(restricted, m.Name)
+		}
+	}
+	if len(restricted) > 0 {
+		return []Check{{Name: "workspace/trust", Status: Warn,
+			Detail: "restricted: " + strings.Join(restricted, ", ") +
+				" — language servers, format on save, tasks, tests and the debugger are off; :trust in the editor"}}
+	}
+	return []Check{{Name: "workspace/trust", Status: OK,
+		Detail: fmt.Sprintf("%d member(s) trusted (:untrust restricts one)", len(ws.Members()))}}
 }
 
 // Config probes settings files for unknown keys (F-006: doctor reports

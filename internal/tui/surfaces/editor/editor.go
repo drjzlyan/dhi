@@ -341,6 +341,9 @@ type Model struct {
 	langs          langserver.Registry
 	tools          HostTools         // finds and installs host tools (F-110)
 	toolCard       *ToolPlan         // the open install card
+	trust          Trust             // restricted mode (F-148); nil trusts everything
+	trustCard      *trustAsk         // the open trust card
+	trustDeclined  map[string]bool   // folders the user said "not now" to this session
 	lspSent        map[string]string // vpath → last pushed text
 	lspDiags       map[string][]lsp.Diagnostic
 	compOpen       bool
@@ -592,6 +595,7 @@ func (m *Model) HelpSections() [][2]string {
 			[2]string{":break · :debug", "breakpoint · start debugging (:cont :next :step :out :stop :eval)"},
 			[2]string{":test [all|name]", "run Go tests · failures list jumps to the line"},
 			[2]string{":task [name]", "run a package.json script, make target or just recipe in a terminal tab · its errors join :diag"},
+			[2]string{":trust · :untrust", "allow / stop language servers, format on save, tasks, tests and the debugger in this folder"},
 			[2]string{":fmt · :sym", "format · outline / go to symbol (format on save: :set nofmt)"},
 			[2]string{"ctrl+y", "review agent suggestions"},
 			[2]string{"ctrl+g", "markdown preview"},
@@ -914,6 +918,9 @@ func (m *Model) HandleKey(key string) bool {
 func (m *Model) handleKey(key string) bool {
 	if m.toolCard != nil {
 		return m.handleToolCardKey(key)
+	}
+	if m.trustCard != nil {
+		return m.handleTrustKey(key)
 	}
 	if m.pendingOpen != nil {
 		return m.pendingOpenKey(key)
@@ -1497,6 +1504,9 @@ func (m *Model) View() string {
 	if m.toolCard != nil {
 		return m.toolCardView(m.view())
 	}
+	if m.trustCard != nil {
+		return m.trustCardView(m.view())
+	}
 	if m.pendingOpen != nil {
 		return m.pendingOpenView(m.view())
 	}
@@ -1759,6 +1769,10 @@ func (m *Model) ExecEx(requester *textbuf.Editor, cmd string) bool {
 		return true
 	}
 	if msg, ok := m.installCommand(cmd); ok {
+		requester.SetMessage(msg)
+		return true
+	}
+	if msg, ok := m.trustCommand(cmd); ok {
 		requester.SetMessage(msg)
 		return true
 	}

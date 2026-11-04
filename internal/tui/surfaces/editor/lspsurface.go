@@ -36,6 +36,9 @@ func (m *Model) lspOpenDoc(path, text string) {
 		m.noteMissing(l, fmt.Errorf("lsp: %s is not installed", l.Server))
 		return
 	}
+	if m.restricted(m.currentGitRootOrFirst(), "start "+l.Server) {
+		return
+	}
 	// Start the server off the UI loop (F-116): a slow or stuck server
 	// used to freeze the editor on the first file it opened.
 	m.lspWaiting[l.ID] = append(m.lspWaiting[l.ID], path)

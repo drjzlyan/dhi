@@ -149,6 +149,9 @@ func (m *Model) startDebug() string {
 	if !ok {
 		return "debug: the file is not inside a workspace member"
 	}
+	if m.restricted(root, "debug") {
+		return trustLine("debug")
+	}
 	start := m.dapStart
 	if start == nil {
 		start = func(ctx context.Context, dir string, env []string) (*dap.Client, error) {

@@ -51,6 +51,7 @@ internal/settings/settings.go 4
 internal/setup/setup.go 4
 internal/tasks/tasks.go 7
 internal/textbuf/disk.go 5
+internal/trust/trust.go 3
 internal/tui/surfaces/editor/editor.go 1
 internal/tui/surfaces/editor/filecmd.go 3
 internal/tui/surfaces/editor/gitdepth.go 2

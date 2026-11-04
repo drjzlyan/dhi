@@ -165,6 +165,9 @@ func (m *Model) taskPickView() string {
 // runTask opens a focused drawer tab running t with the user's tool.
 // It returns a message when the tool is missing.
 func (m *Model) runTask(t taskrun.Task) string {
+	if m.restricted(t.Dir, "run "+t.Runner+" tasks") {
+		return trustLine("run " + t.Runner + " tasks")
+	}
 	argv := append([]string(nil), t.Argv...)
 	if m.tools != nil {
 		bin, ok := m.tools.Find(argv[0])
