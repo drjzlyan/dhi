@@ -71,6 +71,10 @@ type Episode struct {
 	// model. The chat owns it; a turn's save keeps whatever is stored.
 	Model string `json:"model,omitempty"`
 
+	// ForkedFrom is the key of the episode this one was forked from
+	// (F-134); "" for an episode that began on its own.
+	ForkedFrom string `json:"forked_from,omitempty"`
+
 	Started time.Time `json:"started"`
 	Updated time.Time `json:"updated"`
 }
@@ -243,6 +247,48 @@ func (s *Store) Update(agent, key string, fn func(*Episode)) error {
 // SetModel sets (or, with "", clears) the episode's model override.
 func (s *Store) SetModel(agent, key, model string) error {
 	return s.Update(agent, key, func(e *Episode) { e.Model = model })
+}
+
+// Forked is the episode a fork starts as (pure, F-134): the source's
+// carried state (goal, plan, model override, and the summary of where the
+// work stands, with the turn count Render reports) under a new key.
+// Everything tied to the source's CLI session or spend is dropped: a CLI
+// session cannot safely be resumed by two threads (both would append to
+// one transcript), so the fork's first turn spawns fresh and rebuilds
+// context from the summary, and its own spend starts at zero.
+func Forked(src Episode, dstKey string, now time.Time) Episode {
+	return Episode{
+		Key: dstKey, Agent: src.Agent, Goal: src.Goal,
+		Turns: src.Turns, LastStatus: src.LastStatus, LastSummary: src.LastSummary,
+		Plan:       append([]PlanStep(nil), src.Plan...),
+		Model:      src.Model,
+		ForkedFrom: src.Key,
+		Started:    now, Updated: now,
+	}
+}
+
+// Fork copies the agent's episode srcKey to dstKey (see Forked) and
+// returns the copy. It refuses a missing source and an existing
+// destination by name; the source is never written.
+func (s *Store) Fork(agent, srcKey, dstKey string, now time.Time) (Episode, error) {
+	if srcKey == dstKey {
+		return Episode{}, errors.New("episode: fork needs a new key")
+	}
+	src, ok, err := s.Get(agent, srcKey)
+	if err != nil {
+		return Episode{}, err
+	}
+	if !ok {
+		return Episode{}, fmt.Errorf("episode: no episode %q to fork", srcKey)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p := s.path(agent, dstKey)
+	if _, err := os.Stat(p); err == nil {
+		return Episode{}, fmt.Errorf("episode: %q already exists", dstKey)
+	}
+	f := Forked(src, dstKey, now)
+	return f, s.write(p, f)
 }
 
 // List returns an agent's episodes, most recently updated first.
