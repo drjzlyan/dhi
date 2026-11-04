@@ -1,13 +1,15 @@
 package editor
 
 import (
+	"bytes"
 	"fmt"
-	"github.com/drjzlyan/dhi/internal/textbuf"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/drjzlyan/dhi/internal/textbuf"
 	"github.com/drjzlyan/dhi/internal/tui/kit"
 	"github.com/drjzlyan/dhi/internal/tui/theme"
 	"github.com/drjzlyan/dhi/internal/workspace"
@@ -379,5 +381,59 @@ func (m *Model) treeOpView(base string) string {
 			"", theme.Hint().Render("y delete · n keep"))
 	}
 	md := kit.Modal{Title: title, Lines: lines, Error: op.err, Width: 64}
+	return kit.Overlay(strings.Split(base, "\n"), md.View(), m.width, m.height)
+}
+
+// pendingOpenKey handles y/n/enter/esc for the large-file confirmation (F-138).
+func (m *Model) pendingOpenKey(key string) bool {
+	if m.pendingOpen == nil {
+		return false
+	}
+	switch key {
+	case "y", "enter":
+		// Confirm and open the file.
+		n := m.pendingOpen.node
+		m.pendingOpen = nil
+		m.openNode(n, true)
+		return true
+	case "n", "esc":
+		// Cancel without opening.
+		m.pendingOpen = nil
+		m.bufFocus = false
+		return true
+	}
+	return false
+}
+
+// largeTextFile reports the size of a regular file at or above the warning
+// threshold that looks like text. Only the first binarySniff bytes are read;
+// a binary file keeps textbuf's own rejection.
+func largeTextFile(path string) (int64, bool) {
+	fi, err := os.Stat(path)
+	if err != nil || !fi.Mode().IsRegular() || fi.Size() < largeFileThreshold {
+		return 0, false
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return 0, false
+	}
+	defer f.Close()
+	head := make([]byte, binarySniff)
+	n, _ := io.ReadFull(f, head)
+	return fi.Size(), bytes.IndexByte(head[:n], 0) < 0
+}
+
+// pendingOpenView renders the large-file confirmation dialog (F-138).
+func (m *Model) pendingOpenView(base string) string {
+	if m.pendingOpen == nil {
+		return base
+	}
+	lines := []string{
+		fmt.Sprintf("Open %s (%s)?", m.agentPath(m.pendingOpen.node.path), kit.FormatBytes(m.pendingOpen.size)),
+		theme.TextMuted().Render("files over 5 MiB may take a moment to load"),
+		"",
+		theme.Hint().Render("y open · n cancel"),
+	}
+	md := kit.Modal{Title: "large file", Lines: lines, Width: 64}
 	return kit.Overlay(strings.Split(base, "\n"), md.View(), m.width, m.height)
 }

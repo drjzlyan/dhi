@@ -43,7 +43,17 @@ const (
 	// agentEditWindow is how long an agent-applied edit keeps its
 	// active-editing indicator visible (F-035 Part B).
 	agentEditWindow = 6 * time.Second
+	// largeFileThreshold is the file size at which we ask before opening (F-138).
+	largeFileThreshold = 5 << 20 // 5 MiB
+	// binarySniff is how much of a file is read to tell text from binary.
+	binarySniff = 8 << 10
 )
+
+// pendingFileOpen tracks a large file awaiting confirmation before opening (F-138).
+type pendingFileOpen struct {
+	node *node
+	size int64
+}
 
 type mode uint8
 
@@ -317,6 +327,7 @@ type Model struct {
 	closed         []string             // closed tabs, for reopen
 	treeOp         *treeOp              // the open file-operation dialog (F-119)
 	treeNote       string               // the last file operation, on the status row
+	pendingOpen    *pendingFileOpen     // pending large-file open confirmation (F-138)
 	lspStarting    map[string]bool      // a server start is in flight (F-116)
 	lspWaiting     map[string][]string  // files to open once their server is up
 	lspPumped      map[*lsp.Client]bool // clients whose events are already read
@@ -892,6 +903,9 @@ func (m *Model) handleKey(key string) bool {
 	if m.toolCard != nil {
 		return m.handleToolCardKey(key)
 	}
+	if m.pendingOpen != nil {
+		return m.pendingOpenKey(key)
+	}
 	if m.treeOp != nil {
 		return m.treeOpKey(key)
 	}
@@ -1350,23 +1364,33 @@ func (m *Model) active() *textbuf.Editor {
 	return nil
 }
 
-func (m *Model) open(n *node) {
-	m.openPath = n.path
-	vp, err := m.ws.VPathFor(n.path)
-	if err == nil {
-		m.openVPath = vp.String()
-	} else {
-		m.openVPath = n.name
-	}
+func (m *Model) open(n *node) { m.openNode(n, false) }
 
+// openNode is the one open path. confirmed skips the large-file check
+// (the user already said yes, F-138).
+func (m *Model) openNode(n *node, confirmed bool) {
+	vpath := n.name
+	if vp, err := m.ws.VPathFor(n.path); err == nil {
+		vpath = vp.String()
+	}
 	for i, t := range m.bufs {
 		if t.path == n.path {
+			m.openPath, m.openVPath = n.path, vpath
 			m.activeTab = i // reuse existing buffer
 			m.bufFocus = true
 			m.act(tutorial.EvEditorOpen)
 			return
 		}
 	}
+	if !confirmed {
+		if size, big := largeTextFile(n.path); big { // F-138
+			m.pendingOpen = &pendingFileOpen{node: n, size: size}
+			m.bufFocus = true
+			return
+		}
+	}
+	m.openPath, m.openVPath = n.path, vpath
+
 	be, err := textbuf.OpenFile(n.path)
 	if err != nil {
 		m.searchErr = err.Error()
@@ -1448,6 +1472,9 @@ func (m *Model) refreshRows() {
 func (m *Model) View() string {
 	if m.toolCard != nil {
 		return m.toolCardView(m.view())
+	}
+	if m.pendingOpen != nil {
+		return m.pendingOpenView(m.view())
 	}
 	if m.treeOp != nil {
 		return m.treeOpView(m.view())
