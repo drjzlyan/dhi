@@ -171,3 +171,24 @@ func TestUserSnippetsWithoutServerAndBadFile(t *testing.T) {
 		t.Fatal("expected a snippet session")
 	}
 }
+
+// F-171 regression: a server that completes a function as the call snippet
+// "Add($0)" puts the cursor inside parens the user never typed; signature
+// help must open as if "(" had been typed, and "1," must advance it.
+func TestCallSnippetOpensSignatureHelp(t *testing.T) {
+	m, srv := openMainGoWithLSP(t)
+	srv.mu.Lock()
+	srv.compItems = []map[string]any{{"label": "Add", "insertTextFormat": 2, "insertText": "Add($0)"}}
+	srv.mu.Unlock()
+	feed(m, "o")
+	typeKeys(m, "Ad")
+	feed(m, "ctrl+space")
+	waitFor(t, m, func() bool { return m.compOpen }, "completion popup")
+	feed(m, "enter")
+	if lineText(m) != "Add()" {
+		t.Fatalf("line %q", lineText(m))
+	}
+	waitFor(t, m, func() bool { return m.sigHelp != nil }, "signature help after the call snippet")
+	typeKeys(m, "1,")
+	waitFor(t, m, func() bool { return m.sigHelp != nil && m.sigHelp.ParamStart == 16 }, "second parameter")
+}

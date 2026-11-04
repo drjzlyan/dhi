@@ -323,7 +323,8 @@ func TestLiveGopls(t *testing.T) {
 	})
 
 	t.Run("signature help", func(t *testing.T) {
-		h.keys("(")
+		// gopls accepts Add as the snippet "Add($0)" (F-171): the parens are
+		// already there, so the call's signature help opens without a "(" key.
 		h.wait(func() bool { return m.sigHelp != nil }, "signature help")
 		sh := m.sigHelp
 		t.Logf("signature %q params [%d:%d]", sh.Label, sh.ParamStart, sh.ParamEnd)

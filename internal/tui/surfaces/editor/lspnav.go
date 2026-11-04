@@ -100,6 +100,9 @@ func (m *Model) acceptCompletion(item lsp.CompletionItem) {
 	from, to := textbuf.Pos{Line: cur.Line, Col: start}, textbuf.Pos{Line: cur.Line, Col: end}
 	if item.Snippet {
 		m.expandSnippet(e, from, to, item.Insert)
+		// A call snippet (Add($0)) leaves the cursor inside parens the user
+		// never typed: open its signature help as "(" would have.
+		m.signatureKey(e, "(", textbuf.ModeInsert)
 	} else {
 		b.ApplyEdit(from, to, item.Insert)
 		m.snipAfterKey(e) // a plain item accepted inside a live snippet stop
