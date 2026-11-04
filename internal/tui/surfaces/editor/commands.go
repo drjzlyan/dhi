@@ -104,6 +104,10 @@ func (m *Model) Commands() []surfaces.Command {
 			add("Fix this problem with an agent", ":fix", ex("fix"))
 		}
 		add("Go to symbol", ":sym", ex("sym"))
+		out = append(out, surfaces.Command{Group: "Editor", Title: "Go to symbol in workspace", Hint: ":wsym", Run: func() tea.Cmd {
+			ex("wsym")()
+			return m.TakeCmd()
+		}})
 		add("Run tests in this package", ":test", ex("test"))
 		add("Run all tests in this repo", ":test all", ex("test all"))
 		add("Toggle breakpoint on this line", ":break", ex("break"))

@@ -66,6 +66,7 @@ const (
 	modeTests
 	modeDebug
 	modeTasks
+	modeWorkspaceSyms
 )
 
 // Option configures optional editor capabilities.
@@ -253,6 +254,7 @@ type Model struct {
 	dapStart      dapStarter                  // adapter launcher; nil = delve (tests inject)
 	testing       *testState                  // :test results (modeTests)
 	syms          *symbolPicker               // :sym outline picker (modeSymbols)
+	wsym          *wsymPicker                 // :wsym workspace picker (modeWorkspaceSyms, F-154)
 	wrapOverride  *bool                       // :set wrap|nowrap for this session; nil follows Settings (F-136)
 	blameOverride *bool                       // :set blame|noblame for this session; nil follows Settings (F-143)
 	nowFn         func() time.Time            // blame ages; nil = time.Now (tests pin it)
@@ -425,6 +427,8 @@ func (m *Model) StatusContext() (string, string) {
 		return "results", ""
 	case m.mode == modeSymbols:
 		return "symbols", "SYMBOLS"
+	case m.mode == modeWorkspaceSyms:
+		return "workspace symbols", "SYMBOLS"
 	case m.mode == modeTests:
 		return "tests", "TESTS"
 	case m.mode == modeTasks:
@@ -507,7 +511,7 @@ func (m *Model) CapturesInput() bool {
 		m.chat != nil && m.chat.open && m.chat.focus,
 		m.gitOpen && m.gitFocus:
 		return true
-	case m.mode == modeFind, m.mode == modeSearchQuery, m.mode == modeSymbols, m.mode == modeTasks:
+	case m.mode == modeFind, m.mode == modeSearchQuery, m.mode == modeSymbols, m.mode == modeWorkspaceSyms, m.mode == modeTasks:
 		return true
 	case m.mode == modeResults && m.replace != nil:
 		return true
@@ -816,6 +820,11 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 	case navMsg:
 		m.onNav(msg)
 		return m.TakeCmd()
+	case wsymTickMsg:
+		return m.onWsymTick(msg)
+	case wsymMsg:
+		m.onWsym(msg)
+		return nil
 	case lspReadyMsg:
 		m.onLSPReady(msg)
 		return nil
@@ -1010,6 +1019,8 @@ func (m *Model) handleKey(key string) bool {
 		return m.handleResultsKey(key)
 	case modeSymbols:
 		return m.handleSymbolKey(key)
+	case modeWorkspaceSyms:
+		return m.handleWsymKey(key)
 	case modeTests:
 		return m.handleTestKey(key)
 	case modeTasks:
@@ -1547,6 +1558,9 @@ func (m *Model) view() string {
 	if m.mode == modeSymbols && m.syms != nil {
 		return m.symbolsView()
 	}
+	if m.mode == modeWorkspaceSyms && m.wsym != nil {
+		return m.wsymView()
+	}
 	if m.mode == modeTasks && m.taskPick != nil {
 		return m.taskPickView()
 	}
@@ -1796,6 +1810,10 @@ func (m *Model) ExecEx(requester *textbuf.Editor, cmd string) bool {
 		return true
 	}
 	if msg, ok := m.symCommand(cmd); ok {
+		requester.SetMessage(msg)
+		return true
+	}
+	if msg, ok := m.wsymCommand(cmd); ok {
 		requester.SetMessage(msg)
 		return true
 	}
