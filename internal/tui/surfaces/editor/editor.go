@@ -111,7 +111,8 @@ func WithLanguages(r langserver.Registry) Option {
 type Prefs struct {
 	TabWidth    int
 	LineNumbers bool
-	Wrap        bool // soft word wrap (F-136)
+	Wrap        bool   // soft word wrap (F-136)
+	Autosave    string // "off", "delay" or "focus" (F-142)
 	Scrollback  int
 }
 
@@ -214,6 +215,8 @@ type Model struct {
 	bufs      []*bufTab
 	activeTab int
 	bufFocus  bool
+	now       func() time.Time // test clock (F-142); nil = time.Now
+	lastKey   time.Time        // the last key the editor saw
 	// split panes (F-057): the second pane's tab, the pending ctrl+w
 	// prefix, and a render flag that keeps popups on the focused pane.
 	split          bool
@@ -578,7 +581,7 @@ func (m *Model) HelpSections() [][2]string {
 // Init starts the terminal and chat message pumps plus the workspace
 // roster watcher (live re-resolution without restart, P1).
 func (m *Model) Init() tea.Cmd {
-	cmds := []tea.Cmd{m.listenTerm(), diskTick()}
+	cmds := []tea.Cmd{m.listenTerm(), diskTick(), autosaveTick()}
 	if m.ws != nil {
 		ch, cancel := m.ws.Subscribe()
 		m.memCancel = cancel
@@ -772,6 +775,9 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 	case diskTickMsg:
 		m.checkDisk()
 		return diskTick()
+	case autosaveTickMsg:
+		m.autosaveDelayed()
+		return autosaveTick()
 	case compTickMsg:
 		m.onCompTick(msg)
 		return m.TakeCmd()
@@ -865,6 +871,17 @@ func (m *Model) TakeCmd() tea.Cmd {
 
 // HandleKey implements surface key routing.
 func (m *Model) HandleKey(key string) bool {
+	m.lastKey = m.clock()
+	prev, prevFocus := m.focusedTab(), m.bufFocus
+	handled := m.handleKey(key)
+	m.autosaveFocusChange(prev, prevFocus)
+	if t := m.focusedTab(); t != nil && t.ed != nil && !t.ed.Buffer().Dirty() {
+		t.noAutosave = false // :w!/:e! settled it (F-142)
+	}
+	return handled
+}
+
+func (m *Model) handleKey(key string) bool {
 	if m.toolCard != nil {
 		return m.handleToolCardKey(key)
 	}
@@ -1314,6 +1331,7 @@ type bufTab struct {
 	gutter gutterState  // git change markers (F-040)
 
 	diskWarned bool // the current on-disk change was already reported (F-115)
+	noAutosave bool // autosave hit a changed-on-disk or write error; off until the buffer is clean (F-142)
 }
 
 // active returns the focused tab's editor, or nil.

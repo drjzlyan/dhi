@@ -444,3 +444,19 @@ func TestSettingValuesUseTheThemeTextColor(t *testing.T) {
 		t.Fatalf("value not painted in the theme's text color: %q", row)
 	}
 }
+
+// F-142: the autosave row cycles off, after delay, on focus change.
+func TestAutosaveRowCycles(t *testing.T) {
+	m, _ := newSurface(t)
+	m.cursor = rowAutosave
+	m.cfg.Editor.Autosave = settings.AutosaveOff
+	for _, want := range []string{settings.AutosaveDelay, settings.AutosaveFocus, settings.AutosaveOff} {
+		feed(m, "enter")
+		if m.cfg.Editor.Autosave != want {
+			t.Fatalf("got %q, want %q", m.cfg.Editor.Autosave, want)
+		}
+	}
+	if got := autosaveValue(settings.AutosaveFocus); got != "on focus change" {
+		t.Fatalf("label = %q", got)
+	}
+}

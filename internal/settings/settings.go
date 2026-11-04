@@ -38,10 +38,20 @@ func DefaultUserPath() (string, error) {
 	return filepath.Join(base, "dhi", "config.toml"), nil
 }
 
+// Autosave modes (F-142).
+const (
+	AutosaveOff   = "off"
+	AutosaveDelay = "delay"
+	AutosaveFocus = "focus"
+)
+
 type Editor struct {
 	TabWidth    int  `toml:"tab_width"`
 	LineNumbers bool `toml:"line_numbers"`
 	Wrap        bool `toml:"wrap"` // soft word wrap in the buffer view (F-136)
+	// Autosave is "off", "delay" (a quiet second after the last key) or
+	// "focus" (when the buffer loses focus) (F-142).
+	Autosave string `toml:"autosave"`
 	// Languages overrides (or adds to) the editor's built-in language
 	// servers, keyed by language id (F-050).
 	Languages map[string]LanguageConfig `toml:"languages,omitempty"`
@@ -249,7 +259,7 @@ func Defaults() Config {
 	return Config{
 		Schema:      SchemaVersion,
 		Theme:       theme.Dark().Name,
-		Editor:      Editor{TabWidth: 4, LineNumbers: true},
+		Editor:      Editor{TabWidth: 4, LineNumbers: true, Autosave: AutosaveOff},
 		Terminal:    Terminal{Scrollback: 1000},
 		Security:    Security{Sandbox: SandboxAuto},
 		Agents:      Agents{Resume: true, Autonomy: AutonomyEnvelope, NativeWeb: WebDeny, MaxIterations: 3, StallSeconds: 900, Reflect: true},
@@ -267,7 +277,7 @@ func DefaultMemory() Memory {
 // Known reports the accepted top-level keys (for doctor warnings).
 func Known() []string {
 	return []string{"schema", "theme", "reduced_motion", "engine", "editor",
-		"terminal", "security", "editor.tab_width", "editor.line_numbers", "editor.wrap",
+		"terminal", "security", "editor.tab_width", "editor.line_numbers", "editor.wrap", "editor.autosave",
 		"worktrees", "worktrees.root",
 		"terminal.scrollback", "security.sandbox",
 		"agents", "agents.max_turns", "agents.resume", "agents.autonomy", "agents.native_web",
@@ -439,6 +449,12 @@ func validate(c Config) error {
 	if c.Editor.TabWidth <= 0 || c.Editor.TabWidth > 16 {
 		return fmt.Errorf("settings: editor.tab_width %d out of range 1..16", c.Editor.TabWidth)
 	}
+	switch c.Editor.Autosave {
+	case AutosaveOff, AutosaveDelay, AutosaveFocus:
+	default:
+		return fmt.Errorf("settings: editor.autosave %q (want %s, %s or %s)",
+			c.Editor.Autosave, AutosaveOff, AutosaveDelay, AutosaveFocus)
+	}
 	if c.Terminal.Scrollback < 100 {
 		return fmt.Errorf("settings: terminal.scrollback %d below minimum 100", c.Terminal.Scrollback)
 	}
@@ -557,6 +573,7 @@ type fileLayer struct {
 		TabWidth    int                       `toml:"tab_width"`
 		LineNumbers *bool                     `toml:"line_numbers"`
 		Wrap        *bool                     `toml:"wrap"`
+		Autosave    string                    `toml:"autosave"`
 		Languages   map[string]LanguageConfig `toml:"languages"`
 	} `toml:"editor"`
 	Worktrees struct {
@@ -692,6 +709,7 @@ func (f fileLayer) mergeInto(dst *Config) {
 	if f.Editor.Wrap != nil {
 		dst.Editor.Wrap = *f.Editor.Wrap
 	}
+	setStr(&dst.Editor.Autosave, f.Editor.Autosave)
 	for id, lc := range f.Editor.Languages { // a later layer replaces a language wholesale
 		if dst.Editor.Languages == nil {
 			dst.Editor.Languages = map[string]LanguageConfig{}

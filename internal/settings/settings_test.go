@@ -768,3 +768,21 @@ func TestNativeWebDefaultsToDenyAndIsValidated(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// F-142: editor.autosave defaults to off, merges, and is validated by name.
+func TestAutosaveSetting(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "c.toml")
+	cfg, err := Load(p, "")
+	if err != nil || cfg.Editor.Autosave != AutosaveOff {
+		t.Fatalf("default = %q err=%v", cfg.Editor.Autosave, err)
+	}
+	os.WriteFile(p, []byte("[editor]\nautosave = \"delay\"\n"), 0o644)
+	if cfg, err = Load(p, ""); err != nil || cfg.Editor.Autosave != AutosaveDelay {
+		t.Fatalf("delay = %q err=%v", cfg.Editor.Autosave, err)
+	}
+	os.WriteFile(p, []byte("[editor]\nautosave = \"sometimes\"\n"), 0o644)
+	if _, err = Load(p, ""); err == nil || !strings.Contains(err.Error(), "editor.autosave") {
+		t.Fatalf("bad value accepted: %v", err)
+	}
+}
