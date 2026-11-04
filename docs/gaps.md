@@ -46,7 +46,7 @@ no daemon.
 - [x] **G-B4** `done` (F-134) — Fork a conversation (episode) by key. Also "new conversation" in a DM (ROADMAP M37 S2).
 - [x] **G-B3** `done` (F-145) — Agent-facing symbols tool backed by LSP (repo-map-lite). Embeddings stay out of scope.
 - [x] **G-B7** `done` (F-152) — Path-scoped rules (`paths:` frontmatter on standards/skills). Low priority.
-- [ ] **G-B6** Open ADR-0037 items: channel file segmentation, KB index cache, spend-ledger rotation.
+- [x] **G-B6** `done` (F-153) — Open ADR-0037 items: channel file segmentation, KB index cache, spend-ledger rotation.
 - [x] **G-B8** `done` (F-130) — Per-chat model picker (ROADMAP M37 S2).
 
 ## Phase 3 — Agent loop
@@ -74,7 +74,7 @@ no daemon.
 
 - [ ] **G-E9** Folding
 - [x] **G-E10** `done` (F-150) — Comment toggle
-- [ ] **G-E11** Workspace symbols
+- [x] **G-E11** `done` (F-154) — Workspace symbols
 - [ ] **G-E12** LSP code actions and quick fix
 - [ ] **G-E13** Multi-cursor
 - [ ] **G-E14** Block visual (`ctrl+v`)
@@ -91,11 +91,11 @@ no daemon.
 
 - [x] **G-R1** `done` (F-142) — Autosave
 - [ ] **G-R2** Hot exit with swap recovery
-- [ ] **G-R3** Local history (snapshot per save, restore, compare)
+- [x] **G-R3** `done` (F-155) — Local history (snapshot per save, restore, compare)
 - [x] **G-R4** `done` (F-149) — Session restore of tabs and splits
 - [x] **G-T1** `done` (F-146) — Task runner reading existing `package.json`, `Makefile`, `justfile` targets, with problem matchers
       (no new file format, ADR-0043)
-- [ ] **G-G1** Merge-conflict tools (ROADMAP M37 S3)
+- [x] **G-G1** `done` (F-156) — Merge-conflict tools (ROADMAP M37 S3)
 - [x] **G-G2** `done` (F-151) — Line-level staging (ROADMAP M37 S3)
 - [x] **G-G3** `done` (F-143) — Inline blame on every line (ROADMAP M37 S3)
 - [x] **G-G4** `done` (F-129) — Stash
@@ -103,7 +103,7 @@ no daemon.
 - [ ] **G-G6** Interactive rebase through a terminal tab
 - [ ] **G-G7** Branch graph and cherry-pick
 - [x] **G-M1** `done` (F-141) — Split terminals
-- [ ] **G-M2** Terminal shell integration (command detection, jump between commands, send selection)
+- [x] **G-M2** `done` (F-157) — Terminal shell integration (command detection, jump between commands, send selection)
 - [x] **G-S1** `done` (F-148) — Restricted mode for unknown repos (before an LSP or formatter runs)
 
 ## Phase 7 — Needs a decision first (**ADR**) or research
@@ -162,3 +162,8 @@ G-E10 — F-150 — 2026-11-04 (gcc/gc{motion}/ctrl+/; also fixed count-before-o
 G-R4 — F-149 — 2026-11-04 (tabs+split on quit to .dhi/tmp/session.json; large files skipped)
 G-S1 — F-148 — 2026-11-04 (trust in ~/.config/dhi/trust.json; editor start points only, agent tools not gated (open))
 G-B7 — F-152 — 2026-11-04 (.claude/rules/**/*.md per member with paths:; skills paths:; files from the trigger text only)
+G-E11 — F-154 — 2026-11-04 (:wsym picker; no key binding)
+G-B6 — F-153 — 2026-11-04 (channel segments 8 MiB, ledger 1 MiB, in-memory KB cache)
+G-R3 — F-155 — 2026-11-04 (.dhi/history; :localhistory compare/restore; project replace not snapshotted)
+G-G1 — F-156 — 2026-11-04 (]x/[x, :conflict, panel UU marks, stage offer)
+G-M2 — F-157 — 2026-11-04 (OSC 133/7; alt+k/j prompts; alt+enter or :send)
