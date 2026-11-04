@@ -1,6 +1,7 @@
 package clirun
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -57,6 +58,20 @@ func TestLoopGuardWindow(t *testing.T) {
 	}
 	if !strings.Contains(why, "in its last") {
 		t.Fatalf("reason = %q", why)
+	}
+}
+
+// An edit-then-test loop repeats the test call but never the edit, so
+// it is work, not a loop.
+func TestLoopGuardEditTestIsNotALoop(t *testing.T) {
+	var g LoopGuard
+	for i := 0; i < 60; i++ {
+		if why := g.Observe(fmt.Sprintf("Edit %d", i)); why != "" {
+			t.Fatalf("edit %d: %q", i, why)
+		}
+		if why := g.Observe("Bash go test ./..."); why != "" {
+			t.Fatalf("test %d: %q", i, why)
+		}
 	}
 }
 

@@ -9,13 +9,14 @@ Budgets bound only between spawns (F-066): a CLI that retried one failing tool c
 Stop through the watchdog's own cancel (`stopSpawn`, as for stall and relaunch), name the reason on
 the run record and to the human, and never retry (a retry repeats the loop or the spend). The
 loop thresholds are fixed constants (`clirun.LoopRun`, 8 identical calls in a row; or 12 of the last
-24), not a new setting.
+24 when those 24 are at most two distinct calls), not a new setting.
 
 ## Behaviour
 - Adapters expose `StreamEvent.Call` (tool + canonical input) for claude, codex (commands) and
   opencode. Other adapters give no identity, so their calls are never counted; `Detail` is a
   truncated display line and is not used.
-- Same call 8 times in a row, or 12 times within 24 calls: the run ends with
+- Same call 8 times in a row, or 12 times within 24 calls that hold at most two distinct
+  calls (A/B ping-pong; an edit-then-test loop runs on, `TestLoopGuardEditTestIsNotALoop`): the run ends with
   `Status=error`, `StopReason="loop"`, `Error="stopped by DHI: the same tool call N times ..."`.
 - `StreamEvent.Spend` carries streamed usage: claude per-message tokens (deduped by message id),
   opencode per-step tokens and cost. The runtime adds it to the ledger tally and checks every

@@ -53,7 +53,7 @@ no daemon.
 
 - [ ] **G-C2** Gated plan mode (ROADMAP M37 S3): read-only turn that publishes `plan_update`, human approval card,
       then the write turn. Absorbs **G-A5** (per-mode prompts: plan, review, ask).
-- [ ] **G-C4** Repeated-tool-call detection from the stream; in-flight spend check that stops a run at the cap.
+- [x] **G-C4** `done` (F-131) — Repeated-tool-call detection from the stream; in-flight spend check that stops a run at the cap.
 - [ ] **G-C7** Wider evals: injection, lessons, orchestration, forge; multi-run live scoring.
 - [ ] **G-C11** Re-verify resume for opencode, cursor, copilot.
 - [ ] **G-C8** Optional OpenTelemetry export. Low priority.
@@ -141,3 +141,4 @@ G-E1 — F-128 — 2026-11-04 (fake LSP only; single-line call detection)
 G-G4 — F-129 — 2026-11-04 (tracked changes only, no -u)
 G-B8 — F-130 — 2026-11-04 (/model in a DM; free-text name, no catalogue; reflection keeps the agent's model)
 G-E2 — F-132 — 2026-11-04 (fake LSP only; rename in the tree does not send didClose)
+G-C4 — F-131 — 2026-11-04 (loop: claude/codex/opencode only; in-flight USD only for opencode, tokens elsewhere)

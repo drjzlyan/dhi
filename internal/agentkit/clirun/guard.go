@@ -13,10 +13,12 @@ const (
 	// LoopRun is how many identical calls in a row stop a run.
 	LoopRun = 8
 	// loopWindow / loopWindowHits: the same call this many times among
-	// the last loopWindow calls (not necessarily adjacent) also stops it,
-	// catching a loop that alternates with one harmless call.
+	// the last loopWindow calls also stops it, when the whole window is
+	// at most two distinct calls (an A/B ping-pong). An edit-then-test
+	// loop repeats the test but its edits differ, so it runs on.
 	loopWindow     = 24
 	loopWindowHits = 12
+	loopDistinct   = 2
 )
 
 // ToolCall is the identity of one tool call: the tool name plus its
@@ -68,13 +70,14 @@ func (g *LoopGuard) Observe(call string) string {
 	if g.streak >= run {
 		return fmt.Sprintf("the same tool call %d times in a row: %s", g.streak, truncate(call, 120))
 	}
-	n := 0
+	n, distinct := 0, map[string]bool{}
 	for _, c := range g.recent {
+		distinct[c] = true
 		if c == call {
 			n++
 		}
 	}
-	if n >= hits {
+	if n >= hits && len(distinct) <= loopDistinct {
 		return fmt.Sprintf("the same tool call %d times in its last %d calls: %s", n, len(g.recent), truncate(call, 120))
 	}
 	return ""
