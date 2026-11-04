@@ -45,6 +45,9 @@ type Editor struct {
 	afterSave   func(*Editor)
 	saveNote    string
 	lastSel     *Selected // selection captured when ":" left visual mode
+	markLo      int       // '< and '> lines of the last visual selection (F-137)
+	markHi      int
+	markSet     bool
 
 	cmdline    []rune  // content after ':', '/' or '?'
 	cmdPrefix  rune    // ':' (ex command), '/' or '?' (search)

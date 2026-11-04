@@ -167,41 +167,6 @@ func (b *Buffer) ReplaceText(old, new string, all bool) (int, error) {
 	return count, nil
 }
 
-// SubstituteAll replaces plain-substring pat with rep: cursor line
-// only unless all; global replaces every occurrence on a line, else
-// the first. Returns (lines changed, hits). One undo group covers the
-// whole substitution.
-func (b *Buffer) SubstituteAll(pat, rep string, all, global bool) (lines, hits int) {
-	b.snapshotBefore()
-	start := 0
-	end := len(b.lines)
-	if !all {
-		start, end = b.cursor.Line, b.cursor.Line+1
-	}
-	for i := start; i < end; i++ {
-		line := b.lines[i]
-		idx := strings.Index(line, pat)
-		if idx < 0 {
-			continue
-		}
-		count := 0
-		if global {
-			count = strings.Count(line, pat)
-			b.lines[i] = strings.ReplaceAll(line, pat, rep)
-		} else {
-			count = 1
-			b.lines[i] = line[:idx] + rep + line[idx+len(pat):]
-		}
-		lines++
-		hits += count
-	}
-	if hits > 0 {
-		b.dirty = true
-		b.seq++
-	}
-	return lines, hits
-}
-
 // ReplaceLines sets the given 0-based lines (out-of-range ones are
 // ignored) as one undo step; it returns how many lines changed (F-056).
 func (b *Buffer) ReplaceLines(edits map[int]string) int {

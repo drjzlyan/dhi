@@ -608,6 +608,8 @@ func (e *Editor) keyVisual(key string) {
 		if text, from, to, ok := e.Selection(); ok {
 			e.lastSel = &Selected{Text: text, From: from, To: to}
 		}
+		lo, hi := order(e.visualStart, e.buf.Cursor())
+		e.markLo, e.markHi, e.markSet = lo.Line, hi.Line, true // '< and '> (F-137)
 		e.mode = ModeCommand
 		e.cmdline = nil
 		e.cmdPrefix = ':'
@@ -784,49 +786,6 @@ func (e *Editor) execCommand(cmd string) {
 		}
 		e.message = "not an editor command: " + cmd
 	}
-}
-
-// exSubstitute implements `:s/pat/rep/[g]` (cursor line) and
-// `:%s/pat/rep/[g]` (whole buffer) — plain-substring replacement, `g`
-// replaces every occurrence on a line instead of the first (F-026 P4).
-// Returns false when cmd is not a substitute form.
-func exSubstitute(e *Editor, cmd string) bool {
-	all := false
-	rest := cmd
-	if strings.HasPrefix(rest, "%s") {
-		all = true
-		rest = rest[1:]
-	}
-	if !strings.HasPrefix(rest, "s/") && !strings.HasPrefix(rest, "s,") {
-		return false
-	}
-	sep := rest[1]
-	parts := strings.Split(rest[2:], string(sep))
-	if len(parts) < 2 || len(parts) > 3 {
-		e.message = "usage: s/pat/rep/[g]"
-		return true
-	}
-	pat, rep := parts[0], parts[1]
-	global := len(parts) == 3 && strings.Contains(parts[2], "g")
-	if pat == "" {
-		e.message = "empty pattern"
-		return true
-	}
-	replaced, n := e.buf.SubstituteAll(pat, rep, all, global)
-	if n == 0 {
-		e.message = "pattern not found: " + pat
-		return true
-	}
-	lines := " lines changed ("
-	if replaced == 1 {
-		lines = " line changed ("
-	}
-	hits := " hits)"
-	if n == 1 {
-		hits = " hit)"
-	}
-	e.message = itoa(replaced) + lines + itoa(n) + hits
-	return true
 }
 
 func itoa(n int) string {
