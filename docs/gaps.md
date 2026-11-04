@@ -43,7 +43,7 @@ no daemon.
 - [x] **G-B1** `done` (F-127) — Per-chat context and cost meter (ROADMAP M37 S2). Data is in `Episode.LastContext` and `Usage`.
 - [ ] **G-B2** Calibrate the 4-runes-per-token budget from CLI usage events; optional model summary via
       `agents.reflect_model`; user `:compact`.
-- [ ] **G-B4** Fork a conversation (episode) by key. Also "new conversation" in a DM (ROADMAP M37 S2).
+- [x] **G-B4** `done` (F-134) — Fork a conversation (episode) by key. Also "new conversation" in a DM (ROADMAP M37 S2).
 - [ ] **G-B3** Agent-facing symbols tool backed by LSP (repo-map-lite). Embeddings stay out of scope.
 - [ ] **G-B7** Path-scoped rules (`paths:` frontmatter on standards/skills). Low priority.
 - [ ] **G-B6** Open ADR-0037 items: channel file segmentation, KB index cache, spend-ledger rotation.
@@ -63,7 +63,7 @@ no daemon.
 
 - [x] **G-E1** `done` (F-128) — LSP signature help
 - [x] **G-E2** `done` (F-132) — LSP `didSave` and `didClose`
-- [ ] **G-E3** `f`/`t`/`%` motions
+- [x] **G-E3** `done` (F-133) — `f`/`t`/`%` motions
 - [ ] **G-E4** Word wrap
 - [ ] **G-E5** Regex in buffer `:s`
 - [ ] **G-E6** Large-file size warning
@@ -142,3 +142,5 @@ G-G4 — F-129 — 2026-11-04 (tracked changes only, no -u)
 G-B8 — F-130 — 2026-11-04 (/model in a DM; free-text name, no catalogue; reflection keeps the agent's model)
 G-E2 — F-132 — 2026-11-04 (fake LSP only; rename in the tree does not send didClose)
 G-C4 — F-131 — 2026-11-04 (loop: claude/codex/opencode only; in-flight USD only for opencode, tokens elsewhere)
+G-E3 — F-133 — 2026-11-04 (Haiku draft; coordinator fixed d% d; d,)
+G-B4 — F-134 — 2026-11-04 (/fork drops the CLI session, rebuilds from the summary; /new)
