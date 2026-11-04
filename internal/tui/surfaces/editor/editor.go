@@ -576,6 +576,7 @@ func (m *Model) HelpSections() [][2]string {
 			[2]string{":e! · :w!", "reload from disk · overwrite an outside change"},
 			[2]string{":42 · 42G", "go to line"},
 			[2]string{"v · V · > <", "select · select lines · indent / outdent (>> << on a line)"},
+			[2]string{"gcc · gc{motion} · ctrl+/", "comment / uncomment lines (counts and visual gc work; ctrl+/ also in insert)"},
 			[2]string{".", "repeat the last change"},
 			[2]string{"f F t T · ; , · %", "find/until char on line · repeat/reverse · match bracket"},
 			[2]string{"gd · gR · K", "go to definition · references · hover"},
@@ -1064,12 +1065,22 @@ func (m *Model) handleKey(key string) bool {
 
 		// `gr`/`ga` sequences and `K` hover (normal mode only; `g` is
 		// dead in textbuf so the surface owns the two-key chords).
-		if m.lspPendingG {
+		if m.lspPendingG && e.Mode() == textbuf.ModeVisual {
+			m.lspPendingG = false // visual: gc comments the selection (F-150); other keys carry on
+			if key == "c" {
+				e.Key("gc")
+				m.lspSync()
+				return true
+			}
+		} else if m.lspPendingG {
 			if e.Mode() == textbuf.ModeNormal {
 				m.lspPendingG = false
 				switch key {
 				case "esc":
 					// release the prefix and let esc fall through
+				case "c": // gc{motion}, gcc: the comment operator (F-150)
+					e.Key("gc")
+					return true
 				case "r":
 					m.startRename()
 					return true
@@ -1091,7 +1102,7 @@ func (m *Model) handleKey(key string) bool {
 			} else {
 				m.lspPendingG = false // mode changed; release
 			}
-		} else if e.Mode() == textbuf.ModeNormal && key == "g" {
+		} else if (e.Mode() == textbuf.ModeNormal || e.Mode() == textbuf.ModeVisual) && key == "g" {
 			m.lspPendingG = true
 			return true
 		}

@@ -185,7 +185,11 @@ func (e *Editor) keyNormal(key string) {
 
 	if e.pendingOp != opNone {
 		switch {
+		case e.pendingOp == opComment && key == "c": // gcc
+			e.beginOp(opComment)
+			return
 		case isMotion:
+			count *= max(e.pendingCnt, 1) // 2d3w is 6 words, 2dj is 3 lines
 			a, z := e.buf.spanFor(motion, count)
 			linewise := motion.linewise()
 			if e.pendingOp == opChange && !linewise {
@@ -240,6 +244,15 @@ func (e *Editor) keyNormal(key string) {
 	}
 
 	switch key {
+	case "gc": // comment operator (F-150); the surface sends the g-chord whole
+		if e.pendingOp != opNone && e.pendingOp != opComment {
+			e.clearPending() // dgc: no such motion
+			return
+		}
+		e.beginOp(opComment)
+	case "ctrl+/", "ctrl+_": // toggle this line (count lines); many terminals send ctrl+_
+		e.toggleCommentHere(count)
+		e.clearPending()
 	case "d":
 		e.beginOp(opDelete)
 	case "c":
@@ -263,6 +276,10 @@ func (e *Editor) keyNormal(key string) {
 
 // runOperator applies delete/change/yank over a half-open range.
 func (e *Editor) runOperator(o op, a, z Pos, linewise bool) {
+	if o == opComment {
+		e.toggleComment(commentLines(a, z))
+		return
+	}
 	text := e.buf.yankRange(a, z)
 	switch o {
 	case opDelete:
@@ -616,6 +633,10 @@ func (e *Editor) keyVisual(key string) {
 	case ">", "<":
 		lo, hi := order(e.visualStart, e.buf.Cursor())
 		e.shiftLines(lo.Line, hi.Line, key == ">")
+		e.mode = ModeNormal
+	case "gc", "ctrl+/", "ctrl+_": // comment the selected lines (F-150)
+		lo, hi := order(e.visualStart, e.buf.Cursor())
+		e.toggleComment(lo.Line, hi.Line)
 		e.mode = ModeNormal
 	case "d", "x":
 		e.register, e.registerLW = e.buf.yankRange(a, z), e.visualLine

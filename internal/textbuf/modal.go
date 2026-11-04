@@ -90,6 +90,7 @@ const (
 	opDelete
 	opChange
 	opYank
+	opComment // gc{motion} (F-150)
 )
 
 // NewEditor wraps content in a modal editor.
