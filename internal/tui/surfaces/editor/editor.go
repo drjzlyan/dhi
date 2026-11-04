@@ -2391,6 +2391,10 @@ func (m *Model) applySuggestion(text string) {
 	b := e.Buffer()
 	// F-117: a visual selection is replaced, as in an inline edit; with
 	// none the block goes in at the cursor as whole lines.
+	if e.BlockSelection() { // its bounds enclose text outside the block (F-159)
+		e.SetMessage("a block selection cannot take a suggestion: use v or V")
+		return
+	}
 	if _, from, to, ok := e.Selection(); ok {
 		b.ApplyEdit(from, to, text)
 		e.Key("esc")

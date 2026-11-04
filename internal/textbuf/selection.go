@@ -2,6 +2,11 @@ package textbuf
 
 import "strings"
 
+// BlockSelection reports a ctrl+v block selection (F-159). Its Selection
+// bounds are the enclosing corners, so callers that replace the selected
+// range must refuse it rather than overwrite text outside the block.
+func (e *Editor) BlockSelection() bool { return e.mode == ModeVisual && e.visualBlock }
+
 // Selection returns the text covered by the active visual selection
 // (half-open, including the character under the cursor like real visual
 // mode) and its bounds. ok is false outside visual mode.

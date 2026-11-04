@@ -48,3 +48,24 @@ func TestMarkCells(t *testing.T) {
 		t.Errorf("wide rune is one block: %q", got)
 	}
 }
+
+// A block selection never lets a suggestion or an agent edit replace the
+// text around the block (F-159).
+func TestBlockSelectionGuardsReplacingFeatures(t *testing.T) {
+	m := openText(t, "abcd\nefgh\nijkl\n", false)
+	e := m.active()
+	for _, k := range []string{"l", "ctrl+v", "j", "l"} {
+		e.Key(k)
+	}
+	if !e.BlockSelection() {
+		t.Fatal("not in block mode")
+	}
+	r, ok := m.currentRegion(0)
+	if !ok || r.text != "abcd\nefgh" || r.from != 0 || r.to != 1 {
+		t.Fatalf("region = %+v %v, want the block's whole lines", r, ok)
+	}
+	m.applySuggestion("XX")
+	if got := e.Buffer().Text(); got != "abcd\nefgh\nijkl\n" {
+		t.Fatalf("suggestion changed a block selection: %q", got)
+	}
+}
