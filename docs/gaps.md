@@ -56,7 +56,7 @@ no daemon.
 - [x] **G-C4** `done` (F-131) — Repeated-tool-call detection from the stream; in-flight spend check that stops a run at the cap.
 - [ ] **G-C7** Wider evals: injection, lessons, orchestration, forge; multi-run live scoring.
 - [ ] **G-C11** Re-verify resume for opencode, cursor, copilot.
-- [ ] **G-C8** Optional OpenTelemetry export. Low priority.
+- [x] **G-C8** `done` (F-164) — Optional OpenTelemetry export. Low priority.
 - [x] **G-LSP-live** `done` (F-163) — Run LSP `gd` and rename live with gopls installed (open ROADMAP M37 item).
 
 ## Phase 4 — Editor, already on the roadmap (S2)
@@ -173,3 +173,4 @@ G-E14 — F-159 — 2026-11-04 (ctrl+v; block ops/register; suggestion/agent-edi
 G-LSP-live — F-163 — 2026-11-04 (TestLiveGopls (DHI_LIVE_LSP=1), gopls 0.24: all features pass)
 G-E12 — F-158 — 2026-11-04 (quickfix marker, ranked ga, resolve, command after edit, :organize; live gopls code_actions passes)
 G-G7 — F-162 — 2026-11-04 (:graph / g in panel; cherry-pick with confirm; branch at commit)
+G-C8 — F-164 — 2026-11-04 (OTLP/HTTP JSON from standard OTEL_* env; metadata only; doctor row)
