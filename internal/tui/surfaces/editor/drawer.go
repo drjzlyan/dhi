@@ -30,6 +30,7 @@ type termTab struct {
 	tool   string       // an approved install of this host tool runs here (F-110)
 	scroll int          // rows scrolled back into history (0 = live) (F-121)
 	task   *taskCapture // a task run's output, scanned for problems on exit (F-146)
+	rebase bool         // an interactive rebase step runs here; its exit is checked (F-165)
 
 	jumpRow int  // absolute row of the prompt alt+k / alt+j last chose (F-157)
 	hasJump bool // jumpRow is valid until the view moves otherwise
@@ -221,6 +222,9 @@ func (m *Model) termExited(id int) {
 		}
 		if t.task != nil {
 			m.taskFinished(t.task, code)
+		}
+		if t.rebase {
+			m.rebaseStepDone(t.dir)
 		}
 	}
 }

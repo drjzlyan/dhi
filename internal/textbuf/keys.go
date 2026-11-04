@@ -830,6 +830,9 @@ func (e *Editor) execCommand(cmd string) {
 		e.closeReq, e.closeForced = true, false
 	case "q!":
 		e.closeReq, e.closeForced = true, true
+	case "cq", "cq!": // quit with failure (F-165)
+		e.aborted = true
+		e.closeReq, e.closeForced = true, true
 	case "wq", "x":
 		if err := e.Save(); err != nil {
 			e.message = err.Error()

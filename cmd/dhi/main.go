@@ -11,6 +11,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/drjzlyan/dhi/internal/checkpoint"
+	"github.com/drjzlyan/dhi/internal/editshim"
 	"github.com/drjzlyan/dhi/internal/hostenv"
 	"github.com/drjzlyan/dhi/internal/hosttools"
 	"os"
@@ -83,6 +84,12 @@ import (
 )
 
 func main() {
+	// F-165: started as the editor of a program DHI launched (an interactive
+	// rebase), DHI only hands the file to the running instance. This is not a
+	// subcommand: the link in DHI's private temp folder names the binary.
+	if editshim.IsShim(os.Args[0]) {
+		os.Exit(editshim.RunShim(os.Args[1:], os.Getenv, func(s string) { fmt.Fprintln(os.Stderr, s) }))
+	}
 	// F-090/F-091: your own instructions, skills and registry, read in
 	// every workspace.
 	if cred, err := credstore.DefaultPath(); err == nil {

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"github.com/drjzlyan/dhi/internal/checkpoint"
 	"github.com/drjzlyan/dhi/internal/editorconfig"
+	"github.com/drjzlyan/dhi/internal/editshim"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -307,6 +308,7 @@ type Model struct {
 	pid           int                  // F-161: id written into swaps; 0 = this process
 	pidAlive      func(int) bool       // F-161: nil = swapfile.PIDAlive
 	commitDone    *textbuf.Editor      // the message buffer that just committed
+	rebase        *rebaseState         // the shim that lets the rebase edit in a buffer (F-165)
 	commitRepo    *gitcore.Repo        // the repo a COMMIT_EDITMSG buffer commits to
 	gitIdentity   gitcore.IdentityFunc // F-029 commit identity; nil refuses
 	gitEntries    []gitcore.FileStatus
@@ -791,6 +793,7 @@ type teaMsg struct {
 	blame     *blameResult
 	testRep   *testrun.Report
 	dbgStart  *dbgStarted
+	editReq   *editshim.Request // editMsgOpen
 }
 
 const (
@@ -810,6 +813,7 @@ const (
 	blameMsgDone // git blame for a tab finished (F-143)
 	dbgMsgStarted
 	dbgMsgUpdate
+	editMsgOpen // a program asks for a file to be edited (F-165)
 )
 
 func (m *Model) Resize(w, h int) {
@@ -892,6 +896,8 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 			m.applyDebugStarted(msg.dbgStart)
 		case dbgMsgUpdate:
 			m.applyDebugUpdate()
+		case editMsgOpen:
+			m.applyEditRequest(msg.editReq)
 		}
 		return m.listenTerm()
 	case chatEvent:
@@ -1494,9 +1500,10 @@ type bufTab struct {
 	swapSeen    string    // text at the last change the swap saw
 	swapAt      time.Time // when it changed
 	swapKnown   bool
-	swapPending bool // changed since the last swap write
-	swapWritten bool // a swap exists for this tab's edits
-	noSwap      bool // another DHI owns the swap, or the recovery card is undecided
+	swapPending bool     // changed since the last swap write
+	swapWritten bool     // a swap exists for this tab's edits
+	noSwap      bool     // another DHI owns the swap, or the recovery card is undecided
+	edit        *editJob // a program (the rebase) waits for this buffer (F-165)
 }
 
 // active returns the focused tab's editor, or nil.
@@ -1587,6 +1594,7 @@ func (m *Model) closeBuffer() {
 		return
 	}
 	closing := m.activeTab
+	m.finishEdit(m.bufs[closing])                           // F-165: a waiting rebase carries on or aborts
 	m.dropSwap(m.bufs[closing])                             // F-161
 	m.lspDidClose(m.bufs[closing].vp, m.bufs[closing].path) // F-132: notify LSP of close
 	m.closed = append(m.closed, m.bufs[closing].path)       // F-119: :reopen
@@ -1907,6 +1915,10 @@ func (m *Model) ExecEx(requester *textbuf.Editor, cmd string) bool {
 		return true
 	}
 	if msg, ok := m.wrapCommand(cmd); ok {
+		requester.SetMessage(msg)
+		return true
+	}
+	if msg, ok := m.rebaseCommand(requester, cmd); ok {
 		requester.SetMessage(msg)
 		return true
 	}

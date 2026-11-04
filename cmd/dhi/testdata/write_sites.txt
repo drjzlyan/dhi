@@ -33,6 +33,7 @@ internal/agentkit/workflow/workflow.go 7
 internal/autopilot/autopilot.go 7
 internal/checkpoint/checkpoint.go 9
 internal/credstore/credstore.go 6
+internal/editshim/editshim.go 5
 internal/evals/arms.go 1
 internal/evals/evals.go 4
 internal/fsx/fsx.go 8

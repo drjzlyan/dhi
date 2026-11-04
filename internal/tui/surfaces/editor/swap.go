@@ -75,7 +75,7 @@ func (m *Model) isAlive(pid int) bool {
 // swappable is whether a tab's edits get a swap: a real file in the
 // workspace, not DHI's own (the commit message), not held off by a card.
 func (m *Model) swappable(t *bufTab) bool {
-	return m.ws != nil && t.ed != nil && t.path != "" && !t.noSwap &&
+	return m.ws != nil && t.ed != nil && t.path != "" && !t.noSwap && t.edit == nil &&
 		!within(t.path, filepath.Join(m.ws.Root, workspace.DHIDir))
 }
 
@@ -148,6 +148,7 @@ func (m *Model) savedSwap(path string) {
 // KeepForNextTime implements surfaces.HotExit: it writes a hot swap for
 // every dirty buffer so the next launch brings the edits back.
 func (m *Model) KeepForNextTime() error {
+	m.closeRebaseServer() // F-165: DHI is leaving; the shim's folder goes with it
 	st := m.swapStore()
 	if st == nil {
 		return fmt.Errorf("hot exit needs a workspace")

@@ -53,8 +53,8 @@ func (m *Model) histStore() *localhistory.Store {
 // .dhi (the commit message) are not history.
 func (m *Model) snapshotSave(path, text string) {
 	st := m.histStore()
-	if st == nil || path == "" || within(path, filepath.Join(m.ws.Root, workspace.DHIDir)) {
-		return
+	if st == nil || path == "" || within(path, filepath.Join(m.ws.Root, workspace.DHIDir)) || m.editJobTab(path) != nil {
+		return // F-165: git's own todo and message files are not the user's history
 	}
 	st.Snapshot(path, text, m.clock())
 }

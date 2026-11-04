@@ -62,6 +62,7 @@ type Editor struct {
 	path        string
 	closeReq    bool
 	closeForced bool
+	aborted     bool // :cq — the close is a failure (F-165)
 	reloaded    bool
 	delegate    CommandDelegate
 
@@ -142,6 +143,10 @@ func (e *Editor) Message() string { return e.message }
 // :q!. The surface decides what closing means.
 func (e *Editor) CloseRequested() bool { return e.closeReq }
 func (e *Editor) CloseForced() bool    { return e.closeForced }
+
+// Aborted reports that the buffer was left with :cq, the editor's failure
+// exit; a program waiting on the buffer (git, F-165) treats it as cancelled.
+func (e *Editor) Aborted() bool { return e.aborted }
 func (e *Editor) TakeClose() bool {
 	c := e.closeReq
 	e.closeReq = false
