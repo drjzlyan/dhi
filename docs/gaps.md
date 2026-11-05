@@ -72,7 +72,7 @@ no daemon.
 
 ## Phase 5 — Editor depth (S3 and new)
 
-- [ ] **G-E9** Folding
+- [x] **G-E9** `done` (F-176) — Folding
 - [x] **G-E10** `done` (F-150) — Comment toggle
 - [x] **G-E11** `done` (F-154) — Workspace symbols
 - [x] **G-E12** `done` (F-158) — LSP code actions and quick fix
@@ -185,3 +185,4 @@ G-C7 — F-172 — 2026-11-04 (injection x3, lesson, tool-forge fixtures 3/3 liv
 G-E18 — F-171 — 2026-11-04 (LSP snippets + tab stops + .vscode/*.code-snippets; call snippet opens signature help; live suite green)
 G-E22 — F-173 — 2026-11-04 (:calls tree, gp/:peek popup, editor.semantic_tokens (gopls started with semanticTokens init option); live)
 G-E15 — F-175 — 2026-11-04 (breadcrumbs on, sticky off by default; LSP outline only; live)
+G-E9 — F-176 — 2026-11-04 (LSP foldingRange or named indent fallback; vim z keys; per-buffer folds; live)
