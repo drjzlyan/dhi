@@ -1158,10 +1158,10 @@ Plan: `~/.claude/plans/i-want-dhi-to-dazzling-sky.md`. Branch `m37`, one commit 
 
 Tracker: `docs/gaps.md` (one checkbox per gap; that file is the source of truth). One spec per gap, worked one at a time.
 
-- [ ] P1 Trust and prompt safety (G-A1, G-C1, G-A2, G-A3, G-A4)
-- [ ] P2 Context and memory (G-B1…B8)
-- [ ] P3 Agent loop (G-C2, G-C4, G-C7, G-C11, G-C8, G-LSP-live)
-- [ ] P4 Editor S2 items (G-E1…E8)
-- [ ] P5 Editor depth (G-E9…E22)
-- [ ] P6 Reliability, git, terminal, tasks (G-R*, G-T1, G-G*, G-M*, G-S1)
-- [ ] P7 ADR-gated and research (G-C3, G-C5, G-C6, G-C10, G-X*)
+- [x] P1 Trust and prompt safety (G-A1, G-C1, G-A2, G-A3, G-A4)
+- [x] P2 Context and memory (G-B1…B8)
+- [x] P3 Agent loop (G-C2, G-C4, G-C7, G-C11, G-C8, G-LSP-live)
+- [x] P4 Editor S2 items (G-E1…E8)
+- [x] P5 Editor depth (G-E9…E22)
+- [x] P6 Reliability, git, terminal, tasks (G-R*, G-T1, G-G*, G-M*, G-S1)
+- [ ] P7 ADR-gated and research — proposed ADR-0047..0051 await the user; G-X1/G-X3 not started (G-C3, G-C5, G-C6, G-C10, G-X*)

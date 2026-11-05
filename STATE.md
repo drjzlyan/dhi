@@ -1,12 +1,12 @@
 # STATE — current position
 
-### Session 70 (M38 gap closure with subagents, branch `m38` off `g-a4-oversize-prompt`)
+### Session 70 (M38 gap closure with subagents, branch `m38` off `g-a4-oversize-prompt`; not pushed)
 
-- Coordinator merges one commit per gap (cherry-pick from agent worktrees); tracker rows and STATE are coordinator-only. Brief for workers: scratchpad BRIEF.md (rebase onto current m38 before commit; verify in the foreground).
-- Done (51, F-127…F-175): every Phase 2–6 gap except G-E9 folding (F-176, agent was running in `.claude/worktrees/agent-a90834e5fdff2fb2d`; resume or redo on top of m38). Phase 7: proposed ADR-0047..0051 (user decides); G-X1/G-X3 need no ADR, not started.
-- Live: gopls 0.24 (brew, approved) — `DHI_LIVE_LSP=1 go test -run TestLiveGopls ./internal/tui/surfaces/editor` all green; evals full suite 13/13 on claude 2.1.311 (F-172); opencode + cursor resume fixed and verified (F-170); copilot/claude/codex resume runs blocked by the auto-mode classifier (user to run if wanted).
-- Next: land G-E9; final audit (one read-only Sonnet auditor per phase group: 1–3, 4–5, 6 — both 1–3 and 6 were cut off by the usage limit); then `make verify` + `make lint` on m38; then ask the user about push/PR.
-- Gotchas: worktrees in `.claude/worktrees/` (write-site audit skips `.claude`); parallel agents cause verify timeouts — rerun the package alone; render-path conflicts (bufferview/editor.go) need semantic merges, not union.py; G-E14 block selections refuse ctrl+f suggestions; bare `indent_size` in .editorconfig means spaces (documented deviation).
+- Phases 1–6 of docs/gaps.md are done: 52 gaps this session (F-127…F-176), one commit per gap plus audit-fix commits. `make verify` and `make lint` green on m38; live gopls suite green (`DHI_LIVE_LSP=1 go test -run TestLiveGopls ./internal/tui/surfaces/editor`, gopls 0.24 via brew, user-approved); live evals 13/13 on claude 2.1.311 (F-172).
+- Final audit (read-only auditors per phase group) found 15 issues; all fixed in three commits `m38 audit: …` (brief-digest fence F-122, OnRun for every spawn F-164, swap ownership by instance lock F-161, quit shutdown hook F-165, :untrust stops servers F-148, untrusted `just` never runs F-146, chord-key gating `WantsRawKey` F-133/F-167/F-176, visual gg, search buffer hot exit, docs).
+- Open, needs the user: Phase 7 proposed ADR-0047..0051 (hooks, failover, headless, ACP, ghost text); G-X1/G-X3 (no ADR needed, not started); copilot resume unverified (classifier blocked the live run; also claude/codex re-checks); orchestration eval fixture (needs a multi-agent harness); push/PR of `m38` (stack on g-a1…g-a4).
+- Known limits recorded in specs: .editorconfig bare indent_size → spaces; same buffer in two panes shares one cursor; multi-cursor undo collapses cursors; normal-mode `r` not implemented in textbuf.
+- Gotchas: agent worktrees in `.claude/worktrees/` (write-site audit skips `.claude`); parallel test load causes timeouts — rerun the package alone.
 
 ### Session 69 (Phase 1 review, branch `g-a4-oversize-prompt`, one fix commit on top of the stack)
 
