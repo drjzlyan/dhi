@@ -78,8 +78,15 @@ func (m *Model) taskDirs() []memberRef {
 // discoverTasks lists every member's tasks; notes name unreadable files.
 func (m *Model) discoverTasks() (items []kit.PaletteItem, notes []string) {
 	dirs := m.taskDirs()
-	just := m.hostJustList()
+	hostJust := m.hostJustList()
 	for _, d := range dirs {
+		// F-148: `just --list` evaluates the justfile (backticks, imports),
+		// so a folder that is not trusted gets its recipes by reading the
+		// file only; nothing of the repo's runs to list tasks.
+		just := hostJust
+		if m.trust != nil && !m.trust.Trusted(m.trustRoot(d.path)) {
+			just = nil
+		}
 		ts, ns := taskrun.Discover(d.path, just)
 		for _, n := range ns {
 			notes = append(notes, d.name+": "+n)

@@ -73,7 +73,7 @@ func crashed(t *testing.T, hot bool) (*Model, string) {
 	swapDirty(m, now, "unsaved work\n")
 	st := m.swapStore()
 	h, text, _ := st.Read(path)
-	h.PID, h.Hot = deadPID, hot
+	h.PID, h.Hot, h.Nonce = deadPID, hot, ""
 	m.closeBuffer() // removes the swap; put it back as a crash leaves it
 	if err := st.WriteSync(h, text); err != nil {
 		t.Fatal(err)
@@ -125,7 +125,7 @@ func TestSwapCardSaysDiskChanged(t *testing.T) {
 	swapDirty(m, now, "unsaved work\n")
 	st := m.swapStore()
 	h, text, _ := st.Read(path)
-	h.PID = deadPID
+	h.PID, h.Nonce = deadPID, ""
 	m.closeBuffer()
 	_ = st.WriteSync(h, text)
 	if err := os.WriteFile(path, []byte("changed outside\n"), 0o644); err != nil {
@@ -150,7 +150,7 @@ func TestSwapLivePIDWarnsWithoutCard(t *testing.T) {
 	swapDirty(m, now, "theirs\n")
 	st := m.swapStore()
 	h, text, _ := st.Read(path)
-	h.PID = livePID
+	h.PID, h.Nonce = livePID, "" // an older swap: no nonce, the pid decides
 	m.closeBuffer()
 	_ = st.WriteSync(h, text)
 	m.open(&node{kind: nodeFile, path: path, name: "app.go"})
@@ -169,7 +169,7 @@ func TestSwapIdenticalToDiskIsDropped(t *testing.T) {
 	st := m.swapStore()
 	h, _, _ := st.Read(path)
 	disk, _ := os.ReadFile(path)
-	h.PID = deadPID
+	h.PID, h.Nonce = deadPID, ""
 	m.closeBuffer()
 	_ = st.WriteSync(h, string(disk))
 	m.open(&node{kind: nodeFile, path: path, name: "app.go"})

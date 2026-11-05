@@ -133,7 +133,10 @@ func (m *Model) trustCommand(cmd string) (string, bool) {
 			return "untrust: " + root + " is still trusted through a parent folder", true
 		}
 		delete(m.trustDeclined, root)
-		return root + " is restricted: language servers, format on save, tasks, tests and the debugger are off", true
+		if m.lspMgr != nil {
+			m.lspMgr.ShutdownAll() // F-148: running servers were started under the trust just withdrawn
+		}
+		return root + " is restricted: language servers stopped; format on save, tasks, tests and the debugger are off", true
 	}
 	if err := m.trust.Trust(root); err != nil {
 		return "trust: " + err.Error(), true

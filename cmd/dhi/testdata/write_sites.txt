@@ -52,7 +52,7 @@ internal/settings/layers.go 3
 internal/settings/patch.go 12
 internal/settings/settings.go 4
 internal/setup/setup.go 4
-internal/swapfile/swapfile.go 4
+internal/swapfile/swapfile.go 8
 internal/tasks/tasks.go 7
 internal/textbuf/disk.go 5
 internal/trust/trust.go 3

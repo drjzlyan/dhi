@@ -35,3 +35,10 @@ only through `:trust` / `:untrust`.
   (`TestRestrictedHoldsTheLanguageServerAndAsksOnce`, `TestTrustCardYesRecordsAndStartsTheServer`).
 - `:trust`, `:untrust`, palette (`TestTrustUntrustCommands`, `TestTrustPaletteActionFlips`).
 - Doctor row (`TestTrustRow`).
+- `:untrust` stops the running language servers (`TestUntrustStopsRunningLanguageServers`).
+- Listing tasks (F-146) in an untrusted folder reads the justfile and never runs `just`, which
+  evaluates the file (`TestRestrictedTaskListNeverRunsJust`).
+
+## Not covered
+Agent tools (shell, MCP) are governed by the sandbox and approval cards (ADR-0006, ADR-0044), not by
+folder trust.

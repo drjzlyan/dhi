@@ -90,8 +90,13 @@ func (m *Model) noteBase(t *bufTab) {
 }
 
 func (m *Model) swapHeader(t *bufTab, hot bool) swapfile.Header {
-	return swapfile.Header{Path: t.path, BaseHash: t.baseHash, BaseMTime: t.baseMTime,
+	h := swapfile.Header{Path: t.path, BaseHash: t.baseHash, BaseMTime: t.baseMTime,
 		At: m.clock(), PID: m.ownPID(), Hot: hot}
+	if st := m.swapStore(); st != nil {
+		h.Nonce = st.Nonce() // liveness is this instance's held lock, not the reusable pid
+		h.Host, _ = os.Hostname()
+	}
+	return h
 }
 
 // swapTick writes the swap of every buffer that has been dirty and
@@ -148,11 +153,11 @@ func (m *Model) savedSwap(path string) {
 // KeepForNextTime implements surfaces.HotExit: it writes a hot swap for
 // every dirty buffer so the next launch brings the edits back.
 func (m *Model) KeepForNextTime() error {
-	m.closeRebaseServer() // F-165: DHI is leaving; the shim's folder goes with it
 	st := m.swapStore()
 	if st == nil {
 		return fmt.Errorf("hot exit needs a workspace")
 	}
+	defer st.Release() // the swaps outlive this DHI: they must read as abandoned, not live
 	var lost []string
 	for _, t := range m.bufs {
 		if t.ed == nil || !t.ed.Buffer().Dirty() {
@@ -208,10 +213,10 @@ func (m *Model) swapOnOpen(t *bufTab) {
 	}
 	cur := t.ed.Buffer().Text()
 	switch {
-	case h.PID == m.ownPID():
+	case st.Own(h) || (h.Nonce == "" && h.PID == m.ownPID()):
 		st.Remove(t.path) // ours, from before this tab was closed
 		return
-	case m.isAlive(h.PID):
+	case st.Live(h, m.isAlive):
 		t.noSwap = true
 		t.ed.SetMessage(fmt.Sprintf("open in another DHI (pid %d), which has unsaved changes here — your edits will not be kept in a swap", h.PID))
 		return
@@ -329,4 +334,13 @@ func (m *Model) swapOverlay(base string) string {
 	}
 	md := kit.Modal{Title: title, Lines: lines, Width: min(m.width-4, 100)}
 	return kit.Overlay(strings.Split(base, "\n"), md.View(), m.width, m.height)
+}
+
+// Shutdown implements surfaces.Shutdowner: DHI is leaving, so the rebase
+// shim's folder goes (F-165) and this instance's swap lock is released.
+func (m *Model) Shutdown() {
+	m.closeRebaseServer()
+	if m.swaps != nil {
+		m.swaps.Release()
+	}
 }

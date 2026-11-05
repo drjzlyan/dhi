@@ -20,9 +20,7 @@ func (a *App) requestQuit() tea.Cmd {
 		}
 	}
 	if len(names) == 0 {
-		a.quitting = true
-		a.saveSessions()
-		return tea.Quit
+		return a.finishQuit()
 	}
 	a.palette, a.showHelp = nil, false
 	a.quitAsk, a.quitErr = names, ""
@@ -53,9 +51,7 @@ func (a *App) quitKey(key string) tea.Cmd {
 				}
 			}
 		}
-		a.quitAsk, a.quitting = nil, true
-		a.saveSessions()
-		return tea.Quit
+		return a.finishQuit()
 	case "k", "K":
 		if !a.canHotExit() {
 			return nil
@@ -68,18 +64,14 @@ func (a *App) quitKey(key string) tea.Cmd {
 				}
 			}
 		}
-		a.quitAsk, a.quitting = nil, true
-		a.saveSessions()
-		return tea.Quit
+		return a.finishQuit()
 	case "d", "D":
 		for _, s := range a.surfaces {
 			if h, ok := s.(surfaces.HotExit); ok {
 				h.DiscardSwaps()
 			}
 		}
-		a.quitAsk, a.quitting = nil, true
-		a.saveSessions()
-		return tea.Quit
+		return a.finishQuit()
 	case "esc", "ctrl+c", "n", "N":
 		a.quitAsk, a.quitErr = nil, ""
 	}
@@ -116,4 +108,17 @@ func (a *App) saveSessions() {
 			ss.SaveSession()
 		}
 	}
+}
+
+// finishQuit is the one way out: sessions are saved, surfaces release what
+// must not outlive DHI (F-165), then the program ends.
+func (a *App) finishQuit() tea.Cmd {
+	a.quitAsk, a.quitting = nil, true
+	a.saveSessions()
+	for _, s := range a.surfaces {
+		if sd, ok := s.(surfaces.Shutdowner); ok {
+			sd.Shutdown()
+		}
+	}
+	return tea.Quit
 }

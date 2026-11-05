@@ -11,7 +11,13 @@ gitignored): one JSON header line (path, hash and mtime of the disk text the
 buffer started from, time, DHI pid, `hot`) then the buffer text. They are
 written on a goroutine `swapDelay` (2 s) after the last change, from the
 existing 500 ms editor tick. Buffers over 4 MiB, untitled buffers and DHI's
-own files (`.dhi`) get no swap. No locking: a live owner only produces a warning.
+own files (`.dhi`) get no swap. A live owner only produces a warning.
+
+Ownership is an flock, not a pid (a pid is reused after a reboot): each DHI holds an exclusive
+lock on `instance-<nonce>.lock` in the swap folder and records the nonce and host in every swap
+header. Live means the lock is held; swaps from another host are never live; only swaps without a
+nonce (older ones) fall back to the pid check. Quitting, and "keep for next time", release the
+lock; stale lock files are swept on the next start.
 
 ## Behaviour
 - Removed on save, on close, when the buffer is clean again, and by "quit
@@ -44,3 +50,5 @@ own files (`.dhi`) get no swap. No locking: a live owner only produces a warning
   `TestQuitKeepFailureStays`, `TestQuitWithoutSavingDiscardsSwaps`,
   `TestQuitKeepNotOfferedWithoutHotExit`).
 - Write sites recorded in `cmd/dhi/testdata/write_sites.txt`.
+- Ownership by lock: `TestLiveByLockNotByPID`, `TestLiveOldSwapFallsBackToPID`, `TestOtherHostNeverLive`
+  (swapfile); `TestSwapReusedPIDStillRecovers`, `TestSwapHeldLockWarns` (editor).

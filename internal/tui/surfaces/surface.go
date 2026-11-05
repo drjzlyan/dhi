@@ -96,6 +96,13 @@ type HotExit interface {
 	DiscardSwaps()
 }
 
+// Shutdowner (F-165) is implemented by a surface holding resources that must
+// not outlive DHI (sockets, scratch folders, locks): the shell calls Shutdown
+// once on every way out.
+type Shutdowner interface {
+	Shutdown()
+}
+
 // SessionSaver (F-149) is implemented by a surface with a session worth
 // reopening: the shell calls SaveSession as DHI quits.
 type SessionSaver interface {

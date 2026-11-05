@@ -41,3 +41,6 @@ buffer the user already knows.
   `TestRebaseCQAbortsTheStep`, `TestRebaseConflictThenContinue` (conflict, `:conflict theirs`, stage
   offer, `:rebase continue`, message buffer), `TestRebaseAbort`, `TestRebaseQuitWithoutSavingKeepsTheTodo`,
   `TestRebaseBaseChoice`, `TestRebaseWithoutOneInProgress`.
+- Every way out of DHI (nothing unsaved, save all, keep for next time, quit without saving) goes
+  through one shutdown hook (`surfaces.Shutdowner`) that removes the shim (`TestEveryQuitPathShutsSurfacesDown`,
+  `TestCancelledQuitDoesNotShutDown`; editor `TestShutdownClosesRebaseServer`).

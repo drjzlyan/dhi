@@ -35,3 +35,5 @@ installed or replaced.
   (`TestTaskPickerListsFiltersAndRunsInTheMemberFolder`); by name and missing tool
   (`TestTaskByNameAndMissingTool`); no task files (`TestTaskWithNoTaskFilesSaysSo`);
   problems reach `:diag` (`TestTaskOutputProblemsFeedDiagAndJump`).
+- In a folder that is not trusted (F-148) recipes come from parsing the justfile; `just --list` is
+  not run (`TestRestrictedTaskListNeverRunsJust`).
