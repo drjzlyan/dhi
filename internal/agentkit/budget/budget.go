@@ -34,6 +34,9 @@ type Entry struct {
 	Task    string    `json:"task,omitempty"` // card slug; "" for card-less turns
 	Tokens  int       `json:"tokens"`         // whole prompt + output (unknown counts as 0)
 	CostUSD float64   `json:"cost_usd"`
+	// Engine is the CLI that actually ran ("claude"), which differs from
+	// the agent's own after an engine failover (F-180); "" in older rows.
+	Engine string `json:"engine,omitempty"`
 }
 
 // LedgerSegmentBytes is the size at which the active ledger file rotates

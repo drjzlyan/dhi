@@ -25,11 +25,11 @@ import (
 )
 
 // SchemaVersion is the agent manifest schema this build WRITES
-// (F-045: + persona; F-031: + workflow). Parse still accepts schema 1 (no role/skills),
+// (F-045: + persona; F-031: + workflow; F-180: + fallback_engine/model). Parse still accepts schema 1 (no role/skills),
 // schema 2 (role/skills, `runtime`), 3 (engine), and 4 (scopes) for
 // back-compat — such files load with their engine derived from
 // `runtime` — but Marshal always emits the current version.
-const SchemaVersion = 6
+const SchemaVersion = 7
 
 // EngineCLIPrefix marks a CLI engine declaration: the host CLI is the
 // inference engine (ADR-0019).
@@ -134,6 +134,16 @@ type Agent struct {
 	Engine  string // "cli:<name>" or "" (inherit default)
 	Runtime string // resolved CLI name ("claude"); "" = inherit default
 
+	// FallbackEngine is the engine a run moves to when the primary is
+	// signed out, rate-limited, missing or down (F-180, ADR-0048):
+	// "" = never chosen (DHI picks a default and writes it), "none" =
+	// chosen to have none, else "cli:<name>". FallbackRuntime is its
+	// resolved CLI name, empty for "" and "none". FallbackModel is for the
+	// fallback CLI only ("" or "default" = that CLI's own).
+	FallbackEngine  string
+	FallbackRuntime string
+	FallbackModel   string
+
 	// Scopes is the agent's declared capability set (F-030 P2); nil/empty
 	// falls back to scopes.Default() at enforcement time.
 	Scopes scopes.Set
@@ -196,6 +206,8 @@ type file struct {
 	Persona   string            `toml:"persona"`
 	PolicyRaw string            `toml:"policy_json"`
 	Engine    string            `toml:"engine"`
+	FallbackE string            `toml:"fallback_engine"`
+	FallbackM string            `toml:"fallback_model"`
 	Scopes    map[string]string `toml:"scopes"`
 	Workflow  string            `toml:"workflow"`
 	Runtime   string            `toml:"runtime"`
@@ -314,6 +326,9 @@ func Parse(id string, data []byte) (*Agent, error) {
 	if cliName != "" {
 		a.Engine = EngineString(cliName)
 	}
+	if err := parseFallback(a, f); err != nil {
+		return nil, fmt.Errorf("agentkit/manifest: %s: %w", id, err)
+	}
 	if f.Timeout != "" {
 		d, err := time.ParseDuration(f.Timeout)
 		if err != nil {
@@ -325,6 +340,42 @@ func Parse(id string, data []byte) (*Agent, error) {
 		return nil, fmt.Errorf("agentkit/manifest: %s: retries %d must not be negative", id, a.Retries)
 	}
 	return a, nil
+}
+
+// FallbackNone is the fallback_engine value of a deliberate "no fallback".
+const FallbackNone = "none"
+
+// parseFallback validates fallback_engine / fallback_model strictly, like
+// engine: an unknown CLI refuses by name, and so does a fallback that is
+// the agent's own engine (it could never help).
+func parseFallback(a *Agent, f file) error {
+	eng := strings.TrimSpace(strings.ToLower(f.FallbackE))
+	model := strings.TrimSpace(f.FallbackM)
+	if eng == "" && model == "" {
+		return nil
+	}
+	if f.Schema < 7 {
+		return fmt.Errorf("fallback_engine/fallback_model require schema = %d", SchemaVersion)
+	}
+	switch eng {
+	case "":
+		return fmt.Errorf("fallback_model needs fallback_engine")
+	case FallbackNone:
+		if model != "" {
+			return fmt.Errorf("fallback_model with fallback_engine = \"none\"")
+		}
+		a.FallbackEngine = FallbackNone
+		return nil
+	}
+	name, err := ParseEngine(eng)
+	if err != nil {
+		return fmt.Errorf("fallback_engine: %w", err)
+	}
+	if name == a.Runtime {
+		return fmt.Errorf("fallback_engine %q is the agent's own engine; use \"none\" or another CLI", eng)
+	}
+	a.FallbackEngine, a.FallbackRuntime, a.FallbackModel = EngineString(name), name, model
+	return nil
 }
 
 // parseScopes validates the manifest's declared scope effects.
@@ -445,6 +496,10 @@ func Marshal(a *Agent) ([]byte, error) {
 			f.Scopes[string(sc)] = string(eff)
 		}
 	}
+	f.FallbackE, f.FallbackM = a.FallbackEngine, a.FallbackModel
+	if f.FallbackE == "" && a.FallbackRuntime != "" {
+		f.FallbackE = EngineString(a.FallbackRuntime)
+	}
 	f.Workflow = a.Workflow
 	f.Retries = a.Retries
 	if a.Timeout > 0 {
@@ -482,10 +537,22 @@ func Marshal(a *Agent) ([]byte, error) {
 		back.Role != a.Role || back.Persona != a.Persona || strings.Join(back.Skills, ",") != strings.Join(a.Skills, ",") ||
 		back.Engine != wantEngine || back.Runtime != wantRuntime ||
 		!scopesEqual(back.Scopes, a.Scopes) ||
+		back.FallbackRuntime != wantFallback(a) || back.FallbackModel != a.FallbackModel ||
 		back.Timeout != a.Timeout || back.Retries != a.Retries {
 		return nil, fmt.Errorf("agentkit/manifest: %s: marshal round-trip mismatch", a.ID)
 	}
 	return data.Bytes(), nil
+}
+
+// wantFallback is the CLI name a marshalled fallback must parse back to.
+func wantFallback(a *Agent) string {
+	if a.FallbackRuntime != "" {
+		return a.FallbackRuntime
+	}
+	if name, err := ParseEngine(a.FallbackEngine); err == nil {
+		return name
+	}
+	return ""
 }
 
 func scopesEqual(a, b scopes.Set) bool {

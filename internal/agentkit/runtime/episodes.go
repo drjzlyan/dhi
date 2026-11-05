@@ -143,5 +143,6 @@ func (r *Runtime) recordSpend(run tasks.Run, taskSlug string) {
 	_ = r.cfg.Spend.Append(budget.Entry{
 		At: run.Finished, Agent: run.Agent, Task: taskSlug,
 		Tokens: tokens, CostUSD: run.CostUSD,
+		Engine: strings.TrimPrefix(run.Runtime, "cli:"),
 	})
 }

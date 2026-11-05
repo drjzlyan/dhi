@@ -132,6 +132,9 @@ func runHead(r tasks.Run) string {
 	if r.Model != "" {
 		s += " · " + r.Model
 	}
+	if r.FailoverFrom != "" { // F-180
+		s += " · failover from " + r.FailoverFrom + " (" + r.FailoverWhy + ")"
+	}
 	return s
 }
 

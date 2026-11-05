@@ -91,6 +91,7 @@ func Run(wsRoot string) Report {
 	r.Checks = append(r.Checks, Workflows(wsRoot)...)
 	r.Checks = append(r.Checks, Dependencies(wsRoot)...)
 	r.Checks = append(r.Checks, Runtimes()...)
+	r.Checks = append(r.Checks, Fallbacks(wsRoot)...)
 	r.Checks = append(r.Checks, Tasks(wsRoot)...)
 	r.Checks = append(r.Checks, RunStore(wsRoot)...)
 	r.Checks = append(r.Checks, Autopilots(wsRoot)...)

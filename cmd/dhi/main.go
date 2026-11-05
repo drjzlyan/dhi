@@ -173,6 +173,18 @@ func runTUI() (relaunch bool) {
 		os.Exit(1)
 	}
 	cfg.Apply()
+	// F-180 (ADR-0048): every agent gets a visible default fallback engine
+	// from the other installed CLIs, in clirun.FallbackOrder. An agent that
+	// inherits the workspace engine is measured against that default.
+	agentkitOrg.DefaultFallback = func(primary string) (string, string) {
+		if primary == "" {
+			if name, err := manifest.ParseEngine(cfg.Engine); err == nil {
+				primary = name
+			}
+		}
+		return clirun.PickFallback(primary, clirun.NewRegistry(cliLook).Installed())
+	}
+
 	kit.SetKeyMap(cfg.Keys)                       // [keys] remaps (F-058): the shell translates, the chrome shows them
 	kit.MacKeys = runtime.GOOS == "darwin"        // hints spell alt as ⌥ (F-101)
 	kit.SetOSClipboard(hosttools.CopyToClipboard) // copy works where OSC 52 does not (ADR-0042)
@@ -301,6 +313,13 @@ func runTUI() (relaunch bool) {
 		// under .dhi/agents/. Guards carry the audited OS-sandbox
 		// adapter (nil here is impossible: the audit blocked first).
 		if messageBus != nil {
+			// Existing agents without a recorded fallback get the default
+			// written into their manifests before the roster loads.
+			if changed, ferr := agentkitOrg.EnsureFallbacks(ws); ferr != nil {
+				fmt.Fprintln(os.Stderr, "dhi: fallback engines:", ferr)
+			} else if len(changed) > 0 {
+				fmt.Fprintln(os.Stderr, "dhi: default fallback engine set for:", strings.Join(changed, ", "))
+			}
 			agentRT = newAgentRuntime(ws, messageBus, guardWorkspace(decision.Sandbox, ws), agentEnv, cfg.Engine, gitRunner, identityFn, sessionStore, runRunner, editorBridge, wsScopes, taskStore, reviewSvc, rgSearcher, mcpStore, convLive.Source(), cliLook, decision.Worktrees,
 				liveTuning(userCfg, wsCfg, cfg, identityFn))
 			if agentRT != nil {
@@ -1599,9 +1618,15 @@ func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cl
 		Episodes: episode.Open(ws.Root),
 		Spend:    budget.Open(ws.Root),
 		Tuning:   tune,
-		OnRun:    otelOnRun(),           // F-164: optional trace export, off without OTEL_* env
-		Lessons:  lessons.Open(ws.Root), // F-068: learned rules, retrieval + reflection
-		Forge:    forge.Open(ws.Root),   // F-069: agent-made tools, active once approved
+		OnFailover: func(agent, from, to, why string) { // F-180: never silent
+			if uiSend != nil {
+				uiSend(app.ToastMsg{Kind: kit.ToastWarning, Title: agent + " switched engine: " + from + " to " + to,
+					Detail: why + "; the fallback engine set for this agent took over"})
+			}
+		},
+		OnRun:   otelOnRun(),           // F-164: optional trace export, off without OTEL_* env
+		Lessons: lessons.Open(ws.Root), // F-068: learned rules, retrieval + reflection
+		Forge:   forge.Open(ws.Root),   // F-069: agent-made tools, active once approved
 		// F-070: agents propose settings changes; the human applies them.
 		SetProps:     setprop.Open(ws.Root),
 		SettingCheck: settingCheck(ws),

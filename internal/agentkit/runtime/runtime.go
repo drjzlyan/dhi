@@ -172,6 +172,10 @@ type Config struct {
 	// OnRun, when set, sees every finished CLI run with its tool-call
 	// count (F-164 trace export). It must not block; nil = nothing.
 	OnRun func(run tasks.Run, toolCalls int)
+	// OnFailover, when set, hears every engine failover (F-180): the
+	// agent, the engine it left and entered ("cli:<name>") and the
+	// failure class. cmd raises the toast. It must not block.
+	OnFailover func(agent, from, to, why string)
 	// SetProps + SettingCheck serve settings_propose (F-070): agents
 	// propose, the human applies in Settings. nil = no proposals.
 	SetProps     *setprop.Store
@@ -440,6 +444,11 @@ type entry struct {
 	cli     *clirun.CLI    // host CLI adapter
 	cliPath string         // resolved binary path for the CLI runtime
 	turnMu  sync.Mutex     // one turn at a time per agent
+	// primaryMissing names the agent's own CLI when its binary is not
+	// installed and the entry was built on the fallback instead (F-180);
+	// the turn asks and announces before it runs.
+	primaryMissing string
+	primary        *clirun.CLI // the missing primary's adapter, for the approval comparison
 }
 
 // New builds per-agent entries from the roster. Agents whose manifest
@@ -503,11 +512,18 @@ func (r *Runtime) extendSandboxForRoster(roster []*manifest.Agent) error {
 		seen[p] = true
 		extras = append(extras, p)
 	}
+	// A fallback engine (F-180) must be able to run when it takes over, so
+	// its roots are admitted up front like the primary's.
+	var names []string
 	for _, m := range roster {
-		name, err := r.engineName(m)
-		if err != nil {
-			continue // buildEntry names the missing engine precisely
+		if name, err := r.engineName(m); err == nil {
+			names = append(names, name)
+		} // else buildEntry names the missing engine precisely
+		if m.FallbackRuntime != "" {
+			names = append(names, m.FallbackRuntime)
 		}
+	}
+	for _, name := range names {
 		c, ok := r.cfg.CLIs.Get(name)
 		if !ok {
 			continue // buildEntry names the unknown runtime precisely
@@ -684,8 +700,18 @@ func (r *Runtime) buildEntry(m *manifest.Agent, jailRoots []string) (*entry, err
 		return nil, fmt.Errorf("runtime: %s: unknown CLI runtime %q", m.ID, name)
 	}
 	path, err := r.cfg.CLIs.Path(name)
+	missing := ""
 	if err != nil {
-		return nil, fmt.Errorf("runtime: %s: %w (install %s to use this engine)", m.ID, err, c.Bin)
+		// F-180: a missing primary binary is a failover cause. With a
+		// fallback that resolves, the agent runs on it (announced and, if
+		// its wiring differs, approved at the turn); without one the
+		// roster refuses by name as before.
+		fe, ferr := r.fallbackEntry(&entry{m: m, cli: c})
+		if m.FallbackRuntime == "" || ferr != nil {
+			return nil, fmt.Errorf("runtime: %s: %w (install %s to use this engine)", m.ID, err, c.Bin)
+		}
+		missing = name
+		m, c, path = fe.m, fe.cli, fe.cliPath
 	}
 	var policy *sandbox.Policy
 	if m.Policy() != nil {
@@ -704,7 +730,12 @@ func (r *Runtime) buildEntry(m *manifest.Agent, jailRoots []string) (*entry, err
 		// created after the choice.
 		m = assign.Effective(m, r.cfg.AllBots())
 	}
-	return &entry{m: m, guard: guard, cli: c, cliPath: path}, nil
+	e := &entry{m: m, guard: guard, cli: c, cliPath: path, primaryMissing: missing}
+	if missing != "" {
+		pc, _ := r.cfg.CLIs.Get(missing)
+		e.primary = pc
+	}
+	return e, nil
 }
 
 // Changes pings once after every successful Reload so UIs can refresh

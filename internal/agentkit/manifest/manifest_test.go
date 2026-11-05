@@ -122,7 +122,7 @@ func TestParseErrors(t *testing.T) {
 	}{
 		{"bad id", "Big-Agent", "schema = 1\nname = \"n\"\nmodel = \"m\"\n", "bad agent id"},
 		{"unknown key", "a", "schema = 1\nname = \"n\"\nmodel = \"m\"\ntemperament = \"calm\"\n", "unknown key"},
-		{"bad schema", "a", "schema = 7\nname = \"n\"\nmodel = \"m\"\n", "schema 7"},
+		{"bad schema", "a", "schema = 8\nname = \"n\"\nmodel = \"m\"\n", "schema 8"},
 		{"missing name", "a", "schema = 1\nmodel = \"m\"\n", "name is required"},
 		{"missing model", "a", "schema = 1\nname = \"n\"\n", "model is required"},
 		{"missing runtime", "a", "schema = 1\nname = \"n\"\nmodel = \"m\"\n", "runtime"},
@@ -401,6 +401,59 @@ func TestPersonaParsesRoundTripsAndNeedsSchema6(t *testing.T) {
 	bad := "schema = 6\nname = \"E\"\nmodel = \"m\"\nengine = \"cli:claude\"\npersona = \"Bad Slug\"\n"
 	if _, err := Parse("e", []byte(bad)); err == nil || !strings.Contains(err.Error(), "persona") {
 		t.Fatalf("bad persona slug = %v", err)
+	}
+}
+
+// F-180: fallback_engine / fallback_model parse strictly, round-trip, and
+// an older manifest without them loads with none recorded.
+func TestFallbackFields(t *testing.T) {
+	head := "schema = 7\nname = \"E\"\nmodel = \"m\"\nengine = \"cli:claude\"\n"
+	cases := []struct {
+		name, extra, wantErr string
+		wantEng, wantRT      string
+		wantModel            string
+	}{
+		{"unset", "", "", "", "", ""},
+		{"cli", "fallback_engine = \"cli:codex\"\n", "", "cli:codex", "codex", ""},
+		{"cli with model", "fallback_engine = \"cli:codex\"\nfallback_model = \"gpt-x\"\n", "", "cli:codex", "codex", "gpt-x"},
+		{"none", "fallback_engine = \"none\"\n", "", "none", "", ""},
+		{"unknown cli", "fallback_engine = \"cli:nope\"\n", "unknown CLI", "", "", ""},
+		{"bad kind", "fallback_engine = \"api:x\"\n", "unknown kind", "", "", ""},
+		{"own engine", "fallback_engine = \"cli:claude\"\n", "own engine", "", "", ""},
+		{"model alone", "fallback_model = \"x\"\n", "needs fallback_engine", "", "", ""},
+		{"model with none", "fallback_engine = \"none\"\nfallback_model = \"x\"\n", "fallback_model", "", "", ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			a, err := Parse("e", []byte(head+c.extra))
+			if c.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), c.wantErr) {
+					t.Fatalf("err = %v, want %q", err, c.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if a.FallbackEngine != c.wantEng || a.FallbackRuntime != c.wantRT || a.FallbackModel != c.wantModel {
+				t.Fatalf("got %q/%q/%q", a.FallbackEngine, a.FallbackRuntime, a.FallbackModel)
+			}
+			data, err := Marshal(a)
+			if err != nil {
+				t.Fatal(err)
+			}
+			back, err := Parse("e", data)
+			if err != nil || back.FallbackEngine != c.wantEng || back.FallbackModel != c.wantModel {
+				t.Fatalf("round trip: %+v err=%v", back, err)
+			}
+		})
+	}
+	old := "schema = 6\nname = \"E\"\nmodel = \"m\"\nengine = \"cli:claude\"\nfallback_engine = \"cli:codex\"\n"
+	if _, err := Parse("e", []byte(old)); err == nil || !strings.Contains(err.Error(), "require schema") {
+		t.Fatalf("schema 6 + fallback = %v", err)
+	}
+	if a, err := Parse("e", []byte("schema = 6\nname = \"E\"\nmodel = \"m\"\nengine = \"cli:claude\"\n")); err != nil || a.FallbackEngine != "" {
+		t.Fatalf("schema 6 without fallback: %+v err=%v", a, err)
 	}
 }
 

@@ -20,6 +20,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/dhitools"
 	"github.com/drjzlyan/dhi/internal/agentkit/episode"
 	"github.com/drjzlyan/dhi/internal/agentkit/lessons"
+	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
 	"github.com/drjzlyan/dhi/internal/agentkit/mcpbridge"
 	"github.com/drjzlyan/dhi/internal/agentkit/pathscope"
 	"github.com/drjzlyan/dhi/internal/agentkit/skills"
@@ -44,6 +45,19 @@ import (
 // The manifest's `runtime` key is the exec authorization; the OS sandbox
 // — from the same Guard seam every exec uses — is the boundary.
 func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message, tl *turnLog) error {
+	// F-180: the agent's own CLI is not installed and the entry was built
+	// on its fallback. Say so (and ask, if the wiring differs) before any
+	// run; every run of this turn is labeled.
+	var fo *failoverInfo
+	if e.primaryMissing != "" {
+		if err := r.failoverApproval(ctx, e.m.ID, e.primary, e.cli); err != nil {
+			r.alert(trigger, e.m.ID, fmt.Sprintf("I couldn't start: %s is not installed and its fallback engine %s was not approved (%v). Install %s, or change the fallback in Settings.",
+				e.primaryMissing, e.cli.Name, err, e.primaryMissing))
+			return fmt.Errorf("runtime: %s: fallback %s: %w (%w)", e.m.ID, e.cli.Name, err, errAlerted)
+		}
+		fo = &failoverInfo{from: manifest.EngineString(e.primaryMissing), why: string(clirun.FailNotInstalled)}
+		r.announceFailover(trigger, e.m.ID, fo.from, manifest.EngineString(e.cli.Name), clirun.FailNotInstalled)
+	}
 	// The KB retrieval rides the turn context but must not inherit a
 	// timeout that would cut the run short: bounded by the caller's
 	// context here, before the manifest timeout arms (the timeout
@@ -83,7 +97,7 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message, tl
 		wfText += noWorktreeNote
 	}
 	rl := &relaunch{}
-	serve := r.serveToolsFor(e, trigger, turnTools{
+	tt := turnTools{
 		workBranch:  r.workBranchSeam(e.m.ID, trigger, rl),
 		access:      r.accessSeam(e.m.ID, rl),
 		envelope:    r.envelopeFor(task, hasTask, workdir, tune),
@@ -91,7 +105,8 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message, tl
 		plan:        r.planSeam(e.m.ID, ep.Key),
 		memberRoots: r.memberRoots(task),
 		lesson:      r.lessonRecorder(e.m.ID),
-	})
+	}
+	serve := r.serveToolsFor(e, trigger, tt)
 	resume := ""
 	if tune.Resume && e.cli.ResumeOK && ep.Resumable(e.cli.Name, workdir) {
 		resume = ep.Session
@@ -105,8 +120,12 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message, tl
 	level := 0
 	prompt, system := r.cliPromptAt(ctx, e, trigger, wfText, level, &ep, resume != "")
 	mcpConfig, mcpEndpoint, mcpGeminiDir, webDenied := "", "", "", false
+	defer func() { // the session in force at the end (a failover swaps it)
+		if serve != nil {
+			serve.stop()
+		}
+	}()
 	if serve != nil {
-		defer serve.stop()
 		mcpConfig, mcpEndpoint, mcpGeminiDir, webDenied = serve.configPath, serve.endpoint, serve.geminiDir, serve.webDenied
 	}
 
@@ -129,6 +148,8 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message, tl
 
 	brief := ""
 	freshFallback := false
+	spawnModel := ep.Model // F-130: the conversation's override; a failover drops it (another vendor's names)
+	ranToolsYet := false   // F-180: a tool ran this turn, so no failover may replay it
 	for attempt := 0; ; attempt++ {
 		// F-066: budgets bind between spawns (a CLI runs to completion).
 		if msg, ok := r.budgetCheck(e.m.ID, task.Slug, tune.Budgets); !ok {
@@ -139,13 +160,15 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message, tl
 		run, events := r.cliSpawnOnce(ctx, e, trigger, spawnInput{
 			prompt: prompt + brief, system: system, workdir: workdir, attempt: attempt,
 			resume: resume, maxTurns: tune.MaxTurns, stall: tune.Stall,
-			model:     ep.Model, // F-130: the conversation's override, "" = the agent's
+			model:     spawnModel, // "" = the agent's
+			failover:  fo,
 			mcpConfig: mcpConfig, mcpEndpoint: mcpEndpoint, mcpGeminiDir: mcpGeminiDir,
 			webDenied: webDenied, relaunch: rl,
 			budgets: tune.Budgets, taskSlug: task.Slug,
 		})
 		r.recordRun(trigger, run)
 		r.recordSpend(run, task.Slug)
+		ranToolsYet = ranToolsYet || ranTools(events)
 		r.calibrate(trigger, e, ep, run, resume == "", runeLen(prompt+brief)+runeLen(system))
 		tl.runs = append(tl.runs, run.ID)
 		tl.outcome = run.Summary
@@ -250,6 +273,28 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message, tl
 		// else retries with a brief of what failed and where it stopped.
 		lastErr := fmt.Errorf("runtime: %s: run %s: %s", e.m.ID, run.ID, run.Error)
 		fail := clirun.Classify(run.Status == tasks.RunTimeout, run.Error)
+		// F-180 (ADR-0048): signed out, rate-limited, missing or down, with
+		// no tool run yet, on an agent that has a fallback engine: one
+		// move to it. After a tool ran the episode stays resumable and the
+		// human chooses.
+		if fail.Failover() && fo == nil && !ranToolsYet && e.m.FallbackRuntime != "" && e.m.FallbackRuntime != e.cli.Name {
+			if fe, ok := r.tryFailover(ctx, trigger, e, fail); ok {
+				fo = &failoverInfo{from: manifest.EngineString(e.cli.Name), why: string(fail)}
+				if serve != nil {
+					serve.stop()
+				}
+				e, spawnModel = fe, ""
+				serve = r.serveToolsFor(e, trigger, tt)
+				mcpConfig, mcpEndpoint, mcpGeminiDir, webDenied = "", "", "", false
+				if serve != nil {
+					mcpConfig, mcpEndpoint, mcpGeminiDir, webDenied = serve.configPath, serve.endpoint, serve.geminiDir, serve.webDenied
+				}
+				resume, ep.Session = "", "" // another vendor cannot continue this session
+				prompt, system = r.cliPromptAt(ctx, e, trigger, wfText, level, &ep, false)
+				attempt-- // the move is not a failed attempt
+				continue
+			}
+		}
 		// F-066: a resumed spawn that fails may be a dead session (expired,
 		// pruned, another machine). Fall back to one fresh spawn — named,
 		// never silent — without spending the retry budget.
@@ -349,6 +394,8 @@ type spawnInput struct {
 	// and the card they are charged to ("" = card-less).
 	budgets  budget.Limits
 	taskSlug string
+	// F-180: set when this spawn runs on the fallback engine.
+	failover *failoverInfo
 }
 
 func (r *Runtime) spawnOnce(ctx context.Context, e *entry, trigger bus.Message, in spawnInput) (tasks.Run, []clirun.StreamEvent) {
@@ -363,6 +410,9 @@ func (r *Runtime) spawnOnce(ctx context.Context, e *entry, trigger bus.Message, 
 		Runtime: "cli:" + e.m.Runtime, Model: model, Attempt: in.attempt,
 		Started: started, Finished: time.Now().UTC(),
 		TokensIn: -1, TokensOut: -1,
+	}
+	if in.failover != nil {
+		run.FailoverFrom, run.FailoverWhy = in.failover.from, in.failover.why
 	}
 
 	// G-X3: images the human attached with @image:. Refused by name before
@@ -701,6 +751,9 @@ func (r *Runtime) saveTranscript(tr transcript, run tasks.Run) string {
 	}
 	if !put(trace.Record{Kind: "prompt", Detail: sent, At: run.Started}) {
 		return ""
+	}
+	if fo := tr.in.failover; fo != nil {
+		put(trace.Record{Kind: failoverEvent, Detail: fmt.Sprintf("%s → %s (%s)", fo.from, run.Runtime, fo.why), At: run.Started})
 	}
 	if tr.full {
 		put(trace.Record{Kind: "system_text", Detail: tr.in.system, At: run.Started})

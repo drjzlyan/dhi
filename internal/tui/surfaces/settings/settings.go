@@ -920,6 +920,7 @@ type agentRow struct {
 	id       string
 	model    string
 	runtime  string
+	fallback string // F-180: "claude", "none", or "" (never chosen)
 	tools    int
 	archived bool
 }
@@ -943,7 +944,8 @@ func (m *Model) agentRows() ([]agentRow, error) {
 	for _, a := range roster {
 		rows = append(rows, agentRow{
 			id: a.ID, model: a.Model, runtime: a.Runtime,
-			tools: len(a.Tools), archived: archived[a.ID],
+			fallback: fallbackName(a),
+			tools:    len(a.Tools), archived: archived[a.ID],
 		})
 	}
 	for _, id := range m.d.Org.Archived(m.d.WS) {
@@ -1108,8 +1110,62 @@ func newAgentForm(clis []string, runtimeIdx int) agentForm {
 		kit.NewTextField("role   ", ""),
 		kit.NewTextField("skills ", ""),
 		kit.NewTextField("persona", ""),
+		kit.NewToggleField("fallback", fallbackChoices(clis), 0),
+		kit.NewTextField("fb model", ""),
 	)
 	return f
+}
+
+// fallbackNone is the fallback toggle's "no fallback engine" choice.
+const fallbackNone = "none"
+
+// fallbackChoices is the fallback toggle's values: none, then each CLI.
+func fallbackChoices(clis []string) []string {
+	return append([]string{fallbackNone}, clis...)
+}
+
+// fallbackName is the CLI name an agent's fallback shows as ("" = never
+// chosen, "none" = chosen to have none).
+func fallbackName(a *manifest.Agent) string {
+	if a.FallbackRuntime != "" {
+		return a.FallbackRuntime
+	}
+	if a.FallbackEngine == manifest.FallbackNone {
+		return fallbackNone
+	}
+	return ""
+}
+
+func orNone(s string) string {
+	if s == "" {
+		return fallbackNone
+	}
+	return s
+}
+
+// setFallbackField selects a CLI (or none) in the form's fallback toggle
+// and prefills its model.
+func (f *agentForm) setFallbackField(clis []string, name, model string) {
+	choices := fallbackChoices(clis)
+	idx := 0
+	for i, c := range choices {
+		if c == name {
+			idx = i
+		}
+	}
+	f.f.Fields[9] = kit.NewToggleField("fallback", choices, idx)
+	f.f.Fields[10] = kit.NewTextField("fb model", model)
+}
+
+// applyFallbackFields writes the form's fallback choice onto the agent
+// (F-180): none, or a CLI with its own model ("" = that CLI's default).
+func applyFallbackFields(a *manifest.Agent, choice, model string) {
+	a.FallbackRuntime, a.FallbackModel = "", ""
+	if choice == "" || choice == fallbackNone {
+		a.FallbackEngine = manifest.FallbackNone
+		return
+	}
+	a.FallbackEngine, a.FallbackRuntime, a.FallbackModel = manifest.EngineString(choice), choice, strings.TrimSpace(model)
 }
 
 // detectedFirst orders the runtime picker detection-driven (F-027 P2):
@@ -1149,6 +1205,9 @@ func (m *Model) editAgentForm(a *manifest.Agent, clis []string) agentForm {
 	f.f.Fields[6] = kit.NewTextField("role   ", a.Role)
 	f.f.Fields[7] = kit.NewTextField("skills ", strings.Join(a.Skills, ", "))
 	f.f.Fields[8] = kit.NewTextField("persona", a.Persona)
+	fb := *a
+	org.ApplyFallback(&fb) // an agent that never had one is shown its default
+	f.setFallbackField(clis, fallbackName(&fb), fb.FallbackModel)
 	for i, c := range clis {
 		if c == a.Runtime {
 			f.f.Fields[4] = kit.NewToggleField("runtime", clis, i)
@@ -1209,6 +1268,7 @@ func (m *Model) submitAgent() {
 		}
 	}
 	persona := strings.TrimSpace(vals[8])
+	fbChoice, fbModel := vals[9], vals[10]
 	if lib := m.libStore(); lib != nil {
 		for _, k := range skills {
 			if _, ok := lib.Skill(k); !ok {
@@ -1226,6 +1286,7 @@ func (m *Model) submitAgent() {
 		Runtime: runtime, Tools: tools,
 		Role: role, Persona: persona, Skills: skills,
 	}
+	applyFallbackFields(a, fbChoice, fbModel)
 	// An edit changes only what the form shows. Everything else the
 	// manifest carries (sandbox policy, scopes, workflow, engine,
 	// timeout, retries) must survive — rebuilding from the form alone
@@ -1238,6 +1299,7 @@ func (m *Model) submitAgent() {
 					keep.Name, keep.Model, keep.System = name, model, system
 					keep.Runtime, keep.Engine = runtime, ""
 					keep.Tools, keep.Role, keep.Persona, keep.Skills = tools, role, persona, skills
+					applyFallbackFields(&keep, fbChoice, fbModel)
 					a = &keep
 					break
 				}
@@ -1881,7 +1943,7 @@ func (m *Model) agentsView() []string {
 	out := []string{}
 	for i, r := range rows {
 		line := padTo(r.id, 12) + padTo(r.model, 14) + padTo(r.runtime, 10) +
-			itoa(r.tools) + " tools"
+			padTo("fallback "+orNone(r.fallback), 20) + itoa(r.tools) + " tools"
 		if r.archived {
 			line = padTo(r.id, 12) + theme.TextDim().Render("archived")
 		}
@@ -2071,5 +2133,15 @@ func maxInt(a, b int) int {
 
 // openNewAgentForm opens the create-agent form.
 func (m *Model) openNewAgentForm() {
-	m.form = newAgentForm(m.d.CLIs, m.detectedFirst(m.d.CLIs))
+	idx := m.detectedFirst(m.d.CLIs)
+	m.form = newAgentForm(m.d.CLIs, idx)
+	// F-180: the new agent opens with its default fallback chosen, where
+	// it can be seen and changed (or set to none) before saving.
+	primary := ""
+	if idx < len(m.d.CLIs) {
+		primary = m.d.CLIs[idx]
+	}
+	probe := manifest.Agent{Runtime: primary}
+	org.ApplyFallback(&probe)
+	m.form.setFallbackField(m.d.CLIs, fallbackName(&probe), "")
 }

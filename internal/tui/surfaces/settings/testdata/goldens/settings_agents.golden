@@ -1,5 +1,5 @@
   general ───── ▏ agents ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
-  CONFIG        ▏ ▌ scout       m-1           claude    2 tools                           
+  CONFIG        ▏ ▌ scout       m-1           claude    fallback none       2 tools       
   PROJECT       ▏   muse        archived                                                  
   SETUP         ▏                                                                         
   agents ────── ▏                                                                         

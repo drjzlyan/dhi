@@ -237,6 +237,12 @@ type Run struct {
 	// for a repeated tool call, "budget" for the in-flight spend cap;
 	// empty for a run nobody stopped. Error carries the full sentence.
 	StopReason string `toml:"stop_reason,omitempty"`
+	// FailoverFrom is the engine ("cli:<name>") this run replaced when the
+	// agent's primary could not serve it, and FailoverWhy the failure
+	// class (F-180, ADR-0048); both empty for a run on the agent's own
+	// engine. Runtime above is the engine that actually ran.
+	FailoverFrom string `toml:"failover_from,omitempty"`
+	FailoverWhy  string `toml:"failover_why,omitempty"`
 
 	// Transcript is the path to the persisted event JSONL under
 	// .dhi/agents/<id>/runs/ (F-013 step 4); empty when the run could

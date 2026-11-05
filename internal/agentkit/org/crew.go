@@ -40,6 +40,7 @@ func (o *Org) CreateAgent(ws *workspace.Workspace, a *manifest.Agent) error {
 	if _, archived := o.archivedExists(ws, a.ID); archived {
 		return fmt.Errorf("org: agent %q is archived (restore it instead)", a.ID)
 	}
+	ApplyFallback(a) // F-180: a new agent starts with a visible default fallback
 	return manifest.WriteFile(dir, a)
 }
 

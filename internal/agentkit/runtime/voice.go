@@ -47,6 +47,10 @@ func humanFailure(fail clirun.Failure, c *clirun.CLI) string {
 		return "I couldn't finish: " + authHint(c) + "."
 	case clirun.FailRateLimit:
 		return "I couldn't finish: the model provider is rate-limiting " + name + ". Ask again in a little while."
+	case clirun.FailNotInstalled:
+		return "I couldn't finish: " + name + " is not installed here. Install it, or pick another engine in Settings."
+	case clirun.FailUnavailable:
+		return "I couldn't finish: the model provider's service is unavailable for " + name + ". Ask again in a little while."
 	case clirun.FailOverflow:
 		return "I couldn't finish: the conversation got too long for " + name + ", even compacted. Start a fresh thread with the essentials."
 	case clirun.FailTimeout:
