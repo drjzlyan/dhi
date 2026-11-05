@@ -17,6 +17,7 @@ import (
 
 	"github.com/drjzlyan/dhi/internal/agentkit/assign"
 	"github.com/drjzlyan/dhi/internal/agentkit/dhitools"
+	"github.com/drjzlyan/dhi/internal/agentkit/hooks"
 	"github.com/drjzlyan/dhi/internal/agentkit/install"
 	"github.com/drjzlyan/dhi/internal/agentkit/library"
 	"github.com/drjzlyan/dhi/internal/agentkit/mcpbridge"
@@ -61,7 +62,8 @@ func userScope() install.Scope {
 		return install.Scope{}
 	}
 	return install.Scope{Name: "every workspace", SkillsDir: library.UserSkillsDir,
-		MCPFile: mcpserver.UserFile, LockPath: filepath.Join(userExtDir, install.LockFile)}
+		MCPFile: mcpserver.UserFile, HooksDir: filepath.Join(userExtDir, "hooks"),
+		LockPath: filepath.Join(userExtDir, install.LockFile)}
 }
 
 func workspaceScope(root string) install.Scope {
@@ -69,7 +71,23 @@ func workspaceScope(root string) install.Scope {
 		return install.Scope{}
 	}
 	return install.Scope{Name: "this workspace", SkillsDir: filepath.Join(root, workspace.DirSkills),
-		MCPFile: mcpserver.WorkspaceFile(root), LockPath: filepath.Join(root, ".dhi", install.LockFile)}
+		MCPFile: mcpserver.WorkspaceFile(root), HooksDir: filepath.Join(root, workspace.DirHooks),
+		LockPath: filepath.Join(root, ".dhi", install.LockFile)}
+}
+
+// enabledHooks is the runtime's plugin-hooks source for the workspace at
+// root: the plugins the user turned on, in either scope (F-179).
+func enabledHooks(root string) func() ([]hooks.Plugin, []string) {
+	return func() ([]hooks.Plugin, []string) {
+		var all []hooks.Plugin
+		var problems []string
+		for _, sc := range []install.Scope{workspaceScope(root), userScope()} {
+			p, probs := install.EnabledHooks(sc)
+			all = append(all, p...)
+			problems = append(problems, probs...)
+		}
+		return all, problems
+	}
 }
 
 func extCache() string {

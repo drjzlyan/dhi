@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/drjzlyan/dhi/internal/agentkit/hooks"
 	"github.com/drjzlyan/dhi/internal/agentkit/mcpserver"
 	"github.com/drjzlyan/dhi/internal/agentkit/skills"
 )
@@ -15,8 +16,10 @@ import (
 // Plugins and marketplaces in the vendor format (ADR-0043): a plugin is a
 // folder with .claude-plugin/plugin.json that bundles skills (skills/ by
 // default) and MCP servers (.mcp.json at its root by default, or the
-// manifest's mcpServers: a path or an inline object). DHI uses those two
-// parts; commands, agents and hooks are listed but not run.
+// manifest's mcpServers: a path or an inline object). DHI also reads its
+// lifecycle hooks (F-179, ADR-0047: hooks/hooks.json or the manifest's
+// hooks); they stay off until the user enables them. Commands and agents
+// are listed but not run.
 
 // Plugin is one plugin's useful contents.
 type Plugin struct {
@@ -26,7 +29,8 @@ type Plugin struct {
 	Dir         string
 	SkillDirs   []string           // skill directories it ships
 	Servers     []mcpserver.Server // MCP servers it configures
-	Unused      []string           // parts DHI does not run: "commands", "agents", "hooks"
+	Hooks       hooks.Set          // lifecycle hooks it ships (off until enabled)
+	Unused      []string           // parts DHI does not run: "commands", "agents"
 	Warnings    []string
 }
 
@@ -105,13 +109,61 @@ func ReadPlugin(dir string) (*Plugin, error) {
 		p.Servers = servers
 		p.Warnings = append(p.Warnings, warns...)
 	}
-	for part, raw := range map[string]json.RawMessage{"commands": m.Commands, "agents": m.Agents, "hooks": m.Hooks} {
+	readHooks(dir, m.Hooks, p)
+	for part, raw := range map[string]json.RawMessage{"commands": m.Commands, "agents": m.Agents} {
 		if len(raw) > 0 || exists(filepath.Join(dir, part)) {
 			p.Unused = append(p.Unused, part)
 		}
 	}
 	sort.Strings(p.Unused)
 	return p, nil
+}
+
+// readHooks fills p.Hooks from the manifest's hooks (a path, a list of
+// paths, or an inline object) or, without one, hooks/hooks.json. A hooks
+// file that cannot be read is a warning on the card, not a failed install:
+// the hooks simply are not offered.
+func readHooks(dir string, raw json.RawMessage, p *Plugin) {
+	var files [][]byte
+	readRel := func(rel string) {
+		f, ok := inside(dir, rel)
+		if !ok {
+			p.Warnings = append(p.Warnings, fmt.Sprintf("hooks path %q leaves the plugin", rel))
+			return
+		}
+		b, err := os.ReadFile(f)
+		if err != nil {
+			p.Warnings = append(p.Warnings, fmt.Sprintf("hooks: cannot read %s: %v", rel, err))
+			return
+		}
+		files = append(files, b)
+	}
+	var one string
+	var many []string
+	switch {
+	case len(raw) == 0 || string(raw) == "null":
+		if b, err := os.ReadFile(filepath.Join(dir, "hooks", "hooks.json")); err == nil {
+			files = append(files, b)
+		}
+	case json.Unmarshal(raw, &one) == nil:
+		readRel(one)
+	case json.Unmarshal(raw, &many) == nil:
+		for _, r := range many {
+			readRel(r)
+		}
+	default:
+		files = append(files, raw) // inline object
+	}
+	for _, b := range files {
+		set, err := hooks.Parse(b)
+		if err != nil {
+			p.Warnings = append(p.Warnings, err.Error())
+			continue
+		}
+		p.Hooks.Hooks = append(p.Hooks.Hooks, set.Hooks...)
+		p.Hooks.Unsupported = append(p.Hooks.Unsupported, set.Unsupported...)
+		p.Warnings = append(p.Warnings, set.Warnings...)
+	}
 }
 
 // Marketplace is a plugin catalog (.claude-plugin/marketplace.json).

@@ -431,6 +431,20 @@ func Runtimes() []Check {
 			checks = append(checks, Check{Name: "runtime/" + c.Name + "/prompt-size", Status: Warn,
 				Detail: c.Bin + " has no verified stdin delivery: a prompt over " + limit + " refuses the turn by name; lower memory.prompt_tokens to keep prompts under it"})
 		}
+		// F-179 (ADR-0047): where plugin hooks reach. DHI's own tool calls
+		// are always covered; the CLI's native tools only where it takes
+		// hooks per run. Said either way, never implied.
+		if c.HooksArgs != nil {
+			checks = append(checks, Check{Name: "runtime/" + c.Name + "/hooks", Status: OK,
+				Detail: "plugin tool hooks (once enabled) cover DHI's tools and " + c.Bin + "'s own tools, handed to it for each run only; your " + c.Bin + " config is never edited"})
+		} else {
+			why := ""
+			if c.HooksWhy != "" {
+				why = ": " + c.HooksWhy
+			}
+			checks = append(checks, Check{Name: "runtime/" + c.Name + "/hooks", Status: OK,
+				Detail: "plugin hooks (once enabled) cover DHI's tools only; " + c.Bin + "'s own tools are not hooked" + why})
+		}
 		for _, k := range c.EnvPass {
 			if k == "HOME" {
 				continue // always set; not worth a row

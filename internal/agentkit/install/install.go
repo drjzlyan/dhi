@@ -24,6 +24,7 @@ type Scope struct {
 	Name      string // "this workspace" or "every workspace"
 	SkillsDir string // <ws>/.dhi/skills or <config>/dhi/skills
 	MCPFile   string // <ws>/.dhi/mcp.json or <config>/dhi/mcp.json
+	HooksDir  string // <ws>/.dhi/hooks or <config>/dhi/hooks: plugin copies whose hooks the user may enable (F-179)
 	LockPath  string // installed.toml next to them
 }
 
@@ -174,12 +175,14 @@ func Runnable(dir string) []string {
 type Pick struct {
 	Skills  []string
 	Servers []string
+	Hooks   bool // keep the plugin's hooks (installed off)
 }
 
 // Result is what Apply installed.
 type Result struct {
 	Skills  []string
 	Servers []string
+	Hooks   string // the plugin whose hooks were stored (off until enabled); "" = none
 }
 
 // Apply writes the picked skills and servers into scope and records them.
@@ -219,12 +222,16 @@ func Apply(b *Bundle, scope Scope, pick *Pick, allowScripts bool) (Result, error
 			servers = append(servers, s)
 		}
 	}
-	if len(todo)+len(servers) == 0 {
-		return res, fmt.Errorf("nothing picked to install")
-	}
 	plugin := ""
+	withHooks := b.Plugin != nil && len(b.Plugin.Hooks.Hooks) > 0 && scope.HooksDir != "" && (pick == nil || pick.Hooks)
 	if b.Plugin != nil {
 		plugin = b.Plugin.Name
+	}
+	if withHooks && !skills.ValidName(plugin) {
+		return res, fmt.Errorf("plugin name %q is not a valid folder name for its hooks", plugin)
+	}
+	if len(todo)+len(servers) == 0 && !withHooks {
+		return res, fmt.Errorf("nothing picked to install")
 	}
 	for _, c := range todo {
 		dst := filepath.Join(scope.SkillsDir, c.Skill.Slug)
@@ -247,6 +254,18 @@ func Apply(b *Bundle, scope Scope, pick *Pick, allowScripts bool) (Result, error
 		}
 		lock.Servers[s.Slug] = Record{Source: b.Source.String(), Commit: b.Commit, Plugin: plugin}
 		res.Servers = append(res.Servers, s.Slug)
+	}
+	if withHooks {
+		// The whole plugin folder, so ${CLAUDE_PLUGIN_ROOT}/scripts/… resolves.
+		// It lands next to the skills, inside DHI's folders; the hooks stay
+		// off until the user enables them (ADR-0047).
+		dst := filepath.Join(scope.HooksDir, plugin)
+		if err := replaceDir(b.Plugin.Dir, dst, true); err != nil {
+			return res, fmt.Errorf("install hooks of %s: %w", plugin, err)
+		}
+		dg, _ := Digest(dst)
+		lock.Hooks[plugin] = HookRecord{Source: b.Source.String(), Commit: b.Commit, Digest: dg}
+		res.Hooks = plugin
 	}
 	return res, lock.Write(scope.LockPath)
 }
@@ -335,6 +354,14 @@ func Remove(scope Scope, kind, name string) error {
 			return err
 		}
 		delete(lock.Servers, name)
+	case "hooks":
+		if !skills.ValidName(name) {
+			return fmt.Errorf("bad plugin name %q", name)
+		}
+		if err := os.RemoveAll(filepath.Join(scope.HooksDir, name)); err != nil {
+			return err
+		}
+		delete(lock.Hooks, name)
 	default:
 		return fmt.Errorf("unknown kind %q", kind)
 	}

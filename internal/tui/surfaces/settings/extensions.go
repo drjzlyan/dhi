@@ -406,6 +406,9 @@ func (m *Model) openInstallConfirm() {
 		}
 		lines = append(lines, theme.AccentText().Render("server "+s.Slug)+theme.TextDim().Render(" — "+kit.ClipEllipsis(where, 60)))
 	}
+	if b.Plugin != nil {
+		lines = append(lines, hookCardLines(b.Plugin.Hooks, max(min(m.width-24, 96), 40))...)
+	}
 	for _, w := range b.Warnings {
 		lines = append(lines, theme.WarningText().Render("⚠ "+w))
 	}
@@ -414,6 +417,10 @@ func (m *Model) openInstallConfirm() {
 		fields = append(fields, kit.NewToggleField("scripts", []string{"don't run yet", "allow them"}, 0))
 	}
 	title := fmt.Sprintf("install %s, %s for %s", kit.Count(len(b.Skills), "skill"), kit.Count(len(b.Servers), "server"), m.extState.scope.Name)
+	if b.Plugin != nil && len(b.Plugin.Hooks.Hooks) > 0 {
+		title = fmt.Sprintf("install %s, %s, %s (off) for %s", kit.Count(len(b.Skills), "skill"), kit.Count(len(b.Servers), "server"),
+			kit.Count(len(b.Plugin.Hooks.Hooks), "hook"), m.extState.scope.Name)
+	}
 	if len(fields) == 0 {
 		fields = append(fields, kit.NewToggleField("install", []string{"yes"}, 0))
 	}
@@ -460,6 +467,9 @@ func (m *Model) submitInstallConfirm() {
 		items = append(items, assign.Item{Kind: assign.KindServer, Name: n, Description: desc})
 	}
 	m.flash = fmt.Sprintf("installed %s", strings.Join(append(res.Skills, res.Servers...), ", "))
+	if res.Hooks != "" {
+		m.flash += "; hooks of " + res.Hooks + " stored, off (INTEGRATIONS → h)"
+	}
 	m.signInInstalled(res.Servers)
 	if len(items) > 0 {
 		m.openAssign(items[0], items[1:])
@@ -479,7 +489,8 @@ func (m *Model) integrationsView(w int) []string {
 	out := []string{theme.TextDim().Render("MCP servers your bots can use · + add an official plugin, a URL or a pasted config"), ""}
 	servers := m.servers()
 	if len(servers) == 0 {
-		return append(out, theme.TextDim().Render("(none yet — press + to add Atlassian, Slack, Zoom, Linear, Notion, GitHub and more)"))
+		out = append(out, theme.TextDim().Render("(none yet — press + to add Atlassian, Slack, Zoom, Linear, Notion, GitHub and more)"))
+		return append(out, m.hooksSection()...)
 	}
 	st := &m.extState
 	st.intCur = min(st.intCur, len(servers)-1)
@@ -517,7 +528,7 @@ func (m *Model) integrationsView(w int) []string {
 		line := mark + name + theme.TextMuted().Render(padTo(kit.ClipEllipsis(where, 26), 28)) + padTo(state, 22) + who
 		out = append(out, kit.ClipEllipsis(line, w))
 	}
-	return out
+	return append(out, m.hooksSection()...)
 }
 
 func (m *Model) integrationsKey(key string) bool {
@@ -539,6 +550,8 @@ func (m *Model) integrationsKey(key string) bool {
 		}
 	case "+", "i":
 		m.loadPlugins(false)
+	case "h":
+		m.openHooksToggle()
 	case "R":
 		m.loadPlugins(true)
 	case "g":

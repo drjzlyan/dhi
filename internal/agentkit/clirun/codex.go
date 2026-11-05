@@ -42,9 +42,12 @@ import (
 
 // Codex is the Codex adapter. Registered under the runtime value "codex".
 var Codex = &CLI{
-	Name:   "codex",
-	Bin:    "codex",
-	Tested: "0.147.0",
+	Name: "codex",
+	// No HooksArgs (F-179): no verified per-run hook input; its hooks live in
+	// config.toml under ~/.codex, which DHI does not edit.
+	HooksWhy: "no verified per-run hook input (hooks live in its persistent config, which DHI does not edit)",
+	Bin:      "codex",
+	Tested:   "0.147.0",
 	// EXACT declared pass-through: codex's own config dir plus the
 	// provider keys it reads for hosted models. Nothing else crosses
 	// (ADR-0012 §4).

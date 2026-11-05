@@ -47,6 +47,8 @@ import (
 // runtime value "copilot".
 var Copilot = &CLI{
 	Name: "copilot",
+	// No HooksArgs (F-179): hooks come from files in the repo or its config folder.
+	HooksWhy: "no verified per-run hook input (hooks load from files in the repo or its config folder, which DHI does not write)",
 	// No ReadOnlyOK (F-144): --deny-tool is not verified against --allow-all-tools.
 	ReadOnlyWhy: "no verified way to deny its write and shell tools under --allow-all-tools",
 	// No ImagesOK (G-X3): not verified, so an image turn is refused by name.

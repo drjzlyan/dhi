@@ -36,6 +36,8 @@ import (
 // "opencode".
 var OpenCode = &CLI{
 	Name: "opencode",
+	// No HooksArgs (F-179): its hooks are plugins loaded from its config folders.
+	HooksWhy: "no verified per-run hook input (its plugins load from persistent config folders, which DHI does not edit)",
 	// No ReadOnlyOK (F-144): OPENCODE_PERMISSION edit/bash deny is not live-verified.
 	ReadOnlyWhy: "its edit and bash permission denial is not verified",
 	// No ImagesOK (G-X3): not verified, so an image turn is refused by name.

@@ -36,3 +36,9 @@ asked for the standards only, and for skills and MCP access to go to the right b
 - Unsigned sources replace signed registry entries, so installs pin a commit and show scripts and
   commands before they can run.
 - Prompt shape changes for every skilled agent; the F-099 evals gate the change.
+
+## Amendments (by reference)
+
+- §3, "lists but does not run … hooks": amended by ADR-0047 (F-179). A plugin's lifecycle hooks are
+  read in the vendor format and run only when the user turns them on per plugin; commands and
+  agents are still listed, not run.

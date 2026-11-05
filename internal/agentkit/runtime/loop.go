@@ -10,6 +10,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/agentkit/dhitools"
 	"github.com/drjzlyan/dhi/internal/agentkit/episode"
+	"github.com/drjzlyan/dhi/internal/agentkit/hooks"
 	"github.com/drjzlyan/dhi/internal/agentkit/scopes"
 	"github.com/drjzlyan/dhi/internal/agentkit/verifyplan"
 	"github.com/drjzlyan/dhi/internal/sandbox"
@@ -222,6 +223,7 @@ type turnTools struct {
 	workBranch     func(ctx context.Context, slug, title, member string, carry bool) (string, error) // work_branch seam (F-086); nil = none
 	access         func(ctx context.Context, kind, target, reason string) (string, error)            // permission_request seam (F-087); nil = none
 	readOnly       bool                                                                              // F-144: DHI's tools keep read scope only
+	hooks          *hooks.Runner                                                                     // F-179: plugin hooks around served tool calls; nil = none
 }
 
 // turnScopes is the capability set a turn's served tools run under: the

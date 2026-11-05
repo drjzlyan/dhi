@@ -19,6 +19,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/clirun"
 	"github.com/drjzlyan/dhi/internal/agentkit/dhitools"
 	"github.com/drjzlyan/dhi/internal/agentkit/episode"
+	"github.com/drjzlyan/dhi/internal/agentkit/hooks"
 	"github.com/drjzlyan/dhi/internal/agentkit/lessons"
 	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
 	"github.com/drjzlyan/dhi/internal/agentkit/mcpbridge"
@@ -106,6 +107,14 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message, tl
 		memberRoots: r.memberRoots(task),
 		lesson:      r.lessonRecorder(e.m.ID),
 	}
+	// F-179: the plugin hooks the user turned on, fired at DHI's tool
+	// boundary and the run's edges; the CLI's own tools too where it takes
+	// hooks per run.
+	hlog := &hookLog{}
+	hk := r.hookRunner(e, trigger, r.turnScopes(e, tt), hlog)
+	tt.hooks = hk
+	hooksConfig, dropHooksFile := r.nativeHooksFile(e, hk, trigger)
+	defer func() { dropHooksFile() }() // the file in force at the end (a failover swaps it)
 	serve := r.serveToolsFor(e, trigger, tt)
 	resume := ""
 	if tune.Resume && e.cli.ResumeOK && ep.Resumable(e.cli.Name, workdir) {
@@ -127,6 +136,25 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message, tl
 	}()
 	if serve != nil {
 		mcpConfig, mcpEndpoint, mcpGeminiDir, webDenied = serve.configPath, serve.endpoint, serve.geminiDir, serve.webDenied
+	}
+	hookCtx := ""
+	if hk != nil {
+		start := hk.Fire(ctx, hooks.Input{Event: hooks.SessionStart, Source: "startup"})
+		sub := hk.Fire(ctx, hooks.Input{Event: hooks.UserPromptSubmit, Prompt: trigger.Text})
+		if sub.Blocked {
+			why := ""
+			for _, rec := range sub.Records {
+				if rec.Kind == hooks.Denied {
+					why = rec.Detail
+				}
+			}
+			r.humanNote(trigger, e.m.ID, "Not started: the plugin hook "+sub.By+" blocked this message: "+why)
+			return nil
+		}
+		hookCtx = joinHookCtx(start.Context, sub.Context)
+		defer func() {
+			hk.Fire(context.WithoutCancel(ctx), hooks.Input{Event: hooks.Stop, Prompt: tl.outcome})
+		}()
 	}
 
 	if e.m.Timeout > 0 {
@@ -158,7 +186,8 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message, tl
 			return fmt.Errorf("runtime: %s: budget: %s: %w", e.m.ID, msg, errAlerted)
 		}
 		run, events := r.cliSpawnOnce(ctx, e, trigger, spawnInput{
-			prompt: prompt + brief, system: system, workdir: workdir, attempt: attempt,
+			prompt: prompt + brief, system: system + hookCtx, workdir: workdir, attempt: attempt,
+			hooksConfig: hooksConfig, hooklog: hlog,
 			resume: resume, maxTurns: tune.MaxTurns, stall: tune.Stall,
 			model:     spawnModel, // "" = the agent's
 			failover:  fo,
@@ -284,6 +313,12 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message, tl
 					serve.stop()
 				}
 				e, spawnModel = fe, ""
+				// F-179: the hooks run in the new engine's sandbox, and only a CLI
+				// that takes them per run gets the file.
+				dropHooksFile()
+				hk = r.hookRunner(e, trigger, r.turnScopes(e, tt), hlog)
+				tt.hooks = hk
+				hooksConfig, dropHooksFile = r.nativeHooksFile(e, hk, trigger)
 				serve = r.serveToolsFor(e, trigger, tt)
 				mcpConfig, mcpEndpoint, mcpGeminiDir, webDenied = "", "", "", false
 				if serve != nil {
@@ -388,8 +423,10 @@ type spawnInput struct {
 	quiet                                bool          // don't relay the stream (reflection)
 	relaunch                             *relaunch     // set mid-run: stop this spawn, the work moved
 	mcpConfig, mcpEndpoint, mcpGeminiDir string
-	webDenied                            bool // mcpGeminiDir carries the web-deny hook
-	readOnly                             bool // F-144: no write tools (plan, review, ask)
+	webDenied                            bool     // mcpGeminiDir carries the web-deny hook
+	hooksConfig                          string   // per-run settings file with plugin tool hooks (F-179)
+	hooklog                              *hookLog // plugin hook records to add to this attempt's transcript
+	readOnly                             bool     // F-144: no write tools (plan, review, ask)
 	// G-C4: the caps the running spawn is checked against as it streams,
 	// and the card they are charged to ("" = card-less).
 	budgets  budget.Limits
@@ -483,7 +520,8 @@ func (r *Runtime) spawnOnce(ctx context.Context, e *entry, trigger bus.Message, 
 		Model: model, Workdir: workdir, Stdin: stdin,
 		Resume: in.resume, MaxTurns: in.maxTurns,
 		MCPConfig: in.mcpConfig, MCPURL: in.mcpEndpoint, MCPGeminiDir: in.mcpGeminiDir,
-		DenyWeb: denyWeb, ReadOnly: in.readOnly, Images: imagesFor(e.cli, images),
+		HooksConfig: in.hooksConfig,
+		DenyWeb:     denyWeb, ReadOnly: in.readOnly, Images: imagesFor(e.cli, images),
 	})...)
 	sbx := r.spawnSandbox(e)
 	if len(images) > 0 {
@@ -703,7 +741,7 @@ func (r *Runtime) spawnOnce(ctx context.Context, e *entry, trigger bus.Message, 
 		run.Summary, run.Error = r.cfg.Redact(run.Summary), r.cfg.Redact(run.Error)
 	}
 	tr := transcript{events: events, stamps: stamps, in: in, stderr: stderr.lastLine(),
-		full: r.tuning().TracePrompts}
+		full: r.tuning().TracePrompts, hooks: in.hooklog.drain()}
 	run.Transcript = r.saveTranscript(tr, run)
 	return run, events
 }
@@ -715,7 +753,8 @@ type transcript struct {
 	stamps []time.Time
 	in     spawnInput
 	stderr string
-	full   bool // agents.trace_prompts: keep the prompt text itself
+	full   bool           // agents.trace_prompts: keep the prompt text itself
+	hooks  []trace.Record // plugin hook decisions since the last attempt (F-179)
 }
 
 // saveTranscript persists one attempt as JSONL under
@@ -767,6 +806,11 @@ func (r *Runtime) saveTranscript(tr transcript, run tasks.Run) string {
 		if i < len(tr.stamps) {
 			rec.At = tr.stamps[i]
 		}
+		if !put(rec) {
+			return ""
+		}
+	}
+	for _, rec := range tr.hooks {
 		if !put(rec) {
 			return ""
 		}
@@ -882,6 +926,9 @@ func (r *Runtime) serveToolsFor(e *entry, trigger bus.Message, tt turnTools) *se
 	if r.cfg.Redact != nil {
 		handler = redactHandler{Handler: handler, redact: r.cfg.Redact}
 	}
+	// F-179: plugin hooks around every served call, outside the redaction
+	// so a hook never sees a granted secret.
+	handler = hooks.Wrap(handler, tt.hooks)
 	endpoint, stop, err := mcp.ServeLoopback(handler)
 	if err != nil {
 		// Named degrade, never silent: the turn proceeds without served

@@ -105,6 +105,10 @@ type RunInput struct {
 	// MCPGeminiDir is the per-turn config directory for adapters that
 	// take it on argv (antigravity: --gemini_dir); "" = none.
 	MCPGeminiDir string
+	// HooksConfig names a per-run settings file carrying plugin hooks for
+	// the CLI's native tools (F-179); "" = none. Only adapters with
+	// HooksArgs honor it.
+	HooksConfig string
 	// Resume continues the CLI's own session with this id (F-066,
 	// ADR-0031); "" = a fresh session. Only adapters with ResumeOK honor
 	// it — the runner never sets it for the rest.
@@ -266,6 +270,16 @@ type CLI struct {
 	MCPGeminiDir func(baseDir, configBody string, denyWeb bool) (dir string, cleanup func(), err error)
 	// MCPGeminiDirFlag is the argv flag that takes that directory.
 	MCPGeminiDirFlag string
+	// HooksArgs returns the argv that hands the CLI a settings file with
+	// plugin hooks for this run only (F-179, ADR-0047: claude --settings).
+	// nil = the CLI has no verified per-run hook input; plugin hooks then
+	// cover DHI-served tools only and doctor names the gap. The file lives
+	// in a DHI temp path; the user's own CLI config is never edited.
+	HooksArgs func(settingsPath string) []string
+	// HooksWhy says why an adapter has no HooksArgs, in the evidence's own
+	// terms. Doctor prints it; a test requires one for every adapter
+	// without, so the gap is never unexplained.
+	HooksWhy string
 }
 
 // MCPWired reports whether the adapter declares a complete per-turn MCP

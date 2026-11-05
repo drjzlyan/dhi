@@ -1610,6 +1610,7 @@ func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cl
 		MCPLoad: func() *mcpserver.Store { // ADR-0043: servers added in Settings reach the next run
 			return mcpserver.OpenWith(ws.Root, ws.Members())
 		},
+		HooksLoad:       enabledHooks(ws.Root), // F-179: plugin hooks the user turned on
 		Run:             runRunner,
 		Editor:          editor,
 		WorkspaceScopes: workspaceScopes,

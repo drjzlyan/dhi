@@ -55,6 +55,7 @@ const (
 	dlgServerRemove
 	dlgSignInPaste
 	dlgSetupReset
+	dlgPluginHooks
 	dlgDisplay // read-only: profile, standards preview, last-run info
 )
 
@@ -164,6 +165,8 @@ func (m *Model) submitDialog() {
 		m.submitInstallSource()
 	case dlgExtConfirm:
 		m.submitInstallConfirm()
+	case dlgPluginHooks:
+		m.submitPluginHooks()
 	case dlgPluginScope:
 		m.submitPluginScope()
 	case dlgServerURL:

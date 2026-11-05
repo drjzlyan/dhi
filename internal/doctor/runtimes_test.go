@@ -74,6 +74,12 @@ func TestRuntimes(t *testing.T) {
 		t.Errorf("claude prompt-size row = %+v", c)
 	}
 
+	// F-179: claude's hook row says its own tools are covered per run, and
+	// that the user's config is not edited.
+	if c, ok := statusOf(checks, "runtime/claude/hooks"); !ok || !strings.Contains(c.Detail, "own tools, handed to it for each run only") {
+		t.Errorf("claude hooks row = %+v", c)
+	}
+
 	// untested version present: strict fail
 	bad := t.TempDir()
 	writeExecutable(t, bad, "claude", "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo \"9.9.9 (Claude Code)\"; fi\n")
@@ -118,5 +124,24 @@ func TestWebRowWarnsForCLIsThatCannotBeRestricted(t *testing.T) {
 	}
 	if got.Status != Warn || !strings.Contains(got.Detail, "no verified way") {
 		t.Fatalf("%s web row = %+v", c.Name, got)
+	}
+}
+
+// TestHooksRowNamesTheCoverageGap: a CLI with no per-run hook input is
+// reported as covered at DHI's tools only, with the evidence's reason
+// (F-179, ADR-0047).
+func TestHooksRowNamesTheCoverageGap(t *testing.T) {
+	orig := lookPath
+	t.Cleanup(func() { lookPath = orig })
+	c, ok := clirun.NewRegistry(nil).Get("codex")
+	if !ok || c.HooksArgs != nil {
+		t.Skip("codex takes hooks per run now")
+	}
+	dir := t.TempDir()
+	lookPath = stubLook(dir)
+	writeExecutable(t, dir, c.Bin, "#!/bin/sh\necho \""+c.Tested+"\"\n")
+	got, found := statusOf(Runtimes(), "runtime/codex/hooks")
+	if !found || !strings.Contains(got.Detail, "DHI's tools only") || !strings.Contains(got.Detail, "no verified per-run hook input") {
+		t.Fatalf("codex hooks row = %+v", got)
 	}
 }

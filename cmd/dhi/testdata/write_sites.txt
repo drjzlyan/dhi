@@ -9,7 +9,7 @@ internal/agentkit/dhitools/fs.go 3
 internal/agentkit/dhitools/ideation.go 2
 internal/agentkit/episode/episode.go 2
 internal/agentkit/forge/forge.go 12
-internal/agentkit/install/install.go 11
+internal/agentkit/install/install.go 12
 internal/agentkit/install/lock.go 3
 internal/agentkit/install/market.go 4
 internal/agentkit/knowledge/knowledge.go 2
@@ -24,6 +24,7 @@ internal/agentkit/org/org.go 6
 internal/agentkit/runtime/calibrate.go 1
 internal/agentkit/runtime/chatextras.go 2
 internal/agentkit/runtime/clirun.go 12
+internal/agentkit/runtime/hooks.go 3
 internal/agentkit/runtime/workbranch.go 1
 internal/agentkit/setprop/setprop.go 3
 internal/agentkit/skillprop/skillprop.go 3

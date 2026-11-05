@@ -41,6 +41,10 @@ import (
 // runtime value "antigravity".
 var Antigravity = &CLI{
 	Name: "antigravity",
+	// No HooksArgs (F-179): the per-turn gemini dir does carry a hooks.json
+	// (the web-deny hook), but only its JSON deny answer is live-verified,
+	// not the vendor exit-code-2 contract plugin hooks use.
+	HooksWhy: "its per-turn hooks.json is verified for a JSON deny answer only, not the exit-code-2 contract plugin hooks use",
 	// No ReadOnlyOK (F-144): no verified switch for its file-changing tools.
 	ReadOnlyWhy: "no verified way to switch off its file and shell tools",
 	// No ImagesOK (G-X3): not verified, so an image turn is refused by name.

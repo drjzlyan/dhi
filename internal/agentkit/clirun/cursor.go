@@ -44,6 +44,8 @@ import (
 // value "cursor-agent".
 var CursorAgent = &CLI{
 	Name: "cursor-agent",
+	// No HooksArgs (F-179): hooks come from hooks.json files, not a flag or env.
+	HooksWhy: "no verified per-run hook input (hooks load from hooks.json files, which DHI does not write into your repos or home)",
 	// No ReadOnlyOK (F-144): headless runs need --force, which approves writes.
 	ReadOnlyWhy: "headless runs need --force, which auto-approves its writes",
 	// No ImagesOK (G-X3): not verified, so an image turn is refused by name.

@@ -46,6 +46,7 @@ var Claude = &CLI{
 				"--max-turns", claudeMaxTurns(in.MaxTurns),
 			)
 			args = append(args, claudeResumeArgs(in.Resume)...)
+			args = append(args, claudeHooksArgs(in.HooksConfig)...)
 			return append(args, claudeDenyWeb(in)...)
 		}
 		args = append(args, in.Prompt,
@@ -56,6 +57,7 @@ var Claude = &CLI{
 		)
 		args = append(args, claudeResumeArgs(in.Resume)...)
 		args = append(args, claudeDenyWeb(in)...)
+		args = append(args, claudeHooksArgs(in.HooksConfig)...)
 		if in.System != "" {
 			args = append(args, "--append-system-prompt", in.System)
 		}
@@ -102,6 +104,20 @@ var Claude = &CLI{
 	MCPOK:         true,
 	MCPConfigFile: claudeMCPConfigFile,
 	MCPConfigArgs: claudeMCPArgs,
+	// HooksArgs: `--settings <file>` loads a settings file for this run on
+	// top of the user's own (documented Claude Code flag); its `hooks` key
+	// is the vendor hook format plugins already ship (F-179, ADR-0047). The
+	// file is a DHI temp file; ~/.claude is never written.
+	HooksArgs: claudeHooksArgs,
+}
+
+// claudeHooksArgs hands claude the per-run settings file carrying plugin
+// tool hooks ("" = none).
+func claudeHooksArgs(settingsPath string) []string {
+	if settingsPath == "" {
+		return nil
+	}
+	return []string{"--settings", settingsPath}
 }
 
 // claudeMaxTurns renders --max-turns (0 = the adapter default, 50).

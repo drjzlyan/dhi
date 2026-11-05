@@ -26,6 +26,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/dhitools"
 	"github.com/drjzlyan/dhi/internal/agentkit/episode"
 	"github.com/drjzlyan/dhi/internal/agentkit/forge"
+	"github.com/drjzlyan/dhi/internal/agentkit/hooks"
 	"github.com/drjzlyan/dhi/internal/agentkit/knowledge"
 	"github.com/drjzlyan/dhi/internal/agentkit/lessons"
 	"github.com/drjzlyan/dhi/internal/agentkit/library"
@@ -145,6 +146,10 @@ type Config struct {
 	MCPServers *mcpserver.Store
 	// MCPLoad, when set, re-reads the server files for each run.
 	MCPLoad func() *mcpserver.Store
+	// HooksLoad returns the plugin hooks the user turned on, and a named
+	// problem for each that cannot run (F-179, ADR-0047). Re-read each
+	// turn; nil = no plugin hooks.
+	HooksLoad func() ([]hooks.Plugin, []string)
 	// MCPAuth authorizes http MCP servers that need a sign-in (F-106);
 	// nil dials them with their configured headers only.
 	MCPAuth func(ctx context.Context, srv mcpserver.Server, base *http.Client) (*http.Client, error)
