@@ -617,6 +617,7 @@ func (m *Model) HelpSections() [][2]string {
 		out = append(out,
 			[2]string{"enter", "send to the crew (no @name: the default agent answers)"},
 			[2]string{"ctrl+x", "stop the turns running in this channel"},
+			[2]string{"/ · tab", "skills and commands: /export, @image:<path>, a skill with user-invocable: true"},
 			[2]string{"alt+y · alt+n · /yes /no", "answer an agent's approval"},
 			[2]string{"ctrl+f", "apply the suggestion block (replaces a visual selection)"})
 	case m.drawerOpen && m.termFocus:

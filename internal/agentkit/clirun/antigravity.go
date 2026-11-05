@@ -43,8 +43,10 @@ var Antigravity = &CLI{
 	Name: "antigravity",
 	// No ReadOnlyOK (F-144): no verified switch for its file-changing tools.
 	ReadOnlyWhy: "no verified way to switch off its file and shell tools",
-	Bin:         "agy",
-	Tested:      "1.2.11", // live-verified 2026-09-26
+	// No ImagesOK (G-X3): not verified, so an image turn is refused by name.
+	ImagesWhy: "no verified image input in its headless mode",
+	Bin:       "agy",
+	Tested:    "1.2.11", // live-verified 2026-09-26
 	// EXACT declared pass-through: HOME/XDG so the CLI reaches its own
 	// OAuth state; nothing else crosses (ADR-0012 §4).
 	EnvPass: []string{

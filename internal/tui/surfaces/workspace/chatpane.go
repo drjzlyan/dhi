@@ -178,7 +178,7 @@ func (p *chatPane) hints() []string {
 	}
 	if p.focus {
 		if bus.IsDM(p.channelName()) { // F-130: only a DM conversation takes an override
-			return []string{"enter send", "^x stop", "/plan", "/model", "/fork", "/compact", "/new", "esc blur"}
+			return []string{"enter send", "^x stop", "/plan", "/model", "/fork", "/compact", "/export", "/new", "esc blur"}
 		}
 		return []string{"enter send", "^x stop", "esc blur"}
 	}
@@ -622,6 +622,12 @@ func (p *chatPane) composerKey(key string) bool {
 	}
 	if key == "enter" && p.editID == 0 && p.conversationCommand(p.input.Value) {
 		p.input = kit.Input{}
+		return true
+	}
+	if key == "enter" && p.editID == 0 && p.slashRefuse(p.input.Value) {
+		return true
+	}
+	if key == "tab" && p.slashComplete() {
 		return true
 	}
 	if key == "enter" && p.editID == 0 {

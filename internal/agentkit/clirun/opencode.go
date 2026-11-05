@@ -38,8 +38,10 @@ var OpenCode = &CLI{
 	Name: "opencode",
 	// No ReadOnlyOK (F-144): OPENCODE_PERMISSION edit/bash deny is not live-verified.
 	ReadOnlyWhy: "its edit and bash permission denial is not verified",
-	Bin:         "opencode",
-	Tested:      "1.18.25",
+	// No ImagesOK (G-X3): not verified, so an image turn is refused by name.
+	ImagesWhy: "its --file attachment is not verified to carry images headlessly",
+	Bin:       "opencode",
+	Tested:    "1.18.25",
 	// EXACT declared pass-through: opencode's config + the provider
 	// keys it reads for hosted models. Nothing else crosses
 	// (ADR-0012 §4).

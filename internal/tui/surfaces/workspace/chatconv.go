@@ -30,6 +30,8 @@ func parseConvCmd(text string) (cmd, rest string, ok bool) {
 		return "fork", "", true
 	case "/new":
 		return "new", strings.TrimSpace(tail), true
+	case "/export": // G-X3: rest is the format
+		return "export", strings.TrimSpace(tail), true
 	case "/compact": // F-135
 		if strings.TrimSpace(tail) != "" {
 			return "", "", false
@@ -64,6 +66,10 @@ func (p *chatPane) conversationCommand(text string) bool {
 	}
 	if cmd == "compact" {
 		p.compact(ch, agent)
+		return true
+	}
+	if cmd == "export" {
+		p.export(ch, rest)
 		return true
 	}
 	p.fork(ch, agent)

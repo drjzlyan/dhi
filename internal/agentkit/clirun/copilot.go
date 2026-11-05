@@ -49,8 +49,10 @@ var Copilot = &CLI{
 	Name: "copilot",
 	// No ReadOnlyOK (F-144): --deny-tool is not verified against --allow-all-tools.
 	ReadOnlyWhy: "no verified way to deny its write and shell tools under --allow-all-tools",
-	Bin:         "copilot",
-	Tested:      "1.0.88", // live-verified 2026-09-26
+	// No ImagesOK (G-X3): not verified, so an image turn is refused by name.
+	ImagesWhy: "no verified image input in its headless mode",
+	Bin:       "copilot",
+	Tested:    "1.0.88", // live-verified 2026-09-26
 	// EXACT declared pass-through: the Copilot token + standard config
 	// roots. Nothing else crosses (ADR-0012 §4).
 	EnvPass: []string{

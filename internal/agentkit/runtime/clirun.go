@@ -22,6 +22,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/lessons"
 	"github.com/drjzlyan/dhi/internal/agentkit/mcpbridge"
 	"github.com/drjzlyan/dhi/internal/agentkit/pathscope"
+	"github.com/drjzlyan/dhi/internal/agentkit/skills"
 	"github.com/drjzlyan/dhi/internal/agentkit/standards"
 	"github.com/drjzlyan/dhi/internal/agentkit/trace"
 	"github.com/drjzlyan/dhi/internal/agentkit/untrusted"
@@ -364,6 +365,23 @@ func (r *Runtime) spawnOnce(ctx context.Context, e *entry, trigger bus.Message, 
 		TokensIn: -1, TokensOut: -1,
 	}
 
+	// G-X3: images the human attached with @image:. Refused by name before
+	// anything runs; a path outside the workspace is made readable to a
+	// sandbox that needs the grant.
+	var images []string
+	if !in.quiet {
+		var err error
+		if images, err = r.turnImages(e, trigger); err != nil {
+			run.Status = tasks.RunError
+			run.Error = err.Error()
+			r.notice(trigger, e.m.ID, err.Error())
+			return run, nil
+		}
+		if len(images) > 0 && !e.cli.ImagesFlag {
+			prompt += imagePromptNote(images)
+		}
+	}
+
 	// Oversized delivery (M14 P1): when the assembled system+prompt
 	// exceeds the argv budget, prompt delivery moves to stdin where the
 	// adapter has a verified path; adapters without one refuse by name
@@ -415,15 +433,23 @@ func (r *Runtime) spawnOnce(ctx context.Context, e *entry, trigger bus.Message, 
 		Model: model, Workdir: workdir, Stdin: stdin,
 		Resume: in.resume, MaxTurns: in.maxTurns,
 		MCPConfig: in.mcpConfig, MCPURL: in.mcpEndpoint, MCPGeminiDir: in.mcpGeminiDir,
-		DenyWeb: denyWeb, ReadOnly: in.readOnly,
+		DenyWeb: denyWeb, ReadOnly: in.readOnly, Images: imagesFor(e.cli, images),
 	})...)
-	if msg := missingState(e.cli, r.spawnSandbox(e)); msg != "" {
+	sbx := r.spawnSandbox(e)
+	if len(images) > 0 {
+		if re, ok := sbx.(sandbox.ReadOnlyExtender); ok {
+			if ext, err := re.WithExtraReadOnly(images); err == nil {
+				sbx = ext
+			}
+		}
+	}
+	if msg := missingState(e.cli, sbx); msg != "" {
 		run.Status = tasks.RunError
 		run.Error = msg
 		r.notice(trigger, e.m.ID, msg)
 		return run, nil
 	}
-	wrapped, err := r.spawnSandbox(e).Wrap(argv)
+	wrapped, err := sbx.Wrap(argv)
 	if errors.Is(err, sandbox.ErrHelperMissing) {
 		// The IDE never blocks on it (ADR-0044): the turn waits here until
 		// the human installs bubblewrap, then continues as if nothing
@@ -1016,7 +1042,7 @@ func (r *Runtime) cliPromptMode(ctx context.Context, e *entry, trigger bus.Messa
 	// manifest system + role template + attached skills — with the
 	// runtime-owned layers appended after it, exactly as the Settings
 	// preview renders (system, then standards, then conventions).
-	role, skills := behavior.Resolve(e.m, r.lib())
+	role, assigned := behavior.Resolve(e.m, r.lib())
 	persona := behavior.ResolvePersona(e.m, r.lib())
 	wsName := filepath.Base(r.cfg.WS.Root)
 	// F-152: the files the turn names (an @file mention expands to its
@@ -1028,7 +1054,7 @@ func (r *Runtime) cliPromptMode(ctx context.Context, e *entry, trigger bus.Messa
 		ManifestSystem: e.m.System,
 		Role:           role,
 		Persona:        persona,
-		Skills:         skills,
+		Skills:         assigned,
 		Mode:           mode,
 		Files:          files,
 	})
@@ -1095,6 +1121,15 @@ func (r *Runtime) cliPromptMode(ctx context.Context, e *entry, trigger bus.Messa
 	text := strings.TrimSpace(stripMention(trigger.Text, e.m.ID))
 	if text == "" {
 		text = trigger.Text
+	}
+	// G-X3: a human's "/<skill> args" runs with that skill activated, as
+	// skill_activate would hand it over. Any library skill that declares
+	// itself user-invocable works, not only the agent's assigned ones: the
+	// human chose it by name. Built-ins never reach here as skills.
+	if trigger.Author == bus.Human {
+		if k, args, ok := skills.Invocation(text, r.userSkills()); ok {
+			text = skills.Prompt(k, args)
+		}
 	}
 	pr := []section{
 		// The human's ask is never trimmed: everything else makes room.

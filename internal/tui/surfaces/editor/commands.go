@@ -5,6 +5,7 @@ import (
 
 	"charm.land/bubbletea/v2"
 
+	"github.com/drjzlyan/dhi/internal/agentkit/skills"
 	"github.com/drjzlyan/dhi/internal/tui/kit"
 	"github.com/drjzlyan/dhi/internal/tui/surfaces"
 )
@@ -31,6 +32,16 @@ func (m *Model) Commands() []surfaces.Command {
 		}
 	}
 	add("Find and open a file", "/", m.openFind)
+	if m.chat != nil && m.chat.rt != nil { // G-X3: user-invocable skills
+		list := m.chat.skillList()
+		for _, k := range skills.Commands(list) {
+			k := k
+			add("Skill /"+k.Slug+" — "+k.Description, "chat", func() { m.chat.fillSkill(k.Slug) })
+		}
+		if n := skills.ShadowNote(list); n != "" {
+			add(n, "", func() {})
+		}
+	}
 	if m.cps != nil {
 		add("Undo the last agent turn…", ":undo-turn", func() {
 			if msg := m.openUndoTurn(); msg != "" {

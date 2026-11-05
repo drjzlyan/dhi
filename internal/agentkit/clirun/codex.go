@@ -64,9 +64,13 @@ var Codex = &CLI{
 	BuildArgs: func(in RunInput) []string {
 		// `exec resume` takes no -C/--sandbox (0.147): the runner's cwd
 		// is the workdir, and the bypass flag covers the sandbox.
-		args := []string{"exec", "--json", "--skip-git-repo-check", "-C", in.Workdir}
+		// Images (G-X3) come right after --json, before a flag: --image
+		// takes values greedily, so a positional must not follow it.
+		img := codexImageArgs(in.Images)
+		args := append([]string{"exec", "--json"}, img...)
+		args = append(args, "--skip-git-repo-check", "-C", in.Workdir)
 		if in.Resume != "" {
-			args = []string{"exec", "resume", "--json", "--skip-git-repo-check"}
+			args = append(append([]string{"exec", "resume", "--json"}, img...), "--skip-git-repo-check")
 		}
 		if in.Model != "" {
 			args = append(args, "-m", in.Model)
@@ -105,6 +109,11 @@ var Codex = &CLI{
 		args = append(args, PromptWithSystem(in.System, in.Prompt))
 		return args
 	},
+	// ImagesOK: `codex exec -i/--image <FILE>` attaches an image to the first
+	// message, and `exec resume` accepts it too (documented; live check
+	// pending). The flag is repeated per file: a comma would split a path.
+	ImagesOK:   true,
+	ImagesFlag: true,
 	// ReadsAgentsMD: a canary in AGENTS.md reached the model in an empty git
 	// dir on 0.162.1 (F-124).
 	ReadsAgentsMD: true,
@@ -293,4 +302,13 @@ func codexVersion(ctx context.Context, path string) (string, error) {
 		return v, nil
 	}
 	return "", fmt.Errorf("clirun/codex: no version in %q", truncate(out, 60))
+}
+
+// codexImageArgs is one --image per file (G-X3).
+func codexImageArgs(images []string) []string {
+	var out []string
+	for _, p := range images {
+		out = append(out, "--image", p)
+	}
+	return out
 }

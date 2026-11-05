@@ -24,6 +24,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/episode"
 	"github.com/drjzlyan/dhi/internal/agentkit/org"
 	profiface "github.com/drjzlyan/dhi/internal/agentkit/profile"
+	"github.com/drjzlyan/dhi/internal/agentkit/skills"
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
 	"github.com/drjzlyan/dhi/internal/autopilot"
 	"github.com/drjzlyan/dhi/internal/gitcore"
@@ -339,6 +340,21 @@ func (m *Model) Commands() []surfaces.Command {
 			m.sec = s
 			return nil
 		}})
+	}
+	if m.sec == secChannels && m.pane != nil {
+		// G-X3: user-invocable skills; running one fills the composer.
+		list := m.pane.skillList()
+		for _, k := range skills.Commands(list) {
+			k := k
+			out = append(out, surfaces.Command{Group: "Skill", Title: "/" + k.Slug + " — " + k.Description, Hint: "composer", Run: func() tea.Cmd {
+				m.pane.input.SetValue("/" + k.Slug + " ")
+				m.pane.focus = true
+				return nil
+			}})
+		}
+		if n := skills.ShadowNote(list); n != "" {
+			out = append(out, surfaces.Command{Group: "Skill", Title: n, Run: func() tea.Cmd { return nil }})
+		}
 	}
 	if m.sec == secBoard && m.taskStore != nil {
 		out = append(out,

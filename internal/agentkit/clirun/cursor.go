@@ -46,8 +46,10 @@ var CursorAgent = &CLI{
 	Name: "cursor-agent",
 	// No ReadOnlyOK (F-144): headless runs need --force, which approves writes.
 	ReadOnlyWhy: "headless runs need --force, which auto-approves its writes",
-	Bin:         "cursor-agent",
-	Tested:      "2026.09.26", // live-verified 2026-09-26
+	// No ImagesOK (G-X3): not verified, so an image turn is refused by name.
+	ImagesWhy: "no verified image input in its headless mode",
+	Bin:       "cursor-agent",
+	Tested:    "2026.09.26", // live-verified 2026-09-26
 	// EXACT declared pass-through: the Cursor API key + standard config
 	// roots. Nothing else crosses (ADR-0012 §4).
 	EnvPass: []string{

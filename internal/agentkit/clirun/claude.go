@@ -81,6 +81,9 @@ var Claude = &CLI{
 	// tool list even under bypassPermissions (live-verified on 2.1.285:
 	// init listed WebFetch and WebSearch without the flag, neither with it).
 	WebDenyOK: true,
+	// ImagesOK: Claude Code opens an image it is given the path of with its
+	// Read tool (documented); the runtime names the path in the prompt.
+	ImagesOK: true,
 	// ReadOnlyOK: the same --disallowedTools list, with the edit, write and
 	// shell tools (F-144; documented, live check pending).
 	ReadOnlyOK:  true,

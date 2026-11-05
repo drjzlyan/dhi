@@ -127,6 +127,10 @@ type RunInput struct {
 	// and ask modes). Only adapters with ReadOnlyOK honor it; the runtime
 	// refuses the mode by name for the rest.
 	ReadOnly bool
+	// Images are absolute paths of image files to attach to the turn
+	// (G-X3). Only adapters with ImagesFlag read them; for ImagesOK
+	// adapters without one the runtime names the paths in the prompt.
+	Images []string
 }
 
 // maxPromptArg is the largest single argv element DHI will build
@@ -205,7 +209,16 @@ type CLI struct {
 	ReadOnlyOK bool
 	// ReadOnlyWhy says why an adapter has no ReadOnlyOK. A test requires
 	// one for every adapter without it.
-	ReadOnlyWhy      string
+	ReadOnlyWhy string
+	// ImagesOK reports that the CLI's headless mode takes an image the
+	// user attached (G-X3, @image: mentions): either the adapter's argv
+	// (ImagesFlag, BuildArgs honors RunInput.Images) or a file path named
+	// in the prompt that the CLI's own read tool opens. Adapters without it
+	// are refused by name when a turn carries an image (ADR-0011), with
+	// ImagesWhy; a test requires one for every adapter without it.
+	ImagesOK         bool
+	ImagesFlag       bool
+	ImagesWhy        string
 	ReadsClaudeRules bool
 	// DenyWebEnv is the env that does it for CLIs that take it there
 	// (opencode: OPENCODE_PERMISSION). Set after the pass-through, so the

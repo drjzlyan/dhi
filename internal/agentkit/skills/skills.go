@@ -43,8 +43,12 @@ type Skill struct {
 	Metadata      map[string]string
 	AllowedTools  string   // space-separated, experimental in the spec
 	Paths         []string // globs (F-152): the skill is offered only when the turn concerns a matching file; none = always
-	Body          string   // Markdown after the frontmatter
-	Dir           string   // absolute skill directory ("" for an unmaterialized builtin)
+	// UserInvocable and ModelDisabled are Claude Code's `user-invocable`
+	// and `disable-model-invocation` frontmatter (G-X3); nil = not declared.
+	UserInvocable *bool
+	ModelDisabled bool
+	Body          string // Markdown after the frontmatter
+	Dir           string // absolute skill directory ("" for an unmaterialized builtin)
 	Warnings      []string
 }
 
@@ -99,6 +103,12 @@ func Parse(dirName string, data []byte) (*Skill, error) {
 			s.AllowedTools = scalar(v)
 		case "paths":
 			s.Paths = pathList(v)
+		case "user-invocable":
+			if b, ok := boolOf(v); ok {
+				s.UserInvocable = &b
+			}
+		case "disable-model-invocation":
+			s.ModelDisabled, _ = boolOf(v)
 		case "metadata":
 			if m, ok := v.(map[string]any); ok {
 				s.Metadata = map[string]string{}
@@ -181,6 +191,22 @@ func pathList(v any) []string {
 		}
 	}
 	return out
+}
+
+// boolOf reads a YAML boolean, or the strings true/false.
+func boolOf(v any) (bool, bool) {
+	switch t := v.(type) {
+	case bool:
+		return t, true
+	case string:
+		switch strings.ToLower(strings.TrimSpace(t)) {
+		case "true":
+			return true, true
+		case "false":
+			return false, true
+		}
+	}
+	return false, false
 }
 
 func scalar(v any) string {
@@ -314,10 +340,16 @@ func Render(s *Skill) (string, error) {
 	if len(s.Paths) > 0 {
 		front["paths"] = s.Paths
 	}
+	if s.UserInvocable != nil {
+		front["user-invocable"] = *s.UserInvocable
+	}
+	if s.ModelDisabled {
+		front["disable-model-invocation"] = true
+	}
 	// name and description first, then the rest in a fixed order.
 	var b strings.Builder
 	b.WriteString("---\n")
-	for _, k := range []string{"name", "description", "license", "compatibility", "allowed-tools", "paths", "metadata"} {
+	for _, k := range []string{"name", "description", "license", "compatibility", "allowed-tools", "paths", "user-invocable", "disable-model-invocation", "metadata"} {
 		v, ok := front[k]
 		if !ok {
 			continue
