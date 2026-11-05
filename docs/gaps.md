@@ -109,7 +109,7 @@ no daemon.
 ## Phase 7 — Needs a decision first (**ADR**) or research
 
 - [ ] **G-C3** `todo` — ADR-0047 accepted (option 2 + per-run native hooks, no persistent CLI config change). Lifecycle hooks, reading the vendor hooks format from installed plugins. No DHI-only format (ADR-0043). **ADR**
-- [ ] **G-C5** `todo` — ADR-0048 accepted, amended (default fallback chosen at setup, editable). Engine failover as an explicit user-set per-agent `fallback_engine`; per-task model routing. **ADR** (ADR-0011)
+- [x] **G-C5** `done` (F-180) — ADR-0048 accepted, amended (default fallback chosen at setup, editable). Engine failover as an explicit user-set per-agent `fallback_engine`; per-task model routing. **ADR** (ADR-0011)
 - [x] **G-C6** `dropped` — ADR-0049 rejected: DHI stays TUI-only (ADR-0004). Headless/CI mode (e.g. `dhi run <task>`) and a GitHub Action. **ADR** (ADR-0004)
 - [x] **G-C10** `dropped` — ADR-0050 rejected: no ACP, one consistent experience. ACP client engine (research first)
 - [x] **G-X1** `done` (F-177) — DAP and test runner beyond Go (ROADMAP M37 S3)
@@ -190,3 +190,4 @@ G-X1 — F-177 — 2026-11-05 (pytest + debugpy, .venv then venv then PATH; vite
 G-X3 — F-178 — 2026-11-05 (user-invocable skills as /name, opt-in; /export md|json redacted+fenced; @image:path for claude and codex only; image flags not run live)
 G-C6 — dropped — 2026-11-05 (ADR-0049 rejected: TUI-only)
 G-C10 — dropped — 2026-11-05 (ADR-0050 rejected: no ACP)
+G-C5 — F-180 — 2026-11-05 (default fallback written at agent creation/boot, editable or none; failover only for auth/rate_limit/not_installed/unavailable before any tool call)
