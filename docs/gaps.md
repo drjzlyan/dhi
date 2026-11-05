@@ -112,7 +112,7 @@ no daemon.
 - [ ] **G-C5** `blocked (ADR)` — proposed ADR-0048, awaiting decision. Engine failover as an explicit user-set per-agent `fallback_engine`; per-task model routing. **ADR** (ADR-0011)
 - [ ] **G-C6** `blocked (ADR)` — proposed ADR-0049, awaiting decision. Headless/CI mode (e.g. `dhi run <task>`) and a GitHub Action. **ADR** (ADR-0004)
 - [ ] **G-C10** `blocked (ADR)` — proposed ADR-0050, awaiting decision. ACP client engine (research first)
-- [ ] **G-X1** (no ADR needed; approach: per-language runner table, pytest+debugpy first) DAP and test runner beyond Go (ROADMAP M37 S3)
+- [x] **G-X1** `done` (F-177) — DAP and test runner beyond Go (ROADMAP M37 S3)
 - [ ] **G-X2** `blocked (ADR)` — proposed ADR-0051, awaiting decision. AI ghost text and next-edit prediction (ROADMAP M37 S3)
 - [ ] **G-X3** (no ADR needed; images only where the CLI accepts them, export via redact+fence, `user-invocable` skills as slash commands) Chat extras: image attachments, session export, user-invocable skills as slash commands
 
@@ -186,3 +186,4 @@ G-E18 — F-171 — 2026-11-05 (LSP snippets + tab stops + .vscode/*.code-snippe
 G-E22 — F-173 — 2026-11-05 (:calls tree, gp/:peek popup, editor.semantic_tokens (gopls started with semanticTokens init option); live)
 G-E15 — F-175 — 2026-11-05 (breadcrumbs on, sticky off by default; LSP outline only; live)
 G-E9 — F-176 — 2026-11-05 (LSP foldingRange or named indent fallback; vim z keys; per-buffer folds; live)
+G-X1 — F-177 — 2026-11-05 (pytest + debugpy, .venv then venv then PATH; vitest/jest runner; JS debug out of scope; not run live: pytest/debugpy not installed)
