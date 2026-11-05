@@ -136,6 +136,7 @@ func (c *Client) initialize(rootDir string, opts map[string]any) error {
 					"tokenModifiers": SemanticModifiers,
 					"formats":        []string{"relative"},
 				},
+				"foldingRange": map[string]any{"lineFoldingOnly": true},
 			},
 			"workspace": map[string]any{
 				"applyEdit":              true,

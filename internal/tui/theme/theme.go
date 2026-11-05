@@ -891,4 +891,8 @@ var (
 	GlyphDirClosed = "▸" // tree: collapsed folder
 	GlyphDivider   = "▏" // deck pane left divider (ADR-0040)
 	GlyphSpark     = "◇" // agent activity / transcript agent author (F-026 P1e); Geometric Shapes, not Dingbats, so common terminal fonts have it
+
+	GlyphFoldOpen   = "▾" // editor gutter: an open fold starts here (F-176)
+	GlyphFoldClosed = "▸" // editor gutter: a closed fold starts here (F-176)
+	GlyphFoldMore   = "⋯" // a closed fold's tail: "⋯ N lines" (F-176)
 )

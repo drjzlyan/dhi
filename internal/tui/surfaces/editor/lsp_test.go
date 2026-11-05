@@ -87,6 +87,12 @@ type goplusFake struct {
 	outlineCap  bool
 	outlineSyms []map[string]any
 	outlineAsks int
+	// F-176: foldCap advertises foldingRangeProvider; foldRanges is the reply,
+	// foldFail answers with an error, foldAsks counts the requests.
+	foldCap    bool
+	foldRanges []map[string]any
+	foldFail   bool
+	foldAsks   int
 }
 
 func startFakeServer(t *testing.T) (*goplusFake, *lsp.Manager) {
@@ -157,6 +163,9 @@ func (f *goplusFake) serve() {
 				if f.outlineCap {
 					caps["documentSymbolProvider"] = true
 				}
+				if f.foldCap {
+					caps["foldingRangeProvider"] = true
+				}
 				if f.resolveCaps {
 					caps["codeActionProvider"] = map[string]any{"resolveProvider": true}
 				}
@@ -207,6 +216,17 @@ func (f *goplusFake) serve() {
 
 		case "textDocument/prepareCallHierarchy", "callHierarchy/incomingCalls", "callHierarchy/outgoingCalls", "textDocument/semanticTokens/full":
 			f.serveF173(msg.ID, msg.Method, msg.Params)
+		case "textDocument/foldingRange":
+			f.mu.Lock()
+			f.foldAsks++
+			rs, fail := f.foldRanges, f.foldFail
+			f.mu.Unlock()
+			if fail {
+				f.writeJSON(map[string]any{"jsonrpc": "2.0", "id": *msg.ID,
+					"error": map[string]any{"code": -32603, "message": "folding exploded"}})
+				break
+			}
+			f.reply(*msg.ID, rs)
 
 		case "textDocument/completion":
 			f.mu.Lock()

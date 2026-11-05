@@ -92,6 +92,9 @@ func (m *Model) bufferView() string {
 	}
 	e.SetTabWidth(tabStop) // block columns count tabs like the view (F-159)
 	wrap := m.wrapEnabled(prefs)
+	m.foldSync(m.bufs[m.activeTab]) // F-176: ranges for this text; then no cursor hides in a fold
+	e.RevealFolds()
+	folded := b.HasClosedFolds()
 	curLine := b.Cursor().Line
 
 	top := 0
@@ -99,6 +102,11 @@ func (m *Model) bufferView() string {
 		top = clampIdx(curLine-rows/2, b.LineCount()-rows)
 	}
 	end := min(top+rows, b.LineCount())
+	var shown []int // the lines drawn, when closed folds hide some
+	if folded && !wrap {
+		shown = windowLines(b, curLine, rows, func(int) int { return 1 })
+		top, end = shown[0], shown[len(shown)-1]+1
+	}
 	gut := strconv.Itoa(end)
 	if wrap {
 		gut = strconv.Itoa(b.LineCount()) // a steady gutter: the window is counted in rows
@@ -111,6 +119,11 @@ func (m *Model) bufferView() string {
 	if wrap {
 		wl = m.layoutWrap(e, rows, m.bufTextWidth(gutW))
 		top, end = wl.top, wl.end
+		shown = wl.lines
+	} else if shown == nil {
+		for l := top; l < end; l++ {
+			shown = append(shown, l)
+		}
 	}
 	if m.inlayEnabled(prefs) {
 		m.inlayWant(e, top, end) // F-169: ask for the window's hints (debounced, async)
@@ -120,7 +133,10 @@ func (m *Model) bufferView() string {
 	}
 	// Where the text starts and which line is on top, so a click maps
 	// back to a buffer position (F-103); each pane copies it out (F-166).
-	m.bufGeom = bufGeom{top: top, rows: end - top, textX: gutW + 1}
+	m.bufGeom = bufGeom{top: top, rows: len(shown), textX: gutW + 1}
+	if folded && !wrap {
+		m.bufGeom.lines = shown
+	}
 
 	curCol := visCol(b.Line(curLine), b.Cursor().Col)
 	var a, z textbuf.Pos
@@ -165,7 +181,8 @@ func (m *Model) bufferView() string {
 		m.startBlame(tab)
 		blame = m.blameText(tab, curLine)
 	}
-	for l := top; l < end; l++ {
+	starts := foldStarts(b) // F-176
+	for si, l := range shown {
 		num := strconv.Itoa(l + 1)
 		if !prefs.LineNumbers {
 			num = " "
@@ -228,13 +245,27 @@ func (m *Model) bufferView() string {
 			}
 			geomInlay[l] = cells
 		}
+		if lo, hi, ok := b.ClosedFoldAt(l); ok && lo == l {
+			text += foldTail(hi - lo) // F-176: the fold's lines collapse into this one row
+			if wrap && ansi.Width(text) > textW {
+				text = ansi.Slice(text, 0, textW)
+			}
+		}
 		marker := gitMarkGlyph(marks, l)
+		debugMark := false
 		if g, ok := m.debugGutter(path, l); ok {
-			marker = g // a breakpoint or the stop line beats a git change mark
+			marker, debugMark = g, true // a breakpoint or the stop line beats a git change mark
+		}
+		if g := foldMark(starts, l, curLine); g != "" && !debugMark {
+			// F-176: a closed fold's marker beats a git mark (it is what hides
+			// the lines); an open fold's shows on the cursor line when free.
+			if g == theme.GlyphFoldClosed || marker == " " {
+				marker = theme.TextDim().Render(g)
+			}
 		}
 		if wrap {
 			// One row per segment: the number and marks only on the first.
-			segs := wl.segs[l-top]
+			segs := wl.segs[si]
 			rs := []rune(expandTabs(raw))
 			for i, st := range segs {
 				en := len(rs)
@@ -296,6 +327,13 @@ func (m *Model) bufferView() string {
 		// F-175: the enclosing symbols' headers, scrolled off the top, are
 		// pinned over the first rows (never over the cursor's row).
 		cr := curLine - top
+		if folded && !wrap { // closed folds hide lines above the cursor's row (F-176)
+			for i, l := range shown {
+				if l == curLine {
+					cr = i
+				}
+			}
+		}
 		if wrap {
 			cr = curRow
 		}

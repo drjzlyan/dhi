@@ -394,6 +394,7 @@ type Model struct {
 	snip           *textbuf.SnippetSession // live tab-stop session (F-171)
 	userSnips      map[string]userSnipSet  // member root → its .vscode snippets, cached (F-171)
 	lspPendingG    bool                    // `g` prefix armed (F-009 sequences)
+	pendingZ       bool                    // `z` prefix armed: fold commands (F-176)
 	pendingBracket string                  // "]" or "[" armed for ]d / [d (F-116)
 	compSeq        int                     // completion debounce generation (F-116)
 	resultsTitle   string                  // results pane holds a list (references, problems), not a search
@@ -641,6 +642,7 @@ func (m *Model) HelpSections() [][2]string {
 			[2]string{"v · V · > <", "select · select lines · indent / outdent (>> << on a line)"},
 			[2]string{"ctrl+v", "select a block by column: motions and $ extend it, o O swap corners; d y c I A r > < ~ u U act on every line, p pastes the block"},
 			[2]string{"gcc · gc{motion} · ctrl+/", "comment / uncomment lines (counts and visual gc work; ctrl+/ also in insert)"},
+			[2]string{"za zc zo · zA zC zO · zM zR · zj zk", "fold: toggle / close / open (capitals: all levels around the cursor) · close / open every fold · next fold start / previous fold end; click the ▸ ▾ gutter mark. Folds come from the language server, else indentation (messages say which); j/k and d y c > skip a closed fold as one line; a search, jump or edit inside one opens it"},
 			[2]string{kit.AltLabel("alt+o · alt+i"), "expand / shrink the selection (language server's syntax tree, else word → quotes → brackets → line → paragraph → buffer; the status line names which)"},
 			[2]string{kit.AltLabel("gb · gB · alt+n · alt+up/down"), "multi-cursor: add the next occurrence of the word (or selection) · skip it · a cursor above / below (:cursor next|skip|above|below|off); edits, motions, d c y and text objects run at every cursor, esc collapses"},
 			[2]string{"iw aw i( a( i[ i{ i\" i' ip ap", "text objects after d c y gc, or in visual mode (b and B for ( and {)"},
@@ -810,7 +812,8 @@ type teaMsg struct {
 	hoverText string
 	sig       *lsp.SignatureHelp
 	sigSeq    int
-	inlay     []lsp.InlayHint // lspMsgInlay: the answer; note = path, sigSeq = request generation, bufSeq = the text it answers
+	inlay     []lsp.InlayHint    // lspMsgInlay: the answer; note = path, sigSeq = request generation, bufSeq = the text it answers
+	folds     []lsp.FoldingRange // lspMsgFold: the server's ranges; note = path, sigSeq = generation (F-176)
 	bufSeq    uint64
 	outline   []lsp.Symbol // lspMsgOutline: the answer; note = path, sigSeq = request generation, bufSeq = the text it answers (F-175)
 	hoverOK   bool
@@ -847,6 +850,8 @@ const (
 	lspMsgInlayDue     // the inlay debounce elapsed: send the request (F-169)
 	lspMsgOutline      // the document outline for a file arrived (F-175)
 	lspMsgOutlineDue   // the outline debounce elapsed: send the request (F-175)
+	lspMsgFold         // folding ranges for a file arrived (F-176)
+	lspMsgFoldDue      // the folding debounce elapsed: send the request (F-176)
 	toolMsgInstalled   // an approved install tab exited (lang: the tool; note: the outcome)
 	testMsgDone
 	blameMsgDone // git blame for a tab finished (F-143)
@@ -931,7 +936,7 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 			}
 		case termMsgClosed:
 			m.termExited(msg.tab)
-		case lspMsgDiag, lspMsgComp, lspMsgHover, lspMsgEdit, lspMsgAction, lspMsgNote, lspMsgSig, lspMsgRun, lspMsgBulb, lspMsgSel, lspMsgInlay, lspMsgInlayDue, lspMsgInlayRefresh, lspMsgOutline, lspMsgOutlineDue:
+		case lspMsgDiag, lspMsgComp, lspMsgHover, lspMsgEdit, lspMsgAction, lspMsgNote, lspMsgSig, lspMsgRun, lspMsgBulb, lspMsgSel, lspMsgInlay, lspMsgInlayDue, lspMsgInlayRefresh, lspMsgOutline, lspMsgOutlineDue, lspMsgFold, lspMsgFoldDue:
 			m.applyLSPUpdate(msg)
 		case toolMsgInstalled:
 			m.applyToolInstalled(msg)
@@ -1218,6 +1223,18 @@ func (m *Model) handleKey(key string) bool {
 				e.Key("esc")
 				e.SetMessage(m.sendToTerm(text))
 			}
+			return true
+		}
+
+		// F-176: z commands fold (za zc zo zA zC zO zM zR zj zk); `z` is
+		// dead in textbuf, so the surface owns the two-key chord.
+		if m.pendingZ {
+			m.pendingZ = false
+			m.foldZKey(e, key)
+			return true
+		}
+		if key == "z" && (e.Mode() == textbuf.ModeNormal || e.Mode() == textbuf.ModeVisual) && !e.AwaitingChar() {
+			m.pendingZ = true
 			return true
 		}
 
@@ -1572,6 +1589,7 @@ type bufTab struct {
 	gutter gutterState  // git change markers (F-040)
 	blame  blameState   // inline blame, loaded off the UI goroutine (F-143)
 	sem    semState     // semantic tokens from the language server (F-173)
+	fold   foldSrc      // where the fold ranges come from; the folds live in the buffer, shared by every pane (F-176)
 
 	tabWidth    int       // .editorconfig tab_width for this buffer; 0 = the setting (F-160)
 	diskWarned  bool      // the current on-disk change was already reported (F-115)
@@ -1817,6 +1835,9 @@ func (m *Model) Click(x, y int) bool {
 				return true
 			}
 		}
+	}
+	if m.foldClick(x, y) { // the gutter marker of a fold toggles it (F-176)
+		return true
 	}
 	if p, ok := m.bufferPos(x, y); ok { // a click in the text places the cursor (F-103)
 		e := m.active()
@@ -2602,6 +2623,7 @@ type bufGeom struct {
 	ox, oy    int                 // surface cell of the first text row's gutter
 	textX     int                 // cells of gutter before the text
 	top, rows int                 // first buffer line shown, and how many
+	lines     []int               // closed folds hide lines: the buffer line of each shown row (F-176)
 	left      int                 // columns scrolled off the left (F-119)
 	inlay     map[int][]inlayCell // shown lines' inlay hints: virtual cells a click skips (F-169)
 	sticky    []int               // buffer line of each pinned top row; a click jumps there (F-175)
@@ -2618,6 +2640,12 @@ func (m *Model) bufferPos(x, y int) (textbuf.Pos, bool) {
 	line := g.top + y - g.oy
 	if r := y - g.oy; r < len(g.sticky) { // a pinned header row: its symbol
 		return textbuf.Pos{Line: g.sticky[r]}, true
+	}
+	if g.lines != nil { // closed folds hide lines between the rows (F-176)
+		if y-g.oy >= len(g.lines) {
+			return textbuf.Pos{}, false
+		}
+		line = g.lines[y-g.oy]
 	}
 	if g.rowLine != nil { // wrapped: rows map to a line and where it starts
 		r := y - g.oy

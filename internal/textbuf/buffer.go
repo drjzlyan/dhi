@@ -42,6 +42,8 @@ type Buffer struct {
 	groupDepth  int  // >0 while an undo group is open (one insert session)
 	groupMarked bool // a snapshot was already taken inside the current group
 
+	fold foldState // code folds: ranges and which are closed (F-176)
+
 	crlf     bool      // the file's lines end in \r\n; Save writes them back that way
 	diskPath string    // the file last read or written ("" for a scratch buffer)
 	disk     diskStamp // what that file held then (F-115 conflict check)

@@ -8,6 +8,10 @@ import (
 // Key feeds one keystroke (bubbletea msg.String() style: "a", "enter",
 // "esc", "backspace", "up", "down", …). It is the entire modal surface.
 func (e *Editor) Key(key string) {
+	defer e.foldAfterKey()
+	if isFoldKey(key) && e.foldKey(key) {
+		return // z commands run once, never per cursor and never as the last change (F-176)
+	}
 	if key == "." && e.mode == ModeNormal && e.pendingOp == opNone && e.pendShift == "" && e.pendFind == 0 && !e.replaying {
 		e.repeat()
 		return
@@ -217,8 +221,14 @@ func (e *Editor) keyNormal(key string) {
 					a, z = a2, z2
 				}
 			}
+			if lo, hi, ok := e.buf.ClosedFoldAt(e.buf.Cursor().Line); ok && !linewise {
+				a, z, linewise = Pos{Line: lo}, Pos{Line: hi + 1}, true // dl on a closed fold takes all of it (F-176)
+			}
 			e.runOperator(e.pendingOp, a, z, linewise)
 			e.clearPending()
+			return
+		case key == "zj" || key == "zk": // dzj: down to the next fold, linewise (F-176)
+			e.foldOperator(key, count*max(e.pendingCnt, 1))
 			return
 		case key == ";" || key == ",":
 			// d; d, : the last find as an operator motion (F-133)
@@ -359,8 +369,7 @@ func (e *Editor) ensureBlankLine(at Pos) {
 func (e *Editor) beginOp(o op) {
 	if e.pendingOp == o { // doubled operator: linewise on current line ×count
 		n := maxInt(maxInt(e.count(), e.pendingCnt), 1)
-		start := e.buf.Cursor().Line
-		z := minInt(start+n, e.buf.LineCount())
+		start, z := e.buf.foldLines(e.buf.Cursor().Line, n) // a closed fold counts as one line (F-176)
 		e.runOperator(o, Pos{start, 0}, Pos{z, 0}, true)
 		e.clearPending()
 		return
@@ -429,6 +438,12 @@ func opMessage(o op, linewise bool) string {
 }
 
 func (e *Editor) normalAction(key string, count int) bool {
+	if key == "x" || key == "delete" || key == "D" { // vim: a closed fold is deleted whole (F-176)
+		if lo, hi, ok := e.buf.ClosedFoldAt(e.buf.Cursor().Line); ok {
+			e.runOperator(opDelete, Pos{Line: lo}, Pos{Line: hi + 1}, true)
+			return true
+		}
+	}
 	switch key {
 	case "i":
 		e.mode = ModeInsert
@@ -453,6 +468,9 @@ func (e *Editor) normalAction(key string, count int) bool {
 		e.buf.cursor.Col = len(e.buf.runes(e.buf.Cursor().Line))
 		e.mode = ModeInsert
 	case "o": // open a line below, keeping the indent (one more after an opener)
+		if _, hi, ok := e.buf.ClosedFoldAt(e.buf.Cursor().Line); ok {
+			e.buf.cursor.Line = hi // below a closed fold, not inside it (F-176)
+		}
 		e.buf.cursor.Col = len(e.buf.runes(e.buf.Cursor().Line))
 		e.newline()
 		e.mode = ModeInsert
@@ -523,7 +541,8 @@ func (e *Editor) normalAction(key string, count int) bool {
 	case ">", "<": // >> / << shift count lines (F-119)
 		if e.pendShift == key {
 			line := e.buf.Cursor().Line
-			e.shiftLines(line, min(line+count, e.buf.LineCount())-1, key == ">")
+			lo, end := e.buf.foldLines(line, count)
+			e.shiftLines(lo, end-1, key == ">")
 			e.pendShift = ""
 			e.cntDigits = nil
 			return true
@@ -593,6 +612,9 @@ func (e *Editor) paste(count int, after bool) {
 	if e.blockRegValid() { // F-159: a block goes back in as a rectangle
 		e.pasteBlock(count, after)
 		return
+	}
+	if _, hi, ok := e.buf.ClosedFoldAt(e.buf.Cursor().Line); ok && after && e.registerLW {
+		e.buf.cursor.Line = hi // linewise p lands below a closed fold (F-176)
 	}
 	for i := 0; i < maxInt(count, 1); i++ {
 		end := e.buf.paste(e.register, e.registerLW, after)
@@ -776,6 +798,7 @@ func (e *Editor) visualSpan() (Pos, Pos) {
 	a, z := order(e.visualStart, cur)
 	if e.visualLine { // whole lines: from the first line's start to the next line's start
 		a.Col = 0
+		a.Line, z.Line = e.buf.foldWiden(a.Line, z.Line) // a closed fold at either end goes whole (F-176)
 		if z.Line+1 < e.buf.LineCount() {
 			return a, Pos{Line: z.Line + 1}
 		}
@@ -975,6 +998,7 @@ func (e *Editor) Reload() error {
 	cur := e.buf.Cursor()
 	b.seq = e.buf.seq + 1 // render caches keyed on seq must not reuse the old text
 	b.SetCursor(cur)
+	b.fold = e.buf.fold // the folds are mapped across the new text on first use (F-176)
 	e.buf = b
 	e.reloaded = true
 	e.mode = ModeNormal

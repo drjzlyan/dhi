@@ -35,6 +35,9 @@ func (b *Buffer) move(m motion, count int) {
 		b.stepOnce(m)
 	}
 	b.clampCursor()
+	if len(b.fold.closed) > 0 {
+		b.snapFold(m == motRight || m == motWordFwd || m == motWordEnd) // never rest inside a closed fold (F-176)
+	}
 }
 
 func (b *Buffer) stepOnce(m motion) {
@@ -59,13 +62,24 @@ func (b *Buffer) stepOnce(m motion) {
 			b.wantCol = 0
 		}
 	case motUp:
-		if b.cursor.Line > 0 {
-			b.cursor.Line--
+		from := b.cursor.Line
+		if lo, _, ok := b.ClosedFoldAt(from); ok {
+			from = lo // a closed fold is one line (F-176)
+		}
+		if from > 0 {
+			b.cursor.Line = from - 1
+			if lo, _, ok := b.ClosedFoldAt(from - 1); ok {
+				b.cursor.Line = lo
+			}
 			b.applyWantCol()
 		}
 	case motDown:
-		if b.cursor.Line < len(b.lines)-1 {
-			b.cursor.Line++
+		from := b.cursor.Line
+		if _, hi, ok := b.ClosedFoldAt(from); ok {
+			from = hi
+		}
+		if from < len(b.lines)-1 {
+			b.cursor.Line = from + 1
 			b.applyWantCol()
 		}
 	case motLineStart:
@@ -271,7 +285,9 @@ func (b *Buffer) spanFor(m motion, count int) (Pos, Pos) {
 		if to.Line < first {
 			first = to.Line
 		}
-		return Pos{first, 0}, Pos{maxInt(from.Line, to.Line) + 1, 0}
+		last := maxInt(from.Line, to.Line)
+		first, last = b.foldWiden(first, last) // closed folds go whole (F-176)
+		return Pos{first, 0}, Pos{last + 1, 0}
 	}
 
 	end := to

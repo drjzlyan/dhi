@@ -42,14 +42,18 @@ func (m *Model) wrapCommand(cmd string) (string, bool) {
 // wrapLayout is the window of lines a wrapped view shows and how each
 // breaks into rows.
 type wrapLayout struct {
-	top, end int     // lines [top, end) are drawn
-	segs     [][]int // per line, the first rune (tab-expanded) of each row
+	top, end int     // lines [top, end) bound what is drawn
+	lines    []int   // the lines drawn, in order: closed folds hide the rest (F-176)
+	segs     [][]int // per drawn line, the first rune (tab-expanded) of each row
 }
 
 // lineSegs breaks buffer line l for the given width. The cursor line
 // reserves a cell for the block when the cursor sits past the last rune.
 func lineSegs(e *textbuf.Editor, l, width int, cells []inlayCell) []int {
 	b := e.Buffer()
+	if lo, _, ok := b.ClosedFoldAt(l); ok && lo == l {
+		return []int{0} // a closed fold is one row (F-176)
+	}
 	plain := expandTabs(b.Line(l))
 	if l == b.Cursor().Line && visCol(b.Line(l), b.Cursor().Col) >= len([]rune(plain)) {
 		plain += " "
@@ -62,8 +66,6 @@ func lineSegs(e *textbuf.Editor, l, width int, cells []inlayCell) []int {
 // buffer.
 func (m *Model) layoutWrap(e *textbuf.Editor, rows, width int) *wrapLayout {
 	b := e.Buffer()
-	cur := b.Cursor().Line
-	n := b.LineCount()
 	cache := map[int][]int{}
 	segs := func(l int) []int {
 		if s, ok := cache[l]; ok {
@@ -73,22 +75,9 @@ func (m *Model) layoutWrap(e *textbuf.Editor, rows, width int) *wrapLayout {
 		cache[l] = s
 		return s
 	}
-	top, used := cur, 0
-	for top > 0 && used+len(segs(top-1)) <= rows/2 {
-		top--
-		used += len(segs(top))
-	}
-	end := cur
-	for end < n && used < rows {
-		used += len(segs(end))
-		end++
-	}
-	for top > 0 && used+len(segs(top-1)) <= rows { // short of the end: use the room above
-		top--
-		used += len(segs(top))
-	}
-	wl := &wrapLayout{top: top, end: end}
-	for l := top; l < end; l++ {
+	lines := windowLines(b, b.Cursor().Line, rows, func(l int) int { return len(segs(l)) })
+	wl := &wrapLayout{top: lines[0], end: lines[len(lines)-1] + 1, lines: lines}
+	for _, l := range lines {
 		wl.segs = append(wl.segs, segs(l))
 	}
 	return wl

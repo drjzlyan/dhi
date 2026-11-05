@@ -484,4 +484,41 @@ func TestLiveGopls(t *testing.T) {
 		h.wait(func() bool { return strings.Contains(h.readDisk("a.go"), "func Sum") }, "a.go renamed on disk")
 		h.wait(func() bool { return strings.Contains(m.active().Buffer().Text(), "Sum(1, 2)") }, "b.go buffer renamed")
 	})
+
+	// F-176: gopls answers textDocument/foldingRange; the method folds.
+	t.Run("folding ranges", func(t *testing.T) {
+		foldDebounce = 0
+		h.open("s.go")
+		b := m.active().Buffer()
+		h.wait(func() bool {
+			m.View() // folds are requested while drawing
+			for _, f := range b.Folds() {
+				if f.Start == 4 {
+					return true
+				}
+			}
+			return false
+		}, "gopls folding ranges for Run")
+		for _, f := range b.Folds() {
+			if f.Start == 4 {
+				t.Logf("gopls fold of Run: lines %d-%d (end convention observed, not assumed)", f.Start, f.End)
+				if f.End <= f.Start {
+					t.Fatalf("fold %+v", f)
+				}
+			}
+		}
+		h.wait(func() bool {
+			m.View()
+			return strings.Contains(strings.ToLower(b.FoldSource()), "gopls") && !strings.Contains(b.FoldSource(), "waiting") && !strings.Contains(b.FoldSource(), "indentation")
+		}, "gopls as the fold source")
+		if src := b.FoldSource(); !strings.Contains(strings.ToLower(src), "gopls") {
+			t.Fatalf("fold source = %q, want gopls", src)
+		}
+		h.at(4, 0)
+		h.keys("z", "c")
+		if v := plainView(m); !strings.Contains(v, "⋯") || strings.Contains(v, "total += 30") {
+			t.Fatalf("method not folded:\n%s", v)
+		}
+		h.keys("z", "o")
+	})
 }
