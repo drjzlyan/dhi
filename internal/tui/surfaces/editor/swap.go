@@ -166,6 +166,9 @@ func (m *Model) KeepForNextTime() error {
 		if m.ws != nil && t.path == m.commitPath() {
 			continue // a half-written commit message is not worth a swap
 		}
+		if m.isSearchBuf(t.ed) {
+			continue // the search-results buffer is never swapped or kept (F-168)
+		}
 		if t.path == "" || t.swapHeld() || !m.swappable(t) {
 			lost = append(lost, t.vp)
 			continue

@@ -198,3 +198,10 @@ func (e *Editor) SetMessage(msg string) { e.message = msg }
 // AwaitingChar reports whether the editor is waiting for a target character
 // after f/F/t/T (F-133).
 func (e *Editor) AwaitingChar() bool { return e.pendFind != 0 }
+
+// WantsRawKey reports a half-typed command whose next key is data for the
+// buffer (an f/F/t/T target, an i/a object character, a block r character):
+// the surface must not read it as the start of one of its own chords.
+func (e *Editor) WantsRawKey() bool {
+	return e.pendFind != 0 || e.pendObj != 0 || e.pendRepl
+}

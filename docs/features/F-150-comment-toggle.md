@@ -10,7 +10,7 @@ The editor had no way to comment code out: `gcc`, `gc{motion}`, visual `gc` and 
   without comments (JSON) or unknown says so on the status line (ADR-0011); nothing is guessed.
 - Block-comment-only types (CSS, HTML, XML, Markdown) wrap each line in the pair, so the toggle is
   per line and round-trips.
-- Text objects (`ip`, `iw`) do not exist in the editor yet, so `gcip` is not available.
+- `gcip` and the other text objects work (F-167).
 - `ctrl+/` has two key names: terminals send `ctrl+_` for it, both are handled. In the editor
   buffer they no longer open help (the app's global `?`/`ctrl+/` help only applies outside buffer
   focus, where `?` is search); help stays on `?` outside the buffer (`esc` returns to the tree).

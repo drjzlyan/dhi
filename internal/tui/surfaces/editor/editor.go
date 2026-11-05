@@ -650,6 +650,7 @@ func (m *Model) HelpSections() [][2]string {
 			[2]string{"f F t T · ; , · %", "find/until char on line · repeat/reverse · match bracket"},
 			[2]string{"gd · gR · K", "go to definition · references · hover"},
 			[2]string{"gp · :peek refs", "peek the definition (or references) in a popup under the cursor: enter jumps, esc closes, ↑/↓ step through several"},
+			[2]string{":wsym [query]", "workspace symbols: search every language server's index, enter jumps"},
 			[2]string{":calls · :calls out", "call hierarchy tree: who calls this function · what it calls (→ opens a level, enter jumps)"},
 			[2]string{"]d · [d · :diag", "next / previous problem · all problems"},
 			[2]string{"gr · ga · :organize", "rename · code actions (quick fixes first; visual: selection) · organize imports"},
@@ -661,6 +662,7 @@ func (m *Model) HelpSections() [][2]string {
 			[2]string{":test [all|name]", "run Go tests · failures list jumps to the line"},
 			[2]string{":task [name]", "run a package.json script, make target or just recipe in a terminal tab · its errors join :diag"},
 			[2]string{":trust · :untrust", "allow / stop language servers, format on save, tasks, tests and the debugger in this folder"},
+			[2]string{":set wrap|blame|inlayhints|semantic|breadcrumbs|sticky", "session toggles (prefix no to turn one off: :set nowrap); Settings holds the defaults"},
 			[2]string{":fmt · :sym", "format · outline / go to symbol (format on save: :set nofmt)"},
 			[2]string{"ctrl+y", "review agent suggestions"},
 			[2]string{"ctrl+g", "markdown preview"},
@@ -1228,12 +1230,13 @@ func (m *Model) handleKey(key string) bool {
 
 		// F-176: z commands fold (za zc zo zA zC zO zM zR zj zk); `z` is
 		// dead in textbuf, so the surface owns the two-key chord.
+		raw := e.WantsRawKey() // the key is a target/object character: no surface chord may take it
 		if m.pendingZ {
 			m.pendingZ = false
 			m.foldZKey(e, key)
 			return true
 		}
-		if key == "z" && (e.Mode() == textbuf.ModeNormal || e.Mode() == textbuf.ModeVisual) && !e.AwaitingChar() {
+		if key == "z" && (e.Mode() == textbuf.ModeNormal || e.Mode() == textbuf.ModeVisual) && !raw {
 			m.pendingZ = true
 			return true
 		}
@@ -1253,6 +1256,10 @@ func (m *Model) handleKey(key string) bool {
 			}
 			if key == "b" { // F-174: the selection becomes a cursor, and the next match another
 				e.Key("gb")
+				return true
+			}
+			if key != "esc" { // gg and any other g-motion belong to the buffer
+				e.Key("g" + key)
 				return true
 			}
 		} else if m.lspPendingG {
@@ -1295,11 +1302,11 @@ func (m *Model) handleKey(key string) bool {
 			} else {
 				m.lspPendingG = false // mode changed; release
 			}
-		} else if (e.Mode() == textbuf.ModeNormal || e.Mode() == textbuf.ModeVisual) && key == "g" {
+		} else if (e.Mode() == textbuf.ModeNormal || e.Mode() == textbuf.ModeVisual) && key == "g" && !raw {
 			m.lspPendingG = true
 			return true
 		}
-		if e.Mode() == textbuf.ModeNormal && key == "K" {
+		if e.Mode() == textbuf.ModeNormal && key == "K" && !raw {
 			m.requestHover()
 			return true
 		}
@@ -1315,7 +1322,7 @@ func (m *Model) handleKey(key string) bool {
 				e.Key(b + "x")
 				return true
 			}
-		} else if e.Mode() == textbuf.ModeNormal && (key == "]" || key == "[") && !e.AwaitingChar() {
+		} else if e.Mode() == textbuf.ModeNormal && (key == "]" || key == "[") && !raw {
 			m.pendingBracket = key
 			return true
 		}

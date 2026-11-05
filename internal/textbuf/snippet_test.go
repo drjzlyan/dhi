@@ -184,7 +184,7 @@ func TestSnippetUndoesAsOneStep(t *testing.T) {
 	e, _ := snipEditor(t, "x", "f(${1:a})")
 	e.Key("esc")
 	e.Key("u")
-	if got := e.Buffer().Text(); got == "xf(a)" {
-		t.Fatalf("snippet insertion not undoable: %q", got)
+	if got := e.Buffer().Text(); got != "x" {
+		t.Fatalf("one undo should restore the pre-expansion text, got %q", got)
 	}
 }

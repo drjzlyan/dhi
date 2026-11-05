@@ -103,7 +103,7 @@ func (m *Model) signatureView() []string {
 	if m.sigHelp == nil || e == nil || e.Mode() != textbuf.ModeInsert || e.Path() != m.sigPath {
 		return nil
 	}
-	w := maxInt(m.width-m.railW()-10, 20)
+	w := maxInt(m.surfW()-10, 20)
 	r := []rune(m.sigHelp.Label)
 	s, z := m.sigHelp.ParamStart, m.sigHelp.ParamEnd
 	if len(r) > w { // window the label so the active parameter stays in view

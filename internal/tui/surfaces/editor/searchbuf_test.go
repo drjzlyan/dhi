@@ -442,3 +442,17 @@ func TestSearchBufGoldens(t *testing.T) {
 	ex(m, "w")
 	golden.Snapshot(t, "editor_search_apply_card_100x30", m.View())
 }
+
+// F-168: hot exit with a dirty search-results buffer succeeds; the buffer is
+// never swapped or kept.
+func TestHotExitSkipsDirtySearchBuffer(t *testing.T) {
+	m, _, _ := sbSetup(t)
+	e := grep(t, m, "needle")
+	e.Buffer().ReplaceLines(map[int]string{3: "  3: half edited"})
+	if !e.Buffer().Dirty() {
+		t.Fatal("search buffer should be dirty")
+	}
+	if err := m.KeepForNextTime(); err != nil {
+		t.Fatalf("KeepForNextTime: %v", err)
+	}
+}
