@@ -1,6 +1,6 @@
 # ADR-0047: Lifecycle hooks are read from installed plugins, in the vendor format
 
-Date: 2026-11-04 · Status: proposed · Companion to: ADR-0043 (standard formats), ADR-0022 (install
+Date: 2026-11-04 · Status: accepted · Companion to: ADR-0043 (standard formats), ADR-0022 (install
 trust), ADR-0044 (approval boundary), ADR-0018 (loopback tool surface)
 Serves: gap G-C3.
 
@@ -50,3 +50,12 @@ host CLI's own native tools.
 4. `internal/agentkit/scopes`: hooks run with the agent's scopes; exec scope required to enable.
 5. `internal/agentkit/untrusted` (fence output), `internal/doctor` (coverage row), Settings toggle.
 6. Spec F-TBD (next free number); ADR-0043 §3 amended by reference.
+
+## Decision (2026-11-05, user)
+Option 2, with the boundary rule the user set: DHI may act outside its own folders only where that
+does not change how anything behaves outside DHI. So, in addition to DHI's tool boundary, plugin
+hooks may also be wired to a CLI's native tools when the CLI accepts hooks through per-run
+configuration DHI passes (flags, environment, or a DHI-owned temporary config folder, as F-123 does
+for antigravity's per-turn settings). DHI never edits the user's persistent CLI configuration; run
+outside DHI, every CLI behaves exactly as before. CLIs with no per-run hook input keep the stated
+coverage gap, named in doctor.

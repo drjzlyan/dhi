@@ -1,6 +1,6 @@
 # ADR-0050: An ACP (Agent Client Protocol) transport for CLI engines
 
-Date: 2026-11-04 · Status: proposed · Companion to: ADR-0019 (CLI is the engine), ADR-0024 (no
+Date: 2026-11-04 · Status: rejected · Companion to: ADR-0019 (CLI is the engine), ADR-0024 (no
 direct-API engine), ADR-0018 (loopback serving), ADR-0044, ADR-0043
 Serves: gap G-C10.
 
@@ -55,3 +55,7 @@ subprocess.
 3. `internal/agentkit/clirun`: `transport` field on the adapter declaration; ACP path in the runner.
 4. Approvals queue: map permission requests to cards; `internal/agentkit/mcpbridge`: pass loopback.
 5. `internal/doctor`: ACP handshake row; fake-agent tests; spec F-TBD (next free number).
+
+## Decision (2026-11-05, user)
+Option 1: no ACP transport. One consistent experience across CLIs matters more than structured
+events for some of them; the per-CLI adapters stay the single integration path.

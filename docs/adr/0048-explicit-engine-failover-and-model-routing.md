@@ -1,6 +1,6 @@
 # ADR-0048: Engine failover is an explicit per-agent setting; models route per workflow step
 
-Date: 2026-11-04 · Status: proposed · Companion to: ADR-0011 (no silent fallbacks), ADR-0019
+Date: 2026-11-04 · Status: accepted (amended) · Companion to: ADR-0011 (no silent fallbacks), ADR-0019
 (CLI engine), ADR-0031 (episodes, budgets), ADR-0016 (agent spec), ADR-0020 (workflows)
 Serves: gap G-C5.
 
@@ -46,3 +46,12 @@ for implementation" needs two agents.
 4. `internal/agentkit/workflow`: per-step `model`/`engine` overrides, validated at load.
 5. `internal/settings`, `internal/doctor`: Settings field and doctor row; table-driven tests.
 6. Spec F-TBD (next free number).
+
+## Decision (2026-11-05, user)
+Option 2, amended: `fallback_engine` and `fallback_model` are set by default rather than left unset.
+At setup (and when the agent's engine is chosen) DHI picks a default fallback from the other
+installed CLIs in a fixed, documented order and writes it into the agent's settings, where it is
+shown and editable (including "none"). This is a visible default the user can change, not a silent
+substitution, so ADR-0011 holds; every failover is still labeled in the transcript, a toast and
+doctor, never crosses an approval boundary without a card, and never happens after a tool call was
+served. Per-step model/engine routing in workflows is not part of this decision.

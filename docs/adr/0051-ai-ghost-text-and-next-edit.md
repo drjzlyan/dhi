@@ -1,6 +1,6 @@
 # ADR-0051: AI ghost text is on demand through the agent CLI; no keystroke-rate engine
 
-Date: 2026-11-04 · Status: proposed · Companion to: ADR-0019 (CLI is the engine), ADR-0024 (no
+Date: 2026-11-04 · Status: accepted · Companion to: ADR-0019 (CLI is the engine), ADR-0024 (no
 direct-API engine), ADR-0031 (budgets), ADR-0044, ADR-0046
 Serves: gap G-X2.
 
@@ -45,3 +45,8 @@ feature as VS Code or Cursor does it conflicts with two accepted ADRs.
    file content (ADR-0046) and meter it in `internal/agentkit/budget`.
 4. `internal/settings`: opt-in and trigger mode; `internal/doctor`: row for engine and LSP support.
 5. Regenerate editor goldens; spec F-TBD (next free number).
+
+## Decision (2026-11-05, user)
+Options 1 and 2: LSP inline completion first (ghost text when the server offers it), plus an
+explicit on-demand agent suggestion (`:suggest` / chord), read-only, bounded, metered. No local
+model (option 3) and no next-edit prediction.

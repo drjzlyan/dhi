@@ -108,12 +108,12 @@ no daemon.
 
 ## Phase 7 — Needs a decision first (**ADR**) or research
 
-- [ ] **G-C3** `blocked (ADR)` — proposed ADR-0047, awaiting decision. Lifecycle hooks, reading the vendor hooks format from installed plugins. No DHI-only format (ADR-0043). **ADR**
-- [ ] **G-C5** `blocked (ADR)` — proposed ADR-0048, awaiting decision. Engine failover as an explicit user-set per-agent `fallback_engine`; per-task model routing. **ADR** (ADR-0011)
-- [ ] **G-C6** `blocked (ADR)` — proposed ADR-0049, awaiting decision. Headless/CI mode (e.g. `dhi run <task>`) and a GitHub Action. **ADR** (ADR-0004)
-- [ ] **G-C10** `blocked (ADR)` — proposed ADR-0050, awaiting decision. ACP client engine (research first)
+- [ ] **G-C3** `todo` — ADR-0047 accepted (option 2 + per-run native hooks, no persistent CLI config change). Lifecycle hooks, reading the vendor hooks format from installed plugins. No DHI-only format (ADR-0043). **ADR**
+- [ ] **G-C5** `todo` — ADR-0048 accepted, amended (default fallback chosen at setup, editable). Engine failover as an explicit user-set per-agent `fallback_engine`; per-task model routing. **ADR** (ADR-0011)
+- [x] **G-C6** `dropped` — ADR-0049 rejected: DHI stays TUI-only (ADR-0004). Headless/CI mode (e.g. `dhi run <task>`) and a GitHub Action. **ADR** (ADR-0004)
+- [x] **G-C10** `dropped` — ADR-0050 rejected: no ACP, one consistent experience. ACP client engine (research first)
 - [x] **G-X1** `done` (F-177) — DAP and test runner beyond Go (ROADMAP M37 S3)
-- [ ] **G-X2** `blocked (ADR)` — proposed ADR-0051, awaiting decision. AI ghost text and next-edit prediction (ROADMAP M37 S3)
+- [ ] **G-X2** `todo` — ADR-0051 accepted (LSP inline completion + on-demand :suggest). AI ghost text and next-edit prediction (ROADMAP M37 S3)
 - [x] **G-X3** `done` (F-178) — Chat extras: image attachments, session export, user-invocable skills as slash commands
 
 ## Not pursued
@@ -188,3 +188,5 @@ G-E15 — F-175 — 2026-11-05 (breadcrumbs on, sticky off by default; LSP outli
 G-E9 — F-176 — 2026-11-05 (LSP foldingRange or named indent fallback; vim z keys; per-buffer folds; live)
 G-X1 — F-177 — 2026-11-05 (pytest + debugpy, .venv then venv then PATH; vitest/jest runner; JS debug out of scope; not run live: pytest/debugpy not installed)
 G-X3 — F-178 — 2026-11-05 (user-invocable skills as /name, opt-in; /export md|json redacted+fenced; @image:path for claude and codex only; image flags not run live)
+G-C6 — dropped — 2026-11-05 (ADR-0049 rejected: TUI-only)
+G-C10 — dropped — 2026-11-05 (ADR-0050 rejected: no ACP)

@@ -1,6 +1,6 @@
 # ADR-0049: A non-interactive `dhi run` and a GitHub Action
 
-Date: 2026-11-04 · Status: proposed · Companion to: ADR-0004 (minimal CLI), ADR-0011, ADR-0044,
+Date: 2026-11-04 · Status: rejected · Companion to: ADR-0004 (minimal CLI), ADR-0011, ADR-0044,
 ADR-0032 (goal loop envelope), ADR-0046
 Serves: gap G-C6.
 
@@ -50,3 +50,6 @@ sandbox (ADR-0019, ADR-0044) assume a human who can answer a card.
 4. `internal/doctor`: a headless readiness check (reuses `--json`).
 5. `.github/workflows/release.yml` publishes checksums; the Action repo; spec F-TBD (next free number); ADR-0004
    amended by reference.
+
+## Decision (2026-11-05, user)
+Option 1: DHI stays TUI-only; ADR-0004 is unchanged. No `dhi run` subcommand and no GitHub Action.
