@@ -509,6 +509,12 @@ func Accent2Bold() lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(Current.Accent2).Bold(true)
 }
 
+// GhostText styles inline suggestions drawn after the cursor (F-181): muted
+// and italic, so it never reads as text in the file.
+func GhostText() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(Current.TextMuted).Italic(true)
+}
+
 // TextDim styles secondary text.
 func TextDim() lipgloss.Style { return lipgloss.NewStyle().Foreground(Current.TextDim) }
 
@@ -895,4 +901,5 @@ var (
 	GlyphFoldOpen   = "▾" // editor gutter: an open fold starts here (F-176)
 	GlyphFoldClosed = "▸" // editor gutter: a closed fold starts here (F-176)
 	GlyphFoldMore   = "⋯" // a closed fold's tail: "⋯ N lines" (F-176)
+	GlyphGhostMore  = "↵" // ghost text: more lines follow the one shown (F-181)
 )

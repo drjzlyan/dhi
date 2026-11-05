@@ -136,6 +136,8 @@ type Prefs struct {
 	Breadcrumbs    bool // symbol path of the cursor in the buffer title (F-175)
 	// StickyScroll pins the enclosing symbols' headers at the top of the pane (F-175).
 	StickyScroll bool
+	// InlineCompletion shows the server's inline completion as ghost text (F-181).
+	InlineCompletion bool
 	// RestoreSession saves the open tabs and split on quit and reopens them
 	// on launch (F-149).
 	RestoreSession bool
@@ -143,7 +145,7 @@ type Prefs struct {
 }
 
 // DefaultPrefs match the settings defaults.
-var DefaultPrefs = Prefs{TabWidth: 4, LineNumbers: true, Breadcrumbs: true, RestoreSession: true, Scrollback: 1000}
+var DefaultPrefs = Prefs{TabWidth: 4, LineNumbers: true, Breadcrumbs: true, InlineCompletion: true, RestoreSession: true, Scrollback: 1000}
 
 // WithPrefs reads the editor settings at each render, so a change in
 // Settings shows at once.
@@ -273,6 +275,13 @@ type Model struct {
 	inlayOverride  *bool                       // :set inlayhints|noinlayhints for this session; nil follows Settings (F-169)
 	inlay          map[string]*inlayState      // per file: cached LSP inlay hints (F-169)
 	inlayCfg       map[*lsp.Client]bool        // clients last told whether to emit hints
+	ghost          *ghostState                 // the ghost text on offer (F-181)
+	ghostSeq       int                         // generation of the debounced inline-completion request
+	ghostOverride  *bool                       // :set ghost|noghost for this session; nil follows Settings (F-181)
+	ghostErrNoted  bool                        // the server's inline-completion error was shown once
+	sug            *suggestState               // a :suggest call in flight (F-181)
+	sugGen         int                         // generation of :suggest calls
+	suggestHook    *suggestHook                // tests: replaces the default agent's runtime
 	crumbOverride  *bool                       // :set [no]breadcrumbs for this session; nil follows Settings (F-175)
 	stickyOverride *bool                       // :set [no]sticky for this session; nil follows Settings (F-175)
 	outline        map[string]*outlineState    // per file: cached document outline (F-175)
@@ -658,12 +667,14 @@ func (m *Model) HelpSections() [][2]string {
 			[2]string{"]x · [x · :conflict ours|theirs|both|base", "next / previous merge conflict · accept a side (one undo step)"},
 			[2]string{"ctrl+space", "completions (they also open as you type)"},
 			[2]string{"tab · shift+tab (insert, in a snippet)", "next / previous snippet stop (snippets: server items and .vscode/*.code-snippets)"},
+			[2]string{"tab (insert, ghost text showing)", "accept the dimmed suggestion after the cursor; esc drops it, typing its next character walks through it. Order: completion popup, then snippet stop, then ghost text, then indent"},
+			[2]string{kit.AltLabel("alt+\\ · :suggest"), "ask your default agent for a short continuation at the end of this line (one read-only call, counted in the budget as \"suggest\"; never automatic). Language servers with inline completion show ghost text on their own (:set ghost|noghost)"},
 			[2]string{":pair <agent>", "invite an agent to pair (:ask · :unpair)"},
 			[2]string{":break · :debug", "breakpoint · start debugging (:cont :next :step :out :stop :eval)"},
 			[2]string{":test [all|name]", "run Go tests · failures list jumps to the line"},
 			[2]string{":task [name]", "run a package.json script, make target or just recipe in a terminal tab · its errors join :diag"},
 			[2]string{":trust · :untrust", "allow / stop language servers, format on save, tasks, tests and the debugger in this folder"},
-			[2]string{":set wrap|blame|inlayhints|semantic|breadcrumbs|sticky", "session toggles (prefix no to turn one off: :set nowrap); Settings holds the defaults"},
+			[2]string{":set wrap|blame|inlayhints|ghost|semantic|breadcrumbs|sticky", "session toggles (prefix no to turn one off: :set nowrap); Settings holds the defaults"},
 			[2]string{":fmt · :sym", "format · outline / go to symbol (format on save: :set nofmt)"},
 			[2]string{"ctrl+y", "review agent suggestions"},
 			[2]string{"ctrl+g", "markdown preview"},
@@ -831,6 +842,9 @@ type teaMsg struct {
 	dbgStart  *dbgStarted
 	editReq   *editshim.Request // editMsgOpen
 
+	inline   []lsp.InlineItem // lspMsgGhost: the server's proposals (note = path, sigSeq = generation, bufSeq = the text, ghostPos = the cursor) (F-181)
+	ghostPos textbuf.Pos
+
 	selRanges      []lsp.Range // lspMsgSel: the server's chain, innermost first (note: its error)
 	selFrom, selTo textbuf.Pos // lspMsgSel: the selection the request was made for
 }
@@ -862,7 +876,11 @@ const (
 	semMsgDone   // semantic tokens: the server answered (F-173)
 	dbgMsgStarted
 	dbgMsgUpdate
-	editMsgOpen // a program asks for a file to be edited (F-165)
+	editMsgOpen    // a program asks for a file to be edited (F-165)
+	lspMsgGhostDue // the ghost-text debounce elapsed: send the request (F-181)
+	lspMsgGhost    // inline completion answered (F-181)
+	sugMsgTick     // :suggest spinner frame (F-181)
+	sugMsgDone     // :suggest answered (F-181)
 )
 
 func (m *Model) Resize(w, h int) {
@@ -941,6 +959,8 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 			m.termExited(msg.tab)
 		case lspMsgDiag, lspMsgComp, lspMsgHover, lspMsgEdit, lspMsgAction, lspMsgNote, lspMsgSig, lspMsgRun, lspMsgBulb, lspMsgSel, lspMsgInlay, lspMsgInlayDue, lspMsgInlayRefresh, lspMsgOutline, lspMsgOutlineDue, lspMsgFold, lspMsgFoldDue:
 			m.applyLSPUpdate(msg)
+		case lspMsgGhostDue, lspMsgGhost, sugMsgTick, sugMsgDone:
+			m.applyGhostMsg(msg)
 		case toolMsgInstalled:
 			m.applyToolInstalled(msg)
 		case testMsgDone:
@@ -1154,6 +1174,9 @@ func (m *Model) handleKey(key string) bool {
 		if key == "ctrl+c" { // vim: leave insert/visual/command (F-115)
 			key = "esc"
 		}
+		if key == "esc" {
+			m.ghostEsc() // F-181: the suggestion goes, a pending :suggest stops; esc still acts
+		}
 		if key == "ctrl+k" && e.Mode() != textbuf.ModeInsert { // F-120: inline edit with an agent
 			return m.startAgentEdit()
 		}
@@ -1356,6 +1379,9 @@ func (m *Model) handleKey(key string) bool {
 		if m.snipKey(e, key) { // F-171: tab / shift+tab walk the snippet's stops
 			return true
 		}
+		if m.ghostKey(e, key) { // F-181: tab accepts the ghost text, alt+backslash asks the agent
+			return true
+		}
 		was := e.Mode()
 		e.SetPageSize(m.height - 4) // ctrl+d/u and pgup/pgdown step by the visible rows
 		e.Key(key)
@@ -1378,6 +1404,7 @@ func (m *Model) handleKey(key string) bool {
 		m.offerConflictStage(e)
 		m.snipAfterKey(e)
 		m.lspSync()
+		m.ghostAfterKey(e, key)
 		if e.Mode() == textbuf.ModeInsert && was == textbuf.ModeInsert {
 			m.autoComplete(key)
 		}
@@ -2044,6 +2071,10 @@ func (m *Model) ExecEx(requester *textbuf.Editor, cmd string) bool {
 		return true
 	}
 	if msg, ok := m.inlayCommand(cmd); ok {
+		requester.SetMessage(msg)
+		return true
+	}
+	if msg, ok := m.ghostCommand(cmd); ok {
 		requester.SetMessage(msg)
 		return true
 	}

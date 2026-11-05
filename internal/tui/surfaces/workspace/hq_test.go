@@ -50,6 +50,28 @@ func TestBuildPerf(t *testing.T) {
 	}
 }
 
+// F-181: ghost-text suggestions are their own line in the record, and the
+// line is absent when there were none.
+func TestPerfShowsSuggestSpendAsItsOwnLine(t *testing.T) {
+	now := time.Date(2026, 10, 15, 12, 0, 0, 0, time.Local)
+	ledger := []budget.Entry{
+		{At: now, Agent: "dev", CostUSD: 0.4},
+		{At: now, Agent: "dev", CostUSD: 0.02, Kind: budget.KindSuggest},
+		{At: now, Agent: "dev", CostUSD: 0.03, Kind: budget.KindSuggest},
+		{At: now, Agent: "qa", CostUSD: 1, Kind: budget.KindSuggest},
+	}
+	p := buildPerf("dev", nil, 0, nil, ledger, nil, nil, now)
+	if p.SuggestN != 2 || p.SuggestWeek < 0.049 || p.SuggestWeek > 0.051 || p.SpendWeek < 0.449 || p.SpendWeek > 0.451 {
+		t.Fatalf("perf = %+v", p)
+	}
+	if got := ansi.Strip(strings.Join(perfLines(p), "\n")); !strings.Contains(got, "suggest 7d") || !strings.Contains(got, "2 calls") {
+		t.Fatalf("no suggest line:\n%s", got)
+	}
+	if got := ansi.Strip(strings.Join(perfLines(samplePerf()), "\n")); strings.Contains(got, "suggest") {
+		t.Fatalf("a suggest line without suggestions:\n%s", got)
+	}
+}
+
 func TestPerfLinesGolden(t *testing.T) {
 	theme.SwapForTest(t, theme.Dark())
 	lines := perfLines(samplePerf())

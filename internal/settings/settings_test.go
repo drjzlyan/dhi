@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -865,6 +866,24 @@ func TestDesktopNotificationsDefaultAndApply(t *testing.T) {
 	Defaults().Apply()
 	if !theme.Notify {
 		t.Fatal("Apply must switch theme.Notify on")
+	}
+}
+
+// F-181: editor.inline_completion defaults on (it only acts when the server
+// provides it); a layer turns it off, and Settings can patch it.
+func TestEditorInlineCompletionLayer(t *testing.T) {
+	def, _ := Load(filepath.Join(t.TempDir(), "none"), "")
+	if !def.Editor.InlineCompletion {
+		t.Fatal("inline_completion must default on")
+	}
+	p := filepath.Join(t.TempDir(), "c.toml")
+	os.WriteFile(p, []byte("[editor]\ninline_completion = false\n"), 0o644)
+	cfg, err := Load(p, "")
+	if err != nil || cfg.Editor.InlineCompletion {
+		t.Fatalf("layer: inline_completion=%v err=%v", cfg.Editor.InlineCompletion, err)
+	}
+	if !slices.Contains(Known(), "editor.inline_completion") {
+		t.Fatal("editor.inline_completion must be a known key")
 	}
 }
 

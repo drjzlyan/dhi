@@ -56,6 +56,13 @@ func TestInstalledServersHandshake(t *testing.T) {
 			if _, err := c.DocumentSymbols(path); err != nil {
 				t.Fatalf("documentSymbol: %v", err)
 			}
+			// F-181: inline completion is asked only of a server that advertises
+			// it, so the live check follows what the server says.
+			if !c.CanInlineCompletion() {
+				t.Logf("%s does not advertise inlineCompletionProvider (ghost text stays off, :suggest still works)", l.Server)
+			} else if _, err := c.InlineCompletion(path, 0, 0); err != nil {
+				t.Fatalf("inlineCompletion: %v", err)
+			}
 		})
 	}
 }

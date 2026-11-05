@@ -233,7 +233,18 @@ func (m *Model) applyInlayMsg(msg teaMsg) {
 
 // inlayCells resolves the cached hints of line l, in line order. nil when
 // hints are off, the cache is for another version, or the line has none.
+// inlayCells is every virtual cell run of line l: the server's hints (F-169)
+// and, on the cursor line, ghost text (F-181), which sorts last.
 func (m *Model) inlayCells(e *textbuf.Editor, l int) []inlayCell {
+	cells := m.hintCells(e, l)
+	if g := m.ghostCell(e, l); g != nil {
+		cells = append(cells, g...)
+	}
+	return cells
+}
+
+// hintCells resolves the cached inlay hints of line l.
+func (m *Model) hintCells(e *textbuf.Editor, l int) []inlayCell {
 	if !m.inlayEnabled(m.editorPrefs()) {
 		return nil
 	}

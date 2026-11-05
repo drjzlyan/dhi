@@ -128,6 +128,8 @@ func (c *Client) initialize(rootDir string, opts map[string]any) error {
 				"formatting":     map[string]any{},
 				"selectionRange": map[string]any{},
 				"inlayHint":      map[string]any{},
+				// F-181: LSP 3.18 inline completion (ghost text).
+				"inlineCompletion": map[string]any{},
 				// F-173: call hierarchy and semantic tokens (full requests).
 				"callHierarchy": map[string]any{},
 				"semanticTokens": map[string]any{

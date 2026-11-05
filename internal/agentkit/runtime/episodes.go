@@ -130,6 +130,11 @@ func (r *Runtime) budgetCheck(agentID, taskSlug string, lim budget.Limits) (stri
 // recordSpend appends one run to the spend ledger (best-effort: the run
 // record on the card is the durable copy).
 func (r *Runtime) recordSpend(run tasks.Run, taskSlug string) {
+	r.recordSpendKind(run, taskSlug, "")
+}
+
+// recordSpendKind is recordSpend with the ledger line's kind.
+func (r *Runtime) recordSpendKind(run tasks.Run, taskSlug, kind string) {
 	if r.cfg.Spend == nil {
 		return
 	}
@@ -142,7 +147,7 @@ func (r *Runtime) recordSpend(run tasks.Run, taskSlug string) {
 	}
 	_ = r.cfg.Spend.Append(budget.Entry{
 		At: run.Finished, Agent: run.Agent, Task: taskSlug,
-		Tokens: tokens, CostUSD: run.CostUSD,
+		Tokens: tokens, CostUSD: run.CostUSD, Kind: kind,
 		Engine: strings.TrimPrefix(run.Runtime, "cli:"),
 	})
 }

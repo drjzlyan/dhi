@@ -277,7 +277,7 @@ func (m *Model) bufferView() string {
 					c0 := runesWidth(rs[:st]) + hintsBefore(cells, st)
 					c1 := runesWidth(rs[:en]) + hintsBefore(cells, en)
 					if en == len(rs) {
-						c1 = runesWidth(rs) + hintsBefore(cells, en+1) // hints after the last rune
+						c1 = runesWidth(rs) + hintsBefore(cells, en+2) // hints after the last rune, and ghost text (F-181) after the cursor block
 					}
 					row = ansi.Slice(text, c0, c1+boolInt(en == len(rs) && l == curLine))
 				}

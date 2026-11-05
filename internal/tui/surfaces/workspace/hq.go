@@ -21,6 +21,8 @@ type Perf struct {
 	Verified, Episodes int // episodes DHI verified as passing, of all
 	Spend7             [7]float64
 	SpendWeek          float64
+	SuggestN           int     // F-181: ghost-text suggestions in the week,
+	SuggestWeek        float64 // and what they cost (already inside SpendWeek)
 	Lessons, Pinned    int
 	Tools              int // forged tools this agent proposed that are active
 }
@@ -49,6 +51,10 @@ func buildPerf(agent string, runs []tasks.Run, done int, eps []episode.Episode, 
 		if day >= 0 && day < 7 {
 			p.Spend7[6-day] += e.CostUSD
 			p.SpendWeek += e.CostUSD
+			if e.Kind == budget.KindSuggest {
+				p.SuggestN++
+				p.SuggestWeek += e.CostUSD
+			}
 		}
 	}
 	for _, l := range ls {
@@ -83,6 +89,9 @@ func perfLines(p Perf) []string {
 	}
 	out = append(out, theme.AccentText().Render(kit.Sparkline(p.Spend7[:]))+" "+
 		theme.TextDim().Render("7d "+fmtCost(p.SpendWeek))+perTask)
+	if p.SuggestN > 0 { // its own line, so a user sees what ghost-text suggestions cost (ADR-0051)
+		out = append(out, theme.TextDim().Render("suggest 7d "+fmtCost(p.SuggestWeek)+" · "+kit.Count(p.SuggestN, "call")))
+	}
 	growth := kit.Count(p.Lessons, "lesson")
 	if p.Pinned > 0 {
 		growth += fmt.Sprintf(" (%d pinned)", p.Pinned)

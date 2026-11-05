@@ -37,7 +37,13 @@ type Entry struct {
 	// Engine is the CLI that actually ran ("claude"), which differs from
 	// the agent's own after an engine failover (F-180); "" in older rows.
 	Engine string `json:"engine,omitempty"`
+	// Kind names a spend that is not an agent turn: KindSuggest for an
+	// editor ghost-text call (F-181), so it shows as its own line.
+	Kind string `json:"kind,omitempty"`
 }
+
+// KindSuggest marks the on-demand ghost-text suggestion calls.
+const KindSuggest = "suggest"
 
 // LedgerSegmentBytes is the size at which the active ledger file rotates
 // into a numbered segment (F-153). Entries reads every segment, so task

@@ -529,6 +529,19 @@ func TestAutosaveRowCycles(t *testing.T) {
 	}
 }
 
+// F-181: ghost text from the language server defaults on and toggles.
+func TestInlineCompletionToggle(t *testing.T) {
+	m, _ := newSurface(t)
+	if !m.cfg.Editor.InlineCompletion {
+		t.Fatal("editor.inline_completion must default on")
+	}
+	m.cursor = rowInlineCompletion
+	feed(m, "enter")
+	if m.cfg.Editor.InlineCompletion {
+		t.Fatal("toggle no-op")
+	}
+}
+
 // F-175: breadcrumbs default on, sticky scroll off; both toggle in Settings.
 func TestBreadcrumbsAndStickyToggle(t *testing.T) {
 	m, _ := newSurface(t)

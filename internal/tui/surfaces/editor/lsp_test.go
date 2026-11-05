@@ -93,6 +93,12 @@ type goplusFake struct {
 	foldRanges []map[string]any
 	foldFail   bool
 	foldAsks   int
+	// F-181: inlineItems is the textDocument/inlineCompletion reply (advertised
+	// through extraCaps), inlineAsks counts requests and inlineAt records each
+	// position as "line:character".
+	inlineItems any
+	inlineAsks  int
+	inlineAt    []string
 }
 
 func startFakeServer(t *testing.T) (*goplusFake, *lsp.Manager) {
@@ -199,6 +205,18 @@ func (f *goplusFake) serve() {
 					{"range": map[string]any{"start": map[string]any{"line": 0, "character": 0}}, "severity": 1, "message": "boom"},
 				},
 			})
+
+		case "textDocument/inlineCompletion":
+			var p struct {
+				Position struct{ Line, Character int }
+			}
+			json.Unmarshal(msg.Params, &p)
+			f.mu.Lock()
+			f.inlineAsks++
+			f.inlineAt = append(f.inlineAt, fmt.Sprintf("%d:%d", p.Position.Line, p.Position.Character))
+			items := f.inlineItems
+			f.mu.Unlock()
+			f.reply(*msg.ID, items)
 
 		case "textDocument/inlayHint":
 			var p struct {
