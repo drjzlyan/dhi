@@ -113,7 +113,7 @@ no daemon.
 - [x] **G-C6** `dropped` — ADR-0049 rejected: DHI stays TUI-only (ADR-0004). Headless/CI mode (e.g. `dhi run <task>`) and a GitHub Action. **ADR** (ADR-0004)
 - [x] **G-C10** `dropped` — ADR-0050 rejected: no ACP, one consistent experience. ACP client engine (research first)
 - [x] **G-X1** `done` (F-177) — DAP and test runner beyond Go (ROADMAP M37 S3)
-- [ ] **G-X2** `todo` — ADR-0051 accepted (LSP inline completion + on-demand :suggest). AI ghost text and next-edit prediction (ROADMAP M37 S3)
+- [x] **G-X2** `done` (F-181) — ADR-0051 accepted (LSP inline completion + on-demand :suggest). AI ghost text and next-edit prediction (ROADMAP M37 S3)
 - [x] **G-X3** `done` (F-178) — Chat extras: image attachments, session export, user-invocable skills as slash commands
 
 ## Not pursued
@@ -192,3 +192,4 @@ G-C6 — dropped — 2026-11-05 (ADR-0049 rejected: TUI-only)
 G-C10 — dropped — 2026-11-05 (ADR-0050 rejected: no ACP)
 G-C5 — F-180 — 2026-11-05 (default fallback written at agent creation/boot, editable or none; failover only for auth/rate_limit/not_installed/unavailable before any tool call)
 G-C3 — F-179 — 2026-11-05 (vendor hooks, off per plugin until enabled; DHI tool boundary + claude native tools via per-run --settings temp file; other CLIs: named gap; not run live)
+G-X2 — F-181 — 2026-11-05 (LSP inline completion when offered — gopls does not; :suggest / alt+\ read-only metered agent suggestion; end-of-line only; ADR-0051 doctor row not done)
