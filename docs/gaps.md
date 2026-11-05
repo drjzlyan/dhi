@@ -114,7 +114,7 @@ no daemon.
 - [ ] **G-C10** `blocked (ADR)` — proposed ADR-0050, awaiting decision. ACP client engine (research first)
 - [x] **G-X1** `done` (F-177) — DAP and test runner beyond Go (ROADMAP M37 S3)
 - [ ] **G-X2** `blocked (ADR)` — proposed ADR-0051, awaiting decision. AI ghost text and next-edit prediction (ROADMAP M37 S3)
-- [ ] **G-X3** (no ADR needed; images only where the CLI accepts them, export via redact+fence, `user-invocable` skills as slash commands) Chat extras: image attachments, session export, user-invocable skills as slash commands
+- [x] **G-X3** `done` (F-178) — Chat extras: image attachments, session export, user-invocable skills as slash commands
 
 ## Not pursued
 
@@ -187,3 +187,4 @@ G-E22 — F-173 — 2026-11-05 (:calls tree, gp/:peek popup, editor.semantic_tok
 G-E15 — F-175 — 2026-11-05 (breadcrumbs on, sticky off by default; LSP outline only; live)
 G-E9 — F-176 — 2026-11-05 (LSP foldingRange or named indent fallback; vim z keys; per-buffer folds; live)
 G-X1 — F-177 — 2026-11-05 (pytest + debugpy, .venv then venv then PATH; vitest/jest runner; JS debug out of scope; not run live: pytest/debugpy not installed)
+G-X3 — F-178 — 2026-11-05 (user-invocable skills as /name, opt-in; /export md|json redacted+fenced; @image:path for claude and codex only; image flags not run live)
