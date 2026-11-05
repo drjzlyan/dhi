@@ -144,15 +144,6 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message, tl
 			budgets: tune.Budgets, taskSlug: task.Slug,
 		})
 		r.recordRun(trigger, run)
-		if r.cfg.OnRun != nil {
-			calls := 0
-			for _, ev := range events {
-				if ev.Kind == clirun.EventCommand {
-					calls++
-				}
-			}
-			r.cfg.OnRun(run, calls)
-		}
 		r.recordSpend(run, task.Slug)
 		r.calibrate(trigger, e, ep, run, resume == "", runeLen(prompt+brief)+runeLen(system))
 		tl.runs = append(tl.runs, run.ID)
@@ -320,7 +311,24 @@ func (r *Runtime) notice(trigger bus.Message, author, text string) {
 // 30s in production; tests compress it to milliseconds via this var).
 var cliRetryBackoff = 30 * time.Second
 
-// cliSpawnOnce runs a single attempt: spawn the wrapped CLI, stream the
+// cliSpawnOnce is spawnOnce plus the OnRun hook (F-164), kept here so
+// every spawn path (write turn, read-only turn, /compact, reflection)
+// reaches it and none can miss it.
+func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Message, in spawnInput) (tasks.Run, []clirun.StreamEvent) {
+	run, events := r.spawnOnce(ctx, e, trigger, in)
+	if r.cfg.OnRun != nil {
+		calls := 0
+		for _, ev := range events {
+			if ev.Kind == clirun.EventCommand {
+				calls++
+			}
+		}
+		r.cfg.OnRun(run, calls)
+	}
+	return run, events
+}
+
+// spawnOnce runs a single attempt: spawn the wrapped CLI, stream the
 // transcript into the trigger thread, persist the event JSONL, finalize,
 // and return the run record.
 // spawnInput is one attempt's spawn parameters.
@@ -342,7 +350,7 @@ type spawnInput struct {
 	taskSlug string
 }
 
-func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Message, in spawnInput) (tasks.Run, []clirun.StreamEvent) {
+func (r *Runtime) spawnOnce(ctx context.Context, e *entry, trigger bus.Message, in spawnInput) (tasks.Run, []clirun.StreamEvent) {
 	prompt, system, workdir := in.prompt, in.system, in.workdir
 	model := e.m.CLIModel()
 	if in.model != "" {

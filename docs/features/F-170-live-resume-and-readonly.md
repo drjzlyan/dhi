@@ -30,7 +30,8 @@ captured, so every turn started fresh although both CLIs resume.
 - opencode: `BuildArgs` adds `--session <id>` when `Resume` is set; the parser emits `EventSession`
   from the first line's `sessionID`, and `Finalize` reports it as `Usage.SessionID`. `ResumeOK`.
 - cursor-agent: `--resume <id>`; the session comes from `system`/`result` `session_id`. `ResumeOK`.
-- copilot stays fresh-per-turn (doctor says so) until a run is allowed and verified.
+- copilot resume is unverified (its live run was classifier-blocked) and stays without `ResumeOK`:
+  fresh-per-turn (doctor says so) until a run is allowed and verified.
 
 ## Acceptance
 - `TestOpenCodeResumeArgsAndSession`, `TestCursorResumeArgsAndSession` (argv, one `EventSession`,

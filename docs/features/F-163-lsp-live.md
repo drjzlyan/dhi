@@ -27,7 +27,11 @@ Run: `DHI_LIVE_LSP=1 go test -run LiveGopls -v ./internal/tui/surfaces/editor`
 | signature help (F-128), active parameter moves on "," | pass |
 | format-on-save through gopls (`:w` rewrites `var z   =   1`) | pass |
 | rename `gr` edits the unopened a.go on disk and the open b.go (F-116) | pass |
-| didSave / didClose (F-132) | pass (no error, server stays healthy; gopls does not expose receipt) |
+| inlay hints | subtest added later; not re-run for this doc |
+| call hierarchy (F-173) | subtest added later; not re-run for this doc |
+| semantic tokens (F-173) | subtest added later; not re-run for this doc |
+| breadcrumbs and sticky scroll (F-175) | subtest added later; not re-run for this doc |
+| didClose (F-132; no didSave step) | pass (no error, server stays healthy; gopls does not expose receipt) |
 
 No DHI bug was found, so no code fix and no new fake-server test were needed.
 
@@ -40,4 +44,6 @@ No DHI bug was found, so no code fix and no new fake-server test were needed.
 
 ## Acceptance
 
-- `TestLiveGopls` and its subtests pass against gopls v0.24.0.
+- `TestLiveGopls` and its subtests (diagnostics, code actions, hover, gd across files, gR references,
+  workspace symbols, inlay hints, call hierarchy, semantic tokens, breadcrumbs and sticky, completion,
+  signature help, didClose, format on save, rename across files) are in the test file; the first rows above passed against gopls v0.24.0.

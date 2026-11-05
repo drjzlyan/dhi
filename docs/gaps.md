@@ -54,8 +54,8 @@ no daemon.
 - [x] **G-C2** `done` (F-144) — Gated plan mode (ROADMAP M37 S3): read-only turn that publishes `plan_update`, human approval card,
       then the write turn. Absorbs **G-A5** (per-mode prompts: plan, review, ask).
 - [x] **G-C4** `done` (F-131) — Repeated-tool-call detection from the stream; in-flight spend check that stops a run at the cap.
-- [x] **G-C7** `done` (F-172) — Wider evals: injection, lessons, orchestration, forge; multi-run live scoring.
-- [x] **G-C11** `done` (F-170) — Re-verify resume for opencode, cursor, copilot.
+- [x] **G-C7** `done` (F-172) — Wider evals: injection, lessons, orchestration, forge; multi-run live scoring. (orchestration fixture not done: no multi-agent harness)
+- [x] **G-C11** `done` (F-170) — Re-verify resume for opencode, cursor, copilot. (copilot resume unverified: classifier-blocked, still no `ResumeOK`)
 - [x] **G-C8** `done` (F-164) — Optional OpenTelemetry export. Low priority.
 - [x] **G-LSP-live** `done` (F-163) — Run LSP `gd` and rename live with gopls installed (open ROADMAP M37 item).
 

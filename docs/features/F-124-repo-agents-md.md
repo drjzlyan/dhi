@@ -30,7 +30,8 @@ So the CLI already sees AGENTS.md in its cwd. The gap that remains is every othe
   get every member's file.
 - On a task-bound turn a member's directory is its worktree (`memberRoots`), so the branch's copy
   is the one carried.
-- Section `repo-instructions`, tag `<repo_instructions>`, priority 2, floor 600, after standards.
+- Section `repo-instructions` (no XML tag: a plain heading line, "Repository instructions (the
+  AGENTS.md of repos your CLI does not load itself; ...):", then the blocks), priority 2, floor 600, after standards.
   Caps: 6000 runes per file, 16000 in all; a cut file names its path.
 - Not fenced as untrusted data (ADR-0046): AGENTS.md is instructions by design. Whether to trust an
   unknown repo's instructions at all is G-S1 (restricted mode).

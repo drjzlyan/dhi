@@ -240,14 +240,21 @@ func briefOf(msgs []bus.Message, agentID string) string {
 		if i := strings.IndexAny(first, ".!?"); i > 20 {
 			first = first[:i+1]
 		}
-		out = append(out, "\n  · "+who+": "+truncateRunes(first, perLine))
+		first = truncateRunes(first, perLine)
+		if m.Author != bus.Human && m.Author != agentID {
+			// Same fence as the recent-message loop (F-122).
+			first = untrusted.Wrap("message from "+m.Author, first)
+		}
+		out = append(out, "\n  · "+who+": "+first)
 	}
 	if len(out) > lines {
 		out = out[len(out)-lines:]
 	}
+	// Drop whole oldest lines, never slice: a cut could leave a fence open.
 	s := strings.Join(out, "")
-	if r := []rune(s); len(r) > total {
-		s = string(r[len(r)-total:])
+	for len(out) > 1 && runeLen(s) > total {
+		out = out[1:]
+		s = strings.Join(out, "")
 	}
 	return s
 }

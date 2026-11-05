@@ -9,7 +9,7 @@ prompt, and nothing stopped the agent from writing before the human had seen it.
 - The read-only turn is enforced by the CLI adapter, not by the prompt. An adapter declares
   `ReadOnlyOK` only where it has a mechanism: claude (`--disallowedTools` with Edit, Write,
   MultiEdit, NotebookEdit, Bash, merged with the web denial) and codex (`--sandbox read-only`, no
-  bypass flag). Documented, not yet live-verified. Every other adapter carries a `ReadOnlyWhy`
+  bypass flag). Live-verified in F-170 (claude 2.1.285, codex 0.162.1). Every other adapter carries a `ReadOnlyWhy`
   and is refused by name (ADR-0011).
 - DHI's own tools run at read scope only in these turns (`turnScopes`).
 - A read-only turn never resumes a CLI session.
@@ -38,5 +38,5 @@ prompt, and nothing stopped the agent from writing before the human had seen it.
   `TestPlanCommandStartsAReadOnlyTurn`, `TestModeCommandRefusals`.
 
 ## Not run
-The mode prompts are a prompt change: a live eval is needed. The claude and codex read-only flags
-need a live check on the tested CLI versions.
+The mode prompts are a prompt change: a live eval is needed. (The claude and codex read-only flags
+were live-verified in F-170, claude 2.1.285 and codex 0.162.1.)
