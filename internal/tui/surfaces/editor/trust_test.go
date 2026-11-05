@@ -54,7 +54,7 @@ func TestRestrictedBlocksTestsAndDebug(t *testing.T) {
 	if msg, _ := m.testCommand("test"); !strings.Contains(msg, "restricted: trust this folder to run tests") || m.testing != nil {
 		t.Errorf("test: %q testing=%v", msg, m.testing)
 	}
-	if msg := m.startDebug(); !strings.Contains(msg, "restricted: trust this folder to debug") || started || m.dbg != nil {
+	if msg := m.startDebug(""); !strings.Contains(msg, "restricted: trust this folder to debug") || started || m.dbg != nil {
 		t.Errorf("debug: %q started=%v", msg, started)
 	}
 }

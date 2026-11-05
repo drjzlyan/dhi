@@ -13,9 +13,9 @@ import (
 	"github.com/drjzlyan/dhi/internal/tui/theme"
 )
 
-// Test runner (F-040). `:test` runs the current file's package, `:test
-// all` the whole member, `:test <pattern>` only matching tests in the
-// package. A green run is one status line; a red one opens a failures
+// Test runner (F-040, F-177). `:test` runs the current file's tests
+// (Go: its package; Python: pytest; JS/TS: vitest or jest), `:test all` the
+// whole member, `:test <pattern>` only matching tests. A green run is one status line; a red one opens a failures
 // overlay where enter jumps to the failing line.
 
 // testRunTimeout bounds one run so a hung test cannot pin the editor.
@@ -24,8 +24,8 @@ var testRunTimeout = 5 * time.Minute
 type testState struct {
 	rep     testrun.Report
 	cur     int
-	dir     string // where the run started (for rerun)
-	args    []string
+	lang    testrun.Language // the runner row (rerun reuses it)
+	target  testrun.Target
 	running bool
 }
 
@@ -47,32 +47,33 @@ func (m *Model) testCommand(cmd string) (string, bool) {
 	if !ok {
 		return "test: the file is not inside a workspace member", true
 	}
-	if !strings.HasSuffix(e.Path(), ".go") {
-		return "test: only Go packages are supported", true
+	lang, ok := testrun.ForPath(e.Path())
+	if !ok {
+		return "test: no test runner for " + filepath.Ext(e.Path()) + " files (Go, Python and JavaScript/TypeScript are supported)", true
 	}
 	if m.restricted(root, "run tests") {
 		return trustLine("run tests"), true
 	}
-	dir, args := filepath.Dir(e.Path()), []string{"."}
+	t := testrun.Target{Dir: root, File: e.Path()}
 	switch {
 	case len(f) == 2 && f[1] == "all":
-		dir, args = root, []string{"./..."}
+		t.All = true
 	case len(f) >= 2:
-		args = []string{"-run", strings.Join(f[1:], " "), "."}
+		t.Pattern = strings.Join(f[1:], " ")
 	}
-	m.startTests(dir, args)
+	m.startTests(lang, t)
 	return "running tests…", true
 }
 
-func (m *Model) startTests(dir string, args []string) {
-	st := &testState{dir: dir, args: args, running: true}
+func (m *Model) startTests(lang testrun.Language, t testrun.Target) {
+	st := &testState{lang: lang, target: t, running: true}
 	m.testing = st
 	env := m.env()
 	ch := m.termMsgs
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), testRunTimeout)
 		defer cancel()
-		rep := testrun.Run(ctx, dir, env, args...)
+		rep := lang.Run(ctx, env, t)
 		ch <- teaMsg{kind: testMsgDone, testRep: &rep}
 	}()
 }
@@ -88,6 +89,9 @@ func (m *Model) applyTestDone(rep *testrun.Report) {
 	e := m.active()
 	switch {
 	case rep.Err != "":
+		if rep.MissingTool != "" && m.askInstall(rep.MissingTool) {
+			rep.Err += " — install it, then run :test again"
+		}
 		if e != nil {
 			e.SetMessage("test: " + rep.Err)
 		}
@@ -120,7 +124,7 @@ func (m *Model) handleTestKey(key string) bool {
 		}
 	case "r":
 		m.mode = modeNav
-		m.startTests(st.dir, st.args)
+		m.startTests(st.lang, st.target)
 		if e := m.active(); e != nil {
 			e.SetMessage("running tests…")
 		}

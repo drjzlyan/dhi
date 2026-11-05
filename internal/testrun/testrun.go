@@ -1,6 +1,8 @@
 // Package testrun runs `go test -json` and turns the event stream into a
-// compact report the editor can show and jump through (F-040). The go
-// binary is resolved from the supplied environment's PATH (the user's).
+// compact report the editor can show and jump through (F-040). Other
+// languages plug in through the Languages table (F-177: pytest, vitest,
+// jest) and normalise into the same Report. Binaries are resolved from the
+// supplied environment's PATH (the user's).
 package testrun
 
 import (
@@ -36,6 +38,9 @@ type Report struct {
 	// Err is a run-level problem (go missing, no output); a normal red
 	// test run has an empty Err and Failures instead.
 	Err string
+	// MissingTool names the host tool (internal/hosttools) whose absence
+	// caused Err, so the editor can offer the install card (F-177).
+	MissingTool string
 }
 
 // event is one `go test -json` record.

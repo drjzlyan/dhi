@@ -60,6 +60,10 @@ type LaunchConfig struct {
 	Program string // package dir, test dir, or binary
 	Args    []string
 	Cwd     string
+	// Raw, when set, is the adapter-specific launch body verbatim (a
+	// language row's own config, e.g. debugpy's); Mode/Program/Args/Cwd
+	// then do not apply and the delve-only outputMode is not added.
+	Raw map[string]any
 }
 
 // Session drives one debug run.
@@ -100,6 +104,12 @@ func Start(ctx context.Context, c *Client, cfg LaunchConfig, bps map[string][]in
 	}
 	if cfg.Cwd != "" {
 		args["cwd"] = cfg.Cwd
+	}
+	if cfg.Raw != nil {
+		args = map[string]any{"request": "launch"}
+		for k, v := range cfg.Raw {
+			args[k] = v
+		}
 	}
 	launch, err := c.Send("launch", args)
 	if err != nil {

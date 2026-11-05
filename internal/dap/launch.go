@@ -3,7 +3,6 @@ package dap
 import (
 	"bufio"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -20,7 +19,7 @@ const VerifiedDelve = "v1.27.2"
 
 // ErrNoDelve says dlv is not installed; the editor offers to install it
 // with the user's package manager (F-110).
-var ErrNoDelve = errors.New("debugging needs the delve adapter (dlv), which is not installed")
+var ErrNoDelve = &MissingToolError{Tool: "dlv", Msg: "debugging needs the delve adapter (dlv), which is not installed"}
 
 // listenLine is what `dlv dap` prints once it accepts connections.
 var listenLine = regexp.MustCompile(`DAP server listening at:\s*(\S+)`)

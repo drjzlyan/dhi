@@ -49,8 +49,8 @@ func (m *Model) toggleBreakpoint() string {
 	if e == nil {
 		return "break: open a file first"
 	}
-	if !strings.HasSuffix(e.Path(), ".go") {
-		return "break: only Go files can be debugged"
+	if _, ok := dap.AdapterFor(e.Path()); !ok {
+		return "break: only Go and Python files can be debugged"
 	}
 	path, line := e.Path(), e.Buffer().Cursor().Line+1
 	lines := m.breakpoints[path]
@@ -123,7 +123,7 @@ func (m *Model) debugCommand(cmd string) (string, bool) {
 	case "break":
 		return m.toggleBreakpoint(), true
 	case "debug":
-		return m.startDebug(), true
+		return m.startDebug(strings.TrimSpace(strings.TrimPrefix(cmd, "debug"))), true
 	case "cont", "next", "step", "out":
 		return m.debugStep(f[0]), true
 	case "stop":
@@ -134,7 +134,9 @@ func (m *Model) debugCommand(cmd string) (string, bool) {
 	return "", false
 }
 
-func (m *Model) startDebug() string {
+// startDebug launches the debugger for the active file. pattern narrows a
+// Python test file to matching tests (`:debug <pattern>`).
+func (m *Model) startDebug(pattern string) string {
 	if m.dbg != nil {
 		return "debug: a session is already running (:stop ends it)"
 	}
@@ -142,8 +144,9 @@ func (m *Model) startDebug() string {
 	if e == nil {
 		return "debug: open a file first"
 	}
-	if !strings.HasSuffix(e.Path(), ".go") {
-		return "debug: only Go packages can be debugged"
+	ad, ok := dap.AdapterFor(e.Path())
+	if !ok {
+		return "debug: no debug adapter for " + filepath.Ext(e.Path()) + " files (Go and Python are supported)"
 	}
 	root, _, ok := m.repoRel(e.Path())
 	if !ok {
@@ -154,15 +157,15 @@ func (m *Model) startDebug() string {
 	}
 	start := m.dapStart
 	if start == nil {
-		start = func(ctx context.Context, dir string, env []string) (*dap.Client, error) {
-			return dap.StartDelve(ctx, dir, env)
-		}
+		start = ad.Start
 	}
 	bps := map[string][]int{}
 	for p, ls := range m.breakpoints {
-		bps[p] = append([]int(nil), ls...)
+		if other, ok := dap.AdapterFor(p); ok && other.Lang == ad.Lang { // each adapter gets its own language's lines
+			bps[p] = append([]int(nil), ls...)
+		}
 	}
-	cfg := dap.LaunchConfig{Mode: "debug", Program: filepath.Dir(e.Path()), Cwd: root}
+	cfg := ad.Launch(e.Path(), root, pattern)
 	env, ch := m.env(), m.termMsgs
 	m.dbg = &dbgState{starting: true}
 	go func() {
@@ -203,8 +206,9 @@ func (m *Model) applyDebugStarted(s *dbgStarted) {
 	}
 	if s.err != nil {
 		m.dbg = nil
-		if errors.Is(s.err, dap.ErrNoDelve) && m.askInstall("dlv") {
-			m.note("debugging needs dlv — install it, then start the debugger again")
+		var mt *dap.MissingToolError
+		if errors.As(s.err, &mt) && m.askInstall(mt.Tool) {
+			m.note(mt.Msg + " — install it, then start the debugger again")
 			return
 		}
 		m.note("debug: " + s.err.Error())

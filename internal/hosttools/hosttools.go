@@ -87,6 +87,17 @@ var Tools = []Tool{
 	{Name: "dlv", Bin: "dlv", Purpose: "debugging Go", Version: []string{"version"},
 		Recipes: map[string][]string{"brew": {"delve"}, "pacman": {"delve"}, "go": {"github.com/go-delve/delve/cmd/dlv@latest"}},
 		Doc:     "https://github.com/go-delve/delve"},
+	{Name: "pytest", Bin: "pytest", Purpose: "running Python tests", Version: []string{"--version"},
+		Recipes: map[string][]string{"brew": {"pytest"}, "apt": {"python3-pytest"}, "dnf": {"python3-pytest"}, "pacman": {"python-pytest"}, "uv": {"pytest"}},
+		Doc:     "https://docs.pytest.org/en/stable/getting-started.html"},
+	// debugpy is a python module, not a binary: it counts as installed when
+	// python3 can import its adapter. No recipe, because pip into the
+	// interpreter the user debugs with is theirs to choose (PEP 668).
+	{Name: "debugpy", Bin: "python3", Purpose: "debugging Python", Version: []string{"-c", "import debugpy.adapter"}, Verify: true,
+		Doc: "https://github.com/microsoft/debugpy#installation"},
+	{Name: "vitest", Bin: "vitest", Purpose: "running JavaScript and TypeScript tests", Version: []string{"--version"},
+		Recipes: map[string][]string{"npm": {"vitest"}},
+		Doc:     "https://vitest.dev/guide/"},
 	{Name: "typescript-language-server", Bin: "typescript-language-server", Purpose: "TypeScript and JavaScript language features", Version: []string{"--version"},
 		// typescript stays on 5.x: TypeScript 7 ships no tsserver and the
 		// server refuses to start without one.
