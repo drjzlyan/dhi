@@ -27,10 +27,10 @@ Run: `DHI_LIVE_LSP=1 go test -run LiveGopls -v ./internal/tui/surfaces/editor`
 | signature help (F-128), active parameter moves on "," | pass |
 | format-on-save through gopls (`:w` rewrites `var z   =   1`) | pass |
 | rename `gr` edits the unopened a.go on disk and the open b.go (F-116) | pass |
-| inlay hints | subtest added later; not re-run for this doc |
-| call hierarchy (F-173) | subtest added later; not re-run for this doc |
-| semantic tokens (F-173) | subtest added later; not re-run for this doc |
-| breadcrumbs and sticky scroll (F-175) | subtest added later; not re-run for this doc |
+| inlay hints | pass (re-run 2026-11-05, gopls v0.24.0) |
+| call hierarchy (F-173) | pass (re-run 2026-11-05, gopls v0.24.0) |
+| semantic tokens (F-173) | pass (re-run 2026-11-05, gopls v0.24.0) |
+| breadcrumbs and sticky scroll (F-175) | pass (re-run 2026-11-05, gopls v0.24.0) |
 | didClose (F-132; no didSave step) | pass (no error, server stays healthy; gopls does not expose receipt) |
 
 No DHI bug was found, so no code fix and no new fake-server test were needed.
