@@ -108,7 +108,7 @@ no daemon.
 
 ## Phase 7 — Needs a decision first (**ADR**) or research
 
-- [ ] **G-C3** `todo` — ADR-0047 accepted (option 2 + per-run native hooks, no persistent CLI config change). Lifecycle hooks, reading the vendor hooks format from installed plugins. No DHI-only format (ADR-0043). **ADR**
+- [x] **G-C3** `done` (F-179) — ADR-0047 accepted (option 2 + per-run native hooks, no persistent CLI config change). Lifecycle hooks, reading the vendor hooks format from installed plugins. No DHI-only format (ADR-0043). **ADR**
 - [x] **G-C5** `done` (F-180) — ADR-0048 accepted, amended (default fallback chosen at setup, editable). Engine failover as an explicit user-set per-agent `fallback_engine`; per-task model routing. **ADR** (ADR-0011)
 - [x] **G-C6** `dropped` — ADR-0049 rejected: DHI stays TUI-only (ADR-0004). Headless/CI mode (e.g. `dhi run <task>`) and a GitHub Action. **ADR** (ADR-0004)
 - [x] **G-C10** `dropped` — ADR-0050 rejected: no ACP, one consistent experience. ACP client engine (research first)
@@ -191,3 +191,4 @@ G-X3 — F-178 — 2026-11-05 (user-invocable skills as /name, opt-in; /export m
 G-C6 — dropped — 2026-11-05 (ADR-0049 rejected: TUI-only)
 G-C10 — dropped — 2026-11-05 (ADR-0050 rejected: no ACP)
 G-C5 — F-180 — 2026-11-05 (default fallback written at agent creation/boot, editable or none; failover only for auth/rate_limit/not_installed/unavailable before any tool call)
+G-C3 — F-179 — 2026-11-05 (vendor hooks, off per plugin until enabled; DHI tool boundary + claude native tools via per-run --settings temp file; other CLIs: named gap; not run live)
