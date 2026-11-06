@@ -154,9 +154,9 @@ func (m *Model) foldAsk(tab *bufTab, seq uint64) {
 	}
 	st.gen++
 	st.want, st.wantSeq = true, seq
-	gen, ch, path := st.gen, m.termMsgs, tab.path
+	gen, ch, path, wait := st.gen, m.termMsgs, tab.path, foldDebounce
 	go func() {
-		time.Sleep(foldDebounce)
+		time.Sleep(wait)
 		select {
 		case ch <- teaMsg{kind: lspMsgFoldDue, note: path, sigSeq: gen}:
 		default:

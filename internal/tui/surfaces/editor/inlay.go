@@ -148,9 +148,9 @@ func (m *Model) inlayWant(e *textbuf.Editor, top, end int) {
 	st.gen++
 	st.want, st.wantSeq = true, seq
 	st.wantFrom, st.wantTo = max(top-span, 0), min(end+span, e.Buffer().LineCount())
-	gen, ch := st.gen, m.termMsgs
+	gen, ch, wait := st.gen, m.termMsgs, inlayDebounce
 	go func() {
-		time.Sleep(inlayDebounce)
+		time.Sleep(wait)
 		select {
 		case ch <- teaMsg{kind: lspMsgInlayDue, note: path, sigSeq: gen}:
 		default:

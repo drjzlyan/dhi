@@ -113,9 +113,9 @@ func (m *Model) semanticWant(t *bufTab, prefs Prefs) {
 		return
 	}
 	t.sem.asked, t.sem.seq = true, seq
-	ch, path := m.termMsgs, t.path
+	ch, path, wait := m.termMsgs, t.path, semDebounce
 	go func() {
-		time.Sleep(semDebounce)
+		time.Sleep(wait)
 		ch <- teaMsg{kind: semMsgTick, sem: &semMsg{path: path, seq: seq}}
 	}()
 }

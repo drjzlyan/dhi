@@ -118,9 +118,9 @@ func (m *Model) outlineWant(e *textbuf.Editor) {
 	}
 	st.gen++
 	st.want, st.wantSeq = true, seq
-	gen, ch := st.gen, m.termMsgs
+	gen, ch, wait := st.gen, m.termMsgs, outlineDebounce
 	go func() {
-		time.Sleep(outlineDebounce)
+		time.Sleep(wait)
 		select {
 		case ch <- teaMsg{kind: lspMsgOutlineDue, note: path, sigSeq: gen}:
 		default:
