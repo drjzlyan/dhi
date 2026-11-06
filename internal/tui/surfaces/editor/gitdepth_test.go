@@ -67,6 +67,68 @@ func TestStageOneHunk(t *testing.T) {
 	}
 }
 
+// F-151: V marks lines inside a hunk; s stages just those, u unstages
+// just those, and the work tree is never touched.
+func TestStageAndUnstageLines(t *testing.T) {
+	m, alpha := gitDepthEditor(t)
+	data, _ := os.ReadFile(filepath.Join(alpha, "app.go"))
+	text := strings.Replace(strings.Replace(string(data), "line 2\n", "LINE 2\n", 1), "line 3\n", "LINE 3\n", 1)
+	_ = os.WriteFile(filepath.Join(alpha, "app.go"), []byte(text), 0o644)
+	feed(m, "ctrl+j", "enter")
+	if m.diff == nil || len(m.diff.hunks) != 1 {
+		t.Fatalf("diff = %+v", m.diff)
+	}
+	// body: 0 ctx, 1 -line 2, 2 -line 3, 3 +LINE 2, 4 +LINE 3 ...
+	feed(m, "V", "j")
+	if !m.diff.lineMode || !strings.Contains(plainView(m), "marked lines") {
+		t.Fatalf("not in line mode:\n%s", plainView(m))
+	}
+	feed(m, "s")
+	cached := m.gitOut(t, alpha, "diff", "--cached")
+	if !strings.Contains(cached, "-line 2") || !strings.Contains(cached, "-line 3") || strings.Contains(cached, "+LINE") {
+		t.Fatalf("staged the two deletions only:\n%s", cached)
+	}
+	if m.diff == nil || m.diff.lineMode {
+		t.Fatal("line mode should end after staging")
+	}
+	if b, _ := os.ReadFile(filepath.Join(alpha, "app.go")); string(b) != text {
+		t.Fatal("the work tree changed")
+	}
+
+	// the staged side: unstage only the first deleted line
+	d := &diffView{path: "app.go", staged: true}
+	m.loadDiff(d)
+	m.diff = d
+	feed(m, "V", "s")
+	if !strings.Contains(d.err, "staged side") {
+		t.Fatalf("s on the staged side: %q", d.err)
+	}
+	feed(m, "u")
+	cached = m.gitOut(t, alpha, "diff", "--cached")
+	if strings.Contains(cached, "-line 2") || !strings.Contains(cached, "-line 3") {
+		t.Fatalf("unstaged line 2 only:\n%s", cached)
+	}
+}
+
+// F-151: line marking refuses on a past commit; esc leaves line mode only.
+func TestLineModeGuards(t *testing.T) {
+	m, alpha := gitDepthEditor(t)
+	_ = os.WriteFile(filepath.Join(alpha, "app.go"), []byte("changed\n"), 0o644)
+	feed(m, "ctrl+j", "enter", "V")
+	if !m.diff.lineMode {
+		t.Fatal("V should start line mode")
+	}
+	feed(m, "esc")
+	if m.diff == nil || m.diff.lineMode {
+		t.Fatal("esc leaves line mode, not the diff")
+	}
+	m.diff.rev = "abc1234"
+	feed(m, "V")
+	if m.diff.lineMode || !strings.Contains(m.diff.err, "read-only") {
+		t.Fatal("a past commit must refuse line marking")
+	}
+}
+
 // F-121: b lists branches; a name that matches none is created.
 func TestBranchCreateAndSwitch(t *testing.T) {
 	m, alpha := gitDepthEditor(t)
@@ -103,6 +165,40 @@ func TestCommitMessageBuffer(t *testing.T) {
 	feed(m, "esc")
 	if msg := m.blameLineFor(t); !strings.Contains(msg, "Ada") {
 		t.Fatalf("blame = %q", msg)
+	}
+}
+
+// F-182: the message buffer starts from the team's draft for the branch,
+// and {ai:…} parts left in it are written off the UI, then committed.
+func TestCommitBufferDraftAndAIParts(t *testing.T) {
+	m, alpha := gitDepthEditor(t)
+	var dir, text string
+	m.commitConv = CommitConventions{
+		Draft: func(d string) string { dir = d; return "PROJ-1: {ai:subject}" },
+		Write: func(_ context.Context, d, msg string) (string, error) {
+			text = msg
+			return strings.Replace(msg, "{ai:subject}", "add the app", 1), nil
+		},
+	}
+	_ = os.WriteFile(filepath.Join(alpha, "app.go"), []byte("changed\n"), 0o644)
+	feed(m, "ctrl+j", "S", "C")
+	if got := m.active().Buffer().Text(); !strings.HasPrefix(got, "PROJ-1: {ai:subject}\n") || !strings.Contains(got, "written by your default agent") {
+		t.Fatalf("draft = %q", got)
+	}
+	if dir != alpha {
+		t.Fatalf("draft asked for %q", dir)
+	}
+	feed(m, "esc", ":", "w", "enter")
+	if !strings.Contains(m.gitMessage, "writing the AI parts") {
+		t.Fatalf("status = %q", m.gitMessage)
+	}
+	m.Update(waitMsg(t, m))
+	settleGitPanel(m) // the commit itself runs off the UI too
+	if text != "PROJ-1: {ai:subject}" || !strings.HasPrefix(m.gitMessage, "committed") {
+		t.Fatalf("writer got %q; status %q", text, m.gitMessage)
+	}
+	if log := strings.TrimSpace(m.gitOut(t, alpha, "log", "-1", "--format=%B")); log != "PROJ-1: add the app" {
+		t.Fatalf("message = %q", log)
 	}
 }
 

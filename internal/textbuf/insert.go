@@ -12,6 +12,8 @@ func (e *Editor) keyInsert(key string) {
 			e.buf.cursor.Col--
 			e.buf.wantCol = e.buf.Cursor().Col
 		}
+	case "ctrl+/", "ctrl+_": // F-150: toggle this line's comment, keep typing
+		e.toggleCommentHere(1)
 	case "enter":
 		e.newline()
 	case "backspace":

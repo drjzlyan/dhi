@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/drjzlyan/dhi/internal/checkpoint"
 	"github.com/drjzlyan/dhi/internal/gitcore"
@@ -35,14 +36,20 @@ func TestUndoAgentTurn(t *testing.T) {
 	after, _ := cps.Snapshot(ctx, "after")
 	_ = cps.Record(ctx, checkpoint.Turn{Agent: "ana", Before: before, After: after, At: after.At})
 
-	if msg := m.openUndoTurn(); msg != "" {
-		t.Fatal(msg)
+	// Diffing the snapshots runs git: the dialog opens when it lands.
+	if msg := m.openUndoTurn(); !strings.HasPrefix(msg, "checking what @ana") || m.undo != nil {
+		t.Fatalf("open: %q (dialog before the diff: %v)", msg, m.undo != nil)
 	}
+	awaitUndo(t, m)
 	v := plainView(m)
 	if !strings.Contains(v, "while @ana worked") || !strings.Contains(v, "added.go") {
 		t.Fatalf("dialog:\n%s", v)
 	}
 	m.HandleKey("y")
+	if m.undo == nil || !m.undo.restoring || !strings.Contains(plainView(m), "restoring…") {
+		t.Fatal("y should start the restore off the UI goroutine")
+	}
+	awaitUndo(t, m)
 	if b, _ := os.ReadFile(path); string(b) != "package main\n" {
 		t.Fatalf("app.go = %q", b)
 	}
@@ -76,14 +83,27 @@ func TestUndoTurnKeepsYourOwnSave(t *testing.T) {
 	}
 	after, _ := cps.Snapshot(ctx, "after")
 	_ = cps.Record(ctx, checkpoint.Turn{Agent: "ana", Before: before, After: after, At: after.At})
-	if msg := m.openUndoTurn(); msg != "" {
-		t.Fatal(msg)
-	}
+	m.openUndoTurn()
+	awaitUndo(t, m)
 	if !strings.Contains(plainView(m), "you saved it during the turn") {
 		t.Fatalf("dialog:\n%s", plainView(m))
 	}
 	m.HandleKey("y")
+	awaitUndo(t, m)
 	if b, _ := os.ReadFile(path); string(b) != "package main!\n" {
 		t.Fatalf("your save was reverted: %q", b)
+	}
+}
+
+// awaitUndo applies messages until undo-turn's diff or restore landed.
+func awaitUndo(t *testing.T, m *Model) {
+	t.Helper()
+	for m.undoLoading || (m.undo != nil && m.undo.restoring) {
+		select {
+		case msg := <-m.termMsgs:
+			m.Update(msg)
+		case <-time.After(20 * time.Second):
+			t.Fatal("undo turn never finished")
+		}
 	}
 }

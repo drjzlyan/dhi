@@ -8,19 +8,19 @@
   PROPOSALS     ▏     feature        built-in  feature/<slug> branches, Conventional Co…  
   LIBRARY       ▏     ticket         built-in  <TICKET>/<slug> branches, "TICKET: subje…  
   team ──────── ▏     personal       built-in  <user>/<slug> branches, free-form commits  
-  TEAMS         ▏                                                                         
-  STANDARDS     ▏ PREVIEW default (in use)                                                
-▌ CONVENTIONS   ▏   branch    task/login-timeout                                          
-  automation ── ▏   worktree  .dhi/tasks/login-timeout/api                                
-  WORKFLOWS     ▏   commit    retry the token refresh                                     
-  AUTOPILOTS    ▏   PR title  Fix login timeout                                           
-  extend ────── ▏   PR body   Created from DHI worktree `task/login-timeout`.             
-  SKILLS        ▏                                                                         
-  INTEGRATIONS  ▏   placeholders: {slug} {member} {ticket} {user} {date} {title}          
-  SECRETS       ▏   {assignee} {type} {subject}. The ticket is the first match of         
-                ▏   [A-Z][A-Z0-9]+-\d+ in the card's slug, title, epic or labels, else    
-                ▏   the slug.                                                             
-                ▏                                                                         
-                ▏                                                                         
-                ▏                                                                         
+  TEAMS         ▏     described      built-in  AI-written commit bodies and PR descript…  
+  STANDARDS     ▏                                                                         
+▌ CONVENTIONS   ▏ PREVIEW default (in use)                                                
+  automation ── ▏   branch    task/login-timeout                                          
+  WORKFLOWS     ▏   review    review/42                                                   
+  AUTOPILOTS    ▏   worktree  .dhi/tasks/login-timeout/api                                
+  extend ────── ▏   commit    retry the token refresh                                     
+  SKILLS        ▏   PR title  Fix login timeout                                           
+  INTEGRATIONS  ▏   PR body   Created from DHI worktree `task/login-timeout`.             
+  SECRETS       ▏                                                                         
+                ▏   symbols: {ticket} {slug} {id} {title} {member} {branch} {assignee}    
+                ▏   {user} {date}; filters {title|kebab} |lower |upper |snake. {ai:hint}  
+                ▏   is text an AI writes (the agent that commits or opens the PR, else    
+                ▏   your default agent); {type} and {subject} are AI parts too. {{ and    
+                ▏   }} are literal braces. Body format is a commit body template; commit  
                 ▏                                                                         

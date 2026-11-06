@@ -10,6 +10,7 @@ import (
 
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/agentkit/org"
+	"github.com/drjzlyan/dhi/internal/conventions"
 	"github.com/drjzlyan/dhi/internal/tasks"
 	"github.com/drjzlyan/dhi/internal/tui/kit"
 	"github.com/drjzlyan/dhi/internal/tui/theme"
@@ -412,16 +413,42 @@ func (m *Model) takeCard(tk tasks.Task) {
 	members := m.ws.Members()
 	branch := m.branchFor(tk.Slug)
 	if len(members) == 1 {
-		if err := m.taskStore.Attach(tk.Slug, members[0].Name, branch, ""); err != nil {
-			m.flashErr("take: " + err.Error())
-			return
-		}
-		m.openTakenWorktree(tk.Slug)
+		m.takeAfterAttach = tk.Slug
+		m.attachAsync(tk.Slug, members[0].Name, branch)
 		return
 	}
 	// Several members: ask which one, then open it (formSubmit follows up).
 	m.takeAfterAttach = tk.Slug
 	m.form = openForm(fTaskAttach, tk.Slug, textField("member ", ""), textField("branch ", branch))
+}
+
+// attachAsync attaches a worktree off the UI goroutine: `git worktree add`
+// checks the whole tree out (seconds on a big repo), and a branch name
+// with {ai:…} parts (or none at all) waits on the default agent, which
+// can take a minute (F-182). Cross-project propagations (F-032) are seeded
+// once the worktree exists. evAttachDone follows.
+func (m *Model) attachAsync(slug, member, branch string) {
+	flash := "creating the worktree…"
+	if branch == "" || len(conventions.Markers(branch)) > 0 {
+		flash = "naming the branch with your agent…"
+	}
+	m.form = formState{kind: fNone, flash: flash}
+	// Changing this member may affect declared dependents: visible,
+	// accept/decline proposals; nothing is auto-created.
+	var seeds []tasks.Propagation
+	if m.ws != nil {
+		for _, d := range m.ws.DependentsOf(member) {
+			seeds = append(seeds, tasks.Propagation{FromMember: d.From, ToMember: d.To, Kind: d.Kind})
+		}
+	}
+	store := m.taskStore
+	go func() {
+		err := store.Attach(slug, member, branch, "")
+		if err == nil {
+			err = store.SeedPropagations(slug, seeds)
+		}
+		m.send(wsEvent{kind: evAttachDone, packName: slug, err: errString(err)})
+	}()
 }
 
 // openTakenWorktree opens the card's first worktree in the editor.

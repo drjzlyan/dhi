@@ -125,7 +125,7 @@ func (m *Model) valueRowAt(row int) *valueRow {
 	case rowStall:
 		return intRow("stall secs", &c.Agents.StallSeconds, 0, 7200, "0 = off, else 60–7200")
 	case rowReflectModel:
-		return textRow("model", &c.Agents.ReflectModel, "the model that reflects on turns; empty = the employee's own")
+		return textRow("model", &c.Agents.ReflectModel, "the model that reflects on turns and writes /compact summaries; empty = the employee's own")
 	case rowTaskUSD:
 		return usdRow("per task", &c.Budgets.TaskUSD)
 	case rowTaskTokens:

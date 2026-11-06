@@ -91,3 +91,38 @@ func TestUpdateKeepsOtherFields(t *testing.T) {
 		t.Fatalf("episode = %+v %v %v", e, ok, err)
 	}
 }
+
+func TestForkCarriesStateAndDropsSession(t *testing.T) {
+	st := Open(t.TempDir())
+	now := time.Date(2026, 11, 4, 9, 0, 0, 0, time.UTC)
+	src := Episode{Key: "thread:dm:alice:7", Agent: "alice", Goal: "fix it", CLI: "claude", Session: "s1",
+		Workdir: "/w", SeenID: 9, Turns: 3, CostUSD: 1.5, TokensIn: 10, LastContext: 5000,
+		LastStatus: "ok", LastSummary: "did a", Model: "opus-x", Plan: []PlanStep{{Title: "a", Status: "done"}}}
+	if err := st.Put(src); err != nil {
+		t.Fatal(err)
+	}
+	f, err := st.Fork("alice", src.Key, "thread:dm:alice:12", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.Session != "" || f.CLI != "" || f.SeenID != 0 || f.CostUSD != 0 || f.LastContext != 0 {
+		t.Errorf("session/spend carried: %+v", f)
+	}
+	if f.Goal != "fix it" || f.Model != "opus-x" || f.LastSummary != "did a" || f.Turns != 3 ||
+		len(f.Plan) != 1 || f.ForkedFrom != src.Key {
+		t.Errorf("state not carried: %+v", f)
+	}
+	if !strings.Contains(f.Render(), "did a") {
+		t.Errorf("render: %q", f.Render())
+	}
+	got, _, _ := st.Get("alice", src.Key)
+	if got.Session != "s1" || got.Plan[0].Status != "done" {
+		t.Errorf("source touched: %+v", got)
+	}
+	if _, err := st.Fork("alice", src.Key, "thread:dm:alice:12", now); err == nil {
+		t.Error("existing destination must be refused")
+	}
+	if _, err := st.Fork("alice", "thread:dm:alice:99", "thread:dm:alice:13", now); err == nil {
+		t.Error("missing source must be refused")
+	}
+}

@@ -7,9 +7,10 @@ package editor
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"github.com/drjzlyan/dhi/internal/checkpoint"
+	"github.com/drjzlyan/dhi/internal/editorconfig"
+	"github.com/drjzlyan/dhi/internal/editshim"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -23,9 +24,11 @@ import (
 	"github.com/drjzlyan/dhi/internal/fuzzy"
 	"github.com/drjzlyan/dhi/internal/gitcore"
 	"github.com/drjzlyan/dhi/internal/langserver"
+	"github.com/drjzlyan/dhi/internal/localhistory"
 	"github.com/drjzlyan/dhi/internal/lsp"
 	"github.com/drjzlyan/dhi/internal/preview"
 	"github.com/drjzlyan/dhi/internal/search"
+	"github.com/drjzlyan/dhi/internal/swapfile"
 	"github.com/drjzlyan/dhi/internal/testrun"
 	"github.com/drjzlyan/dhi/internal/textbuf"
 	"github.com/drjzlyan/dhi/internal/tui/branding"
@@ -43,7 +46,17 @@ const (
 	// agentEditWindow is how long an agent-applied edit keeps its
 	// active-editing indicator visible (F-035 Part B).
 	agentEditWindow = 6 * time.Second
+	// largeFileThreshold is the file size at which we ask before opening (F-138).
+	largeFileThreshold = 5 << 20 // 5 MiB
+	// binarySniff is how much of a file is read to tell text from binary.
+	binarySniff = 8 << 10
 )
+
+// pendingFileOpen tracks a large file awaiting confirmation before opening (F-138).
+type pendingFileOpen struct {
+	node *node
+	size int64
+}
 
 type mode uint8
 
@@ -55,6 +68,9 @@ const (
 	modeSymbols
 	modeTests
 	modeDebug
+	modeTasks
+	modeWorkspaceSyms
+	modeCalls // :calls call-hierarchy tree (F-173)
 )
 
 // Option configures optional editor capabilities.
@@ -111,11 +127,25 @@ func WithLanguages(r langserver.Registry) Option {
 type Prefs struct {
 	TabWidth    int
 	LineNumbers bool
-	Scrollback  int
+	Wrap        bool   // soft word wrap (F-136)
+	Autosave    string // "off", "delay" or "focus" (F-142)
+	Blame       bool   // inline blame on the cursor line (F-143)
+	InlayHints  bool   // LSP inlay hints, dimmed inline (F-169)
+	// SemanticTokens layers the server's semantic colours over syntax (F-173).
+	SemanticTokens bool
+	Breadcrumbs    bool // symbol path of the cursor in the buffer title (F-175)
+	// StickyScroll pins the enclosing symbols' headers at the top of the pane (F-175).
+	StickyScroll bool
+	// InlineCompletion shows the server's inline completion as ghost text (F-181).
+	InlineCompletion bool
+	// RestoreSession saves the open tabs and split on quit and reopens them
+	// on launch (F-149).
+	RestoreSession bool
+	Scrollback     int
 }
 
 // DefaultPrefs match the settings defaults.
-var DefaultPrefs = Prefs{TabWidth: 4, LineNumbers: true, Scrollback: 1000}
+var DefaultPrefs = Prefs{TabWidth: 4, LineNumbers: true, Breadcrumbs: true, InlineCompletion: true, RestoreSession: true, Scrollback: 1000}
 
 // WithPrefs reads the editor settings at each render, so a change in
 // Settings shows at once.
@@ -174,6 +204,21 @@ func WithUnread(us *unread.Store) Option {
 	}
 }
 
+// CommitConventions give the commit buffer the team's message shape
+// (F-182): Draft is the prefilled start for the repo at dir (its subject
+// and body format, AI parts as {ai:…} markers); Write fills markers left
+// in a message from the staged changes (it may take a minute, so it runs
+// off the UI). Either may be nil.
+type CommitConventions struct {
+	Draft func(dir string) string
+	Write func(ctx context.Context, dir, text string) (string, error)
+}
+
+// WithCommitConventions installs the commit buffer's conventions.
+func WithCommitConventions(c CommitConventions) Option {
+	return func(m *Model) { m.commitConv = c }
+}
+
 // WithIdentity installs the git identity resolver used by the git
 // panel's commit path (F-029). A nil resolver refuses by name.
 func WithIdentity(fn gitcore.IdentityFunc) Option {
@@ -182,6 +227,8 @@ func WithIdentity(fn gitcore.IdentityFunc) Option {
 
 // Model is the Editor surface.
 type Model struct {
+	commitConv    CommitConventions // F-182: the commit buffer's draft and AI writer
+	commitWriting bool              // a message's AI parts are being written
 	// start wires the start page (F-097); startZones are its click spans
 	// from the last render, startOX/OY where the page sat on screen.
 	start            StartDeps
@@ -197,10 +244,12 @@ type Model struct {
 	rows      []treeRow
 	list      kit.List
 	// treeGits caches each member's branch + changed paths for the
-	// file tree (F-064); nil means reload on the next render.
-	treeGits map[string]*treeGit
-	width    int
-	height   int
+	// file tree (F-064), read off the UI goroutine; treeGitGen drops a
+	// read that an invalidation overtook.
+	treeGits   map[string]*treeGit
+	treeGitGen int
+	width      int
+	height     int
 
 	mode      mode
 	query     []rune
@@ -213,12 +262,18 @@ type Model struct {
 	bufs      []*bufTab
 	activeTab int
 	bufFocus  bool
-	// split panes (F-057): the second pane's tab, the pending ctrl+w
-	// prefix, and a render flag that keeps popups on the focused pane.
-	split          bool
-	splitTab       int
+	now       func() time.Time // test clock (F-142); nil = time.Now
+	lastKey   time.Time        // the last key the editor saw
+	// split panes (F-057, F-166): the layout tree (nil = one pane), the
+	// focused leaf, the rects of the last render, the pending ctrl+w
+	// prefix, and the box being rendered (paneW/paneH, 0 = whole area;
+	// renderingSplit keeps popups on the focused pane).
+	layout         *pane
+	focus          *pane
+	panes          []paneRect
 	pendingW       bool
 	renderingSplit bool
+	paneW, paneH   int
 
 	// agentEditPath/agentEditAt mark the last agent-applied edit so the
 	// buffer title can show an active-editing indicator (F-035 Part B).
@@ -226,16 +281,39 @@ type Model struct {
 	agentEditAt   time.Time
 
 	// Pair programming (F-038): agent suggestions awaiting review.
-	proposals    []proposal
-	reviewOpen   bool
-	pairNote     string
-	breakpoints  map[string][]int // abs path → sorted 1-based lines (F-039)
-	dbg          *dbgState
-	dapStart     dapStarter    // adapter launcher; nil = delve (tests inject)
-	testing      *testState    // :test results (modeTests)
-	syms         *symbolPicker // :sym outline picker (modeSymbols)
-	formatOnSave bool          // :set fmt|nofmt; default on (Go + live server only)
-	pairAgent    string        // pairing partner (F-038); "" = no session
+	proposals      []proposal
+	reviewOpen     bool
+	pairNote       string
+	breakpoints    map[string][]int // abs path → sorted 1-based lines (F-039)
+	dbg            *dbgState
+	dapStart       dapStarter                  // adapter launcher; nil = delve (tests inject)
+	testing        *testState                  // :test results (modeTests)
+	syms           *symbolPicker               // :sym outline picker (modeSymbols)
+	wsym           *wsymPicker                 // :wsym workspace picker (modeWorkspaceSyms, F-154)
+	wrapOverride   *bool                       // :set wrap|nowrap for this session; nil follows Settings (F-136)
+	inlayOverride  *bool                       // :set inlayhints|noinlayhints for this session; nil follows Settings (F-169)
+	inlay          map[string]*inlayState      // per file: cached LSP inlay hints (F-169)
+	inlayCfg       map[*lsp.Client]bool        // clients last told whether to emit hints
+	ghost          *ghostState                 // the ghost text on offer (F-181)
+	ghostSeq       int                         // generation of the debounced inline-completion request
+	ghostOverride  *bool                       // :set ghost|noghost for this session; nil follows Settings (F-181)
+	ghostErrNoted  bool                        // the server's inline-completion error was shown once
+	sug            *suggestState               // a :suggest call in flight (F-181)
+	sugGen         int                         // generation of :suggest calls
+	suggestHook    *suggestHook                // tests: replaces the default agent's runtime
+	crumbOverride  *bool                       // :set [no]breadcrumbs for this session; nil follows Settings (F-175)
+	stickyOverride *bool                       // :set [no]sticky for this session; nil follows Settings (F-175)
+	outline        map[string]*outlineState    // per file: cached document outline (F-175)
+	calls          *callPicker                 // :calls tree (modeCalls, F-173)
+	peek           *peekState                  // gp / :peek popup (F-173)
+	semOverride    *bool                       // :set semantic|nosemantic for this session; nil follows Settings (F-173)
+	blameOverride  *bool                       // :set blame|noblame for this session; nil follows Settings (F-143)
+	nowFn          func() time.Time            // blame ages; nil = time.Now (tests pin it)
+	ec             *editorconfig.Resolver      // .editorconfig lookups, cached per folder (F-160)
+	formatOnSave   bool                        // :set fmt|nofmt; default on (Go + live server only)
+	pairAgent      string                      // pairing partner (F-038); "" = no session
+	taskPick       *kit.Palette                // :task picker (modeTasks, F-146)
+	taskDiags      map[string][]lsp.Diagnostic // problems from the last task's output (F-146)
 
 	drawerOpen  bool
 	termCopy    string // text a terminal program copied (OSC 52), not yet sent
@@ -244,6 +322,7 @@ type Model struct {
 	termFocus   bool
 	terms       []*termTab
 	activeTerm  int
+	termSplit   [2]int // tab ids shown side by side, left then right (F-141); 0 = none
 	cancelTerms []context.CancelFunc
 	termMsgs    chan teaMsg
 	termEnv     func() []string
@@ -255,23 +334,42 @@ type Model struct {
 	previewKey string // content hash of last rendered preview
 	previewDoc string
 
-	gitOpen      bool
-	gitFocus     bool
-	gitTab       int // 0 status, 1 log
-	gitCursor    int
-	gitRepo      *gitcore.Repo
-	gitCLI       *gitcore.Runner // the user's git for diff, apply, branches, blame (F-121)
-	diff         *diffView
-	branches     *branchPicker
-	commitDone   *textbuf.Editor      // the message buffer that just committed
-	commitRepo   *gitcore.Repo        // the repo a COMMIT_EDITMSG buffer commits to
-	gitIdentity  gitcore.IdentityFunc // F-029 commit identity; nil refuses
-	gitEntries   []gitcore.FileStatus
-	gitLog       []gitcore.CommitEntry
-	gitErr       string
-	gitInput     []rune
-	gitInputMode bool
-	gitMessage   string
+	gitOpen       bool
+	gitFocus      bool
+	gitTab        int // 0 status, 1 log
+	gitCursor     int
+	gitRepo       *gitcore.Repo
+	gitCLI        *gitcore.Runner // the user's git for diff, apply, branches, blame (F-121)
+	diff          *diffView
+	branches      *branchPicker
+	stash         *stashView           // F-129
+	hist          *fileHistory         // F-140
+	graph         *graphView           // F-162
+	lh            *localHist           // F-155
+	lhStore       *localhistory.Store  // F-155
+	swaps         *swapfile.Store      // F-161
+	swapCard      *swapCard            // F-161: recovery card for a file opened with a dead DHI's swap
+	pid           int                  // F-161: id written into swaps; 0 = this process
+	pidAlive      func(int) bool       // F-161: nil = swapfile.PIDAlive
+	commitDone    *textbuf.Editor      // the message buffer that just committed
+	rebase        *rebaseState         // the shim that lets the rebase edit in a buffer (F-165)
+	commitRepo    *gitcore.Repo        // the repo a COMMIT_EDITMSG buffer commits to
+	gitIdentity   gitcore.IdentityFunc // F-029 commit identity; nil refuses
+	gitEntries    []gitcore.FileStatus
+	gitLoading    bool // a panel read is in flight (refreshGitData)
+	committing    bool // a commit is running off the UI goroutine (startCommit)
+	gitWriting    bool // a stage or unstage is running off the UI goroutine (gitWrite)
+	undoLoading   bool // undo-turn is diffing the snapshots (openUndoTurn)
+	tasksLoading  bool // :task is running `just --list` (taskCommand)
+	gitDataGen    int  // drops a panel read that a newer one overtook
+	gitLog        []gitcore.CommitEntry
+	gitErr        string
+	gitInput      []rune
+	gitInputMode  bool
+	gitMessage    string
+	gitConflicts  map[string]string        // unmerged path (repo-relative) -> porcelain code, "UU" (F-156)
+	conflictStage string                   // absolute path whose last conflict was resolved and saved: y stages it
+	conflictSeen  map[*textbuf.Editor]bool // buffers that held conflict markers
 
 	searcher      search.Searcher
 	searchQuery   []rune
@@ -303,32 +401,50 @@ type Model struct {
 	undo           *undoState
 	recent         []string // recently opened files, newest first (F-119)
 	recentLoaded   bool
-	closed         []string             // closed tabs, for reopen
-	treeOp         *treeOp              // the open file-operation dialog (F-119)
-	treeNote       string               // the last file operation, on the status row
+	restoring      bool             // reopening the saved session: not a "recent" event (F-149)
+	closed         []string         // closed tabs, for reopen
+	treeOp         *treeOp          // the open file-operation dialog (F-119)
+	treeNote       string           // the last file operation, on the status row
+	pendingOpen    *pendingFileOpen // pending large-file open confirmation (F-138)
+	sbuf           *searchBuf       // the search results buffer's listing (F-168)
+	sbApply        *searchApply     // the card before :w writes its edits
+	grepLast       *grepArgs        // what :grep! repeats
+	grepCancel     context.CancelFunc
+	grepGen        int
 	lspStarting    map[string]bool      // a server start is in flight (F-116)
 	lspWaiting     map[string][]string  // files to open once their server is up
 	lspPumped      map[*lsp.Client]bool // clients whose events are already read
 	langs          langserver.Registry
 	tools          HostTools         // finds and installs host tools (F-110)
 	toolCard       *ToolPlan         // the open install card
+	trust          Trust             // restricted mode (F-148); nil trusts everything
+	trustCard      *trustAsk         // the open trust card
+	trustDeclined  map[string]bool   // folders the user said "not now" to this session
 	lspSent        map[string]string // vpath → last pushed text
 	lspDiags       map[string][]lsp.Diagnostic
 	compOpen       bool
 	compItems      []lsp.CompletionItem
 	compCur        int
-	lspPendingG    bool   // `g` prefix armed (F-009 sequences)
-	pendingBracket string // "]" or "[" armed for ]d / [d (F-116)
-	compSeq        int    // completion debounce generation (F-116)
-	resultsTitle   string // results pane holds a list (references, problems), not a search
+	snip           *textbuf.SnippetSession // live tab-stop session (F-171)
+	userSnips      map[string]userSnipSet  // member root → its .vscode snippets, cached (F-171)
+	lspPendingG    bool                    // `g` prefix armed (F-009 sequences)
+	pendingZ       bool                    // `z` prefix armed: fold commands (F-176)
+	pendingBracket string                  // "]" or "[" armed for ]d / [d (F-116)
+	compSeq        int                     // completion debounce generation (F-116)
+	resultsTitle   string                  // results pane holds a list (references, problems), not a search
 	hoverOpen      bool
 	hoverLines     []string
+	sigHelp        *lsp.SignatureHelp // the open signature-help popup (F-128)
+	sigSeq         int                // signature request generation; stale answers are dropped
+	sigPath        string             // the file the popup belongs to
 	renameMode     bool
 	renameOld      string
 	renameInput    []rune
 	actionOpen     bool
 	actionItems    []lsp.CodeAction
 	actionCur      int
+	bulbKey        string // cursor line the quick-fix probe last asked about (F-158)
+	bulbOn         bool   // that probe found a quick fix
 
 	chat *chatModel
 }
@@ -368,6 +484,7 @@ func New(version string, ws *workspace.Workspace, opts ...Option) *Model {
 	for _, opt := range opts {
 		opt(m)
 	}
+	m.restoreSession() // F-149: after the options, which carry the prefs and the language table
 	return m
 }
 
@@ -389,8 +506,14 @@ func (m *Model) StatusContext() (string, string) {
 		return "results", ""
 	case m.mode == modeSymbols:
 		return "symbols", "SYMBOLS"
+	case m.mode == modeWorkspaceSyms:
+		return "workspace symbols", "SYMBOLS"
+	case m.mode == modeCalls:
+		return "call hierarchy", "CALLS"
 	case m.mode == modeTests:
 		return "tests", "TESTS"
+	case m.mode == modeTasks:
+		return "tasks", "TASKS"
 	case m.mode == modeDebug:
 		return "debugger", "DEBUG"
 	case m.drawerOpen && m.termFocus:
@@ -402,6 +525,9 @@ func (m *Model) StatusContext() (string, string) {
 		case textbuf.ModeInsert:
 			return "buffer", "INSERT"
 		case textbuf.ModeVisual:
+			if m.active().VisualBlock() {
+				return "buffer", "V-BLOCK"
+			}
 			return "buffer", "VISUAL"
 		}
 		return "buffer", ""
@@ -419,13 +545,13 @@ func (m *Model) Hints() (string, []string) {
 	case m.chat != nil && m.chat.open && m.chat.focus:
 		return "", []string{"enter send", "@ mention", "^x stop", "^f apply", "[ ] channel", "esc blur"}
 	case m.drawerOpen && m.termFocus:
-		hints := []string{"ctrl+t blur", "shift+pgup scroll back", kit.AltLabel("alt+n new tab"), kit.AltLabel("alt+w close tab"), kit.AltLabel("alt+1..9 tab")}
+		hints := []string{"ctrl+t blur", "shift+pgup scroll back", kit.AltLabel("alt+n new tab"), kit.AltLabel("alt+w close tab"), kit.AltLabel("alt+s split"), kit.AltLabel("alt+o other pane"), kit.AltLabel("alt+1..9 tab")}
 		if t := m.activeTermTab(); t != nil && t.exited {
 			hints = append([]string{kit.AltLabel("alt+r restart")}, hints...)
 		}
 		return "", hints
 	case m.gitOpen && m.gitFocus:
-		return "", []string{"enter diff", "s stage", "S all", "u unstage", "c commit", "C message", "b branch", "p pull", "P push", "tab status/log", "esc blur"}
+		return "", []string{"enter diff", "s stage", "S all", "u unstage", "c commit", "C message", "b branch", "z stash", "h history", "p pull", "P push", "tab status/log", "esc blur"}
 	case m.treeOp != nil:
 		return "", nil // the dialog names its keys
 	case m.mode != modeNav:
@@ -469,7 +595,7 @@ func (m *Model) CapturesInput() bool {
 		m.chat != nil && m.chat.open && m.chat.focus,
 		m.gitOpen && m.gitFocus:
 		return true
-	case m.mode == modeFind, m.mode == modeSearchQuery, m.mode == modeSymbols:
+	case m.mode == modeFind, m.mode == modeSearchQuery, m.mode == modeSymbols, m.mode == modeWorkspaceSyms, m.mode == modeCalls, m.mode == modeTasks:
 		return true
 	case m.mode == modeResults && m.replace != nil:
 		return true
@@ -525,6 +651,7 @@ func (m *Model) HelpSections() [][2]string {
 		out = append(out,
 			[2]string{"enter", "send to the crew (no @name: the default agent answers)"},
 			[2]string{"ctrl+x", "stop the turns running in this channel"},
+			[2]string{"/ · tab", "skills and commands: /export, @image:<path>, a skill with user-invocable: true"},
 			[2]string{"alt+y · alt+n · /yes /no", "answer an agent's approval"},
 			[2]string{"ctrl+f", "apply the suggestion block (replaces a visual selection)"})
 	case m.drawerOpen && m.termFocus:
@@ -532,6 +659,8 @@ func (m *Model) HelpSections() [][2]string {
 			[2]string{"ctrl+t", "blur/close the drawer"},
 			[2]string{"shift+pgup · shift+pgdown", "scroll back through the output (any key returns)"},
 			[2]string{kit.AltLabel("alt+n · alt+w · alt+r"), "new tab · close this tab · restart an exited one"},
+			[2]string{kit.AltLabel("alt+s · alt+o"), "split the terminal beside a new shell · move focus between the two panes (alt+w closes one)"},
+			[2]string{kit.AltLabel("alt+k · alt+j"), "previous / next command prompt (needs a shell that sends OSC 133 marks; a ✗ marks failed commands)"},
 			[2]string{kit.AltLabel("alt+1..9"), "switch terminal tab"})
 	case m.gitOpen && m.gitFocus:
 		out = append(out,
@@ -543,24 +672,45 @@ func (m *Model) HelpSections() [][2]string {
 			[2]string{":w :q :wq · ctrl+s", "save · quit · save and quit · save in any mode"},
 			[2]string{":e path · :w path · :reopen", "open · save as · reopen the last closed file"},
 			[2]string{":e! · :w!", "reload from disk · overwrite an outside change"},
+			[2]string{kit.AltLabel("alt+enter · :send"), "send the selection (visual) or the line to the terminal, without running it"},
 			[2]string{":42 · 42G", "go to line"},
 			[2]string{"v · V · > <", "select · select lines · indent / outdent (>> << on a line)"},
+			[2]string{"ctrl+v", "select a block by column: motions and $ extend it, o O swap corners; d y c I A r > < ~ u U act on every line, p pastes the block"},
+			[2]string{"gcc · gc{motion} · ctrl+/", "comment / uncomment lines (counts and visual gc work; ctrl+/ also in insert)"},
+			[2]string{"za zc zo · zA zC zO · zM zR · zj zk", "fold: toggle / close / open (capitals: all levels around the cursor) · close / open every fold · next fold start / previous fold end; click the ▸ ▾ gutter mark. Folds come from the language server, else indentation (messages say which); j/k and d y c > skip a closed fold as one line; a search, jump or edit inside one opens it"},
+			[2]string{kit.AltLabel("alt+o · alt+i"), "expand / shrink the selection (language server's syntax tree, else word → quotes → brackets → line → paragraph → buffer; the status line names which)"},
+			[2]string{kit.AltLabel("gb · gB · alt+n · alt+up/down"), "multi-cursor: add the next occurrence of the word (or selection) · skip it · a cursor above / below (:cursor next|skip|above|below|off); edits, motions, d c y and text objects run at every cursor, esc collapses"},
+			[2]string{"iw aw i( a( i[ i{ i\" i' ip ap", "text objects after d c y gc, or in visual mode (b and B for ( and {)"},
 			[2]string{".", "repeat the last change"},
+			[2]string{"f F t T · ; , · %", "find/until char on line · repeat/reverse · match bracket"},
 			[2]string{"gd · gR · K", "go to definition · references · hover"},
+			[2]string{"gp · :peek refs", "peek the definition (or references) in a popup under the cursor: enter jumps, esc closes, ↑/↓ step through several"},
+			[2]string{":wsym [query]", "workspace symbols: search every language server's index, enter jumps"},
+			[2]string{":calls · :calls out", "call hierarchy tree: who calls this function · what it calls (→ opens a level, enter jumps)"},
 			[2]string{"]d · [d · :diag", "next / previous problem · all problems"},
-			[2]string{"gr · ga", "rename · code actions"},
+			[2]string{"gr · ga · :organize", "rename · code actions (quick fixes first; visual: selection) · organize imports"},
+			[2]string{"]x · [x · :conflict ours|theirs|both|base", "next / previous merge conflict · accept a side (one undo step)"},
 			[2]string{"ctrl+space", "completions (they also open as you type)"},
+			[2]string{"tab · shift+tab (insert, in a snippet)", "next / previous snippet stop (snippets: server items and .vscode/*.code-snippets)"},
+			[2]string{"tab (insert, ghost text showing)", "accept the dimmed suggestion after the cursor; esc drops it, typing its next character walks through it. Order: completion popup, then snippet stop, then ghost text, then indent"},
+			[2]string{kit.AltLabel("alt+\\ · :suggest"), "ask your default agent for a short continuation at the end of this line (one read-only call, counted in the budget as \"suggest\"; never automatic). Language servers with inline completion show ghost text on their own (:set ghost|noghost)"},
 			[2]string{":pair <agent>", "invite an agent to pair (:ask · :unpair)"},
 			[2]string{":break · :debug", "breakpoint · start debugging (:cont :next :step :out :stop :eval)"},
 			[2]string{":test [all|name]", "run Go tests · failures list jumps to the line"},
+			[2]string{":task [name]", "run a package.json script, make target or just recipe in a terminal tab · its errors join :diag"},
+			[2]string{":trust · :untrust", "allow / stop language servers, format on save, tasks, tests and the debugger in this folder"},
+			[2]string{":set wrap|blame|inlayhints|ghost|semantic|breadcrumbs|sticky", "session toggles (prefix no to turn one off: :set nowrap); Settings holds the defaults"},
 			[2]string{":fmt · :sym", "format · outline / go to symbol (format on save: :set nofmt)"},
 			[2]string{"ctrl+y", "review agent suggestions"},
 			[2]string{"ctrl+g", "markdown preview"},
 			[2]string{":s/old/new/[g]", "replace"},
-			[2]string{"ctrl+w v · ctrl+w w", "split side by side · switch pane (:vs · :only)"})
+			[2]string{":grep [-C n] pat [glob]", "search results buffer: enter / gd opens a row, :w applies edited rows after a card, :grep! refreshes"},
+			[2]string{"ctrl+w v · s · h j k l · w", "split side by side · stacked · focus a pane · cycle (:vs · :sp)"},
+			[2]string{"ctrl+w c · o · =", "close the pane · keep only it · equalize (up to 4 panes; :close · :only)"})
 	case m.mode == modeResults:
 		out = append(out, [2]string{"enter", "jump to the hit"},
-			[2]string{"r", "replace across every hit (preview, then enter)"})
+			[2]string{"r", "replace across every hit (preview, then enter)"},
+			[2]string{"o", "open the hits as an editable buffer (:w asks before writing rows back)"})
 	}
 	return out
 }
@@ -568,7 +718,7 @@ func (m *Model) HelpSections() [][2]string {
 // Init starts the terminal and chat message pumps plus the workspace
 // roster watcher (live re-resolution without restart, P1).
 func (m *Model) Init() tea.Cmd {
-	cmds := []tea.Cmd{m.listenTerm(), diskTick()}
+	cmds := []tea.Cmd{m.listenTerm(), diskTick(), autosaveTick()}
 	if m.ws != nil {
 		ch, cancel := m.ws.Subscribe()
 		m.memCancel = cancel
@@ -646,6 +796,7 @@ func (m *Model) reloadMembers() {
 		if member == "" || aliveName[member] {
 			bufs = append(bufs, b)
 		} else if b.ed != nil {
+			m.lspDidClose(b.vp, b.path) // F-132: notify LSP of close
 			b.ed.SetCommandDelegate(nil)
 		}
 	}
@@ -698,14 +849,36 @@ type teaMsg struct {
 	diagPath  string
 	compItems []lsp.CompletionItem
 	hoverText string
+	sig       *lsp.SignatureHelp
+	sigSeq    int
+	inlay     []lsp.InlayHint    // lspMsgInlay: the answer; note = path, sigSeq = request generation, bufSeq = the text it answers
+	folds     []lsp.FoldingRange // lspMsgFold: the server's ranges; note = path, sigSeq = generation (F-176)
+	bufSeq    uint64
+	outline   []lsp.Symbol // lspMsgOutline: the answer; note = path, sigSeq = request generation, bufSeq = the text it answers (F-175)
 	hoverOK   bool
 	edit      *lsp.WorkspaceEdit
 	actions   []lsp.CodeAction
 	note      string
 	lang      string // toolMsgInstalled: the tool
 	installOK bool   // toolMsgInstalled: the tool is now found
+	blame     *blameResult
+	treeGit   *treeGitResult
+	gitData   *gitDataResult
+	commit    *commitResult
+	undoReady *undoReady
+	undoDone  *undoDone
+	tasks     *tasksFound
+	stashRes  *stashResult
+	sem       *semMsg // semMsgTick / semMsgDone (F-173)
 	testRep   *testrun.Report
 	dbgStart  *dbgStarted
+	editReq   *editshim.Request // editMsgOpen
+
+	inline   []lsp.InlineItem // lspMsgGhost: the server's proposals (note = path, sigSeq = generation, bufSeq = the text, ghostPos = the cursor) (F-181)
+	ghostPos textbuf.Pos
+
+	selRanges      []lsp.Range // lspMsgSel: the server's chain, innermost first (note: its error)
+	selFrom, selTo textbuf.Pos // lspMsgSel: the selection the request was made for
 }
 
 const (
@@ -717,10 +890,38 @@ const (
 	lspMsgEdit
 	lspMsgAction
 	lspMsgNote
-	toolMsgInstalled // an approved install tab exited (lang: the tool; note: the outcome)
+	lspMsgSig
+	lspMsgRun          // a resolved code action, ready to apply (F-158)
+	lspMsgBulb         // quick-fix probe result for the cursor line (F-158)
+	lspMsgSel          // selectionRange answer for an expand (F-167)
+	lspMsgInlay        // inlay hints for a file arrived (F-169)
+	lspMsgInlayRefresh // the server's hints changed: drop the cache (F-169)
+	lspMsgInlayDue     // the inlay debounce elapsed: send the request (F-169)
+	lspMsgOutline      // the document outline for a file arrived (F-175)
+	lspMsgOutlineDue   // the outline debounce elapsed: send the request (F-175)
+	lspMsgFold         // folding ranges for a file arrived (F-176)
+	lspMsgFoldDue      // the folding debounce elapsed: send the request (F-176)
+	toolMsgInstalled   // an approved install tab exited (lang: the tool; note: the outcome)
 	testMsgDone
+	blameMsgDone // git blame for a tab finished (F-143)
+	semMsgTick   // semantic tokens: the debounce after an edit elapsed (F-173)
+	semMsgDone   // semantic tokens: the server answered (F-173)
 	dbgMsgStarted
 	dbgMsgUpdate
+	editMsgOpen      // a program asks for a file to be edited (F-165)
+	lspMsgGhostDue   // the ghost-text debounce elapsed: send the request (F-181)
+	lspMsgGhost      // inline completion answered (F-181)
+	sugMsgTick       // :suggest spinner frame (F-181)
+	sugMsgDone       // :suggest answered (F-181)
+	commitMsgWritten // the AI parts of a commit message were written (F-182): note = message, hoverText = error
+	treeGitMsgDone   // a member's tree git status was read (treeGit)
+	gitDataMsgDone   // the git panel's status, log and conflicts were read (gitData)
+	commitMsgDone    // a commit finished (commit)
+	undoMsgReady     // undo-turn: the turn's diff is ready (undoReady)
+	undoMsgDone      // undo-turn: the restore finished (undoDone)
+	taskMsgFound     // :task: the task listing is ready (tasks)
+	stashMsgDone     // a stash command finished (stashRes)
+	gitOpMsgDone     // a panel stage/unstage finished: hoverText = error
 )
 
 func (m *Model) Resize(w, h int) {
@@ -758,12 +959,36 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 	case diskTickMsg:
 		m.checkDisk()
 		return diskTick()
+	case autosaveTickMsg:
+		m.autosaveDelayed()
+		m.swapTick() // F-161
+		return autosaveTick()
 	case compTickMsg:
 		m.onCompTick(msg)
 		return m.TakeCmd()
 	case navMsg:
 		m.onNav(msg)
 		return m.TakeCmd()
+	case peekMsg:
+		m.onPeek(msg)
+		return m.TakeCmd()
+	case callsMsg:
+		m.onCalls(msg)
+		return m.TakeCmd()
+	case callsPrepMsg:
+		m.onCallsPrep(msg) // the root's load stays queued for the shell to drain
+		return nil
+	case symsMsg:
+		m.onSyms(msg)
+		return nil
+	case grepDoneMsg:
+		m.onGrepDone(msg)
+		return m.TakeCmd()
+	case wsymTickMsg:
+		return m.onWsymTick(msg)
+	case wsymMsg:
+		m.onWsym(msg)
+		return nil
 	case lspReadyMsg:
 		m.onLSPReady(msg)
 		return nil
@@ -779,16 +1004,44 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 			}
 		case termMsgClosed:
 			m.termExited(msg.tab)
-		case lspMsgDiag, lspMsgComp, lspMsgHover, lspMsgEdit, lspMsgAction, lspMsgNote:
+		case lspMsgDiag, lspMsgComp, lspMsgHover, lspMsgEdit, lspMsgAction, lspMsgNote, lspMsgSig, lspMsgRun, lspMsgBulb, lspMsgSel, lspMsgInlay, lspMsgInlayDue, lspMsgInlayRefresh, lspMsgOutline, lspMsgOutlineDue, lspMsgFold, lspMsgFoldDue:
 			m.applyLSPUpdate(msg)
+		case lspMsgGhostDue, lspMsgGhost, sugMsgTick, sugMsgDone:
+			m.applyGhostMsg(msg)
+		case commitMsgWritten:
+			m.onCommitWritten(msg)
 		case toolMsgInstalled:
 			m.applyToolInstalled(msg)
 		case testMsgDone:
 			m.applyTestDone(msg.testRep)
+		case blameMsgDone:
+			m.applyBlame(msg.blame)
+		case treeGitMsgDone:
+			m.applyTreeGit(msg.treeGit)
+		case gitDataMsgDone:
+			m.applyGitData(msg.gitData)
+		case commitMsgDone:
+			m.applyCommit(msg.commit)
+		case undoMsgReady:
+			m.applyUndoReady(msg.undoReady)
+		case undoMsgDone:
+			m.applyUndoDone(msg.undoDone)
+		case taskMsgFound:
+			m.applyTasksFound(msg.tasks)
+		case stashMsgDone:
+			m.applyStash(msg.stashRes)
+		case gitOpMsgDone:
+			m.applyGitWrite(msg)
+		case semMsgTick:
+			m.onSemanticTick(msg.sem)
+		case semMsgDone:
+			m.onSemanticDone(msg.sem)
 		case dbgMsgStarted:
 			m.applyDebugStarted(msg.dbgStart)
 		case dbgMsgUpdate:
 			m.applyDebugUpdate()
+		case editMsgOpen:
+			m.applyEditRequest(msg.editReq)
 		}
 		return m.listenTerm()
 	case chatEvent:
@@ -851,8 +1104,29 @@ func (m *Model) TakeCmd() tea.Cmd {
 
 // HandleKey implements surface key routing.
 func (m *Model) HandleKey(key string) bool {
+	m.lastKey = m.clock()
+	prev, prevFocus := m.focusedTab(), m.bufFocus
+	handled := m.handleKey(key)
+	m.probeBulb()
+	m.autosaveFocusChange(prev, prevFocus)
+	if t := m.focusedTab(); t != nil && t.ed != nil && !t.ed.Buffer().Dirty() {
+		t.noAutosave = false // :w!/:e! settled it (F-142)
+	}
+	return handled
+}
+
+func (m *Model) handleKey(key string) bool {
 	if m.toolCard != nil {
 		return m.handleToolCardKey(key)
+	}
+	if m.trustCard != nil {
+		return m.handleTrustKey(key)
+	}
+	if m.pendingOpen != nil {
+		return m.pendingOpenKey(key)
+	}
+	if m.sbApply != nil {
+		return m.searchApplyKey(key)
 	}
 	if m.treeOp != nil {
 		return m.treeOpKey(key)
@@ -865,6 +1139,21 @@ func (m *Model) HandleKey(key string) bool {
 	}
 	if m.branches != nil {
 		return m.branchKey(key)
+	}
+	if m.stash != nil {
+		return m.stashKey(key)
+	}
+	if m.hist != nil {
+		return m.histKey(key)
+	}
+	if m.swapCard != nil {
+		return m.swapKey(key)
+	}
+	if m.graph != nil {
+		return m.graphKey(key)
+	}
+	if m.lh != nil {
+		return m.lhKey(key)
 	}
 	if m.ws == nil {
 		return m.startVisible() && m.startKey(key)
@@ -933,8 +1222,14 @@ func (m *Model) HandleKey(key string) bool {
 		return m.handleResultsKey(key)
 	case modeSymbols:
 		return m.handleSymbolKey(key)
+	case modeWorkspaceSyms:
+		return m.handleWsymKey(key)
+	case modeCalls:
+		return m.handleCallsKey(key)
 	case modeTests:
 		return m.handleTestKey(key)
+	case modeTasks:
+		return m.handleTaskKey(key)
 	case modeDebug:
 		return m.handleDebugKey(key)
 	}
@@ -943,6 +1238,9 @@ func (m *Model) HandleKey(key string) bool {
 		e := m.active()
 		if key == "ctrl+c" { // vim: leave insert/visual/command (F-115)
 			key = "esc"
+		}
+		if key == "esc" {
+			m.ghostEsc() // F-181: the suggestion goes, a pending :suggest stops; esc still acts
 		}
 		if key == "ctrl+k" && e.Mode() != textbuf.ModeInsert { // F-120: inline edit with an agent
 			return m.startAgentEdit()
@@ -953,6 +1251,11 @@ func (m *Model) HandleKey(key string) bool {
 			} else {
 				e.SetMessage(`"` + m.openVPath + `" written`)
 			}
+			m.offerConflictStage(e)
+			return true
+		}
+
+		if m.conflictStage != "" && m.answerConflictStage(e, key) {
 			return true
 		}
 
@@ -971,6 +1274,9 @@ func (m *Model) HandleKey(key string) bool {
 			if handled := m.handleActionKey(key); handled || key == "esc" {
 				return true
 			}
+		}
+		if m.peek != nil { // F-173: esc closes, enter jumps
+			return m.handlePeekKey(key)
 		}
 		if m.hoverOpen {
 			m.hoverOpen = false
@@ -996,25 +1302,85 @@ func (m *Model) HandleKey(key string) bool {
 			}
 		}
 
+		// F-167: alt+o / alt+i grow / shrink the selection (normal and visual).
+		if (key == "alt+o" || key == "alt+i") && (e.Mode() == textbuf.ModeNormal || e.Mode() == textbuf.ModeVisual) {
+			m.selectionKey(key)
+			return true
+		}
+
+		// F-157: alt+enter sends the visual selection to the terminal.
+		if key == "alt+enter" && e.Mode() == textbuf.ModeVisual {
+			if text, _, _, ok := e.Selection(); ok {
+				e.Key("esc")
+				e.SetMessage(m.sendToTerm(text))
+			}
+			return true
+		}
+
+		// F-176: z commands fold (za zc zo zA zC zO zM zR zj zk); `z` is
+		// dead in textbuf, so the surface owns the two-key chord.
+		raw := e.WantsRawKey() // the key is a target/object character: no surface chord may take it
+		if m.pendingZ {
+			m.pendingZ = false
+			m.foldZKey(e, key)
+			return true
+		}
+		if key == "z" && (e.Mode() == textbuf.ModeNormal || e.Mode() == textbuf.ModeVisual) && !raw {
+			m.pendingZ = true
+			return true
+		}
+
 		// `gr`/`ga` sequences and `K` hover (normal mode only; `g` is
 		// dead in textbuf so the surface owns the two-key chords).
-		if m.lspPendingG {
+		if m.lspPendingG && e.Mode() == textbuf.ModeVisual {
+			m.lspPendingG = false // visual: gc comments the selection (F-150); other keys carry on
+			if key == "a" {       // F-158: code actions for the selection
+				m.requestCodeActions(true)
+				return true
+			}
+			if key == "c" {
+				e.Key("gc")
+				m.lspSync()
+				return true
+			}
+			if key == "b" { // F-174: the selection becomes a cursor, and the next match another
+				e.Key("gb")
+				return true
+			}
+			if key != "esc" { // gg and any other g-motion belong to the buffer
+				e.Key("g" + key)
+				return true
+			}
+		} else if m.lspPendingG {
 			if e.Mode() == textbuf.ModeNormal {
 				m.lspPendingG = false
 				switch key {
 				case "esc":
 					// release the prefix and let esc fall through
+				case "c": // gc{motion}, gcc: the comment operator (F-150)
+					e.Key("gc")
+					return true
 				case "r":
 					m.startRename()
 					return true
 				case "d": // F-116: definition
+					if m.isSearchBuf(e) { // F-168: gd on a result row opens it
+						m.openSearchRow(e)
+						return true
+					}
 					m.requestNav(false)
 					return true
 				case "R": // F-116: references
 					m.requestNav(true)
 					return true
+				case "p": // F-173: peek the definition (vim's gp, put-and-move, is not implemented)
+					m.requestPeek(false)
+					return true
 				case "a":
-					m.requestCodeActions()
+					m.requestCodeActions(false)
+					return true
+				case "b", "B": // F-174: add the next occurrence as a cursor / skip it
+					e.Key("g" + key)
 					return true
 				case "g": // gg: first line (F-102)
 					e.Key("gg")
@@ -1025,27 +1391,41 @@ func (m *Model) HandleKey(key string) bool {
 			} else {
 				m.lspPendingG = false // mode changed; release
 			}
-		} else if e.Mode() == textbuf.ModeNormal && key == "g" {
+		} else if (e.Mode() == textbuf.ModeNormal || e.Mode() == textbuf.ModeVisual) && key == "g" && !raw {
 			m.lspPendingG = true
 			return true
 		}
-		if e.Mode() == textbuf.ModeNormal && key == "K" {
+		if e.Mode() == textbuf.ModeNormal && key == "K" && !raw {
 			m.requestHover()
 			return true
 		}
 		// ]d / [d: next / previous problem (F-116).
+		// Don't intercept if the buffer is awaiting a character for f/F/t/T (F-133).
 		if b := m.pendingBracket; b != "" {
 			m.pendingBracket = ""
 			if e.Mode() == textbuf.ModeNormal && key == "d" {
 				m.jumpDiag(map[string]int{"]": 1, "[": -1}[b])
 				return true
 			}
-		} else if e.Mode() == textbuf.ModeNormal && (key == "]" || key == "[") {
+			if e.Mode() == textbuf.ModeNormal && key == "x" { // F-156: next / previous merge conflict
+				e.Key(b + "x")
+				return true
+			}
+		} else if e.Mode() == textbuf.ModeNormal && (key == "]" || key == "[") && !raw {
 			m.pendingBracket = key
 			return true
 		}
 
+		if key == "enter" && e.Mode() == textbuf.ModeNormal && m.isSearchBuf(e) { // F-168
+			m.openSearchRow(e)
+			return true
+		}
+
 		// esc in normal mode hands focus back to the tree
+		if key == "esc" && e.Mode() == textbuf.ModeNormal && e.CursorCount() > 1 {
+			e.Key("esc") // F-174: the first esc collapses the extra cursors
+			return true
+		}
 		if key == "esc" && e.Mode() == textbuf.ModeNormal {
 			if e.Highlight() != "" { // first esc clears the search marks, the next leaves
 				e.ClearHighlight()
@@ -1061,6 +1441,12 @@ func (m *Model) HandleKey(key string) bool {
 			return true
 		}
 
+		if m.snipKey(e, key) { // F-171: tab / shift+tab walk the snippet's stops
+			return true
+		}
+		if m.ghostKey(e, key) { // F-181: tab accepts the ghost text, alt+backslash asks the agent
+			return true
+		}
 		was := e.Mode()
 		e.SetPageSize(m.height - 4) // ctrl+d/u and pgup/pgdown step by the visible rows
 		e.Key(key)
@@ -1080,10 +1466,14 @@ func (m *Model) HandleKey(key string) bool {
 			m.gitOpen, m.gitFocus = true, true
 			m.loadGit()
 		}
+		m.offerConflictStage(e)
+		m.snipAfterKey(e)
 		m.lspSync()
+		m.ghostAfterKey(e, key)
 		if e.Mode() == textbuf.ModeInsert && was == textbuf.ModeInsert {
 			m.autoComplete(key)
 		}
+		m.signatureKey(e, key, was)
 		return true
 	}
 	return m.handleNavKey(key)
@@ -1093,6 +1483,7 @@ func (m *Model) HandleKey(key string) bool {
 func (m *Model) handleTermKey(key string) bool {
 	if idx := altDigitIndex(key, len(m.terms)); idx >= 0 {
 		m.activeTerm = idx
+		m.syncTermSize() // a split pair shows at pane width, a lone tab at full
 		return true
 	}
 	switch key {
@@ -1101,14 +1492,26 @@ func (m *Model) handleTermKey(key string) bool {
 		if dir != "" {
 			m.newTermTab(dir, label+"-"+itoa(len(m.terms)+1))
 			m.activeTerm = len(m.terms) - 1
+			m.syncTermSize()
 		}
 		return true
 	case "alt+w": // F-121: close this tab (the program is stopped)
-		m.closeTerm(m.activeTerm)
+		m.closeTermPane()
+		return true
+	case "alt+s": // F-141: a new shell beside this one
+		m.splitTerm()
+		return true
+	case "alt+o": // F-141: focus the other pane
+		m.focusOtherPane()
 		return true
 	case "alt+r": // F-121: restart an exited tab in the same folder
 		m.restartTerm(m.activeTerm)
 		return true
+	case "alt+k", "alt+j": // F-157: previous / next command prompt (a full-screen program keeps them)
+		if t := m.activeTermTab(); t != nil && !t.screen.AltScreen() {
+			m.jumpPrompt(map[string]int{"alt+k": -1, "alt+j": 1}[key])
+			return true
+		}
 	}
 	t := m.activeTermTab()
 	if t != nil {
@@ -1120,6 +1523,7 @@ func (m *Model) handleTermKey(key string) bool {
 				step = max(rows-1, 1)
 			}
 			t.scroll += step
+			t.hasJump = false
 			return true
 		case "shift+pgdown", "shift+down":
 			step := 1
@@ -1128,9 +1532,10 @@ func (m *Model) handleTermKey(key string) bool {
 				step = max(rows-1, 1)
 			}
 			t.scroll = max(t.scroll-step, 0)
+			t.hasJump = false
 			return true
 		}
-		t.scroll = 0 // typing returns to the live screen
+		t.scroll, t.hasJump = 0, false // typing returns to the live screen
 	}
 	if t == nil || t.sess == nil || t.exited {
 		return true
@@ -1154,7 +1559,10 @@ func (m *Model) activeTermTab() *termTab {
 
 func (m *Model) activeTermDir() (string, string) {
 	if t := m.activeTermTab(); t != nil {
-		return t.dir, t.sess.Label()
+		if t.sess == nil { // a refused start keeps no session
+			return t.dir, filepath.Base(t.dir)
+		}
+		return t.workDir(), t.sess.Label() // where the shell is now (F-157)
 	}
 	if len(m.members) > 0 {
 		return m.members[0].path, m.members[0].name
@@ -1279,8 +1687,22 @@ type bufTab struct {
 	path   string
 	syntax *highlighter // per-tab buffer colorizer (F-026 P4)
 	gutter gutterState  // git change markers (F-040)
+	blame  blameState   // inline blame, loaded off the UI goroutine (F-143)
+	sem    semState     // semantic tokens from the language server (F-173)
+	fold   foldSrc      // where the fold ranges come from; the folds live in the buffer, shared by every pane (F-176)
 
-	diskWarned bool // the current on-disk change was already reported (F-115)
+	tabWidth    int       // .editorconfig tab_width for this buffer; 0 = the setting (F-160)
+	diskWarned  bool      // the current on-disk change was already reported (F-115)
+	noAutosave  bool      // autosave hit a changed-on-disk or write error; off until the buffer is clean (F-142)
+	baseHash    string    // hash of the disk text this tab loaded or last saved (F-161)
+	baseMTime   int64     // that file's mtime, unix nanoseconds
+	swapSeen    string    // text at the last change the swap saw
+	swapAt      time.Time // when it changed
+	swapKnown   bool
+	swapPending bool     // changed since the last swap write
+	swapWritten bool     // a swap exists for this tab's edits
+	noSwap      bool     // another DHI owns the swap, or the recovery card is undecided
+	edit        *editJob // a program (the rebase) waits for this buffer (F-165)
 }
 
 // active returns the focused tab's editor, or nil.
@@ -1291,23 +1713,33 @@ func (m *Model) active() *textbuf.Editor {
 	return nil
 }
 
-func (m *Model) open(n *node) {
-	m.openPath = n.path
-	vp, err := m.ws.VPathFor(n.path)
-	if err == nil {
-		m.openVPath = vp.String()
-	} else {
-		m.openVPath = n.name
-	}
+func (m *Model) open(n *node) { m.openNode(n, false) }
 
+// openNode is the one open path. confirmed skips the large-file check
+// (the user already said yes, F-138).
+func (m *Model) openNode(n *node, confirmed bool) {
+	vpath := n.name
+	if vp, err := m.ws.VPathFor(n.path); err == nil {
+		vpath = vp.String()
+	}
 	for i, t := range m.bufs {
 		if t.path == n.path {
+			m.openPath, m.openVPath = n.path, vpath
 			m.activeTab = i // reuse existing buffer
 			m.bufFocus = true
 			m.act(tutorial.EvEditorOpen)
 			return
 		}
 	}
+	if !confirmed {
+		if size, big := largeTextFile(n.path); big { // F-138
+			m.pendingOpen = &pendingFileOpen{node: n, size: size}
+			m.bufFocus = true
+			return
+		}
+	}
+	m.openPath, m.openVPath = n.path, vpath
+
 	be, err := textbuf.OpenFile(n.path)
 	if err != nil {
 		m.searchErr = err.Error()
@@ -1316,8 +1748,19 @@ func (m *Model) open(n *node) {
 	}
 	be.SetCommandDelegate(m)
 	be.SetIndent(m.indentFor(n.path, be.Buffer().Text())) // F-119
+	be.SetTabWidth(m.editorPrefs().TabWidth)              // F-159
+	m.applyEditorConfigOpen(be)                           // F-160
 	be.SetBeforeSave(m.beforeSave)
 	be.SetAfterSave(func(ed *textbuf.Editor) {
+		m.snapshotSave(ed.Path(), ed.Buffer().Text()) // F-155: local history
+		m.editorConfigSaved(ed.Path())                // F-160: a saved .editorconfig applies now
+		m.savedSwap(ed.Path())                        // F-161: the swap is stale now
+		m.lspDidSave(ed)                              // F-132: notify LSP of save
+		if m.isSearchBuf(ed) {                        // F-168: :w on the search buffer asks before writing rows back
+			m.searchBufSaved(ed)
+			return
+		}
+		m.invalidateBlame(ed.Path())                            // F-143: lines moved
 		if ed.Path() == m.commitPath() && m.commitRepo != nil { // F-121: :w commits
 			m.gitMessage = m.commitFromBuffer(ed.Buffer().Text())
 			m.commitDone = ed // closed once the key that saved it is handled
@@ -1332,10 +1775,12 @@ func (m *Model) open(n *node) {
 		m.refreshRows()
 	})
 	tab := &bufTab{ed: be, vp: m.openVPath, path: n.path, syntax: &highlighter{path: n.path}}
+	tab.tabWidth = m.configFor(n.path).TabWidth
 	m.bufs = append(m.bufs, tab)
 	m.activeTab = len(m.bufs) - 1
 	m.bufFocus = true
 	m.lspOpenDoc(n.path, be.Buffer().Text())
+	m.swapOnOpen(tab) // F-161
 	m.noteRecent(n.path)
 	m.act(tutorial.EvEditorOpen)
 }
@@ -1348,7 +1793,10 @@ func (m *Model) closeBuffer() {
 		return
 	}
 	closing := m.activeTab
-	m.closed = append(m.closed, m.bufs[closing].path) // F-119: :reopen
+	m.finishEdit(m.bufs[closing])                           // F-165: a waiting rebase carries on or aborts
+	m.dropSwap(m.bufs[closing])                             // F-161
+	m.lspDidClose(m.bufs[closing].vp, m.bufs[closing].path) // F-132: notify LSP of close
+	m.closed = append(m.closed, m.bufs[closing].path)       // F-119: :reopen
 	m.bufs = append(m.bufs[:m.activeTab], m.bufs[m.activeTab+1:]...)
 	switch {
 	case len(m.bufs) == 0:
@@ -1357,16 +1805,7 @@ func (m *Model) closeBuffer() {
 	case m.activeTab >= len(m.bufs):
 		m.activeTab = len(m.bufs) - 1
 	}
-	if m.split { // closing a pane's buffer ends the split on the other one
-		m.split = false
-		other := m.splitTab
-		if other > closing {
-			other--
-		}
-		if other >= 0 && other < len(m.bufs) && other != closing {
-			m.activeTab = other
-		}
-	}
+	m.splitActive() // a closed buffer leaves its panes; focus moves to a neighbor (F-166)
 }
 
 // refreshRows re-flattens the tree into list items.
@@ -1387,6 +1826,15 @@ func (m *Model) View() string {
 	if m.toolCard != nil {
 		return m.toolCardView(m.view())
 	}
+	if m.trustCard != nil {
+		return m.trustCardView(m.view())
+	}
+	if m.pendingOpen != nil {
+		return m.pendingOpenView(m.view())
+	}
+	if m.sbApply != nil {
+		return m.searchApplyView(m.view())
+	}
 	if m.treeOp != nil {
 		return m.treeOpView(m.view())
 	}
@@ -1399,7 +1847,36 @@ func (m *Model) View() string {
 	if m.branches != nil {
 		return m.branchView(m.view())
 	}
+	if m.stash != nil {
+		return m.stashViewOverlay(m.view())
+	}
+	if m.hist != nil {
+		return m.histOverlay(m.view())
+	}
+	if m.swapCard != nil {
+		return m.swapOverlay(m.view())
+	}
+	if m.graph != nil {
+		return m.graphOverlay(m.view())
+	}
+	if m.lh != nil {
+		return m.lhOverlay(m.view())
+	}
 	return m.view()
+}
+
+// mainPanelW is the width of the main (buffer) panel: the surface less the
+// rail (flush with the full-width bottom panels, F-064) and the crew
+// panel, which docks right while the buffer gives way.
+func (m *Model) mainPanelW() int {
+	w := m.width - m.railW()
+	if m.railW() == 0 {
+		w = m.width
+	}
+	if m.chat != nil && m.chat.open {
+		w -= chatWidth
+	}
+	return maxInt(w, 10)
 }
 
 func (m *Model) view() string {
@@ -1417,6 +1894,15 @@ func (m *Model) view() string {
 	}
 	if m.mode == modeSymbols && m.syms != nil {
 		return m.symbolsView()
+	}
+	if m.mode == modeWorkspaceSyms && m.wsym != nil {
+		return m.wsymView()
+	}
+	if m.mode == modeCalls && m.calls != nil {
+		return m.callsView()
+	}
+	if m.mode == modeTasks && m.taskPick != nil {
+		return m.taskPickView()
 	}
 	if m.mode == modeTests && m.testing != nil {
 		return m.testsView()
@@ -1438,6 +1924,21 @@ func (m *Model) view() string {
 // selected (and the tree focused); clicking the selected row again opens
 // the file or toggles the folder, like enter.
 func (m *Model) Click(x, y int) bool {
+	if m.splitActive() && m.mode == modeNav && !m.reviewOpen {
+		if r := m.paneAt(x, y); r != nil { // a click focuses the pane under it (F-166)
+			if r.leaf != m.focus {
+				m.focusPane(r.leaf)
+				m.bufGeom = r.geom
+			}
+			m.bufFocus = true
+			if _, ok := m.bufferPos(x, y); !ok {
+				return true
+			}
+		}
+	}
+	if m.foldClick(x, y) { // the gutter marker of a fold toggles it (F-176)
+		return true
+	}
 	if p, ok := m.bufferPos(x, y); ok { // a click in the text places the cursor (F-103)
 		e := m.active()
 		if e.Mode() == textbuf.ModeVisual {
@@ -1471,19 +1972,7 @@ func (m *Model) Click(x, y int) bool {
 }
 
 func (m *Model) navView() string {
-	bodyH := m.height
-	if m.drawerOpen {
-		bodyH = m.height - min(drawerHeight, maxInt(m.height/3, 4)) - 1 // drawer + its hint footer
-		if bodyH < 4 {
-			bodyH = 4
-		}
-	}
-	if m.gitOpen {
-		bodyH = bodyH - min(gitPanelHeight, maxInt(m.height/3, 5))
-		if bodyH < 4 {
-			bodyH = 4
-		}
-	}
+	bodyH := m.bodyHeight()
 	rail := kit.NewPanel("files", false)
 	savedListH := m.list.Height
 	m.list.Width = maxInt(m.railW()-4, 8)
@@ -1513,7 +2002,12 @@ func (m *Model) navView() string {
 		title = "preview — " + title
 	case m.active() != nil:
 		e := m.active()
-		title = bufferTitle(e) + m.diagChip(e) + m.agentChip(e) + m.pairBadge() + m.pairChip(e.Path())
+		chips := m.diagChip(e) + m.agentChip(e) + m.pairBadge() + m.pairChip(e.Path())
+		vp := ""
+		if t := m.focusedTab(); t != nil {
+			vp = t.vp
+		}
+		title = m.bufferTitle(e, vp, m.mainPanelW(), chips) + chips
 		main = m.bufferView()
 	case m.openPath != "":
 		main = strings.Join([]string{
@@ -1534,15 +2028,8 @@ func (m *Model) navView() string {
 	if railW >= m.width { // narrow, nothing open: the tree is the view
 		return m.withBottomPanels(rail.View())
 	}
-	mainW := m.width - railW // flush with the full-width bottom panels (F-064)
-	if railW == 0 {
-		mainW = m.width
-	}
+	mainW := m.mainPanelW()
 	chatOpen := m.chat != nil && m.chat.open
-	if chatOpen {
-		mainW -= chatWidth // the crew panel docks right; the buffer gives way
-	}
-	mainW = maxInt(mainW, 10)
 	centered := kit.Center(main, maxInt(mainW-2, 10), maxInt(bodyH-2, 3))
 	if m.startVisible() {
 		// The page's zones are page-relative: record where Center put it
@@ -1558,7 +2045,7 @@ func (m *Model) navView() string {
 		strip := tabStrip(m.bufs, m.activeTab, mainW-2)
 		centered = joinV(strip, centered)
 		mdPrev := m.previewOn && preview.IsMarkdown(m.active().Path())
-		if !mdPrev && !m.splitActive() {
+		if !mdPrev {
 			// Inside the pane: one divider column, one header row, the tabs.
 			m.bufGeom.ok, m.bufGeom.ox, m.bufGeom.oy = true, railW+1, 1+len(splitLines(strip))
 		}
@@ -1640,6 +2127,46 @@ func (m *Model) ExecEx(requester *textbuf.Editor, cmd string) bool {
 		requester.SetMessage(msg)
 		return true
 	}
+	if msg, ok := m.trustCommand(cmd); ok {
+		requester.SetMessage(msg)
+		return true
+	}
+	if msg, ok := m.wrapCommand(cmd); ok {
+		requester.SetMessage(msg)
+		return true
+	}
+	if msg, ok := m.inlayCommand(cmd); ok {
+		requester.SetMessage(msg)
+		return true
+	}
+	if msg, ok := m.ghostCommand(cmd); ok {
+		requester.SetMessage(msg)
+		return true
+	}
+	if msg, ok := m.outlineCommand(cmd); ok {
+		requester.SetMessage(msg)
+		return true
+	}
+	if msg, ok := m.rebaseCommand(requester, cmd); ok {
+		requester.SetMessage(msg)
+		return true
+	}
+	if msg, ok := m.blameCommand(cmd); ok {
+		requester.SetMessage(msg)
+		return true
+	}
+	if msg, ok := m.semanticCommand(cmd); ok {
+		requester.SetMessage(msg)
+		return true
+	}
+	if msg, ok := m.callsCommand(cmd); ok {
+		requester.SetMessage(msg)
+		return true
+	}
+	if msg, ok := m.peekCommand(cmd); ok {
+		requester.SetMessage(msg)
+		return true
+	}
 	if msg, ok := m.fmtCommand(cmd); ok {
 		requester.SetMessage(msg)
 		if strings.TrimSpace(cmd) == "fmt" && msg == "formatted" {
@@ -1647,11 +2174,27 @@ func (m *Model) ExecEx(requester *textbuf.Editor, cmd string) bool {
 		}
 		return true
 	}
+	if msg, ok := m.grepCommand(cmd); ok {
+		requester.SetMessage(msg)
+		return true
+	}
 	if msg, ok := m.fileCommand(requester, cmd); ok {
 		requester.SetMessage(msg)
 		return true
 	}
+	if msg, ok := m.sendCommand(requester, cmd); ok {
+		requester.SetMessage(msg)
+		return true
+	}
 	if msg, ok := m.symCommand(cmd); ok {
+		requester.SetMessage(msg)
+		return true
+	}
+	if msg, ok := m.wsymCommand(cmd); ok {
+		requester.SetMessage(msg)
+		return true
+	}
+	if msg, ok := m.taskCommand(cmd); ok {
 		requester.SetMessage(msg)
 		return true
 	}
@@ -1942,11 +2485,7 @@ func (m *Model) startSearch(q string) {
 	if err != nil {
 		m.searching = false
 		m.hitsCh = nil
-		m.searchErr = err.Error()
-		var missing *search.MissingToolError
-		if errors.As(err, &missing) && m.askInstall(missing.Tool) {
-			m.searchErr = "search needs ripgrep (" + missing.Tool + ") — install it, then search again"
-		}
+		m.searchErr = m.searchFailure(err)
 		return
 	}
 	m.searchErr = ""
@@ -1975,6 +2514,9 @@ func (m *Model) handleResultsKey(key string) bool {
 		return true
 	case "enter", "l":
 		return m.jumpHit()
+	case "o": // F-168: the hits as an editable buffer
+		m.openResultsAsBuffer()
+		return true
 	case "r":
 		if m.resultsTitle == "" { // a list (references, problems) has nothing to replace
 			m.openReplace()
@@ -2043,7 +2585,7 @@ func (m *Model) resultsBlock() string {
 	}
 	count := theme.Hint().Render(kit.Count(len(m.hits), "hit") + searchStateSuffix(m.searching))
 	lines := append([]string{head + "  " + count, ""}, splitLines(m.hitList.View())...)
-	lines = append(lines, "", theme.Hint().Render("⏎ jump · r replace · esc back"))
+	lines = append(lines, "", theme.Hint().Render("⏎ jump · r replace · o as buffer · esc back"))
 	return strings.Join(lines, "\n")
 }
 
@@ -2145,6 +2687,10 @@ func (m *Model) applySuggestion(text string) {
 	b := e.Buffer()
 	// F-117: a visual selection is replaced, as in an inline edit; with
 	// none the block goes in at the cursor as whole lines.
+	if e.BlockSelection() { // its bounds enclose text outside the block (F-159)
+		e.SetMessage("a block selection cannot take a suggestion: use v or V")
+		return
+	}
 	if _, from, to, ok := e.Selection(); ok {
 		b.ApplyEdit(from, to, text)
 		e.Key("esc")
@@ -2176,10 +2722,15 @@ func truncateRunes(s string, n int) string {
 // by the last render (F-103).
 type bufGeom struct {
 	ok        bool
-	ox, oy    int // surface cell of the first text row's gutter
-	textX     int // cells of gutter before the text
-	top, rows int // first buffer line shown, and how many
-	left      int // columns scrolled off the left (F-119)
+	rowLine   []int               // wrap on: buffer line of each shown row (F-136)
+	rowStart  []int               // wrap on: first rune (tab-expanded) of each shown row
+	ox, oy    int                 // surface cell of the first text row's gutter
+	textX     int                 // cells of gutter before the text
+	top, rows int                 // first buffer line shown, and how many
+	lines     []int               // closed folds hide lines: the buffer line of each shown row (F-176)
+	left      int                 // columns scrolled off the left (F-119)
+	inlay     map[int][]inlayCell // shown lines' inlay hints: virtual cells a click skips (F-169)
+	sticky    []int               // buffer line of each pinned top row; a click jumps there (F-175)
 }
 
 // bufferPos maps a surface cell to a buffer position (false outside the
@@ -2191,10 +2742,32 @@ func (m *Model) bufferPos(x, y int) (textbuf.Pos, bool) {
 		return textbuf.Pos{}, false
 	}
 	line := g.top + y - g.oy
+	if r := y - g.oy; r < len(g.sticky) { // a pinned header row: its symbol
+		return textbuf.Pos{Line: g.sticky[r]}, true
+	}
+	if g.lines != nil { // closed folds hide lines between the rows (F-176)
+		if y-g.oy >= len(g.lines) {
+			return textbuf.Pos{}, false
+		}
+		line = g.lines[y-g.oy]
+	}
+	if g.rowLine != nil { // wrapped: rows map to a line and where it starts
+		r := y - g.oy
+		if r >= len(g.rowLine) {
+			return textbuf.Pos{}, false
+		}
+		line = g.rowLine[r]
+		plain := expandTabs(e.Buffer().Line(line))
+		idx := runeAtCellHinted(plain, g.rowStart[r], max(x-g.ox-g.textX, 0), g.inlay[line])
+		return textbuf.Pos{Line: line, Col: runeCol(e.Buffer().Line(line), idx)}, true
+	}
 	if line >= e.Buffer().LineCount() {
 		return textbuf.Pos{}, false
 	}
 	vc := max(x-g.ox-g.textX, 0) + g.left
+	if cells := g.inlay[line]; len(cells) > 0 {
+		vc = devirtCell(cells, vc) // hints are not text
+	}
 	return textbuf.Pos{Line: line, Col: runeCol(e.Buffer().Line(line), vc)}, true
 }
 

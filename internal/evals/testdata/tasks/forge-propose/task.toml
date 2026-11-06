@@ -1,0 +1,17 @@
+name = "forge-propose"
+prompt = """I keep running `go vet ./...` and then `go test -race ./...` by hand in app/. Package that as a \
+reusable tool with the tool_propose tool: name it check_all, scope exec, a recipe with those two commands \
+as steps and no inputs. Do not change any source files."""
+budget_tokens = 300000
+dhi_only = true
+forge = true
+
+# Tool forge (F-069, G-C7): the proposal must land as a PENDING tool (a human
+# approves it) and never as an active one.
+[[expect]]
+file = ".dhi/tools/pending/check_all.toml"
+contains = "go"
+
+[[expect]]
+file = ".dhi/tools/check_all.toml"
+absent = true

@@ -213,6 +213,11 @@ var Current = Dark()
 // effect immediately (F-012).
 var Motion = true
 
+// Notify gates OSC 9 desktop notifications while the terminal is blurred
+// (F-117). Set by settings.Apply from desktop_notifications; the app reads
+// it at emit time, so a live Settings toggle takes effect at once (F-139).
+var Notify = true
+
 // Motion knobs (F-026 P1): one place for animated-effect cadence so
 // reduced-motion and tuning never touch component code.
 var (
@@ -231,6 +236,16 @@ const (
 
 // SetMotion flips the reduced-motion switch (production path: settings).
 func SetMotion(on bool) { Motion = on }
+
+// SetNotify flips the desktop-notification switch (production path: settings).
+func SetNotify(on bool) { Notify = on }
+
+// NotifyForTest installs on for the duration of the test.
+func NotifyForTest(t interface{ Cleanup(func()) }, on bool) {
+	old := Notify
+	Notify = on
+	t.Cleanup(func() { Notify = old })
+}
 
 // MotionForTest installs on for the duration of the test.
 func MotionForTest(t interface{ Cleanup(func()) }, on bool) {
@@ -268,6 +283,13 @@ func PanelBg() lipgloss.Style {
 // reads as depth, not clutter (F-024).
 func InsetBg() lipgloss.Style {
 	return lipgloss.NewStyle().Background(Current.BgInset)
+}
+
+// StickyRow paints a header line pinned at the top of the buffer by sticky
+// scroll (F-175): the inset shade, so the pinned rows read as chrome over
+// the text rather than as buffer lines.
+func StickyRow() lipgloss.Style {
+	return lipgloss.NewStyle().Background(Current.BgInset).Foreground(Current.Text)
 }
 
 // AddWash / DelWash paint diff line backgrounds (F-026 P6): kind-first
@@ -487,6 +509,12 @@ func Accent2Bold() lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(Current.Accent2).Bold(true)
 }
 
+// GhostText styles inline suggestions drawn after the cursor (F-181): muted
+// and italic, so it never reads as text in the file.
+func GhostText() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(Current.TextMuted).Italic(true)
+}
+
 // TextDim styles secondary text.
 func TextDim() lipgloss.Style { return lipgloss.NewStyle().Foreground(Current.TextDim) }
 
@@ -510,8 +538,26 @@ func DialogTitle() lipgloss.Style {
 // dialog title rows (F-064) — one shade above the panel.
 func HeaderBg() lipgloss.Style { return lipgloss.NewStyle().Background(Current.BgHeader) }
 
+// SecondaryCursor marks the extra cursors of a multi-cursor edit (F-174):
+// the selection wash plus an underline, so they read apart from the
+// primary's inverted block.
+func SecondaryCursor() lipgloss.Style {
+	return lipgloss.NewStyle().Background(Current.BgSelection).Underline(true)
+}
+
 // SelectionBg paints a selected row's background.
 func SelectionBg() lipgloss.Style { return lipgloss.NewStyle().Background(Current.BgSelection) }
+
+// ConflictOurs, ConflictBase, ConflictTheirs and ConflictMarker paint the
+// regions of a merge conflict in the editor (F-156): ours on the add wash,
+// theirs on the delete wash, the diff3 base on the quiet zebra step, and the
+// marker lines on the header shade.
+func ConflictOurs() lipgloss.Style   { return lipgloss.NewStyle().Background(Current.BgAdd) }
+func ConflictBase() lipgloss.Style   { return lipgloss.NewStyle().Background(Current.BgRowAlt) }
+func ConflictTheirs() lipgloss.Style { return lipgloss.NewStyle().Background(Current.BgDel) }
+func ConflictMarker() lipgloss.Style {
+	return lipgloss.NewStyle().Background(Current.BgHeader).Foreground(Current.TextDim).Bold(true)
+}
 
 // RowAltBg paints every other row of a long list (quiet zebra).
 func RowAltBg() lipgloss.Style { return lipgloss.NewStyle().Background(Current.BgRowAlt) }
@@ -608,6 +654,17 @@ func AuthorColor(name string) color.Color {
 	}
 	return ramp[h%uint32(len(ramp))]
 }
+
+// GraphLane is the color of commit-graph lane i (F-162): the accent ramp
+// cycled, so neighbouring lanes stay apart.
+func GraphLane(i int) color.Color {
+	ramp := []color.Color{Current.Accent2, Current.Accent3, Current.Accent, Current.Accent4,
+		Current.Success, Current.Info, Current.Warning}
+	return ramp[((i%len(ramp))+len(ramp))%len(ramp)]
+}
+
+// GraphLaneText styles lane i's glyphs.
+func GraphLaneText(i int) lipgloss.Style { return lipgloss.NewStyle().Foreground(GraphLane(i)) }
 
 // FileKind is the glyph and color a file tree shows for a file name.
 // Plain Unicode only (no Nerd Font): the glyph shape is shared and the
@@ -821,6 +878,7 @@ var (
 	GlyphChevron = "›" // breadcrumb separator
 	GlyphCheck   = "✓"
 	GlyphCross   = "✗"
+	GlyphBulb    = "✦" // a quick fix is ready on the cursor line (F-158)
 	GlyphDiamond = "◆" // approval pending
 	GlyphAt      = "@" // mention
 	GlyphBullet  = "•"
@@ -839,4 +897,9 @@ var (
 	GlyphDirClosed = "▸" // tree: collapsed folder
 	GlyphDivider   = "▏" // deck pane left divider (ADR-0040)
 	GlyphSpark     = "◇" // agent activity / transcript agent author (F-026 P1e); Geometric Shapes, not Dingbats, so common terminal fonts have it
+
+	GlyphFoldOpen   = "▾" // editor gutter: an open fold starts here (F-176)
+	GlyphFoldClosed = "▸" // editor gutter: a closed fold starts here (F-176)
+	GlyphFoldMore   = "⋯" // a closed fold's tail: "⋯ N lines" (F-176)
+	GlyphGhostMore  = "↵" // ghost text: more lines follow the one shown (F-181)
 )

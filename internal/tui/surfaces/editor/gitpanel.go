@@ -3,8 +3,11 @@ package editor
 import (
 	"context"
 	"os"
+	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/drjzlyan/dhi/internal/gitcore"
 	"github.com/drjzlyan/dhi/internal/tui/kit"
@@ -49,22 +52,87 @@ func (m *Model) loadGit() {
 		m.gitErr = err.Error()
 		return
 	}
+	if m.gitRepo == nil || m.gitRepo.Path() != rp.Path() {
+		// Another repo: its rows must not show under this one's name.
+		m.gitEntries, m.gitLog, m.gitConflicts = nil, nil, nil
+	}
 	m.gitRepo = rp
 	m.gitErr = ""
 	m.refreshGitData()
 }
 
+// gitDataResult is a background read of the panel's status, log and
+// conflicts for the repo at path.
+type gitDataResult struct {
+	path      string
+	gen       int
+	entries   []gitcore.FileStatus
+	log       []gitcore.CommitEntry
+	conflicts map[string]string
+	err       string
+}
+
+// refreshGitData re-reads the panel off the UI goroutine: go-git status
+// hashes the worktree and the conflict list runs git, seconds on a big
+// repo. The panel keeps its rows until gitDataMsgDone lands. The read
+// opens its own handle, so it never shares go-git state with a stage or
+// commit on the UI goroutine.
 func (m *Model) refreshGitData() {
-	if m.gitRepo == nil {
+	if m.gitRepo == nil || m.termMsgs == nil {
 		return
 	}
-	if st, err := m.gitRepo.Status(); err == nil {
-		m.gitEntries = st
-	} else {
-		m.gitErr = err.Error()
+	m.gitDataGen++
+	m.gitLoading = true
+	path, gen, cli, ch := m.gitRepo.Path(), m.gitDataGen, m.gitCLI, m.termMsgs
+	go func() {
+		r := &gitDataResult{path: path, gen: gen}
+		rp, err := gitcore.Open(path)
+		if err != nil {
+			r.err = err.Error()
+			ch <- teaMsg{kind: gitDataMsgDone, gitData: r}
+			return
+		}
+		if st, err := rp.Status(); err == nil {
+			r.entries = st
+		} else {
+			r.err = err.Error()
+		}
+		if log, err := rp.Log(15); err == nil {
+			r.log = log
+		}
+		if cli != nil { // F-156
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			list, err := gitcore.Conflicts(ctx, cli, path)
+			cancel()
+			if err != nil {
+				r.err = err.Error()
+			} else if len(list) > 0 {
+				r.conflicts = make(map[string]string, len(list))
+				for _, c := range list {
+					r.conflicts[c.Path] = c.Code
+				}
+			}
+		}
+		ch <- teaMsg{kind: gitDataMsgDone, gitData: r}
+	}()
+}
+
+// applyGitData shows the latest read for the open repo; an older one, or
+// one for a repo the panel has left, is dropped.
+func (m *Model) applyGitData(r *gitDataResult) {
+	if r == nil || r.gen != m.gitDataGen || m.gitRepo == nil || m.gitRepo.Path() != r.path {
+		return
 	}
-	if log, err := m.gitRepo.Log(15); err == nil {
-		m.gitLog = log
+	m.gitLoading = false
+	m.gitEntries, m.gitConflicts = r.entries, r.conflicts
+	if r.log != nil {
+		m.gitLog = r.log
+	}
+	if r.err != "" {
+		m.gitErr = r.err
+	}
+	if n := m.gitRowCount(); m.gitCursor >= n {
+		m.gitCursor = max(n-1, 0)
 	}
 }
 
@@ -141,6 +209,23 @@ func (m *Model) handleGitKey(key string) bool {
 	case "b":
 		m.openBranches()
 		return true
+	case "z": // F-129
+		m.openStash()
+		return true
+	case "h": // F-140: the file's commits (the selected change, else the open buffer)
+		abs := ""
+		if rel := m.gitSelectedPath(); rel != "" && m.gitRepo != nil {
+			abs = filepath.Join(m.gitRepo.Path(), rel)
+		}
+		if msg := m.openHistory(abs); msg != "" {
+			m.gitErr = msg
+		}
+		return true
+	case "g": // F-162: the branch graph
+		if msg := m.openGraph(); msg != "" {
+			m.gitErr = msg
+		}
+		return true
 	case "p":
 		m.pushPull(false)
 		return true
@@ -170,22 +255,7 @@ func (m *Model) handleCommitInput(key string) bool {
 			m.gitErr = gitcore.ErrIdentityUnset.Error()
 			return true
 		}
-		id, err := m.gitIdentity(context.Background())
-		if err != nil {
-			m.gitErr = err.Error()
-			return true
-		}
-		defer m.invalidateGutters() // HEAD moves on commit
-		hash, err := m.gitRepo.Commit(gitcore.CommitOptions{
-			Message: msg, Author: id.Name, Email: id.Email,
-		})
-		if err != nil {
-			m.gitErr = err.Error()
-		} else {
-			m.gitErr = ""
-			m.gitMessage = "committed " + shortHash(hash)
-		}
-		m.refreshGitData()
+		m.gitMessage = m.startCommit(m.gitRepo.Path(), msg, false)
 		return true
 	}
 	m.gitInput, _ = kit.EditRunes(m.gitInput, key)
@@ -202,18 +272,64 @@ func (m *Model) stageAt(path string, all bool) {
 	} else {
 		paths = []string{path}
 	}
-	if err := m.gitRepo.Stage(paths...); err != nil {
-		m.gitErr = err.Error()
+	if m.gitConflicts[path] != "" && m.gitCLI != nil { // F-156: go-git cannot resolve an unmerged entry
+		cli := m.gitCLI
+		m.gitWrite(func(dir string) error {
+			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+			defer cancel()
+			return gitcore.StagePath(ctx, cli, dir, path)
+		})
+		return
 	}
-	m.refreshGitData()
+	m.gitWrite(func(dir string) error {
+		rp, err := gitcore.Open(dir)
+		if err != nil {
+			return err
+		}
+		return rp.Stage(paths...)
+	})
 }
 
 func (m *Model) unstageAt() {
-	if m.gitRepo == nil || m.gitSelectedPath() == "" {
+	path := m.gitSelectedPath()
+	if m.gitRepo == nil || path == "" {
 		return
 	}
-	if err := m.gitRepo.Unstage(m.gitSelectedPath()); err != nil {
-		m.gitErr = err.Error()
+	m.gitWrite(func(dir string) error {
+		rp, err := gitcore.Open(dir)
+		if err != nil {
+			return err
+		}
+		return rp.Unstage(path)
+	})
+}
+
+// gitWrite runs one index write (stage, unstage) in the panel's repo off
+// the UI goroutine: go-git reads the worktree status for each, seconds on
+// a big repo. Writes run one at a time, and never beside a commit, so the
+// index changes in the order the keys asked; gitOpMsgDone refreshes.
+func (m *Model) gitWrite(op func(dir string) error) {
+	if m.gitWriting || m.committing {
+		m.gitMessage = "git is still busy — try again in a moment"
+		return
+	}
+	m.gitWriting = true
+	dir, ch := m.gitRepo.Path(), m.termMsgs
+	go func() {
+		err := op(dir)
+		msg := teaMsg{kind: gitOpMsgDone}
+		if err != nil {
+			msg.hoverText = err.Error()
+		}
+		ch <- msg
+	}()
+}
+
+// applyGitWrite reports a finished index write and re-reads the panel.
+func (m *Model) applyGitWrite(msg teaMsg) {
+	m.gitWriting = false
+	if msg.hoverText != "" {
+		m.gitErr = msg.hoverText
 	}
 	m.refreshGitData()
 }
@@ -223,7 +339,7 @@ func (m *Model) unstageAt() {
 func (m *Model) gitStagedFiles() []FileEntry {
 	var out []FileEntry
 	for _, f := range m.gitEntries {
-		if f.Staged {
+		if f.Staged && m.gitConflicts[f.Path] == "" {
 			out = append(out, FileEntry{Path: f.Path, Letter: string(f.X)})
 		}
 	}
@@ -233,11 +349,25 @@ func (m *Model) gitStagedFiles() []FileEntry {
 type FileEntry struct {
 	Path   string
 	Letter string
+	// Conflict marks an unmerged file (F-156); Letter is its code, "UU".
+	Conflict bool
 }
 
+// gitUnstagedFiles lists the work-tree changes, unmerged files first.
 func (m *Model) gitUnstagedFiles() []FileEntry {
 	var out []FileEntry
+	paths := make([]string, 0, len(m.gitConflicts))
+	for p := range m.gitConflicts {
+		paths = append(paths, p)
+	}
+	sort.Strings(paths)
+	for _, p := range paths { // from the user's tool: go-git's status does not see them
+		out = append(out, FileEntry{Path: p, Letter: m.gitConflicts[p], Conflict: true})
+	}
 	for _, f := range m.gitEntries {
+		if m.gitConflicts[f.Path] != "" {
+			continue
+		}
 		if (!f.Staged && f.WorktreeDirty()) || f.Y == '?' || f.Y == 'U' {
 			out = append(out, FileEntry{Path: f.Path, Letter: string(f.Y)})
 		}
@@ -316,6 +446,9 @@ func (m *Model) gitBody(h int) []string {
 					cursorRow = len(rows)
 				}
 				letter := theme.WarningText().Render(f.Letter + " ")
+				if f.Conflict {
+					letter = theme.DangerText().Render(f.Letter + " ")
+				}
 				if isStaged {
 					letter = theme.SuccessText().Render(f.Letter + " ")
 				}
@@ -331,6 +464,10 @@ func (m *Model) gitBody(h int) []string {
 			if len(files) == 0 && isStaged {
 				rows = append(rows, theme.TextDim().Render("  (nothing staged)"))
 			}
+		}
+		if m.gitLoading && m.gitEntries == nil {
+			rows = append(rows, theme.TextDim().Render("  reading git status…"))
+			break
 		}
 		addSection(stagedHeader, staged, true)
 		addSection(unstagedHeader, unstaged, false)

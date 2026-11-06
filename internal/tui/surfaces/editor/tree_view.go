@@ -12,27 +12,63 @@ import (
 )
 
 // treeGit is one member's branch and changed paths, shown in the file
-// tree (F-064). It is read once per member through go-git (no shelling
-// out) and dropped on save or after a git action, so rows render from a
-// cache instead of hitting the repository on every keypress.
+// tree (F-064). It is read through go-git, whose status hashes the
+// worktree (seconds on a big repo), so it is read off the UI goroutine:
+// rows render from this cache, and a save or git action marks it stale
+// and reloads it in the background while the old letters stay up.
 type treeGit struct {
 	branch  string
 	changed map[string]byte // repo-relative slash path → status letter
 	dirs    map[string]bool // repo-relative dirs holding a change
+
+	root    string
+	loading bool // a read is in flight
+	stale   bool // invalidated since the last read: reload on next use
 }
 
-// gitFor returns the cached status for member, loading it on first use.
-// Non-repositories cache an empty entry so they are not retried.
+// treeGitResult is a finished background read for one member.
+type treeGitResult struct {
+	member string
+	gen    int
+	g      *treeGit
+}
+
+// gitFor returns the cached status for member and starts a read when
+// there is none yet or it went stale. Called from render: never blocks.
 func (m *Model) gitFor(member, root string) *treeGit {
-	if g, ok := m.treeGits[member]; ok {
-		return g
+	g, ok := m.treeGits[member]
+	if !ok {
+		g = &treeGit{changed: map[string]byte{}, dirs: map[string]bool{}, root: root, stale: true}
+		if m.treeGits == nil {
+			m.treeGits = map[string]*treeGit{}
+		}
+		m.treeGits[member] = g
 	}
-	g := &treeGit{changed: map[string]byte{}, dirs: map[string]bool{}}
-	if m.treeGits == nil {
-		m.treeGits = map[string]*treeGit{}
+	if g.stale && !g.loading {
+		m.startTreeGit(member, g)
 	}
-	m.treeGits[member] = g
-	if root == "" || !gitcore.IsRepo(root) {
+	return g
+}
+
+// startTreeGit reads member's status off the UI goroutine;
+// treeGitMsgDone carries it back to applyTreeGit.
+func (m *Model) startTreeGit(member string, g *treeGit) {
+	g.stale = false
+	if g.root == "" || m.termMsgs == nil {
+		return
+	}
+	g.loading = true
+	ch, root, gen := m.termMsgs, g.root, m.treeGitGen
+	go func() {
+		ch <- teaMsg{kind: treeGitMsgDone, treeGit: &treeGitResult{member: member, gen: gen, g: readTreeGit(root)}}
+	}()
+}
+
+// readTreeGit reads root's branch and changed paths. Non-repositories
+// give an empty entry so they are not retried.
+func readTreeGit(root string) *treeGit {
+	g := &treeGit{changed: map[string]byte{}, dirs: map[string]bool{}, root: root}
+	if !gitcore.IsRepo(root) {
 		return g
 	}
 	rp, err := gitcore.Open(root)
@@ -58,9 +94,24 @@ func (m *Model) gitFor(member, root string) *treeGit {
 	return g
 }
 
-// invalidateTreeGit drops the cached tree status so the next render
-// reloads it.
-func (m *Model) invalidateTreeGit() { m.treeGits = nil }
+// applyTreeGit stores a finished read unless the cache was invalidated
+// after it started (a newer read is then on its way).
+func (m *Model) applyTreeGit(r *treeGitResult) {
+	if r == nil || r.gen != m.treeGitGen || m.treeGits == nil {
+		return
+	}
+	m.treeGits[r.member] = r.g
+	m.refreshRows() // the rows carry the letters
+}
+
+// invalidateTreeGit marks the cached tree status stale: rows keep the old
+// letters until the background reload lands.
+func (m *Model) invalidateTreeGit() {
+	m.treeGitGen++
+	for _, g := range m.treeGits {
+		g.stale, g.loading = true, false
+	}
+}
 
 // memberRoot is the filesystem root of member.
 func (m *Model) memberRoot(member string) string {

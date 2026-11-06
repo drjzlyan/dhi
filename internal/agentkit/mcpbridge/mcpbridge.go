@@ -29,6 +29,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/mcpserver"
 	"github.com/drjzlyan/dhi/internal/agentkit/scopes"
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
+	"github.com/drjzlyan/dhi/internal/agentkit/untrusted"
 	"github.com/drjzlyan/dhi/internal/credstore"
 	"github.com/drjzlyan/dhi/internal/mcp"
 	"github.com/drjzlyan/dhi/internal/sandbox"
@@ -199,7 +200,8 @@ func (b *Bridge) Call(ctx context.Context, name string, args []byte) (string, bo
 	if err != nil {
 		return "", true, err
 	}
-	return out, isErr, nil
+	// A server's reply is a third party's text (F-122).
+	return untrusted.Wrap("mcp:"+slug, out), isErr, nil
 }
 
 // dialDefault opens a production server: stdio under the sandbox, http

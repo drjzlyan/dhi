@@ -59,11 +59,21 @@ var countChoices = []string{"0", "1", "2", "3", "4", "5", "6", "7", "8", "9"}
 // role counts (F-079) or a starter team (F-045), and picks the default
 // engine from the CLIs found.
 type teamStep struct {
-	base
 	env       *Env
 	templates []starter.Template
 	form      *kit.Form
 	engines   []string
+	// detecting: DetectCLIs runs off the UI thread (it asks every CLI for
+	// its version, seconds live); the engine row waits for its reply. gen
+	// drops a reply meant for an earlier Enter.
+	detecting bool
+	gen       int
+}
+
+// teamCLIsMsg carries DetectCLIs' answer back to the team step.
+type teamCLIsMsg struct {
+	gen      int
+	versions map[string]string
 }
 
 func (*teamStep) ID() string    { return "team" }
@@ -92,24 +102,9 @@ func (s *teamStep) Enter() tea.Cmd {
 		}
 	}
 	s.engines = s.engines[:0]
-	if s.env.DetectCLIs != nil {
-		for name, ver := range s.env.DetectCLIs() {
-			if ver != "" {
-				s.engines = append(s.engines, name)
-			}
-		}
-		orderEngines(s.engines)
-	}
-	choices := append(append([]string(nil), s.engines...), engineLater)
-	pick := 0
-	for i, e := range s.engines { // keep an engine the user already configured
-		if "cli:"+e == s.env.Engine {
-			pick = i
-		}
-	}
 	fields := []kit.Field{
 		kit.NewToggleField("team", slugs, pickTeam),
-		kit.NewToggleField("engine", choices, pick),
+		s.engineField(),
 	}
 	if s.env.ComposeTeam != nil {
 		def := starter.DefaultCounts()
@@ -118,10 +113,51 @@ func (s *teamStep) Enter() tea.Cmd {
 		}
 	}
 	s.form = kit.NewForm("team", fields...)
+	s.gen++
+	s.detecting = s.env.DetectCLIs != nil
+	if !s.detecting {
+		return nil
+	}
+	gen, detect := s.gen, s.env.DetectCLIs
+	return func() tea.Msg { return teamCLIsMsg{gen: gen, versions: detect()} }
+}
+
+// engineField is the engine toggle over the CLIs found so far, keeping an
+// engine the user already configured.
+func (s *teamStep) engineField() kit.Field {
+	choices := append(append([]string(nil), s.engines...), engineLater)
+	pick := 0
+	for i, e := range s.engines {
+		if "cli:"+e == s.env.Engine {
+			pick = i
+		}
+	}
+	return kit.NewToggleField("engine", choices, pick)
+}
+
+func (s *teamStep) Update(msg tea.Msg) tea.Cmd {
+	m, ok := msg.(teamCLIsMsg)
+	if !ok || m.gen != s.gen {
+		return nil
+	}
+	s.detecting = false
+	s.engines = s.engines[:0]
+	for name, ver := range m.versions {
+		if ver != "" {
+			s.engines = append(s.engines, name)
+		}
+	}
+	orderEngines(s.engines)
+	s.form.Fields[fieldEngine] = s.engineField()
 	return nil
 }
 
 func (s *teamStep) HandleKey(key string) Action {
+	// Saving before detection lands would set no engine: enter waits,
+	// esc still skips.
+	if s.detecting && key == "enter" {
+		return Stay
+	}
 	switch s.form.HandleKey(key) {
 	case kit.FormCancel:
 		return Skip
@@ -217,7 +253,9 @@ func (s *teamStep) View(w, f int) []string {
 		out = append(out, s.roleGrid(w)...)
 	}
 	out = append(out, rest...)
-	if len(s.engines) == 0 {
+	if s.detecting {
+		out = append(out, dim(kit.SpinnerGlyph(f)+" checking which coding CLIs are installed…"))
+	} else if len(s.engines) == 0 {
 		out = append(out, "", warn("No coding CLI found on your PATH."),
 			dim("Employees will wait until you install one and pick it in Settings."))
 	} else {

@@ -80,6 +80,7 @@ func (m *Model) gutterMarks(t *bufTab) []linediff.Mark {
 func (m *Model) invalidateGutters() {
 	for _, t := range m.bufs {
 		t.gutter = gutterState{}
+		t.blame.invalidate() // F-143: HEAD moved
 	}
 	m.invalidateTreeGit()
 }

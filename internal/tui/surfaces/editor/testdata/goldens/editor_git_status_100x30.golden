@@ -1,4 +1,4 @@
-▏ files ─────────────────── ▏ app.go   NORMAL  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
+▏ files ─────────────────── ▏ alpha › app.go   NORMAL  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
 ▏   ▾ alpha/  master     ●  ▏  app.go                                                               
 ▏   ├ ▸ src/             ●  ▏ 1▎package main// touched                                              
 ▏ ▌ └ ◦ app.go           M  ▏ 2                                                                     

@@ -494,6 +494,44 @@ func TestTeamStepPreviewsTheTeamAndItsLead(t *testing.T) {
 	}
 }
 
+// enterHeld presses enter but keeps the command it queues instead of
+// running it, so a test sees the UI before an async reply lands.
+func enterHeld(m *Model) tea.Cmd {
+	m.HandleKey("enter")
+	return m.TakeCmd()
+}
+
+// Detection asks every CLI for its version (seconds, live): the team step
+// opens at once, says it is checking, and enter waits for the answer
+// rather than saving no engine.
+func TestTeamStepDetectsCLIsOffTheUIThread(t *testing.T) {
+	f := newTeamFixture(t)
+	calls := 0
+	inner := f.env.DetectCLIs
+	f.env.DetectCLIs = func() map[string]string { calls++; return inner() }
+	m := f.wizard()
+	key(m, "enter", "enter") // welcome, identity
+	cmd := enterHeld(m)      // conventions → team
+	if m.steps[m.idx].ID() != "team" || calls != 0 {
+		t.Fatalf("step %s, DetectCLIs calls %d before the command ran", m.steps[m.idx].ID(), calls)
+	}
+	if v := plain(m); !strings.Contains(v, "checking which coding CLIs are installed") {
+		t.Fatalf("no checking line while detecting:\n%s", v)
+	}
+	m.HandleKey("enter")
+	if m.steps[m.idx].ID() != "team" || len(f.applied)+len(f.composed) != 0 {
+		t.Fatalf("enter saved before detection: step %s applied=%v composed=%v", m.steps[m.idx].ID(), f.applied, f.composed)
+	}
+	run(m, cmd)
+	if v := plain(m); calls != 1 || !strings.Contains(v, "coding CLIs found: claude, opencode") {
+		t.Fatalf("calls %d, engines not shown:\n%s", calls, v)
+	}
+	key(m, "enter")
+	if strings.Join(f.engines, ",") != "cli:claude" {
+		t.Fatalf("engines = %v", f.engines)
+	}
+}
+
 func TestTeamStepAppliesTeamAndEngineAndRelaunches(t *testing.T) {
 	f := newTeamFixture(t)
 	m := f.toTeam(t)
@@ -697,6 +735,50 @@ func (f *cliFixture) toCLI(t *testing.T) *Model {
 	return m
 }
 
+// The CLI step never runs detection on the UI thread: not on entry, not on
+// r, not after an install; enter waits for the rows, esc still leaves.
+func TestCLIStepDetectsOffTheUIThread(t *testing.T) {
+	f := newCLIFixture(t)
+	calls := 0
+	inner := f.env.CLIStatus
+	f.env.CLIStatus = func() []CLIRow { calls++; return inner() }
+	m := f.wizard()
+	key(m, "enter", "enter") // welcome, identity
+	cmd := enterHeld(m)      // conventions → cli
+	if m.steps[m.idx].ID() != "cli" || calls != 0 {
+		t.Fatalf("step %s, CLIStatus calls %d before the command ran", m.steps[m.idx].ID(), calls)
+	}
+	if v := plain(m); !strings.Contains(v, "checking which coding CLIs are installed") || strings.Contains(v, "No CLI is ready") {
+		t.Fatalf("while checking:\n%s", v)
+	}
+	m.HandleKey("enter")
+	if m.steps[m.idx].ID() != "cli" {
+		t.Fatalf("enter left the step before the rows arrived: %s", m.steps[m.idx].ID())
+	}
+	run(m, cmd)
+	if v := plain(m); calls != 1 || !strings.Contains(v, "2.1.285") {
+		t.Fatalf("calls %d, rows not shown:\n%s", calls, v)
+	}
+	m.HandleKey("r")
+	recheck := m.TakeCmd()
+	if calls != 1 || !strings.Contains(plain(m), "checking which coding CLIs") {
+		t.Fatalf("r ran CLIStatus on the UI thread (calls %d)", calls)
+	}
+	// A reply to an earlier request is dropped: only the latest counts.
+	run(m, cmd)
+	if !strings.Contains(plain(m), "checking which coding CLIs") {
+		t.Fatal("a stale reply ended the re-check")
+	}
+	run(m, recheck)
+	if calls != 3 || strings.Contains(plain(m), "checking which coding CLIs") {
+		t.Fatalf("re-check did not land (calls %d):\n%s", calls, plain(m))
+	}
+	key(m, "j", "i", "y") // install codex; the refresh after it is async too
+	if f.installs[0] != "codex" || !strings.Contains(plain(m), "codex installed") {
+		t.Fatalf("installs %v:\n%s", f.installs, plain(m))
+	}
+}
+
 func TestCLIStepListsStatusAndSignInHint(t *testing.T) {
 	f := newCLIFixture(t)
 	m := f.toCLI(t)
@@ -714,6 +796,38 @@ func TestCLIStepListsStatusAndSignInHint(t *testing.T) {
 	// The install key names what it does for the selected row (F-098).
 	if _, h := m.Hints(); !strings.Contains(strings.Join(h, ","), "i install") {
 		t.Fatalf("codex row: hints %v", h)
+	}
+}
+
+// A CLI whose binary was found but whose --version gave no version (a
+// Copilot whose node is missing, say) is shown as found and broken, not
+// "not installed", and i says where it is and why — never an install.
+func TestCLIStepShowsAFoundBinaryWhoseProbeFailed(t *testing.T) {
+	f := newCLIFixture(t)
+	inner := f.env.CLIStatus
+	f.env.CLIStatus = func() []CLIRow {
+		rows := inner()
+		for i := range rows {
+			if rows[i].Name == "codex" {
+				rows[i].Path, rows[i].ProbeErr = "/home/dana/.local/share/gh/copilot/codex", "codex --version: exit status 127 (node: not found)"
+			}
+		}
+		return rows
+	}
+	m := f.toCLI(t)
+	if v := plain(m); !strings.Contains(v, "found, but --version failed") {
+		t.Fatalf("no found-but-broken badge:\n%s", v)
+	}
+	key(m, "j")
+	if _, h := m.Hints(); strings.Contains(strings.Join(h, ","), "i install") {
+		t.Fatalf("a found CLI must not offer an install: %v", h)
+	}
+	key(m, "i")
+	if v := plain(m); !strings.Contains(v, "node: not found") || !strings.Contains(v, "is installed at") || !strings.Contains(v, "press r") {
+		t.Fatalf("i must say where and why:\n%s", v)
+	}
+	if len(f.installs) != 0 {
+		t.Fatalf("installed %v", f.installs)
 	}
 }
 

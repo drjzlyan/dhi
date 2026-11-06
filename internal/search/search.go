@@ -46,17 +46,30 @@ type RegexSearcher interface {
 	SearchRegex(ctx context.Context, pattern string, roots []string) (<-chan Hit, error)
 }
 
+// GlobSearcher is implemented by searchers that take a regular
+// expression and a path glob (rg -g), which the search results buffer's
+// :grep passes (F-168).
+type GlobSearcher interface {
+	SearchGlob(ctx context.Context, pattern string, roots []string, glob string) (<-chan Hit, error)
+}
+
 // Search implements Searcher (fixed-string).
 func (r Ripgrep) Search(ctx context.Context, query string, roots []string) (<-chan Hit, error) {
-	return r.run(ctx, query, roots, true)
+	return r.run(ctx, query, roots, true, "")
 }
 
 // SearchRegex implements RegexSearcher (rg's regex syntax).
 func (r Ripgrep) SearchRegex(ctx context.Context, pattern string, roots []string) (<-chan Hit, error) {
-	return r.run(ctx, pattern, roots, false)
+	return r.run(ctx, pattern, roots, false, "")
 }
 
-func (r Ripgrep) run(ctx context.Context, query string, roots []string, fixed bool) (<-chan Hit, error) {
+// SearchGlob implements GlobSearcher: a regex limited to files matching
+// glob (rg's gitignore-style -g syntax); an empty glob searches everything.
+func (r Ripgrep) SearchGlob(ctx context.Context, pattern string, roots []string, glob string) (<-chan Hit, error) {
+	return r.run(ctx, pattern, roots, false, glob)
+}
+
+func (r Ripgrep) run(ctx context.Context, query string, roots []string, fixed bool, glob string) (<-chan Hit, error) {
 	if len(roots) == 0 {
 		return nil, fmt.Errorf("search: no roots given")
 	}
@@ -66,6 +79,9 @@ func (r Ripgrep) run(ctx context.Context, query string, roots []string, fixed bo
 	args := []string{"--json", "-S", "--no-require-git", "--max-filesize", "1M"}
 	if fixed {
 		args = append(args, "-F")
+	}
+	if glob != "" {
+		args = append(args, "-g", glob)
 	}
 	cmd := exec.CommandContext(ctx, r.Bin, append(args, "-e", query)...)
 	cmd.Args = append(cmd.Args, roots...)
@@ -180,6 +196,15 @@ func (h Host) SearchRegex(ctx context.Context, pattern string, roots []string) (
 		return nil, err
 	}
 	return r.SearchRegex(ctx, pattern, roots)
+}
+
+// SearchGlob implements GlobSearcher.
+func (h Host) SearchGlob(ctx context.Context, pattern string, roots []string, glob string) (<-chan Hit, error) {
+	r, err := h.rg()
+	if err != nil {
+		return nil, err
+	}
+	return r.SearchGlob(ctx, pattern, roots, glob)
 }
 
 // Refused is the explicit "capability not installed" searcher

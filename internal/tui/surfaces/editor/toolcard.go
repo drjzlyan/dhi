@@ -145,9 +145,15 @@ func (m *Model) runToolInstall(p ToolPlan) {
 // and any prompt (an ssh passphrase, a credential helper) are the user's
 // to see and answer (F-121: push and pull).
 func (m *Model) runInTab(label, dir string, argv []string) {
+	m.runInTabEnv(label, dir, argv, nil)
+}
+
+// runInTabEnv is runInTab with extra environment variables (F-165: the editor
+// shim). It returns the tab so the caller can mark it.
+func (m *Model) runInTabEnv(label, dir string, argv, extra []string) *termTab {
 	m.drawerOpen, m.termFocus = true, true
 	ctx, cancel := context.WithCancel(context.Background())
-	sess, err := term.Start(ctx, term.Options{Dir: dir, Label: label, Env: m.env(), Command: argv})
+	sess, err := term.Start(ctx, term.Options{Dir: dir, Label: label, Env: withEnv(m.env(), extra), Command: argv})
 	t := &termTab{sess: sess, dir: dir, screen: vt.New(m.editorPrefs().Scrollback)}
 	t.screen.Feed([]byte("\x1b[2m$ " + strings.Join(argv, " ") + "\x1b[0m\r\n"))
 	m.addTerm(t, cancel)
@@ -155,10 +161,20 @@ func (m *Model) runInTab(label, dir string, argv []string) {
 	if err != nil {
 		t.exited = true
 		t.screen.Feed([]byte("\x1b[31m" + err.Error() + "\x1b[0m\r\n"))
-		return
+		return t
 	}
 	m.syncTermSize()
 	go m.pumpTerm(t.id, sess, m.termMsgs)
+	return t
+}
+
+// withEnv appends extra to a non-empty environment; an empty one stays empty
+// so term.Start still refuses it by name.
+func withEnv(env, extra []string) []string {
+	if len(env) == 0 || len(extra) == 0 {
+		return env
+	}
+	return append(append([]string{}, env...), extra...)
 }
 
 // installDir is where install tabs start: the workspace root.

@@ -69,6 +69,32 @@ func TestRipgrepSearchStreamsHits(t *testing.T) {
 	}
 }
 
+// TestRipgrepSearchGlobPassesGlob: the glob reaches rg as -g, after the
+// fixed flags and before the pattern, and a regex search stays a regex (F-168).
+func TestRipgrepSearchGlobPassesGlob(t *testing.T) {
+	dir := t.TempDir()
+	argsFile := filepath.Join(dir, "args")
+	bin := filepath.Join(dir, "rg")
+	script := "#!/bin/sh\nprintf '%s\\n' \"$@\" > " + argsFile + "\n"
+	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	hits, err := Ripgrep{Bin: bin}.SearchGlob(context.Background(), "ne+dle", []string{"/ws"}, "*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range hits {
+	}
+	data, err := os.ReadFile(argsFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	args := string(data)
+	if !strings.Contains(args, "-g\n*.go\n") || strings.Contains(args, "-F") || !strings.Contains(args, "-e\nne+dle\n") {
+		t.Errorf("rg args = %q", args)
+	}
+}
+
 func TestRipgrepRejectsBadInput(t *testing.T) {
 	r := Ripgrep{Bin: "/bin/true"}
 	if _, err := r.Search(context.Background(), "", []string{"/ws"}); err == nil {

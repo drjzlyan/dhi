@@ -402,6 +402,44 @@ func TestFormattingEditsAndNull(t *testing.T) {
 	}
 }
 
+func TestWorkspaceSymbolsShapes(t *testing.T) {
+	c := startFake(t, func(method string, _ json.RawMessage) (any, bool) {
+		if method != "workspace/symbol" {
+			return nil, false
+		}
+		return []map[string]any{
+			{"name": "Run", "kind": 12, "containerName": "main", "location": map[string]any{
+				"uri": "file:///ws/a.go", "range": map[string]any{
+					"start": map[string]any{"line": 3, "character": 5}, "end": map[string]any{"line": 3, "character": 8}}}},
+			{"name": "Bare", "kind": 23, "location": map[string]any{"uri": "file:///ws/b.go"}},
+		}, true
+	})
+	got, err := c.WorkspaceSymbols("R")
+	if err != nil || len(got) != 2 {
+		t.Fatalf("got = %+v err=%v", got, err)
+	}
+	if got[0] != (WorkspaceSymbol{Name: "Run", Kind: "func", Container: "main", Path: "/ws/a.go", Line: 3, Col: 5}) ||
+		got[1] != (WorkspaceSymbol{Name: "Bare", Kind: "struct", Path: "/ws/b.go"}) {
+		t.Fatalf("got = %+v", got)
+	}
+}
+
+// F-175: a symbol carries its whole extent, not just its name's line.
+func TestDocumentSymbolsCarryTheirExtent(t *testing.T) {
+	pos := func(l, ch int) map[string]any { return map[string]any{"line": l, "character": ch} }
+	c := startFake(t, func(string, json.RawMessage) (any, bool) {
+		return []map[string]any{{
+			"name": "Run", "kind": 12,
+			"range":          map[string]any{"start": pos(3, 0), "end": pos(20, 1)},
+			"selectionRange": map[string]any{"start": pos(3, 5), "end": pos(3, 8)},
+		}}, true
+	})
+	got, err := c.DocumentSymbols("/ws/a.go")
+	if err != nil || len(got) != 1 || got[0].Line != 3 || got[0].RangeLine != 3 || got[0].EndLine != 20 {
+		t.Fatalf("extent = %+v err=%v", got, err)
+	}
+}
+
 func TestDocumentSymbolsBothShapes(t *testing.T) {
 	pos := func(l, ch int) map[string]any { return map[string]any{"line": l, "character": ch} }
 	rng := func(l int) map[string]any { return map[string]any{"start": pos(l, 5), "end": pos(l, 9)} }
@@ -415,8 +453,8 @@ func TestDocumentSymbolsBothShapes(t *testing.T) {
 	if err != nil || len(got) != 2 {
 		t.Fatalf("hier = %+v err=%v", got, err)
 	}
-	if got[0] != (Symbol{Name: "Server", Kind: "struct", Line: 2, Col: 5, Depth: 0}) ||
-		got[1] != (Symbol{Name: "Start", Kind: "method", Line: 5, Col: 5, Depth: 1}) {
+	if got[0] != (Symbol{Name: "Server", Kind: "struct", Line: 2, Col: 5, Depth: 0, RangeLine: 2, EndLine: 2}) ||
+		got[1] != (Symbol{Name: "Start", Kind: "method", Line: 5, Col: 5, Depth: 1, RangeLine: 5, EndLine: 5}) {
 		t.Fatalf("hier = %+v", got)
 	}
 	flat := startFake(t, func(string, json.RawMessage) (any, bool) {

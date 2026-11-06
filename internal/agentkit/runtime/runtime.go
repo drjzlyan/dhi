@@ -26,6 +26,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/dhitools"
 	"github.com/drjzlyan/dhi/internal/agentkit/episode"
 	"github.com/drjzlyan/dhi/internal/agentkit/forge"
+	"github.com/drjzlyan/dhi/internal/agentkit/hooks"
 	"github.com/drjzlyan/dhi/internal/agentkit/knowledge"
 	"github.com/drjzlyan/dhi/internal/agentkit/lessons"
 	"github.com/drjzlyan/dhi/internal/agentkit/library"
@@ -117,6 +118,10 @@ type Config struct {
 	// PR opens a PR for a task's branch (the served `pr_open` tool; the
 	// review service in main). nil = pr_open refuses by name.
 	PR dhitools.PRSeam
+	// ConventionVars gives the template symbols for a branch ({ticket},
+	// {slug}, {title}, …): the guidance shows a task's own values and
+	// git_commit checks against them (F-182). nil = shapes only.
+	ConventionVars func(branch string) map[string]string
 	// Memory gives agents persistent context across turns (M14 P1):
 	// the journal tail and notes ride the system block. Nil = no
 	// memory injection (the block names it, never silent).
@@ -145,6 +150,10 @@ type Config struct {
 	MCPServers *mcpserver.Store
 	// MCPLoad, when set, re-reads the server files for each run.
 	MCPLoad func() *mcpserver.Store
+	// HooksLoad returns the plugin hooks the user turned on, and a named
+	// problem for each that cannot run (F-179, ADR-0047). Re-read each
+	// turn; nil = no plugin hooks.
+	HooksLoad func() ([]hooks.Plugin, []string)
 	// MCPAuth authorizes http MCP servers that need a sign-in (F-106);
 	// nil dials them with their configured headers only.
 	MCPAuth func(ctx context.Context, srv mcpserver.Server, base *http.Client) (*http.Client, error)
@@ -169,6 +178,13 @@ type Config struct {
 	// Tuning supplies max-turns, resume and budgets per turn; nil = the
 	// defaults (resume on, no caps).
 	Tuning func() Tuning
+	// OnRun, when set, sees every finished CLI run with its tool-call
+	// count (F-164 trace export). It must not block; nil = nothing.
+	OnRun func(run tasks.Run, toolCalls int)
+	// OnFailover, when set, hears every engine failover (F-180): the
+	// agent, the engine it left and entered ("cli:<name>") and the
+	// failure class. cmd raises the toast. It must not block.
+	OnFailover func(agent, from, to, why string)
 	// SetProps + SettingCheck serve settings_propose (F-070): agents
 	// propose, the human applies in Settings. nil = no proposals.
 	SetProps     *setprop.Store
@@ -182,7 +198,7 @@ type Config struct {
 	// Provision creates the task's worktree for member on the convention
 	// branch and records it on the card (F-067; tasks.Store.Attach in the
 	// app). nil = DHI never provisions; the agent works where it is.
-	Provision func(slug, member string) error
+	Provision func(ctx context.Context, slug, member string, fill map[string]string) error
 
 	// Toolchain says whether the tools a project's checks need are on the
 	// user's system (F-110). nil = assume they are.
@@ -209,6 +225,8 @@ type Runtime struct {
 	libRef *library.Store
 
 	cons consolidator // daily lesson consolidation (F-068)
+
+	cal *calibration // runes-per-token fit per CLI and model (F-135)
 
 	// offering dedupes the access cards raised from sandbox denials
 	// (F-087): agent|path → a card is pending.
@@ -435,6 +453,11 @@ type entry struct {
 	cli     *clirun.CLI    // host CLI adapter
 	cliPath string         // resolved binary path for the CLI runtime
 	turnMu  sync.Mutex     // one turn at a time per agent
+	// primaryMissing names the agent's own CLI when its binary is not
+	// installed and the entry was built on the fallback instead (F-180);
+	// the turn asks and announces before it runs.
+	primaryMissing string
+	primary        *clirun.CLI // the missing primary's adapter, for the approval comparison
 }
 
 // New builds per-agent entries from the roster. Agents whose manifest
@@ -448,7 +471,7 @@ func New(cfg Config, roster []*manifest.Agent) (*Runtime, error) {
 	if cfg.Sandbox == nil {
 		return nil, fmt.Errorf("runtime: config.Sandbox is required (pass sandbox.Noop{} to opt out explicitly)")
 	}
-	r := &Runtime{cfg: cfg, agents: map[string]*entry{}, roster: make(chan struct{}, 1)}
+	r := &Runtime{cfg: cfg, agents: map[string]*entry{}, roster: make(chan struct{}, 1), cal: newCalibration(cfg.WS.Root)}
 	// Admit each rostered CLI's state + binary roots into the OS sandbox
 	// BEFORE guards capture the adapter: claude lives under ~/.local and
 	// writes ~/.claude — the workspace jail alone denies its exec (exit
@@ -498,11 +521,18 @@ func (r *Runtime) extendSandboxForRoster(roster []*manifest.Agent) error {
 		seen[p] = true
 		extras = append(extras, p)
 	}
+	// A fallback engine (F-180) must be able to run when it takes over, so
+	// its roots are admitted up front like the primary's.
+	var names []string
 	for _, m := range roster {
-		name, err := r.engineName(m)
-		if err != nil {
-			continue // buildEntry names the missing engine precisely
+		if name, err := r.engineName(m); err == nil {
+			names = append(names, name)
+		} // else buildEntry names the missing engine precisely
+		if m.FallbackRuntime != "" {
+			names = append(names, m.FallbackRuntime)
 		}
+	}
+	for _, name := range names {
 		c, ok := r.cfg.CLIs.Get(name)
 		if !ok {
 			continue // buildEntry names the unknown runtime precisely
@@ -679,8 +709,18 @@ func (r *Runtime) buildEntry(m *manifest.Agent, jailRoots []string) (*entry, err
 		return nil, fmt.Errorf("runtime: %s: unknown CLI runtime %q", m.ID, name)
 	}
 	path, err := r.cfg.CLIs.Path(name)
+	missing := ""
 	if err != nil {
-		return nil, fmt.Errorf("runtime: %s: %w (install %s to use this engine)", m.ID, err, c.Bin)
+		// F-180: a missing primary binary is a failover cause. With a
+		// fallback that resolves, the agent runs on it (announced and, if
+		// its wiring differs, approved at the turn); without one the
+		// roster refuses by name as before.
+		fe, ferr := r.fallbackEntry(&entry{m: m, cli: c})
+		if m.FallbackRuntime == "" || ferr != nil {
+			return nil, fmt.Errorf("runtime: %s: %w (install %s to use this engine)", m.ID, err, c.Bin)
+		}
+		missing = name
+		m, c, path = fe.m, fe.cli, fe.cliPath
 	}
 	var policy *sandbox.Policy
 	if m.Policy() != nil {
@@ -699,7 +739,12 @@ func (r *Runtime) buildEntry(m *manifest.Agent, jailRoots []string) (*entry, err
 		// created after the choice.
 		m = assign.Effective(m, r.cfg.AllBots())
 	}
-	return &entry{m: m, guard: guard, cli: c, cliPath: path}, nil
+	e := &entry{m: m, guard: guard, cli: c, cliPath: path, primaryMissing: missing}
+	if missing != "" {
+		pc, _ := r.cfg.CLIs.Get(missing)
+		e.primary = pc
+	}
+	return e, nil
 }
 
 // Changes pings once after every successful Reload so UIs can refresh

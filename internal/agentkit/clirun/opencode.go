@@ -35,9 +35,15 @@ import (
 // OpenCode is the OpenCode adapter. Registered under the runtime value
 // "opencode".
 var OpenCode = &CLI{
-	Name:   "opencode",
-	Bin:    "opencode",
-	Tested: "1.18.25",
+	Name: "opencode",
+	// No HooksArgs (F-179): its hooks are plugins loaded from its config folders.
+	HooksWhy: "no verified per-run hook input (its plugins load from persistent config folders, which DHI does not edit)",
+	// No ReadOnlyOK (F-144): OPENCODE_PERMISSION edit/bash deny is not live-verified.
+	ReadOnlyWhy: "its edit and bash permission denial is not verified",
+	// No ImagesOK (G-X3): not verified, so an image turn is refused by name.
+	ImagesWhy: "its --file attachment is not verified to carry images headlessly",
+	Bin:       "opencode",
+	Tested:    "1.18.25",
 	// EXACT declared pass-through: opencode's config + the provider
 	// keys it reads for hosted models. Nothing else crosses
 	// (ADR-0012 §4).
@@ -60,12 +66,27 @@ var OpenCode = &CLI{
 		if in.Workdir != "" {
 			args = append(args, "--title", safeTitle(in.Workdir, "dhi"))
 		}
+		if in.Resume != "" {
+			args = append(args, "--session", in.Resume)
+		}
 		// No verified system-prompt flag on `run`: the system block
 		// rides ahead of the prompt in the shared tagged shape (M14 P1;
 		// live-verify checklist: switch to a native flag if one lands).
 		args = append(args, PromptWithSystem(in.System, in.Prompt))
 		return args
 	},
+	// ReadsAgentsMD: a canary in AGENTS.md reached the model in an empty git
+	// dir on 1.19.0 (F-124).
+	ReadsAgentsMD: true,
+	// WebDenyOK: OPENCODE_PERMISSION resolves into the config's
+	// permission table (`opencode debug config`) and webfetch left the
+	// tool list (live-verified on 1.19.0).
+	WebDenyOK: true,
+	// ResumeOK: `run --session <id>` continues the session whose id every
+	// JSONL line carries as sessionID; live-verified on 1.19.0 (F-170): a
+	// word told in turn 1 was recalled in turn 2.
+	ResumeOK:    true,
+	DenyWebEnv:  []string{`OPENCODE_PERMISSION={"webfetch":"deny","websearch":"deny"}`},
 	ParseStream: opencodeParseStream,
 	Finalize:    opencodeFinalize,
 	Version:     opencodeVersion,
@@ -89,8 +110,9 @@ var OpenCode = &CLI{
 
 // opencodeItem is the union shape of one run JSONL line.
 type opencodeItem struct {
-	Type string `json:"type"`
-	Part struct {
+	Type      string `json:"type"`
+	SessionID string `json:"sessionID"`
+	Part      struct {
 		Type   string `json:"type"`
 		Text   string `json:"text"`
 		Tool   string `json:"tool"`
@@ -122,6 +144,7 @@ type opencodeItem struct {
 // the final text event.
 type opencodeStop struct {
 	Type        string  `json:"type"` // "opencode.step_finish"
+	SessionID   string  `json:"session_id"`
 	LastMessage string  `json:"last_message"`
 	Cost        float64 `json:"cost"`
 	Tokens      struct {
@@ -134,17 +157,28 @@ func opencodeParseStream(r io.Reader) <-chan StreamEvent {
 	ch := make(chan StreamEvent)
 	go func() {
 		defer close(ch)
-		var lastText string
+		var lastText, session string
 		for line := range lineStream(r) {
 			var it opencodeItem
 			if err := json.Unmarshal([]byte(line), &it); err != nil {
 				ch <- StreamEvent{Kind: EventError, Detail: truncate(err.Error(), 120)}
 				continue
 			}
+			if session == "" && it.SessionID != "" {
+				session = it.SessionID
+				ch <- StreamEvent{Kind: EventSession, Session: session}
+			}
 			switch it.Type {
 			case "step_finish":
+				if it.Part.Reason != "stop" {
+					// A mid-run step: its tokens and cost are known now (G-C4).
+					ch <- StreamEvent{Kind: EventUsage, Spend: Spend{
+						Tokens:  it.Part.Tokens.Input + it.Part.Tokens.Output,
+						CostUSD: it.Part.Cost,
+					}}
+				}
 				if it.Part.Reason == "stop" {
-					stop := opencodeStop{Type: "opencode.step_finish", LastMessage: lastText, Cost: it.Part.Cost}
+					stop := opencodeStop{Type: "opencode.step_finish", LastMessage: lastText, Cost: it.Part.Cost, SessionID: session}
 					stop.Tokens.Input = it.Part.Tokens.Input
 					stop.Tokens.Output = it.Part.Tokens.Output
 					b, err := json.Marshal(stop)
@@ -178,7 +212,8 @@ func opencodeParseStream(r io.Reader) <-chan StreamEvent {
 					ch <- StreamEvent{Kind: EventError, Detail: detail, Denied: DeniedPath(why)}
 					continue
 				}
-				ch <- StreamEvent{Kind: EventCommand, Detail: "tool: " + truncate(title, 160)}
+				ch <- StreamEvent{Kind: EventCommand, Detail: "tool: " + truncate(title, 160),
+					Call: ToolCall(it.Part.Tool, title)}
 			}
 		}
 	}()
@@ -198,6 +233,7 @@ func opencodeFinalize(final string) (string, Usage, error) {
 		TokensOut: stop.Tokens.Output,
 		CostUSD:   stop.Cost,
 		HasCost:   stop.Cost > 0,
+		SessionID: stop.SessionID,
 	}
 	if stop.Tokens.Input == 0 {
 		u.TokensIn = -1

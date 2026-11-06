@@ -13,13 +13,37 @@ const (
 	FailOverflow  Failure = "overflow"   // prompt or context too long: retry compacted
 	FailTimeout   Failure = "timeout"    // the turn's deadline is spent
 	FailStopped   Failure = "stopped"    // someone stopped the turn (ctrl+x, a reassigned card)
+	FailGuard     Failure = "guard"      // DHI stopped the run: repeated tool call or spend cap (G-C4)
 	FailNoFinal   Failure = "no_final"   // the stream ended without a terminal line
 	FailStall     Failure = "stall"      // the watchdog killed a silent spawn (F-067)
 	FailCrash     Failure = "crash"      // anything else
+
+	// G-C5 (ADR-0048): two causes that matter to engine failover.
+	FailNotInstalled Failure = "not_installed" // the CLI binary is not on PATH
+	FailUnavailable  Failure = "unavailable"   // the vendor's service is down (5xx)
 )
 
 // Retryable reports whether another attempt can change the outcome.
-func (f Failure) Retryable() bool { return f != FailAuth && f != FailTimeout && f != FailStopped }
+func (f Failure) Retryable() bool {
+	return f != FailAuth && f != FailTimeout && f != FailStopped && f != FailGuard && f != FailNotInstalled
+}
+
+// Failover reports whether f is in the closed set of causes a run may
+// move to the agent's fallback engine for (ADR-0048): signed out, a quota
+// or rate limit, not installed, service unavailable. Everything else (a
+// crash, a stall, a bad prompt, a stop) stays the agent's own failure, so
+// the list never grows by accident.
+func (f Failure) Failover() bool {
+	switch f {
+	case FailAuth, FailRateLimit, FailNotInstalled, FailUnavailable:
+		return true
+	}
+	return false
+}
+
+// GuardPrefix starts the run error of a run DHI itself stopped (G-C4);
+// the reason follows. A retry would repeat the loop or the spend.
+const GuardPrefix = "stopped by DHI: "
 
 // failurePatterns are matched lower-cased against the run error and the
 // stream's error lines, first class wins. Order matters: overflow text
@@ -29,7 +53,9 @@ var failurePatterns = []struct {
 	class Failure
 	subs  []string
 }{
+	{FailGuard, []string{strings.ToLower(GuardPrefix)}},
 	{FailStall, []string{"stalled: no output for"}},
+	{FailNotInstalled, []string{"executable file not found", "not found on path"}},
 	{FailOverflow, []string{
 		"prompt is too long", "context window", "context length", "maximum context",
 		"too many tokens", "argv budget",
@@ -41,6 +67,9 @@ var failurePatterns = []struct {
 	{FailRateLimit, []string{
 		" 429", "rate limit", "rate_limit", "overloaded", " 529", "usage limit",
 		"too many requests",
+	}},
+	{FailUnavailable, []string{
+		" 503", " 502", "service unavailable", "temporarily unavailable", "bad gateway",
 	}},
 }
 

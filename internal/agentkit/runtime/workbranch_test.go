@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -26,12 +27,14 @@ func TestWorkBranchGivesAChatTurnACardAndWorktree(t *testing.T) {
 		return ".dhi/tasks/" + slug + "/" + member, nil
 	}, nil)
 	h.rt.cfg.Tasks = st
-	h.rt.cfg.Provision = func(slug, member string) error { return st.Attach(slug, member, "task/"+slug, "") }
+	h.rt.cfg.Provision = func(_ context.Context, slug, member string, _ map[string]string) error {
+		return st.Attach(slug, member, "task/"+slug, "")
+	}
 	trig := mustPost(t, h, bus.Message{Channel: "dm:scout", Author: bus.Human, Text: "fix the pipeline"})
 
 	rl := &relaunch{}
 	wb := h.rt.workBranchSeam("scout", trig, rl)
-	out, err := wb(context.Background(), "fix-pipeline", "Fix the pipeline", "", false)
+	out, err := wb(context.Background(), "fix-pipeline", "Fix the pipeline", "", false, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,9 +52,28 @@ func TestWorkBranchGivesAChatTurnACardAndWorktree(t *testing.T) {
 		t.Fatalf("next spawn workdir = %s", got)
 	}
 	// Asking again on the same thread reports the worktree, no new card.
-	again, err := wb(context.Background(), "other", "Other", "", false)
+	again, err := wb(context.Background(), "other", "Other", "", false, nil)
 	if err != nil || !strings.Contains(again, "already works in") {
 		t.Fatalf("second call = %q %v", again, err)
+	}
+}
+
+// F-182: the agent's fill for the branch name's AI parts reaches
+// Provision, which names the branch with it.
+func TestWorkBranchPassesTheAgentsFillToProvision(t *testing.T) {
+	h := episodeHarness(t)
+	st, _ := tasks.Open(h.ws)
+	h.rt.cfg.Tasks = st
+	var got map[string]string
+	h.rt.cfg.Provision = func(_ context.Context, _, _ string, fill map[string]string) error {
+		got = fill
+		return fmt.Errorf("stop here")
+	}
+	trig := mustPost(t, h, bus.Message{Channel: "dm:scout", Author: bus.Human, Text: "go"})
+	_, err := h.rt.workBranchSeam("scout", trig, &relaunch{})(context.Background(), "csv", "CSV", "", false,
+		map[string]string{"short name": "csv export"})
+	if err == nil || got["short name"] != "csv export" {
+		t.Fatalf("fill = %v, err = %v", got, err)
 	}
 }
 
@@ -60,12 +82,12 @@ func TestWorkBranchRefusesAnotherAgentsCard(t *testing.T) {
 	h := episodeHarness(t)
 	st, _ := tasks.Open(h.ws)
 	h.rt.cfg.Tasks = st
-	h.rt.cfg.Provision = func(string, string) error { return nil }
+	h.rt.cfg.Provision = func(context.Context, string, string, map[string]string) error { return nil }
 	if err := st.Create("csv", "CSV", "dev", ""); err != nil {
 		t.Fatal(err)
 	}
 	trig := mustPost(t, h, bus.Message{Channel: "dm:scout", Author: bus.Human, Text: "go"})
-	_, err := h.rt.workBranchSeam("scout", trig, &relaunch{})(context.Background(), "csv", "CSV", "", false)
+	_, err := h.rt.workBranchSeam("scout", trig, &relaunch{})(context.Background(), "csv", "CSV", "", false, nil)
 	if err == nil || !strings.Contains(err.Error(), "belongs to dev") {
 		t.Fatalf("err = %v", err)
 	}
@@ -125,13 +147,15 @@ func TestWorkBranchCarriesOnlyThisTurnsChanges(t *testing.T) {
 		return rel, nil
 	}, nil)
 	h.rt.cfg.Tasks = st
-	h.rt.cfg.Provision = func(slug, member string) error { return st.Attach(slug, member, "task/"+slug, "") }
+	h.rt.cfg.Provision = func(_ context.Context, slug, member string, _ map[string]string) error {
+		return st.Attach(slug, member, "task/"+slug, "")
+	}
 	trig := mustPost(t, h, bus.Message{Channel: "dm:scout", Author: bus.Human, Text: "fix it"})
 	wb := h.rt.workBranchSeam("scout", trig, &relaunch{}) // the turn begins: b.go is already dirty
 
 	write(filepath.Join(repo, "a.go"), "package a // the agent's fix\n")
 	write(filepath.Join(repo, "c.go"), "package a // new\n")
-	out, err := wb(context.Background(), "fix", "Fix", "", true)
+	out, err := wb(context.Background(), "fix", "Fix", "", true, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

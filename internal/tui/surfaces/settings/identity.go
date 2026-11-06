@@ -12,28 +12,64 @@ import (
 
 // ---- git identity row (F-083) ----
 
-// loadIdentity reads the git identity once and caches it.
-func (m *Model) loadIdentity() (gitcore.Identity, bool) {
-	if m.ident == nil {
-		var id gitcore.Identity
-		ok := false
-		if m.d.Identity != nil {
-			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-			got, err := m.d.Identity(ctx)
-			cancel()
-			id, ok = got, err == nil
-		}
-		m.ident, m.identOK = &id, ok
+// identEvent carries an identity read or a suggestion back to the loop:
+// both run git (and the suggestion GitHub), so never on the UI thread.
+type identEvent struct {
+	id      gitcore.Identity
+	ok      bool
+	suggest bool // a suggestion for the open identity form, not the row
+	source  string
+}
+
+// loadIdentity returns the cached git identity; the first call starts
+// reading it in the background (loaded=false until the event lands).
+func (m *Model) loadIdentity() (id gitcore.Identity, ok, loaded bool) {
+	if m.ident != nil {
+		return *m.ident, m.identOK, true
 	}
-	return *m.ident, m.identOK
+	if m.d.Identity != nil && !m.identLoading {
+		m.identLoading = true
+		resolve, ch := m.d.Identity, m.events
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			got, err := resolve(ctx)
+			cancel()
+			ch <- settingsEvent{ident: &identEvent{id: got, ok: err == nil}}
+		}()
+	}
+	return gitcore.Identity{}, false, false
+}
+
+func (m *Model) onIdentEvent(ev identEvent) {
+	if !ev.suggest {
+		m.identLoading = false
+		m.ident, m.identOK = &ev.id, ev.ok
+		return
+	}
+	if m.dkind != dlgIdentity || m.dform == nil || m.dlg == nil {
+		return
+	}
+	title := "git identity"
+	if ev.source != "" {
+		title += " — suggested " + ev.source
+	}
+	m.dform.Title, m.dlg.Title = title, title
+	// Fill the open form only while it is still empty: never over typing.
+	if v := m.dform.Values(); strings.TrimSpace(v[0]+v[1]) == "" {
+		m.dform.Fields[0] = kit.NewTextField("name", ev.id.Name)
+		m.dform.Fields[1] = kit.NewTextField("email", ev.id.Email)
+	}
 }
 
 func (m *Model) identityValue() string {
 	if m.d.Identity == nil {
 		return theme.TextMuted().Render("unavailable (git is not installed yet)")
 	}
-	id, ok := m.loadIdentity()
-	if !ok {
+	id, ok, loaded := m.loadIdentity()
+	switch {
+	case !loaded:
+		return theme.TextMuted().Render("checking…")
+	case !ok:
 		return theme.WarningText().Render("not set — enter to set it")
 	}
 	return id.Name + " <" + id.Email + ">"
@@ -44,16 +80,23 @@ func (m *Model) openIdentityForm() {
 		m.flash = "git identity can't be changed here: git is not installed yet"
 		return
 	}
-	id, ok := m.loadIdentity()
+	id, ok, loaded := m.loadIdentity()
+	if !loaded {
+		m.flash = "still reading your git identity — try again in a moment"
+		return
+	}
 	title := "git identity"
 	if !ok && m.d.SuggestIdentity != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
-		best := gitcore.BestSuggestion(m.d.SuggestIdentity(ctx))
-		cancel()
-		id = best.Identity
-		if best.Source != "" {
-			title = "git identity — suggested " + best.Source
-		}
+		// Suggestions look at the repos, GitHub and the account: the form
+		// opens now and fills in when they arrive.
+		title = "git identity — looking for a suggestion…"
+		suggest, ch := m.d.SuggestIdentity, m.events
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+			best := gitcore.BestSuggestion(suggest(ctx))
+			cancel()
+			ch <- settingsEvent{ident: &identEvent{id: best.Identity, suggest: true, source: best.Source}}
+		}()
 	}
 	m.openFormDialog(title, dlgIdentity, "",
 		kit.NewTextField("name", id.Name), kit.NewTextField("email", id.Email))

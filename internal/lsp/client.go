@@ -28,9 +28,11 @@ type Diagnostic struct {
 type CompletionItem struct {
 	Label  string
 	Detail string
-	Insert string // text to insert (textEdit/insertText, snippets made plain); Label when the server gave none
-	Filter string // filterText, when it differs from Label
-	Range  *Range // the range Insert replaces (UTF-16 columns); nil = the word before the cursor
+	Insert string // text to insert (textEdit/insertText); Label when the server gave none
+	// Snippet: Insert is snippet syntax ($1, ${1:x}, $0), expanded by the editor (F-171).
+	Snippet bool
+	Filter  string // filterText, when it differs from Label
+	Range   *Range // the range Insert replaces (UTF-16 columns); nil = the word before the cursor
 }
 
 // EventKind discriminates async server pushes.
@@ -39,6 +41,7 @@ type EventKind uint8
 const (
 	EvDiagnostics EventKind = iota
 	EvApplyEdit
+	EvInlayRefresh // workspace/inlayHint/refresh: cached hints are stale (F-169)
 )
 
 // Event is one server→client notification routed to the UI.
@@ -67,10 +70,17 @@ type Client struct {
 	initDone   bool
 	serverName string
 	caps       map[string]json.RawMessage // server capabilities; nil = not reported
+	optMu      sync.Mutex
+	options    map[string]any // server settings by section, answered to workspace/configuration (F-169)
 }
 
 // New wraps an established connection and runs the handshake.
 func New(ctx context.Context, conn io.ReadWriteCloser, rootDir string) (*Client, error) {
+	return NewWithOptions(ctx, conn, rootDir, nil)
+}
+
+// NewWithOptions is New with the server's initializationOptions (nil = none).
+func NewWithOptions(ctx context.Context, conn io.ReadWriteCloser, rootDir string, opts map[string]any) (*Client, error) {
 	c := &Client{
 		conn:    conn,
 		reader:  bufio.NewReader(conn),
@@ -82,29 +92,64 @@ func New(ctx context.Context, conn io.ReadWriteCloser, rootDir string) (*Client,
 	// The reader must run BEFORE the handshake: responses are routed by
 	// the read loop and would otherwise deadlock initialize.
 	go c.readLoop()
-	if err := c.initialize(rootDir); err != nil {
+	if err := c.initialize(rootDir, opts); err != nil {
 		c.cancel()
 		return nil, err
 	}
 	return c, nil
 }
 
-func (c *Client) initialize(rootDir string) error {
+func (c *Client) initialize(rootDir string, opts map[string]any) error {
 	params := map[string]any{
 		"processId": nil,
 		"rootUri":   pathToURI(rootDir),
 		"capabilities": map[string]any{
 			"textDocument": map[string]any{
-				"completion": map[string]any{"completionItem": map[string]any{}},
+				"completion": map[string]any{"completionItem": map[string]any{"snippetSupport": true}},
 				"hover":      map[string]any{"contentFormat": []string{"plaintext", "markdown"}},
-				"rename":     map[string]any{},
-				"codeAction": map[string]any{},
-				"formatting": map[string]any{},
+				"signatureHelp": map[string]any{"signatureInformation": map[string]any{
+					"documentationFormat":    []string{"plaintext", "markdown"},
+					"parameterInformation":   map[string]any{"labelOffsetSupport": true},
+					"activeParameterSupport": true,
+				}},
+				"synchronization": map[string]any{
+					"didSave": true,
+				},
+				"rename": map[string]any{},
+				"codeAction": map[string]any{
+					"codeActionLiteralSupport": map[string]any{"codeActionKind": map[string]any{
+						"valueSet": []string{"quickfix", "refactor", "source", "source.organizeImports"},
+					}},
+					"isPreferredSupport": true,
+					"disabledSupport":    true,
+					"dataSupport":        true,
+					"resolveSupport":     map[string]any{"properties": []string{"edit"}},
+				},
+				"formatting":     map[string]any{},
+				"selectionRange": map[string]any{},
+				"inlayHint":      map[string]any{},
+				// F-181: LSP 3.18 inline completion (ghost text).
+				"inlineCompletion": map[string]any{},
+				// F-173: call hierarchy and semantic tokens (full requests).
+				"callHierarchy": map[string]any{},
+				"semanticTokens": map[string]any{
+					"requests":       map[string]any{"full": true},
+					"tokenTypes":     SemanticTypes,
+					"tokenModifiers": SemanticModifiers,
+					"formats":        []string{"relative"},
+				},
+				"foldingRange": map[string]any{"lineFoldingOnly": true},
 			},
 			"workspace": map[string]any{
-				"applyEdit": true,
+				"applyEdit":              true,
+				"configuration":          true,
+				"didChangeConfiguration": map[string]any{},
+				"inlayHint":              map[string]any{"refreshSupport": true},
 			},
 		},
+	}
+	if opts != nil {
+		params["initializationOptions"] = opts
 	}
 	var result struct {
 		ServerInfo *struct {
@@ -236,6 +281,17 @@ func (c *Client) readLoop() {
 				default:
 				}
 			}
+		case msg.ID != nil && msg.Method == "workspace/configuration":
+			body, _ := json.Marshal(c.configuration(msg.Params))
+			resp, _ := json.Marshal(rpcMessage{JSONRPC: "2.0", ID: msg.ID, Result: body})
+			_ = c.write(resp)
+		case msg.ID != nil && msg.Method == "workspace/inlayHint/refresh":
+			resp, _ := json.Marshal(rpcMessage{JSONRPC: "2.0", ID: msg.ID, Result: json.RawMessage("null")})
+			_ = c.write(resp)
+			select {
+			case c.events <- Event{Kind: EvInlayRefresh}:
+			default:
+			}
 		case msg.ID != nil && msg.Method != "":
 			// server→client request we don't implement; reply empty so
 			// the server never stalls waiting on us.
@@ -300,6 +356,67 @@ func (c *Client) DidChange(path, text string) error {
 	})
 }
 
+// SaveOptions reports whether the server wants didSave notifications and
+// whether it wants the full text included. A server that reports no
+// capabilities at all is given the benefit of the doubt (test doubles); one
+// that reports capabilities but omits save is not asked (ADR-0011).
+func (c *Client) SaveOptions() (send, includeText bool) {
+	if c.caps == nil {
+		return true, false // test doubles benefit of doubt
+	}
+	raw, ok := c.caps["textDocumentSync"]
+	if !ok {
+		return false, false
+	}
+	var s any
+	_ = json.Unmarshal(raw, &s)
+	switch t := s.(type) {
+	case map[string]any:
+		// Object with optional `save` field.
+		save, ok := t["save"]
+		if !ok {
+			return false, false
+		}
+		// `save: true` or `save: {}` means send didSave without text.
+		switch sv := save.(type) {
+		case bool:
+			return sv, false
+		case map[string]any:
+			// Check for `includeText: true`.
+			if it, ok := sv["includeText"].(bool); ok {
+				return true, it
+			}
+			return true, false
+		}
+		return false, false
+	}
+	// Plain number or other type: no save capability.
+	return false, false
+}
+
+// DidSave announces that a document was saved. The server's SaveOptions
+// determines whether this is sent and whether text is included.
+func (c *Client) DidSave(path, text string) error {
+	send, includeText := c.SaveOptions()
+	if !send {
+		return nil
+	}
+	params := map[string]any{
+		"textDocument": map[string]any{"uri": pathToURI(path)},
+	}
+	if includeText {
+		params["text"] = text
+	}
+	return c.notify("textDocument/didSave", params)
+}
+
+// DidClose announces that a document was closed.
+func (c *Client) DidClose(path string) error {
+	return c.notify("textDocument/didClose", map[string]any{
+		"textDocument": map[string]any{"uri": pathToURI(path)},
+	})
+}
+
 var docVersions atomic.Int64
 
 func (c *Client) version() int64 { return docVersions.Add(1) }
@@ -356,56 +473,10 @@ func decodeCompletion(raw json.RawMessage) []CompletionItem {
 		if it.Insert == "" {
 			it.Insert = w.Label
 		}
-		if w.Format == 2 {
-			it.Insert = StripSnippet(it.Insert)
-		}
+		it.Snippet = w.Format == 2
 		out = append(out, it)
 	}
 	return out
-}
-
-// StripSnippet turns snippet syntax ($1, ${1:name}, $0) into plain text,
-// keeping placeholders' default text.
-func StripSnippet(s string) string {
-	var b strings.Builder
-	r := []rune(s)
-	for i := 0; i < len(r); i++ {
-		switch {
-		case r[i] == '\\' && i+1 < len(r):
-			i++
-			b.WriteRune(r[i])
-		case r[i] == '$' && i+1 < len(r) && r[i+1] >= '0' && r[i+1] <= '9':
-			for i+1 < len(r) && r[i+1] >= '0' && r[i+1] <= '9' {
-				i++
-			}
-		case r[i] == '$' && i+1 < len(r) && r[i+1] == '{':
-			j := i + 2
-			for j < len(r) && r[j] >= '0' && r[j] <= '9' {
-				j++
-			}
-			if j < len(r) && r[j] == ':' {
-				j++
-			}
-			depth := 1
-			k := j
-			for k < len(r) && depth > 0 {
-				switch r[k] {
-				case '{':
-					depth++
-				case '}':
-					depth--
-				}
-				if depth > 0 {
-					k++
-				}
-			}
-			b.WriteString(StripSnippet(string(r[j:min(k, len(r))])))
-			i = k
-		default:
-			b.WriteRune(r[i])
-		}
-	}
-	return b.String()
 }
 
 // Shutdown performs the polite two-step teardown.

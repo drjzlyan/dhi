@@ -24,8 +24,10 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/episode"
 	"github.com/drjzlyan/dhi/internal/agentkit/org"
 	profiface "github.com/drjzlyan/dhi/internal/agentkit/profile"
+	"github.com/drjzlyan/dhi/internal/agentkit/skills"
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
 	"github.com/drjzlyan/dhi/internal/autopilot"
+	"github.com/drjzlyan/dhi/internal/conventions"
 	"github.com/drjzlyan/dhi/internal/gitcore"
 	"github.com/drjzlyan/dhi/internal/ideation"
 	"github.com/drjzlyan/dhi/internal/inbox"
@@ -115,23 +117,24 @@ type Model struct {
 	armSeq     uint64 // autopilot tick-chain guard: exactly one in flight
 	cancelAuto func()
 
-	approvals    *tools.Approvals                        // pending-approval queue (F-016 source)
-	unreadStore  *unread.Store                           // read-mark store (F-017); nil = no bus
-	worktreeHint string                                  // where an attached worktree lands ("" = default text)
-	unreadErr    string                                  // store unavailable: named, never silent
-	chatMetaErr  string                                  // reactions/edits/pins store unavailable
-	unreadCounts map[string]int                          // per-frame rail counts (syncUnread)
-	openChat     func() bool                             // focus editor chat approvals (F-016 jump)
-	openReview   func(id string) bool                    // reviewer select (F-016 jump)
-	openEditor   func(paths []string) bool               // editor open-in-editor (repos `e`, F-026 P3)
-	working      func(channel string, thread int64) bool // live turn indicator (F-035 Part D)
-	agentWorking func(id string) bool                    // agent presence (F-072/F-073)
-	card         *cardPage                               // open card page (F-073)
-	trace        *tracePane                              // open task trace (F-074)
-	assign       *assignPicker                           // assignee picker (F-073)
-	branchForFn  func(slug string) string                // conventional task branch (F-073/F-075)
-	commitPrefix func(slug string) string                // commit subject start (F-075)
-	openWorktree func(label, dir string) bool            // editor: worktree as a tree root (F-073)
+	approvals    *tools.Approvals                                             // pending-approval queue (F-016 source)
+	unreadStore  *unread.Store                                                // read-mark store (F-017); nil = no bus
+	worktreeHint string                                                       // where an attached worktree lands ("" = default text)
+	unreadErr    string                                                       // store unavailable: named, never silent
+	chatMetaErr  string                                                       // reactions/edits/pins store unavailable
+	unreadCounts map[string]int                                               // per-frame rail counts (syncUnread)
+	openChat     func() bool                                                  // focus editor chat approvals (F-016 jump)
+	openReview   func(id string) bool                                         // reviewer select (F-016 jump)
+	openEditor   func(paths []string) bool                                    // editor open-in-editor (repos `e`, F-026 P3)
+	working      func(channel string, thread int64) bool                      // live turn indicator (F-035 Part D)
+	agentWorking func(id string) bool                                         // agent presence (F-072/F-073)
+	card         *cardPage                                                    // open card page (F-073)
+	trace        *tracePane                                                   // open task trace (F-074)
+	assign       *assignPicker                                                // assignee picker (F-073)
+	branchForFn  func(slug string) string                                     // conventional task branch (F-073/F-075)
+	commitPrefix func(slug string) string                                     // commit subject start (F-075)
+	writeCommit  func(ctx context.Context, slug, text string) (string, error) // AI markers → message (F-182)
+	openWorktree func(label, dir string) bool                                 // editor: worktree as a tree root (F-073)
 	// takeAfterAttach is the card whose attach form came from T: once
 	// attached, its worktree opens in the editor.
 	takeAfterAttach string
@@ -171,7 +174,8 @@ const (
 	evPing uint8 = iota
 	evCloneDone
 	evTaskPRDone
-	evPingFlash // ping with flash message
+	evPingFlash  // ping with flash message
+	evAttachDone // a worktree attached off the UI (its branch named by an agent, F-182)
 )
 
 // errString converts error to string, empty string if nil.
@@ -210,8 +214,14 @@ type Deps struct {
 	// (F-073); nil falls back to task/<slug>.
 	BranchFor func(slug string) string
 	// CommitPrefix is the start of a commit subject for a card from the
-	// conventions' subject template ("PROJ-12: "); "" = none (F-075).
+	// conventions' subject template, up to its first AI part ("PROJ-12: ");
+	// "" = none (F-075). {ai:…} markers typed into the form are written on
+	// commit (F-182).
 	CommitPrefix func(slug string) string
+	// WriteCommit turns the commit text the human submitted into the
+	// message: AI markers written, the body format added (F-182). It may
+	// take a minute; the board runs it off the UI. nil = text as typed.
+	WriteCommit func(ctx context.Context, slug, text string) (string, error)
 	// OpenWorktree shows a task worktree as an editor tree root and
 	// switches to the editor (F-073 take-it flow).
 	OpenWorktree func(label, dir string) bool
@@ -225,6 +235,10 @@ type Deps struct {
 	// card pane shows the assignee's plan, DHI's verify verdict and the
 	// episode's spend. nil = no episode block.
 	Episodes *episode.Store
+	// MemoryLimits are the live prompt and session token budgets
+	// (memory.prompt_tokens / memory.session_tokens) the chat's context
+	// meter measures against (F-127); nil shows sizes without a limit.
+	MemoryLimits func() (prompt, session int)
 }
 
 // New returns the workspace model. A nil ws renders the not-a-workspace
@@ -269,6 +283,7 @@ func New(version string, ws *workspace.Workspace, d Deps) *Model {
 		m.agentWorking = d.AgentWorking
 		m.branchForFn = d.BranchFor
 		m.commitPrefix = d.CommitPrefix
+		m.writeCommit = d.WriteCommit
 		m.openWorktree = d.OpenWorktree
 		m.episodes = d.Episodes
 		m.sessions = d.Sessions
@@ -285,6 +300,7 @@ func New(version string, ws *workspace.Workspace, d Deps) *Model {
 			m.pane = newChatPane(d.Bus, d.Runtime, m.org)
 			m.pane.profile = m.agentProfileLines
 			m.pane.agentWorking = d.AgentWorking
+			m.pane.meter = &chatMeter{episodes: d.Episodes, limits: d.MemoryLimits}
 			m.pane.approvals = d.Approvals
 			m.pane.decide = m.decideAsk
 			if cm, err := channelmeta.Open(ws.Root); err != nil {
@@ -334,6 +350,21 @@ func (m *Model) Commands() []surfaces.Command {
 			m.sec = s
 			return nil
 		}})
+	}
+	if m.sec == secChannels && m.pane != nil {
+		// G-X3: user-invocable skills; running one fills the composer.
+		list := m.pane.skillList()
+		for _, k := range skills.Commands(list) {
+			k := k
+			out = append(out, surfaces.Command{Group: "Skill", Title: "/" + k.Slug + " — " + k.Description, Hint: "composer", Run: func() tea.Cmd {
+				m.pane.input.SetValue("/" + k.Slug + " ")
+				m.pane.focus = true
+				return nil
+			}})
+		}
+		if n := skills.ShadowNote(list); n != "" {
+			out = append(out, surfaces.Command{Group: "Skill", Title: n, Run: func() tea.Cmd { return nil }})
+		}
 	}
 	if m.sec == secBoard && m.taskStore != nil {
 		out = append(out,
@@ -531,7 +562,21 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 					" created for " + msg.packName}
 			}
 		case evPingFlash:
-			m.form = formState{flash: msg.flash}
+			if msg.err != "" {
+				m.flashErr(msg.err) // a failed commit or push says so
+			} else {
+				m.form = formState{flash: msg.flash}
+			}
+		case evAttachDone:
+			switch {
+			case msg.err != "":
+				m.flashErr("worktree: " + msg.err)
+			case m.takeAfterAttach == msg.packName:
+				m.takeAfterAttach = ""
+				m.openTakenWorktree(msg.packName)
+			default:
+				m.form = formState{flash: "worktree ready for " + msg.packName}
+			}
 		}
 		if msg.kind == evPing && m.autopilots != nil {
 			// A card changed (created/armed/removed): the schedule set
@@ -1309,29 +1354,11 @@ func (m *Model) submitForm() {
 		}
 		member := strings.TrimSpace(f.values()[0])
 		branch := strings.TrimSpace(f.values()[1])
-		if err := m.taskStore.Attach(f.orig, member, branch, ""); err != nil {
-			f.err = err.Error()
-			return
-		}
-		// Cross-project propagation (F-032): changing this member may
-		// affect declared dependents — seed visible, accept/decline
-		// proposals; nothing is auto-created.
-		if m.ws != nil {
-			var seeds []tasks.Propagation
-			for _, d := range m.ws.DependentsOf(member) {
-				seeds = append(seeds, tasks.Propagation{FromMember: d.From, ToMember: d.To, Kind: d.Kind})
-			}
-			if err := m.taskStore.SeedPropagations(f.orig, seeds); err != nil {
-				f.err = err.Error()
-				return
-			}
-		}
+		// The worktree checkout (and an agent writing the branch name's AI
+		// parts, F-182) runs off the UI; evAttachDone opens it if taking.
 		slug := f.orig // closeForm resets the form f points at
 		m.closeForm()
-		if m.takeAfterAttach == slug {
-			m.takeAfterAttach = ""
-			m.openTakenWorktree(slug)
-		}
+		m.attachAsync(slug, member, branch)
 	case fTaskThread:
 		if m.taskStore == nil {
 			f.err = "task store unavailable"
@@ -1363,17 +1390,25 @@ func (m *Model) submitForm() {
 		go func() {
 			ctx, cancel := context.WithTimeout(context.Background(), taskPRTimeout)
 			defer cancel()
-			cs := tk.ChangeSets[0]
-			meta, err := m.reviewSvc.CreatePRForBranch(ctx,
-				cs.Member, cs.Branch, title, base)
+			// One PR per member branch, as pr_open does (F-032); the
+			// conventions' PR title and body apply in the review service.
 			ev := wsEvent{kind: evTaskPRDone, packName: slug}
-			if err != nil {
-				ev.err = err.Error()
-			} else {
-				ev.prNum = meta.Number
-				if serr := m.taskStore.SetPR(slug, meta.Number, meta.URL); serr != nil {
-					ev.err = "PR #" + itoa(meta.Number) + " created, but the card could not record it: " + serr.Error()
+			var failures []string
+			for i, cs := range tk.ChangeSets {
+				meta, err := m.reviewSvc.CreatePRForBranch(ctx, cs.Member, cs.Branch, title, base)
+				if err != nil {
+					failures = append(failures, cs.Member+": "+err.Error())
+					continue
 				}
+				if i == 0 || ev.prNum == 0 {
+					ev.prNum = meta.Number
+					if serr := m.taskStore.SetPR(slug, meta.Number, meta.URL); serr != nil {
+						failures = append(failures, "PR #"+itoa(meta.Number)+" created, but the card could not record it: "+serr.Error())
+					}
+				}
+			}
+			if len(failures) > 0 {
+				ev.err = strings.Join(failures, "; ")
 			}
 			m.send(ev)
 		}()
@@ -1396,8 +1431,20 @@ func (m *Model) submitForm() {
 		}
 		m.closeForm()
 		m.form = formState{kind: fNone, flash: "committing..."}
+		if len(conventions.Markers(message)) > 0 {
+			m.form.flash = "writing the AI parts of the message, then committing…"
+		}
+		write := m.writeCommit
 		go func() {
-			err := m.taskStore.Commit(slug, message)
+			var err error
+			if write != nil {
+				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+				message, err = write(ctx, slug, message)
+				cancel()
+			}
+			if err == nil {
+				err = m.taskStore.Commit(slug, message)
+			}
 			ev := wsEvent{kind: evPingFlash, err: errString(err)}
 			if err == nil {
 				ev.flash = "committed"

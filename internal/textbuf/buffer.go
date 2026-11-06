@@ -42,6 +42,8 @@ type Buffer struct {
 	groupDepth  int  // >0 while an undo group is open (one insert session)
 	groupMarked bool // a snapshot was already taken inside the current group
 
+	fold foldState // code folds: ranges and which are closed (F-176)
+
 	crlf     bool      // the file's lines end in \r\n; Save writes them back that way
 	diskPath string    // the file last read or written ("" for a scratch buffer)
 	disk     diskStamp // what that file held then (F-115 conflict check)
@@ -167,39 +169,18 @@ func (b *Buffer) ReplaceText(old, new string, all bool) (int, error) {
 	return count, nil
 }
 
-// SubstituteAll replaces plain-substring pat with rep: cursor line
-// only unless all; global replaces every occurrence on a line, else
-// the first. Returns (lines changed, hits). One undo group covers the
-// whole substitution.
-func (b *Buffer) SubstituteAll(pat, rep string, all, global bool) (lines, hits int) {
+// SetText replaces the whole buffer with text as one undo step, keeping
+// the cursor where it was (clamped). It reports whether anything changed.
+func (b *Buffer) SetText(text string) bool {
+	if text == b.Text() {
+		return false
+	}
 	b.snapshotBefore()
-	start := 0
-	end := len(b.lines)
-	if !all {
-		start, end = b.cursor.Line, b.cursor.Line+1
-	}
-	for i := start; i < end; i++ {
-		line := b.lines[i]
-		idx := strings.Index(line, pat)
-		if idx < 0 {
-			continue
-		}
-		count := 0
-		if global {
-			count = strings.Count(line, pat)
-			b.lines[i] = strings.ReplaceAll(line, pat, rep)
-		} else {
-			count = 1
-			b.lines[i] = line[:idx] + rep + line[idx+len(pat):]
-		}
-		lines++
-		hits += count
-	}
-	if hits > 0 {
-		b.dirty = true
-		b.seq++
-	}
-	return lines, hits
+	b.lines = strings.Split(text, "\n")
+	b.clampCursor()
+	b.dirty = true
+	b.seq++
+	return true
 }
 
 // ReplaceLines sets the given 0-based lines (out-of-range ones are

@@ -1,0 +1,30 @@
+▏ files ─────────────────── ▏ .dhi › tmp › SEARCH_RESULTS   NORMAL  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
+▏ ▌ ▸ alpha/                ▏  app.go   SEARCH_RESULTS                                              
+▏   ▸ beta/                 ▏  1 # :grep "needle" — 2 matches in 1 file · context 2                 
+▏                           ▏  2 # enter · gd opens the row · edit rows, :w asks before writing th  
+▏                           ▏  3 alpha/src/main.go:                                                 
+▏                           ▏  4   1- line one                                                      
+▏                           ▏  5   2- line two                                                      
+▏                           ▏  6   3: thread three                                                  
+▏                           ▏  7   4- line four                                                     
+▏                           ▏  8   5- line five                                                     
+▏             ╭─ apply search edits ─────────────────────────────────────────────────╮              
+▏             │ write 1 edited line to 1 file?                                       │              
+▏             │                                                                      │              
+▏             │   alpha/src/main.go  1 line                                          │              
+▏             │                                                                      │              
+▏             │ a line whose source changed since the search is skipped and reported │              
+▏             │                                                                      │              
+▏             │ y apply · n cancel                                                   │              
+▏             ╰──────────────────────────────────────────────────────────────────────╯              
+▏                           ▏                                                                       
+▏                           ▏                                                                       
+▏                           ▏                                                                       
+▏                           ▏                                                                       
+▏                           ▏                                                                       
+▏                           ▏                                                                       
+▏                           ▏                                                                       
+▏                           ▏                                                                       
+▏                           ▏                                                                       
+▏                           ▏                                                                       
+▏                           ▏                                                                       

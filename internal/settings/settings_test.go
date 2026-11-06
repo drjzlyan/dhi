@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -53,6 +54,76 @@ func TestBoolFalseOverride(t *testing.T) {
 	}
 	if cfg.Editor.LineNumbers {
 		t.Error("explicit false overridden by default true")
+	}
+}
+
+// F-136: editor.wrap defaults off and a layer can turn it on.
+func TestEditorWrapLayer(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "c.toml")
+	os.WriteFile(p, []byte("[editor]\nwrap = true\n"), 0o644)
+	cfg, err := Load(p, "")
+	if err != nil || !cfg.Editor.Wrap {
+		t.Fatalf("wrap = %v err=%v", cfg.Editor.Wrap, err)
+	}
+	def, _ := Load(filepath.Join(t.TempDir(), "none"), "")
+	if def.Editor.Wrap {
+		t.Fatal("wrap must default off")
+	}
+}
+
+// F-143: editor.blame defaults off and a layer can turn it on.
+func TestEditorBlameLayer(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "c.toml")
+	os.WriteFile(p, []byte("[editor]\nblame = true\n"), 0o644)
+	cfg, err := Load(p, "")
+	if err != nil || !cfg.Editor.Blame {
+		t.Fatalf("blame = %v err=%v", cfg.Editor.Blame, err)
+	}
+	def, _ := Load(filepath.Join(t.TempDir(), "none"), "")
+	if def.Editor.Blame {
+		t.Fatal("blame must default off")
+	}
+}
+
+// F-169: editor.inlay_hints defaults off and a layer can turn it on.
+func TestEditorInlayHintsLayer(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "c.toml")
+	os.WriteFile(p, []byte("[editor]\ninlay_hints = true\n"), 0o644)
+	cfg, err := Load(p, "")
+	if err != nil || !cfg.Editor.InlayHints {
+		t.Fatalf("inlay_hints = %v err=%v", cfg.Editor.InlayHints, err)
+	}
+	def, _ := Load(filepath.Join(t.TempDir(), "none"), "")
+	if def.Editor.InlayHints {
+		t.Fatal("inlay_hints must default off")
+	}
+}
+
+// F-173: editor.semantic_tokens defaults off and a layer can turn it on.
+func TestEditorSemanticTokensLayer(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "c.toml")
+	os.WriteFile(p, []byte("[editor]\nsemantic_tokens = true\n"), 0o644)
+	cfg, err := Load(p, "")
+	if err != nil || !cfg.Editor.SemanticTokens {
+		t.Fatalf("semantic_tokens = %v err=%v", cfg.Editor.SemanticTokens, err)
+	}
+	def, _ := Load(filepath.Join(t.TempDir(), "none"), "")
+	if def.Editor.SemanticTokens {
+		t.Fatal("semantic_tokens must default off")
+	}
+}
+
+// F-149: editor.restore_session defaults on and a layer can turn it off.
+func TestEditorRestoreSessionLayer(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "c.toml")
+	os.WriteFile(p, []byte("[editor]\nrestore_session = false\n"), 0o644)
+	cfg, err := Load(p, "")
+	if err != nil || cfg.Editor.RestoreSession {
+		t.Fatalf("restore_session = %v err=%v", cfg.Editor.RestoreSession, err)
+	}
+	def, _ := Load(filepath.Join(t.TempDir(), "none"), "")
+	if !def.Editor.RestoreSession {
+		t.Fatal("restore_session must default on")
 	}
 }
 
@@ -737,5 +808,95 @@ func TestLiveRereadsOnChange(t *testing.T) {
 	_ = os.Chtimes(user, time.Now().Add(2*time.Second), time.Now().Add(2*time.Second))
 	if live().Editor.TabWidth != 8 {
 		t.Fatal("an invalid file must keep the last good config")
+	}
+}
+
+func TestNativeWebDefaultsToDenyAndIsValidated(t *testing.T) {
+	cfg := Defaults()
+	if cfg.Agents.NativeWeb != WebDeny {
+		t.Fatalf("default = %q, want deny", cfg.Agents.NativeWeb)
+	}
+	cfg.Agents.NativeWeb = "sometimes"
+	if err := Check(cfg); err == nil || !strings.Contains(err.Error(), "agents.native_web") {
+		t.Fatalf("invalid value accepted: %v", err)
+	}
+	cfg.Agents.NativeWeb = WebAllow
+	if err := Check(cfg); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// F-142: editor.autosave defaults to off, merges, and is validated by name.
+func TestAutosaveSetting(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "c.toml")
+	cfg, err := Load(p, "")
+	if err != nil || cfg.Editor.Autosave != AutosaveOff {
+		t.Fatalf("default = %q err=%v", cfg.Editor.Autosave, err)
+	}
+	os.WriteFile(p, []byte("[editor]\nautosave = \"delay\"\n"), 0o644)
+	if cfg, err = Load(p, ""); err != nil || cfg.Editor.Autosave != AutosaveDelay {
+		t.Fatalf("delay = %q err=%v", cfg.Editor.Autosave, err)
+	}
+	os.WriteFile(p, []byte("[editor]\nautosave = \"sometimes\"\n"), 0o644)
+	if _, err = Load(p, ""); err == nil || !strings.Contains(err.Error(), "editor.autosave") {
+		t.Fatalf("bad value accepted: %v", err)
+	}
+}
+
+// F-139: desktop_notifications defaults on, a layer can turn it off, and
+// Apply drives the live theme.Notify switch.
+func TestDesktopNotificationsDefaultAndApply(t *testing.T) {
+	theme.NotifyForTest(t, true)
+	if !Defaults().DesktopNotifications {
+		t.Fatal("default must be on")
+	}
+	user := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(user, []byte("desktop_notifications = false\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(user, "")
+	if err != nil || cfg.DesktopNotifications {
+		t.Fatalf("layer off lost: %+v err=%v", cfg.DesktopNotifications, err)
+	}
+	cfg.Apply()
+	if theme.Notify {
+		t.Fatal("Apply must switch theme.Notify off")
+	}
+	Defaults().Apply()
+	if !theme.Notify {
+		t.Fatal("Apply must switch theme.Notify on")
+	}
+}
+
+// F-181: editor.inline_completion defaults on (it only acts when the server
+// provides it); a layer turns it off, and Settings can patch it.
+func TestEditorInlineCompletionLayer(t *testing.T) {
+	def, _ := Load(filepath.Join(t.TempDir(), "none"), "")
+	if !def.Editor.InlineCompletion {
+		t.Fatal("inline_completion must default on")
+	}
+	p := filepath.Join(t.TempDir(), "c.toml")
+	os.WriteFile(p, []byte("[editor]\ninline_completion = false\n"), 0o644)
+	cfg, err := Load(p, "")
+	if err != nil || cfg.Editor.InlineCompletion {
+		t.Fatalf("layer: inline_completion=%v err=%v", cfg.Editor.InlineCompletion, err)
+	}
+	if !slices.Contains(Known(), "editor.inline_completion") {
+		t.Fatal("editor.inline_completion must be a known key")
+	}
+}
+
+// F-175: editor.breadcrumbs defaults on, editor.sticky_scroll off; layers override.
+func TestEditorBreadcrumbsAndStickyLayer(t *testing.T) {
+	def, _ := Load(filepath.Join(t.TempDir(), "none"), "")
+	if !def.Editor.Breadcrumbs || def.Editor.StickyScroll {
+		t.Fatalf("defaults: breadcrumbs=%v sticky=%v", def.Editor.Breadcrumbs, def.Editor.StickyScroll)
+	}
+	p := filepath.Join(t.TempDir(), "c.toml")
+	os.WriteFile(p, []byte("[editor]\nbreadcrumbs = false\nsticky_scroll = true\n"), 0o644)
+	cfg, err := Load(p, "")
+	if err != nil || cfg.Editor.Breadcrumbs || !cfg.Editor.StickyScroll {
+		t.Fatalf("layer: breadcrumbs=%v sticky=%v err=%v", cfg.Editor.Breadcrumbs, cfg.Editor.StickyScroll, err)
 	}
 }

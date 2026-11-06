@@ -30,6 +30,7 @@ import (
 	agentkitStandards "github.com/drjzlyan/dhi/internal/agentkit/standards"
 	agentkitWorkflow "github.com/drjzlyan/dhi/internal/agentkit/workflow"
 	"github.com/drjzlyan/dhi/internal/autopilot"
+	"github.com/drjzlyan/dhi/internal/hostenv"
 	"github.com/drjzlyan/dhi/internal/hosttools"
 	"github.com/drjzlyan/dhi/internal/ideation"
 	"github.com/drjzlyan/dhi/internal/langserver"
@@ -37,6 +38,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/sandbox"
 	"github.com/drjzlyan/dhi/internal/settings"
 	"github.com/drjzlyan/dhi/internal/tasks"
+	"github.com/drjzlyan/dhi/internal/trust"
 	"github.com/drjzlyan/dhi/internal/unread"
 	"github.com/drjzlyan/dhi/internal/workspace"
 )
@@ -78,6 +80,7 @@ func Run(wsRoot string) Report {
 	r.Checks = append(r.Checks, GitAccess(wsRoot)...)
 	r.Checks = append(r.Checks, Workspace(wsRoot)...)
 	r.Checks = append(r.Checks, Config(wsRoot)...)
+	r.Checks = append(r.Checks, Trust(wsRoot)...)
 	r.Checks = append(r.Checks, Agents(wsRoot)...)
 	r.Checks = append(r.Checks, AgentTools(wsRoot)...)
 	r.Checks = append(r.Checks, Library(wsRoot)...)
@@ -88,6 +91,7 @@ func Run(wsRoot string) Report {
 	r.Checks = append(r.Checks, Workflows(wsRoot)...)
 	r.Checks = append(r.Checks, Dependencies(wsRoot)...)
 	r.Checks = append(r.Checks, Runtimes()...)
+	r.Checks = append(r.Checks, Fallbacks(wsRoot)...)
 	r.Checks = append(r.Checks, Tasks(wsRoot)...)
 	r.Checks = append(r.Checks, RunStore(wsRoot)...)
 	r.Checks = append(r.Checks, Autopilots(wsRoot)...)
@@ -99,6 +103,7 @@ func Run(wsRoot string) Report {
 	r.Checks = append(r.Checks, GH()...)
 	r.Checks = append(r.Checks, Sandbox(sandboxMode(wsRoot))...)
 	r.Checks = append(r.Checks, Secrets(os.Environ())...)
+	r.Checks = append(r.Checks, Telemetry(hostenv.Env())...)
 	r.Healthy = true
 	for _, c := range r.Checks {
 		if c.Status == Fail {
@@ -214,6 +219,44 @@ func Workspace(root string) []Check {
 		}
 	}
 	return checks
+}
+
+// trustPath locates the trust record; swappable in tests.
+var trustPath = trust.DefaultPath
+
+// Trust reports which workspace members are trusted to run language
+// servers, formatters, tasks, tests and the debugger (F-148). Restricted
+// members are a Warn that names them and the way out.
+func Trust(wsRoot string) []Check {
+	if wsRoot == "" {
+		return nil
+	}
+	ws, err := workspace.Load(wsRoot)
+	if err != nil {
+		return nil // workspace/config already says why
+	}
+	path, err := trustPath()
+	if err != nil {
+		return []Check{{Name: "workspace/trust", Status: Warn, Detail: err.Error()}}
+	}
+	st := trust.New(path)
+	if err := st.Err(); err != nil {
+		return []Check{{Name: "workspace/trust", Status: Warn,
+			Detail: err.Error() + " — every folder is restricted until it is fixed"}}
+	}
+	var restricted []string
+	for _, m := range ws.Members() {
+		if !st.Trusted(m.Path) {
+			restricted = append(restricted, m.Name)
+		}
+	}
+	if len(restricted) > 0 {
+		return []Check{{Name: "workspace/trust", Status: Warn,
+			Detail: "restricted: " + strings.Join(restricted, ", ") +
+				" — language servers, format on save, tasks, tests and the debugger are off; :trust in the editor"}}
+	}
+	return []Check{{Name: "workspace/trust", Status: OK,
+		Detail: fmt.Sprintf("%d member(s) trusted (:untrust restricts one)", len(ws.Members()))}}
 }
 
 // Config probes settings files for unknown keys (F-006: doctor reports
@@ -357,6 +400,50 @@ func Runtimes() []Check {
 		} else {
 			checks = append(checks, Check{Name: "runtime/" + c.Name + "/resume", Status: OK,
 				Detail: "no verified session resume; each turn starts fresh with DHI's episode summary"})
+		}
+		// F-123: say plainly whether the CLI's own web tools can be
+		// switched off; never imply a restriction that is not verified.
+		if c.WebDenyOK {
+			checks = append(checks, Check{Name: "runtime/" + c.Name + "/web", Status: OK,
+				Detail: "native web fetch/search tools are switched off unless agents.native_web = \"allow\" (verified)"})
+		} else {
+			why := ""
+			if c.WebDenyWhy != "" {
+				why = ": " + c.WebDenyWhy
+			}
+			checks = append(checks, Check{Name: "runtime/" + c.Name + "/web", Status: Warn,
+				Detail: "no verified way to switch off " + c.Bin + "'s own web fetch/search tools; they stay available to its agents (the sandbox still applies)" + why})
+		}
+		// F-124: which repos' AGENTS.md reach the agent by which route.
+		if c.ReadsAgentsMD {
+			checks = append(checks, Check{Name: "runtime/" + c.Name + "/agents-md", Status: OK,
+				Detail: c.Bin + " loads AGENTS.md from its working directory (verified); DHI adds the other members' files to the prompt"})
+		} else {
+			checks = append(checks, Check{Name: "runtime/" + c.Name + "/agents-md", Status: OK,
+				Detail: "not verified that " + c.Bin + " loads AGENTS.md itself; DHI adds every member's file to the prompt"})
+		}
+		// G-A4: what happens to a prompt over the argv budget.
+		limit := fmt.Sprintf("%d KiB", clirun.MaxPromptArg()>>10)
+		if c.StdinOK {
+			checks = append(checks, Check{Name: "runtime/" + c.Name + "/prompt-size", Status: OK,
+				Detail: "a prompt over " + limit + " is sent on stdin as one block (system block first, no system-prompt slot); the run record shows delivery = \"stdin\""})
+		} else {
+			checks = append(checks, Check{Name: "runtime/" + c.Name + "/prompt-size", Status: Warn,
+				Detail: c.Bin + " has no verified stdin delivery: a prompt over " + limit + " refuses the turn by name; lower memory.prompt_tokens to keep prompts under it"})
+		}
+		// F-179 (ADR-0047): where plugin hooks reach. DHI's own tool calls
+		// are always covered; the CLI's native tools only where it takes
+		// hooks per run. Said either way, never implied.
+		if c.HooksArgs != nil {
+			checks = append(checks, Check{Name: "runtime/" + c.Name + "/hooks", Status: OK,
+				Detail: "plugin tool hooks (once enabled) cover DHI's tools and " + c.Bin + "'s own tools, handed to it for each run only; your " + c.Bin + " config is never edited"})
+		} else {
+			why := ""
+			if c.HooksWhy != "" {
+				why = ": " + c.HooksWhy
+			}
+			checks = append(checks, Check{Name: "runtime/" + c.Name + "/hooks", Status: OK,
+				Detail: "plugin hooks (once enabled) cover DHI's tools only; " + c.Bin + "'s own tools are not hooked" + why})
 		}
 		for _, k := range c.EnvPass {
 			if k == "HOME" {

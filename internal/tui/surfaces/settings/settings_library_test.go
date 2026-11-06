@@ -140,8 +140,8 @@ func TestAgentFormCarriesRoleAndSkills(t *testing.T) {
 	if !m.HandleKey("n") {
 		t.Fatal("n refused")
 	}
-	if len(m.form.f.Fields) != 9 {
-		t.Fatalf("agent form fields = %d, want 9 (id/name/model/system/runtime/tools/role/skills/persona)", len(m.form.f.Fields))
+	if len(m.form.f.Fields) != 11 {
+		t.Fatalf("agent form fields = %d, want 11 (id/name/model/system/runtime/tools/role/skills/persona/fallback/fb model)", len(m.form.f.Fields))
 	}
 	if m.form.f.Fields[8].Label != "persona" {
 		t.Fatalf("persona label = %q", m.form.f.Fields[8].Label)

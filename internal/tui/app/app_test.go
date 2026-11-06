@@ -902,3 +902,26 @@ func TestToastFloatsTopRightAndExpires(t *testing.T) {
 		t.Fatal("toast still showing after expiry")
 	}
 }
+
+// TestOSC9RespectsSetting (F-139): the notification is raised only when
+// blurred and desktop_notifications is on; the default is on.
+func TestOSC9RespectsSetting(t *testing.T) {
+	a := New("test", &stubSurface{id: "ws", title: "Workspace"})
+	tk := &kit.Toast{Title: "t", Detail: "d"}
+	if !theme.Notify {
+		t.Fatal("desktop notifications must default on")
+	}
+	a.blurred = true
+	if a.notifyCmd(tk) == nil {
+		t.Fatal("blurred + on: expected OSC 9")
+	}
+	theme.NotifyForTest(t, false)
+	if a.notifyCmd(tk) != nil {
+		t.Fatal("blurred + off: no OSC 9")
+	}
+	theme.NotifyForTest(t, true)
+	a.blurred = false
+	if a.notifyCmd(tk) != nil {
+		t.Fatal("focused: no OSC 9")
+	}
+}

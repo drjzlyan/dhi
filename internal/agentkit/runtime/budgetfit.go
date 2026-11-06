@@ -3,6 +3,8 @@ package runtime
 import (
 	"fmt"
 	"strings"
+
+	"github.com/drjzlyan/dhi/internal/agentkit/untrusted"
 )
 
 // F-078: one token budget for the whole prompt. Every block — persona,
@@ -135,7 +137,7 @@ func joinTagged(secs []section) string {
 	var b strings.Builder
 	open := ""
 	for _, s := range secs {
-		text := strings.Trim(s.text, "\n")
+		text := untrusted.Balance(strings.Trim(s.text, "\n"))
 		if strings.TrimSpace(text) == "" {
 			continue
 		}

@@ -105,6 +105,14 @@ type Store struct {
 
 	mu    sync.Mutex
 	index index
+
+	// Search cache (F-153): bodies by entry id and the vector index over
+	// them, invalidated by file size/mtime and entry metadata.
+	bodies      map[string]bodyCache
+	vix         *vectorIndex
+	vixKey      string
+	bodyReads   int // test counters
+	indexBuilds int
 }
 
 // Open loads (or initializes) the KB under ws with the given policy;
@@ -175,14 +183,8 @@ func (s *Store) Search(ctx context.Context, query string, limit int) ([]Hit, err
 	}
 
 	// Lexical vectors over title + tags + body of every entry.
-	bodies := make([]string, len(s.index.Entries))
-	docs := make([]string, len(s.index.Entries))
-	for i, e := range s.index.Entries {
-		data, _ := os.ReadFile(filepath.Join(s.root, filepath.FromSlash(e.File)))
-		bodies[i] = string(data)
-		docs[i] = e.Title + " " + e.Title + " " + strings.Join(e.Tags, " ") + "\n" + bodies[i]
-	}
-	sims := newVectorIndex(docs).similarity(query)
+	bodies, vix := s.corpus()
+	sims := vix.similarity(query)
 
 	now := time.Now()
 	var out []Hit
@@ -214,6 +216,58 @@ func (s *Store) Search(ctx context.Context, query string, limit int) ([]Hit, err
 		out = out[:limit]
 	}
 	return out, nil
+}
+
+// bodyCache is one entry's file as last read, valid while its size and
+// mtime hold (F-153).
+type bodyCache struct {
+	size int64
+	mod  time.Time
+	body string
+}
+
+// corpus returns every entry's body and the TF-IDF index over them. A
+// body is re-read only when its file's size or mtime changed, and the
+// index is rebuilt only when some body, title or tag set changed, so a
+// search over an unchanged KB costs one stat per entry. Callers hold s.mu.
+func (s *Store) corpus() ([]string, *vectorIndex) {
+	if s.bodies == nil {
+		s.bodies = map[string]bodyCache{}
+	}
+	bodies := make([]string, len(s.index.Entries))
+	var key strings.Builder
+	live := map[string]bool{}
+	for i, e := range s.index.Entries {
+		live[e.ID] = true
+		var size int64 = -1 // a missing file reads as empty, as before
+		var mod time.Time
+		if st, err := os.Stat(filepath.Join(s.root, filepath.FromSlash(e.File))); err == nil {
+			size, mod = st.Size(), st.ModTime()
+		}
+		c, ok := s.bodies[e.ID]
+		if !ok || c.size != size || !c.mod.Equal(mod) {
+			data, _ := os.ReadFile(filepath.Join(s.root, filepath.FromSlash(e.File)))
+			c = bodyCache{size: size, mod: mod, body: string(data)}
+			s.bodies[e.ID] = c
+			s.bodyReads++
+		}
+		bodies[i] = c.body
+		fmt.Fprintf(&key, "%s\x00%s\x00%s\x00%d\x00%d\n", e.ID, e.Title, strings.Join(e.Tags, " "), size, mod.UnixNano())
+	}
+	for id := range s.bodies {
+		if !live[id] {
+			delete(s.bodies, id)
+		}
+	}
+	if s.vix == nil || s.vixKey != key.String() {
+		docs := make([]string, len(bodies))
+		for i, e := range s.index.Entries {
+			docs[i] = e.Title + " " + e.Title + " " + strings.Join(e.Tags, " ") + "\n" + bodies[i]
+		}
+		s.vix, s.vixKey = newVectorIndex(docs), key.String()
+		s.indexBuilds++
+	}
+	return bodies, s.vix
 }
 
 // minSimilarity is the cosine below which a vector match is noise.

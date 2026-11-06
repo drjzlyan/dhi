@@ -65,9 +65,66 @@ func TestCodexThreadIDBecomesSession(t *testing.T) {
 // Only verified adapters may claim resume.
 func TestResumeOKOnlyVerified(t *testing.T) {
 	for _, c := range allAdapters() {
-		want := c.Name == "claude" || c.Name == "codex"
+		want := c.Name == "claude" || c.Name == "codex" || c.Name == "opencode" || c.Name == "cursor-agent"
 		if c.ResumeOK != want {
 			t.Fatalf("%s.ResumeOK = %v, want %v", c.Name, c.ResumeOK, want)
 		}
+	}
+}
+
+// F-170: opencode and cursor-agent resume (live-verified); copilot is not.
+func TestOpenCodeResumeArgsAndSession(t *testing.T) {
+	args := OpenCode.BuildArgs(RunInput{Prompt: "go", Workdir: "/w", Resume: "ses_1"})
+	i := slices.Index(args, "--session")
+	if i < 0 || args[i+1] != "ses_1" || args[len(args)-1] != "go" {
+		t.Fatalf("args = %v", args)
+	}
+	if slices.Contains(OpenCode.BuildArgs(RunInput{Prompt: "go", Workdir: "/w"}), "--session") {
+		t.Fatal("a fresh run must not pass --session")
+	}
+	stream := `{"type":"step_start","sessionID":"ses_9","part":{"type":"step-start"}}
+{"type":"text","sessionID":"ses_9","part":{"type":"text","text":"noted."}}
+{"type":"step_finish","sessionID":"ses_9","part":{"reason":"stop","tokens":{"input":5,"output":1}}}`
+	var sessions []string
+	var final string
+	for ev := range OpenCode.ParseStream(strings.NewReader(stream)) {
+		switch ev.Kind {
+		case EventSession:
+			sessions = append(sessions, ev.Session)
+		case EventFinal:
+			final = ev.Detail
+		}
+	}
+	_, u, err := OpenCode.Finalize(final)
+	if err != nil || u.SessionID != "ses_9" || len(sessions) != 1 || sessions[0] != "ses_9" {
+		t.Fatalf("sessions = %v, usage = %+v, %v", sessions, u, err)
+	}
+}
+
+func TestCursorResumeArgsAndSession(t *testing.T) {
+	args := CursorAgent.BuildArgs(RunInput{Prompt: "go", Workdir: "/w", Resume: "chat-1"})
+	i := slices.Index(args, "--resume")
+	if i < 0 || args[i+1] != "chat-1" || args[0] != "-p" || args[1] != "go" {
+		t.Fatalf("args = %v", args)
+	}
+	if slices.Contains(CursorAgent.BuildArgs(RunInput{Prompt: "go"}), "--resume") {
+		t.Fatal("a fresh run must not pass --resume")
+	}
+	stream := `{"type":"system","subtype":"init","session_id":"chat-7","model":"Auto"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"noted."}]},"session_id":"chat-7"}
+{"type":"result","subtype":"success","is_error":false,"result":"noted.","session_id":"chat-7","usage":{"inputTokens":9,"outputTokens":1}}`
+	var sessions []string
+	var final string
+	for ev := range CursorAgent.ParseStream(strings.NewReader(stream)) {
+		switch ev.Kind {
+		case EventSession:
+			sessions = append(sessions, ev.Session)
+		case EventFinal:
+			final = ev.Detail
+		}
+	}
+	_, u, err := CursorAgent.Finalize(final)
+	if err != nil || u.SessionID != "chat-7" || len(sessions) != 1 {
+		t.Fatalf("sessions = %v, usage = %+v, %v", sessions, u, err)
 	}
 }

@@ -69,6 +69,9 @@ func (m *Model) formatEditor(ed *textbuf.Editor) string {
 	if !known {
 		return "format: no language support for this file type"
 	}
+	if m.restricted(path, "format") {
+		return trustLine("format")
+	}
 	if len(l.Format) > 0 {
 		return m.formatExternal(ed, l)
 	}
@@ -108,11 +111,19 @@ func (m *Model) formatEditor(ed *textbuf.Editor) string {
 	return ""
 }
 
-// beforeSave is the format-on-save hook installed on every buffer: a buffer
-// with a configured formatter, or a live server that can format, is
-// formatted; anything else saves as-is (no server is the normal case, so it
-// stays quiet).
+// beforeSave is the hook installed on every buffer: format on save, then
+// the file's .editorconfig whitespace rules (F-160), which run last so a
+// formatter cannot undo them.
 func (m *Model) beforeSave(ed *textbuf.Editor) string {
+	note := m.formatBeforeSave(ed)
+	m.editorConfigBeforeSave(ed)
+	return note
+}
+
+// formatBeforeSave: a buffer with a configured formatter, or a live server
+// that can format, is formatted; anything else saves as-is (no server is
+// the normal case, so it stays quiet).
+func (m *Model) formatBeforeSave(ed *textbuf.Editor) string {
 	if !m.formatOnSave {
 		return ""
 	}

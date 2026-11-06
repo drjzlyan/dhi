@@ -1,0 +1,30 @@
+▏ files ─────────────────── ▏ app.go   NORMAL  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
+▏ ▌ ▸ alpha/                ▏  app.go                                                               
+▏   ▸ beta/                 ▏ 1 package main                                                        
+▏                           ▏ 2                                                                     
+▏                           ▏ 3 // worda wordb wordc wordd worde wordf wordg wordh wordi wordj      
+▏                           ▏   wordk wordl wordm wordn wordo wordp wordq wordr words wordt wordu   
+▏                           ▏   wordv wordw wordx wordy wordz worda wordb wordc wordd worde wordf   
+▏                           ▏   wordg wordh wordi wordj wordk wordl wordm wordn wordo wordp wordq   
+▏                           ▏   wordr words                                                         
+▏                           ▏ 4                                                                     
+▏                           ▏ 5 func main() {                                                       
+▏                           ▏ 6     println("日本語日本語日本語日本語日本語日本語日本語日本語日本   
+▏                           ▏   日本語日本語日本語日本語日本語日本語日本語日本語日本語日本語日本語  
+▏                           ▏   日本語日本語日本語日本語日本語日本語日本語日本語日本語日本語日本語  
+▏                           ▏   日本語日本語日本語日本語日本語日本語日本語日本語日本語")            
+▏                           ▏ 7 }                                                                   
+▏                           ▏ 8                                                                     
+▏                           ▏                                                                       
+▏                           ▏                                                                       
+▏                           ▏                                                                       
+▏                           ▏                                                                       
+▏                           ▏                                                                       
+▏                           ▏                                                                       
+▏                           ▏                                                                       
+▏                           ▏                                                                       
+▏                           ▏                                                                       
+▏                           ▏                                                                       
+▏                           ▏                                                                       
+▏                           ▏                                                                       
+▏                           ▏                                                                       

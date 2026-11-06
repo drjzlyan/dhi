@@ -47,6 +47,6 @@ func TestSplitPanes(t *testing.T) {
 
 	feed(m, "ctrl+w", "v", ":", "q", "enter")
 	if m.splitActive() || len(m.bufs) != 1 {
-		t.Fatalf("closing a pane's buffer: split=%v bufs=%d", m.split, len(m.bufs))
+		t.Fatalf("closing a pane's buffer: split=%v bufs=%d", m.splitActive(), len(m.bufs))
 	}
 }

@@ -134,10 +134,10 @@ func InferFromExample(commit, pr string) Inference {
 
 // PRSkeleton keeps a PR description's structure: headings, checklist
 // items (unchecked) and HTML comments (template hints). Text without
-// headings is kept whole. Braces are escaped out so it is a valid
-// template; {title} heads it when it has no heading of its own.
+// headings is kept whole. Braces are doubled so it is a template
+// that renders back to the same text; {title} heads it when it has no heading of its own.
 func PRSkeleton(text string) string {
-	text = strings.NewReplacer("{", "(", "}", ")").Replace(strings.TrimSpace(text))
+	text = braceEscaper.Replace(strings.TrimSpace(text))
 	var keep []string
 	headings := 0
 	for _, l := range strings.Split(text, "\n") {
@@ -172,6 +172,11 @@ func collapseBlank(lines []string) []string {
 	return out
 }
 
+// braceEscaper makes learned text a template that renders back to
+// itself: every brace doubled (F-182), so nothing in it reads as a
+// symbol or an {ai} slot.
+var braceEscaper = strings.NewReplacer("{", "{{", "}", "}}")
+
 // prTemplatePaths are where GitHub looks for a PR template.
 var prTemplatePaths = []string{
 	".github/pull_request_template.md", ".github/PULL_REQUEST_TEMPLATE.md",
@@ -184,13 +189,13 @@ var prTemplatePaths = []string{
 func PRTemplate(dir string) string {
 	for _, p := range prTemplatePaths {
 		if b, err := os.ReadFile(filepath.Join(dir, p)); err == nil {
-			return strings.NewReplacer("{", "(", "}", ")").Replace(strings.TrimSpace(string(b)))
+			return braceEscaper.Replace(strings.TrimSpace(string(b)))
 		}
 	}
 	if m, _ := filepath.Glob(filepath.Join(dir, ".github", "PULL_REQUEST_TEMPLATE", "*.md")); len(m) > 0 {
 		sort.Strings(m)
 		if b, err := os.ReadFile(m[0]); err == nil {
-			return strings.NewReplacer("{", "(", "}", ")").Replace(strings.TrimSpace(string(b)))
+			return braceEscaper.Replace(strings.TrimSpace(string(b)))
 		}
 	}
 	return ""

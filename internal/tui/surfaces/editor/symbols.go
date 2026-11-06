@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 
+	tea "charm.land/bubbletea/v2"
+
 	"github.com/drjzlyan/dhi/internal/lsp"
 	"github.com/drjzlyan/dhi/internal/textbuf"
 	"github.com/drjzlyan/dhi/internal/tui/kit"
@@ -50,17 +52,39 @@ func (m *Model) symCommand(cmd string) (string, bool) {
 	if c == nil {
 		return "sym: no language server for this file", true
 	}
+	// The server may still be indexing (seconds): ask off the UI loop and
+	// open the picker when symsMsg lands.
 	path := e.Path()
-	syms, err := withTimeout(func() ([]lsp.Symbol, error) { return c.DocumentSymbols(path) })
-	if err != nil {
-		return "sym failed: " + err.Error(), true
+	m.queue(func() tea.Msg {
+		syms, err := withTimeout(func() ([]lsp.Symbol, error) { return c.DocumentSymbols(path) })
+		return symsMsg{path: path, syms: syms, err: err}
+	})
+	return "sym: asking the language server…", true
+}
+
+// symsMsg is the server's document symbols for :sym.
+type symsMsg struct {
+	path string
+	syms []lsp.Symbol
+	err  error
+}
+
+// onSyms opens the picker if the file is still the one in front.
+func (m *Model) onSyms(msg symsMsg) {
+	e := m.active()
+	if e == nil || e.Path() != msg.path {
+		return
 	}
-	if len(syms) == 0 {
-		return "sym: the server reports no symbols", true
+	switch {
+	case msg.err != nil:
+		e.SetMessage("sym failed: " + msg.err.Error())
+	case len(msg.syms) == 0:
+		e.SetMessage("sym: the server reports no symbols")
+	default:
+		e.SetMessage("")
+		m.syms = &symbolPicker{all: msg.syms}
+		m.mode = modeSymbols
 	}
-	m.syms = &symbolPicker{all: syms}
-	m.mode = modeSymbols
-	return "", true
 }
 
 func (m *Model) handleSymbolKey(key string) bool {

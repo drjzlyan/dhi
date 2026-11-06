@@ -20,19 +20,21 @@ func (d Deps) workTools() []tool {
 		return nil
 	}
 	type workArgs struct {
-		Slug   string `json:"slug"`
-		Title  string `json:"title"`
-		Member string `json:"member"`
-		Carry  *bool  `json:"carry"`
+		Slug   string  `json:"slug"`
+		Title  string  `json:"title"`
+		Member string  `json:"member"`
+		Carry  *bool   `json:"carry"`
+		Fill   FillArg `json:"fill"`
 	}
 	return []tool{{
 		info: mcp.ToolInfo{
 			Name: "work_branch",
 			Description: "Move this conversation's code work onto its own task card, branch and worktree before you edit or commit. " +
 				"Args: {\"slug\":\"short-kebab-id\",\"title\":\"what and why\", optional \"member\":\"repo\" (required with several), " +
-				"optional \"carry\": true (default) moves uncommitted changes already made in the shared checkout into the worktree}. " +
+				"optional \"carry\": true (default) moves uncommitted changes already made in the shared checkout into the worktree, " +
+				"\"fill\": [{\"key\": \"<key>\", \"text\": \"...\"}] when the team's branch name has <…> parts}. " +
 				"An existing slug you own is resumed. After it succeeds, end your run with one short line: DHI continues you in the worktree.",
-			InputSchema: json.RawMessage(`{"type":"object","required":["slug","title"],"properties":{"slug":{"type":"string"},"title":{"type":"string"},"member":{"type":"string"},"carry":{"type":"boolean"}},"additionalProperties":false}`),
+			InputSchema: json.RawMessage(`{"type":"object","required":["slug","title"],"properties":{"slug":{"type":"string"},"title":{"type":"string"},"member":{"type":"string"},"carry":{"type":"boolean"},"fill":` + fillSchema + `},"additionalProperties":false}`),
 		},
 		parse: func(raw json.RawMessage) (any, error) {
 			var a workArgs
@@ -51,7 +53,13 @@ func (d Deps) workTools() []tool {
 		exec: func(ctx context.Context, dec any) (string, error) {
 			a := dec.(workArgs)
 			carry := a.Carry == nil || *a.Carry
-			return d.WorkBranch(ctx, a.Slug, a.Title, strings.TrimSpace(a.Member), carry)
+			// F-182: a non-nil fill says the agent writes the branch name's AI
+			// parts; a missing one is named back to it, never written for it.
+			fill := map[string]string(a.Fill)
+			if fill == nil {
+				fill = map[string]string{}
+			}
+			return d.WorkBranch(ctx, a.Slug, a.Title, strings.TrimSpace(a.Member), carry, fill)
 		},
 	}}
 }

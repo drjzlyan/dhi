@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/drjzlyan/dhi/internal/agentkit/untrusted"
 	"github.com/drjzlyan/dhi/internal/fsx"
 	"io/fs"
 	"os"
@@ -65,6 +66,21 @@ type Episode struct {
 	// cache reads + cache writes): how full a resumed CLI session is
 	// (F-078). 0 = unknown.
 	LastContext int `json:"last_context,omitempty"`
+
+	// Summary is a model-written digest of the conversation up to bus
+	// message SummaryUpTo (F-135, /compact). A fresh turn carries it
+	// instead of replaying those messages.
+	Summary     string `json:"summary,omitempty"`
+	SummaryUpTo int64  `json:"summary_up_to,omitempty"`
+
+	// Model is the user's per-conversation model override (F-130): the
+	// agent's turns in this episode run on it instead of the manifest
+	// model. The chat owns it; a turn's save keeps whatever is stored.
+	Model string `json:"model,omitempty"`
+
+	// ForkedFrom is the key of the episode this one was forked from
+	// (F-134); "" for an episode that began on its own.
+	ForkedFrom string `json:"forked_from,omitempty"`
 
 	Started time.Time `json:"started"`
 	Updated time.Time `json:"updated"`
@@ -145,6 +161,10 @@ func (e Episode) Render() string {
 		}
 	}
 	b.WriteString(".")
+	if e.Summary != "" {
+		// Model-written from the conversation, so data, not instructions.
+		b.WriteString("\n\nSummary of the conversation so far (compacted):\n" + untrusted.Wrap("episode summary", e.Summary))
+	}
 	return b.String()
 }
 
@@ -233,6 +253,65 @@ func (s *Store) Update(agent, key string, fn func(*Episode)) error {
 	}
 	fn(&e)
 	return s.write(p, e)
+}
+
+// Compacted records a compaction (F-135): summary stands for the
+// conversation up to message upTo, and the kept CLI session is dropped so
+// the next turn starts fresh from the summary instead of resuming the
+// long session.
+func (s *Store) Compacted(agent, key, summary string, upTo int64) error {
+	return s.Update(agent, key, func(e *Episode) {
+		e.Summary, e.SummaryUpTo = summary, upTo
+		e.Session, e.LastContext = "", 0
+	})
+}
+
+// SetModel sets (or, with "", clears) the episode's model override.
+func (s *Store) SetModel(agent, key, model string) error {
+	return s.Update(agent, key, func(e *Episode) { e.Model = model })
+}
+
+// Forked is the episode a fork starts as (pure, F-134): the source's
+// carried state (goal, plan, model override, and the summary of where the
+// work stands, with the turn count Render reports) under a new key.
+// Everything tied to the source's CLI session or spend is dropped: a CLI
+// session cannot safely be resumed by two threads (both would append to
+// one transcript), so the fork's first turn spawns fresh and rebuilds
+// context from the summary, and its own spend starts at zero.
+func Forked(src Episode, dstKey string, now time.Time) Episode {
+	return Episode{
+		Key: dstKey, Agent: src.Agent, Goal: src.Goal,
+		Turns: src.Turns, LastStatus: src.LastStatus, LastSummary: src.LastSummary,
+		Summary:    src.Summary, // SummaryUpTo is not carried: the fork's thread has its own messages
+		Plan:       append([]PlanStep(nil), src.Plan...),
+		Model:      src.Model,
+		ForkedFrom: src.Key,
+		Started:    now, Updated: now,
+	}
+}
+
+// Fork copies the agent's episode srcKey to dstKey (see Forked) and
+// returns the copy. It refuses a missing source and an existing
+// destination by name; the source is never written.
+func (s *Store) Fork(agent, srcKey, dstKey string, now time.Time) (Episode, error) {
+	if srcKey == dstKey {
+		return Episode{}, errors.New("episode: fork needs a new key")
+	}
+	src, ok, err := s.Get(agent, srcKey)
+	if err != nil {
+		return Episode{}, err
+	}
+	if !ok {
+		return Episode{}, fmt.Errorf("episode: no episode %q to fork", srcKey)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p := s.path(agent, dstKey)
+	if _, err := os.Stat(p); err == nil {
+		return Episode{}, fmt.Errorf("episode: %q already exists", dstKey)
+	}
+	f := Forked(src, dstKey, now)
+	return f, s.write(p, f)
 }
 
 // List returns an agent's episodes, most recently updated first.

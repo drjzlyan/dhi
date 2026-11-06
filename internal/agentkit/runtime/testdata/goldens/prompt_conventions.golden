@@ -1,0 +1,29 @@
+Team conventions (enforced by DHI):
+- Branches: tasks use "{user}/{ticket|lower}-<short name>", reviews use "review/{id}".
+- Commit subjects follow Conventional Commits: type(scope): subject.
+- Commit subjects take the shape "<Conventional Commits type: feat, fix, docs, refactor, test, chore, …>: <imperative summary of the change>".
+- Commit bodies take this shape (text outside <…> exactly as shown):
+    <why the change is needed, in one or two sentences>
+    
+    Refs: {ticket}
+- Keep commit subjects within 72 characters.
+- PR descriptions take this shape; DHI writes the fixed parts:
+    ## Summary
+    
+    <what changed and why>
+    
+    ## Testing
+    
+    <how it was tested>
+    
+    Task `{slug}` · branch `{branch}`
+- Parts in <…> are yours to write. Pass them as `fill`, a list of {"key", "text"} with the keys below, to git_commit, pr_open or work_branch, and DHI puts them in place:
+  "short name"
+  "type": Conventional Commits type: feat, fix, docs, refactor, test, chore, …
+  "subject": imperative summary of the change
+  "why the change is needed, in one or two sentences"
+  "what changed and why"
+  "how it was tested"
+- DHI fills the {symbols}: {ticket} = the task's ticket key (PROJ-123), else its slug; {slug} = the task's short id (login-timeout); {id} = the task slug, or the review id on a review branch; {title} = the task title; in a PR title, the title the author gave; {branch} = the branch being committed or opened as a PR; {user} = your login name.
+- Commit only with git_commit and open PRs only with pr_open: a `git commit` or `gh pr create` of your own skips these rules.
+</conventions>

@@ -42,9 +42,12 @@ import (
 
 // Codex is the Codex adapter. Registered under the runtime value "codex".
 var Codex = &CLI{
-	Name:   "codex",
-	Bin:    "codex",
-	Tested: "0.147.0",
+	Name: "codex",
+	// No HooksArgs (F-179): no verified per-run hook input; its hooks live in
+	// config.toml under ~/.codex, which DHI does not edit.
+	HooksWhy: "no verified per-run hook input (hooks live in its persistent config, which DHI does not edit)",
+	Bin:      "codex",
+	Tested:   "0.147.0",
 	// EXACT declared pass-through: codex's own config dir plus the
 	// provider keys it reads for hosted models. Nothing else crosses
 	// (ADR-0012 §4).
@@ -64,22 +67,35 @@ var Codex = &CLI{
 	BuildArgs: func(in RunInput) []string {
 		// `exec resume` takes no -C/--sandbox (0.147): the runner's cwd
 		// is the workdir, and the bypass flag covers the sandbox.
-		args := []string{"exec", "--json", "--skip-git-repo-check", "-C", in.Workdir}
+		// Images (G-X3) come right after --json, before a flag: --image
+		// takes values greedily, so a positional must not follow it.
+		img := codexImageArgs(in.Images)
+		args := append([]string{"exec", "--json"}, img...)
+		args = append(args, "--skip-git-repo-check", "-C", in.Workdir)
 		if in.Resume != "" {
-			args = []string{"exec", "resume", "--json", "--skip-git-repo-check"}
+			args = append(append([]string{"exec", "resume", "--json"}, img...), "--skip-git-repo-check")
 		}
 		if in.Model != "" {
 			args = append(args, "-m", in.Model)
 		}
-		if in.Resume == "" {
+		if in.Resume == "" && in.ReadOnly {
+			// F-144: codex's own read-only sandbox, and no bypass flag.
+			args = append(args, "--sandbox", "read-only")
+		} else if in.Resume == "" {
 			// OS sandbox is the boundary; codex's own sandbox must not
 			// double-wrap or pause on interactive approval prompts.
 			args = append(args, "--sandbox", "danger-full-access")
 		}
-		args = append(args, "--dangerously-bypass-approvals-and-sandbox")
+		if !in.ReadOnly {
+			args = append(args, "--dangerously-bypass-approvals-and-sandbox")
+		}
 		// IDE tools (F-028): register DHI's loopback endpoint inline via
 		// `-c mcp_servers.dhi.url=...` (no config file needed).
 		args = append(args, CodexMCPArgs(in.MCPConfig, in.MCPURL)...)
+		if in.DenyWeb {
+			// Also accepted by `exec resume` (0.162.1).
+			args = append(args, "-c", "web_search=disabled")
+		}
 		if in.Resume != "" {
 			args = append(args, in.Resume)
 		}
@@ -96,6 +112,21 @@ var Codex = &CLI{
 		args = append(args, PromptWithSystem(in.System, in.Prompt))
 		return args
 	},
+	// ImagesOK: `codex exec -i/--image <FILE>` attaches an image to the first
+	// message, and `exec resume` accepts it too (documented; live check
+	// pending). The flag is repeated per file: a comma would split a path.
+	ImagesOK:   true,
+	ImagesFlag: true,
+	// ReadsAgentsMD: a canary in AGENTS.md reached the model in an empty git
+	// dir on 0.162.1 (F-124).
+	ReadsAgentsMD: true,
+	// WebDenyOK: web_search=disabled (live-verified on 0.162.1: asked
+	// whether it has a web search tool, "live" answered YES, "disabled" NO).
+	WebDenyOK: true,
+	// ReadOnlyOK: --sandbox read-only without the bypass flag (F-144;
+	// documented, live check pending). A resumed session takes no
+	// --sandbox, so the runtime never resumes a read-only turn.
+	ReadOnlyOK:  true,
 	ParseStream: codexParseStream,
 	Finalize:    codexFinalize,
 	Version:     codexVersion,
@@ -217,7 +248,8 @@ func codexLineEvents(it codexItem) (StreamEvent, bool) {
 				return StreamEvent{}, false
 			}
 			return StreamEvent{Kind: EventCommand, Detail: "command: " +
-				truncate(strings.TrimSpace(it.Item.Command), 160)}, true
+				truncate(strings.TrimSpace(it.Item.Command), 160),
+				Call: ToolCall("command", strings.TrimSpace(it.Item.Command))}, true
 		case "file_change":
 			return StreamEvent{Kind: EventCommand, Detail: "file_change: " + it.Item.Path}, true
 		case "agent_message":
@@ -273,4 +305,13 @@ func codexVersion(ctx context.Context, path string) (string, error) {
 		return v, nil
 	}
 	return "", fmt.Errorf("clirun/codex: no version in %q", truncate(out, 60))
+}
+
+// codexImageArgs is one --image per file (G-X3).
+func codexImageArgs(images []string) []string {
+	var out []string
+	for _, p := range images {
+		out = append(out, "--image", p)
+	}
+	return out
 }

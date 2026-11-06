@@ -7,6 +7,7 @@
 package syntax
 
 import (
+	"path/filepath"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -115,6 +116,9 @@ func (c Class) Style() (lipgloss.Style, bool) {
 // is empty or too large, or lexing fails — callers then render plain,
 // never fake-coloured (F-011).
 func Lex(path, text string) []Line {
+	if filepath.Base(path) == "git-rebase-todo" { // F-165
+		return lexRebaseTodo(text)
+	}
 	return lexWith(lexers.Match(path), text)
 }
 

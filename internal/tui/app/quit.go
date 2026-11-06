@@ -20,15 +20,25 @@ func (a *App) requestQuit() tea.Cmd {
 		}
 	}
 	if len(names) == 0 {
-		a.quitting = true
-		return tea.Quit
+		return a.finishQuit()
 	}
 	a.palette, a.showHelp = nil, false
 	a.quitAsk, a.quitErr = names, ""
 	return nil
 }
 
-// quitKey answers the quit guard: s saves everything and quits, d quits
+// canHotExit is whether any surface can keep its unsaved work (F-161).
+func (a *App) canHotExit() bool {
+	for _, s := range a.surfaces {
+		if _, ok := s.(surfaces.HotExit); ok {
+			return true
+		}
+	}
+	return false
+}
+
+// quitKey answers the quit guard: s saves everything and quits, k keeps the edits in swap files for the
+// next launch (F-161) and quits, d quits
 // without saving, esc (or ctrl+c again) goes back to work.
 func (a *App) quitKey(key string) tea.Cmd {
 	switch key {
@@ -41,11 +51,27 @@ func (a *App) quitKey(key string) tea.Cmd {
 				}
 			}
 		}
-		a.quitAsk, a.quitting = nil, true
-		return tea.Quit
+		return a.finishQuit()
+	case "k", "K":
+		if !a.canHotExit() {
+			return nil
+		}
+		for _, s := range a.surfaces {
+			if h, ok := s.(surfaces.HotExit); ok {
+				if err := h.KeepForNextTime(); err != nil {
+					a.quitErr = err.Error()
+					return nil
+				}
+			}
+		}
+		return a.finishQuit()
 	case "d", "D":
-		a.quitAsk, a.quitting = nil, true
-		return tea.Quit
+		for _, s := range a.surfaces {
+			if h, ok := s.(surfaces.HotExit); ok {
+				h.DiscardSwaps()
+			}
+		}
+		return a.finishQuit()
 	case "esc", "ctrl+c", "n", "N":
 		a.quitAsk, a.quitErr = nil, ""
 	}
@@ -64,10 +90,35 @@ func (a *App) quitView() string {
 		}
 		lines = append(lines, theme.WarningText().Render("  ● ")+theme.TextStyle().Render(n))
 	}
-	lines = append(lines, "",
-		theme.Keycap().Render("s")+theme.TextMuted().Render(" save all and quit   ")+
-			theme.Keycap().Render("d")+theme.TextMuted().Render(" quit without saving   ")+
-			theme.Keycap().Render("esc")+theme.TextMuted().Render(" keep working"))
+	keys := theme.Keycap().Render("s") + theme.TextMuted().Render(" save all and quit   ")
+	if a.canHotExit() {
+		keys += theme.Keycap().Render("k") + theme.TextMuted().Render(" keep for next time   ")
+	}
+	keys += theme.Keycap().Render("d") + theme.TextMuted().Render(" quit without saving   ") +
+		theme.Keycap().Render("esc") + theme.TextMuted().Render(" keep working")
+	lines = append(lines, "", keys)
 	md := kit.Modal{Title: "Quit DHI?", Lines: lines, Error: a.quitErr}
 	return md.View()
+}
+
+// saveSessions lets each surface write the session it will reopen (F-149).
+func (a *App) saveSessions() {
+	for _, s := range a.surfaces {
+		if ss, ok := s.(surfaces.SessionSaver); ok {
+			ss.SaveSession()
+		}
+	}
+}
+
+// finishQuit is the one way out: sessions are saved, surfaces release what
+// must not outlive DHI (F-165), then the program ends.
+func (a *App) finishQuit() tea.Cmd {
+	a.quitAsk, a.quitting = nil, true
+	a.saveSessions()
+	for _, s := range a.surfaces {
+		if sd, ok := s.(surfaces.Shutdowner); ok {
+			sd.Shutdown()
+		}
+	}
+	return tea.Quit
 }

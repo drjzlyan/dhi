@@ -38,7 +38,7 @@ func TestInsertModeRoundTrip(t *testing.T) {
 
 func TestIOpenAndType(t *testing.T) {
 	e := NewEditor("fn main() {}")
-	feed(e, "f") // unknown in MVP → ignored
+	feed(e, "q") // unknown key → ignored
 	e.Key("i")
 	feed(e, "x", "y", "esc")
 	if e.Buffer().Text() != "xyfn main() {}" {
@@ -278,6 +278,175 @@ func TestSpaceKeyBothSpellings(t *testing.T) {
 		feed(e, k)
 		if c := e.Buffer().Cursor(); c.Col != 1 {
 			t.Errorf("normal-mode %q moved cursor to col %d, want 1", k, c.Col)
+		}
+	}
+}
+
+// TestFindCharMotion tests f/F/t/T motions (F-133).
+func TestFindCharMotion(t *testing.T) {
+	// f: find forward, inclusive
+	e := NewEditor("abcxyz")
+	feed(e, "f", "x")
+	if c := e.Buffer().Cursor(); c.Col != 3 {
+		t.Fatalf("fx: cursor col = %d, want 3", c.Col)
+	}
+
+	// F: find backward, exclusive
+	e2 := NewEditor("xyzabc")
+	feed(e2, "$", "F", "x")
+	if c := e2.Buffer().Cursor(); c.Col != 0 {
+		t.Fatalf("$Fx: cursor col = %d, want 0", c.Col)
+	}
+
+	// t: until forward, inclusive
+	e3 := NewEditor("abcxyz")
+	feed(e3, "t", "x")
+	if c := e3.Buffer().Cursor(); c.Col != 2 {
+		t.Fatalf("tx: cursor col = %d, want 2", c.Col)
+	}
+
+	// T: until backward, exclusive
+	e4 := NewEditor("xyzabc")
+	feed(e4, "$", "T", "x")
+	if c := e4.Buffer().Cursor(); c.Col != 1 {
+		t.Fatalf("$Tx: cursor col = %d, want 1", c.Col)
+	}
+
+	// Not found: cursor stays
+	e5 := NewEditor("abcdef")
+	feed(e5, "f", "z")
+	if c := e5.Buffer().Cursor(); c.Col != 0 {
+		t.Fatalf("fz (not found): cursor col = %d, want 0", c.Col)
+	}
+
+	// Count: find nth occurrence on "axaxax"
+	// x appears at positions 1, 3, 5
+	// 2fx finds the 2nd x at position 3
+	e6 := NewEditor("axaxax")
+	feed(e6, "2", "f", "x")
+	if c := e6.Buffer().Cursor(); c.Col != 3 {
+		t.Fatalf("2fx: cursor col = %d, want 3", c.Col)
+	}
+
+	// Find with space
+	e7 := NewEditor("a b c")
+	feed(e7, "f", "space")
+	if c := e7.Buffer().Cursor(); c.Col != 1 {
+		t.Fatalf("f<space>: cursor col = %d, want 1", c.Col)
+	}
+}
+
+// TestDeleteWithFind tests delete operator with find motions (F-133).
+func TestDeleteWithFind(t *testing.T) {
+	// dfx on abcx: delete inclusive up to x
+	e := NewEditor("abcx")
+	feed(e, "d", "f", "x")
+	if got := e.Buffer().Text(); got != "" {
+		t.Fatalf("dfx: %q, want empty", got)
+	}
+
+	// dtx on abcxyz: delete up to (but not including) x
+	e2 := NewEditor("abcxyz")
+	feed(e2, "d", "t", "x")
+	if got := e2.Buffer().Text(); got != "xyz" {
+		t.Fatalf("dtx: %q, want xyz", got)
+	}
+
+	// dFx backward on xabc (cursor at col 4, after 'c')
+	// F is exclusive: delete from cursor back to (but not including) x
+	// Range is [0, 4), which deletes all 4 characters
+	e3 := NewEditor("xabc")
+	feed(e3, "$", "d", "F", "x")
+	if got := e3.Buffer().Text(); got != "" {
+		t.Fatalf("$dFx: %q, want empty", got)
+	}
+
+	// Test with cursor on 'c' (col 3): dFx should delete [0, 3)
+	e4 := NewEditor("xabc")
+	feed(e4, "$", "h", "d", "F", "x") // move cursor left to col 3
+	if got := e4.Buffer().Text(); got != "c" {
+		t.Fatalf("dFx at col 3: %q, want c", got)
+	}
+}
+
+// TestRepeatFind tests ; and , for find repetition (F-133).
+func TestRepeatFind(t *testing.T) {
+	// ; repeats the last find
+	// On "xaxax", starting at col 0:
+	// x's are at positions 0, 2, 4
+	// fx finds first x after cursor at col 2
+	e := NewEditor("xaxax")
+	feed(e, "f", "x")
+	if c := e.Buffer().Cursor(); c.Col != 2 {
+		t.Fatalf("fx: col=%d, want 2", c.Col)
+	}
+	feed(e, ";")
+	if c := e.Buffer().Cursor(); c.Col != 4 {
+		t.Fatalf("fx;: col=%d, want 4", c.Col)
+	}
+
+	// , reverses the find direction
+	// On "xaxax", starting at col 0:
+	// x's are at positions 0, 2, 4
+	// 2fx finds the 2nd x at col 4
+	e2 := NewEditor("xaxax")
+	feed(e2, "2", "f", "x") // move to second x at col 4
+	if c := e2.Buffer().Cursor(); c.Col != 4 {
+		t.Fatalf("2fx: col=%d, want 4", c.Col)
+	}
+	// Now from col 4, find next x - there's none, so no move
+	// Try a different test: reverse the last find
+	e3 := NewEditor("xaxax")
+	feed(e3, "l", "f", "x") // start at col 1, find next x at col 2
+	if c := e3.Buffer().Cursor(); c.Col != 2 {
+		t.Fatalf("col 1, fx: col=%d, want 2", c.Col)
+	}
+	feed(e3, ",") // reverse: find backward for x from col 2, should find col 0
+	if c := e3.Buffer().Cursor(); c.Col != 0 {
+		t.Fatalf("col 2, Fx (via ,): col=%d, want 0", c.Col)
+	}
+}
+
+// TestMatchBracket tests % motion (F-133).
+func TestMatchBracket(t *testing.T) {
+	// % on opening bracket
+	e := NewEditor("a(b)c")
+	feed(e, "l", "%")
+	if c := e.Buffer().Cursor(); c.Col != 3 {
+		t.Fatalf("(b)c at ( then %%: col=%d, want 3", c.Col)
+	}
+
+	// % on closing bracket
+	e2 := NewEditor("a(b)c")
+	feed(e2, "l", "l", "l", "%")
+	if c := e2.Buffer().Cursor(); c.Col != 1 {
+		t.Fatalf("a(b)c at ) then %%: col=%d, want 1", c.Col)
+	}
+
+	// % not on bracket: find forward
+	e3 := NewEditor("ab(cd)ef")
+	feed(e3, "%")
+	if c := e3.Buffer().Cursor(); c.Col != 5 {
+		t.Fatalf("ab(cd)ef not on bracket, %% finds ): col=%d, want 5", c.Col)
+	}
+}
+
+// d% and d; d, compose like vim (F-133).
+func TestOperatorBracketAndRepeatFind(t *testing.T) {
+	for _, c := range []struct {
+		in   string
+		keys []string
+		want string
+	}{
+		{"f(a, b) z", []string{"d", "%"}, " z"},
+		{"f(a, b) z", []string{"f", "(", "d", "%"}, "f z"},
+		{"a,b,c,d", []string{"f", ",", ";", "d", ";"}, "a,bd"},
+		{"a,b,c,d", []string{"$", "F", ",", "d", ","}, "a,b,c,d"}, // no "," ahead: nothing deleted
+	} {
+		e := NewEditor(c.in)
+		feed(e, c.keys...)
+		if got := e.Buffer().Text(); got != c.want {
+			t.Errorf("%q %v = %q, want %q", c.in, c.keys, got, c.want)
 		}
 	}
 }

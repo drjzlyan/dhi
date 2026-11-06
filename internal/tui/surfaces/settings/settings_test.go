@@ -76,8 +76,8 @@ func TestReducedMotionTogglesLiveAndPersists(t *testing.T) {
 func TestTabWidthCyclesAndPersists(t *testing.T) {
 	m, path := newSurface(t)
 	m.cursor = rowTheme
-	feed(m, "j", "j") // tab_width
-	feed(m, "l")      // 4 → 8
+	feed(m, "j", "j", "j") // tab_width (after theme, reduced_motion, desktop_notifications)
+	feed(m, "l")           // 4 → 8
 
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -95,11 +95,92 @@ func TestTabWidthCyclesAndPersists(t *testing.T) {
 func TestLineNumbersToggle(t *testing.T) {
 	m, _ := newSurface(t)
 	m.cursor = rowTheme
-	feed(m, "j", "j", "j") // line_numbers
+	feed(m, "j", "j", "j", "j") // line_numbers (after tab_width)
 	was := m.cfg.Editor.LineNumbers
 	feed(m, "enter")
 	if m.cfg.Editor.LineNumbers == was {
 		t.Fatal("toggle no-op")
+	}
+}
+
+// F-143: inline blame is a Settings toggle, off by default.
+func TestBlameToggle(t *testing.T) {
+	m, _ := newSurface(t)
+	if m.cfg.Editor.Blame {
+		t.Fatal("blame must default off")
+	}
+	m.cursor = rowBlame
+	feed(m, "enter")
+	if !m.cfg.Editor.Blame {
+		t.Fatal("toggle no-op")
+	}
+}
+
+// F-169: LSP inlay hints are a Settings toggle, off by default.
+func TestInlayHintsToggle(t *testing.T) {
+	m, _ := newSurface(t)
+	if m.cfg.Editor.InlayHints {
+		t.Fatal("inlay hints must default off")
+	}
+	m.cursor = rowInlayHints
+	feed(m, "enter")
+	if !m.cfg.Editor.InlayHints {
+		t.Fatal("toggle no-op")
+	}
+}
+
+// F-173: semantic token colours are a Settings toggle, off by default.
+func TestSemanticTokensToggle(t *testing.T) {
+	m, _ := newSurface(t)
+	if m.cfg.Editor.SemanticTokens {
+		t.Fatal("semantic tokens must default off")
+	}
+	m.cursor = rowSemanticTokens
+	feed(m, "enter")
+	if !m.cfg.Editor.SemanticTokens {
+		t.Fatal("toggle no-op")
+	}
+}
+
+// F-136: wrap long lines is a Settings toggle, off by default.
+func TestWrapToggle(t *testing.T) {
+	m, _ := newSurface(t)
+	if m.cfg.Editor.Wrap {
+		t.Fatal("wrap must default off")
+	}
+	m.cursor = rowWrap
+	feed(m, "enter")
+	if !m.cfg.Editor.Wrap {
+		t.Fatal("toggle no-op")
+	}
+}
+
+func TestDesktopNotificationsToggle(t *testing.T) {
+	theme.NotifyForTest(t, true)
+	m, path := newSurface(t)
+	m.cursor = rowTheme
+	feed(m, "j", "j") // reduced_motion, then desktop_notifications
+	if !m.cfg.DesktopNotifications || !theme.Notify {
+		t.Fatal("default must be on")
+	}
+	feed(m, "enter")
+	if m.cfg.DesktopNotifications || theme.Notify {
+		t.Fatal("toggle did not turn it off live")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "desktop_notifications = false") {
+		t.Errorf("persisted file:\n%s", data)
+	}
+	back, err := settings.Load(path, "")
+	if err != nil || back.DesktopNotifications {
+		t.Errorf("reload = %v err=%v, want off", back.DesktopNotifications, err)
+	}
+	feed(m, "enter")
+	if !theme.Notify {
+		t.Fatal("toggle back on did not apply")
 	}
 }
 
@@ -390,7 +471,7 @@ func TestEverySettingHasAPlaceInSettings(t *testing.T) {
 		"schema": "internal",
 		// Naming templates (CONVENTIONS section: use, edit, learn).
 		"conventions.branch.review": "CONVENTIONS", "conventions.commit.ticket_pattern": "CONVENTIONS",
-		"conventions.commit.subject": "CONVENTIONS", "conventions.commit.body": "CONVENTIONS",
+		"conventions.commit.subject": "CONVENTIONS", "conventions.commit.body": "CONVENTIONS", "conventions.commit.body_format": "CONVENTIONS",
 		"conventions.pr.title": "CONVENTIONS", "conventions.pr.body": "CONVENTIONS",
 		"conventions.worktree.task": "CONVENTIONS", "conventions.active": "CONVENTIONS",
 		"conventions.commit.co_author_enabled": "the co-author row", "conventions.copyright.enabled": "the copyright row",
@@ -429,5 +510,49 @@ func TestSettingValuesUseTheThemeTextColor(t *testing.T) {
 	theme.SwapForTest(t, theme.Light())
 	if row := settingRow(false, "you are a", "developer"); !strings.Contains(row, "38;2;30;31;43m") {
 		t.Fatalf("value not painted in the theme's text color: %q", row)
+	}
+}
+
+// F-142: the autosave row cycles off, after delay, on focus change.
+func TestAutosaveRowCycles(t *testing.T) {
+	m, _ := newSurface(t)
+	m.cursor = rowAutosave
+	m.cfg.Editor.Autosave = settings.AutosaveOff
+	for _, want := range []string{settings.AutosaveDelay, settings.AutosaveFocus, settings.AutosaveOff} {
+		feed(m, "enter")
+		if m.cfg.Editor.Autosave != want {
+			t.Fatalf("got %q, want %q", m.cfg.Editor.Autosave, want)
+		}
+	}
+	if got := autosaveValue(settings.AutosaveFocus); got != "on focus change" {
+		t.Fatalf("label = %q", got)
+	}
+}
+
+// F-181: ghost text from the language server defaults on and toggles.
+func TestInlineCompletionToggle(t *testing.T) {
+	m, _ := newSurface(t)
+	if !m.cfg.Editor.InlineCompletion {
+		t.Fatal("editor.inline_completion must default on")
+	}
+	m.cursor = rowInlineCompletion
+	feed(m, "enter")
+	if m.cfg.Editor.InlineCompletion {
+		t.Fatal("toggle no-op")
+	}
+}
+
+// F-175: breadcrumbs default on, sticky scroll off; both toggle in Settings.
+func TestBreadcrumbsAndStickyToggle(t *testing.T) {
+	m, _ := newSurface(t)
+	if !m.cfg.Editor.Breadcrumbs || m.cfg.Editor.StickyScroll {
+		t.Fatalf("defaults: breadcrumbs=%v sticky=%v", m.cfg.Editor.Breadcrumbs, m.cfg.Editor.StickyScroll)
+	}
+	m.cursor = rowBreadcrumbs
+	feed(m, "enter")
+	m.cursor = rowStickyScroll
+	feed(m, "enter")
+	if m.cfg.Editor.Breadcrumbs || !m.cfg.Editor.StickyScroll {
+		t.Fatal("toggle no-op")
 	}
 }

@@ -18,6 +18,7 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
+	"github.com/drjzlyan/dhi/internal/agentkit/clirun"
 	"github.com/drjzlyan/dhi/internal/agentkit/forge"
 	"github.com/drjzlyan/dhi/internal/agentkit/install"
 	"github.com/drjzlyan/dhi/internal/agentkit/lessons"
@@ -78,7 +79,9 @@ type Model struct {
 	learned *conventions.Inference // pending learned conventions (F-082)
 	ident   *gitcore.Identity      // cached git identity (F-083); nil = not read yet
 	identOK bool
-	wantID  gitcore.Identity // the identity awaiting confirmation
+	// identLoading: the identity is being read off the UI thread.
+	identLoading bool
+	wantID       gitcore.Identity // the identity awaiting confirmation
 	// valueHint explains the value a CONFIG editor dialog wants (F-084).
 	valueHint string
 	// cfgKeys are the settings keys CONFIG rendered, in order (F-084:
@@ -111,6 +114,8 @@ type settingsEvent struct {
 	title string    // when lines is set: a display dialog title
 	lines []string  // when set: open a display dialog with these lines
 	ext   *extEvent // an install fetch finished (SKILLS / INTEGRATIONS)
+	ident *identEvent
+	skill *skillEvent
 }
 
 type sectionID uint8
@@ -362,8 +367,15 @@ func (m *Model) listen() tea.Cmd {
 
 func (m *Model) Update(msg tea.Msg) tea.Cmd {
 	if ev, ok := msg.(settingsEvent); ok {
-		if ev.ext != nil {
+		switch {
+		case ev.ext != nil:
 			m.onExtEvent(*ev.ext)
+			return m.listen()
+		case ev.ident != nil:
+			m.onIdentEvent(*ev.ident)
+			return m.listen()
+		case ev.skill != nil:
+			m.onSkillInstalled(*ev.skill)
 			return m.listen()
 		}
 		m.form.busy = false
@@ -537,8 +549,18 @@ const (
 	// Appearance, editor and terminal.
 	rowTheme
 	rowReducedMotion
+	rowDesktopNotifications
 	rowTabWidth
 	rowLineNumbers
+	rowWrap
+	rowAutosave // editor.autosave (F-142)
+	rowBlame
+	rowInlayHints       // editor.inlay_hints (F-169)
+	rowSemanticTokens   // editor.semantic_tokens (F-173)
+	rowBreadcrumbs      // editor.breadcrumbs (F-175)
+	rowStickyScroll     // editor.sticky_scroll (F-175)
+	rowInlineCompletion // editor.inline_completion (F-181)
+	rowRestoreSession   // editor.restore_session (F-149)
 	rowScrollback
 	rowLanguages // editor.languages on/off (F-084)
 	// Seven capability-scope rows (F-030 P2), then the sandbox.
@@ -563,6 +585,7 @@ const (
 	rowEngine
 	rowResume
 	rowAutonomy
+	rowNativeWeb
 	rowMaxTurns
 	rowMaxIter
 	rowStall
@@ -630,6 +653,17 @@ func cycleString(cur string, opts []string, dir int) string {
 	return opts[0]
 }
 
+// autosaveValue words the editor.autosave choice (F-142).
+func autosaveValue(v string) string {
+	switch v {
+	case settings.AutosaveDelay:
+		return "after delay"
+	case settings.AutosaveFocus:
+		return "on focus change"
+	}
+	return "off"
+}
+
 // languagePresets is the cycle for profile.writing.language.
 var languagePresets = []string{"English", "Spanish", "German", "French", "Portuguese", "Hindi", "Japanese", "Chinese"}
 
@@ -677,6 +711,8 @@ func (m *Model) cycle(dir int) {
 		}
 	case rowReducedMotion:
 		m.cfg.ReducedMotion = !m.cfg.ReducedMotion
+	case rowDesktopNotifications:
+		m.cfg.DesktopNotifications = !m.cfg.DesktopNotifications
 	case rowTabWidth:
 		widths := []int{2, 4, 8}
 		for i, w := range widths {
@@ -687,6 +723,25 @@ func (m *Model) cycle(dir int) {
 		}
 	case rowLineNumbers:
 		m.cfg.Editor.LineNumbers = !m.cfg.Editor.LineNumbers
+	case rowWrap:
+		m.cfg.Editor.Wrap = !m.cfg.Editor.Wrap
+	case rowAutosave:
+		m.cfg.Editor.Autosave = cycleString(m.cfg.Editor.Autosave,
+			[]string{settings.AutosaveOff, settings.AutosaveDelay, settings.AutosaveFocus}, dir)
+	case rowBlame:
+		m.cfg.Editor.Blame = !m.cfg.Editor.Blame
+	case rowInlayHints:
+		m.cfg.Editor.InlayHints = !m.cfg.Editor.InlayHints
+	case rowSemanticTokens:
+		m.cfg.Editor.SemanticTokens = !m.cfg.Editor.SemanticTokens
+	case rowBreadcrumbs:
+		m.cfg.Editor.Breadcrumbs = !m.cfg.Editor.Breadcrumbs
+	case rowStickyScroll:
+		m.cfg.Editor.StickyScroll = !m.cfg.Editor.StickyScroll
+	case rowInlineCompletion:
+		m.cfg.Editor.InlineCompletion = !m.cfg.Editor.InlineCompletion
+	case rowRestoreSession:
+		m.cfg.Editor.RestoreSession = !m.cfg.Editor.RestoreSession
 	case rowScrollback:
 		step := 500 * dir
 		if m.cfg.Terminal.Scrollback+step >= 100 {
@@ -726,6 +781,9 @@ func (m *Model) cycle(dir int) {
 	case rowAutonomy:
 		m.cfg.Agents.Autonomy = cycleString(m.cfg.Agents.Autonomy,
 			[]string{settings.AutonomyEnvelope, settings.AutonomyAsk}, dir)
+	case rowNativeWeb:
+		m.cfg.Agents.NativeWeb = cycleString(m.cfg.Agents.NativeWeb,
+			[]string{settings.WebDeny, settings.WebAllow}, dir)
 	case rowMaxTurns:
 		m.cfg.Agents.MaxTurns = cycleNum(m.cfg.Agents.MaxTurns, maxTurnPresets, dir)
 	case rowMaxIter:
@@ -876,6 +934,7 @@ type agentRow struct {
 	id       string
 	model    string
 	runtime  string
+	fallback string // F-180: "claude", "none", or "" (never chosen)
 	tools    int
 	archived bool
 }
@@ -899,7 +958,8 @@ func (m *Model) agentRows() ([]agentRow, error) {
 	for _, a := range roster {
 		rows = append(rows, agentRow{
 			id: a.ID, model: a.Model, runtime: a.Runtime,
-			tools: len(a.Tools), archived: archived[a.ID],
+			fallback: fallbackName(a),
+			tools:    len(a.Tools), archived: archived[a.ID],
 		})
 	}
 	for _, id := range m.d.Org.Archived(m.d.WS) {
@@ -1064,8 +1124,62 @@ func newAgentForm(clis []string, runtimeIdx int) agentForm {
 		kit.NewTextField("role   ", ""),
 		kit.NewTextField("skills ", ""),
 		kit.NewTextField("persona", ""),
+		kit.NewToggleField("fallback", fallbackChoices(clis), 0),
+		kit.NewTextField("fb model", ""),
 	)
 	return f
+}
+
+// fallbackNone is the fallback toggle's "no fallback engine" choice.
+const fallbackNone = "none"
+
+// fallbackChoices is the fallback toggle's values: none, then each CLI.
+func fallbackChoices(clis []string) []string {
+	return append([]string{fallbackNone}, clis...)
+}
+
+// fallbackName is the CLI name an agent's fallback shows as ("" = never
+// chosen, "none" = chosen to have none).
+func fallbackName(a *manifest.Agent) string {
+	if a.FallbackRuntime != "" {
+		return a.FallbackRuntime
+	}
+	if a.FallbackEngine == manifest.FallbackNone {
+		return fallbackNone
+	}
+	return ""
+}
+
+func orNone(s string) string {
+	if s == "" {
+		return fallbackNone
+	}
+	return s
+}
+
+// setFallbackField selects a CLI (or none) in the form's fallback toggle
+// and prefills its model.
+func (f *agentForm) setFallbackField(clis []string, name, model string) {
+	choices := fallbackChoices(clis)
+	idx := 0
+	for i, c := range choices {
+		if c == name {
+			idx = i
+		}
+	}
+	f.f.Fields[9] = kit.NewToggleField("fallback", choices, idx)
+	f.f.Fields[10] = kit.NewTextField("fb model", model)
+}
+
+// applyFallbackFields writes the form's fallback choice onto the agent
+// (F-180): none, or a CLI with its own model ("" = that CLI's default).
+func applyFallbackFields(a *manifest.Agent, choice, model string) {
+	a.FallbackRuntime, a.FallbackModel = "", ""
+	if choice == "" || choice == fallbackNone {
+		a.FallbackEngine = manifest.FallbackNone
+		return
+	}
+	a.FallbackEngine, a.FallbackRuntime, a.FallbackModel = manifest.EngineString(choice), choice, strings.TrimSpace(model)
 }
 
 // detectedFirst orders the runtime picker detection-driven (F-027 P2):
@@ -1105,6 +1219,9 @@ func (m *Model) editAgentForm(a *manifest.Agent, clis []string) agentForm {
 	f.f.Fields[6] = kit.NewTextField("role   ", a.Role)
 	f.f.Fields[7] = kit.NewTextField("skills ", strings.Join(a.Skills, ", "))
 	f.f.Fields[8] = kit.NewTextField("persona", a.Persona)
+	fb := *a
+	org.ApplyFallback(&fb) // an agent that never had one is shown its default
+	f.setFallbackField(clis, fallbackName(&fb), fb.FallbackModel)
 	for i, c := range clis {
 		if c == a.Runtime {
 			f.f.Fields[4] = kit.NewToggleField("runtime", clis, i)
@@ -1165,6 +1282,7 @@ func (m *Model) submitAgent() {
 		}
 	}
 	persona := strings.TrimSpace(vals[8])
+	fbChoice, fbModel := vals[9], vals[10]
 	if lib := m.libStore(); lib != nil {
 		for _, k := range skills {
 			if _, ok := lib.Skill(k); !ok {
@@ -1182,6 +1300,7 @@ func (m *Model) submitAgent() {
 		Runtime: runtime, Tools: tools,
 		Role: role, Persona: persona, Skills: skills,
 	}
+	applyFallbackFields(a, fbChoice, fbModel)
 	// An edit changes only what the form shows. Everything else the
 	// manifest carries (sandbox policy, scopes, workflow, engine,
 	// timeout, retries) must survive — rebuilding from the form alone
@@ -1194,6 +1313,7 @@ func (m *Model) submitAgent() {
 					keep.Name, keep.Model, keep.System = name, model, system
 					keep.Runtime, keep.Engine = runtime, ""
 					keep.Tools, keep.Role, keep.Persona, keep.Skills = tools, role, persona, skills
+					applyFallbackFields(&keep, fbChoice, fbModel)
 					a = &keep
 					break
 				}
@@ -1594,7 +1714,7 @@ func (m *Model) sectionHints() []string {
 	case secAutopilots:
 		sec = []string{"n new", "t rituals", "e arm/pause", "r run now", "c task cards", "o last run", "x remove"}
 	case secIntegrations:
-		sec = []string{"+ add", "enter sign in", "p paste sign-in address", "g give to bots", "a new bot with it", "d sign out", "x remove", "v config", "R refresh plugins"}
+		sec = []string{"+ add", "enter sign in", "p paste sign-in address", "g give to bots", "a new bot with it", "d sign out", "x remove", "v config", "h plugin hooks", "R refresh plugins"}
 	case secSecrets:
 		sec = []string{"a add", "e replace value", "x delete"}
 	}
@@ -1655,9 +1775,19 @@ func (m *Model) configView(w, budget int) []string {
 	head("appearance")
 	add(rowTheme, "theme", m.themeValue())
 	add(rowReducedMotion, "reduced_motion", boolValue(m.cfg.ReducedMotion))
+	add(rowDesktopNotifications, "desktop_notifications", boolValue(m.cfg.DesktopNotifications))
 	head("editor & terminal")
 	add(rowTabWidth, "editor.tab_width", itoa(m.cfg.Editor.TabWidth))
 	add(rowLineNumbers, "editor.line_numbers", boolValue(m.cfg.Editor.LineNumbers))
+	add(rowWrap, "editor.wrap", boolValue(m.cfg.Editor.Wrap))
+	add(rowAutosave, "editor.autosave", autosaveValue(m.cfg.Editor.Autosave))
+	add(rowBlame, "editor.blame", boolValue(m.cfg.Editor.Blame))
+	add(rowInlayHints, "editor.inlay_hints", boolValue(m.cfg.Editor.InlayHints))
+	add(rowSemanticTokens, "editor.semantic_tokens", boolValue(m.cfg.Editor.SemanticTokens))
+	add(rowBreadcrumbs, "editor.breadcrumbs", boolValue(m.cfg.Editor.Breadcrumbs))
+	add(rowStickyScroll, "editor.sticky_scroll", boolValue(m.cfg.Editor.StickyScroll))
+	add(rowInlineCompletion, "editor.inline_completion", boolValue(m.cfg.Editor.InlineCompletion))
+	add(rowRestoreSession, "editor.restore_session", boolValue(m.cfg.Editor.RestoreSession))
 	add(rowScrollback, "terminal.scrollback", itoa(m.cfg.Terminal.Scrollback))
 	add(rowLanguages, "editor.languages", m.languagesValue())
 	head("agent scopes & sandbox")
@@ -1689,6 +1819,7 @@ func (m *Model) configView(w, budget int) []string {
 	add(rowEngine, "engine", orMuted(m.cfg.Engine == "", "none — pick a coding CLI", strings.TrimPrefix(m.cfg.Engine, "cli:")))
 	add(rowResume, "agents.resume", boolValue(m.cfg.Agents.Resume))
 	add(rowAutonomy, "agents.autonomy", autonomyValue(m.cfg.Agents.Autonomy))
+	add(rowNativeWeb, "agents.native_web", nativeWebValue(m.cfg.Agents.NativeWeb))
 	add(rowMaxTurns, "agents.max_turns", orMuted(m.cfg.Agents.MaxTurns == 0, "CLI default", itoa(m.cfg.Agents.MaxTurns)))
 	add(rowMaxIter, "agents.max_iterations", itoa(m.cfg.Agents.MaxIterations))
 	add(rowStall, "agents.stall_seconds", orMuted(m.cfg.Agents.StallSeconds == 0, "off", stallText(m.cfg.Agents.StallSeconds)))
@@ -1735,6 +1866,19 @@ func autonomyValue(mode string) string {
 		return "ask"
 	}
 	return theme.SuccessText().Render("envelope")
+}
+
+// nativeWebValue says what the setting does and which CLIs it cannot
+// reach, from the adapters' own declarations (F-123).
+func nativeWebValue(mode string) string {
+	if mode == settings.WebAllow {
+		return "allow — CLIs may fetch and search the web"
+	}
+	out := theme.SuccessText().Render("deny")
+	if no := clirun.NewRegistry(nil).CannotDenyWeb(); len(no) > 0 {
+		out += theme.TextMuted().Render(" · cannot restrict " + strings.Join(no, ", "))
+	}
+	return out
 }
 
 // stallText renders the watchdog window ("15m", "90s").
@@ -1814,7 +1958,7 @@ func (m *Model) agentsView() []string {
 	out := []string{}
 	for i, r := range rows {
 		line := padTo(r.id, 12) + padTo(r.model, 14) + padTo(r.runtime, 10) +
-			itoa(r.tools) + " tools"
+			padTo("fallback "+orNone(r.fallback), 20) + itoa(r.tools) + " tools"
 		if r.archived {
 			line = padTo(r.id, 12) + theme.TextDim().Render("archived")
 		}
@@ -1917,7 +2061,7 @@ var settingLabels = map[string]string{
 	"profile.writing.emoji": "emoji in writing", "profile.writing.language": "writing language",
 	"profile.reading.order": "replies start with", "profile.reading.format": "reply format",
 	"profile.reading.detail": "reply detail",
-	"reduced_motion":         "reduce motion", "editor.tab_width": "tab width", "editor.line_numbers": "line numbers",
+	"reduced_motion":         "reduce motion", "desktop_notifications": "desktop notifications", "editor.tab_width": "tab width", "editor.line_numbers": "line numbers", "editor.wrap": "wrap long lines", "editor.autosave": "autosave", "editor.blame": "inline blame", "editor.semantic_tokens": "semantic colours", "editor.breadcrumbs": "breadcrumbs", "editor.sticky_scroll": "sticky scroll", "editor.inline_completion": "ghost text", "editor.inlay_hints": "inlay hints", "editor.restore_session": "restore session",
 	"terminal.scrollback": "terminal scrollback", "editor.languages": "editor languages",
 	"scopes.read": "may read files", "scopes.write": "may write files", "scopes.exec": "may run commands",
 	"scopes.network": "may use the network", "scopes.git": "may use git", "scopes.push": "may push",
@@ -1926,7 +2070,7 @@ var settingLabels = map[string]string{
 	"conventions.commit.format": "commit format", "conventions.commit.co_author": "co-author trailer",
 	"conventions.copyright": "copyright header", "conventions.copyright.license": "license",
 	"conventions.commit.max_subject": "commit subject limit",
-	"engine":                         "default coding CLI", "agents.resume": "resume CLI sessions", "agents.autonomy": "autonomy",
+	"engine":                         "default coding CLI", "agents.resume": "resume CLI sessions", "agents.autonomy": "autonomy", "agents.native_web": "CLI web tools",
 	"agents.max_turns": "CLI turns per run", "agents.max_iterations": "verify → fix rounds",
 	"agents.stall_seconds": "stall watchdog", "agents.reflect": "learn from turns",
 	"agents.reflect_model": "reflection model", "agents.trace_prompts": "save full prompts",
@@ -2004,5 +2148,15 @@ func maxInt(a, b int) int {
 
 // openNewAgentForm opens the create-agent form.
 func (m *Model) openNewAgentForm() {
-	m.form = newAgentForm(m.d.CLIs, m.detectedFirst(m.d.CLIs))
+	idx := m.detectedFirst(m.d.CLIs)
+	m.form = newAgentForm(m.d.CLIs, idx)
+	// F-180: the new agent opens with its default fallback chosen, where
+	// it can be seen and changed (or set to none) before saving.
+	primary := ""
+	if idx < len(m.d.CLIs) {
+		primary = m.d.CLIs[idx]
+	}
+	probe := manifest.Agent{Runtime: primary}
+	org.ApplyFallback(&probe)
+	m.form.setFallbackField(m.d.CLIs, fallbackName(&probe), "")
 }

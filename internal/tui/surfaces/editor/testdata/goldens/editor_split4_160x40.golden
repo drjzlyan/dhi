@@ -1,0 +1,40 @@
+▏ files ───────────────────────── ▏ alpha › app.go   NORMAL  ─────────────────────────────────── ▏ beta › README.md   NORMAL  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
+▏ ▌ ▾ alpha/                      ▏  app.go   main.go   helper.go   README.md                    ▏  app.go   main.go   helper.go   README.md                    
+▏   ├ ▾ src/                      ▏ 1 package main                                               ▏ 1 # beta                                                     
+▏   │ ├ ▾ util/                   ▏ 2                                                            ▏ 2                                                            
+▏   │ │ └ ◦ helper.go             ▏                                                              ▏                                                              
+▏   │ └ ◦ main.go                 ▏                                                              ▏                                                              
+▏   └ ◦ app.go                    ▏                                                              ▏                                                              
+▏   ▾ beta/                       ▏                                                              ▏                                                              
+▏   └ ≡ README.md                 ▏                                                              ▏                                                              
+▏                                 ▏                                                              ▏                                                              
+▏                                 ▏                                                              ▏                                                              
+▏                                 ▏                                                              ▏                                                              
+▏                                 ▏                                                              ▏                                                              
+▏                                 ▏                                                              ▏                                                              
+▏                                 ▏                                                              ▏                                                              
+▏                                 ▏                                                              ▏                                                              
+▏                                 ▏                                                              ▏                                                              
+▏                                 ▏                                                              ▏                                                              
+▏                                 ▏                                                              ▏                                                              
+▏                                 ▏                                                              ▏                                                              
+▏                                 ▏ alpha › src › util › helper.go   NORMAL  ─────────────────── ▏ alpha › src › main.go   NORMAL  ──────────────────────────── 
+▏                                 ▏  app.go   main.go   helper.go   README.md                    ▏  app.go   main.go   helper.go   README.md                    
+▏                                 ▏ 1 package util                                               ▏ 1 package main                                               
+▏                                 ▏ 2                                                            ▏ 2                                                            
+▏                                 ▏                                                              ▏                                                              
+▏                                 ▏                                                              ▏                                                              
+▏                                 ▏                                                              ▏                                                              
+▏                                 ▏                                                              ▏                                                              
+▏                                 ▏                                                              ▏                                                              
+▏                                 ▏                                                              ▏                                                              
+▏                                 ▏                                                              ▏                                                              
+▏                                 ▏                                                              ▏                                                              
+▏                                 ▏                                                              ▏                                                              
+▏                                 ▏                                                              ▏                                                              
+▏                                 ▏                                                              ▏                                                              
+▏                                 ▏                                                              ▏                                                              
+▏                                 ▏                                                              ▏                                                              
+▏                                 ▏                                                              ▏                                                              
+▏                                 ▏                                                              ▏                                                              
+▏                                 ▏                                                              ▏                                                              

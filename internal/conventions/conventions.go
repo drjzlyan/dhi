@@ -42,8 +42,8 @@ type Worktree struct {
 	Task string `toml:"task"`
 }
 
-// Branch names task and review branches. Placeholders: {slug}, {id},
-// {user}, {date}.
+// Branch names task and review branches. Symbols per FieldSymbols; a
+// task branch may hold {ai:…} slots (F-182), a review branch may not.
 type Branch struct {
 	Task   string `toml:"task"`
 	Review string `toml:"review"`
@@ -68,6 +68,9 @@ type Commit struct {
 	// Body is an example commit body (F-082): agents follow its
 	// structure and style, not its words. "" = a body that explains why.
 	Body string `toml:"body,omitempty"`
+	// BodyFormat is a commit body template (F-182): symbols DHI fills and
+	// {ai:…} slots the author writes, enforced like Subject. "" = none.
+	BodyFormat string `toml:"body_format,omitempty"`
 }
 
 // Copyright configures the header agents put on new source files.
@@ -78,9 +81,10 @@ type Copyright struct {
 	Year    string `toml:"year"`    // "" = current year at write time
 }
 
-// PR templates. Title (applied to titles agents choose in pr_open) may use
-// {title} and {slug}; Body (every PR DHI opens) may use {branch}, {member}
-// and {title}. Unknown placeholders are refused, not silently kept.
+// PR templates, applied to every PR DHI opens (pr_open, the board, the
+// reviewer): Title wraps the title the author gave as {title}; Body is
+// the description. Both take the message symbols and {ai:…} slots
+// (F-182). Unknown placeholders are refused, not silently kept.
 type PR struct {
 	Title string `toml:"title"`
 	Body  string `toml:"body"`
@@ -101,35 +105,46 @@ func Defaults() Config {
 }
 
 var (
-	placeholderRe  = regexp.MustCompile(`\{([a-z]+)\}`)
 	branchBadRe    = regexp.MustCompile(`[^A-Za-z0-9._/-]+`)
 	conventionalRe = regexp.MustCompile(
 		`^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-z0-9._/-]+\))?!?: \S`)
 )
 
-// ExpandBranch fills a branch pattern. Unknown placeholders and results
-// git would reject are errors naming the pattern — no silent fallback.
+// ExpandBranch fills a branch pattern that has no AI slots. Unknown
+// placeholders and results git would reject are errors naming the
+// pattern — no silent fallback.
 func ExpandBranch(pattern string, vars map[string]string) (string, error) {
+	return ExpandBranchFill(pattern, vars, nil)
+}
+
+// ExpandBranchFill fills a branch pattern, AI slots from fill. Every
+// value is made ref-safe; a missing AI text is a *MissingAIError.
+func ExpandBranchFill(pattern string, vars, fill map[string]string) (string, error) {
 	if strings.TrimSpace(pattern) == "" {
 		return "", fmt.Errorf("conventions: empty branch pattern")
 	}
-	var bad string
-	out := placeholderRe.ReplaceAllStringFunc(pattern, func(m string) string {
-		k := m[1 : len(m)-1]
-		v, ok := vars[k]
-		if !ok {
-			bad = k
-			return m
+	out, err := render(pattern, vars, fill, func(v string) string { return sanitizeRef(capRunes(v, maxBranchPart)) })
+	if err != nil {
+		if _, ok := IsMissingAI(err); ok {
+			return "", err
 		}
-		return sanitizeRef(v)
-	})
-	if bad != "" {
-		return "", fmt.Errorf("conventions: branch pattern %q: unknown placeholder {%s}", pattern, bad)
+		return "", fmt.Errorf("conventions: branch pattern %q: %w", pattern, err)
 	}
 	if err := checkRef(out); err != nil {
 		return "", fmt.Errorf("conventions: branch pattern %q gives %q: %w", pattern, out, err)
 	}
 	return out, nil
+}
+
+// maxBranchPart caps one filled value in a branch name, so an AI-written
+// part stays a name, not a sentence.
+const maxBranchPart = 48
+
+func capRunes(s string, n int) string {
+	if r := []rune(s); len(r) > n {
+		return strings.TrimRight(string(r[:n]), "-_. ")
+	}
+	return s
 }
 
 func sanitizeRef(s string) string {
@@ -148,19 +163,49 @@ func checkRef(ref string) error {
 	return nil
 }
 
-// ValidateBranchPattern reports whether a pattern can produce a valid
-// ref (checked with representative values).
-func ValidateBranchPattern(pattern string) error {
-	_, err := ExpandBranch(pattern, SampleVars())
+// ValidateBranchPattern reports whether a task-branch pattern can produce
+// a valid ref (its symbols checked, then filled with representative
+// values and sample AI text).
+func ValidateBranchPattern(pattern string) error { return validateBranch(FieldBranchTask, pattern) }
+
+func validateBranch(field, pattern string) error {
+	if strings.TrimSpace(pattern) == "" {
+		return fmt.Errorf("conventions: empty branch pattern")
+	}
+	if err := ValidateField(field, pattern); err != nil {
+		return err
+	}
+	_, err := ExpandBranchFill(pattern, SampleVars(), sampleFill(pattern))
 	return err
+}
+
+// sampleFill gives every AI slot of tpl representative text.
+func sampleFill(tpl string) map[string]string {
+	fill := map[string]string{}
+	for _, sl := range Slots(tpl) {
+		fill[sl.Key] = SampleAI(sl.Key)
+	}
+	return fill
+}
+
+// SampleAI is the representative AI text previews show for a slot.
+func SampleAI(key string) string {
+	switch key {
+	case "type":
+		return "fix"
+	case "subject":
+		return "retry the token refresh"
+	}
+	return "retry token refresh"
 }
 
 // Validate rejects a malformed Config by key name.
 func (c Config) Validate() error {
-	for key, p := range map[string]string{"branch.task": c.Branch.Task, "branch.review": c.Branch.Review} {
-		if err := ValidateBranchPattern(p); err != nil {
-			return fmt.Errorf("%s: %w", key, err)
-		}
+	if err := validateBranch(FieldBranchTask, c.Branch.Task); err != nil {
+		return fmt.Errorf("branch.task: %w", err)
+	}
+	if err := validateBranch(FieldBranchReview, c.Branch.Review); err != nil {
+		return fmt.Errorf("branch.review: %w", err)
 	}
 	switch c.Commit.Format {
 	case FormatFree, FormatConventional, FormatTicket:
@@ -183,17 +228,14 @@ func (c Config) Validate() error {
 	if c.Copyright.Enabled && strings.TrimSpace(c.Copyright.Holder) == "" {
 		return fmt.Errorf("copyright.holder is required when copyright.enabled")
 	}
-	if err := checkPlaceholders("pr.title", c.PR.Title, prTitleVars...); err != nil {
-		return err
-	}
-	if err := checkPlaceholders("pr.body", c.PR.Body, prBodyVars...); err != nil {
-		return err
+	for field, tpl := range map[string]string{FieldPRTitle: c.PR.Title, FieldPRBody: c.PR.Body,
+		FieldCommitSubject: c.Commit.Subject, FieldCommitBody: c.Commit.BodyFormat} {
+		if err := ValidateField(field, tpl); err != nil {
+			return err
+		}
 	}
 	if err := ValidateWorktreePattern(c.Worktree.Task); err != nil {
 		return fmt.Errorf("worktree.task: %w", err)
-	}
-	if err := checkPlaceholders("commit.subject", c.Commit.Subject, subjectVars...); err != nil {
-		return err
 	}
 	for name, t := range c.Templates {
 		if !templateNameRe.MatchString(name) {
@@ -209,30 +251,22 @@ func (c Config) Validate() error {
 	return nil
 }
 
-// checkPlaceholders refuses a template that uses a {name} outside allowed.
-func checkPlaceholders(key, tpl string, allowed ...string) error {
-	ok := map[string]bool{}
-	for _, a := range allowed {
-		ok[a] = true
-	}
-	for _, m := range placeholderRe.FindAllStringSubmatch(tpl, -1) {
-		if !ok[m[1]] {
-			return fmt.Errorf("%s: unknown placeholder {%s} (allowed: {%s})", key, m[1], strings.Join(allowed, "}, {"))
-		}
-	}
-	return nil
-}
-
 var coAuthorRe = regexp.MustCompile(`^[^<>]+ <[^<>@\s]+@[^<>@\s]+>$`)
 
 // CheckCommit validates a message against the configured format and
-// returns an error that tells the author how to fix it.
-func (c Commit) CheckCommit(msg string) error {
+// templates, knowing no task values; see CheckCommitFor.
+func (c Commit) CheckCommit(msg string) error { return c.CheckCommitFor(msg, nil) }
+
+// CheckCommitFor validates a message against the configured format, the
+// subject template and the body format, with the symbols of the task it
+// is for (F-182): fixed parts must read as rendered, AI slots take any
+// text. The error tells the author how to fix it.
+func (c Commit) CheckCommitFor(msg string, vars map[string]string) error {
 	msg = strings.TrimSpace(msg)
 	if msg == "" {
 		return fmt.Errorf("commit message is required")
 	}
-	subject, _, _ := strings.Cut(msg, "\n")
+	subject, body, _ := strings.Cut(msg, "\n")
 	if c.MaxSubject > 0 && len([]rune(subject)) > c.MaxSubject {
 		return fmt.Errorf("commit subject is %d chars; limit is %d", len([]rune(subject)), c.MaxSubject)
 	}
@@ -242,6 +276,9 @@ func (c Commit) CheckCommit(msg string) error {
 			return fmt.Errorf("commit subject %q must be conventional: type(scope): subject (types: feat fix docs style refactor perf test build ci chore revert)", subject)
 		}
 	case FormatTicket:
+		if c.noTicketKey(vars) {
+			break // the subject template's shape, with the slug, decides
+		}
 		re, err := regexp.Compile(`^` + c.TicketPattern + `[:\s]`)
 		if err != nil {
 			return fmt.Errorf("commit.ticket_pattern: %w", err)
@@ -250,7 +287,64 @@ func (c Commit) CheckCommit(msg string) error {
 			return fmt.Errorf("commit subject %q must start with a ticket key matching %s, e.g. \"PROJ-123: subject\"", subject, c.TicketPattern)
 		}
 	}
+	if err := Match(FieldCommitSubject, c.Subject, vars, subject); err != nil {
+		return fmt.Errorf("%w; got %q", err, subject)
+	}
+	if strings.TrimSpace(c.BodyFormat) != "" {
+		if err := Match(FieldCommitBody, c.BodyFormat, vars, stripTrailers(body)); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+// noTicketKey reports a task without a ticket key under a subject
+// template that places {ticket}: DHI fills the slug there, so asking for
+// a key the card does not have would refuse every commit.
+func (c Commit) noTicketKey(vars map[string]string) bool {
+	t, ok := vars["ticket"]
+	if !ok || !strings.Contains(c.Subject, "{ticket") {
+		return false
+	}
+	re, err := regexp.Compile(`^(?:` + c.TicketPattern + `)$`)
+	return err == nil && !re.MatchString(t)
+}
+
+// ComposeCommit renders a whole message from the templates: the subject
+// template (required) and, when set, the body format. body is the free
+// body used when there is no body format.
+func (c Commit) ComposeCommit(vars, fill map[string]string, body string) (string, error) {
+	subjectTpl := c.Subject
+	if strings.TrimSpace(subjectTpl) == "" {
+		if strings.TrimSpace(c.BodyFormat) == "" {
+			return "", fmt.Errorf("the team has no commit template to fill: write the whole message")
+		}
+		subjectTpl = "{subject}" // a body format alone: the subject is a part you write
+	}
+	subject, err := Render(subjectTpl, vars, fill)
+	if err != nil {
+		return "", fmt.Errorf("commit subject: %w", err)
+	}
+	if strings.TrimSpace(c.BodyFormat) != "" {
+		if body, err = Render(c.BodyFormat, vars, fill); err != nil {
+			return "", fmt.Errorf("commit body: %w", err)
+		}
+	}
+	msg := strings.TrimSpace(subject)
+	if b := strings.TrimSpace(body); b != "" {
+		msg += "\n\n" + b
+	}
+	return msg, nil
+}
+
+// stripTrailers drops the git trailers (Co-Authored-By: …) closing a
+// body, which DHI or the author's tools add outside the body format.
+func stripTrailers(body string) string {
+	lines := strings.Split(strings.TrimRight(body, "\n "), "\n")
+	for len(lines) > 0 && trailerRe.MatchString(strings.TrimSpace(lines[len(lines)-1])) {
+		lines = lines[:len(lines)-1]
+	}
+	return strings.Join(lines, "\n")
 }
 
 // Finalize applies the co-author trailer (once) to a validated message.
@@ -338,55 +432,109 @@ func commentStyle(name string) (open, line, closer string, ok bool) {
 	return "", "", "", false
 }
 
-// Render substitutes {name} placeholders in a template; unknown names
-// are left intact so a typo is visible in the output.
-func Render(tpl string, vars map[string]string) string {
-	return placeholderRe.ReplaceAllStringFunc(tpl, func(m string) string {
-		if v, ok := vars[m[1:len(m)-1]]; ok {
-			return v
-		}
-		return m
-	})
-}
-
-// Placeholder sets per template field (F-075).
-var (
-	prTitleVars = []string{"title", "slug", "ticket"}
-	prBodyVars  = []string{"branch", "member", "title", "slug", "ticket", "assignee"}
-	subjectVars = []string{"ticket", "slug", "type", "subject"}
-)
-
 // Guidance renders the rules as an instruction block for an agent's
 // system prompt, so it follows them before DHI's gates have to refuse.
-func (c Config) Guidance() string {
+func (c Config) Guidance() string { return c.GuidanceFor(nil) }
+
+// GuidanceFor is Guidance for one task: each template is shown with the
+// symbols DHI knows already filled and the AI slots the agent writes
+// marked <like this>, so every CLI gets the same exact shapes (F-182).
+func (c Config) GuidanceFor(vars map[string]string) string {
 	var b strings.Builder
 	b.WriteString("Team conventions (enforced by DHI):\n")
-	fmt.Fprintf(&b, "- Branches: tasks use %q, reviews use %q.\n", c.Branch.Task, c.Branch.Review)
+	fmt.Fprintf(&b, "- Branches: tasks use %q, reviews use %q.\n", Shape(c.Branch.Task, vars), Shape(c.Branch.Review, vars))
 	switch c.Commit.Format {
 	case FormatConventional:
 		b.WriteString("- Commit subjects follow Conventional Commits: type(scope): subject.\n")
 	case FormatTicket:
-		fmt.Fprintf(&b, "- Commit subjects start with a ticket key matching %s, e.g. \"PROJ-123: subject\".\n", c.Commit.TicketPattern)
+		if c.Commit.noTicketKey(vars) {
+			b.WriteString("- This task has no ticket key: its slug stands in for it in commit subjects.\n")
+		} else {
+			fmt.Fprintf(&b, "- Commit subjects start with a ticket key matching %s, e.g. \"PROJ-123: subject\".\n", c.Commit.TicketPattern)
+		}
 	default:
 		b.WriteString("- Commit messages: a short imperative subject, then a body explaining why.\n")
 	}
 	if c.Commit.Subject != "" {
-		fmt.Fprintf(&b, "- Commit subjects take the shape %q (the ticket is the task's ticket key, else its slug).\n", c.Commit.Subject)
+		fmt.Fprintf(&b, "- Commit subjects take the shape %q.\n", Shape(c.Commit.Subject, vars))
 	}
-	if body := strings.TrimSpace(c.Commit.Body); body != "" {
+	if f := strings.TrimSpace(c.Commit.BodyFormat); f != "" {
+		b.WriteString("- Commit bodies take this shape (text outside <…> exactly as shown):\n")
+		indent(&b, Shape(f, vars))
+	} else if body := strings.TrimSpace(c.Commit.Body); body != "" {
 		b.WriteString("- Commit bodies follow the structure and style of this example (its sections and tone, not its words):\n")
-		for _, l := range strings.Split(body, "\n") {
-			b.WriteString("    " + l + "\n")
-		}
+		indent(&b, body)
 	}
 	fmt.Fprintf(&b, "- Keep commit subjects within %d characters.\n", c.Commit.MaxSubject)
 	if c.Commit.CoAuthorEnabled {
 		b.WriteString("- DHI adds the Co-Authored-By trailer to commits; do not add it yourself.\n")
 	}
+	if c.PR.Title != "" && c.PR.Title != "{title}" {
+		fmt.Fprintf(&b, "- PR titles take the shape %q; pr_open's title is the {title} part.\n", Shape(c.PR.Title, vars))
+	}
+	if HasAI(c.PR.Body) {
+		b.WriteString("- PR descriptions take this shape; DHI writes the fixed parts:\n")
+		indent(&b, Shape(c.PR.Body, vars))
+	}
+	if slots := c.agentSlots(); len(slots) > 0 {
+		b.WriteString("- Parts in <…> are yours to write. Pass them as `fill`, a list of {\"key\", \"text\"} with the keys below, to git_commit, pr_open or work_branch, and DHI puts them in place:\n")
+		b.WriteString(SlotList(slots) + "\n")
+	}
+	if open := c.openSymbols(vars); len(open) > 0 {
+		b.WriteString("- DHI fills the {symbols}: " + strings.Join(open, "; ") + ".\n")
+	}
+	b.WriteString("- Commit only with git_commit and open PRs only with pr_open: a `git commit` or `gh pr create` of your own skips these rules.\n")
 	if c.Copyright.Enabled {
 		b.WriteString("- New source files begin with the copyright header: ")
 		b.WriteString(strings.TrimSpace(strings.ReplaceAll(c.Copyright.HeaderFor("x.go", time.Now()), "\n", " ")))
 		b.WriteString("\n")
 	}
 	return strings.TrimRight(b.String(), "\n")
+}
+
+// openSymbols explains the symbols left unfilled in the guidance (no
+// task is bound yet), e.g. "{ticket} is the task's ticket key …".
+func (c Config) openSymbols(vars map[string]string) []string {
+	used := map[string]bool{}
+	for _, tpl := range []string{c.Branch.Task, c.Branch.Review, c.Commit.Subject, c.Commit.BodyFormat, c.PR.Title, c.PR.Body} {
+		toks, _ := parse(tpl)
+		for _, t := range toks {
+			if _, known := vars[t.text]; t.kind == tokVar && !known {
+				used[t.text] = true
+			}
+		}
+	}
+	var out []string
+	for _, s := range Symbols {
+		if used[s.Name] {
+			out = append(out, "{"+s.Name+"} = "+s.Desc)
+		}
+	}
+	return out
+}
+
+// agentSlots are the AI slots of every template an agent fills, once
+// per key, in reading order.
+func (c Config) agentSlots() []Slot {
+	var out []Slot
+	seen := map[string]bool{}
+	subject := c.Commit.Subject
+	if strings.TrimSpace(subject) == "" && HasAI(c.Commit.BodyFormat) {
+		subject = "{subject}" // ComposeCommit's subject for a body format alone
+	}
+	for _, tpl := range []string{c.Branch.Task, subject, c.Commit.BodyFormat, c.PR.Title, c.PR.Body} {
+		for _, sl := range Slots(tpl) {
+			if !seen[sl.Key] {
+				seen[sl.Key] = true
+				out = append(out, sl)
+			}
+		}
+	}
+	return out
+}
+
+func indent(b *strings.Builder, text string) {
+	for _, l := range strings.Split(text, "\n") {
+		b.WriteString("    " + l + "\n")
+	}
 }

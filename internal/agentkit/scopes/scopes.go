@@ -120,7 +120,7 @@ var toolScopes = map[string]Scope{
 	"read": Read, "list": Read, "glob": Read, "workspace_search": Read,
 	"search":     Read,
 	"git_status": Read, "git_log": Read, "git_branch": Read, "git_diff": Read,
-	"lsp_hover": Read, "lsp_definition": Read, "lsp_references": Read, "lsp_code_action": Read,
+	"lsp_hover": Read, "lsp_definition": Read, "lsp_references": Read, "lsp_code_action": Read, "code_symbols": Read,
 	"editor_open": Read, "editor_reveal": Read, "editor_context": Read, "debug_state": Read,
 	// editor_propose_edit only queues a suggestion; the human's accept/
 	// reject in the editor is the gate, so it needs no separate approval.

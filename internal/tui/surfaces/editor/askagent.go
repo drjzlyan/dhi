@@ -57,6 +57,13 @@ func (m *Model) currentRegion(around int) (region, bool) {
 	if e == nil {
 		return region{}, false
 	}
+	if e.BlockSelection() {
+		// A block's text is not its lines; the edit replaces whole lines,
+		// so it gets the block's full lines (F-159).
+		_, from, to, _ := e.Selection()
+		lines := e.Buffer().Lines()[from.Line : to.Line+1]
+		return region{text: strings.Join(lines, "\n"), from: from.Line, to: to.Line}, true
+	}
 	if sel, from, to, ok := e.Selection(); ok && sel != "" {
 		return region{text: sel, from: from.Line, to: to.Line}, true
 	}

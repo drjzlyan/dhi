@@ -26,21 +26,9 @@ func minInt(a, b int) int {
 // the theme-only rule stays satisfied.
 var cursorStyle = lipgloss.NewStyle().Reverse(true)
 
-func bufferTitle(e *textbuf.Editor) string {
-	name := e.Path()
-	if i := strings.LastIndex(name, "/"); i >= 0 {
-		name = name[i+1:]
-	}
-	dot := ""
-	if e.Buffer().Dirty() {
-		dot = " " + theme.WarningText().Render("●")
-	}
-	return name + dot + "  " + modePill(e.Mode())
-}
-
 // modePill colors the editing mode (F-064): normal in the editor's
 // indigo, insert green, visual amber, command blue.
-func modePill(md textbuf.Mode) string {
+func modePill(md textbuf.Mode, block bool) string {
 	c := theme.Current.Accent2
 	switch md {
 	case textbuf.ModeInsert:
@@ -50,14 +38,25 @@ func modePill(md textbuf.Mode) string {
 	case textbuf.ModeCommand:
 		c = theme.Current.Info
 	}
-	return kit.Pill(md.String(), c)
+	label := md.String()
+	if block {
+		label = "V-BLOCK" // ctrl+v (F-159)
+	}
+	return kit.Pill(label, c)
 }
 
 // diagChip renders the error/warning count for the active buffer.
 func (m *Model) diagChip(e *textbuf.Editor) string {
 	errs, warns := m.diagCount(e)
+	bulb := ""
+	if m.bulbOn && e == m.active() { // F-158: a quick fix is ready on the cursor line
+		bulb = theme.WarningText().Render(theme.GlyphBulb)
+	}
 	if errs == 0 && warns == 0 {
-		return ""
+		if bulb == "" {
+			return ""
+		}
+		return "  " + bulb
 	}
 	var b strings.Builder
 	b.WriteString("  ")
@@ -70,6 +69,9 @@ func (m *Model) diagChip(e *textbuf.Editor) string {
 		}
 		b.WriteString(theme.WarningText().Render("⚠" + itoa(warns)))
 	}
+	if bulb != "" {
+		b.WriteString(" " + bulb)
+	}
 	return b.String()
 }
 
@@ -79,27 +81,63 @@ func (m *Model) bufferView() string {
 	e := m.active()
 	b := e.Buffer()
 	rows := maxInt(m.height-5, 1) // strip + panel padding + command line
-
-	top := 0
-	if b.LineCount() > rows {
-		top = clampIdx(b.Cursor().Line-rows/2, b.LineCount()-rows)
+	if m.paneH > 0 {
+		rows = maxInt(m.paneH-5, 1) // a pane (F-166)
 	}
-	end := min(top+rows, b.LineCount())
 
 	prefs := m.editorPrefs()
 	tabStop = prefs.TabWidth
+	if t := m.focusedTab(); t != nil && t.tabWidth > 0 {
+		tabStop = min(t.tabWidth, 16) // F-160: .editorconfig beats the setting
+	}
+	e.SetTabWidth(tabStop) // block columns count tabs like the view (F-159)
+	wrap := m.wrapEnabled(prefs)
+	m.foldSync(m.bufs[m.activeTab]) // F-176: ranges for this text; then no cursor hides in a fold
+	e.RevealFolds()
+	folded := b.HasClosedFolds()
+	curLine := b.Cursor().Line
+
+	top := 0
+	if b.LineCount() > rows {
+		top = clampIdx(curLine-rows/2, b.LineCount()-rows)
+	}
+	end := min(top+rows, b.LineCount())
+	var shown []int // the lines drawn, when closed folds hide some
+	if folded && !wrap {
+		shown = windowLines(b, curLine, rows, func(int) int { return 1 })
+		top, end = shown[0], shown[len(shown)-1]+1
+	}
 	gut := strconv.Itoa(end)
+	if wrap {
+		gut = strconv.Itoa(b.LineCount()) // a steady gutter: the window is counted in rows
+	}
 	gutW := len(gut) + 1
 	if !prefs.LineNumbers {
 		gutW = 1 // a one-cell column keeps problem colors and git marks
 	}
-	if !m.renderingSplit {
-		// Where the text starts and which line is on top, so a click maps
-		// back to a buffer position (F-103).
-		m.bufGeom = bufGeom{top: top, rows: end - top, textX: gutW + 1}
+	var wl *wrapLayout
+	if wrap {
+		wl = m.layoutWrap(e, rows, m.bufTextWidth(gutW))
+		top, end = wl.top, wl.end
+		shown = wl.lines
+	} else if shown == nil {
+		for l := top; l < end; l++ {
+			shown = append(shown, l)
+		}
+	}
+	if m.inlayEnabled(prefs) {
+		m.inlayWant(e, top, end) // F-169: ask for the window's hints (debounced, async)
+	}
+	if m.breadcrumbsEnabled(prefs) || m.stickyEnabled(prefs) {
+		m.outlineWant(e) // F-175: the outline both read (debounced, async)
+	}
+	// Where the text starts and which line is on top, so a click maps
+	// back to a buffer position (F-103); each pane copies it out (F-166).
+	m.bufGeom = bufGeom{top: top, rows: len(shown), textX: gutW + 1}
+	if folded && !wrap {
+		m.bufGeom.lines = shown
 	}
 
-	curLine := b.Cursor().Line
 	curCol := visCol(b.Line(curLine), b.Cursor().Col)
 	var a, z textbuf.Pos
 	visual := e.Mode() == textbuf.ModeVisual
@@ -115,18 +153,36 @@ func (m *Model) bufferView() string {
 	// in view instead of running off the panel.
 	textW := m.bufTextWidth(gutW)
 	left := 0
-	if curCol >= textW-1 {
-		left = curCol - textW + 2
+	curCells := m.inlayCells(e, curLine) // F-169: hints are virtual cells in front of the cursor
+	curColV := curCol + hintsUpTo(curCells, curCol)
+	if !wrap && curColV >= textW-1 { // wrapped lines never scroll sideways
+		left = curColV - textW + 2
 	}
-	if !m.renderingSplit {
-		m.bufGeom.left = left
-	}
+	var geomInlay map[int][]inlayCell
+	m.bufGeom.left = left
 
+	var extra map[int][]int // F-174: the secondary cursors' columns by line
+	for _, c := range e.Cursors() {
+		if extra == nil {
+			extra = map[int][]int{}
+		}
+		extra[c.Line] = append(extra[c.Line], c.Col)
+	}
 	var out []string
+	var rowLine, rowStart []int
+	curRow, curCell := 0, 0
 	path := e.Path()
 	syntax := m.syntaxFor(e)
 	marks := m.gutterMarks(m.bufs[m.activeTab])
-	for l := top; l < end; l++ {
+	m.semanticWant(m.bufs[m.activeTab], prefs) // F-173
+	blame := ""
+	if m.blameEnabled(prefs) {
+		tab := m.bufs[m.activeTab]
+		m.startBlame(tab)
+		blame = m.blameText(tab, curLine)
+	}
+	starts := foldStarts(b) // F-176
+	for si, l := range shown {
 		num := strconv.Itoa(l + 1)
 		if !prefs.LineNumbers {
 			num = " "
@@ -142,7 +198,11 @@ func (m *Model) bufferView() string {
 		raw := b.Line(l)
 		text := expandTabs(raw)
 
-		if visual {
+		if bt, bb, bl, br, ok := e.BlockRange(); ok {
+			if l >= bt && l <= bb { // ctrl+v: the same display cells on every line (F-159)
+				text = markCells(text, bl, br)
+			}
+		} else if visual {
 			selStart, selEnd := 0, len([]rune(text))
 			switch {
 			case l < a.Line || l > z.Line:
@@ -159,6 +219,12 @@ func (m *Model) bufferView() string {
 			text = withCursor(text, curCol)
 		} else if hl != "" && strings.Contains(raw, hl) {
 			text = markMatches(text, expandTabs(hl)) // plain, so the marks stay exact
+		} else if styled, ok := m.searchBufStyled(e, text); ok {
+			text = styled // F-168: the search buffer colors its own rows
+		} else if st, ok := conflictStyle(e.ConflictRegionAt(l)); ok {
+			// Merge-conflict regions (F-026-style washes, F-156) render plain
+			// so the background runs unbroken to the edge.
+			text = st.Render(padTo(text, textW, wrap))
 		} else if syntax != nil {
 			// Colorized lines keep the raw text underneath (F-026 P4);
 			// cursor and selection lines render plain so the rune-level
@@ -166,23 +232,130 @@ func (m *Model) bufferView() string {
 			if st := syntax.styled(l); st != "" {
 				text = expandTabs(st) // escapes never contain a tab
 			}
+			text = m.semanticLine(m.bufs[m.activeTab], prefs, l, raw, text) // F-173
+		}
+		if cols := extra[l]; len(cols) > 0 { // F-174, before inlay hints shift the cells
+			text = markSecondary(text, raw, cols)
+		}
+		cells := m.inlayCells(e, l)
+		if len(cells) > 0 {
+			text = insertInlay(text, cells)
+			if geomInlay == nil {
+				geomInlay = map[int][]inlayCell{}
+			}
+			geomInlay[l] = cells
+		}
+		if lo, hi, ok := b.ClosedFoldAt(l); ok && lo == l {
+			text += foldTail(hi - lo) // F-176: the fold's lines collapse into this one row
+			if wrap && ansi.Width(text) > textW {
+				text = ansi.Slice(text, 0, textW)
+			}
+		}
+		marker := gitMarkGlyph(marks, l)
+		debugMark := false
+		if g, ok := m.debugGutter(path, l); ok {
+			marker, debugMark = g, true // a breakpoint or the stop line beats a git change mark
+		}
+		if g := foldMark(starts, l, curLine); g != "" && !debugMark {
+			// F-176: a closed fold's marker beats a git mark (it is what hides
+			// the lines); an open fold's shows on the cursor line when free.
+			if g == theme.GlyphFoldClosed || marker == " " {
+				marker = theme.TextDim().Render(g)
+			}
+		}
+		if wrap {
+			// One row per segment: the number and marks only on the first.
+			segs := wl.segs[si]
+			rs := []rune(expandTabs(raw))
+			for i, st := range segs {
+				en := len(rs)
+				if i+1 < len(segs) {
+					en = segs[i+1]
+				}
+				row := text
+				if len(segs) > 1 {
+					c0 := runesWidth(rs[:st]) + hintsBefore(cells, st)
+					c1 := runesWidth(rs[:en]) + hintsBefore(cells, en)
+					if en == len(rs) {
+						c1 = runesWidth(rs) + hintsBefore(cells, en+2) // hints after the last rune, and ghost text (F-181) after the cursor block
+					}
+					row = ansi.Slice(text, c0, c1+boolInt(en == len(rs) && l == curLine))
+				}
+				if len(cells) > 0 && ansi.Width(row) > textW {
+					row = ansi.Slice(row, 0, textW)
+				}
+				if blame != "" && l == curLine && i+1 == len(segs) {
+					row += blameSuffix(blame, textW-ansi.Width(row)) // last visual row only
+				}
+				if i == 0 {
+					out = append(out, gutter+marker+row)
+				} else {
+					out = append(out, strings.Repeat(" ", gutW)+row)
+				}
+				rowLine, rowStart = append(rowLine, l), append(rowStart, st)
+				if l == curLine && curCol >= st && (i+1 == len(segs) || curCol < segs[i+1]) {
+					curRow = len(out) - 1
+					curCell = runesWidth(rs[st:min(curCol, len(rs))]) + hintsBetween(cells, st, curCol)
+				}
+			}
+			continue
 		}
 		if left > 0 || ansi.Width(text) > textW {
 			text = ansi.Slice(text, left, left+textW)
 		}
-		marker := gitMarkGlyph(marks, l)
-		if g, ok := m.debugGutter(path, l); ok {
-			marker = g // a breakpoint or the stop line beats a git change mark
+		if blame != "" && l == curLine {
+			text += blameSuffix(blame, textW-ansi.Width(text))
 		}
 		out = append(out, gutter+marker+text)
+	}
+	m.bufGeom.inlay = geomInlay
+	if wrap {
+		// A cursor line taller than the pane keeps the cursor's row in view.
+		if drop := curRow - rows + 1; drop > 0 {
+			out, rowLine, rowStart, curRow = out[drop:], rowLine[drop:], rowStart[drop:], curRow-drop
+		}
+		if len(out) > rows {
+			out, rowLine, rowStart = out[:rows], rowLine[:rows], rowStart[:rows]
+		}
+		if len(out) > 0 {
+			m.bufGeom.rowLine, m.bufGeom.rowStart, m.bufGeom.rows = rowLine, rowStart, len(out)
+			m.bufGeom.top = rowLine[0]
+		}
+	}
+
+	if m.stickyEnabled(prefs) {
+		// F-175: the enclosing symbols' headers, scrolled off the top, are
+		// pinned over the first rows (never over the cursor's row).
+		cr := curLine - top
+		if folded && !wrap { // closed folds hide lines above the cursor's row (F-176)
+			for i, l := range shown {
+				if l == curLine {
+					cr = i
+				}
+			}
+		}
+		if wrap {
+			cr = curRow
+		}
+		if hs := m.stickyHeaders(e, m.bufGeom.top, cr); len(hs) > 0 {
+			for i, l := range hs {
+				out[i] = stickyRow(b, l, gutW, textW, prefs.LineNumbers)
+			}
+			m.bufGeom.sticky = hs
+		}
 	}
 
 	if popup := m.popupRows(); len(popup) > 0 && !m.renderingSplit {
 		// F-026 P4: completions/code-actions/hover float as a bordered
 		// dialog anchored under the cursor cell — not plain rows
 		// appended below the buffer.
-		x := clampIdx(gutW+curCol, maxInt(m.width-m.railW()-5, 20)-10)
-		out = m.floatPopup(out, popup, x, curLine, top)
+		x := clampIdx(gutW+curColV, maxInt(m.surfW()-5, 20)-10)
+		if wrap { // rows, not lines: the popup hangs under the cursor's row
+			x = clampIdx(gutW+curCell, maxInt(m.surfW()-5, 20)-10)
+			out = m.floatPopup(out, popup, x, curRow, 0)
+		} else {
+			out = m.floatPopup(out, popup, x, curLine, top)
+		}
 	}
 
 	cmd := e.CommandLine()
@@ -207,13 +380,19 @@ func (m *Model) bufferView() string {
 // popupRows picks the one open LSP popup (completions > code actions >
 // hover — the key interceptors make them mutually exclusive in practice).
 func (m *Model) popupRows() []string {
+	if rows := m.peekView(); len(rows) > 0 { // F-173
+		return rows
+	}
 	if rows := m.completionView(); len(rows) > 0 {
 		return rows
 	}
 	if rows := m.actionView(); len(rows) > 0 {
 		return rows
 	}
-	return m.hoverView()
+	if rows := m.hoverView(); len(rows) > 0 {
+		return rows
+	}
+	return m.signatureView()
 }
 
 // floatPopup paints a bordered dialog over the buffer rows: x = anchor
@@ -225,7 +404,7 @@ func (m *Model) floatPopup(base []string, rows []string, x, curLine, top int) []
 	if len(rows) == 0 || len(base) == 0 {
 		return base
 	}
-	avail := maxInt(m.width-m.railW()-5, 20)
+	avail := maxInt(m.surfW()-5, 20)
 	w := 0
 	for _, r := range rows {
 		if lw := ansi.Width(ansi.Strip(r)); lw > w {
@@ -291,7 +470,7 @@ func (m *Model) hoverView() []string {
 	rows := make([]string, 0, min(len(m.hoverLines), 6)+1)
 	rows = append(rows, theme.Hint().Render("hover:"))
 	for _, ln := range m.hoverLines[:min(len(m.hoverLines), 6)] {
-		rows = append(rows, "  "+theme.TextDim().Render(truncateRunes(ln, maxInt(m.width-m.railW()-6, 20))))
+		rows = append(rows, "  "+theme.TextDim().Render(truncateRunes(ln, maxInt(m.surfW()-6, 20))))
 	}
 	return rows
 }
@@ -337,14 +516,20 @@ func markMatches(line, pat string) string {
 	}
 }
 
+// surfW is the width the buffer being drawn has: its pane's, else the
+// surface right of the tree.
+func (m *Model) surfW() int {
+	if m.paneW > 0 {
+		return m.paneW
+	}
+	return m.width - m.railW()
+}
+
 // bufTextWidth is how many cells of text a buffer row shows.
 func (m *Model) bufTextWidth(gutW int) int {
-	w := m.width - m.railW()
-	if m.chat != nil && m.chat.open {
+	w := m.surfW()
+	if m.paneW == 0 && m.chat != nil && m.chat.open {
 		w -= chatWidth
-	}
-	if m.splitActive() {
-		w /= 2
 	}
 	return maxInt(w-2-gutW-1, 10) // panel edges, gutter, change mark
 }
@@ -360,6 +545,34 @@ func markRange(line string, start, end int) string {
 		return line
 	}
 	return string(r[:start]) + cursorStyle.Render(string(r[start:end])) + string(r[end:])
+}
+
+// markCells inverts display cells [start,end) of a plain line; a start past
+// the line's end marks nothing (a short line has no part in the block).
+func markCells(line string, start, end int) string {
+	w := ansi.Width(line)
+	end = min(end, w)
+	if start >= end {
+		return line
+	}
+	return ansi.Slice(line, 0, start) + cursorStyle.Render(ansi.Slice(line, start, end)) + ansi.Slice(line, end, w)
+}
+
+// markSecondary paints the extra cursors of a multi-cursor edit (F-174) on
+// one rendered line: the display cell at each column, or a blank one past
+// the end. text may carry styling.
+func markSecondary(text, raw string, cols []int) string {
+	for _, c := range cols {
+		cell := visCol(raw, c)
+		w := ansi.Width(text)
+		if cell >= w {
+			text += strings.Repeat(" ", cell-w) + theme.SecondaryCursor().Render(" ")
+			continue
+		}
+		under := ansi.Strip(ansi.Slice(text, cell, cell+1)) // the style gets the bare rune, not its escapes
+		text = ansi.Slice(text, 0, cell) + theme.SecondaryCursor().Render(under) + ansi.Slice(text, cell+1, w)
+	}
+	return text
 }
 
 func padLeft(s string, n int) string {
@@ -519,4 +732,28 @@ func visCol(raw string, col int) int {
 		v += col - n // past the end (insert mode after the last rune)
 	}
 	return v
+}
+
+// conflictStyle is the wash for a line inside a merge conflict (F-156).
+func conflictStyle(r textbuf.ConflictRegion) (lipgloss.Style, bool) {
+	switch r {
+	case textbuf.RegionMarker:
+		return theme.ConflictMarker(), true
+	case textbuf.RegionOurs:
+		return theme.ConflictOurs(), true
+	case textbuf.RegionBase:
+		return theme.ConflictBase(), true
+	case textbuf.RegionTheirs:
+		return theme.ConflictTheirs(), true
+	}
+	return lipgloss.Style{}, false
+}
+
+// padTo fills a line to the text width so a wash spans the row; wrapped
+// lines are left as they are (their rows are cut by cell).
+func padTo(s string, w int, wrap bool) string {
+	if n := w - ansi.Width(s); !wrap && n > 0 {
+		return s + strings.Repeat(" ", n)
+	}
+	return s
 }

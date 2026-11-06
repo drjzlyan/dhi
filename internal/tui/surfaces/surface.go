@@ -88,6 +88,27 @@ type Unsaved interface {
 	SaveAll() error    // saves everything Unsaved listed
 }
 
+// HotExit (F-161) is implemented by a surface that can keep its unsaved work
+// as swap files: the quit guard offers "keep for next time", and "quit
+// without saving" drops the swaps along with the edits.
+type HotExit interface {
+	KeepForNextTime() error
+	DiscardSwaps()
+}
+
+// Shutdowner (F-165) is implemented by a surface holding resources that must
+// not outlive DHI (sockets, scratch folders, locks): the shell calls Shutdown
+// once on every way out.
+type Shutdowner interface {
+	Shutdown()
+}
+
+// SessionSaver (F-149) is implemented by a surface with a session worth
+// reopening: the shell calls SaveSession as DHI quits.
+type SessionSaver interface {
+	SaveSession()
+}
+
 // AltDigitTaker is implemented by a surface that uses alt+1..9 itself
 // (the editor's terminal tabs): while it reports true those keys go to
 // the surface instead of switching views (ADR-0041).

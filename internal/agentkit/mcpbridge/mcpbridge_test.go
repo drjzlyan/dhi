@@ -68,7 +68,7 @@ func TestBridgeAllowlistAndRouting(t *testing.T) {
 	}
 	// Calling an allowed tool routes to the server.
 	out, isErr, err := b.Call(context.Background(), "mcp__fs__read", []byte(`{}`))
-	if err != nil || isErr || out != "called read" || caller.last != "read" {
+	if err != nil || isErr || out != "<untrusted_data source=\"mcp:fs\">\ncalled read\n</untrusted_data>" || caller.last != "read" {
 		t.Fatalf("call = %q isErr=%v err=%v last=%q", out, isErr, err, caller.last)
 	}
 	// A tool not in the allowlist is refused, not routed.

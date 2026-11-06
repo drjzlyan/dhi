@@ -378,6 +378,9 @@ func (c *chatModel) composerKey(key string, apply func(string)) bool {
 			c.input = kit.Input{}
 			return true
 		}
+		if text != "" && c.slashCommand(text) {
+			return true
+		}
 		if text != "" {
 			if c.expand != nil { // @file, @selection, @problems, @path (F-120)
 				text, _ = c.expand(text, c.agents)
@@ -400,6 +403,9 @@ func (c *chatModel) composerKey(key string, apply func(string)) bool {
 			}
 			c.markChannelRead() // posting reads the channel (F-017)
 		}
+		return true
+	}
+	if key == "tab" && c.slashComplete() {
 		return true
 	}
 	if key == "tab" { // complete the @word being typed (F-120)

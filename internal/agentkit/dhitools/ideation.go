@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/drjzlyan/dhi/internal/agentkit/untrusted"
 	"github.com/drjzlyan/dhi/internal/ideation"
 	"github.com/drjzlyan/dhi/internal/mcp"
 )
@@ -67,7 +68,7 @@ func (d Deps) ideationTools() []tool {
 				if err != nil {
 					return "", fmt.Errorf("%s: %w", p.rel, err)
 				}
-				return string(data), nil
+				return untrusted.Wrap("ideation", string(data)), nil
 			},
 		},
 		{
@@ -93,7 +94,7 @@ func (d Deps) ideationTools() []tool {
 				return sess, nil
 			},
 			exec: func(_ context.Context, dec any) (string, error) {
-				return renderSession(dec.(ideation.Session)), nil
+				return untrusted.Wrap("ideation", renderSession(dec.(ideation.Session))), nil
 			},
 		},
 		{

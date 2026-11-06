@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/drjzlyan/dhi/internal/ansi"
 	"github.com/drjzlyan/dhi/internal/search"
@@ -63,6 +64,30 @@ func plainView(m *Model) string { return ansi.Strip(m.View()) }
 func feed(m *Model, keys ...string) {
 	for _, k := range keys {
 		m.HandleKey(k)
+		settleGitPanel(m)
+	}
+}
+
+// settleGitPanel waits for a git panel read or commit the key started, as
+// a user waits for the rows before acting on them. Other messages it meets are
+// put back for the test to take.
+func settleGitPanel(m *Model) {
+	var other []teaMsg
+	for m.gitLoading || m.committing || m.gitWriting || (m.stash != nil && m.stash.busy != "") {
+		select {
+		case msg := <-m.termMsgs:
+			switch msg.kind {
+			case gitDataMsgDone, treeGitMsgDone, commitMsgDone, gitOpMsgDone, stashMsgDone:
+				m.Update(msg)
+				continue
+			}
+			other = append(other, msg)
+		case <-time.After(10 * time.Second):
+			panic("the git panel read never landed")
+		}
+	}
+	for _, msg := range other {
+		m.termMsgs <- msg
 	}
 }
 

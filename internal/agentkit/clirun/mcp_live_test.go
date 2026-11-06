@@ -312,7 +312,7 @@ func TestLiveAntigravityMCP(t *testing.T) {
 	defer stop()
 
 	base := t.TempDir()
-	dir, cleanup, err := Antigravity.MCPGeminiDir(base, Antigravity.MCPConfigFile(endpoint))
+	dir, cleanup, err := Antigravity.MCPGeminiDir(base, Antigravity.MCPConfigFile(endpoint), false)
 	if err != nil {
 		t.Fatalf("gemini_dir mirror: %v", err)
 	}

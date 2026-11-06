@@ -286,6 +286,7 @@ func TestBoardFlows(t *testing.T) {
 	m.HandleKey("w")
 	typeInto(t, m, 0, "alpha") // member from fixture workspace
 	m.HandleKey("enter")
+	awaitAttach(t, m)
 	tk, _ = store.Get("fix-login")
 	if len(tk.ChangeSets) != 1 || tk.ChangeSets[0].Member != "alpha" ||
 		tk.ChangeSets[0].Branch != "task/fix-login" {

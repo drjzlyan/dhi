@@ -296,3 +296,27 @@ func TestFinalReplyMarked(t *testing.T) {
 		t.Fatalf("final reply not marked: %+v", m)
 	}
 }
+
+// F-124: a CLI runs at the workspace root, so it never loads a member
+// repo's AGENTS.md; the system block carries it, labelled by path and
+// tagged as instructions, not fenced as untrusted data.
+func TestPromptCarriesMemberAgentsMD(t *testing.T) {
+	h := newHarness(t, baseDoc())
+	if err := os.WriteFile(filepath.Join(h.ws.Root, "api", "AGENTS.md"), []byte("always run gofmt"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	trig := mustPost(t, h, bus.Message{Channel: "#general", Author: bus.Human, Text: "@scout go"})
+	_, sys := h.rt.cliPromptAt(context.Background(), h.rt.agents["scout"], trig, "", 0, nil, false)
+	i := strings.Index(sys, "<repo_instructions>")
+	j := strings.Index(sys, "</repo_instructions>")
+	if i < 0 || j < i {
+		t.Fatalf("no repo_instructions section:\n%s", sys)
+	}
+	body := sys[i:j]
+	if !strings.Contains(body, "api/AGENTS.md:") || !strings.Contains(body, "always run gofmt") {
+		t.Fatalf("section lacks the member's AGENTS.md:\n%s", body)
+	}
+	if strings.Contains(body, "<untrusted_data") {
+		t.Fatalf("AGENTS.md must not be fenced as untrusted:\n%s", body)
+	}
+}

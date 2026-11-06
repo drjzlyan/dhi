@@ -16,7 +16,9 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/agentkit/clirun"
 	"github.com/drjzlyan/dhi/internal/agentkit/episode"
+	"github.com/drjzlyan/dhi/internal/agentkit/forge"
 	"github.com/drjzlyan/dhi/internal/agentkit/knowledge"
+	"github.com/drjzlyan/dhi/internal/agentkit/lessons"
 	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
 	"github.com/drjzlyan/dhi/internal/agentkit/memory"
 	agentruntime "github.com/drjzlyan/dhi/internal/agentkit/runtime"
@@ -209,6 +211,10 @@ func RunDHI(c Config, t Task, root string) Result {
 		return fail("tasks", err)
 	}
 	st.SetAttach(gitWorktreeAttach(ws), nil)
+	extra, err := seedDHI(t, ws, root, b)
+	if err != nil {
+		return fail("seed", err)
+	}
 	kb, err := knowledge.Open(ws, knowledge.Review, nil)
 	if err != nil {
 		return fail("knowledge", err)
@@ -247,13 +253,17 @@ func RunDHI(c Config, t Task, root string) Result {
 		Workflows: true,
 		Memory:    memory.Open(ws),
 		Knowledge: kb,
+		Lessons:   extra.lessons,
+		Forge:     extra.forge,
 		Episodes:  episode.Open(ws.Root),
 		Spend:     budget.Open(ws.Root),
 		// The app's goal-loop seams (F-067): DHI provisions the task
 		// worktree and verifies the work itself.
-		Run:       execRunner{env: c.Env},
-		Tuning:    func() agentruntime.Tuning { return evalTuning(t) },
-		Provision: func(slug, member string) error { return st.Attach(slug, member, "task/"+slug, "") },
+		Run:    execRunner{env: c.Env},
+		Tuning: func() agentruntime.Tuning { return evalTuning(t) },
+		Provision: func(_ context.Context, slug, member string, _ map[string]string) error {
+			return st.Attach(slug, member, "task/"+slug, "")
+		},
 	}, []*manifest.Agent{m})
 	if err != nil {
 		return fail("runtime", err)
@@ -309,6 +319,47 @@ func RunDHI(c Config, t Task, root string) Result {
 		r.VerifyRounds, r.Verify = ep.Iterations, ep.Verify
 	}
 	return scoreIn(t, root, memberDir, r)
+}
+
+// seeded is the optional runtime state a fixture asks for.
+type seeded struct {
+	lessons *lessons.Store
+	forge   *forge.Store
+}
+
+// seedDHI writes the fixture's DHI-only context (F-172): KB entries,
+// earlier channel posts, Brain lessons and the tool forge. Stores stay
+// nil unless the fixture needs them, so other fixtures run as before.
+func seedDHI(t Task, ws *workspace.Workspace, root string, b *bus.Bus) (seeded, error) {
+	var out seeded
+	if len(t.KB) > 0 {
+		auto, err := knowledge.Open(ws, knowledge.Auto, nil)
+		if err != nil {
+			return out, err
+		}
+		for _, k := range t.KB {
+			if _, _, err := auto.Contribute(knowledge.Contribution{Title: k.Title, Body: k.Body, Tags: k.Tags, Author: "eval-seed", Importance: 4}); err != nil {
+				return out, err
+			}
+		}
+	}
+	for _, po := range t.Posts {
+		if _, err := b.Post(bus.Message{Channel: "#general", Author: po.Author, Text: po.Text}); err != nil {
+			return out, err
+		}
+	}
+	if len(t.Lessons) > 0 {
+		out.lessons = lessons.Open(root)
+		for _, l := range t.Lessons {
+			if _, _, err := out.lessons.Add(lessons.Lesson{Scope: lessons.ScopeUser, Text: l.Text, Confidence: 0.9, Source: lessons.SourceHuman}); err != nil {
+				return out, err
+			}
+		}
+	}
+	if t.Forge {
+		out.forge = forge.Open(root)
+	}
+	return out, nil
 }
 
 // evalTuning is the runtime's defaults with the fixture's round cap.

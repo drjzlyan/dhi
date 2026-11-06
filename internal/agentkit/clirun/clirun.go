@@ -20,6 +20,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -48,6 +49,26 @@ type StreamEvent struct {
 	// Session is an EventSession's id: known before the run ends, so a
 	// run DHI stops (relaunch) can still be resumed.
 	Session string
+	// Call is an EventCommand's tool name plus its full normalized input
+	// (G-C4), the identity repeated-call detection compares. Detail is a
+	// truncated display line and for some tools names no input at all, so
+	// it cannot tell two different calls apart. "" = the adapter does not
+	// expose one; such calls are never counted.
+	Call string
+	// Spend is an EventUsage's own spend, when the CLI streams it before
+	// the final line (G-C4); the in-flight budget check sums it. UsageID
+	// names the model message it belongs to so a message streamed in
+	// several lines is counted once (the last line wins); "" = always new.
+	Spend   Spend
+	UsageID string
+}
+
+// Spend is what one streamed model call cost so far. Tokens counts the
+// same things the spend ledger does (fresh input, output, cache read and
+// write); CostUSD is only what the CLI itself reported, never a guess.
+type Spend struct {
+	Tokens  int
+	CostUSD float64
 }
 
 // Usage is what a finished run reports about itself. -1 tokens mean the
@@ -85,6 +106,10 @@ type RunInput struct {
 	// MCPGeminiDir is the per-turn config directory for adapters that
 	// take it on argv (antigravity: --gemini_dir); "" = none.
 	MCPGeminiDir string
+	// HooksConfig names a per-run settings file carrying plugin hooks for
+	// the CLI's native tools (F-179); "" = none. Only adapters with
+	// HooksArgs honor it.
+	HooksConfig string
 	// Resume continues the CLI's own session with this id (F-066,
 	// ADR-0031); "" = a fresh session. Only adapters with ResumeOK honor
 	// it — the runner never sets it for the rest.
@@ -99,6 +124,18 @@ type RunInput struct {
 	// StdinOK; adapters without verified stdin delivery refuse by name
 	// (ADR-0011) instead of dying on E2BIG.
 	Stdin string
+	// DenyWeb switches the CLI's own web fetch/search tools off (F-123).
+	// Only adapters with WebDenyOK honor it; the runtime sets it from
+	// agents.native_web.
+	DenyWeb bool
+	// ReadOnly runs the turn without any write tool (F-144 plan, review
+	// and ask modes). Only adapters with ReadOnlyOK honor it; the runtime
+	// refuses the mode by name for the rest.
+	ReadOnly bool
+	// Images are absolute paths of image files to attach to the turn
+	// (G-X3). Only adapters with ImagesFlag read them; for ImagesOK
+	// adapters without one the runtime names the paths in the prompt.
+	Images []string
 }
 
 // maxPromptArg is the largest single argv element DHI will build
@@ -161,6 +198,46 @@ type CLI struct {
 	// adapter honors RunInput.Resume and Finalize reports SessionID.
 	// Unverified adapters always start fresh, and doctor says so.
 	ResumeOK bool
+	// WebDenyOK reports a live-verified way to switch the CLI's own web
+	// fetch/search tools off (F-123): either BuildArgs honors
+	// RunInput.DenyWeb or DenyWebEnv carries it. Adapters without one
+	// cannot be restricted, and doctor and Settings say so by name.
+	WebDenyOK bool
+	// ReadsAgentsMD reports that the CLI itself loads AGENTS.md from its
+	// working directory (F-124). Only a live canary run sets it; the
+	// runtime then leaves that one file out of the prompt so it is never
+	// shown twice. Members below the cwd are still the prompt's job.
+	ReadsAgentsMD bool
+	// ReadOnlyOK reports a way to run a turn with no write tools
+	// (F-144): BuildArgs honors RunInput.ReadOnly. Adapters without one
+	// are refused by name in the read-only modes, with ReadOnlyWhy.
+	ReadOnlyOK bool
+	// ReadOnlyWhy says why an adapter has no ReadOnlyOK. A test requires
+	// one for every adapter without it.
+	ReadOnlyWhy string
+	// ImagesOK reports that the CLI's headless mode takes an image the
+	// user attached (G-X3, @image: mentions): either the adapter's argv
+	// (ImagesFlag, BuildArgs honors RunInput.Images) or a file path named
+	// in the prompt that the CLI's own read tool opens. Adapters without it
+	// are refused by name when a turn carries an image (ADR-0011), with
+	// ImagesWhy; a test requires one for every adapter without it.
+	ImagesOK         bool
+	ImagesFlag       bool
+	ImagesWhy        string
+	ReadsClaudeRules bool
+	// DenyWebEnv is the env that does it for CLIs that take it there
+	// (opencode: OPENCODE_PERMISSION). Set after the pass-through, so the
+	// user's own value never wins.
+	DenyWebEnv []string
+	// WebDenyWhy says why an adapter has no WebDenyOK, in the evidence's
+	// own terms (cursor). Doctor prints it; a test requires one for every
+	// adapter that cannot deny, so "unsupported" is never unexplained.
+	WebDenyWhy string
+	// DenyWebDir marks a denial that rides the per-turn MCPGeminiDir
+	// (antigravity: a PreToolUse hook). A spawn without an IDE-tools
+	// mirror gets a deny-only one; one that cannot be built is refused by
+	// name.
+	DenyWebDir bool
 	// MCPOK reports whether the adapter has a verified MCP-server
 	// wiring (F-028): the runtime serves DHI's IDE tools to these
 	// adapters over a per-turn loopback endpoint. Adapters without it
@@ -189,9 +266,21 @@ type CLI struct {
 	// --gemini_dir). It receives a writable base dir and the rendered
 	// config body, returning the dir and a cleanup. Optional; when set
 	// it supersedes the temp-file/env delivery.
-	MCPGeminiDir func(baseDir, configBody string) (dir string, cleanup func(), err error)
+	// denyWeb adds the CLI's web-tool block to the same directory (F-123);
+	// an empty configBody keeps the user's own MCP config.
+	MCPGeminiDir func(baseDir, configBody string, denyWeb bool) (dir string, cleanup func(), err error)
 	// MCPGeminiDirFlag is the argv flag that takes that directory.
 	MCPGeminiDirFlag string
+	// HooksArgs returns the argv that hands the CLI a settings file with
+	// plugin hooks for this run only (F-179, ADR-0047: claude --settings).
+	// nil = the CLI has no verified per-run hook input; plugin hooks then
+	// cover DHI-served tools only and doctor names the gap. The file lives
+	// in a DHI temp path; the user's own CLI config is never edited.
+	HooksArgs func(settingsPath string) []string
+	// HooksWhy says why an adapter has no HooksArgs, in the evidence's own
+	// terms. Doctor prints it; a test requires one for every adapter
+	// without, so the gap is never unexplained.
+	HooksWhy string
 }
 
 // MCPWired reports whether the adapter declares a complete per-turn MCP
@@ -252,6 +341,19 @@ func (r *Registry) All() []*CLI {
 	return out
 }
 
+// CannotDenyWeb names the adapters with no verified way to switch the
+// CLI's own web tools off (F-123), sorted. Doctor and Settings print it,
+// so what they say cannot drift from the adapters.
+func (r *Registry) CannotDenyWeb() []string {
+	var out []string
+	for _, n := range r.order {
+		if !r.byName[n].WebDenyOK {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
 // Get returns one adapter by registry name.
 func (r *Registry) Get(name string) (*CLI, bool) {
 	c, ok := r.byName[name]
@@ -280,34 +382,55 @@ func (r *Registry) Names() []string {
 	return out
 }
 
-// Detect probes every registered CLI on PATH: name → detected version
-// ("" = not detected). A probe that fails or times out counts as not
-// detected — the doctor row names it, nothing is guessed (ADR-0011).
+// Probe is what detection found for one CLI: where its binary is and
+// the version it reports. Path set with Version "" means the binary is
+// there but its --version failed or printed no version (Err says which);
+// that is a CLI to fix, not a missing one.
+type Probe struct {
+	Path, Version string
+	Err           error
+}
+
+// versionProbeTimeout bounds one --version call. Node CLIs on a cold
+// cache (npm, nvm, volta shims) can take several seconds to start.
+const versionProbeTimeout = 20 * time.Second
+
+// Detect reports each registered CLI's version ("" when it is not
+// usable); DetectAll says why.
 func (r *Registry) Detect() map[string]string {
+	all := r.DetectAll()
+	out := make(map[string]string, len(all))
+	for n, p := range all {
+		out[n] = p.Version
+	}
+	return out
+}
+
+// DetectAll finds every registered CLI and asks it for its version.
+func (r *Registry) DetectAll() map[string]Probe {
 	// Each CLI answers --version on its own; asking them all at once makes
 	// detection as slow as the slowest one, not their sum (~2.5s live).
 	all := r.All()
-	vers := make([]string, len(all))
+	probes := make([]Probe, len(all))
 	var wg sync.WaitGroup
 	for i, c := range all {
 		path, err := r.look(c.Bin)
 		if err != nil {
 			continue
 		}
+		probes[i].Path = path
 		wg.Add(1)
 		go func(i int, c *CLI, path string) {
 			defer wg.Done()
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), versionProbeTimeout)
 			defer cancel()
-			if v, err := c.Version(ctx, path); err == nil {
-				vers[i] = v
-			}
+			probes[i].Version, probes[i].Err = c.Version(ctx, path)
 		}(i, c, path)
 	}
 	wg.Wait()
-	out := make(map[string]string, len(all))
+	out := make(map[string]Probe, len(all))
 	for i, c := range all {
-		out[c.Name] = vers[i]
+		out[c.Name] = probes[i]
 	}
 	return out
 }
@@ -398,30 +521,50 @@ func parseJSONLine(line string) (map[string]any, error) {
 	return m, nil
 }
 
-// probeVersion runs `path --version` (context-bounded) and returns the
-// combined output; adapters extract the version token.
+// probeVersion runs `path --version` (context-bounded) and returns its
+// stdout and stderr together, colour codes removed: some CLIs print the
+// banner on stderr, or exit non-zero after printing it (an update
+// notice). The output is kept whenever it holds a version.
 func probeVersion(ctx context.Context, path string) (string, error) {
 	cmd := exec.CommandContext(ctx, path, "--version")
-	out, err := cmd.Output()
+	out, err := cmd.CombinedOutput()
+	text := strings.TrimSpace(ansiRe.ReplaceAllString(string(out), ""))
 	if err != nil {
 		if ctx.Err() != nil {
-			return "", fmt.Errorf("clirun: version probe timed out")
+			return "", fmt.Errorf("clirun: %s --version timed out", filepath.Base(path))
 		}
-		return "", fmt.Errorf("clirun: version probe: %w", err)
+		if firstVersionToken(text) == "" {
+			return "", fmt.Errorf("clirun: %s --version: %w (%s)", filepath.Base(path), err, truncate(text, 80))
+		}
 	}
-	return strings.TrimSpace(string(out)), nil
+	return text, nil
 }
+
+var ansiRe = regexp.MustCompile(`\x1b\[[0-9;?]*[ -/]*[@-~]`)
 
 // firstVersionToken scans a `--version` banner for the first
 // version-shaped token ("2.1.177 (Claude Code)", "codex-cli 0.147.0",
-// "v1.2.3"): leading "v" and trailing commas tolerated.
+// "v1.2.3", "GitHub Copilot CLI 1.0.88.", "1.0.90-1"): a leading "v",
+// surrounding punctuation and a prerelease or build suffix are dropped,
+// so every adapter reads banners the same way.
 func firstVersionToken(out string) string {
 	for _, f := range strings.Fields(out) {
-		f = strings.TrimPrefix(f, "v")
-		f = strings.TrimSuffix(f, ",")
-		if isVersionLike(f) {
-			return f
+		if v := versionCore(f); v != "" {
+			return v
 		}
+	}
+	return ""
+}
+
+// versionCore is f's X.Y[.Z] core, or "" when f is not a version.
+func versionCore(f string) string {
+	f = strings.Trim(f, ".,;:()[]'\"")
+	f = strings.TrimPrefix(strings.TrimPrefix(f, "v"), "V")
+	if i := strings.IndexAny(f, "-+"); i > 0 {
+		f = f[:i]
+	}
+	if isVersionLike(f) {
+		return f
 	}
 	return ""
 }

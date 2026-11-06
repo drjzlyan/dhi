@@ -45,6 +45,9 @@ type Editor struct {
 	afterSave   func(*Editor)
 	saveNote    string
 	lastSel     *Selected // selection captured when ":" left visual mode
+	markLo      int       // '< and '> lines of the last visual selection (F-137)
+	markHi      int
+	markSet     bool
 
 	cmdline    []rune  // content after ':', '/' or '?'
 	cmdPrefix  rune    // ':' (ex command), '/' or '?' (search)
@@ -59,19 +62,47 @@ type Editor struct {
 	path        string
 	closeReq    bool
 	closeForced bool
+	aborted     bool // :cq — the close is a failure (F-165)
 	reloaded    bool
 	delegate    CommandDelegate
 
 	indent string // what Tab inserts ("" = a tab) (F-119)
 	noPair bool   // bracket/quote pairing off
 
-	visualLine bool     // V: whole lines (F-119)
-	pendShift  string   // ">" or "<" waiting for its double (>>, <<)
-	rec        []string // keys of the change being made, for "."
-	recSeq     uint64   // buffer seq when it started
-	lastChange []string // the last change's keys
-	replaying  bool
-	hlOff      bool // matches of the last search are not marked
+	visualLine   bool // V: whole lines (F-119)
+	visualBlock  bool // ctrl+v: a rectangle by display column (F-159)
+	blockEOL     bool // "$" in a block: each line's end
+	pendRepl     bool // r waiting for its character in block mode
+	preGrouped   bool // an undo group is already open for the insert about to start
+	blockIns     *blockInsert
+	blockReg     []string // the last block yank/delete, one string per line
+	blockRegText string   // register text it matched; a later yank breaks the match
+	blockW       int
+	tabW         int
+	pendShift    string   // ">" or "<" waiting for its double (>>, <<)
+	rec          []string // keys of the change being made, for "."
+	recSeq       uint64   // buffer seq when it started
+	lastChange   []string // the last change's keys
+	replaying    bool
+	hlOff        bool       // matches of the last search are not marked
+	cfBlocks     []Conflict // parsed merge conflicts, valid while cfSeq == buf.seq+1 (F-156)
+	cfSeq        uint64
+
+	mc      *multi // secondary cursors (F-174); nil = the single-cursor path
+	inMulti bool   // a key is running at each cursor: Key must not fan out again
+
+	pendObj  rune   // 'i' or 'a' waiting for its object character (F-167)
+	objLast  [2]Pos // anchor and cursor after the last visual text object
+	objSel   bool
+	selStack []selFrame // selections to shrink back to (F-167)
+	selLast  [2]Pos     // anchor and cursor the last expand/shrink left
+	selChain bool       // selLast is meaningful
+
+	pendFind rune     // 'f', 'F', 't', 'T' waiting for target char, or 0 (F-133)
+	lastFind struct { // last find motion for ; and , (F-133)
+		kind rune // 'f', 'F', 't', 'T'
+		ch   rune
+	}
 }
 
 type op uint8
@@ -81,6 +112,7 @@ const (
 	opDelete
 	opChange
 	opYank
+	opComment // gc{motion} (F-150)
 )
 
 // NewEditor wraps content in a modal editor.
@@ -121,6 +153,10 @@ func (e *Editor) Message() string { return e.message }
 // :q!. The surface decides what closing means.
 func (e *Editor) CloseRequested() bool { return e.closeReq }
 func (e *Editor) CloseForced() bool    { return e.closeForced }
+
+// Aborted reports that the buffer was left with :cq, the editor's failure
+// exit; a program waiting on the buffer (git, F-165) treats it as cancelled.
+func (e *Editor) Aborted() bool { return e.aborted }
 func (e *Editor) TakeClose() bool {
 	c := e.closeReq
 	e.closeReq = false
@@ -158,3 +194,14 @@ func (e *Editor) SetCommandDelegate(d CommandDelegate) { e.delegate = d }
 
 // SetMessage sets the status-line text (used by delegates).
 func (e *Editor) SetMessage(msg string) { e.message = msg }
+
+// AwaitingChar reports whether the editor is waiting for a target character
+// after f/F/t/T (F-133).
+func (e *Editor) AwaitingChar() bool { return e.pendFind != 0 }
+
+// WantsRawKey reports a half-typed command whose next key is data for the
+// buffer (an f/F/t/T target, an i/a object character, a block r character):
+// the surface must not read it as the start of one of its own chords.
+func (e *Editor) WantsRawKey() bool {
+	return e.pendFind != 0 || e.pendObj != 0 || e.pendRepl
+}

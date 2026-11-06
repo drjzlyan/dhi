@@ -28,6 +28,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/scopes"
 	"github.com/drjzlyan/dhi/internal/agentkit/setprop"
 	"github.com/drjzlyan/dhi/internal/agentkit/tools"
+	"github.com/drjzlyan/dhi/internal/agentkit/untrusted"
 	"github.com/drjzlyan/dhi/internal/conventions"
 	"github.com/drjzlyan/dhi/internal/gitcore"
 	"github.com/drjzlyan/dhi/internal/ideation"
@@ -76,6 +77,10 @@ type Deps struct {
 	// moment of each commit / file write / PR, so an edit to the
 	// conventions file governs the running crew (F-052).
 	Conventions conventions.Source
+	// ConvVars gives the template symbols ({ticket}, {slug}, {title}, …)
+	// for a branch, so commits and PRs are checked against the task's own
+	// values (F-182); nil = only the template's shape is checked.
+	ConvVars func(branch string) map[string]string
 
 	// Gate enforces the active feature workflow (F-031) at a seam: it
 	// returns the refusal reasons for acting on seam ("git:commit",
@@ -129,7 +134,7 @@ type Deps struct {
 	LessonRecord func(text, scope string, tags []string) (string, error)
 	// WorkBranch moves a chat turn's work onto its own card, convention
 	// branch and worktree (F-086); nil = no work_branch tool.
-	WorkBranch func(ctx context.Context, slug, title, member string, carry bool) (string, error)
+	WorkBranch func(ctx context.Context, slug, title, member string, carry bool, fill map[string]string) (string, error)
 	// Access asks the human for sandbox access the agent lacks (F-087):
 	// write to a path, network, or running commands; nil = no tool.
 	Access func(ctx context.Context, kind, target, reason string) (string, error)
@@ -204,10 +209,37 @@ func (d Deps) checkGate(seam string) []string {
 	return d.Gate(seam)
 }
 
+// prArgs are pr_open's arguments.
+type prArgs struct {
+	Slug  string  `json:"slug"`
+	Title string  `json:"title"`
+	Base  string  `json:"base"`
+	Fill  FillArg `json:"fill"`
+}
+
+func dedupeSlots(slots []conventions.Slot) []conventions.Slot {
+	var out []conventions.Slot
+	seen := map[string]bool{}
+	for _, sl := range slots {
+		if !seen[sl.Key] {
+			seen[sl.Key] = true
+			out = append(out, sl)
+		}
+	}
+	return out
+}
+
 // PRSeam opens a PR for one member's branch and returns the
 // human-readable result (the review service in main). nil refuses
 // pr_open by name.
-type PRSeam func(ctx context.Context, member, branch, title, base string) (string, error)
+type PRSeam func(ctx context.Context, req PRRequest) (string, error)
+
+// PRRequest is one member's PR: Title is the {title} part of the team's
+// pr.title; Fill the agent's text for the AI parts of title and body.
+type PRRequest struct {
+	Member, Branch, Title, Base string
+	Fill                        map[string]string
+}
 
 // tool is one served tool's declaration + handler. Args parse in two
 // phases: parse runs BEFORE the approval gate so a malformed call is
@@ -233,6 +265,7 @@ var servedSlugs = []string{
 	"run", "ask_human", "skill_run",
 	"editor_open", "editor_reveal", "editor_apply_edit",
 	"lsp_hover", "lsp_definition", "lsp_references", "lsp_rename", "lsp_code_action",
+	"code_symbols",
 	"task_list", "task_create", "task_status", "task_assign", "task_comment", "pr_open",
 	"editor_context", "editor_propose_edit", "debug_state",
 	"kb_search", "kb_contribute",
@@ -273,6 +306,7 @@ func (d Deps) Handler() mcp.Handler {
 	all = append(all, d.miscTools()...)
 	all = append(all, d.editorTools()...)
 	all = append(all, d.lspTools()...)
+	all = append(all, d.symbolsTools()...)
 	all = append(all, d.taskTools()...)
 	all = append(all, d.kbTools()...)
 	all = append(all, d.memoryTools()...)
@@ -423,7 +457,7 @@ func (d Deps) taskTools() []tool {
 			if b.Len() == 0 {
 				return "(no tasks)\n", nil
 			}
-			return b.String(), nil
+			return untrusted.Wrap("tasks", b.String()), nil
 		},
 	})
 	out = append(out, tool{
@@ -575,27 +609,34 @@ func (d Deps) taskTools() []tool {
 	})
 	out = append(out, tool{
 		info: mcp.ToolInfo{
-			Name:        "pr_open",
-			Description: "Open a pull request for a task's changesets (one PR per member branch). Args: {\"slug\": \"...\", \"title\": \"...\", \"base\": \"main\"}. Mutating: crosses approvals.",
-			InputSchema: json.RawMessage(`{"type":"object","required":["slug","title"],"properties":{"slug":{"type":"string"},"title":{"type":"string"},"base":{"type":"string"}},"additionalProperties":false}`),
+			Name: "pr_open",
+			Description: "Open a pull request for a task's changesets (one PR per member branch). Args: {\"slug\": \"...\", \"title\": \"...\", \"base\": \"main\", " +
+				"\"fill\": [{\"key\": \"<key>\", \"text\": \"...\"}] for the <…> parts of the team's PR title and description}. DHI writes the rest of the title and description. Mutating: crosses approvals.",
+			InputSchema: json.RawMessage(`{"type":"object","required":["slug","title"],"properties":{"slug":{"type":"string"},"title":{"type":"string"},"base":{"type":"string"},"fill":` + fillSchema + `},"additionalProperties":false}`),
 		},
 		parse: func(raw json.RawMessage) (any, error) {
-			var a struct {
-				Slug  string `json:"slug"`
-				Title string `json:"title"`
-				Base  string `json:"base"`
-			}
+			var a prArgs
 			if err := args(raw, &a); err != nil {
 				return nil, err
+			}
+			// F-182: every AI part of the PR template needs the agent's
+			// text before an approval is spent on it.
+			if cv := d.conv(); cv != nil {
+				var missing []conventions.Slot
+				fill := conventions.NormalizeFill(a.Fill)
+				for _, sl := range append(conventions.Slots(cv.PR.Title), conventions.Slots(cv.PR.Body)...) {
+					if strings.TrimSpace(fill[sl.Key]) == "" {
+						missing = append(missing, sl)
+					}
+				}
+				if len(missing) > 0 {
+					return nil, fmt.Errorf("conventions: %w", fillHelp(&conventions.MissingAIError{Slots: dedupeSlots(missing)}))
+				}
 			}
 			return a, nil
 		},
 		exec: func(ctx context.Context, dec any) (string, error) {
-			a := dec.(struct {
-				Slug  string `json:"slug"`
-				Title string `json:"title"`
-				Base  string `json:"base"`
-			})
+			a := dec.(prArgs)
 			slug := strings.TrimSpace(a.Slug)
 			if d.PR == nil {
 				return "", fmt.Errorf("pr_open unavailable: no review seam wired")
@@ -612,16 +653,10 @@ func (d Deps) taskTools() []tool {
 				return "", fmt.Errorf("task %s has no worktree — attach one first", slug)
 			}
 			var opened, failures []string
-			title := a.Title
-			if cv := d.conv(); cv != nil { // conventions.pr.title (F-042)
-				ticket := conventions.TicketFor(cv.Commit.TicketPattern, append([]string{t.Slug, t.Title, t.Epic}, t.Labels...)...)
-				if ticket == "" {
-					ticket = slug
-				}
-				title = conventions.Render(cv.PR.Title, map[string]string{"title": a.Title, "slug": slug, "ticket": ticket})
-			}
 			for _, cs := range t.ChangeSets {
-				res, err := d.PR(ctx, cs.Member, cs.Branch, title, a.Base)
+				// The review service applies pr.title and pr.body (F-182), the
+				// same for this tool, the board and the reviewer.
+				res, err := d.PR(ctx, PRRequest{Member: cs.Member, Branch: cs.Branch, Title: a.Title, Base: a.Base, Fill: a.Fill})
 				if err != nil {
 					failures = append(failures, cs.Member+": "+err.Error())
 					continue
@@ -679,7 +714,7 @@ func (d Deps) kbTools() []tool {
 			for _, h := range hits {
 				fmt.Fprintf(&b, "- %s: %s\n", h.Entry.Title, h.Snippet)
 			}
-			return b.String(), nil
+			return untrusted.Wrap("kb", b.String()), nil
 		},
 	})
 	out = append(out, tool{
@@ -786,7 +821,7 @@ func (d Deps) memoryTools() []tool {
 			if strings.TrimSpace(notes) == "" {
 				return "(notes empty)\n", nil
 			}
-			return notesPage(notes, dec.([2]int)[0], dec.([2]int)[1]), nil
+			return untrusted.Wrap("notes", notesPage(notes, dec.([2]int)[0], dec.([2]int)[1])), nil
 		},
 	})
 	out = append(out, tool{
@@ -864,7 +899,7 @@ func (d Deps) channelTools() []tool {
 				}
 				fmt.Fprintf(&b, "%s: %s\n", who, m.Text)
 			}
-			return b.String(), nil
+			return untrusted.Wrap("channel "+ch, b.String()), nil
 		},
 	})
 	out = append(out, tool{

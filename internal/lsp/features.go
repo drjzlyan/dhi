@@ -31,12 +31,59 @@ type Command struct {
 	Arguments []any  `json:"arguments,omitempty"`
 }
 
-// CodeAction is one quickfix/refactor offering.
+// CodeAction is one quickfix/refactor offering. Data is the server's
+// opaque token that codeAction/resolve needs to fill in a missing Edit.
 type CodeAction struct {
-	Title   string         `json:"title"`
-	Kind    string         `json:"kind,omitempty"`
-	Edit    *WorkspaceEdit `json:"edit,omitempty"`
-	Command *Command       `json:"command,omitempty"`
+	Title     string          `json:"title"`
+	Kind      string          `json:"kind,omitempty"`
+	Edit      *WorkspaceEdit  `json:"edit,omitempty"`
+	Command   *Command        `json:"command,omitempty"`
+	Preferred bool            `json:"isPreferred,omitempty"`
+	Disabled  string          `json:"-"` // reason; non-empty = not applicable (spec: disabled.reason)
+	Data      json.RawMessage `json:"data,omitempty"`
+}
+
+// UnmarshalJSON accepts the two wire shapes of a codeAction result item:
+// a CodeAction literal, or a bare Command (whose "command" is a string).
+func (a *CodeAction) UnmarshalJSON(b []byte) error {
+	var raw struct {
+		Title       string          `json:"title"`
+		Kind        string          `json:"kind"`
+		Edit        *WorkspaceEdit  `json:"edit"`
+		Command     json.RawMessage `json:"command"`
+		IsPreferred bool            `json:"isPreferred"`
+		Disabled    *struct {
+			Reason string `json:"reason"`
+		} `json:"disabled"`
+		Data      json.RawMessage `json:"data"`
+		Arguments []any           `json:"arguments"`
+	}
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return err
+	}
+	*a = CodeAction{Title: raw.Title, Kind: raw.Kind, Edit: raw.Edit, Preferred: raw.IsPreferred, Data: raw.Data}
+	if raw.Disabled != nil {
+		a.Disabled = raw.Disabled.Reason
+		if a.Disabled == "" {
+			a.Disabled = "disabled"
+		}
+	}
+	if len(raw.Command) > 0 && string(raw.Command) != "null" {
+		if raw.Command[0] == '"' { // bare Command: {title, command: "id", arguments}
+			var id string
+			if err := json.Unmarshal(raw.Command, &id); err != nil {
+				return err
+			}
+			a.Command = &Command{Title: raw.Title, Command: id, Arguments: raw.Arguments}
+		} else {
+			var c Command
+			if err := json.Unmarshal(raw.Command, &c); err != nil {
+				return err
+			}
+			a.Command = &c
+		}
+	}
+	return nil
 }
 
 // WorkspaceEdit is a set of per-file edits. The wire allows either a
@@ -69,6 +116,9 @@ func (w *WorkspaceEdit) UnmarshalJSON(b []byte) error {
 		w.Files = append(w.Files, FileEdit{URI: uri, Edits: edits})
 	}
 	for _, d := range raw.DocumentChanges {
+		if d.TextDocument.URI == "" {
+			continue // create/rename/delete file operations are not supported
+		}
 		w.Files = append(w.Files, FileEdit{URI: d.TextDocument.URI, Edits: d.Edits})
 	}
 	return nil
@@ -255,6 +305,12 @@ func (c *Client) Rename(path string, line, col int, newName string) (*WorkspaceE
 // CodeAction requests quickfixes for a range, seeded with the
 // diagnostics the UI already knows about on that line.
 func (c *Client) CodeAction(path string, rng Range, diags []Diagnostic) ([]CodeAction, error) {
+	return c.CodeActionOnly(path, rng, diags, nil)
+}
+
+// CodeActionOnly is CodeAction restricted to the given kinds (context.only,
+// e.g. "quickfix", "source.organizeImports"); nil asks for every kind.
+func (c *Client) CodeActionOnly(path string, rng Range, diags []Diagnostic, only []string) ([]CodeAction, error) {
 	wireDiags := make([]map[string]any, 0, len(diags))
 	for _, d := range diags {
 		wireDiags = append(wireDiags, map[string]any{
@@ -263,11 +319,15 @@ func (c *Client) CodeAction(path string, rng Range, diags []Diagnostic) ([]CodeA
 			"message":  d.Message,
 		})
 	}
+	ctx := map[string]any{"diagnostics": wireDiags}
+	if len(only) > 0 {
+		ctx["only"] = only
+	}
 	var raw json.RawMessage
 	params := map[string]any{
 		"textDocument": map[string]any{"uri": pathToURI(path)},
 		"range":        rng,
-		"context":      map[string]any{"diagnostics": wireDiags},
+		"context":      ctx,
 	}
 	if err := c.call("textDocument/codeAction", params, &raw); err != nil {
 		return nil, err
@@ -280,6 +340,46 @@ func (c *Client) CodeAction(path string, rng Range, diags []Diagnostic) ([]CodeA
 		return nil, fmt.Errorf("lsp: codeAction result: %w", err)
 	}
 	return actions, nil
+}
+
+// CanResolveCodeAction reports whether the server advertised
+// codeActionProvider.resolveProvider, i.e. may return actions whose edit
+// is filled in by codeAction/resolve.
+func (c *Client) CanResolveCodeAction() bool {
+	raw, ok := c.caps["codeActionProvider"]
+	if !ok {
+		return false
+	}
+	var p struct {
+		Resolve bool `json:"resolveProvider"`
+	}
+	return json.Unmarshal(raw, &p) == nil && p.Resolve
+}
+
+// ResolveCodeAction asks the server to complete an action (its edit).
+func (c *Client) ResolveCodeAction(a CodeAction) (CodeAction, error) {
+	wire := map[string]any{"title": a.Title}
+	if a.Kind != "" {
+		wire["kind"] = a.Kind
+	}
+	if len(a.Data) > 0 {
+		wire["data"] = a.Data
+	}
+	var raw json.RawMessage
+	if err := c.call("codeAction/resolve", wire, &raw); err != nil {
+		return a, err
+	}
+	if len(raw) == 0 || string(raw) == "null" {
+		return a, nil
+	}
+	var out CodeAction
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return a, fmt.Errorf("lsp: codeAction/resolve result: %w", err)
+	}
+	if out.Title == "" {
+		out.Title = a.Title
+	}
+	return out, nil
 }
 
 // ExecuteCommand runs a server-side command from a code action. It is a
@@ -301,4 +401,100 @@ func decodeApplyEdit(params json.RawMessage) (*WorkspaceEdit, bool) {
 		return nil, false
 	}
 	return &p.Edit, true
+}
+
+// SignatureHelp is the active signature of a call, flattened for the
+// popup: Label is the signature text, [ParamStart,ParamEnd) the active
+// parameter in rune offsets of Label (equal when none is active).
+type SignatureHelp struct {
+	Label                string
+	ParamStart, ParamEnd int
+	Doc                  string
+}
+
+// SignatureTriggers reports the characters that should request signature
+// help. A server that reports no capabilities at all (test doubles) gets
+// the conventional "(" and ","; one that reports some and omits
+// signatureHelpProvider is never asked (ADR-0011: no guessing).
+func (c *Client) SignatureTriggers() []string {
+	if c.caps == nil {
+		return []string{"(", ","}
+	}
+	raw, ok := c.caps["signatureHelpProvider"]
+	if !ok {
+		return nil
+	}
+	var p struct {
+		Trigger   []string `json:"triggerCharacters"`
+		Retrigger []string `json:"retriggerCharacters"`
+	}
+	_ = json.Unmarshal(raw, &p) // `true` (no options) leaves both empty
+	return append(p.Trigger, p.Retrigger...)
+}
+
+// SignatureHelp asks for the signature of the call around a position and
+// resolves its active signature and parameter. Nil when the server has
+// none (null result or no signatures).
+func (c *Client) SignatureHelp(path string, line, col int) (*SignatureHelp, error) {
+	var raw json.RawMessage
+	params := map[string]any{
+		"textDocument": map[string]any{"uri": pathToURI(path)},
+		"position":     map[string]any{"line": line, "character": col},
+	}
+	if err := c.call("textDocument/signatureHelp", params, &raw); err != nil {
+		return nil, err
+	}
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil, nil
+	}
+	var res struct {
+		Signatures []struct {
+			Label           string          `json:"label"`
+			Documentation   json.RawMessage `json:"documentation"`
+			ActiveParameter *int            `json:"activeParameter"`
+			Parameters      []struct {
+				Label json.RawMessage `json:"label"`
+			} `json:"parameters"`
+		} `json:"signatures"`
+		ActiveSignature *int `json:"activeSignature"`
+		ActiveParameter *int `json:"activeParameter"`
+	}
+	if err := json.Unmarshal(raw, &res); err != nil {
+		return nil, fmt.Errorf("lsp: signatureHelp result: %w", err)
+	}
+	if len(res.Signatures) == 0 {
+		return nil, nil
+	}
+	si := 0
+	if res.ActiveSignature != nil && *res.ActiveSignature >= 0 && *res.ActiveSignature < len(res.Signatures) {
+		si = *res.ActiveSignature
+	}
+	sig := res.Signatures[si]
+	out := &SignatureHelp{Label: sig.Label}
+	if len(sig.Documentation) > 0 {
+		out.Doc = flattenContents(sig.Documentation)
+	}
+	pi := -1 // the signature's own activeParameter beats the response's
+	switch {
+	case sig.ActiveParameter != nil:
+		pi = *sig.ActiveParameter
+	case res.ActiveParameter != nil:
+		pi = *res.ActiveParameter
+	}
+	if pi < 0 || pi >= len(sig.Parameters) {
+		return out, nil
+	}
+	var name string
+	var span []int
+	pl := sig.Parameters[pi].Label
+	if json.Unmarshal(pl, &name) == nil {
+		// A substring of the signature label (first occurrence).
+		if i := strings.Index(sig.Label, name); i >= 0 && name != "" {
+			out.ParamStart = len([]rune(sig.Label[:i]))
+			out.ParamEnd = out.ParamStart + len([]rune(name))
+		}
+	} else if json.Unmarshal(pl, &span) == nil && len(span) == 2 && span[0] <= span[1] {
+		out.ParamStart, out.ParamEnd = RuneCol(sig.Label, span[0]), RuneCol(sig.Label, span[1])
+	}
+	return out, nil
 }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/drjzlyan/dhi/internal/conventions"
 	"github.com/drjzlyan/dhi/internal/gitcore"
 	"github.com/drjzlyan/dhi/internal/mcp"
 )
@@ -172,22 +173,40 @@ func (d Deps) gitTools() []tool {
 		},
 		{
 			info: mcp.ToolInfo{
-				Name:        "git_commit",
-				Description: "Stage all changes and commit them as the user's git identity. Args: {\"message\": \"...\"}. Mutating: crosses approvals. Refuses with nothing staged.",
-				InputSchema: json.RawMessage(`{"type":"object","required":["message"],"properties":{"message":{"type":"string"}},"additionalProperties":false}`),
+				Name: "git_commit",
+				Description: "Stage all changes and commit them as the user's git identity. Args: {\"message\": \"subject\\n\\nbody\"}, or " +
+					"{\"fill\": [{\"key\": \"<key>\", \"text\": \"...\"}], \"body\": \"(optional free body)\"} to have DHI write the team's commit template with your text in its <…> parts. " +
+					"The message must follow the team's commit shape. Mutating: crosses approvals. Refuses with nothing staged.",
+				InputSchema: json.RawMessage(`{"type":"object","properties":{"message":{"type":"string"},"fill":` + fillSchema + `,"body":{"type":"string"}},"additionalProperties":false}`),
 			},
 			parse: func(raw json.RawMessage) (any, error) {
-				var a struct {
-					Message string `json:"message"`
-				}
+				var a commitArgs
 				if err := args(raw, &a); err != nil {
 					return nil, err
 				}
-				if strings.TrimSpace(a.Message) == "" {
-					return nil, fmt.Errorf("commit message is required")
+				// Validate the target repo before spending an approval.
+				repo, err := open()
+				if err != nil {
+					return nil, err
 				}
-				if cv := d.conv(); cv != nil {
-					if err := cv.Commit.CheckCommit(a.Message); err != nil {
+				br, _ := repo.CurrentBranch()
+				cv := d.conv()
+				var vars map[string]string
+				if d.ConvVars != nil {
+					vars = d.ConvVars(br)
+				}
+				switch {
+				case strings.TrimSpace(a.Message) != "":
+				case len(a.Fill) > 0 && cv != nil:
+					// F-182: DHI writes the template; the agent wrote the slots.
+					if a.Message, err = cv.Commit.ComposeCommit(vars, a.Fill, a.Body); err != nil {
+						return nil, fmt.Errorf("conventions: %w", fillHelp(err))
+					}
+				default:
+					return nil, fmt.Errorf("commit message is required (or fill, for the team's commit template)")
+				}
+				if cv != nil {
+					if err := cv.Commit.CheckCommitFor(a.Message, vars); err != nil {
 						return nil, fmt.Errorf("conventions: %w", err)
 					}
 				}
@@ -196,14 +215,9 @@ func (d Deps) gitTools() []tool {
 				if reasons := d.checkGate("git:commit"); len(reasons) > 0 {
 					return nil, fmt.Errorf("workflow blocks commit: %s", strings.Join(reasons, "; "))
 				}
-				// Validate the target repo before spending an approval.
-				repo, err := open()
-				if err != nil {
-					return nil, err
-				}
 				// F-086: never on the shared default branch — the work
 				// belongs on its own branch DHI can verify and PR.
-				if br, _ := repo.CurrentBranch(); d.isDefaultBranch(context.Background(), br) {
+				if d.isDefaultBranch(context.Background(), br) {
 					return nil, fmt.Errorf("refusing to commit on %s, the default branch: call work_branch to move this work onto its own branch, then commit there", br)
 				}
 				return a, nil
@@ -223,9 +237,7 @@ func (d Deps) gitTools() []tool {
 				if err := repo.Stage("."); err != nil {
 					return "", err
 				}
-				msg := dec.(struct {
-					Message string `json:"message"`
-				}).Message
+				msg := dec.(commitArgs).Message
 				if cv := d.conv(); cv != nil {
 					msg = cv.Commit.Finalize(msg)
 				}
@@ -312,4 +324,54 @@ func (d Deps) isDefaultBranch(ctx context.Context, branch string) bool {
 	}
 	out, _, err := d.Git.Run(ctx, d.Workdir, "symbolic-ref", "--short", "refs/remotes/origin/HEAD")
 	return err == nil && strings.TrimPrefix(strings.TrimSpace(out), "origin/") == branch
+}
+
+// commitArgs are git_commit's arguments: a whole message, or fill (and
+// an optional free body) for the team's commit template (F-182).
+type commitArgs struct {
+	Message string  `json:"message"`
+	Fill    FillArg `json:"fill"`
+	Body    string  `json:"body"`
+}
+
+// fillHelp turns a missing-slot error into one that lists every key to
+// pass in fill and what each is for.
+func fillHelp(err error) error {
+	if m, ok := conventions.IsMissingAI(err); ok {
+		return fmt.Errorf("%w; pass fill with:\n%s", err, conventions.SlotList(m.Slots))
+	}
+	return err
+}
+
+// fillSchema is the `fill` argument's JSON Schema: a list of {key, text}
+// objects. A list of objects is the shape every engine's tool calling
+// takes (plan_update uses it); an open map (additionalProperties) is not
+// supported by every engine's schema subset.
+const fillSchema = `{"type":"array","items":{"type":"object","required":["key","text"],"properties":{"key":{"type":"string"},"text":{"type":"string"}},"additionalProperties":false}}`
+
+// FillArg is the agent's text for the AI parts, by slot key. It reads
+// the advertised list of {key, text} and, as a courtesy to an engine
+// that sends one, a plain {"key": "text"} object.
+type FillArg map[string]string
+
+// UnmarshalJSON accepts either shape.
+func (f *FillArg) UnmarshalJSON(b []byte) error {
+	var list []struct {
+		Key  string `json:"key"`
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal(b, &list); err == nil {
+		m := FillArg{}
+		for _, e := range list {
+			m[e.Key] = e.Text
+		}
+		*f = m
+		return nil
+	}
+	var m map[string]string
+	if err := json.Unmarshal(b, &m); err != nil {
+		return fmt.Errorf("fill must be a list of {\"key\", \"text\"}")
+	}
+	*f = m
+	return nil
 }

@@ -45,7 +45,9 @@ var Claude = &CLI{
 				"--permission-mode", "bypassPermissions", // OS sandbox is the boundary (ADR-0012 §3)
 				"--max-turns", claudeMaxTurns(in.MaxTurns),
 			)
-			return append(args, claudeResumeArgs(in.Resume)...)
+			args = append(args, claudeResumeArgs(in.Resume)...)
+			args = append(args, claudeHooksArgs(in.HooksConfig)...)
+			return append(args, claudeDenyWeb(in)...)
 		}
 		args = append(args, in.Prompt,
 			"--output-format", "stream-json",
@@ -54,6 +56,8 @@ var Claude = &CLI{
 			"--max-turns", claudeMaxTurns(in.MaxTurns),
 		)
 		args = append(args, claudeResumeArgs(in.Resume)...)
+		args = append(args, claudeDenyWeb(in)...)
+		args = append(args, claudeHooksArgs(in.HooksConfig)...)
 		if in.System != "" {
 			args = append(args, "--append-system-prompt", in.System)
 		}
@@ -69,6 +73,22 @@ var Claude = &CLI{
 		}
 		return args
 	},
+	// ReadsAgentsMD: a canary in AGENTS.md reached the model in an empty git
+	// dir on 2.1.285 (F-124).
+	ReadsAgentsMD: true,
+	// ReadsClaudeRules: Claude Code loads .claude/rules/**/*.md, honouring
+	// `paths:`, from the project (documented behaviour; F-152).
+	ReadsClaudeRules: true,
+	// WebDenyOK: --disallowedTools removes both tools from the session's
+	// tool list even under bypassPermissions (live-verified on 2.1.285:
+	// init listed WebFetch and WebSearch without the flag, neither with it).
+	WebDenyOK: true,
+	// ImagesOK: Claude Code opens an image it is given the path of with its
+	// Read tool (documented); the runtime names the path in the prompt.
+	ImagesOK: true,
+	// ReadOnlyOK: the same --disallowedTools list, with the edit, write and
+	// shell tools (F-144; documented, live check pending).
+	ReadOnlyOK:  true,
 	ParseStream: claudeParseStream,
 	Finalize:    claudeFinalize,
 	Version:     claudeVersion,
@@ -84,6 +104,20 @@ var Claude = &CLI{
 	MCPOK:         true,
 	MCPConfigFile: claudeMCPConfigFile,
 	MCPConfigArgs: claudeMCPArgs,
+	// HooksArgs: `--settings <file>` loads a settings file for this run on
+	// top of the user's own (documented Claude Code flag); its `hooks` key
+	// is the vendor hook format plugins already ship (F-179, ADR-0047). The
+	// file is a DHI temp file; ~/.claude is never written.
+	HooksArgs: claudeHooksArgs,
+}
+
+// claudeHooksArgs hands claude the per-run settings file carrying plugin
+// tool hooks ("" = none).
+func claudeHooksArgs(settingsPath string) []string {
+	if settingsPath == "" {
+		return nil
+	}
+	return []string{"--settings", settingsPath}
 }
 
 // claudeMaxTurns renders --max-turns (0 = the adapter default, 50).
@@ -163,7 +197,9 @@ func claudeAssistantEvents(ev map[string]any) []StreamEvent {
 	if u, ok := msg["usage"].(map[string]any); ok {
 		n := func(k string) int { f, _ := u[k].(float64); return int(f) }
 		if ctx := n("input_tokens") + n("cache_read_input_tokens") + n("cache_creation_input_tokens"); ctx > 0 {
-			out = append(out, StreamEvent{Kind: EventUsage, Context: ctx})
+			id, _ := msg["id"].(string)
+			out = append(out, StreamEvent{Kind: EventUsage, Context: ctx, UsageID: id,
+				Spend: Spend{Tokens: ctx + n("output_tokens")}})
 		}
 	}
 	for _, raw := range content {
@@ -178,7 +214,8 @@ func claudeAssistantEvents(ev map[string]any) []StreamEvent {
 			}
 		case "tool_use":
 			name, _ := b["name"].(string)
-			out = append(out, StreamEvent{Kind: EventCommand, Detail: claudeToolDetail(name, b["input"])})
+			out = append(out, StreamEvent{Kind: EventCommand, Detail: claudeToolDetail(name, b["input"]),
+				Call: ToolCall(name, b["input"])})
 		}
 	}
 	return out
@@ -290,10 +327,8 @@ func claudeVersion(ctx context.Context, path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	for _, f := range strings.Fields(out) {
-		if isVersionLike(f) {
-			return f, nil
-		}
+	if v := firstVersionToken(out); v != "" {
+		return v, nil
 	}
 	return "", fmt.Errorf("clirun/claude: no version in %q", truncate(out, 60))
 }
@@ -320,4 +355,21 @@ func reencode(m map[string]any) string {
 		return "{}"
 	}
 	return string(b)
+}
+
+// claudeDenyWeb is the flag that removes claude's native web tools (F-123).
+func claudeDenyWeb(in RunInput) []string {
+	var deny []string
+	if in.DenyWeb {
+		deny = append(deny, "WebFetch", "WebSearch")
+	}
+	if in.ReadOnly {
+		// F-144: the tool list also loses every file-changing and shell
+		// tool; DHI's own tools are limited by scope in the runtime.
+		deny = append(deny, "Edit", "Write", "MultiEdit", "NotebookEdit", "Bash")
+	}
+	if len(deny) == 0 {
+		return nil
+	}
+	return []string{"--disallowedTools", strings.Join(deny, ",")}
 }

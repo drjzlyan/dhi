@@ -204,7 +204,7 @@ func (e *Editor) recordDone() {
 	if e.replaying || e.rec == nil {
 		return
 	}
-	if e.mode != ModeNormal || e.pendingOp != opNone || e.pendShift != "" || len(e.cntDigits) > 0 {
+	if e.mode != ModeNormal || e.pendingOp != opNone || e.pendShift != "" || len(e.cntDigits) > 0 || e.pendFind != 0 {
 		return // the change is still being made
 	}
 	if e.buf.seq != e.recSeq && e.rec[0] != "u" && e.rec[0] != "ctrl+r" {

@@ -38,9 +38,36 @@ func DefaultUserPath() (string, error) {
 	return filepath.Join(base, "dhi", "config.toml"), nil
 }
 
+// Autosave modes (F-142).
+const (
+	AutosaveOff   = "off"
+	AutosaveDelay = "delay"
+	AutosaveFocus = "focus"
+)
+
 type Editor struct {
 	TabWidth    int  `toml:"tab_width"`
 	LineNumbers bool `toml:"line_numbers"`
+	Wrap        bool `toml:"wrap"` // soft word wrap in the buffer view (F-136)
+	// Autosave is "off", "delay" (a quiet second after the last key) or
+	// "focus" (when the buffer loses focus) (F-142).
+	Autosave   string `toml:"autosave"`
+	Blame      bool   `toml:"blame"`       // inline blame on the cursor line (F-143)
+	InlayHints bool   `toml:"inlay_hints"` // LSP inlay hints, dimmed inline (F-169)
+	// SemanticTokens layers the language server's semantic token colours
+	// over the syntax highlighting; off by default (F-173).
+	SemanticTokens bool `toml:"semantic_tokens"`
+	// Breadcrumbs shows the symbol path of the cursor in the buffer title,
+	// on unless turned off; StickyScroll pins the enclosing symbols'
+	// header lines at the top of the pane (F-175).
+	Breadcrumbs  bool `toml:"breadcrumbs"`
+	StickyScroll bool `toml:"sticky_scroll"`
+	// InlineCompletion shows the language server's inline completion as ghost
+	// text (F-181), on unless turned off; the server must provide it.
+	InlineCompletion bool `toml:"inline_completion"`
+	// RestoreSession reopens the last session's tabs and split on launch;
+	// on unless turned off (F-149).
+	RestoreSession bool `toml:"restore_session"`
 	// Languages overrides (or adds to) the editor's built-in language
 	// servers, keyed by language id (F-050).
 	Languages map[string]LanguageConfig `toml:"languages,omitempty"`
@@ -111,6 +138,11 @@ type Agents struct {
 	// "envelope" lets DHI tools act without asking inside the task's own
 	// worktree; "ask" keeps every mutation behind an approval.
 	Autonomy string `toml:"autonomy"`
+	// NativeWeb is whether the agent CLI's own web fetch/search tools
+	// stay on (F-123): "deny" (default) switches them off where the CLI
+	// has a verified way to; "allow" leaves them on. DHI's own tools and
+	// the sandbox are unaffected.
+	NativeWeb string `toml:"native_web"`
 	// MaxIterations caps the verify → fix rounds of one task turn.
 	MaxIterations int `toml:"max_iterations"`
 	// StallSeconds kills a spawn that emits nothing for this long
@@ -119,7 +151,8 @@ type Agents struct {
 	// Reflect lets an agent learn from a turn that failed, needed fixing
 	// or was corrected (F-068): one short, tool-less, budgeted spawn.
 	Reflect bool `toml:"reflect"`
-	// ReflectModel runs reflection on a cheaper model ("" = the agent's).
+	// ReflectModel runs reflection and the /compact summary (F-135) on a
+	// cheaper model ("" = the agent's).
 	ReflectModel string `toml:"reflect_model"`
 	// TracePrompts saves each spawn's full prompt and system text into
 	// its run transcript for the trace view (F-074). Off by default:
@@ -131,6 +164,10 @@ type Agents struct {
 const (
 	AutonomyEnvelope = "envelope"
 	AutonomyAsk      = "ask"
+
+	// Native web modes (F-123).
+	WebDeny  = "deny"
+	WebAllow = "allow"
 )
 
 // Memory bounds what an agent carries and keeps (F-078), so a long-lived
@@ -205,6 +242,9 @@ type Config struct {
 	Schema        int    `toml:"schema"`
 	Theme         string `toml:"theme,omitempty"`
 	ReducedMotion bool   `toml:"reduced_motion"`
+	// DesktopNotifications: OSC 9 notifications while the terminal is
+	// blurred (F-117); on unless turned off (F-139).
+	DesktopNotifications bool `toml:"desktop_notifications"`
 	// ThemeSet reports that a config layer named the theme. When none
 	// did, the app follows the terminal's background (light terminals
 	// get the light theme). Never written.
@@ -236,14 +276,15 @@ type Config struct {
 // Defaults returns the built-in baseline every layer merges onto.
 func Defaults() Config {
 	return Config{
-		Schema:      SchemaVersion,
-		Theme:       theme.Dark().Name,
-		Editor:      Editor{TabWidth: 4, LineNumbers: true},
-		Terminal:    Terminal{Scrollback: 1000},
-		Security:    Security{Sandbox: SandboxAuto},
-		Agents:      Agents{Resume: true, Autonomy: AutonomyEnvelope, MaxIterations: 3, StallSeconds: 900, Reflect: true},
-		Memory:      DefaultMemory(),
-		Conventions: conventions.Defaults(),
+		Schema:               SchemaVersion,
+		Theme:                theme.Dark().Name,
+		DesktopNotifications: true,
+		Editor:               Editor{TabWidth: 4, LineNumbers: true, Autosave: AutosaveOff, RestoreSession: true, Breadcrumbs: true, InlineCompletion: true},
+		Terminal:             Terminal{Scrollback: 1000},
+		Security:             Security{Sandbox: SandboxAuto},
+		Agents:               Agents{Resume: true, Autonomy: AutonomyEnvelope, NativeWeb: WebDeny, MaxIterations: 3, StallSeconds: 900, Reflect: true},
+		Memory:               DefaultMemory(),
+		Conventions:          conventions.Defaults(),
 	}
 }
 
@@ -255,11 +296,11 @@ func DefaultMemory() Memory {
 
 // Known reports the accepted top-level keys (for doctor warnings).
 func Known() []string {
-	return []string{"schema", "theme", "reduced_motion", "engine", "editor",
-		"terminal", "security", "editor.tab_width", "editor.line_numbers",
+	return []string{"schema", "theme", "reduced_motion", "desktop_notifications", "engine", "editor",
+		"terminal", "security", "editor.tab_width", "editor.line_numbers", "editor.wrap", "editor.autosave", "editor.blame", "editor.inlay_hints", "editor.semantic_tokens", "editor.breadcrumbs", "editor.sticky_scroll", "editor.inline_completion", "editor.restore_session",
 		"worktrees", "worktrees.root",
 		"terminal.scrollback", "security.sandbox",
-		"agents", "agents.max_turns", "agents.resume", "agents.autonomy",
+		"agents", "agents.max_turns", "agents.resume", "agents.autonomy", "agents.native_web",
 		"agents.max_iterations", "agents.stall_seconds", "agents.reflect", "agents.reflect_model", "agents.trace_prompts",
 		"memory", "memory.prompt_tokens", "memory.session_tokens", "memory.journal_max",
 		"memory.lessons_max", "memory.pinned_max", "memory.decay_days",
@@ -277,7 +318,7 @@ func Known() []string {
 		"conventions.copyright.enabled", "conventions.copyright.holder",
 		"conventions.copyright.license", "conventions.copyright.year",
 		"conventions.pr.title", "conventions.pr.body",
-		"conventions.worktree.task", "conventions.commit.subject", "conventions.commit.body", "conventions.active"}
+		"conventions.worktree.task", "conventions.commit.subject", "conventions.commit.body", "conventions.commit.body_format", "conventions.active"}
 }
 
 // templateFields are the keys a [conventions.templates.<name>] table may
@@ -285,7 +326,7 @@ func Known() []string {
 var templateFields = map[string]bool{
 	"description": true, "branch.task": true, "branch.review": true, "worktree.task": true,
 	"commit.format": true, "commit.ticket_pattern": true, "commit.subject": true, "commit.body": true,
-	"pr.title": true, "pr.body": true,
+	"commit.body_format": true, "pr.title": true, "pr.body": true,
 }
 
 // knownTemplateKey accepts conventions.templates.<name>.<field>.
@@ -428,6 +469,12 @@ func validate(c Config) error {
 	if c.Editor.TabWidth <= 0 || c.Editor.TabWidth > 16 {
 		return fmt.Errorf("settings: editor.tab_width %d out of range 1..16", c.Editor.TabWidth)
 	}
+	switch c.Editor.Autosave {
+	case AutosaveOff, AutosaveDelay, AutosaveFocus:
+	default:
+		return fmt.Errorf("settings: editor.autosave %q (want %s, %s or %s)",
+			c.Editor.Autosave, AutosaveOff, AutosaveDelay, AutosaveFocus)
+	}
 	if c.Terminal.Scrollback < 100 {
 		return fmt.Errorf("settings: terminal.scrollback %d below minimum 100", c.Terminal.Scrollback)
 	}
@@ -454,6 +501,11 @@ func validate(c Config) error {
 		case k == "ctrl+c" || v == "ctrl+c":
 			return fmt.Errorf("settings: keys.%s: ctrl+c always quits and cannot be remapped", k)
 		}
+	}
+	switch c.Agents.NativeWeb {
+	case WebDeny, WebAllow:
+	default:
+		return fmt.Errorf("settings: agents.native_web %q (want %q or %q)", c.Agents.NativeWeb, WebDeny, WebAllow)
 	}
 	if c.Agents.MaxTurns < 0 || c.Agents.MaxTurns > 500 {
 		return fmt.Errorf("settings: agents.max_turns %d out of range 0..500 (0 = the CLI default)", c.Agents.MaxTurns)
@@ -531,16 +583,26 @@ func LoadBestEffort(userPath, wsPath string) (Config, error) {
 // fileLayer decodes one TOML document; pointers distinguish "unset"
 // from false/zero so later layers only override what they set.
 type fileLayer struct {
-	Schema        int               `toml:"schema"`
-	Theme         string            `toml:"theme"`
-	ReducedMotion *bool             `toml:"reduced_motion"`
-	Engine        string            `toml:"engine"`
-	Scopes        map[string]string `toml:"scopes"`
-	Keys          map[string]string `toml:"keys"`
-	Editor        struct {
-		TabWidth    int                       `toml:"tab_width"`
-		LineNumbers *bool                     `toml:"line_numbers"`
-		Languages   map[string]LanguageConfig `toml:"languages"`
+	Schema               int               `toml:"schema"`
+	Theme                string            `toml:"theme"`
+	ReducedMotion        *bool             `toml:"reduced_motion"`
+	DesktopNotifications *bool             `toml:"desktop_notifications"`
+	Engine               string            `toml:"engine"`
+	Scopes               map[string]string `toml:"scopes"`
+	Keys                 map[string]string `toml:"keys"`
+	Editor               struct {
+		TabWidth         int                       `toml:"tab_width"`
+		LineNumbers      *bool                     `toml:"line_numbers"`
+		Wrap             *bool                     `toml:"wrap"`
+		Autosave         string                    `toml:"autosave"`
+		Blame            *bool                     `toml:"blame"`
+		InlayHints       *bool                     `toml:"inlay_hints"`
+		SemanticTokens   *bool                     `toml:"semantic_tokens"`
+		Breadcrumbs      *bool                     `toml:"breadcrumbs"`
+		StickyScroll     *bool                     `toml:"sticky_scroll"`
+		InlineCompletion *bool                     `toml:"inline_completion"`
+		RestoreSession   *bool                     `toml:"restore_session"`
+		Languages        map[string]LanguageConfig `toml:"languages"`
 	} `toml:"editor"`
 	Worktrees struct {
 		Root string `toml:"root"`
@@ -555,6 +617,7 @@ type fileLayer struct {
 		MaxTurns      *int    `toml:"max_turns"`
 		Resume        *bool   `toml:"resume"`
 		Autonomy      *string `toml:"autonomy"`
+		NativeWeb     *string `toml:"native_web"`
 		MaxIterations *int    `toml:"max_iterations"`
 		StallSeconds  *int    `toml:"stall_seconds"`
 		Reflect       *bool   `toml:"reflect"`
@@ -606,8 +669,9 @@ type fileLayer struct {
 			CoAuthorEnabled *bool `toml:"co_author_enabled"`
 			// A pointer, so a layer can set free subjects ("") explicitly.
 			Subject *string `toml:"subject"`
-			// Likewise the body example (F-082).
-			Body *string `toml:"body"`
+			// Likewise the body example (F-082) and the body format (F-182).
+			Body       *string `toml:"body"`
+			BodyFormat *string `toml:"body_format"`
 		} `toml:"commit"`
 		Copyright struct {
 			Enabled *bool  `toml:"enabled"`
@@ -643,6 +707,9 @@ func (f fileLayer) mergeInto(dst *Config) {
 	if f.ReducedMotion != nil {
 		dst.ReducedMotion = *f.ReducedMotion
 	}
+	if f.DesktopNotifications != nil {
+		dst.DesktopNotifications = *f.DesktopNotifications
+	}
 	if f.Engine != "" {
 		dst.Engine = strings.TrimSpace(f.Engine)
 	}
@@ -671,6 +738,31 @@ func (f fileLayer) mergeInto(dst *Config) {
 	if f.Editor.LineNumbers != nil {
 		dst.Editor.LineNumbers = *f.Editor.LineNumbers
 	}
+	if f.Editor.Wrap != nil {
+		dst.Editor.Wrap = *f.Editor.Wrap
+	}
+	setStr(&dst.Editor.Autosave, f.Editor.Autosave)
+	if f.Editor.Blame != nil {
+		dst.Editor.Blame = *f.Editor.Blame
+	}
+	if f.Editor.InlayHints != nil {
+		dst.Editor.InlayHints = *f.Editor.InlayHints
+	}
+	if f.Editor.SemanticTokens != nil {
+		dst.Editor.SemanticTokens = *f.Editor.SemanticTokens
+	}
+	if f.Editor.Breadcrumbs != nil {
+		dst.Editor.Breadcrumbs = *f.Editor.Breadcrumbs
+	}
+	if f.Editor.StickyScroll != nil {
+		dst.Editor.StickyScroll = *f.Editor.StickyScroll
+	}
+	if f.Editor.InlineCompletion != nil {
+		dst.Editor.InlineCompletion = *f.Editor.InlineCompletion
+	}
+	if f.Editor.RestoreSession != nil {
+		dst.Editor.RestoreSession = *f.Editor.RestoreSession
+	}
 	for id, lc := range f.Editor.Languages { // a later layer replaces a language wholesale
 		if dst.Editor.Languages == nil {
 			dst.Editor.Languages = map[string]LanguageConfig{}
@@ -690,6 +782,7 @@ func (f fileLayer) mergeInto(dst *Config) {
 	setPtr(&dst.Agents.MaxTurns, f.Agents.MaxTurns)
 	setPtr(&dst.Agents.Resume, f.Agents.Resume)
 	setPtr(&dst.Agents.Autonomy, f.Agents.Autonomy)
+	setPtr(&dst.Agents.NativeWeb, f.Agents.NativeWeb)
 	setPtr(&dst.Agents.MaxIterations, f.Agents.MaxIterations)
 	setPtr(&dst.Agents.StallSeconds, f.Agents.StallSeconds)
 	setPtr(&dst.Agents.Reflect, f.Agents.Reflect)
@@ -711,6 +804,7 @@ func (f fileLayer) mergeInto(dst *Config) {
 	setStr(&d.Worktree.Task, cv.Worktree.Task)
 	setPtr(&d.Commit.Subject, cv.Commit.Subject)
 	setPtr(&d.Commit.Body, cv.Commit.Body)
+	setPtr(&d.Commit.BodyFormat, cv.Commit.BodyFormat)
 	for name, t := range cv.Templates {
 		if d.Templates == nil {
 			d.Templates = map[string]conventions.Template{}
@@ -781,6 +875,7 @@ func (c Config) Apply() {
 		theme.Current = fn()
 	}
 	theme.SetMotion(!c.ReducedMotion)
+	theme.SetNotify(c.DesktopNotifications)
 }
 
 // FollowBackground picks the live theme from the terminal background when

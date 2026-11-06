@@ -138,8 +138,8 @@ func TestEnsureHeader(t *testing.T) {
 	}
 }
 
-func TestRender(t *testing.T) {
-	if got := Render("{title} ({slug}) {typo}", map[string]string{"title": "T", "slug": "s"}); got != "T (s) {typo}" {
+func TestRenderKnownKeepsUnknownTokens(t *testing.T) {
+	if got := RenderKnown("{title} ({slug}) {typo}", map[string]string{"title": "T", "slug": "s"}); got != "T (s) {typo}" {
 		t.Errorf("render = %q", got)
 	}
 }
@@ -151,7 +151,7 @@ func TestPRTemplatesAcceptTheirOwnPlaceholders(t *testing.T) {
 	if err := c.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	if got := Render(c.PR.Title, map[string]string{"title": "Add x", "slug": "x-1"}); got != "[x-1] Add x" {
-		t.Fatalf("title = %q", got)
+	if got, err := Render(c.PR.Title, map[string]string{"title": "Add x", "slug": "x-1"}, nil); err != nil || got != "[x-1] Add x" {
+		t.Fatalf("title = %q, %v", got, err)
 	}
 }

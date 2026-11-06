@@ -1153,3 +1153,17 @@ Plan: `~/.claude/plans/i-want-dhi-to-dazzling-sky.md`. Branch `m37`, one commit 
       conversation" in a DM, LSP signature help, didClose/didSave, a large-file size warning, the git gutter
       past 2000 lines, regex in buffer `:s`, word wrap, `f`/`t`/`%`, block visual (ctrl+v), an OSC 9 setting
 - [x] README GIFs re-recorded for M37
+
+## M38 — Gap closure vs Claude Code, opencode, VS Code (session 64)
+
+Tracker: `docs/gaps.md` (one checkbox per gap; that file is the source of truth). One spec per gap, worked one at a time.
+
+- [x] P1 Trust and prompt safety (G-A1, G-C1, G-A2, G-A3, G-A4)
+- [x] P2 Context and memory (G-B1…B8)
+- [x] P3 Agent loop (G-C2, G-C4, G-C7, G-C11, G-C8, G-LSP-live)
+- [x] P4 Editor S2 items (G-E1…E8)
+- [x] P5 Editor depth (G-E9…E22)
+- [x] P6 Reliability, git, terminal, tasks (G-R*, G-T1, G-G*, G-M*, G-S1)
+- [x] P7 ADR-gated and research — G-X1 F-177, G-X3 F-178, G-C3 F-179, G-C5 F-180, G-X2 F-181 done; G-C6 and G-C10 dropped (ADR-0049/0050 rejected) (G-C3, G-C5, G-C6, G-C10, G-X*)
+- [x] Session 71: conventions review fixes + F-182 your own branch/commit/PR formats with `{ai:…}` parts (ADR-0052), F-183 onboarding CLI detection (gh copilot dir, tolerant version probe)
+- [x] Session 72: F-184 slow work off the UI thread (setup CLI detection, Settings identity/skill install, Reviewer plan, board attach, editor git/stash/undo-turn/:task/:sym/:calls); Ideator turn-context fix

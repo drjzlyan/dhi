@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/drjzlyan/dhi/internal/checkpoint"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,15 +14,22 @@ import (
 	"time"
 
 	"github.com/drjzlyan/dhi/internal/agentkit/behavior"
+	"github.com/drjzlyan/dhi/internal/agentkit/budget"
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/agentkit/clirun"
 	"github.com/drjzlyan/dhi/internal/agentkit/dhitools"
 	"github.com/drjzlyan/dhi/internal/agentkit/episode"
+	"github.com/drjzlyan/dhi/internal/agentkit/hooks"
 	"github.com/drjzlyan/dhi/internal/agentkit/lessons"
+	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
 	"github.com/drjzlyan/dhi/internal/agentkit/mcpbridge"
+	"github.com/drjzlyan/dhi/internal/agentkit/pathscope"
+	"github.com/drjzlyan/dhi/internal/agentkit/skills"
 	"github.com/drjzlyan/dhi/internal/agentkit/standards"
 	"github.com/drjzlyan/dhi/internal/agentkit/trace"
+	"github.com/drjzlyan/dhi/internal/agentkit/untrusted"
 	"github.com/drjzlyan/dhi/internal/agentkit/workflow"
+	"github.com/drjzlyan/dhi/internal/checkpoint"
 	"github.com/drjzlyan/dhi/internal/gitcore"
 	"github.com/drjzlyan/dhi/internal/mcp"
 	"github.com/drjzlyan/dhi/internal/sandbox"
@@ -40,6 +46,19 @@ import (
 // The manifest's `runtime` key is the exec authorization; the OS sandbox
 // — from the same Guard seam every exec uses — is the boundary.
 func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message, tl *turnLog) error {
+	// F-180: the agent's own CLI is not installed and the entry was built
+	// on its fallback. Say so (and ask, if the wiring differs) before any
+	// run; every run of this turn is labeled.
+	var fo *failoverInfo
+	if e.primaryMissing != "" {
+		if err := r.failoverApproval(ctx, e.m.ID, e.primary, e.cli); err != nil {
+			r.alert(trigger, e.m.ID, fmt.Sprintf("I couldn't start: %s is not installed and its fallback engine %s was not approved (%v). Install %s, or change the fallback in Settings.",
+				e.primaryMissing, e.cli.Name, err, e.primaryMissing))
+			return fmt.Errorf("runtime: %s: fallback %s: %w (%w)", e.m.ID, e.cli.Name, err, errAlerted)
+		}
+		fo = &failoverInfo{from: manifest.EngineString(e.primaryMissing), why: string(clirun.FailNotInstalled)}
+		r.announceFailover(trigger, e.m.ID, fo.from, manifest.EngineString(e.cli.Name), clirun.FailNotInstalled)
+	}
 	// The KB retrieval rides the turn context but must not inherit a
 	// timeout that would cut the run short: bounded by the caller's
 	// context here, before the manifest timeout arms (the timeout
@@ -61,7 +80,7 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message, tl
 		}
 	}
 	if hasTask {
-		task = r.provisionWorktree(e.m.ID, trigger, task)
+		task = r.provisionWorktree(ctx, e.m.ID, trigger, task)
 	}
 	workdir := r.cliWorkdir(trigger)
 	if !hasTask { // F-120: a chat turn edits the repos in place — make it undoable
@@ -79,7 +98,7 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message, tl
 		wfText += noWorktreeNote
 	}
 	rl := &relaunch{}
-	serve := r.serveToolsFor(e, trigger, turnTools{
+	tt := turnTools{
 		workBranch:  r.workBranchSeam(e.m.ID, trigger, rl),
 		access:      r.accessSeam(e.m.ID, rl),
 		envelope:    r.envelopeFor(task, hasTask, workdir, tune),
@@ -87,7 +106,16 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message, tl
 		plan:        r.planSeam(e.m.ID, ep.Key),
 		memberRoots: r.memberRoots(task),
 		lesson:      r.lessonRecorder(e.m.ID),
-	})
+	}
+	// F-179: the plugin hooks the user turned on, fired at DHI's tool
+	// boundary and the run's edges; the CLI's own tools too where it takes
+	// hooks per run.
+	hlog := &hookLog{}
+	hk := r.hookRunner(e, trigger, r.turnScopes(e, tt), hlog)
+	tt.hooks = hk
+	hooksConfig, dropHooksFile := r.nativeHooksFile(e, hk, trigger)
+	defer func() { dropHooksFile() }() // the file in force at the end (a failover swaps it)
+	serve := r.serveToolsFor(e, trigger, tt)
 	resume := ""
 	if tune.Resume && e.cli.ResumeOK && ep.Resumable(e.cli.Name, workdir) {
 		resume = ep.Session
@@ -100,10 +128,33 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message, tl
 	}
 	level := 0
 	prompt, system := r.cliPromptAt(ctx, e, trigger, wfText, level, &ep, resume != "")
-	mcpConfig, mcpEndpoint, mcpGeminiDir := "", "", ""
+	mcpConfig, mcpEndpoint, mcpGeminiDir, webDenied := "", "", "", false
+	defer func() { // the session in force at the end (a failover swaps it)
+		if serve != nil {
+			serve.stop()
+		}
+	}()
 	if serve != nil {
-		defer serve.stop()
-		mcpConfig, mcpEndpoint, mcpGeminiDir = serve.configPath, serve.endpoint, serve.geminiDir
+		mcpConfig, mcpEndpoint, mcpGeminiDir, webDenied = serve.configPath, serve.endpoint, serve.geminiDir, serve.webDenied
+	}
+	hookCtx := ""
+	if hk != nil {
+		start := hk.Fire(ctx, hooks.Input{Event: hooks.SessionStart, Source: "startup"})
+		sub := hk.Fire(ctx, hooks.Input{Event: hooks.UserPromptSubmit, Prompt: trigger.Text})
+		if sub.Blocked {
+			why := ""
+			for _, rec := range sub.Records {
+				if rec.Kind == hooks.Denied {
+					why = rec.Detail
+				}
+			}
+			r.humanNote(trigger, e.m.ID, "Not started: the plugin hook "+sub.By+" blocked this message: "+why)
+			return nil
+		}
+		hookCtx = joinHookCtx(start.Context, sub.Context)
+		defer func() {
+			hk.Fire(context.WithoutCancel(ctx), hooks.Input{Event: hooks.Stop, Prompt: tl.outcome})
+		}()
 	}
 
 	if e.m.Timeout > 0 {
@@ -125,6 +176,8 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message, tl
 
 	brief := ""
 	freshFallback := false
+	spawnModel := ep.Model // F-130: the conversation's override; a failover drops it (another vendor's names)
+	ranToolsYet := false   // F-180: a tool ran this turn, so no failover may replay it
 	for attempt := 0; ; attempt++ {
 		// F-066: budgets bind between spawns (a CLI runs to completion).
 		if msg, ok := r.budgetCheck(e.m.ID, task.Slug, tune.Budgets); !ok {
@@ -133,13 +186,19 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message, tl
 			return fmt.Errorf("runtime: %s: budget: %s: %w", e.m.ID, msg, errAlerted)
 		}
 		run, events := r.cliSpawnOnce(ctx, e, trigger, spawnInput{
-			prompt: prompt + brief, system: system, workdir: workdir, attempt: attempt,
+			prompt: prompt + brief, system: system + hookCtx, workdir: workdir, attempt: attempt,
+			hooksConfig: hooksConfig, hooklog: hlog,
 			resume: resume, maxTurns: tune.MaxTurns, stall: tune.Stall,
+			model:     spawnModel, // "" = the agent's
+			failover:  fo,
 			mcpConfig: mcpConfig, mcpEndpoint: mcpEndpoint, mcpGeminiDir: mcpGeminiDir,
-			relaunch: rl,
+			webDenied: webDenied, relaunch: rl,
+			budgets: tune.Budgets, taskSlug: task.Slug,
 		})
 		r.recordRun(trigger, run)
 		r.recordSpend(run, task.Slug)
+		ranToolsYet = ranToolsYet || ranTools(events)
+		r.calibrate(trigger, e, ep, run, resume == "", runeLen(prompt+brief)+runeLen(system))
 		tl.runs = append(tl.runs, run.ID)
 		tl.outcome = run.Summary
 		if run.Status != tasks.RunOK {
@@ -243,6 +302,34 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message, tl
 		// else retries with a brief of what failed and where it stopped.
 		lastErr := fmt.Errorf("runtime: %s: run %s: %s", e.m.ID, run.ID, run.Error)
 		fail := clirun.Classify(run.Status == tasks.RunTimeout, run.Error)
+		// F-180 (ADR-0048): signed out, rate-limited, missing or down, with
+		// no tool run yet, on an agent that has a fallback engine: one
+		// move to it. After a tool ran the episode stays resumable and the
+		// human chooses.
+		if fail.Failover() && fo == nil && !ranToolsYet && e.m.FallbackRuntime != "" && e.m.FallbackRuntime != e.cli.Name {
+			if fe, ok := r.tryFailover(ctx, trigger, e, fail); ok {
+				fo = &failoverInfo{from: manifest.EngineString(e.cli.Name), why: string(fail)}
+				if serve != nil {
+					serve.stop()
+				}
+				e, spawnModel = fe, ""
+				// F-179: the hooks run in the new engine's sandbox, and only a CLI
+				// that takes them per run gets the file.
+				dropHooksFile()
+				hk = r.hookRunner(e, trigger, r.turnScopes(e, tt), hlog)
+				tt.hooks = hk
+				hooksConfig, dropHooksFile = r.nativeHooksFile(e, hk, trigger)
+				serve = r.serveToolsFor(e, trigger, tt)
+				mcpConfig, mcpEndpoint, mcpGeminiDir, webDenied = "", "", "", false
+				if serve != nil {
+					mcpConfig, mcpEndpoint, mcpGeminiDir, webDenied = serve.configPath, serve.endpoint, serve.geminiDir, serve.webDenied
+				}
+				resume, ep.Session = "", "" // another vendor cannot continue this session
+				prompt, system = r.cliPromptAt(ctx, e, trigger, wfText, level, &ep, false)
+				attempt-- // the move is not a failed attempt
+				continue
+			}
+		}
 		// F-066: a resumed spawn that fails may be a dead session (expired,
 		// pruned, another machine). Fall back to one fresh spawn — named,
 		// never silent — without spending the retry budget.
@@ -257,7 +344,11 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message, tl
 		}
 		if !fail.Retryable() || attempt >= e.m.Retries ||
 			fail == clirun.FailOverflow && level == maxCompaction {
-			r.alert(trigger, e.m.ID, humanFailure(fail, e.cli))
+			msg := humanFailure(fail, e.cli)
+			if run.StopReason != "" {
+				msg = guardAlert(run)
+			}
+			r.alert(trigger, e.m.ID, msg)
 			return fmt.Errorf("%w (%w)", lastErr, errAlerted)
 		}
 		if fail == clirun.FailOverflow {
@@ -301,7 +392,24 @@ func (r *Runtime) notice(trigger bus.Message, author, text string) {
 // 30s in production; tests compress it to milliseconds via this var).
 var cliRetryBackoff = 30 * time.Second
 
-// cliSpawnOnce runs a single attempt: spawn the wrapped CLI, stream the
+// cliSpawnOnce is spawnOnce plus the OnRun hook (F-164), kept here so
+// every spawn path (write turn, read-only turn, /compact, reflection)
+// reaches it and none can miss it.
+func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Message, in spawnInput) (tasks.Run, []clirun.StreamEvent) {
+	run, events := r.spawnOnce(ctx, e, trigger, in)
+	if r.cfg.OnRun != nil {
+		calls := 0
+		for _, ev := range events {
+			if ev.Kind == clirun.EventCommand {
+				calls++
+			}
+		}
+		r.cfg.OnRun(run, calls)
+	}
+	return run, events
+}
+
+// spawnOnce runs a single attempt: spawn the wrapped CLI, stream the
 // transcript into the trigger thread, persist the event JSONL, finalize,
 // and return the run record.
 // spawnInput is one attempt's spawn parameters.
@@ -315,9 +423,19 @@ type spawnInput struct {
 	quiet                                bool          // don't relay the stream (reflection)
 	relaunch                             *relaunch     // set mid-run: stop this spawn, the work moved
 	mcpConfig, mcpEndpoint, mcpGeminiDir string
+	webDenied                            bool     // mcpGeminiDir carries the web-deny hook
+	hooksConfig                          string   // per-run settings file with plugin tool hooks (F-179)
+	hooklog                              *hookLog // plugin hook records to add to this attempt's transcript
+	readOnly                             bool     // F-144: no write tools (plan, review, ask)
+	// G-C4: the caps the running spawn is checked against as it streams,
+	// and the card they are charged to ("" = card-less).
+	budgets  budget.Limits
+	taskSlug string
+	// F-180: set when this spawn runs on the fallback engine.
+	failover *failoverInfo
 }
 
-func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Message, in spawnInput) (tasks.Run, []clirun.StreamEvent) {
+func (r *Runtime) spawnOnce(ctx context.Context, e *entry, trigger bus.Message, in spawnInput) (tasks.Run, []clirun.StreamEvent) {
 	prompt, system, workdir := in.prompt, in.system, in.workdir
 	model := e.m.CLIModel()
 	if in.model != "" {
@@ -326,9 +444,29 @@ func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Messag
 	started := time.Now().UTC()
 	run := tasks.Run{
 		ID: runID(started), Agent: e.m.ID,
-		Runtime: "cli:" + e.m.Runtime, Model: e.m.CLIModel(), Attempt: in.attempt,
+		Runtime: "cli:" + e.m.Runtime, Model: model, Attempt: in.attempt,
 		Started: started, Finished: time.Now().UTC(),
 		TokensIn: -1, TokensOut: -1,
+	}
+	if in.failover != nil {
+		run.FailoverFrom, run.FailoverWhy = in.failover.from, in.failover.why
+	}
+
+	// G-X3: images the human attached with @image:. Refused by name before
+	// anything runs; a path outside the workspace is made readable to a
+	// sandbox that needs the grant.
+	var images []string
+	if !in.quiet {
+		var err error
+		if images, err = r.turnImages(e, trigger); err != nil {
+			run.Status = tasks.RunError
+			run.Error = err.Error()
+			r.notice(trigger, e.m.ID, err.Error())
+			return run, nil
+		}
+		if len(images) > 0 && !e.cli.ImagesFlag {
+			prompt += imagePromptNote(images)
+		}
 	}
 
 	// Oversized delivery (M14 P1): when the assembled system+prompt
@@ -346,6 +484,7 @@ func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Messag
 			return run, nil
 		}
 		stdin = clirun.PromptWithSystem(system, prompt)
+		run.Delivery = "stdin"
 		prompt, system = "", ""
 	}
 
@@ -356,19 +495,49 @@ func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Messag
 	// the wrapper's `--` land in the CLI's lap as positional args — for
 	// claude that turned the sandbox invocation itself into the prompt
 	// and the reply came back as plain text (no stream-json at all).
+	denyWeb := e.cli.WebDenyOK && !r.tuning().AllowNativeWeb
+	if denyWeb && e.cli.DenyWebDir && !in.webDenied {
+		// The denial rides the per-turn directory. A turn without IDE
+		// tools (or a reflection spawn) gets a deny-only mirror; without
+		// one the CLI would run with its web tools on, the silent
+		// widening ADR-0011 forbids, so the spawn stops by name.
+		dir, cleanup, err := r.denyWebDir(e, in.mcpGeminiDir)
+		if err != nil {
+			msg := e.cli.Name + ": native web tools cannot be switched off this turn (" + err.Error() + "); " +
+				"not starting. Retry, or set agents.native_web = \"allow\" in Settings."
+			run.Status = tasks.RunError
+			run.Error = msg
+			if !in.quiet {
+				r.notice(trigger, e.m.ID, msg)
+			}
+			return run, nil
+		}
+		defer cleanup()
+		in.mcpGeminiDir = dir
+	}
 	argv := append([]string{e.cliPath}, e.cli.BuildArgs(clirun.RunInput{
 		Prompt: prompt, System: system,
 		Model: model, Workdir: workdir, Stdin: stdin,
 		Resume: in.resume, MaxTurns: in.maxTurns,
 		MCPConfig: in.mcpConfig, MCPURL: in.mcpEndpoint, MCPGeminiDir: in.mcpGeminiDir,
+		HooksConfig: in.hooksConfig,
+		DenyWeb:     denyWeb, ReadOnly: in.readOnly, Images: imagesFor(e.cli, images),
 	})...)
-	if msg := missingState(e.cli, r.spawnSandbox(e)); msg != "" {
+	sbx := r.spawnSandbox(e)
+	if len(images) > 0 {
+		if re, ok := sbx.(sandbox.ReadOnlyExtender); ok {
+			if ext, err := re.WithExtraReadOnly(images); err == nil {
+				sbx = ext
+			}
+		}
+	}
+	if msg := missingState(e.cli, sbx); msg != "" {
 		run.Status = tasks.RunError
 		run.Error = msg
 		r.notice(trigger, e.m.ID, msg)
 		return run, nil
 	}
-	wrapped, err := r.spawnSandbox(e).Wrap(argv)
+	wrapped, err := sbx.Wrap(argv)
 	if errors.Is(err, sandbox.ErrHelperMissing) {
 		// The IDE never blocks on it (ADR-0044): the turn waits here until
 		// the human installs bubblewrap, then continues as if nothing
@@ -422,6 +591,30 @@ func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Messag
 	var stamps []time.Time // when each event arrived (F-074 trace)
 	relaunched := false
 	sessionSeen := "" // from the CLI's first line, for a run DHI stops
+	// G-C4: a repeated tool call or a spend cap reached mid-run ends the
+	// spawn through the same cancel the watchdog uses; the reason is named
+	// on the run record and to the human, never a silent kill.
+	var loop clirun.LoopGuard
+	var meter budget.Meter
+	var guardKind, guardWhy string
+	var base budget.Spent
+	capped := !in.budgets.None() && r.cfg.Spend != nil
+	if capped {
+		if entries, err := r.cfg.Spend.Entries(); err != nil {
+			capped = false
+			if !in.quiet {
+				r.notice(trigger, e.m.ID, "the spend ledger is unreadable ("+err.Error()+"); budgets are not enforced while this run streams")
+			}
+		} else {
+			base = budget.Tally(entries, e.m.ID, in.taskSlug, budget.DayStart(time.Now()))
+		}
+	}
+	guardStop := func(kind, why string) {
+		if guardKind == "" {
+			guardKind, guardWhy = kind, why
+			stopSpawn()
+		}
+	}
 	var dog *time.Timer
 	if in.stall > 0 {
 		var self atomic.Pointer[time.Timer]
@@ -457,6 +650,20 @@ func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Messag
 		if ev.Kind == clirun.EventUsage {
 			run.Context = ev.Context // the last call's wins
 		}
+		if ev.Kind == clirun.EventUsage && (ev.Spend.Tokens > 0 || ev.Spend.CostUSD > 0) {
+			meter.Add(ev.UsageID, ev.Spend.Tokens, ev.Spend.CostUSD)
+			if capped {
+				tok, usd := meter.Total()
+				if msg, ok := budget.Check(in.budgets, base.Plus(tok, usd, in.taskSlug != ""), in.taskSlug != ""); !ok {
+					guardStop("budget", "the budget was reached mid-run — "+msg)
+				}
+			}
+		}
+		if ev.Kind == clirun.EventCommand {
+			if why := loop.Observe(ev.Call); why != "" {
+				guardStop("loop", why)
+			}
+		}
 		if ev.Kind == clirun.EventSession {
 			sessionSeen = ev.Session
 		}
@@ -483,6 +690,16 @@ func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Messag
 		// Same thread and cwd (a grant) resume this session; a new
 		// worktree is a new episode and starts fresh anyway.
 		run.Session = sessionSeen
+	case guardKind != "":
+		run.Status = tasks.RunError
+		run.Error = clirun.GuardPrefix + guardWhy
+		run.StopReason = guardKind
+		run.Session = sessionSeen
+		// The CLI never reached its final line, so the ledger would see a
+		// free run: charge what was streamed.
+		if tok, usd := meter.Total(); tok > 0 || usd > 0 {
+			run.TokensIn, run.CostUSD, run.HasCost = tok, usd, usd > 0
+		}
 	case stalled.Load():
 		run.Status = tasks.RunError
 		run.Error = fmt.Sprintf("stalled: no output for %s", in.stall)
@@ -524,7 +741,7 @@ func (r *Runtime) cliSpawnOnce(ctx context.Context, e *entry, trigger bus.Messag
 		run.Summary, run.Error = r.cfg.Redact(run.Summary), r.cfg.Redact(run.Error)
 	}
 	tr := transcript{events: events, stamps: stamps, in: in, stderr: stderr.lastLine(),
-		full: r.tuning().TracePrompts}
+		full: r.tuning().TracePrompts, hooks: in.hooklog.drain()}
 	run.Transcript = r.saveTranscript(tr, run)
 	return run, events
 }
@@ -536,7 +753,8 @@ type transcript struct {
 	stamps []time.Time
 	in     spawnInput
 	stderr string
-	full   bool // agents.trace_prompts: keep the prompt text itself
+	full   bool           // agents.trace_prompts: keep the prompt text itself
+	hooks  []trace.Record // plugin hook decisions since the last attempt (F-179)
 }
 
 // saveTranscript persists one attempt as JSONL under
@@ -573,6 +791,9 @@ func (r *Runtime) saveTranscript(tr transcript, run tasks.Run) string {
 	if !put(trace.Record{Kind: "prompt", Detail: sent, At: run.Started}) {
 		return ""
 	}
+	if fo := tr.in.failover; fo != nil {
+		put(trace.Record{Kind: failoverEvent, Detail: fmt.Sprintf("%s → %s (%s)", fo.from, run.Runtime, fo.why), At: run.Started})
+	}
 	if tr.full {
 		put(trace.Record{Kind: "system_text", Detail: tr.in.system, At: run.Started})
 		put(trace.Record{Kind: "prompt_text", Detail: tr.in.prompt, At: run.Started})
@@ -589,10 +810,29 @@ func (r *Runtime) saveTranscript(tr transcript, run tasks.Run) string {
 			return ""
 		}
 	}
+	for _, rec := range tr.hooks {
+		if !put(rec) {
+			return ""
+		}
+	}
 	if run.Status != tasks.RunOK && tr.stderr != "" {
 		put(trace.Record{Kind: "stderr", Detail: tr.stderr, At: run.Finished})
 	}
 	return p
+}
+
+// denyWebDir builds a per-turn mirror that only adds the web-deny hook
+// and keeps the user's own MCP config (F-123). It refuses when the turn
+// already has a mirror without the hook (native_web flipped to deny
+// mid-turn): replacing it would drop the IDE tools.
+func (r *Runtime) denyWebDir(e *entry, existing string) (string, func(), error) {
+	switch {
+	case existing != "":
+		return "", nil, errors.New("this turn's config was built before native_web became deny")
+	case e.cli.MCPGeminiDir == nil || r.cfg.WS == nil:
+		return "", nil, errors.New("no per-turn config directory")
+	}
+	return e.cli.MCPGeminiDir(filepath.Join(r.cfg.WS.Root, ".dhi", "mcp"), "", true)
 }
 
 // serveSession is one per-turn IDE-tools server (nil when the agent
@@ -602,6 +842,7 @@ type serveSession struct {
 	configPath string // temp MCP config file ("" for inline adapters)
 	endpoint   string // the loopback URL the adapter must reach
 	geminiDir  string // per-turn --gemini_dir mirror ("" for other adapters)
+	webDenied  bool   // geminiDir carries the web-deny hook (F-123)
 	stop       func()
 }
 
@@ -685,6 +926,9 @@ func (r *Runtime) serveToolsFor(e *entry, trigger bus.Message, tt turnTools) *se
 	if r.cfg.Redact != nil {
 		handler = redactHandler{Handler: handler, redact: r.cfg.Redact}
 	}
+	// F-179: plugin hooks around every served call, outside the redaction
+	// so a hook never sees a granted secret.
+	handler = hooks.Wrap(handler, tt.hooks)
 	endpoint, stop, err := mcp.ServeLoopback(handler)
 	if err != nil {
 		// Named degrade, never silent: the turn proceeds without served
@@ -703,7 +947,8 @@ func (r *Runtime) serveToolsFor(e *entry, trigger bus.Message, tt turnTools) *se
 	// dir so OAuth/state survive (ADR-0012 §4 read pass-through).
 	if e.cli.MCPGeminiDir != nil {
 		base := filepath.Join(r.cfg.WS.Root, ".dhi", "mcp")
-		dir, cleanup, derr := e.cli.MCPGeminiDir(base, e.cli.MCPConfigFile(endpoint))
+		deny := e.cli.WebDenyOK && !r.tuning().AllowNativeWeb
+		dir, cleanup, derr := e.cli.MCPGeminiDir(base, e.cli.MCPConfigFile(endpoint), deny)
 		if derr != nil {
 			stopAll()
 			r.notice(trigger, e.m.ID, "IDE tools unavailable this turn: "+derr.Error())
@@ -711,6 +956,7 @@ func (r *Runtime) serveToolsFor(e *entry, trigger bus.Message, tt turnTools) *se
 		}
 		sess.configPath = dir
 		sess.geminiDir = dir
+		sess.webDenied = deny
 		sess.stop = func() {
 			cleanup()
 			stopAll()
@@ -792,12 +1038,13 @@ func (r *Runtime) toolDeps(e *entry, trigger bus.Message, tt turnTools, gate fun
 		Run:         r.runFor(e), // live (M32): never wired — `run` always said "runner unavailable"
 		Sessions:    r.cfg.Sessions,
 		Editor:      r.cfg.Editor,
-		Scopes:      r.agentScopes(e.m),
+		Scopes:      r.turnScopes(e, tt),
 		Gate:        gate,
 		OnRun:       onRun,
 		PR:          r.cfg.PR,
 		Skills:      r.lib(),
 		Conventions: r.cfg.Conventions,
+		ConvVars:    r.cfg.ConventionVars,
 		Channel:     trigger.Channel,
 		Thread:      trigger.Thread,
 		Workdir:     r.cliWorkdir(trigger),
@@ -885,21 +1132,32 @@ func (r *Runtime) cliPrompt(ctx context.Context, e *entry, trigger bus.Message, 
 // messages after ep.SeenID are replayed. A fresh spawn of an ongoing
 // episode carries the episode summary instead.
 func (r *Runtime) cliPromptAt(ctx context.Context, e *entry, trigger bus.Message, wfText string, level int, ep *episode.Episode, resumed bool) (prompt, system string) {
+	return r.cliPromptMode(ctx, e, trigger, wfText, level, ep, resumed, "")
+}
+
+// cliPromptMode is cliPromptAt for a working mode (F-144): "" is the
+// normal turn, whose prompt it leaves exactly as it was.
+func (r *Runtime) cliPromptMode(ctx context.Context, e *entry, trigger bus.Message, wfText string, level int, ep *episode.Episode, resumed bool, mode string) (prompt, system string) {
 	lim := limitsAt(level)
 	// F-027: the effective persona comes from the behaviour composer —
 	// manifest system + role template + attached skills — with the
 	// runtime-owned layers appended after it, exactly as the Settings
 	// preview renders (system, then standards, then conventions).
-	role, skills := behavior.Resolve(e.m, r.lib())
+	role, assigned := behavior.Resolve(e.m, r.lib())
 	persona := behavior.ResolvePersona(e.m, r.lib())
 	wsName := filepath.Base(r.cfg.WS.Root)
+	// F-152: the files the turn names (an @file mention expands to its
+	// path) decide which path-scoped skills and rules ride.
+	files := pathscope.Files(trigger.Text)
 	identity := behavior.Compose(behavior.Input{
 		AgentID:        e.m.ID,
 		Workspace:      wsName,
 		ManifestSystem: e.m.System,
 		Role:           role,
 		Persona:        persona,
-		Skills:         skills,
+		Skills:         assigned,
+		Mode:           mode,
+		Files:          files,
 	})
 	var members []string
 	for _, m := range r.cfg.WS.Members() {
@@ -913,6 +1171,7 @@ func (r *Runtime) cliPromptAt(ctx context.Context, e *entry, trigger bus.Message
 	grounding += "\n3. Before changing code outside a task worktree, call work_branch: DHI makes the card, branch and worktree and continues you there. The default branch is locked, so a commit to it fails — and the human reviews work per branch."
 	grounding += "\n4. If the sandbox blocks you (\"Operation not permitted\"), call permission_request for exactly what you need. Do not give up or work around it: the human decides access, and a workaround hides what you needed."
 	grounding += "\n5. Finish by saying what changed, how you checked it (the command you ran and what it showed), and what is still open or blocked. The human decides what to review from that, so an unchecked change must say it is unchecked."
+	grounding += "\n6. " + untrusted.Rule
 	grounding += r.secretsLine(e.m.ID)
 	// Stable sections first (they cache), volatile after (F-065); each
 	// carries its priority for the prompt budget (F-078).
@@ -927,9 +1186,28 @@ func (r *Runtime) cliPromptAt(ctx context.Context, e *entry, trigger bus.Message
 	if r.cfg.Standards {
 		sys = append(sys, section{name: "standards", text: "\n\n" + standards.Resolve(r.cfg.WS.Root, e.m.ID, r.teamLookup()), prio: 2, floor: 600})
 	}
+	// F-152: the repos' .claude/rules the CLI will not load from its cwd.
+	var roots map[string]string
+	if t, ok := r.boundTask(trigger); ok {
+		roots = r.memberRoots(t)
+	}
+	if rules := standards.RepoRules(r.cfg.WS.Members(), roots, r.cliWorkdir(trigger), e.cli.ReadsClaudeRules); len(rules) > 0 {
+		if rb := standards.RulesBlock(rules, files, false); rb != "" {
+			sys = append(sys, section{name: "rules", text: "\n\n" + rb, prio: 2, floor: 400})
+		}
+	}
+	// F-124: the AGENTS.md of repos the CLI will not load from its cwd.
+	if ri := standards.RepoInstructions(r.cfg.WS.Members(), roots, r.cliWorkdir(trigger), e.cli.ReadsAgentsMD); ri != "" {
+		sys = append(sys, section{name: "repo-instructions", text: "\n\n" + ri, prio: 2, floor: 600})
+	}
 	if r.cfg.Conventions != nil {
 		if cv := r.cfg.Conventions(); cv != nil {
-			sys = append(sys, section{name: "conventions", text: "\n\n" + cv.Guidance(), prio: 2, floor: 400})
+			// F-182: the shapes with this task's own values filled in.
+			var vars map[string]string
+			if t, ok := r.boundTask(trigger); ok && len(t.ChangeSets) > 0 && r.cfg.ConventionVars != nil {
+				vars = r.cfg.ConventionVars(t.ChangeSets[0].Branch)
+			}
+			sys = append(sys, section{name: "conventions", text: "\n\n" + cv.GuidanceFor(vars), prio: 2, floor: 400})
 		}
 	}
 	if wfText != "" {
@@ -950,6 +1228,15 @@ func (r *Runtime) cliPromptAt(ctx context.Context, e *entry, trigger bus.Message
 	if text == "" {
 		text = trigger.Text
 	}
+	// G-X3: a human's "/<skill> args" runs with that skill activated, as
+	// skill_activate would hand it over. Any library skill that declares
+	// itself user-invocable works, not only the agent's assigned ones: the
+	// human chose it by name. Built-ins never reach here as skills.
+	if trigger.Author == bus.Human {
+		if k, args, ok := skills.Invocation(text, r.userSkills()); ok {
+			text = skills.Prompt(k, args)
+		}
+	}
 	pr := []section{
 		// The human's ask is never trimmed: everything else makes room.
 		{name: "trigger", text: text, prio: 0, floor: runeLen(text)},
@@ -960,6 +1247,7 @@ func (r *Runtime) cliPromptAt(ctx context.Context, e *entry, trigger bus.Message
 	if ep != nil && resumed {
 		seen = ep.SeenID
 	} else if ep != nil {
+		seen = ep.SummaryUpTo // F-135: a compacted conversation replays only what came after
 		pr = append(pr, section{name: "episode", text: ep.Render(), prio: 3, floor: 300})
 	}
 	// The history's header and brief of dropped messages stay whole; its
@@ -971,7 +1259,11 @@ func (r *Runtime) cliPromptAt(ctx context.Context, e *entry, trigger bus.Message
 
 	// One budget for both halves: the system part is fitted in what the
 	// prompt part leaves, the prompt part in what the system part leaves.
-	budget := int(float64(r.tuning().memoryTuning().PromptTokens*runesPerToken) * compactionFactor[min(max(level, 0), len(compactionFactor)-1)])
+	model := e.m.CLIModel()
+	if ep != nil && ep.Model != "" {
+		model = ep.Model
+	}
+	budget := int(float64(r.tuning().memoryTuning().PromptTokens) * r.cal.Ratio(e.cli.Name, model) * compactionFactor[min(max(level, 0), len(compactionFactor)-1)])
 	all := append(append([]section{}, sys...), pr...)
 	// Tags wrap the fitted sections (F-099): their room comes off the
 	// budget first, so the fit stays honest.
@@ -995,7 +1287,7 @@ func (r *Runtime) memoryBlock(agentID string, lim promptLimits) string {
 	} else if len(journal) > 0 {
 		b.WriteString("\nRecent journal:")
 		for _, en := range journal {
-			b.WriteString("\n- [" + en.Kind + "] " + truncateRunes(en.Text, lim.journalRunes))
+			b.WriteString("\n- [" + en.Kind + "] " + untrusted.Wrap("journal", truncateRunes(en.Text, lim.journalRunes)))
 		}
 	} else {
 		b.WriteString("\n- (journal empty — record durable lessons as you learn them)")
@@ -1005,11 +1297,11 @@ func (r *Runtime) memoryBlock(agentID string, lim promptLimits) string {
 		b.WriteString("\n- notes unavailable: " + err.Error())
 	} else if strings.TrimSpace(notes) != "" {
 		// Head and tail (F-078): what was added last is visible too.
-		b.WriteString("\nNotes:\n" + shrinkRunes(strings.TrimSpace(notes), lim.notes, false))
+		b.WriteString("\nNotes:\n" + untrusted.Wrap("notes", shrinkRunes(strings.TrimSpace(notes), lim.notes, false)))
 	}
 	if digest, err := r.cfg.Memory.Digest(agentID); err == nil && strings.TrimSpace(digest) != "" && lim.journal > 0 {
 		// The rolled-up journal: older memory in brief, newest last.
-		b.WriteString("\nOlder journal (digest):\n" + shrinkRunes(strings.TrimSpace(digest), lim.notes/2, true))
+		b.WriteString("\nOlder journal (digest):\n" + untrusted.Wrap("journal-digest", shrinkRunes(strings.TrimSpace(digest), lim.notes/2, true)))
 	}
 	return b.String()
 }
@@ -1029,9 +1321,11 @@ func (r *Runtime) knowledgeBlock(ctx context.Context, query string, lim promptLi
 	}
 	var b strings.Builder
 	b.WriteString("\n\nRelevant knowledge base entries:")
+	var hb strings.Builder
 	for _, h := range hits {
-		b.WriteString("\n- " + truncateRunes(h.Snippet, lim.kbRunes))
+		hb.WriteString("- " + truncateRunes(h.Snippet, lim.kbRunes) + "\n")
 	}
+	b.WriteString("\n" + untrusted.Wrap("kb", hb.String()))
 	return b.String()
 }
 
@@ -1080,6 +1374,11 @@ func (r *Runtime) cliEnv(c *clirun.CLI, agentID, mcpConfig string) []string {
 	}
 	if r.cfg.PushGuard != "" {
 		env = gitcore.PushGuardEnv(env, r.cfg.PushGuard)
+	}
+	if !r.tuning().AllowNativeWeb {
+		for _, kv := range c.DenyWebEnv {
+			env = setEnv(env, kv)
+		}
 	}
 	for _, k := range c.WaitEnv {
 		env = setEnv(env, k+"="+strconv.Itoa(int(humanWait/time.Millisecond)))

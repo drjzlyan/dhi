@@ -34,10 +34,32 @@ type Entry struct {
 	Task    string    `json:"task,omitempty"` // card slug; "" for card-less turns
 	Tokens  int       `json:"tokens"`         // whole prompt + output (unknown counts as 0)
 	CostUSD float64   `json:"cost_usd"`
+	// Engine is the CLI that actually ran ("claude"), which differs from
+	// the agent's own after an engine failover (F-180); "" in older rows.
+	Engine string `json:"engine,omitempty"`
+	// Kind names a spend that is not an agent turn: KindSuggest for an
+	// editor ghost-text call (F-181), so it shows as its own line.
+	Kind string `json:"kind,omitempty"`
 }
 
+// KindSuggest marks the on-demand ghost-text suggestion calls.
+const KindSuggest = "suggest"
+
+// KindWrite marks the calls that write the AI parts of a branch name,
+// commit message or PR for a human or before a turn (F-182).
+const KindWrite = "write"
+
+// LedgerSegmentBytes is the size at which the active ledger file rotates
+// into a numbered segment (F-153). Entries reads every segment, so task
+// and day totals are unaffected by the boundary.
+const LedgerSegmentBytes int64 = 1 << 20
+
 // Ledger is the append-only spend log.
-type Ledger struct{ path string }
+type Ledger struct {
+	path string
+	// SegmentBytes overrides LedgerSegmentBytes (tests); 0 = default.
+	SegmentBytes int64
+}
 
 // Open returns the ledger under wsRoot.
 func Open(wsRoot string) *Ledger {
@@ -46,15 +68,22 @@ func Open(wsRoot string) *Ledger {
 
 // Append records one run.
 func (l *Ledger) Append(e Entry) error {
+	seg := LedgerSegmentBytes
+	if l.SegmentBytes > 0 {
+		seg = l.SegmentBytes
+	}
+	if _, err := jsonl.Rotate(l.path, seg); err != nil {
+		return fmt.Errorf("budget: ledger: %w", err)
+	}
 	if err := jsonl.Append(l.path, e); err != nil {
 		return fmt.Errorf("budget: ledger: %w", err)
 	}
 	return nil
 }
 
-// Entries reads the whole ledger (missing = empty).
+// Entries reads the whole ledger, segments first (missing = empty).
 func (l *Ledger) Entries() ([]Entry, error) {
-	es, err := jsonl.ReadAll[Entry](l.path)
+	es, err := jsonl.ReadAllSegments[Entry](l.path)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil
 	}
@@ -113,4 +142,48 @@ func Check(l Limits, s Spent, hasTask bool) (breach string, ok bool) {
 func DayStart(t time.Time) time.Time {
 	y, m, d := t.Date()
 	return time.Date(y, m, d, 0, 0, 0, 0, t.Location())
+}
+
+// Meter sums one running spawn's streamed spend (G-C4) so the runtime
+// can stop it at the cap instead of after the fact. Each call is keyed:
+// a message streamed over several lines is counted once, at its last
+// value; an empty key is always a new call.
+type Meter struct {
+	calls map[string]Entry
+	anon  Entry
+}
+
+// Add records one streamed call's spend under key.
+func (m *Meter) Add(key string, tokens int, usd float64) {
+	if key == "" {
+		m.anon.Tokens += tokens
+		m.anon.CostUSD += usd
+		return
+	}
+	if m.calls == nil {
+		m.calls = map[string]Entry{}
+	}
+	m.calls[key] = Entry{Tokens: tokens, CostUSD: usd}
+}
+
+// Total is the spawn's spend so far.
+func (m *Meter) Total() (tokens int, usd float64) {
+	tokens, usd = m.anon.Tokens, m.anon.CostUSD
+	for _, e := range m.calls {
+		tokens += e.Tokens
+		usd += e.CostUSD
+	}
+	return tokens, usd
+}
+
+// Plus is s with a running spawn's spend added to every total it counts
+// toward. hasTask mirrors Check: task totals only move for card turns.
+func (s Spent) Plus(tokens int, usd float64, hasTask bool) Spent {
+	if hasTask {
+		s.TaskUSD += usd
+		s.TaskTokens += tokens
+	}
+	s.AgentDayUSD += usd
+	s.WorkspaceDayUSD += usd
+	return s
 }

@@ -56,6 +56,9 @@ type chatPane struct {
 	// agentWorking feeds presence dots and the live status line (F-072);
 	// nil renders neither.
 	agentWorking func(id string) bool
+	// meter feeds the DM header's context and cost readout (F-127); nil
+	// renders none.
+	meter *chatMeter
 
 	channels   []string
 	active     int
@@ -174,6 +177,9 @@ func (p *chatPane) hints() []string {
 		return []string{"type to filter", "enter open", "esc clear"}
 	}
 	if p.focus {
+		if bus.IsDM(p.channelName()) { // F-130: only a DM conversation takes an override
+			return []string{"enter send", "^x stop", "/plan", "/model", "/fork", "/compact", "/export", "/new", "esc blur"}
+		}
 		return []string{"enter send", "^x stop", "esc blur"}
 	}
 	if p.railFocus {
@@ -606,6 +612,24 @@ func (p *chatPane) composerKey(key string) bool {
 	if choice, ok := tools.ComposerDecide(key, p.input.Value == "" && p.editID == 0); ok && p.answerAsk(choice) {
 		return true
 	}
+	if key == "enter" && p.editID == 0 && p.modeCommand(p.input.Value) {
+		p.input = kit.Input{}
+		return true
+	}
+	if key == "enter" && p.editID == 0 && p.modelCommand(p.input.Value) {
+		p.input = kit.Input{}
+		return true
+	}
+	if key == "enter" && p.editID == 0 && p.conversationCommand(p.input.Value) {
+		p.input = kit.Input{}
+		return true
+	}
+	if key == "enter" && p.editID == 0 && p.slashRefuse(p.input.Value) {
+		return true
+	}
+	if key == "tab" && p.slashComplete() {
+		return true
+	}
 	if key == "enter" && p.editID == 0 {
 		if choice, ok := tools.SlashDecide(p.input.Value); ok && p.answerAsk(choice) {
 			p.input = kit.Input{}
@@ -790,6 +814,7 @@ func (p *chatPane) renderNarrow(width, height int) []string {
 	if p.threadID != 0 {
 		header += theme.Hint().Render("  · thread (c back)")
 	}
+	header = p.headerMeter(header, width)
 	lines = append(lines, header)
 	if p.switcher != nil {
 		return append(lines, p.switcherLines(width, height-len(lines))...)
@@ -833,6 +858,7 @@ func (p *chatPane) transcriptLines(width, height int, wide bool) []string {
 	if n := p.pinnedCount(); n > 0 {
 		header += theme.TextDim().Render("  · " + itoa(n) + " pinned")
 	}
+	header = p.headerMeter(header, width)
 	lines = append(lines, header)
 	if p.switcher != nil {
 		return append(lines, p.switcherLines(width, height-1)...)
@@ -903,6 +929,12 @@ func (p *chatPane) askLines(width int) []string {
 
 // askHint is the answer legend for where the keyboard is.
 func (p *chatPane) askHint() string {
+	if ap := p.pendingAsk(); ap != nil && ap.IsPlan() {
+		if p.focus {
+			return "alt+y approve the plan · alt+n reject (keeps the draft)"
+		}
+		return "y approve the plan · n reject (keeps the draft)"
+	}
 	if p.focus {
 		return tools.ComposerDecideHint
 	}

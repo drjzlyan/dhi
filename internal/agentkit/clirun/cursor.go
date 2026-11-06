@@ -43,9 +43,15 @@ import (
 // CursorAgent is the Cursor agent adapter. Registered under the runtime
 // value "cursor-agent".
 var CursorAgent = &CLI{
-	Name:   "cursor-agent",
-	Bin:    "cursor-agent",
-	Tested: "2026.09.26", // live-verified 2026-09-26
+	Name: "cursor-agent",
+	// No HooksArgs (F-179): hooks come from hooks.json files, not a flag or env.
+	HooksWhy: "no verified per-run hook input (hooks load from hooks.json files, which DHI does not write into your repos or home)",
+	// No ReadOnlyOK (F-144): headless runs need --force, which approves writes.
+	ReadOnlyWhy: "headless runs need --force, which auto-approves its writes",
+	// No ImagesOK (G-X3): not verified, so an image turn is refused by name.
+	ImagesWhy: "no verified image input in its headless mode",
+	Bin:       "cursor-agent",
+	Tested:    "2026.09.26", // live-verified 2026-09-26
 	// EXACT declared pass-through: the Cursor API key + standard config
 	// roots. Nothing else crosses (ADR-0012 §4).
 	EnvPass: []string{
@@ -79,12 +85,19 @@ var CursorAgent = &CLI{
 		if in.Workdir != "" {
 			args = append(args, "--workspace", in.Workdir)
 		}
+		if in.Resume != "" {
+			args = append(args, "--resume", in.Resume)
+		}
 		if in.MCPURL != "" {
 			// Auto-approve the served MCP server without a prompt.
 			args = append(args, "--approve-mcps")
 		}
 		return args
 	},
+	// ResumeOK: `--resume <chatId>` continues the session_id the first
+	// system line and the result line carry; live-verified on 2026.10.12
+	// (F-170): a word told in turn 1 was recalled in turn 2.
+	ResumeOK:    true,
 	ParseStream: cursorParseStream,
 	Finalize:    cursorFinalize,
 	Version:     cursorVersion,
@@ -96,6 +109,15 @@ var CursorAgent = &CLI{
 		return fmt.Sprintf(`{"mcpServers":{"dhi":{"url":%q}}}`, endpoint)
 	},
 	MCPProjectFile: ".cursor/mcp.json",
+	// ReadsAgentsMD: a canary in AGENTS.md reached the model in an empty git
+	// dir on 2026.10.12 (F-124).
+	ReadsAgentsMD: true,
+	// No WebDenyOK (F-123). Read from the shipped 2026.10.12 source: with
+	// --force its web fetch and web search approvals return approved
+	// before any permission rule is consulted, a deny rule in cli.json or
+	// cli-config.json is never looked at, and headless runs need --force
+	// for shell and writes. Re-check on a new version.
+	WebDenyWhy: "--force auto-approves its web fetch and search before any deny rule is read (2026.10.12), and headless runs need --force",
 }
 
 // cursorItem is the union shape of one stream-json line. Live-verified
@@ -107,6 +129,7 @@ type cursorItem struct {
 	Subtype string `json:"subtype"`
 	IsError bool   `json:"is_error"`
 	Result  string `json:"result"`
+	Session string `json:"session_id"`
 	Text    string `json:"text"`
 	Message struct {
 		Role    string `json:"role"`
@@ -134,6 +157,7 @@ type cursorStop struct {
 	Type        string `json:"type"` // "cursor.result"
 	LastMessage string `json:"last_message"`
 	IsError     bool   `json:"is_error"`
+	SessionID   string `json:"session_id"`
 	TokensIn    int    `json:"tokens_in"`
 	TokensOut   int    `json:"tokens_out"`
 }
@@ -142,12 +166,16 @@ func cursorParseStream(r io.Reader) <-chan StreamEvent {
 	ch := make(chan StreamEvent)
 	go func() {
 		defer close(ch)
-		var lastText string
+		var lastText, session string
 		for line := range lineStream(r) {
 			var it cursorItem
 			if err := json.Unmarshal([]byte(line), &it); err != nil {
 				ch <- StreamEvent{Kind: EventError, Detail: truncate(err.Error(), 120)}
 				continue
+			}
+			if session == "" && it.Session != "" {
+				session = it.Session
+				ch <- StreamEvent{Kind: EventSession, Session: session}
 			}
 			switch it.Type {
 			case "result":
@@ -156,7 +184,7 @@ func cursorParseStream(r io.Reader) <-chan StreamEvent {
 					msg = lastText
 				}
 				stop := cursorStop{
-					Type: "cursor.result", LastMessage: msg, IsError: it.IsError,
+					Type: "cursor.result", LastMessage: msg, IsError: it.IsError, SessionID: session,
 					TokensIn: it.Usage.InputTokens, TokensOut: it.Usage.OutputTokens,
 				}
 				b, err := json.Marshal(stop)
@@ -271,7 +299,7 @@ func cursorFinalize(final string) (string, Usage, error) {
 	if stop.IsError {
 		return "", Usage{}, fmt.Errorf("clirun/cursor-agent: run ended with an error")
 	}
-	u := Usage{TokensIn: stop.TokensIn, TokensOut: stop.TokensOut}
+	u := Usage{TokensIn: stop.TokensIn, TokensOut: stop.TokensOut, SessionID: stop.SessionID}
 	if stop.TokensIn == 0 {
 		u.TokensIn = -1
 	}
@@ -287,17 +315,8 @@ func cursorVersion(ctx context.Context, path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	// cursor reports "2026.09.26-dd393fe" (date + build hash): keep the
-	// numeric date token, drop the hash.
-	for _, f := range strings.Fields(out) {
-		f = strings.TrimPrefix(f, "v")
-		f = strings.TrimSuffix(f, ",")
-		if i := strings.IndexByte(f, '-'); i > 0 {
-			f = f[:i]
-		}
-		if isVersionLike(f) {
-			return f, nil
-		}
+	if v := firstVersionToken(out); v != "" {
+		return v, nil
 	}
 	return "", fmt.Errorf("clirun/cursor-agent: no version in %q", truncate(out, 60))
 }

@@ -24,6 +24,9 @@ type Lock struct {
 	Schema  int               `toml:"schema"`
 	Skills  map[string]Record `toml:"skills,omitempty"`
 	Servers map[string]Record `toml:"servers,omitempty"`
+	// Hooks records the plugins whose lifecycle hooks were installed, and
+	// whether the user turned them on (F-179). Off until enabled.
+	Hooks map[string]HookRecord `toml:"hooks,omitempty"`
 	// AllBots names skills and servers every agent gets, including
 	// agents created later (F-107).
 	AllBots AllBots `toml:"all_bots,omitempty"`
@@ -46,7 +49,7 @@ type Record struct {
 
 // ReadLock reads path; a missing file is an empty lock.
 func ReadLock(path string) (*Lock, error) {
-	l := &Lock{Schema: 1, Skills: map[string]Record{}, Servers: map[string]Record{}}
+	l := &Lock{Schema: 1, Skills: map[string]Record{}, Servers: map[string]Record{}, Hooks: map[string]HookRecord{}}
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
 		return l, nil
@@ -62,6 +65,9 @@ func ReadLock(path string) (*Lock, error) {
 	}
 	if l.Servers == nil {
 		l.Servers = map[string]Record{}
+	}
+	if l.Hooks == nil {
+		l.Hooks = map[string]HookRecord{}
 	}
 	return l, nil
 }

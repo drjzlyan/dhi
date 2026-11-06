@@ -2,6 +2,7 @@ package workspace
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -223,4 +224,53 @@ func pumpEvent(t *testing.T, m *Model) any {
 		t.Fatal("event never arrived")
 	}
 	return nil
+}
+
+// F-182: a PR opened from the board gets the team's PR title template,
+// with the card's symbols, the same as an agent's pr_open.
+func TestTaskPRFromTheBoardAppliesThePRTitleTemplate(t *testing.T) {
+	m, _, _, stub := gitTaskFixture(t)
+	m.reviewSvc.SetPRTitleFunc(func() string { return "[{slug}] {title}" })
+	m.reviewSvc.SetPRVarsFunc(func(string) map[string]string { return map[string]string{"slug": "feat-1"} })
+	selectBoardCard(m, "feat-1")
+	m.HandleKey("p")
+	m.form.f.Fields[1].Value = "master"
+	m.submitForm()
+	_ = m.Update(pumpEvent(t, m))
+	if len(stub.created) != 1 || !strings.HasSuffix(stub.created[0], "|[feat-1] Ship feat") {
+		t.Fatalf("gh calls = %v", stub.created)
+	}
+}
+
+// The board's commit runs the message writer off the UI first ({ai:…}
+// markers), and a failure — of the writer or the commit — is shown,
+// never swallowed (it used to flash nothing).
+func TestBoardCommitWritesMarkersAndShowsFailures(t *testing.T) {
+	m, _, _, _ := gitTaskFixture(t)
+	var asked string
+	m.writeCommit = func(_ context.Context, slug, text string) (string, error) {
+		asked = slug + "|" + text
+		return "", errors.New("no agents yet to write the AI parts")
+	}
+	selectBoardCard(m, "feat-1")
+	m.HandleKey("c")
+	m.form.f.Fields[0].Value = "feat-1: {ai:subject}"
+	m.submitForm()
+	if !strings.Contains(m.form.flash, "writing the AI parts") {
+		t.Fatalf("flash = %q", m.form.flash)
+	}
+	_ = m.Update(pumpEvent(t, m))
+	if asked != "feat-1|feat-1: {ai:subject}" || !strings.Contains(m.form.err, "no agents yet") {
+		t.Fatalf("asked %q, err %q", asked, m.form.err)
+	}
+	// The writer succeeds but the commit fails (the worktree is gone):
+	// that is shown too.
+	m.writeCommit = func(_ context.Context, _, text string) (string, error) { return "feat-1: add x", nil }
+	m.HandleKey("c")
+	m.form.f.Fields[0].Value = "feat-1: add x"
+	m.submitForm()
+	_ = m.Update(pumpEvent(t, m))
+	if m.form.err == "" {
+		t.Fatal("a failed commit must say so")
+	}
 }

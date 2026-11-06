@@ -164,5 +164,6 @@ func (e *Editor) SelectFrom(anchor Pos) {
 	}
 	e.clearPending()
 	e.mode = ModeVisual
+	e.visualBlock, e.blockEOL = false, false
 	e.visualStart = anchor
 }

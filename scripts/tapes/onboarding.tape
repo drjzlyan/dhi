@@ -66,12 +66,15 @@ Right
 Sleep 2.5s
 Enter
 Sleep 2s
-# Pick a team from the palette: the squad. DHI relaunches with it.
+# Pick a team from the palette: solo. DHI relaunches with it.
 Ctrl+P
 Sleep 800ms
 Type "pick a team"
 Sleep 800ms
 Enter
+# The team step asks every CLI for its version in the background (enter
+# waits for it): continue once the CLIs found are listed.
+Wait+Screen@30s /coding CLIs found|No coding CLI found/
 Sleep 2s
 Right
 Sleep 2.5s

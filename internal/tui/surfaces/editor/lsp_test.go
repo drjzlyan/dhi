@@ -20,6 +20,7 @@ type goplusFake struct {
 	conn net.Conn
 	rd   *bufio.Reader
 
+	wmu      sync.Mutex // one frame at a time on the pipe
 	mu       sync.Mutex
 	lastOpen string // file URI seen in the last didOpen
 	// declinePrepare makes prepareRename answer null (symbol not
@@ -29,8 +30,8 @@ type goplusFake struct {
 	// answers with a JSON-RPC error instead (F-040).
 	formatEdits []map[string]any
 	formatFail  bool
-	// events records didChange/formatting in arrival order; lastChange is
-	// the text of the latest didChange (what the "server" believes).
+	// events records didChange/formatting/didSave/didClose in arrival order;
+	// lastChange is the text of the latest didChange (what the "server" believes).
 	events     []string
 	lastChange string
 	// lastLang is the languageId of the latest didOpen (F-050); noFormat
@@ -41,6 +42,63 @@ type goplusFake struct {
 	// not-open file a rename also edits.
 	locs        []map[string]any
 	renameExtra string
+	// wsSyms is the workspace/symbol reply (F-145).
+	wsSyms []map[string]any
+	// didSaveOpts controls server capabilities for save (F-132).
+	// nil = default (no explicit capability); otherwise {}, {includeText: true}, etc.
+	didSaveOpts any
+	// didSaveEvents records (uri, hasText) pairs for each didSave received.
+	didSaveEvents []map[string]any
+	// didCloseUris records URIs for each didClose received.
+	didCloseUris []string
+	// F-158: codeAction replies per context.only ("" = any), resolve support,
+	// the resolved action, and the executeCommand requests seen.
+	// F-171: compItems replaces the default completion reply; initCaps is the
+	// client capabilities of the initialize request.
+	compItems    []map[string]any
+	initCaps     string
+	actionsFor   map[string][]map[string]any
+	resolveCaps  bool
+	resolved     map[string]any
+	onlySeen     []string
+	execCommands []string
+	execEdit     map[string]any // sent as workspace/applyEdit while executing
+	// F-173: extra server capabilities, the semantic token data, and the
+	// requests seen ("semanticTokens", "prepareCallHierarchy", ...).
+	extraCaps map[string]any
+	semData   []int
+	outerURI  string // the file call-hierarchy item "outer" lives in
+	seen      []string
+	// F-167: selectionRange capability, the reply chain (ranges, innermost
+	// first), a forced error, and how many requests arrived.
+	selCap   bool
+	selChain []map[string]any
+	selFail  bool
+	selAsked int
+	// F-169: inlayCap advertises inlayHintProvider; inlayHints is the reply
+	// and inlayAsks counts the textDocument/inlayHint requests (their ranges
+	// as "start-end" line pairs in inlayRanges).
+	inlayCap    bool
+	inlayHints  []map[string]any
+	inlayAsks   int
+	inlayRanges []string
+	// F-175: outlineCap advertises documentSymbolProvider; outlineSyms (when
+	// set) is the documentSymbol reply and outlineAsks counts the requests.
+	outlineCap  bool
+	outlineSyms []map[string]any
+	outlineAsks int
+	// F-176: foldCap advertises foldingRangeProvider; foldRanges is the reply,
+	// foldFail answers with an error, foldAsks counts the requests.
+	foldCap    bool
+	foldRanges []map[string]any
+	foldFail   bool
+	foldAsks   int
+	// F-181: inlineItems is the textDocument/inlineCompletion reply (advertised
+	// through extraCaps), inlineAsks counts requests and inlineAt records each
+	// position as "line:character".
+	inlineItems any
+	inlineAsks  int
+	inlineAt    []string
 }
 
 func startFakeServer(t *testing.T) (*goplusFake, *lsp.Manager) {
@@ -51,9 +109,18 @@ func startFakeServer(t *testing.T) (*goplusFake, *lsp.Manager) {
 // startFakeServerFor injects the scripted server as the client of lang; with
 // noFormat it reports capabilities that lack documentFormattingProvider.
 func startFakeServerFor(t *testing.T, lang string, noFormat bool) (*goplusFake, *lsp.Manager) {
+	return startFakeServerCfg(t, lang, noFormat, nil)
+}
+
+// startFakeServerCfg is startFakeServerFor with cfg run before the server
+// answers initialize (capabilities are read then).
+func startFakeServerCfg(t *testing.T, lang string, noFormat bool, cfg func(*goplusFake)) (*goplusFake, *lsp.Manager) {
 	t.Helper()
 	clientConn, serverConn := net.Pipe()
 	f := &goplusFake{conn: serverConn, rd: bufio.NewReader(serverConn), noFormat: noFormat}
+	if cfg != nil {
+		cfg(f)
+	}
 	go f.serve()
 
 	mgr := lsp.NewManager(nil, nil)
@@ -82,9 +149,41 @@ func (f *goplusFake) serve() {
 		}
 		switch msg.Method {
 		case "initialize":
+			f.mu.Lock()
+			f.initCaps = string(msg.Params)
+			f.mu.Unlock()
 			res := map[string]any{"serverInfo": map[string]any{"name": "fake-gopls"}}
 			if f.noFormat {
 				res["capabilities"] = map[string]any{"hoverProvider": true}
+			} else {
+				f.mu.Lock()
+				opts := f.didSaveOpts
+				f.mu.Unlock()
+				caps := map[string]any{}
+				if opts != nil {
+					caps["textDocumentSync"] = map[string]any{"save": opts}
+				}
+				if f.inlayCap {
+					caps["inlayHintProvider"] = true
+				}
+				if f.outlineCap {
+					caps["documentSymbolProvider"] = true
+				}
+				if f.foldCap {
+					caps["foldingRangeProvider"] = true
+				}
+				if f.resolveCaps {
+					caps["codeActionProvider"] = map[string]any{"resolveProvider": true}
+				}
+				if f.selCap {
+					caps["selectionRangeProvider"] = true
+				}
+				for k, v := range f.extraCaps {
+					caps[k] = v
+				}
+				if len(caps) > 0 {
+					res["capabilities"] = caps
+				}
 			}
 			f.reply(*msg.ID, res)
 
@@ -107,7 +206,54 @@ func (f *goplusFake) serve() {
 				},
 			})
 
+		case "textDocument/inlineCompletion":
+			var p struct {
+				Position struct{ Line, Character int }
+			}
+			json.Unmarshal(msg.Params, &p)
+			f.mu.Lock()
+			f.inlineAsks++
+			f.inlineAt = append(f.inlineAt, fmt.Sprintf("%d:%d", p.Position.Line, p.Position.Character))
+			items := f.inlineItems
+			f.mu.Unlock()
+			f.reply(*msg.ID, items)
+
+		case "textDocument/inlayHint":
+			var p struct {
+				Range struct {
+					Start, End struct{ Line int }
+				} `json:"range"`
+			}
+			json.Unmarshal(msg.Params, &p)
+			f.mu.Lock()
+			f.inlayAsks++
+			f.inlayRanges = append(f.inlayRanges, fmt.Sprintf("%d-%d", p.Range.Start.Line, p.Range.End.Line))
+			hints := f.inlayHints
+			f.mu.Unlock()
+			f.reply(*msg.ID, hints)
+
+		case "textDocument/prepareCallHierarchy", "callHierarchy/incomingCalls", "callHierarchy/outgoingCalls", "textDocument/semanticTokens/full":
+			f.serveF173(msg.ID, msg.Method, msg.Params)
+		case "textDocument/foldingRange":
+			f.mu.Lock()
+			f.foldAsks++
+			rs, fail := f.foldRanges, f.foldFail
+			f.mu.Unlock()
+			if fail {
+				f.writeJSON(map[string]any{"jsonrpc": "2.0", "id": *msg.ID,
+					"error": map[string]any{"code": -32603, "message": "folding exploded"}})
+				break
+			}
+			f.reply(*msg.ID, rs)
+
 		case "textDocument/completion":
+			f.mu.Lock()
+			custom := f.compItems
+			f.mu.Unlock()
+			if custom != nil {
+				f.reply(*msg.ID, custom)
+				break
+			}
 			f.reply(*msg.ID, []map[string]any{
 				{"label": "Println", "detail": "func(a ...any) (n int, err error)"},
 				{"label": "Printf"},
@@ -177,6 +323,33 @@ func (f *goplusFake) serve() {
 			}
 			f.mu.Unlock()
 
+		case "textDocument/signatureHelp":
+			// F-128: activeParameter = commas before the cursor on its line.
+			var p struct {
+				Position struct {
+					Line, Character int
+				} `json:"position"`
+			}
+			json.Unmarshal(msg.Params, &p)
+			f.mu.Lock()
+			lines := strings.Split(f.lastChange, "\n")
+			f.events = append(f.events, "signatureHelp")
+			f.mu.Unlock()
+			active := 0
+			if p.Position.Line < len(lines) {
+				r := []rune(lines[p.Position.Line])
+				active = strings.Count(string(r[:min(p.Position.Character, len(r))]), ",")
+			}
+			f.reply(*msg.ID, map[string]any{
+				"signatures": []map[string]any{{
+					"label":         "func Add(a int, b int) int",
+					"documentation": "Add sums two ints.\nmore",
+					"parameters":    []map[string]any{{"label": "a int"}, {"label": []int{16, 21}}},
+				}},
+				"activeSignature": 0,
+				"activeParameter": active,
+			})
+
 		case "textDocument/formatting":
 			f.mu.Lock()
 			f.events = append(f.events, "formatting")
@@ -191,7 +364,41 @@ func (f *goplusFake) serve() {
 			}
 			f.reply(*msg.ID, edits)
 
+		case "textDocument/selectionRange": // F-167
+			f.mu.Lock()
+			chain, fail := f.selChain, f.selFail
+			f.selAsked++
+			f.mu.Unlock()
+			if fail {
+				f.writeJSON(map[string]any{"jsonrpc": "2.0", "id": *msg.ID,
+					"error": map[string]any{"code": -32603, "message": "boom"}})
+				break
+			}
+			var node any // innermost first; build the parent links
+			for i := len(chain) - 1; i >= 0; i-- {
+				n := map[string]any{"range": chain[i]}
+				if node != nil {
+					n["parent"] = node
+				}
+				node = n
+			}
+			f.reply(*msg.ID, []any{node})
+
+		case "workspace/symbol":
+			f.mu.Lock()
+			syms := f.wsSyms
+			f.mu.Unlock()
+			f.reply(*msg.ID, syms)
+
 		case "textDocument/documentSymbol":
+			f.mu.Lock()
+			f.outlineAsks++
+			custom := f.outlineSyms
+			f.mu.Unlock()
+			if custom != nil {
+				f.reply(*msg.ID, custom)
+				break
+			}
 			sel := func(l int) map[string]any {
 				return map[string]any{
 					"start": map[string]any{"line": l, "character": 5},
@@ -210,6 +417,24 @@ func (f *goplusFake) serve() {
 				} `json:"textDocument"`
 			}
 			json.Unmarshal(msg.Params, &p)
+			var cp struct {
+				Context struct {
+					Only []string `json:"only"`
+				} `json:"context"`
+			}
+			json.Unmarshal(msg.Params, &cp)
+			only := strings.Join(cp.Context.Only, ",")
+			f.mu.Lock()
+			f.onlySeen = append(f.onlySeen, only)
+			custom, has := f.actionsFor[only]
+			if !has {
+				custom, has = f.actionsFor[""]
+			}
+			f.mu.Unlock()
+			if has {
+				f.reply(*msg.ID, custom)
+				break
+			}
 			f.reply(*msg.ID, []map[string]any{
 				{"title": "quickfix boom", "edit": map[string]any{"changes": map[string]any{
 					p.TextDocument.URI: []map[string]any{
@@ -220,6 +445,55 @@ func (f *goplusFake) serve() {
 					},
 				}}},
 			})
+
+		case "codeAction/resolve":
+			f.mu.Lock()
+			r := f.resolved
+			f.events = append(f.events, "resolve")
+			f.mu.Unlock()
+			f.reply(*msg.ID, r)
+
+		case "workspace/executeCommand":
+			var p struct {
+				Command string `json:"command"`
+			}
+			json.Unmarshal(msg.Params, &p)
+			f.mu.Lock()
+			f.execCommands = append(f.execCommands, p.Command)
+			ed := f.execEdit
+			f.mu.Unlock()
+			f.reply(*msg.ID, nil)
+			if ed != nil { // async: the pipe is synchronous and the client answers the request
+				go f.writeJSON(map[string]any{"jsonrpc": "2.0", "id": 900, "method": "workspace/applyEdit", "params": map[string]any{"edit": ed}})
+			}
+
+		case "textDocument/didSave":
+			var p struct {
+				TextDocument struct {
+					URI string `json:"uri"`
+				} `json:"textDocument"`
+				Text *string `json:"text"`
+			}
+			json.Unmarshal(msg.Params, &p)
+			f.mu.Lock()
+			f.events = append(f.events, "didSave")
+			f.didSaveEvents = append(f.didSaveEvents, map[string]any{
+				"uri":     p.TextDocument.URI,
+				"hasText": p.Text != nil,
+			})
+			f.mu.Unlock()
+
+		case "textDocument/didClose":
+			var p struct {
+				TextDocument struct {
+					URI string `json:"uri"`
+				} `json:"textDocument"`
+			}
+			json.Unmarshal(msg.Params, &p)
+			f.mu.Lock()
+			f.events = append(f.events, "didClose")
+			f.didCloseUris = append(f.didCloseUris, p.TextDocument.URI)
+			f.mu.Unlock()
 
 		default:
 			if msg.ID != nil {
@@ -239,6 +513,8 @@ func (f *goplusFake) notify(method string, params any) {
 
 func (f *goplusFake) writeJSON(v any) {
 	data, _ := json.Marshal(v)
+	f.wmu.Lock()
+	defer f.wmu.Unlock()
 	fmt.Fprintf(f.conn, "Content-Length: %d\r\n\r\n", len(data))
 	f.conn.Write(data)
 }

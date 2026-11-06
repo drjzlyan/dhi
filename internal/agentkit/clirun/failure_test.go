@@ -21,6 +21,10 @@ func TestClassify(t *testing.T) {
 		{"argv budget", false, "assembled prompt exceeds the argv budget (96 KiB) and x has no verified stdin delivery", FailOverflow},
 		{"no final", false, "CLI stream ended without a final event", FailNoFinal},
 		{"plain crash", false, "exit 2", FailCrash},
+		{"not installed", false, `spawn claude: exec: "claude": executable file not found in $PATH`, FailNotInstalled},
+		{"503", false, "API Error: 503 Service Unavailable", FailUnavailable},
+		{"bad gateway", false, "exit 1: 502 Bad Gateway", FailUnavailable},
+		{"temporarily unavailable", false, "the service is temporarily unavailable", FailUnavailable},
 		{"watchdog stall", false, "stalled: no output for 15m0s", FailStall},
 		{"max turns is a crash", false, "clirun/claude: run ended with \"error_max_turns\"", FailCrash},
 	}

@@ -38,8 +38,11 @@ func TestInferFromExample(t *testing.T) {
 		t.Fatalf("got %+v", i)
 	}
 	i = InferFromExample("", "## Summary\nAdds login.\n\n## Checklist\n- [x] tests\n- [ ] docs {later}\n")
-	if i.PRBody != "## Summary\n\n## Checklist\n\n- [ ] tests\n- [ ] docs (later)" {
+	if i.PRBody != "## Summary\n\n## Checklist\n\n- [ ] tests\n- [ ] docs {{later}}" {
 		t.Fatalf("pr skeleton %q", i.PRBody)
+	}
+	if got, err := Render(i.PRBody, nil, nil); err != nil || !strings.HasSuffix(got, "docs {later}") {
+		t.Fatalf("learned braces must render back as written: %q, %v", got, err)
 	}
 	c := Defaults()
 	c.Learn(i)
@@ -55,7 +58,7 @@ func TestPRTemplateAndGuidanceBody(t *testing.T) {
 	}
 	os.MkdirAll(filepath.Join(dir, ".github"), 0o755)
 	os.WriteFile(filepath.Join(dir, ".github", "pull_request_template.md"), []byte("## What {x}\n"), 0o644)
-	if got := PRTemplate(dir); got != "## What (x)" {
+	if got := PRTemplate(dir); got != "## What {{x}}" {
 		t.Fatalf("template %q", got)
 	}
 	c := Defaults()

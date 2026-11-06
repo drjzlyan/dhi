@@ -34,6 +34,13 @@ func (ap *Approval) IsAccess() bool {
 	return strings.HasPrefix(ap.Scope, AccessWrite) || strings.HasPrefix(ap.Scope, AccessExec) || ap.IsSecret()
 }
 
+// AccessPlan prefixes a plan-approval scope (F-144): Target carries the
+// plan, one step per line. It is a one-time decision, never remembered.
+const AccessPlan = "plan:"
+
+// IsPlan reports a plan awaiting approval before the write turn (F-144).
+func (ap *Approval) IsPlan() bool { return strings.HasPrefix(ap.Scope, AccessPlan) }
+
 // IsSecret reports a request to use a stored secret (F-089).
 func (ap *Approval) IsSecret() bool { return strings.HasPrefix(ap.Scope, AccessSecret) }
 
@@ -253,6 +260,9 @@ func (a *Approvals) ResolveFor(id int, layer Layer) bool {
 //   - "everywhere": allow and remember for every workspace.
 //   - "no": deny.
 func (a *Approvals) Decide(ap *Approval, choice string) bool {
+	if ap.IsPlan() && choice != "no" {
+		return a.Resolve(ap.ID, true) // a plan is approved for this run only
+	}
 	switch choice {
 	case "yes":
 		if ap.IsAccess() {
@@ -283,6 +293,10 @@ const DecideHint = "y yes · o once · a always here · g everywhere · n no"
 // Describe renders an approval for a card: "write /path" for access,
 // else op and target.
 func (ap *Approval) Describe() string {
+	if ap.IsPlan() {
+		steps := strings.Split(strings.TrimSpace(ap.Target), "\n")
+		return fmt.Sprintf("approve a plan of %d steps: %s", len(steps), strings.Join(steps, "; "))
+	}
 	if p, ok := strings.CutPrefix(ap.Scope, AccessWrite); ok {
 		return "write access to " + p
 	}

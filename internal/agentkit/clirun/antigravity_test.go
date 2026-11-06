@@ -126,7 +126,7 @@ func TestAntigravityGeminiDirMirror(t *testing.T) {
 	must(os.MkdirAll(filepath.Join(realGemini, "antigravity-cli"), 0o755))
 
 	base := t.TempDir()
-	dir, cleanup, err := antigravityMCPGeminiDir(realGemini, base, Antigravity.MCPConfigFile("http://127.0.0.1:9/mcp"))
+	dir, cleanup, err := antigravityMCPGeminiDir(realGemini, base, Antigravity.MCPConfigFile("http://127.0.0.1:9/mcp"), false)
 	if err != nil {
 		t.Fatalf("mirror: %v", err)
 	}
@@ -163,7 +163,7 @@ func TestAntigravityGeminiDirMirror(t *testing.T) {
 // to fail, silently dropping served tools for the turn).
 func TestAntigravityGeminiDirMirrorFreshInstall(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "no-such-gemini")
-	dir, cleanup, err := antigravityMCPGeminiDir(missing, t.TempDir(), Antigravity.MCPConfigFile("http://127.0.0.1:9/mcp"))
+	dir, cleanup, err := antigravityMCPGeminiDir(missing, t.TempDir(), Antigravity.MCPConfigFile("http://127.0.0.1:9/mcp"), false)
 	if err != nil {
 		t.Fatalf("mirror of a missing dir: %v", err)
 	}
@@ -181,5 +181,30 @@ func TestAntigravityMCPArgs(t *testing.T) {
 	}
 	if strings.Contains(strings.Join(Antigravity.BuildArgs(RunInput{Prompt: "p"}), "\x00"), "--gemini_dir") {
 		t.Fatal("antigravity emitted --gemini_dir without a dir")
+	}
+}
+
+// TestAntigravityDenyOnlyMirrorKeepsUserServers: an empty config body
+// adds the deny hook and leaves the user's own mcp_config.json in place.
+func TestAntigravityDenyOnlyMirrorKeepsUserServers(t *testing.T) {
+	realGemini := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(realGemini, "config"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	user := filepath.Join(realGemini, "config", "mcp_config.json")
+	if err := os.WriteFile(user, []byte(`{"mcpServers":{"user":{}}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	dir, cleanup, err := antigravityMCPGeminiDir(realGemini, t.TempDir(), "", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	if ln, err := os.Readlink(filepath.Join(dir, "config", "mcp_config.json")); err != nil || ln != user {
+		t.Fatalf("user's mcp_config.json not linked through: %q %v", ln, err)
+	}
+	body, err := os.ReadFile(filepath.Join(dir, "config", "hooks.json"))
+	if err != nil || !strings.Contains(string(body), antigravityDenyHook) {
+		t.Fatalf("hooks.json = %q %v", body, err)
 	}
 }

@@ -122,3 +122,25 @@ func TestRootRunsWithoutSudo(t *testing.T) {
 		t.Fatalf("root recipe = %q sudo=%v", in.String(), in.Sudo)
 	}
 }
+
+// `gh copilot` downloads the Copilot CLI into gh's data folder, which is
+// not on PATH: it is still found (both layouts gh may use).
+func TestFindCopilotInGhDataFolder(t *testing.T) {
+	defer func() { look, extraDirs = hostenv.LookPath, installDirs }()
+	for _, nested := range []bool{false, true} {
+		home := t.TempDir()
+		dir := filepath.Join(home, ".local", "share", "gh")
+		if nested {
+			dir = filepath.Join(dir, "copilot")
+		}
+		os.MkdirAll(dir, 0o755)
+		os.WriteFile(filepath.Join(dir, "copilot"), []byte("#!/bin/sh\n"), 0o755)
+		look = func(string) (string, error) { return "", errors.New("not found") }
+		extraDirs = func() []string { return nodeDirs(home) }
+		copilot, _ := Get("copilot")
+		p, onPath, ok := Locate(copilot)
+		if !ok || onPath || p != filepath.Join(dir, "copilot") {
+			t.Fatalf("nested=%v: locate = %q onPath=%v ok=%v", nested, p, onPath, ok)
+		}
+	}
+}

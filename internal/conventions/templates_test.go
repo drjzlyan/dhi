@@ -30,7 +30,7 @@ func TestUserTemplateShadowsAndValidates(t *testing.T) {
 	user.Branch.Task = "dev/{user}/{slug}"
 	c.Templates = map[string]Template{"team": user, "feature": user}
 	names := strings.Join(c.TemplateNames(), ",")
-	if names != "default,ticket,personal,feature,team" {
+	if names != "default,ticket,personal,described,feature,team" {
 		t.Fatalf("names = %s", names)
 	}
 	if _, builtin, _ := c.Lookup("feature"); builtin {
@@ -82,12 +82,13 @@ func TestTicketForAndPreview(t *testing.T) {
 	_ = c.Activate("ticket")
 	p := strings.Join(c.Preview(), "\n")
 	for _, want := range []string{"branch    PROJ-123/login-timeout", "worktree  .dhi/tasks/PROJ-123/api",
-		"commit    PROJ-123: retry the token refresh", "PR title  [PROJ-123] Fix login timeout"} {
+		"commit    PROJ-123: <imperative summary of the change>", "PR title  [PROJ-123] Fix login timeout"} {
 		if !strings.Contains(p, want) {
 			t.Fatalf("preview missing %q:\n%s", want, p)
 		}
 	}
-	if !strings.Contains(c.Guidance(), `"{ticket}: {subject}"`) {
+	if g := c.Guidance(); !strings.Contains(g, `"{ticket}: <imperative summary of the change>"`) ||
+		!strings.Contains(g, "{ticket} = the task's ticket key") {
 		t.Fatalf("guidance lacks the subject shape:\n%s", c.Guidance())
 	}
 }

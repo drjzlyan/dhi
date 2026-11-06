@@ -13,6 +13,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/gitcore"
 	"github.com/drjzlyan/dhi/internal/hostenv"
 	"github.com/drjzlyan/dhi/internal/hosttools"
+	"github.com/drjzlyan/dhi/internal/otelexport"
 )
 
 // The host suites (ADR-0044): DHI uses the user's own environment and
@@ -233,4 +234,31 @@ func tilde(p string) string {
 		return "~" + p[len(home):]
 	}
 	return p
+}
+
+// Telemetry reports optional OpenTelemetry export (F-164): read-only,
+// driven by the standard OTEL_EXPORTER_OTLP_* variables. Off is OK; a
+// collector that rejects spans, or spans dropped on a full queue, warn
+// once here rather than per run.
+func Telemetry(environ []string) []Check {
+	cfg := otelexport.FromEnv(environ)
+	if !cfg.Enabled() {
+		return []Check{{Name: "telemetry/otel", Status: OK,
+			Detail: "off (set OTEL_EXPORTER_OTLP_ENDPOINT to export agent runs as traces)"}}
+	}
+	detail := "exporting agent run metadata to " + cfg.Where() + " as service " + cfg.Service
+	e := otelexport.Current()
+	if e == nil {
+		return []Check{{Name: "telemetry/otel", Status: OK, Detail: detail}}
+	}
+	s := e.Stats()
+	detail += fmt.Sprintf(" (%d sent, %d dropped)", s.Sent, s.Dropped)
+	if s.LastErr != "" {
+		return []Check{{Name: "telemetry/otel", Status: Warn,
+			Detail: fmt.Sprintf("%s; last export failed: %s (%d failed)", detail, s.LastErr, s.Failed)}}
+	}
+	if s.Dropped > 0 {
+		return []Check{{Name: "telemetry/otel", Status: Warn, Detail: detail + ": queue was full, spans dropped"}}
+	}
+	return []Check{{Name: "telemetry/otel", Status: OK, Detail: detail}}
 }

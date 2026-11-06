@@ -27,6 +27,10 @@ type Tuning struct {
 	Reflect      bool   // reflect on turns that carried a signal
 	ReflectModel string // "" = the agent's model
 
+	// F-123: leave the CLI's own web fetch/search tools on. The zero
+	// value denies them, so a missing tuning never widens the surface.
+	AllowNativeWeb bool
+
 	// F-074: save full prompts into run transcripts.
 	TracePrompts bool
 
@@ -102,9 +106,9 @@ func (r *Runtime) saveEpisode(ep episode.Episode) {
 		return
 	}
 	_ = r.cfg.Episodes.Update(ep.Agent, ep.Key, func(cur *episode.Episode) {
-		plan := cur.Plan
+		plan, model := cur.Plan, cur.Model // the chat owns the model override (F-130)
 		*cur = ep
-		cur.Plan = plan
+		cur.Plan, cur.Model = plan, model
 	})
 }
 
@@ -126,6 +130,11 @@ func (r *Runtime) budgetCheck(agentID, taskSlug string, lim budget.Limits) (stri
 // recordSpend appends one run to the spend ledger (best-effort: the run
 // record on the card is the durable copy).
 func (r *Runtime) recordSpend(run tasks.Run, taskSlug string) {
+	r.recordSpendKind(run, taskSlug, "")
+}
+
+// recordSpendKind is recordSpend with the ledger line's kind.
+func (r *Runtime) recordSpendKind(run tasks.Run, taskSlug, kind string) {
 	if r.cfg.Spend == nil {
 		return
 	}
@@ -138,6 +147,7 @@ func (r *Runtime) recordSpend(run tasks.Run, taskSlug string) {
 	}
 	_ = r.cfg.Spend.Append(budget.Entry{
 		At: run.Finished, Agent: run.Agent, Task: taskSlug,
-		Tokens: tokens, CostUSD: run.CostUSD,
+		Tokens: tokens, CostUSD: run.CostUSD, Kind: kind,
+		Engine: strings.TrimPrefix(run.Runtime, "cli:"),
 	})
 }

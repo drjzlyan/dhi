@@ -27,8 +27,13 @@ type termTab struct {
 	dir    string
 	screen *vt.Screen // emulated terminal sized to the pane (F-061)
 	exited bool
-	tool   string // an approved install of this host tool runs here (F-110)
-	scroll int    // rows scrolled back into history (0 = live) (F-121)
+	tool   string       // an approved install of this host tool runs here (F-110)
+	scroll int          // rows scrolled back into history (0 = live) (F-121)
+	task   *taskCapture // a task run's output, scanned for problems on exit (F-146)
+	rebase bool         // an interactive rebase step runs here; its exit is checked (F-165)
+
+	jumpRow int  // absolute row of the prompt alt+k / alt+j last chose (F-157)
+	hasJump bool // jumpRow is valid until the view moves otherwise
 }
 
 // ToggleDrawer opens/closes/focus-blurs the terminal drawer (ctrl+t):
@@ -107,6 +112,9 @@ func (m *Model) syncTermSize() {
 			continue
 		}
 		cols, rows := m.termGeom(i == m.activeTerm && t.screen.AltScreen())
+		if w := m.paneWidth(i); w > 0 && (i != m.activeTerm || !t.screen.AltScreen()) {
+			cols = w // a split pane gets its own PTY width (F-141)
+		}
 		if w, h := t.screen.Size(); w == cols && h == rows {
 			continue
 		}
@@ -186,6 +194,9 @@ func (m *Model) ingestTermChunk(id int, chunk []byte) {
 		return
 	}
 	t := m.terms[idx]
+	if t.task != nil {
+		t.task.add(chunk)
+	}
 	wasAlt := t.screen.AltScreen()
 	t.screen.Feed(chunk)
 	if t.screen.AltScreen() != wasAlt {
@@ -209,6 +220,12 @@ func (m *Model) termExited(id int) {
 		if t.tool != "" {
 			m.toolInstallDone(t.tool, code)
 		}
+		if t.task != nil {
+			m.taskFinished(t.task, code)
+		}
+		if t.rebase {
+			m.rebaseStepDone(t.dir)
+		}
 	}
 }
 
@@ -228,6 +245,9 @@ func (m *Model) drawerView() string {
 	h := min(drawerHeight, maxInt(m.height/3, 4))
 	cols, rows := m.termGeom(false)
 	body := m.termBody(cols, rows)
+	if m.termSplitActive() && !m.fullScreenTerm() {
+		body = m.splitBody(rows)
+	}
 	panel := kit.NewPanel("terminal"+termStrip(m), m.termFocus)
 	panel.SetContent(body...)
 	panel.Width = maxInt(m.width, 20)
@@ -252,18 +272,26 @@ func (m *Model) termBody(cols, rows int) []string {
 	if t == nil {
 		return make([]string, rows)
 	}
+	return m.termBodyOf(t, cols, rows, m.termFocus)
+}
+
+// termBodyOf renders one tab's screen; focused shows its cursor cell.
+func (m *Model) termBodyOf(t *termTab, cols, rows int, focused bool) []string {
 	body := t.screen.Lines(cols, rows)
 	if t.scroll > 0 { // F-121: looking back through the scrollback
 		all := append(t.screen.History(cols), body...)
 		t.scroll = min(t.scroll, max(len(all)-rows, 0))
 		end := len(all) - t.scroll
-		view := append([]string(nil), all[max(end-rows, 0):end]...)
+		start := max(end-rows, 0)
+		view := append([]string(nil), all[start:end]...)
+		markFailed(t, view, t.screen.RowBase()-len(all)+len(body)+start, cols)
 		if len(view) > 0 {
 			view[len(view)-1] = theme.Hint().Render(fmt.Sprintf("↑ %d lines back · shift+pgdown or any key returns", t.scroll))
 		}
 		return view
 	}
-	if t.exited || !m.termFocus {
+	markFailed(t, body, t.screen.RowBase(), cols)
+	if t.exited || !focused {
 		return body
 	}
 	x, y := t.screen.Cursor()
@@ -314,6 +342,9 @@ func (m *Model) closeTerm(i int) {
 	}
 	if m.cancelTerms[i] != nil {
 		m.cancelTerms[i]()
+	}
+	if id := m.terms[i].id; id == m.termSplit[0] || id == m.termSplit[1] {
+		m.termSplit = [2]int{} // closing either pane ends the split
 	}
 	m.terms = append(m.terms[:i], m.terms[i+1:]...)
 	m.cancelTerms = append(m.cancelTerms[:i], m.cancelTerms[i+1:]...)

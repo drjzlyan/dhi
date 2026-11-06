@@ -5,6 +5,7 @@ import (
 
 	"charm.land/bubbletea/v2"
 
+	"github.com/drjzlyan/dhi/internal/agentkit/skills"
 	"github.com/drjzlyan/dhi/internal/tui/kit"
 	"github.com/drjzlyan/dhi/internal/tui/surfaces"
 )
@@ -31,6 +32,16 @@ func (m *Model) Commands() []surfaces.Command {
 		}
 	}
 	add("Find and open a file", "/", m.openFind)
+	if m.chat != nil && m.chat.rt != nil { // G-X3: user-invocable skills
+		list := m.chat.skillList()
+		for _, k := range skills.Commands(list) {
+			k := k
+			add("Skill /"+k.Slug+" — "+k.Description, "chat", func() { m.chat.fillSkill(k.Slug) })
+		}
+		if n := skills.ShadowNote(list); n != "" {
+			add(n, "", func() {})
+		}
+	}
 	if m.cps != nil {
 		add("Undo the last agent turn…", ":undo-turn", func() {
 			if msg := m.openUndoTurn(); msg != "" {
@@ -54,6 +65,23 @@ func (m *Model) Commands() []surfaces.Command {
 	}
 	if m.searcher != nil {
 		add("Search the workspace", "s", m.openSearch)
+	}
+	add("Run a task…", ":task", func() {
+		if e := m.active(); e != nil {
+			m.ExecEx(e, "task")
+		} else if msg, _ := m.taskCommand("task"); msg != "" {
+			m.toast = &kit.Toast{Kind: kit.ToastInfo, Title: "Tasks", Detail: msg}
+		}
+	})
+	if m.trust != nil {
+		title, ex := "Trust this folder…", "trust"
+		if m.trust.Trusted(m.trustRoot(m.activeDir())) {
+			title, ex = "Stop trusting this folder (restricted mode)", "untrust"
+		}
+		add(title, ":"+ex, func() {
+			msg, _ := m.trustCommand(ex)
+			m.toast = &kit.Toast{Kind: kit.ToastInfo, Title: "Trust", Detail: msg}
+		})
 	}
 	add("Toggle terminal", "ctrl+t", m.ToggleDrawer)
 	if len(m.terms) > 0 && m.chat != nil {
@@ -86,7 +114,14 @@ func (m *Model) Commands() []surfaces.Command {
 		if _, ok := m.diagAtLine(e.Path(), e.Buffer().Cursor().Line); ok {
 			add("Fix this problem with an agent", ":fix", ex("fix"))
 		}
+		add("Organize imports", ":organize", ex("organize"))
+		add("Local history of this file", ":localhistory", ex("localhistory"))
+		add("Commit graph of the branches", ":graph", ex("graph"))
 		add("Go to symbol", ":sym", ex("sym"))
+		out = append(out, surfaces.Command{Group: "Editor", Title: "Go to symbol in workspace", Hint: ":wsym", Run: func() tea.Cmd {
+			ex("wsym")()
+			return m.TakeCmd()
+		}})
 		add("Run tests in this package", ":test", ex("test"))
 		add("Run all tests in this repo", ":test all", ex("test all"))
 		add("Toggle breakpoint on this line", ":break", ex("break"))

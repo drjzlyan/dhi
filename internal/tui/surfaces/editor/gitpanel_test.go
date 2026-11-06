@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/drjzlyan/dhi/internal/gitcore"
 	"github.com/drjzlyan/dhi/internal/testutil/golden"
@@ -199,8 +200,151 @@ func TestGitPanelGolden(t *testing.T) {
 	feed(m, "enter")
 
 	feed(m, "ctrl+j")
+	awaitTreeGit(t, m)
 	golden.Snapshot(t, "editor_git_status_100x30", m.View())
 
 	feed(m, "tab")
 	golden.Snapshot(t, "editor_git_log_100x30", m.View())
+}
+
+// go-git status hashes the worktree (seconds on a big repo): the tree reads
+// it off the UI goroutine, keeps rendering meanwhile, and drops a read that
+// a save overtook.
+func TestTreeGitStatusLoadsOffTheUIGoroutine(t *testing.T) {
+	m := newEditor(t)
+	makeAlphaRepo(t, m)
+	m.invalidateTreeGit()
+	m.refreshRows()
+	alpha := m.members[0].name
+	if g := m.treeGits[alpha]; g == nil || !g.loading {
+		t.Fatalf("refreshRows should start a background read: %+v", g)
+	}
+	awaitTreeGit(t, m)
+	if g := m.treeGits[alpha]; g.changed["src/main.go"] != '?' || g.branch == "" {
+		t.Fatalf("status after the read: %+v", g)
+	}
+
+	m.invalidateTreeGit()
+	m.refreshRows()       // read #1 starts
+	m.invalidateTreeGit() // a save overtakes it
+	select {
+	case msg := <-m.termMsgs:
+		m.Update(msg)
+	case <-time.After(10 * time.Second):
+		t.Fatal("read #1 never finished")
+	}
+	if g := m.treeGits[alpha]; !g.stale {
+		t.Fatal("an overtaken read must not land as current")
+	}
+}
+
+// The panel's status, log and conflict list are read off the UI goroutine:
+// opening it returns at once and says it is reading; a read that a newer
+// refresh overtook does not land.
+func TestGitPanelReadsOffTheUIGoroutine(t *testing.T) {
+	m := newEditor(t)
+	makeAlphaRepo(t, m)
+	m.HandleKey("ctrl+j") // not feed: feed waits for the read
+	if !m.gitLoading || m.gitEntries != nil {
+		t.Fatalf("opening the panel should start a read: loading=%v entries=%v", m.gitLoading, m.gitEntries)
+	}
+	if v := plainView(m); !strings.Contains(v, "reading git status…") {
+		t.Fatalf("panel while reading:\n%s", v)
+	}
+	settleGitPanel(m)
+	if len(m.gitEntries) == 0 || len(m.gitLog) != 1 {
+		t.Fatalf("after the read: entries=%v log=%v", m.gitEntries, m.gitLog)
+	}
+
+	m.refreshGitData() // read #1
+	first := m.gitDataGen
+	m.refreshGitData() // read #2 overtakes it
+	for got := 0; got < 2; {
+		select {
+		case msg := <-m.termMsgs:
+			if msg.kind != gitDataMsgDone {
+				continue
+			}
+			got++
+			if msg.gitData.gen == first {
+				before := m.gitEntries
+				m.Update(msg)
+				if &m.gitEntries[0] != &before[0] {
+					t.Fatal("an overtaken read landed")
+				}
+				continue
+			}
+			m.Update(msg)
+		case <-time.After(10 * time.Second):
+			t.Fatal("reads never finished")
+		}
+	}
+	if m.gitLoading {
+		t.Fatal("the newest read should have landed")
+	}
+}
+
+// go-git reads the whole worktree before committing: the commit runs off
+// the UI goroutine, a second one waits its turn, and the outcome refreshes
+// the panel.
+func TestGitPanelCommitsOffTheUIGoroutine(t *testing.T) {
+	m := newEditor(t)
+	makeAlphaRepo(t, m)
+	m.gitIdentity = func(context.Context) (gitcore.Identity, error) {
+		return gitcore.Identity{Name: "Ada", Email: "ada@example.com"}, nil
+	}
+	alpha := m.members[0].path
+	_ = os.WriteFile(filepath.Join(alpha, "app.go"), []byte("changed\n"), 0o644)
+	m.loadGit()
+	settleGitPanel(m)
+	if err := m.gitRepo.Stage("app.go"); err != nil {
+		t.Fatal(err)
+	}
+	m.gitInput, m.gitInputMode = []rune("tidy"), true
+	m.handleCommitInput("enter")
+	if !m.committing || m.gitMessage != "committing…" {
+		t.Fatalf("enter should start the commit: committing=%v msg=%q", m.committing, m.gitMessage)
+	}
+	m.gitInput, m.gitInputMode = []rune("again"), true
+	m.handleCommitInput("enter")
+	if !strings.Contains(m.gitMessage, "already committing") {
+		t.Fatalf("a second commit while one runs: %q", m.gitMessage)
+	}
+	settleGitPanel(m)
+	if !strings.HasPrefix(m.gitMessage, "committed ") || m.gitErr != "" {
+		t.Fatalf("after the commit: msg=%q err=%q", m.gitMessage, m.gitErr)
+	}
+	if len(m.gitLog) != 2 || m.gitLog[0].Message != "tidy" {
+		t.Fatalf("log = %+v", m.gitLog)
+	}
+}
+
+// go-git stages through a full status read (100ms+ here, seconds on a big
+// repo): s returns at once, a second index write waits its turn, and the
+// panel re-reads when the write lands.
+func TestGitPanelStagesOffTheUIGoroutine(t *testing.T) {
+	m := newEditor(t)
+	makeAlphaRepo(t, m)
+	m.gitIdentity = func(context.Context) (gitcore.Identity, error) {
+		return gitcore.Identity{Name: "Ada", Email: "ada@example.com"}, nil
+	}
+	_ = os.WriteFile(filepath.Join(m.members[0].path, "app.go"), []byte("changed\n"), 0o644)
+	feed(m, "ctrl+j") // feed waits for the panel's first read
+	m.HandleKey("s")
+	if !m.gitWriting {
+		t.Fatal("s should stage off the UI goroutine")
+	}
+	m.HandleKey("S")
+	if !strings.Contains(m.gitMessage, "still busy") {
+		t.Fatalf("a second write while one runs: %q", m.gitMessage)
+	}
+	m.gitInput, m.gitInputMode = []rune("x"), true
+	m.handleCommitInput("enter")
+	if m.committing || !strings.Contains(m.gitMessage, "still staging") {
+		t.Fatalf("a commit beside a stage: committing=%v msg=%q", m.committing, m.gitMessage)
+	}
+	settleGitPanel(m)
+	if got := stagedPaths(m.gitEntries); len(got) != 1 || got[0] != "app.go" {
+		t.Fatalf("staged = %v", got)
+	}
 }

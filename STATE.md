@@ -1,5 +1,85 @@
 # STATE — current position
 
+### Session 73 (PR #19 review + live run, branch `m38`)
+
+- Reviewed PR #19 before merge: CI 4/4 green, `make verify` (race) green, `golangci-lint` 0 issues.
+- Live run (real binary, throwaway HOME/XDG, tmux): wizard workspace step, open/edit/`:w` (disk byte-checked), tree `M` marker, git panel stage + commit (commit visible in `git log`), Settings page, Coding-agent step (detection shows "checking…" then all six CLIs, no freeze), quit guard + `d`, clean exit 0. No defects found, so no fix commits.
+- Read `93c9c21`'s async closures for state read after return: they capture locals; `m.send` is a callback set at init.
+- Seen once, not reproduced in 3 replays (exit 0, lock released): an empty `.dhi/tmp/swap/instance-*.lock` left after quit in a session that also created the workspace mid-run. Harmless: `sweepStaleLocks` removes it on the next launch.
+- Gotcha: running copilot `--version` under a fresh HOME makes copilot unpack its package into `~/Library/Caches/copilot` (sandbox only).
+
+### Session 71 (review + F-182 naming templates with AI parts + F-183 CLI detection, branch `m38`; uncommitted)
+
+- User asked: review the existing branch/commit/PR conventions; let users define their own branch, commit (title + body) and PR (title + description) formats from symbols and AI-written parts, consistent on every CLI; then (mid-session) fix onboarding CLI detection (Copilot present but not detected on one machine).
+- Review bugs found and fixed (F-182 "Problem"): SampleVars-based validation let unrenderable branch patterns save; `commit.subject` never enforced; `pr.title` only on pr_open; Reviewer PR pushed `review/<id>` regardless of `branch.review`; board PR only for the first member; board commit/push failures silently dropped (`evPingFlash` ignored err); learned PR templates turned braces into parens.
+- F-182 (ADR-0052): `conventions/template.go` one language (`{symbol|filter}`, `{ai:hint}`, `{{ }}`), per-field rules, Render/Match/Shape/Prefill/Markers; `commit.body_format`; `described` built-in. Agents fill AI parts via `fill` on git_commit/pr_open/work_branch (refused before approval when missing); humans/pre-turn use `Runtime.WriteSlots` (read-only one-shot on the default agent, ledger kind `write`; refuses CLIs without read-only mode by name). `review.Service.OpenPR` renders title+body for every caller before pushing. Main: `cmd/dhi/naming.go` (`varsForBranch`, `nameTaskBranch`, `writeCommit`). Board commit/attach async; editor COMMIT_EDITMSG draft + async markers.
+- F-183: hosttools searches gh's copilot download dir + node manager bins; one tolerant version parser for all adapters (stderr, ANSI, prerelease, non-zero exit); `Registry.DetectAll` keeps found-but-failing binaries; wizard shows "found, but --version failed" with the reason. Live: all six CLIs detected on this machine (copilot 1.0.88 at ~/.local/bin).
+- Gates: `make verify` green, `make lint` 0 issues. Goldens regenerated deliberately: settings_conventions(_learn), new prompt_conventions (identical on all six CLIs).
+- Not run live: an agent filling a `described` PR via pr_open; WriteSlots against a real CLI; setup on the machine that missed Copilot.
+- Known hole (documented, ADR-0052 §5): an agent's own shell `git commit`/`gh pr create` skips the rules on every CLI; guidance forbids it, no commit-msg hook (ADR-0044).
+- Review scope: the conventions/git/PR surface was reviewed in depth; the rest of the 479-file m38 diff relied on session 70's audit plus green gates.
+- Follow-up fixes after review: ticket-format + slug fallback no longer refuses every commit (`noTicketKey`); `fill` advertised as a list of {key,text} (no open-map schema, Gemini-safe), object form still accepted; board commit prefill stops at the first AI part; `{member}` allowed in branch.task (attach fills it); body-format-only `fill`; work_branch asks for branch parts only when it creates the branch; Provision gets the turn ctx.
+- Pre-existing flake fixed: editor tests raced async local-history writes against temp-dir cleanup (failed on clean HEAD under -race); `localhistory.Store.SetSync` + `syncHistory` in editor TestMain. Production stays async.
+- Copilot: not reproduced (all six CLIs detected here); fixes cover likely causes. A 0.0.x copilot shows as a different major (red) vs tested 1.0.88.
+- README recordings re-made on this tree (all four). M38 had broken three tapes: record.sh now pre-trusts `acme` (trust card ate the editor's typing) and clears `acme/.dhi/tmp/swap` before each tape (editor's killed session opened views on "Unsaved changes found"); settings.tape steps past the new desktop-notifications row; onboarding.tape waits for the detected CLIs (`Wait+Screen /coding CLIs found/`), because enter waits for detection now (F-184). One full `make record` run hung in ffmpeg on the onboarding GIF once; reruns were clean.
+
+### Session 72 (F-184 slow work off the UI thread, branch `m38`; uncommitted, on top of session 71's work)
+
+- User asked: fix the team-step freeze and move anything that impacts the TUI off the UI thread.
+- Method: a temporary `DHI_SLOW_LOG` watchdog wrapping `App.Update`/`View` (deleted) over the four tapes, plus a scan of `context.Background()` sites in `internal/tui` and of `cmd/dhi`-injected hooks, plus timings on a clone of this repo (go-git status ~110 ms, stage one file ~130 ms, `Conflicts` ~100 ms, `git worktree add` ~400 ms).
+- Converted (F-184 table): wizard team/CLI detection; Settings identity row (was `git config` in View), identity suggestion, skill install; Reviewer `PlanReview`; board attach (all paths; propagations now seeded on the AI-branch path too); editor tree status, panel refresh, stage/unstage, commit, stash, undo-turn, `:task` via just, `:sym`, `:calls` prepare.
+- Separate bug fixed: Ideator `requestTurn` cancelled the turn's context on return, so every turn it dispatched died at once (`TestRejectRoutesToAuthor`).
+- Kept sync on purpose (bounded/ordered): graph, file log, hunk apply, git config writes, conflict `git add`, `Runtime.Handle`, `term.Start`, format-on-save, non-just `:task`.
+- Test helpers: editor `feed` settles background git work (`settleGitPanel`), `awaitTreeGit`, `awaitUndo`; reviewer `planNow`; workspace `awaitAttach`.
+- Gates: `make verify` green, `make lint` 0 issues; final watchdog run over the four tapes: no Update/View over 50 ms.
+- Not covered: CLI step's `r` doesn't invalidate the detection cache (only an install does) — pre-existing; large-repo timings extrapolated, not measured.
+
+### Session 70 (M38 gap closure with subagents, branch `m38` off `g-a4-oversize-prompt`; not pushed)
+
+- Phases 1–6 of docs/gaps.md are done: 52 gaps this session (F-127…F-176), one commit per gap plus audit-fix commits. `make verify` and `make lint` green on m38; live gopls suite green (`DHI_LIVE_LSP=1 go test -run TestLiveGopls ./internal/tui/surfaces/editor`, gopls 0.24 via brew, user-approved); live evals 13/13 on claude 2.1.311 (F-172), re-run 13/13 on the final tree after the audit fixes; real-binary smoke in tmux (throwaway HOME): wizard workspace, open/edit/:w, clean quit (exit 0, no lock/shim left), session restore on relaunch.
+- Final audit (read-only auditors per phase group) found 19 issues (6 + 5 + 8); all fixed in three commits `m38 audit: …` (brief-digest fence F-122, OnRun for every spawn F-164, swap ownership by instance lock F-161, quit shutdown hook F-165, :untrust stops servers F-148, untrusted `just` never runs F-146, chord-key gating `WantsRawKey` F-133/F-167/F-176, visual gg, search buffer hot exit, docs).
+- Phase 7 decided (user, 2026-11-05): ADR-0047 accepted (+ boundary rule: per-run config only, never persistent CLI config) → G-C3 F-179; ADR-0048 accepted amended (default fallback written at creation, editable) → G-C5 F-180; ADR-0049 and ADR-0050 rejected → G-C6, G-C10 dropped; ADR-0051 accepted → G-X2 F-181. G-X1 F-177, G-X3 F-178 done. Every gaps.md row is now done or dropped.
+- Not run live: claude --settings hook firing (F-179), image flags (F-178), pytest/debugpy (F-177; not installed), :suggest against a real CLI (F-181); copilot resume (classifier-blocked). Gaps left in specs: ADR-0051 doctor row; ghost text end-of-line only.
+- `m38` pushed to origin (no PR; CI not run).
+- Known limits recorded in specs: visual `g` + anything but a/c/b/g is swallowed (e.g. `vgj`, regression from the audit fix); .editorconfig bare indent_size → spaces; same buffer in two panes shares one cursor; multi-cursor undo collapses cursors; normal-mode `r` not implemented in textbuf.
+- Gotchas: agent worktrees in `.claude/worktrees/` (write-site audit skips `.claude`); parallel test load causes timeouts — rerun the package alone.
+
+### Session 69 (Phase 1 review, branch `g-a4-oversize-prompt`, one fix commit on top of the stack)
+
+- Reviewed G-A1…G-A4. Fixed:
+  - `untrusted.defuse` lowercased the whole string, then indexed it with `s`'s byte offsets. ẞ and İ change byte length when lowercased, so content could close the fence or panic Wrap (a channel post was enough). It now matches the tag in `s` with an ASCII fold. Added a `FuzzWrap` test.
+  - With `native_web = deny` (the default), antigravity refused every spawn that had no IDE-tools mirror. That covered every reflection run (`learn.go`), so agy never learned from a turn. Such spawns now get a deny-only mirror: an empty config body keeps the user's own `mcp_config.json`. The guard also checks `serveSession.webDenied`, not "a directory exists", so switching native_web to deny mid-turn refuses instead of running agy with web on.
+  - Imports regrouped (the untrusted/clirun/checkpoint lines had landed in the stdlib group).
+- Checked, no change: nothing truncates tool output after `Wrap`; the prompt goldens did not move.
+- Next: Phase 2, suggested G-B1.
+
+### Session 68 (G-A4, branch `g-a4-oversize-prompt`, fifth in the stack, on `g-a3-prompt-goldens`)
+
+- G-A4 done (F-126): `Run.Delivery = "stdin"` and a doctor `prompt-size` row per CLI. Chose record-and-report over trimming. Phase 1 is complete; next: Phase 2, suggested G-B1.
+
+### Session 67 (G-A3, branch `g-a3-prompt-goldens`, fourth in the stack, on `g-a2-agents-md`)
+
+- G-A3 done (F-125): `TestPromptGoldens` snapshots the assembled system block and prompt (fresh and compacted); all six adapters assemble the same prompt today. Not in the fixture: memory, KB, lessons, episode. Next gap: G-A4.
+
+### Session 66 (G-A2, branch `g-a2-agents-md`, third in the stack G-A1 → G-C1 → G-A2)
+
+- G-A2 done in code (F-124): `standards.RepoInstructions` + `CLI.ReadsAgentsMD` + prompt section
+  `repo-instructions` + Settings preview + doctor row. Canary runs (F-124 table) showed the CLI
+  already reads AGENTS.md in its cwd, so no suppression; the gap was the other members' files.
+- Not run: live `make eval` (existing fixtures are single-repo; section empty). agy 1.4.12 checked too: reads AGENTS.md, not CLAUDE.md.
+- G-C1 decision (user): cursor runs with the doctor warning; `deny` does not refuse it. Next gap: G-A3.
+
+### Session 64 (gap analysis, planning only)
+
+- User asked for a comparison of DHI with Claude Code, opencode and VS Code, including prompt, memory
+  and agent engineering. Result: `docs/gaps.md` (tracker) and ROADMAP M38. No code changed.
+- Next: pick the first gap (suggested G-A1), set it `in progress` here, write its spec, implement.
+  Verified in code: no content-trust fencing (ADR-0022 is install trust only); no adapter passes a
+  tool deny flag (`clirun/claude.go:45,53`, `codex.go:79`, `antigravity.go:66`).
+- Currently in progress: none. G-A1 done in session 65 (F-122, ADR-0046): `internal/agentkit/untrusted`
+  fences tool results and prompt sections; live injection eval waits on G-C7. G-C1 done in code (session 65, branch `g-c1-native-web`, stacked on `g-a1-untrusted-fence`, F-123): `agents.native_web` deny by default; verified live for claude, codex, opencode, copilot (`--excluded-tools`) and antigravity (PreToolUse hook in the per-turn gemini dir). cursor investigated: its 2026.10.12 source approves web fetch/search under `--force` before reading any deny rule, so it is unrestrictable and says why in doctor (`WebDenyWhy`). Open decision: should `native_web = deny` refuse to run a CLI that cannot comply? Two live runs were blocked by the auto-mode classifier (`--allow-all-tools`, `--dangerously-skip-permissions`), so those exact flag combinations are checked by the CLIs' docs and the unit tests only.
+- Plan file from this session: `~/.claude/plans/analyse-the-dhi-ide-composed-twilight.md`.
+
 ### Session 63 (M37: best-in-class audit, then the fixes, branch `m37`)
 
 - User asked: a complete, user's-eye audit to make DHI best-in-class, then the changes. Audit =

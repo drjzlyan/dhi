@@ -110,6 +110,14 @@ func prFixture(t *testing.T) (*Model, *review.Store, *ghFake) {
 }
 
 // pumpSubmit drains the async submit started by the confirm screen.
+// planNow presses enter in the submit dialog and waits for the plan, which
+// is built off the UI loop.
+func planNow(t *testing.T, m *Model) {
+	t.Helper()
+	m.HandleKey("enter")
+	_ = m.Update(awaitEvent(t, m, evPlanned))
+}
+
 func pumpSubmit(t *testing.T, m *Model) {
 	t.Helper()
 	settle(t, m)
@@ -129,7 +137,7 @@ func TestSubmitDialogSendsOneReviewAsTheHuman(t *testing.T) {
 		t.Fatalf("S did not open the submit dialog (kind=%v err=%q)", m.form.kind, m.opErr)
 	}
 	m.form.fields[1].runes = []rune("Overall: ok")
-	m.HandleKey("enter")
+	planNow(t, m)
 	if m.form.kind != fSubmitConfirm {
 		t.Fatalf("no confirmation (kind=%v err=%q)", m.form.kind, m.form.err)
 	}
@@ -179,7 +187,7 @@ func TestSubmitDialogEscStepsBackAndOwnPRApprovalIsRefused(t *testing.T) {
 	fgh.login, fgh.prAuthor = "me", "me"
 	m.HandleKey("S")
 	m.form.fields[0].val = 1 // approve
-	m.HandleKey("enter")
+	planNow(t, m)
 	if m.form.kind != fSubmitConfirm {
 		t.Fatalf("kind = %v err=%q", m.form.kind, m.form.err)
 	}
@@ -187,7 +195,7 @@ func TestSubmitDialogEscStepsBackAndOwnPRApprovalIsRefused(t *testing.T) {
 	if m.form.kind != fSubmit {
 		t.Fatalf("esc should return to the dialog, kind=%v", m.form.kind)
 	}
-	m.HandleKey("enter")
+	planNow(t, m)
 	m.HandleKey("enter")
 	pumpSubmit(t, m)
 	if !strings.Contains(m.opErr, "your own pull request") || len(fgh.submitted) != 0 {
@@ -203,9 +211,29 @@ func TestSubmitDialogRefusesAnEmptyCommentReview(t *testing.T) {
 		t.Fatal(err)
 	}
 	m.HandleKey("S")
-	m.HandleKey("enter")
+	planNow(t, m)
 	if m.form.kind != fSubmit || !strings.Contains(m.form.err, "nothing to send") {
 		t.Fatalf("kind=%v err=%q", m.form.kind, m.form.err)
+	}
+}
+
+// Planning reads the diff (git or gh): enter leaves the dialog busy at
+// once, keys wait, and a plan that lands after esc closed it is dropped.
+func TestSubmitPlanRunsOffTheUILoop(t *testing.T) {
+	m, _, _ := prFixture(t)
+	m.HandleKey("S")
+	m.HandleKey("enter")
+	if m.form.kind != fSubmit || !m.form.busy {
+		t.Fatalf("enter should start planning: kind=%v busy=%v", m.form.kind, m.form.busy)
+	}
+	m.HandleKey("enter") // waits: no second plan, no send
+	m.HandleKey("esc")
+	if m.form.kind != fNone {
+		t.Fatalf("esc should close the busy dialog, kind=%v", m.form.kind)
+	}
+	_ = m.Update(awaitEvent(t, m, evPlanned))
+	if m.form.kind != fNone || m.draft != nil {
+		t.Fatalf("a late plan reopened the dialog: kind=%v draft=%v", m.form.kind, m.draft != nil)
 	}
 }
 

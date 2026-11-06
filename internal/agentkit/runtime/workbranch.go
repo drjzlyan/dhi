@@ -64,7 +64,7 @@ func (r *Runtime) continueTurn(ctx context.Context, agentID string, trigger bus.
 // With carry, uncommitted changes in the member checkout move into the
 // new worktree (stash, then pop there) — the yume-forge case, where the
 // fixes were already made in place.
-func (r *Runtime) workBranchSeam(agentID string, trigger bus.Message, rl *relaunch) func(ctx context.Context, slug, title, member string, carry bool) (string, error) {
+func (r *Runtime) workBranchSeam(agentID string, trigger bus.Message, rl *relaunch) func(ctx context.Context, slug, title, member string, carry bool, fill map[string]string) (string, error) {
 	if r.cfg.Tasks == nil || r.cfg.Provision == nil {
 		return nil
 	}
@@ -74,7 +74,7 @@ func (r *Runtime) workBranchSeam(agentID string, trigger bus.Message, rl *relaun
 	for _, m := range r.cfg.WS.Members() {
 		pre[m.Name] = r.dirtyPaths(context.Background(), m.Path)
 	}
-	return func(ctx context.Context, slug, title, member string, carry bool) (string, error) {
+	return func(ctx context.Context, slug, title, member string, carry bool, fill map[string]string) (string, error) {
 		if cur, ok := r.boundTask(trigger); ok && len(cur.ChangeSets) > 0 {
 			return fmt.Sprintf("this thread already works in %s on branch %s (task %s)",
 				cur.ChangeSets[0].Path, cur.ChangeSets[0].Branch, cur.Slug), nil
@@ -103,7 +103,7 @@ func (r *Runtime) workBranchSeam(agentID string, trigger bus.Message, rl *relaun
 		}
 		t, _ = r.cfg.Tasks.Get(slug)
 		if len(t.ChangeSets) == 0 {
-			if err := r.cfg.Provision(slug, member); err != nil {
+			if err := r.cfg.Provision(ctx, slug, member, fill); err != nil {
 				if stashed {
 					// Best effort: the worktree failed, so put the stashed
 					// changes back where they were; that error is secondary.

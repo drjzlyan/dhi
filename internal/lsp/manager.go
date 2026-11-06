@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"sync"
 )
 
@@ -93,6 +94,29 @@ func (m *Manager) ClientFor(lang string) *Client {
 	return m.clients[lang]
 }
 
+// LangClient pairs a language id with its running client.
+type LangClient struct {
+	Lang   string
+	Client *Client
+}
+
+// Live returns the running clients in language-id order; an exited
+// client is left out.
+func (m *Manager) Live() []LangClient {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []LangClient
+	for lang, c := range m.clients {
+		select {
+		case <-c.Done():
+		default:
+			out = append(out, LangClient{Lang: lang, Client: c})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Lang < out[j].Lang })
+	return out
+}
+
 // ShutdownAll politely tears every client down.
 func (m *Manager) ShutdownAll() {
 	m.mu.Lock()
@@ -105,6 +129,17 @@ func (m *Manager) ShutdownAll() {
 	for _, c := range cs {
 		c.Shutdown()
 	}
+}
+
+// serverInitOptions are the initializationOptions a server needs to offer
+// a feature the editor implements (F-173). gopls ships semantic tokens off
+// and advertises them only when asked; the request itself is made only
+// when editor.semantic_tokens is on.
+func serverInitOptions(bin string) map[string]any {
+	if filepath.Base(bin) == "gopls" {
+		return map[string]any{"semanticTokens": true}
+	}
+	return nil
 }
 
 // StartProcess spawns a server binary with stdio wired to the client.
@@ -127,7 +162,7 @@ func StartProcess(ctx context.Context, bin string, args, env []string, rootDir s
 		return nil, fmt.Errorf("lsp: start %s: %w", filepath.Base(bin), err)
 	}
 	conn := &processConn{cmd: cmd, r: stdout, w: stdin}
-	c, err := New(ctx, conn, rootDir)
+	c, err := NewWithOptions(ctx, conn, rootDir, serverInitOptions(bin))
 	if err != nil {
 		_ = cmd.Process.Kill()
 		return nil, err

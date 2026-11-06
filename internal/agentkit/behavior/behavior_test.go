@@ -83,3 +83,22 @@ func TestComposeOrdersPersonaBetweenRoleAndSkills(t *testing.T) {
 		t.Fatal("an empty persona must add no block")
 	}
 }
+
+func TestComposeScopedSkills(t *testing.T) {
+	skills := []library.Skill{
+		{Slug: "always", Description: "d"},
+		{Slug: "go-only", Description: "d", Paths: []string{"**/*.go"}},
+	}
+	in := Input{Skills: skills, Files: []string{"api/main.go"}}
+	if out := Compose(in); !strings.Contains(out, "<name>go-only</name>") || !strings.Contains(out, "<name>always</name>") {
+		t.Fatalf("matching file: both skills: %q", out)
+	}
+	in.Files = []string{"web/app.ts"}
+	if out := Compose(in); strings.Contains(out, "go-only") || !strings.Contains(out, "<name>always</name>") {
+		t.Fatalf("non-matching file: scoped skill out: %q", out)
+	}
+	in.Files = nil
+	if out := Compose(in); strings.Contains(out, "go-only") {
+		t.Fatalf("no files: scoped skill out: %q", out)
+	}
+}

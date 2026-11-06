@@ -4,6 +4,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/ansi"
@@ -194,6 +195,13 @@ func (p *chatPane) header() string {
 		h += theme.SuccessText().Render("  ● working")
 	}
 	return h
+}
+
+// headerMeter adds the DM's context and cost readout (F-127) when the
+// header has room for it.
+func (p *chatPane) headerMeter(header string, width int) string {
+	full, compact := p.meter.forChat(p.channelName(), p.threadID, time.Now())
+	return withMeter(header, full, compact, width)
 }
 
 // ---- quick switcher (ctrl+g) ----

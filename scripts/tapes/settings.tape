@@ -36,7 +36,8 @@ Sleep 2s
 Type "j"
 Enter
 Sleep 1.5s
-Type "j"
+# Past desktop notifications to the tab width.
+Type "jj"
 Type "e"
 Sleep 600ms
 Backspace

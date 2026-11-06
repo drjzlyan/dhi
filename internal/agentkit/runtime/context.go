@@ -8,6 +8,7 @@ import (
 
 	"github.com/drjzlyan/dhi/internal/agentkit/bus"
 	"github.com/drjzlyan/dhi/internal/agentkit/clirun"
+	"github.com/drjzlyan/dhi/internal/agentkit/untrusted"
 	"github.com/drjzlyan/dhi/internal/tasks"
 )
 
@@ -90,13 +91,17 @@ func (r *Runtime) historyBlock(agentID string, trigger bus.Message, lim promptLi
 	}
 	for _, m := range msgs {
 		prefix := m.Author
+		text := truncateRunes(m.Text, lim.msgRunes)
 		switch m.Author {
 		case bus.Human:
 			prefix = "you (the human)"
 		case agentID:
 			prefix = "you (earlier)"
+		default:
+			// Another agent's words may carry what it read elsewhere (F-122).
+			text = untrusted.Wrap("message from "+m.Author, text)
 		}
-		b.WriteString("\n- " + prefix + ": " + truncateRunes(m.Text, lim.msgRunes))
+		b.WriteString("\n- " + prefix + ": " + text)
 	}
 	return h.String(), b.String()
 }
@@ -133,10 +138,11 @@ func (r *Runtime) taskBlock(agentID string, trigger bus.Message, lim promptLimit
 	}
 	b.WriteString(r.teamBlock(agentID, t))
 	if c := lastN(t.Comments, lim.comments); len(c) > 0 {
-		b.WriteString("\n- recent comments:")
+		var cb strings.Builder
 		for _, cm := range c {
-			b.WriteString("\n  - " + cm.Author + ": " + truncateRunes(cm.Text, 200))
+			cb.WriteString("- " + cm.Author + ": " + truncateRunes(cm.Text, 200) + "\n")
 		}
+		b.WriteString("\n- recent comments:\n" + untrusted.Wrap("task-comments", cb.String()))
 	}
 	if rs := lastN(t.Runs, lim.runs); len(rs) > 0 {
 		b.WriteString("\n- earlier runs:")
@@ -234,14 +240,21 @@ func briefOf(msgs []bus.Message, agentID string) string {
 		if i := strings.IndexAny(first, ".!?"); i > 20 {
 			first = first[:i+1]
 		}
-		out = append(out, "\n  · "+who+": "+truncateRunes(first, perLine))
+		first = truncateRunes(first, perLine)
+		if m.Author != bus.Human && m.Author != agentID {
+			// Same fence as the recent-message loop (F-122).
+			first = untrusted.Wrap("message from "+m.Author, first)
+		}
+		out = append(out, "\n  · "+who+": "+first)
 	}
 	if len(out) > lines {
 		out = out[len(out)-lines:]
 	}
+	// Drop whole oldest lines, never slice: a cut could leave a fence open.
 	s := strings.Join(out, "")
-	if r := []rune(s); len(r) > total {
-		s = string(r[len(r)-total:])
+	for len(out) > 1 && runeLen(s) > total {
+		out = out[1:]
+		s = strings.Join(out, "")
 	}
 	return s
 }

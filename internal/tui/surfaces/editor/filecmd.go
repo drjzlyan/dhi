@@ -19,6 +19,16 @@ func (m *Model) fileCommand(requester *textbuf.Editor, cmd string) (string, bool
 		return m.openUndoTurn(), true
 	case "fix":
 		return m.fixProblem(), true
+	case "organize":
+		return m.organizeImports(), true
+	case "localhistory":
+		return m.openLocalHistory(), true
+	case "history":
+		return m.openHistory(""), true
+	case "graph":
+		return m.openGraph(), true
+	case "cherrypick", "cherrypick abort":
+		return m.cherryPickCmd(strings.TrimSpace(cmd) == "cherrypick abort"), true
 	case "blame":
 		return m.blameLine(), true
 	}
@@ -124,6 +134,7 @@ func (m *Model) saveAs(e *textbuf.Editor, p string, force bool) string {
 	if err := e.Buffer().SaveForce(target); err != nil {
 		return err.Error()
 	}
+	m.snapshotSave(target, e.Buffer().Text()) // F-155
 	t := m.activeTabRef()
 	t.path = target
 	e.SetPath(target)
@@ -140,10 +151,13 @@ func (m *Model) saveAs(e *textbuf.Editor, p string, force bool) string {
 	return fmt.Sprintf("%q written — now editing it", t.vp)
 }
 
-// indentFor is what Tab inserts in path (F-119): the file's own style when
-// it has one, else the language's (tabs for Go, Makefiles), else four
-// spaces.
+// indentFor is what Tab inserts in path (F-119): .editorconfig first
+// (F-160), then the file's own style when it has one, else the language's
+// (tabs for Go, Makefiles), else four spaces.
 func (m *Model) indentFor(path, text string) string {
+	if unit := m.configFor(path).IndentUnit(m.editorPrefs().TabWidth); unit != "" {
+		return unit
+	}
 	if unit := textbuf.DetectIndent(text); unit != "" {
 		return unit
 	}
