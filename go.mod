@@ -3,7 +3,7 @@ module github.com/drjzlyan/dhi
 go 1.26.5
 
 require (
-	charm.land/bubbletea/v2 v2.1.0
+	charm.land/bubbletea/v2 v2.1.1
 	charm.land/lipgloss/v2 v2.0.6
 	github.com/BurntSushi/toml v1.6.0
 	github.com/alecthomas/chroma/v2 v2.27.0
@@ -16,8 +16,8 @@ require (
 	github.com/go-git/go-git/v5 v5.19.3
 	github.com/lucasb-eyer/go-colorful v1.4.1
 	github.com/mattn/go-runewidth v0.0.31
-	github.com/yuin/goldmark v1.8.6
-	go.yaml.in/yaml/v3 v3.0.5
+	github.com/yuin/goldmark v1.8.7
+	go.yaml.in/yaml/v3 v3.0.6
 	golang.org/x/sys v0.49.0
 )
 
