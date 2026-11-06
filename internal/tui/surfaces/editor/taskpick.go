@@ -3,7 +3,9 @@ package editor
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -75,11 +77,19 @@ func (m *Model) taskDirs() []memberRef {
 	return nil
 }
 
-// discoverTasks lists every member's tasks; notes name unreadable files.
-func (m *Model) discoverTasks() (items []kit.PaletteItem, notes []string) {
-	dirs := m.taskDirs()
+// taskSource is one folder to list tasks in, with the `just --list`
+// runner it may use (nil: read the justfile only).
+type taskSource struct {
+	dir  memberRef
+	just taskrun.JustList
+}
+
+// taskSources decides, on the UI goroutine, where to look and whether
+// `just` may run there.
+func (m *Model) taskSources() []taskSource {
 	hostJust := m.hostJustList()
-	for _, d := range dirs {
+	var out []taskSource
+	for _, d := range m.taskDirs() {
 		// F-148: `just --list` evaluates the justfile (backticks, imports),
 		// so a folder that is not trusted gets its recipes by reading the
 		// file only; nothing of the repo's runs to list tasks.
@@ -87,19 +97,57 @@ func (m *Model) discoverTasks() (items []kit.PaletteItem, notes []string) {
 		if m.trust != nil && !m.trust.Trusted(m.trustRoot(d.path)) {
 			just = nil
 		}
-		ts, ns := taskrun.Discover(d.path, just)
+		out = append(out, taskSource{dir: d, just: just})
+	}
+	return out
+}
+
+// runsJust reports a source list that will start `just` (a process the
+// UI must not wait for): just is installed, trusted, and a justfile is
+// there.
+func runsJust(srcs []taskSource) bool {
+	for _, s := range srcs {
+		if s.just == nil {
+			continue
+		}
+		for _, name := range []string{"justfile", "Justfile", ".justfile"} {
+			if _, err := os.Stat(filepath.Join(s.dir.path, name)); err == nil {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// findTasks lists every source's tasks; notes name unreadable files.
+func findTasks(srcs []taskSource) (items []kit.PaletteItem, notes []string) {
+	for _, src := range srcs {
+		d := src.dir
+		ts, ns := taskrun.Discover(d.path, src.just)
 		for _, n := range ns {
 			notes = append(notes, d.name+": "+n)
 		}
 		for _, t := range ts {
 			group := ""
-			if len(dirs) > 1 {
+			if len(srcs) > 1 {
 				group = d.name
 			}
 			items = append(items, kit.PaletteItem{Group: group, Title: t.Name, Hint: t.Runner + " · " + oneLine(t.Hint), Data: t})
 		}
 	}
 	return items, notes
+}
+
+// discoverTasks lists every member's tasks; notes name unreadable files.
+func (m *Model) discoverTasks() (items []kit.PaletteItem, notes []string) {
+	return findTasks(m.taskSources())
+}
+
+// tasksFound is a background task listing for :task args.
+type tasksFound struct {
+	args  []string
+	items []kit.PaletteItem
+	notes []string
 }
 
 func oneLine(s string) string {
@@ -117,13 +165,49 @@ func (m *Model) taskCommand(cmd string) (string, bool) {
 	if len(f) == 0 || (f[0] != "task" && f[0] != "tasks") {
 		return "", false
 	}
-	items, notes := m.discoverTasks()
+	srcs := m.taskSources()
+	if runsJust(srcs) {
+		// `just --list` evaluates the justfile: off the UI goroutine.
+		if m.tasksLoading {
+			return "task: still looking for tasks…", true
+		}
+		m.tasksLoading = true
+		ch := m.termMsgs
+		go func() {
+			items, notes := findTasks(srcs)
+			ch <- teaMsg{kind: taskMsgFound, tasks: &tasksFound{args: f, items: items, notes: notes}}
+		}()
+		return "task: looking for tasks…", true
+	}
+	items, notes := findTasks(srcs)
+	return m.showTasks(f, items, notes), true
+}
+
+// applyTasksFound continues :task with a background listing.
+func (m *Model) applyTasksFound(r *tasksFound) {
+	m.tasksLoading = false
+	if r == nil {
+		return
+	}
+	msg := m.showTasks(r.args, r.items, r.notes)
+	if msg == "" {
+		return
+	}
+	if e := m.active(); e != nil {
+		e.SetMessage(msg)
+	} else {
+		m.toast = &kit.Toast{Kind: kit.ToastInfo, Title: "Tasks", Detail: msg}
+	}
+}
+
+// showTasks runs the named task or opens the picker over items.
+func (m *Model) showTasks(f []string, items []kit.PaletteItem, notes []string) string {
 	if len(items) == 0 {
 		msg := "task: no package.json scripts, Makefile targets or justfile recipes here"
 		if len(notes) > 0 {
 			msg = "task: " + strings.Join(notes, " · ")
 		}
-		return msg, true
+		return msg
 	}
 	if len(f) > 1 {
 		var hit []taskrun.Task
@@ -134,19 +218,19 @@ func (m *Model) taskCommand(cmd string) (string, bool) {
 		}
 		switch len(hit) {
 		case 0:
-			return "task: no task named " + f[1], true
+			return "task: no task named " + f[1]
 		case 1:
-			return m.runTask(hit[0]), true
+			return m.runTask(hit[0])
 		}
-		return "task: " + f[1] + " is in several places — use :task and pick one", true
+		return "task: " + f[1] + " is in several places — use :task and pick one"
 	}
 	m.taskPick = kit.NewPalette(items)
 	m.taskPick.Title, m.taskPick.Noun = "run a task", "tasks"
 	m.mode = modeTasks
 	if len(notes) > 0 {
-		return strings.Join(notes, " · "), true
+		return strings.Join(notes, " · ")
 	}
-	return "", true
+	return ""
 }
 
 func (m *Model) handleTaskKey(key string) bool {

@@ -168,6 +168,40 @@ func TestCommitMessageBuffer(t *testing.T) {
 	}
 }
 
+// F-182: the message buffer starts from the team's draft for the branch,
+// and {ai:…} parts left in it are written off the UI, then committed.
+func TestCommitBufferDraftAndAIParts(t *testing.T) {
+	m, alpha := gitDepthEditor(t)
+	var dir, text string
+	m.commitConv = CommitConventions{
+		Draft: func(d string) string { dir = d; return "PROJ-1: {ai:subject}" },
+		Write: func(_ context.Context, d, msg string) (string, error) {
+			text = msg
+			return strings.Replace(msg, "{ai:subject}", "add the app", 1), nil
+		},
+	}
+	_ = os.WriteFile(filepath.Join(alpha, "app.go"), []byte("changed\n"), 0o644)
+	feed(m, "ctrl+j", "S", "C")
+	if got := m.active().Buffer().Text(); !strings.HasPrefix(got, "PROJ-1: {ai:subject}\n") || !strings.Contains(got, "written by your default agent") {
+		t.Fatalf("draft = %q", got)
+	}
+	if dir != alpha {
+		t.Fatalf("draft asked for %q", dir)
+	}
+	feed(m, "esc", ":", "w", "enter")
+	if !strings.Contains(m.gitMessage, "writing the AI parts") {
+		t.Fatalf("status = %q", m.gitMessage)
+	}
+	m.Update(waitMsg(t, m))
+	settleGitPanel(m) // the commit itself runs off the UI too
+	if text != "PROJ-1: {ai:subject}" || !strings.HasPrefix(m.gitMessage, "committed") {
+		t.Fatalf("writer got %q; status %q", text, m.gitMessage)
+	}
+	if log := strings.TrimSpace(m.gitOut(t, alpha, "log", "-1", "--format=%B")); log != "PROJ-1: add the app" {
+		t.Fatalf("message = %q", log)
+	}
+}
+
 func (m *Model) blameLineFor(t *testing.T) string {
 	t.Helper()
 	m.open(&node{kind: nodeFile, path: filepath.Join(m.members[0].path, "app.go"), name: "app.go"})

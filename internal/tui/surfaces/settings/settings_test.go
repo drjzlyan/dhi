@@ -471,7 +471,7 @@ func TestEverySettingHasAPlaceInSettings(t *testing.T) {
 		"schema": "internal",
 		// Naming templates (CONVENTIONS section: use, edit, learn).
 		"conventions.branch.review": "CONVENTIONS", "conventions.commit.ticket_pattern": "CONVENTIONS",
-		"conventions.commit.subject": "CONVENTIONS", "conventions.commit.body": "CONVENTIONS",
+		"conventions.commit.subject": "CONVENTIONS", "conventions.commit.body": "CONVENTIONS", "conventions.commit.body_format": "CONVENTIONS",
 		"conventions.pr.title": "CONVENTIONS", "conventions.pr.body": "CONVENTIONS",
 		"conventions.worktree.task": "CONVENTIONS", "conventions.active": "CONVENTIONS",
 		"conventions.commit.co_author_enabled": "the co-author row", "conventions.copyright.enabled": "the copyright row",

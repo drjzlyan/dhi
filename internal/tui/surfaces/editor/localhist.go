@@ -45,9 +45,15 @@ func (m *Model) histStore() *localhistory.Store {
 	}
 	if m.lhStore == nil {
 		m.lhStore = localhistory.New(filepath.Join(m.ws.Root, workspace.DHIDir, "history"))
+		m.lhStore.SetSync(syncHistory)
 	}
 	return m.lhStore
 }
+
+// syncHistory makes snapshots write before a save returns. Tests set it
+// (main_test.go): a background write can outlive a test and race the
+// removal of its temp dir.
+var syncHistory bool
 
 // snapshotSave records text as path's saved content. DHI's own files under
 // .dhi (the commit message) are not history.

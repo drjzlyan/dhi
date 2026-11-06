@@ -140,6 +140,8 @@ type revEvent struct {
 	msg  bus.Message
 	n    int // PR number for evPosted, added-comment count for evImported, comments sent for evSubmitted
 	url  string
+	// draft is a planned review for evPlanned.
+	draft *submitDraft
 }
 
 func itoa(n int) string { return strconv.Itoa(n) }
@@ -154,6 +156,7 @@ const (
 	evSubmitted // a whole review was sent (F-049)
 	evPRCreated
 	evImported
+	evPlanned // the submit dialog's plan is ready to confirm
 )
 
 // Deps carries the services this surface operates. A nil Service degrades
@@ -320,6 +323,8 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 				m.closeFormWithFlash(msg)
 				m.act(tutorial.EvReviewSubmitted)
 			}
+		case evPlanned:
+			m.onPlanned(ev)
 		case evPRCreated:
 			m.busy = false
 			if ev.err != "" {

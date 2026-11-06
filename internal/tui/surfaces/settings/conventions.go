@@ -112,6 +112,7 @@ func (m *Model) openTemplateDialog(title string, kind dialogKind, target string,
 		kit.NewTextField("ticket regexp ", t.Commit.TicketPattern),
 		kit.NewTextField("commit subject", t.Commit.Subject),
 		kit.NewTextField("commit body   ", strings.ReplaceAll(t.Commit.Body, "\n", `\n`)),
+		kit.NewTextField("body format   ", strings.ReplaceAll(t.Commit.BodyFormat, "\n", `\n`)),
 		kit.NewTextField("PR title      ", t.PR.Title),
 		kit.NewTextField("PR body       ", strings.ReplaceAll(t.PR.Body, "\n", `\n`)),
 	)
@@ -136,7 +137,8 @@ func (m *Model) submitTemplate() {
 	t.Worktree.Task = strings.TrimSpace(v[4])
 	t.Commit.Format, t.Commit.TicketPattern, t.Commit.Subject = v[5], strings.TrimSpace(v[6]), strings.TrimSpace(v[7])
 	t.Commit.Body = strings.ReplaceAll(strings.TrimSpace(v[8]), `\n`, "\n")
-	t.PR.Title, t.PR.Body = strings.TrimSpace(v[9]), strings.ReplaceAll(strings.TrimSpace(v[10]), `\n`, "\n")
+	t.Commit.BodyFormat = strings.ReplaceAll(strings.TrimSpace(v[9]), `\n`, "\n")
+	t.PR.Title, t.PR.Body = strings.TrimSpace(v[10]), strings.ReplaceAll(strings.TrimSpace(v[11]), `\n`, "\n")
 
 	next := m.cfg.Conventions
 	tpls := map[string]conventions.Template{}
@@ -240,7 +242,8 @@ func flatKeys(c conventions.Config, withActive bool) map[string]any {
 	set := map[string]any{
 		"branch.task": c.Branch.Task, "branch.review": c.Branch.Review, "worktree.task": c.Worktree.Task,
 		"commit.format": c.Commit.Format, "commit.ticket_pattern": c.Commit.TicketPattern,
-		"commit.subject": c.Commit.Subject, "commit.body": c.Commit.Body, "pr.title": c.PR.Title, "pr.body": c.PR.Body,
+		"commit.subject": c.Commit.Subject, "commit.body": c.Commit.Body, "commit.body_format": c.Commit.BodyFormat,
+		"pr.title": c.PR.Title, "pr.body": c.PR.Body,
 	}
 	if withActive {
 		set["active"] = c.Active
@@ -300,7 +303,10 @@ func (m *Model) conventionsView(w int) []string {
 		}
 		out = append(out, "")
 		for _, l := range kit.WrapWords(fmt.Sprintf(
-			"placeholders: {slug} {member} {ticket} {user} {date} {title} {assignee} {type} {subject}. The ticket is the first match of %s in the card's slug, title, epic or labels, else the slug.",
+			"symbols: {ticket} {slug} {id} {title} {member} {branch} {assignee} {user} {date}; filters {title|kebab} |lower |upper |snake. "+
+				"{ai:hint} is text an AI writes (the agent that commits or opens the PR, else your default agent); {type} and {subject} are AI parts too. "+
+				"{{ and }} are literal braces. Body format is a commit body template; commit body is an example agents imitate. "+
+				"The ticket is the first match of %s in the card's slug, title, epic or labels, else the slug.",
 			c.Commit.TicketPattern), max(w-2, 20)) {
 			out = append(out, "  "+theme.Hint().Render(l))
 		}

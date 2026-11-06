@@ -706,7 +706,7 @@ func (s *conventionsStep) Apply() error {
 // where you look, not three at the bottom.
 var conventionsHelp = []string{
 	"How commit subjects read: free text, conventional (fix(api): …) or a ticket id first.",
-	"The branch each task's work happens on. {slug} is the task, {user} you.",
+	"The branch each task's work happens on. {slug} is the task, {user} you, {ai:short name} an agent's words.",
 	"\"Name <email>\" added to commits as a Co-Authored-By trailer. Empty = off.",
 	"The holder named in new-file headers. Empty = no headers.",
 	"An SPDX id for those headers, e.g. MIT or Apache-2.0.",
@@ -716,9 +716,13 @@ var conventionsHelp = []string{
 // preview shows what the current answers produce, live as they change.
 func (s *conventionsStep) preview() []string {
 	c := s.next()
-	branch, err := conventions.ExpandBranch(c.Branch.Task, map[string]string{
-		"slug": "fix-login", "user": "ada", "date": "2026-10-20", "id": "42", "ticket": "ABC-123"})
-	if err != nil {
+	vars := conventions.SampleVars()
+	vars["slug"], vars["id"], vars["user"], vars["ticket"] = "fix-login", "fix-login", "ada", "ABC-123"
+	branch, err := conventions.ExpandBranch(c.Branch.Task, vars)
+	switch {
+	case conventions.HasAI(c.Branch.Task) && conventions.ValidateBranchPattern(c.Branch.Task) == nil:
+		branch = conventions.Shape(c.Branch.Task, vars) // an agent writes the <…> part
+	case err != nil:
 		branch = "(" + err.Error() + ")"
 	}
 	subject := map[string]string{

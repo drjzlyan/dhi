@@ -39,11 +39,16 @@ type Entry struct {
 
 // Store writes and reads snapshots under one folder.
 type Store struct {
-	dir string
-	mu  sync.Mutex
-	wg  sync.WaitGroup
-	n   int
+	dir  string
+	mu   sync.Mutex
+	wg   sync.WaitGroup
+	n    int
+	sync bool // SetSync: write in the caller (tests whose temp dir goes when they end)
 }
+
+// SetSync makes Snapshot write before it returns. For tests: an
+// asynchronous write can outlive the test and race its temp dir cleanup.
+func (s *Store) SetSync(on bool) { s.sync = on }
 
 // New returns a store rooted at dir (created on the first snapshot).
 func New(dir string) *Store { return &Store{dir: dir} }
@@ -59,6 +64,12 @@ func (s *Store) fileDir(path string) string {
 // must never fail a save.
 func (s *Store) Snapshot(path, text string, at time.Time) {
 	if len(text) > MaxSnapshotBytes {
+		return
+	}
+	if s.sync {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		s.write(path, text, at)
 		return
 	}
 	s.wg.Add(1)

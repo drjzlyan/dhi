@@ -65,25 +65,59 @@ func (m *Model) submitSkillInstall() {
 		return
 	}
 	v := m.dform.Values()
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	defer cancel()
-	slugs, err := skillprop.Install(ctx, m.d.Ext.Fetch, m.d.Ext.Tmp, *p, m.d.Ext.scope(v[0]))
-	if err != nil {
-		m.dform.SetError(err.Error())
+	// The install fetches the skill (network, up to minutes): off the UI
+	// thread, with the form busy so a second enter cannot install twice.
+	m.dform.SetError("")
+	m.dform.Busy = true
+	prop, scopeName, attach := *p, v[0], v[1] == "yes"
+	fetch, tmp, scope, ch := m.d.Ext.Fetch, m.d.Ext.Tmp, m.d.Ext.scope(v[0]), m.events
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		slugs, err := skillprop.Install(ctx, fetch, tmp, prop, scope)
+		ch <- settingsEvent{skill: &skillEvent{prop: prop, scope: scopeName, attach: attach, slugs: slugs, err: err}}
+	}()
+}
+
+// skillEvent is a finished skill install, back on the UI loop.
+type skillEvent struct {
+	prop   skillprop.Proposal
+	scope  string
+	attach bool
+	slugs  []string
+	err    error
+}
+
+// onSkillInstalled records an install that finished: the suggestion is
+// resolved and, if asked, the skill joins the agent (local writes).
+func (m *Model) onSkillInstalled(ev skillEvent) {
+	open := m.dkind == dlgSkillInstall && m.dform != nil && m.dtarget == fmt.Sprint(ev.prop.ID)
+	fail := func(msg string) {
+		if open {
+			m.dform.Busy = false
+			m.dform.SetError(msg)
+			return
+		}
+		m.flash = "failed: " + msg
+	}
+	if ev.err != nil {
+		fail(ev.err.Error())
 		return
 	}
 	note := ""
-	if v[1] == "yes" && m.d.Org != nil {
-		if err := skillprop.Attach(m.d.WS, m.d.Org, p.Agent, slugs); err != nil {
-			note = " (could not add it to " + p.Agent + ": " + err.Error() + ")"
+	if ev.attach && m.d.Org != nil {
+		if err := skillprop.Attach(m.d.WS, m.d.Org, ev.prop.Agent, ev.slugs); err != nil {
+			note = " (could not add it to " + ev.prop.Agent + ": " + err.Error() + ")"
 		} else {
-			note = "; " + p.Agent + " uses it from its next turn"
+			note = "; " + ev.prop.Agent + " uses it from its next turn"
 		}
 	}
-	if err := m.d.SkillProps.Resolve(p.ID, skillprop.Approved, v[0]); err != nil {
-		m.dform.SetError(err.Error())
+	if err := m.d.SkillProps.Resolve(ev.prop.ID, skillprop.Approved, ev.scope); err != nil {
+		fail(err.Error())
 		return
 	}
-	m.closeDialog()
-	m.flash = fmt.Sprintf("installed %s for %s%s", strings.Join(slugs, ", "), v[0], note)
+	if open {
+		m.closeDialog()
+	}
+	m.flash = fmt.Sprintf("installed %s for %s%s", strings.Join(ev.slugs, ", "), ev.scope, note)
 }

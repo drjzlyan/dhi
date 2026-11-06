@@ -45,6 +45,10 @@ type Entry struct {
 // KindSuggest marks the on-demand ghost-text suggestion calls.
 const KindSuggest = "suggest"
 
+// KindWrite marks the calls that write the AI parts of a branch name,
+// commit message or PR for a human or before a turn (F-182).
+const KindWrite = "write"
+
 // LedgerSegmentBytes is the size at which the active ledger file rotates
 // into a numbered segment (F-153). Entries reads every segment, so task
 // and day totals are unaffected by the boundary.

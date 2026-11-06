@@ -74,19 +74,37 @@ func (m *Model) planSubmit() {
 		return
 	}
 	summary := strings.TrimSpace(f.fields[1].text())
-	ctx, cancel := context.WithTimeout(context.Background(), opTimeout)
-	defer cancel()
-	plan, err := m.svc.PlanReview(ctx, r, v, summary)
-	if err != nil {
-		f.err = err.Error()
+	// Planning reads the diff (git, or gh for a PR): off the UI loop, the
+	// form busy until evPlanned lands.
+	f.busy, f.err = true, ""
+	svc := m.svc
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), opTimeout)
+		defer cancel()
+		plan, err := svc.PlanReview(ctx, r, v, summary)
+		m.send(revEvent{kind: evPlanned, id: r.ID, err: errString(err),
+			draft: &submitDraft{id: r.ID, verdict: v, summary: summary, plan: plan}})
+	}()
+}
+
+// onPlanned shows the confirmation for a planned review, if its dialog
+// is still the one open.
+func (m *Model) onPlanned(ev revEvent) {
+	f := &m.form
+	if f.kind != fSubmit || f.orig != ev.id || !f.busy {
+		return // closed (esc) while planning
+	}
+	f.busy = false
+	if ev.err != "" {
+		f.err = ev.err
 		return
 	}
-	if v == review.VerdictComment && plan.Body == "" && len(plan.Inline) == 0 && len(plan.Replies) == 0 {
+	d := ev.draft
+	if d.verdict == review.VerdictComment && d.plan.Body == "" && len(d.plan.Inline) == 0 && len(d.plan.Replies) == 0 {
 		f.err = "nothing to send — write a comment or a summary (or approve / request changes)"
 		return
 	}
-	f.err = ""
-	m.draft = &submitDraft{id: r.ID, verdict: v, summary: summary, plan: plan}
+	m.draft = d
 	f.kind = fSubmitConfirm
 }
 

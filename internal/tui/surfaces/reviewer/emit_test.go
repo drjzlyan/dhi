@@ -34,7 +34,7 @@ func TestReviewerReportsOpenCommentAndSubmit(t *testing.T) {
 	}
 
 	m.HandleKey("S")
-	m.HandleKey("enter")
+	planNow(t, m)
 	m.HandleKey("enter")
 	// open() queued a diff load and a remote sync ahead of the submit result.
 	for i := 0; i < 6 && !slices.Contains(got, tutorial.EvReviewSubmitted) && m.opErr == ""; i++ {
@@ -52,7 +52,7 @@ func TestAFailedSubmitReportsNothing(t *testing.T) {
 	m.SetEmitter(func(ev string) { got = append(got, ev) })
 	m.HandleKey("S")
 	m.form.fields[0].val = 1
-	m.HandleKey("enter")
+	planNow(t, m)
 	m.HandleKey("enter")
 	pumpSubmit(t, m)
 	if m.opErr == "" {

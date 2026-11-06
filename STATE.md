@@ -1,5 +1,31 @@
 # STATE — current position
 
+### Session 71 (review + F-182 naming templates with AI parts + F-183 CLI detection, branch `m38`; uncommitted)
+
+- User asked: review the existing branch/commit/PR conventions; let users define their own branch, commit (title + body) and PR (title + description) formats from symbols and AI-written parts, consistent on every CLI; then (mid-session) fix onboarding CLI detection (Copilot present but not detected on one machine).
+- Review bugs found and fixed (F-182 "Problem"): SampleVars-based validation let unrenderable branch patterns save; `commit.subject` never enforced; `pr.title` only on pr_open; Reviewer PR pushed `review/<id>` regardless of `branch.review`; board PR only for the first member; board commit/push failures silently dropped (`evPingFlash` ignored err); learned PR templates turned braces into parens.
+- F-182 (ADR-0052): `conventions/template.go` one language (`{symbol|filter}`, `{ai:hint}`, `{{ }}`), per-field rules, Render/Match/Shape/Prefill/Markers; `commit.body_format`; `described` built-in. Agents fill AI parts via `fill` on git_commit/pr_open/work_branch (refused before approval when missing); humans/pre-turn use `Runtime.WriteSlots` (read-only one-shot on the default agent, ledger kind `write`; refuses CLIs without read-only mode by name). `review.Service.OpenPR` renders title+body for every caller before pushing. Main: `cmd/dhi/naming.go` (`varsForBranch`, `nameTaskBranch`, `writeCommit`). Board commit/attach async; editor COMMIT_EDITMSG draft + async markers.
+- F-183: hosttools searches gh's copilot download dir + node manager bins; one tolerant version parser for all adapters (stderr, ANSI, prerelease, non-zero exit); `Registry.DetectAll` keeps found-but-failing binaries; wizard shows "found, but --version failed" with the reason. Live: all six CLIs detected on this machine (copilot 1.0.88 at ~/.local/bin).
+- Gates: `make verify` green, `make lint` 0 issues. Goldens regenerated deliberately: settings_conventions(_learn), new prompt_conventions (identical on all six CLIs).
+- Not run live: an agent filling a `described` PR via pr_open; WriteSlots against a real CLI; setup on the machine that missed Copilot.
+- Known hole (documented, ADR-0052 §5): an agent's own shell `git commit`/`gh pr create` skips the rules on every CLI; guidance forbids it, no commit-msg hook (ADR-0044).
+- Review scope: the conventions/git/PR surface was reviewed in depth; the rest of the 479-file m38 diff relied on session 70's audit plus green gates.
+- Follow-up fixes after review: ticket-format + slug fallback no longer refuses every commit (`noTicketKey`); `fill` advertised as a list of {key,text} (no open-map schema, Gemini-safe), object form still accepted; board commit prefill stops at the first AI part; `{member}` allowed in branch.task (attach fills it); body-format-only `fill`; work_branch asks for branch parts only when it creates the branch; Provision gets the turn ctx.
+- Pre-existing flake fixed: editor tests raced async local-history writes against temp-dir cleanup (failed on clean HEAD under -race); `localhistory.Store.SetSync` + `syncHistory` in editor TestMain. Production stays async.
+- Copilot: not reproduced (all six CLIs detected here); fixes cover likely causes. A 0.0.x copilot shows as a different major (red) vs tested 1.0.88.
+- README recordings re-made on this tree (all four). M38 had broken three tapes: record.sh now pre-trusts `acme` (trust card ate the editor's typing) and clears `acme/.dhi/tmp/swap` before each tape (editor's killed session opened views on "Unsaved changes found"); settings.tape steps past the new desktop-notifications row; onboarding.tape waits for the detected CLIs (`Wait+Screen /coding CLIs found/`), because enter waits for detection now (F-184). One full `make record` run hung in ffmpeg on the onboarding GIF once; reruns were clean.
+
+### Session 72 (F-184 slow work off the UI thread, branch `m38`; uncommitted, on top of session 71's work)
+
+- User asked: fix the team-step freeze and move anything that impacts the TUI off the UI thread.
+- Method: a temporary `DHI_SLOW_LOG` watchdog wrapping `App.Update`/`View` (deleted) over the four tapes, plus a scan of `context.Background()` sites in `internal/tui` and of `cmd/dhi`-injected hooks, plus timings on a clone of this repo (go-git status ~110 ms, stage one file ~130 ms, `Conflicts` ~100 ms, `git worktree add` ~400 ms).
+- Converted (F-184 table): wizard team/CLI detection; Settings identity row (was `git config` in View), identity suggestion, skill install; Reviewer `PlanReview`; board attach (all paths; propagations now seeded on the AI-branch path too); editor tree status, panel refresh, stage/unstage, commit, stash, undo-turn, `:task` via just, `:sym`, `:calls` prepare.
+- Separate bug fixed: Ideator `requestTurn` cancelled the turn's context on return, so every turn it dispatched died at once (`TestRejectRoutesToAuthor`).
+- Kept sync on purpose (bounded/ordered): graph, file log, hunk apply, git config writes, conflict `git add`, `Runtime.Handle`, `term.Start`, format-on-save, non-just `:task`.
+- Test helpers: editor `feed` settles background git work (`settleGitPanel`), `awaitTreeGit`, `awaitUndo`; reviewer `planNow`; workspace `awaitAttach`.
+- Gates: `make verify` green, `make lint` 0 issues; final watchdog run over the four tapes: no Update/View over 50 ms.
+- Not covered: CLI step's `r` doesn't invalidate the detection cache (only an install does) — pre-existing; large-repo timings extrapolated, not measured.
+
 ### Session 70 (M38 gap closure with subagents, branch `m38` off `g-a4-oversize-prompt`; not pushed)
 
 - Phases 1–6 of docs/gaps.md are done: 52 gaps this session (F-127…F-176), one commit per gap plus audit-fix commits. `make verify` and `make lint` green on m38; live gopls suite green (`DHI_LIVE_LSP=1 go test -run TestLiveGopls ./internal/tui/surfaces/editor`, gopls 0.24 via brew, user-approved); live evals 13/13 on claude 2.1.311 (F-172), re-run 13/13 on the final tree after the audit fixes; real-binary smoke in tmux (throwaway HOME): wizard workspace, open/edit/:w, clean quit (exit 0, no lock/shim left), session restore on relaunch.

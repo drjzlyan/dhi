@@ -80,7 +80,7 @@ func (r *Runtime) cliTurn(ctx context.Context, e *entry, trigger bus.Message, tl
 		}
 	}
 	if hasTask {
-		task = r.provisionWorktree(e.m.ID, trigger, task)
+		task = r.provisionWorktree(ctx, e.m.ID, trigger, task)
 	}
 	workdir := r.cliWorkdir(trigger)
 	if !hasTask { // F-120: a chat turn edits the repos in place — make it undoable
@@ -1044,6 +1044,7 @@ func (r *Runtime) toolDeps(e *entry, trigger bus.Message, tt turnTools, gate fun
 		PR:          r.cfg.PR,
 		Skills:      r.lib(),
 		Conventions: r.cfg.Conventions,
+		ConvVars:    r.cfg.ConventionVars,
 		Channel:     trigger.Channel,
 		Thread:      trigger.Thread,
 		Workdir:     r.cliWorkdir(trigger),
@@ -1201,7 +1202,12 @@ func (r *Runtime) cliPromptMode(ctx context.Context, e *entry, trigger bus.Messa
 	}
 	if r.cfg.Conventions != nil {
 		if cv := r.cfg.Conventions(); cv != nil {
-			sys = append(sys, section{name: "conventions", text: "\n\n" + cv.Guidance(), prio: 2, floor: 400})
+			// F-182: the shapes with this task's own values filled in.
+			var vars map[string]string
+			if t, ok := r.boundTask(trigger); ok && len(t.ChangeSets) > 0 && r.cfg.ConventionVars != nil {
+				vars = r.cfg.ConventionVars(t.ChangeSets[0].Branch)
+			}
+			sys = append(sys, section{name: "conventions", text: "\n\n" + cv.GuidanceFor(vars), prio: 2, floor: 400})
 		}
 	}
 	if wfText != "" {

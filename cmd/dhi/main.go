@@ -268,30 +268,49 @@ func runTUI() (relaunch bool) {
 	// seam lights up only when git is installed.
 	var messageBus *bus.Bus
 	var agentRT *agentkitRuntime.Runtime
+	// F-182: the AI parts of a branch, commit or PR nobody's agent is
+	// writing are written by the default agent, once the team is up.
+	writer := func(ctx context.Context, req conventions.GenRequest) (map[string]string, error) {
+		if agentRT == nil {
+			return nil, fmt.Errorf("no agents yet to write the AI parts ({ai:…}) — ctrl+a sets up a team, or write them yourself")
+		}
+		return agentRT.Writer()(ctx, req)
+	}
 	var taskStore *tasks.Store
 	var reviewSvc *review.Service
 	var sessionStore *ideation.Store
 	var unreadStore *unread.Store
 	var mcpStore *mcpserver.Store
+	// F-182: the commit buffer starts from the team's shape for the
+	// branch it commits on, and :w writes the {ai:…} parts left in it.
+	edOpts = append(edOpts, editor.WithCommitConventions(editor.CommitConventions{
+		Draft: func(dir string) string {
+			branch := ""
+			if r, err := gitcore.Open(dir); err == nil {
+				branch, _ = r.CurrentBranch()
+			}
+			c := convLive.Get()
+			return c.Commit.Draft(varsForBranch(taskStore, c, branch))
+		},
+		Write: func(ctx context.Context, dir, text string) (string, error) {
+			diff, _ := gitDiffFor(ctx, dir, true)
+			return writeCommit(ctx, writer, text, diff)
+		},
+	}))
 	if ws != nil {
 		messageBus = openBus(ws)
 		if ts, err := tasks.Open(ws); err == nil {
 			taskStore = ts
 			taskStore.SetIdentity(identityFn)
-			wireTaskSeam(ws, ts, convLive.Get, decision.Worktrees)
+			wireTaskSeam(ws, ts, convLive.Get, decision.Worktrees, writer)
 		}
 		reviewSvc = openReviewService(ws, func() conventions.Config { return convLive.Get() }, decision.Worktrees)
-		if reviewSvc != nil && taskStore != nil {
+		if reviewSvc != nil {
+			// F-182: one symbol source for every PR, task branch or not.
 			reviewSvc.SetPRVarsFunc(func(branch string) map[string]string {
-				for _, tk := range taskStore.List() {
-					for _, cs := range tk.ChangeSets {
-						if cs.Branch == branch {
-							return taskVars(taskStore, convLive.Get(), tk.Slug, cs.Member)
-						}
-					}
-				}
-				return nil
+				return varsForBranch(taskStore, convLive.Get(), branch)
 			})
+			reviewSvc.SetGenerator(writer)
 		}
 		mcpStore = mcpserver.OpenWith(ws.Root, ws.Members())
 		if ss, err := ideation.Open(ws); err == nil {
@@ -321,7 +340,7 @@ func runTUI() (relaunch bool) {
 				fmt.Fprintln(os.Stderr, "dhi: default fallback engine set for:", strings.Join(changed, ", "))
 			}
 			agentRT = newAgentRuntime(ws, messageBus, guardWorkspace(decision.Sandbox, ws), agentEnv, cfg.Engine, gitRunner, identityFn, sessionStore, runRunner, editorBridge, wsScopes, taskStore, reviewSvc, rgSearcher, mcpStore, convLive.Source(), cliLook, decision.Worktrees,
-				liveTuning(userCfg, wsCfg, cfg, identityFn))
+				liveTuning(userCfg, wsCfg, cfg, identityFn), writer)
 			if agentRT != nil {
 				// F-071: a held sub-card starts the moment its blockers are
 				// done, whoever moved them.
@@ -520,22 +539,56 @@ func runTUI() (relaunch bool) {
 			},
 			Working:      agentRT.Working,
 			AgentWorking: agentRT.AgentWorking,
+			// F-182: the card's own branch once it has one; before that the
+			// template with the task's symbols and any AI part as an
+			// {ai:…} marker, which attaching writes.
 			BranchFor: func(slug string) string {
-				c := convLive.Get()
-				b, err := conventions.ExpandBranch(c.Branch.Task, taskVars(taskStore, c, slug, ""))
-				if err != nil {
-					return ""
+				if taskStore != nil {
+					if tk, ok := taskStore.Get(slug); ok && len(tk.ChangeSets) > 0 {
+						return tk.ChangeSets[0].Branch
+					}
 				}
-				return b
+				c := convLive.Get()
+				return conventions.Prefill(c.Branch.Task, taskVars(taskStore, c, slug, ""))
 			},
 			CommitPrefix: func(slug string) string {
 				c := convLive.Get()
-				if c.Commit.Subject == "" || strings.Contains(c.Commit.Subject, "{type}") {
-					return "" // a commit type is the author's call
+				branch := ""
+				if taskStore != nil {
+					if tk, ok := taskStore.Get(slug); ok && len(tk.ChangeSets) > 0 {
+						branch = tk.ChangeSets[0].Branch
+					}
 				}
-				v := taskVars(taskStore, c, slug, "")
-				v["subject"] = ""
-				return conventions.Render(c.Commit.Subject, v)
+				// One line you type at the end of: the subject up to its first
+				// AI part ("PROJ-7: "), never a marker you would type after.
+				subject, _, _ := strings.Cut(c.Commit.Draft(varsForBranch(taskStore, c, branch)), "\n")
+				if i := strings.Index(subject, "{ai"); i >= 0 {
+					subject = subject[:i]
+				}
+				return subject
+			},
+			WriteCommit: func(ctx context.Context, slug, text string) (string, error) {
+				if len(conventions.Markers(text)) == 0 && convLive.Get().Commit.BodyFormat == "" {
+					return text, nil
+				}
+				c := convLive.Get()
+				var diff strings.Builder
+				if taskStore != nil {
+					if tk, ok := taskStore.Get(slug); ok {
+						for _, cs := range tk.ChangeSets {
+							if d, ok := gitDiffFor(ctx, filepath.Join(ws.Root, cs.Path), false); ok {
+								fmt.Fprintf(&diff, "%s:\n%s\n", cs.Member, d)
+							}
+						}
+						if len(tk.ChangeSets) > 0 && !strings.Contains(strings.TrimSpace(text), "\n") {
+							// The board takes one line; the body format follows it.
+							if f := c.Commit.BodyFormat; f != "" {
+								text += "\n\n" + conventions.Prefill(f, varsForBranch(taskStore, c, tk.ChangeSets[0].Branch))
+							}
+						}
+					}
+				}
+				return writeCommit(ctx, writer, text, diff.String())
 			},
 			OpenWorktree: func(label, dir string) bool {
 				if appRef == nil {
@@ -848,21 +901,38 @@ func newSetupEnv(cwd string, ws *workspace.Workspace, userCfg string,
 		return len(roster)
 	}
 	// Detection asks every CLI for its version (seconds, live): the CLI and
-	// team steps share one answer per run, refreshed after an install.
-	var detected map[string]string
-	detect := func() map[string]string {
+	// team steps share one answer per run, refreshed after an install. The
+	// steps call it from commands, so the lock is held across DetectAll: a
+	// second caller waits for the first answer instead of probing again.
+	var (
+		detectMu sync.Mutex
+		detected map[string]clirun.Probe
+	)
+	probe := func() map[string]clirun.Probe {
+		detectMu.Lock()
+		defer detectMu.Unlock()
 		if detected == nil {
-			detected = clirun.NewRegistry(cliLook).Detect()
+			detected = clirun.NewRegistry(cliLook).DetectAll()
 		}
 		return detected
 	}
-	env.DetectCLIs = detect
+	env.DetectCLIs = func() map[string]string {
+		out := map[string]string{}
+		for n, p := range probe() {
+			out[n] = p.Version
+		}
+		return out
+	}
 	env.CLIStatus = func() []wizard.CLIRow {
 		reg := clirun.NewRegistry(cliLook)
-		detected := detect()
+		detected := probe()
 		var rows []wizard.CLIRow
 		for _, c := range reg.All() {
-			row := wizard.CLIRow{Name: c.Name, Version: detected[c.Name], Tested: c.Tested}
+			p := detected[c.Name]
+			row := wizard.CLIRow{Name: c.Name, Version: p.Version, Tested: c.Tested, Path: p.Path}
+			if p.Err != nil {
+				row.ProbeErr = p.Err.Error()
+			}
 			row.Plan, _ = clirun.PlanFor(c.Name)
 			if row.Version != "" {
 				row.Verdict, row.Why = clirun.Assess(c.Tested, row.Version)
@@ -877,7 +947,9 @@ func newSetupEnv(cwd string, ws *workspace.Workspace, userCfg string,
 	env.CLIInstall = cliInstall
 	env.RunInstall = func(name string, done func(error) tea.Msg) tea.Cmd {
 		return runInstall(name, func(err error) tea.Msg {
+			detectMu.Lock()
 			detected = nil // the next look sees what was installed
+			detectMu.Unlock()
 			return done(err)
 		})
 	}
@@ -1028,13 +1100,19 @@ func openReviewService(ws *workspace.Workspace, conv func() conventions.Config, 
 	ghBin, _ := hostLook("gh")
 	gh := review.NewGHCLI(ghBin)
 	svc := review.NewService(ws, st, nil, gh)
+	prTitle := func() string { return conv().PR.Title }
+	reviewBranch := func(id string) (string, error) { return conventions.ExpandBranch(conv().Branch.Review, branchVars(id)) }
 	svc.SetPRBodyFunc(prBody)
+	svc.SetPRTitleFunc(prTitle)
+	svc.SetReviewBranchFunc(reviewBranch)
 	runner := userGit()
 	if runner == nil {
 		return svc // no git: diffs degrade visibly
 	}
 	svc = review.NewService(ws, st, runner, gh)
 	svc.SetPRBodyFunc(prBody)
+	svc.SetPRTitleFunc(prTitle)
+	svc.SetReviewBranchFunc(reviewBranch)
 	st.SetWorktreeSeam(
 		func(id, member, startpoint string) (string, error) {
 			mem, ok := ws.Member(member)
@@ -1072,7 +1150,7 @@ func openReviewService(ws *workspace.Workspace, conv func() conventions.Config, 
 
 // wireTaskSeam connects task ChangeSets to git worktrees when git is
 // installed; without it, attaching reports a visible error.
-func wireTaskSeam(ws *workspace.Workspace, ts *tasks.Store, conv func() conventions.Config, wt worktrees.Layout) {
+func wireTaskSeam(ws *workspace.Workspace, ts *tasks.Store, conv func() conventions.Config, wt worktrees.Layout, gen conventions.Generator) {
 	runner := userGit()
 	if runner == nil {
 		return // no git; doctor explains
@@ -1085,9 +1163,27 @@ func wireTaskSeam(ws *workspace.Workspace, ts *tasks.Store, conv func() conventi
 			}
 			c := conv()
 			vars := taskVars(ts, c, slug, member)
-			if branch == "" {
-				var err error
-				if branch, err = conventions.ExpandBranch(c.Branch.Task, vars); err != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			defer cancel()
+			var err error
+			// A prefilled name may still hold symbols only known now ({member}).
+			branch = conventions.RenderKnown(branch, vars)
+			switch {
+			case branch == "":
+				if branch, err = nameTaskBranch(ctx, c, ts, slug, member, nil, gen); err != nil {
+					return "", err
+				}
+			case len(conventions.Markers(branch)) > 0:
+				// F-182: a prefilled name whose {ai:…} parts the human kept.
+				if gen == nil {
+					return "", fmt.Errorf("branch %q has AI parts and no agent can write them: name it yourself", branch)
+				}
+				got, gerr := gen(ctx, conventions.GenRequest{What: "git branch name", Shape: conventions.Shape(branch, nil),
+					Slots: conventions.Markers(branch), Context: taskContext(ts, slug) + "\nWrite each part as a few lower-case words; DHI joins them with dashes."})
+				if gerr != nil {
+					return "", fmt.Errorf("naming the branch: %w", gerr)
+				}
+				if branch, err = conventions.FillBranchMarkers(branch, got); err != nil {
 					return "", err
 				}
 			}
@@ -1096,9 +1192,9 @@ func wireTaskSeam(ws *workspace.Workspace, ts *tasks.Store, conv func() conventi
 				return "", err
 			}
 			rel, dst := wt.TaskAt(sub)
-			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-			defer cancel()
-			if err := runner.WorktreeAdd(ctx, mem.Path, dst, branch, startpoint); err != nil {
+			wctx, wcancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			defer wcancel()
+			if err := runner.WorktreeAdd(wctx, mem.Path, dst, branch, startpoint); err != nil {
 				return "", err
 			}
 			return rel, nil
@@ -1523,7 +1619,7 @@ type liveCrew interface {
 	CancelChannel(channel string) int
 }
 
-func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cliEnv []string, defaultEngine string, gitRunner *gitcore.Runner, identityFn gitcore.IdentityFunc, sessionStore *ideation.Store, runRunner dhitools.CommandRunner, editor dhitools.EditorAPI, workspaceScopes scopes.Set, taskStore *tasks.Store, reviewSvc *review.Service, kbSearcher search.Searcher, mcpStore *mcpserver.Store, conv conventions.Source, cliLook func(string) (string, error), wt worktrees.Layout, tune func() agentkitRuntime.Tuning) *agentkitRuntime.Runtime {
+func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cliEnv []string, defaultEngine string, gitRunner *gitcore.Runner, identityFn gitcore.IdentityFunc, sessionStore *ideation.Store, runRunner dhitools.CommandRunner, editor dhitools.EditorAPI, workspaceScopes scopes.Set, taskStore *tasks.Store, reviewSvc *review.Service, kbSearcher search.Searcher, mcpStore *mcpserver.Store, conv conventions.Source, cliLook func(string) (string, error), wt worktrees.Layout, tune func() agentkitRuntime.Tuning, gen conventions.Generator) *agentkitRuntime.Runtime {
 	roster, err := manifest.LoadDir(filepath.Join(ws.Root, workspace.DirAgents))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "dhi: agent roster:", err)
@@ -1642,7 +1738,7 @@ func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cl
 		// branch before the agent starts, so the work lands where DHI can
 		// verify it and open the PR.
 		Toolchain: hostToolchain{},
-		Provision: func(slug, member string) error {
+		Provision: func(ctx context.Context, slug, member string, fill map[string]string) error {
 			if taskStore == nil {
 				return fmt.Errorf("task store unavailable")
 			}
@@ -1652,19 +1748,32 @@ func newAgentRuntime(ws *workspace.Workspace, b *bus.Bus, sb sandbox.Sandbox, cl
 					c = *cc
 				}
 			}
-			branch, err := conventions.ExpandBranch(c.Branch.Task, taskVars(taskStore, c, slug, member))
+			// F-182: the agent's fill (work_branch), else the default agent
+			// writes the branch name's AI parts before the turn starts.
+			branch, err := nameTaskBranch(ctx, c, taskStore, slug, member, fill, gen)
 			if err != nil {
 				return err
 			}
 			return taskStore.Attach(slug, member, branch, "")
 		},
+		ConventionVars: func(branch string) map[string]string {
+			c := conventions.Defaults()
+			if conv != nil {
+				if cc := conv(); cc != nil {
+					c = *cc
+				}
+			}
+			return varsForBranch(taskStore, c, branch)
+		},
 		// F-020 pr_open: the review service opens task PRs; gh missing
-		// refuses by name at dispatch.
-		PR: func(ctx context.Context, member, branch, title, base string) (string, error) {
+		// refuses by name at dispatch. The agent wrote the AI parts
+		// (fill); DHI never writes them behind its back.
+		PR: func(ctx context.Context, req dhitools.PRRequest) (string, error) {
 			if reviewSvc == nil {
 				return "", fmt.Errorf("review service unavailable")
 			}
-			meta, err := reviewSvc.CreatePRForBranch(ctx, member, branch, title, base)
+			meta, err := reviewSvc.OpenPR(ctx, review.PRRequest{Member: req.Member, Branch: req.Branch,
+				Title: req.Title, Base: req.Base, Fill: req.Fill})
 			if err != nil {
 				return "", err
 			}

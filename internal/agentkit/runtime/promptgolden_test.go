@@ -11,6 +11,7 @@ import (
 	"github.com/drjzlyan/dhi/internal/agentkit/clirun"
 	"github.com/drjzlyan/dhi/internal/agentkit/manifest"
 	"github.com/drjzlyan/dhi/internal/agentkit/standards"
+	"github.com/drjzlyan/dhi/internal/conventions"
 	"github.com/drjzlyan/dhi/internal/sandbox"
 	"github.com/drjzlyan/dhi/internal/testutil/golden"
 )
@@ -81,6 +82,43 @@ func TestPromptGoldens(t *testing.T) {
 			continue
 		}
 		golden.Snapshot(t, "prompt_fresh_"+c.Name, got)
+	}
+}
+
+// F-182: the team's branch, commit and PR shapes (symbols, filters, AI
+// parts) reach every CLI as the same conventions section, so each agent
+// writes the same names and messages whichever engine it runs on.
+func TestPromptConventionsSameOnEveryCLI(t *testing.T) {
+	h, trig := promptFixture(t)
+	cv := conventions.Defaults()
+	if err := cv.Activate("described"); err != nil {
+		t.Fatal(err)
+	}
+	cv.Branch.Task = "{user}/{ticket|lower}-{ai:short name|kebab}"
+	h.rt.cfg.Conventions = conventions.Static(cv)
+	section := func(cli *clirun.CLI) string {
+		e := h.rt.agents["scout"]
+		was := e.cli
+		e.cli = cli
+		defer func() { e.cli = was }()
+		_, system := h.rt.cliPromptAt(context.Background(), e, trig, "", 0, nil, false)
+		i := strings.Index(system, "Team conventions (enforced by DHI):")
+		if i < 0 {
+			t.Fatalf("%s: no conventions section:\n%s", cli.Name, system)
+		}
+		rest := system[i:]
+		if j := strings.Index(rest, "\n\n"); j > 0 {
+			rest = rest[:j]
+		}
+		return rest
+	}
+	base, _ := h.rt.cfg.CLIs.Get("claude")
+	want := section(base)
+	golden.Snapshot(t, "prompt_conventions", want)
+	for _, c := range h.rt.cfg.CLIs.All() {
+		if got := section(c); got != want {
+			t.Errorf("%s gets a different conventions section:\n%s", c.Name, got)
+		}
 	}
 }
 

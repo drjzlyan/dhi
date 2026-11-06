@@ -214,7 +214,58 @@ func installDirs() []string {
 	if home != "" {
 		dirs = append(dirs, filepath.Join(home, ".cargo", "bin"), filepath.Join(home, ".local", "bin"))
 	}
-	return dirs
+	return append(dirs, nodeDirs(home)...)
+}
+
+// nodeDirs are where Node version managers and package managers put the
+// agent CLIs (npm -g, volta, bun, pnpm), and where `gh copilot`
+// downloads the Copilot CLI, which is never put on PATH. They are found
+// even when the login shell's PATH could not be read.
+func nodeDirs(home string) []string {
+	var dirs []string
+	if p := hostenv.Get("NPM_CONFIG_PREFIX"); p != "" {
+		dirs = append(dirs, filepath.Join(p, "bin"))
+	}
+	if p := hostenv.Get("VOLTA_HOME"); p != "" {
+		dirs = append(dirs, filepath.Join(p, "bin"))
+	}
+	if p := hostenv.Get("PNPM_HOME"); p != "" {
+		dirs = append(dirs, p)
+	}
+	if p := hostenv.Get("BUN_INSTALL"); p != "" {
+		dirs = append(dirs, filepath.Join(p, "bin"))
+	}
+	for _, d := range ghDataDirs(home) {
+		// gh keeps the download as <data>/copilot or <data>/copilot/copilot.
+		dirs = append(dirs, d, filepath.Join(d, "copilot"))
+	}
+	if home != "" {
+		dirs = append(dirs,
+			filepath.Join(home, ".npm-global", "bin"), filepath.Join(home, ".volta", "bin"),
+			filepath.Join(home, ".bun", "bin"), filepath.Join(home, "Library", "pnpm"),
+			filepath.Join(home, ".local", "share", "pnpm"))
+	}
+	return append(dirs, "/opt/homebrew/bin", "/usr/local/bin")
+}
+
+// ghDataDirs is gh's data folder: GH_DATA_DIR, else XDG_DATA_HOME/gh,
+// else ~/.local/share/gh (the same on macOS), and on Windows
+// %LOCALAPPDATA%\GitHub CLI.
+func ghDataDirs(home string) []string {
+	if d := hostenv.Get("GH_DATA_DIR"); d != "" {
+		return []string{d}
+	}
+	var out []string
+	if x := hostenv.Get("XDG_DATA_HOME"); x != "" {
+		out = append(out, filepath.Join(x, "gh"))
+	}
+	if la := hostenv.Get("LOCALAPPDATA"); la != "" {
+		out = append(out, filepath.Join(la, "GitHub CLI"))
+	}
+	if home != "" {
+		out = append(out, filepath.Join(home, ".local", "share", "gh"))
+	}
+	return out
 }
 
 var (

@@ -176,6 +176,11 @@ func TestTakeCardAssignsProvisionsAndOpensEditor(t *testing.T) {
 	}
 	typeInto(t, m, 0, "beta")
 	m.HandleKey("enter")
+	// git worktree add checks out the tree: the key returns at once.
+	if !strings.Contains(m.form.flash, "creating the worktree") {
+		t.Fatalf("flash while attaching = %q", m.form.flash)
+	}
+	awaitAttach(t, m)
 	tk, _ := store.Get("csv")
 	if tk.Assignee != bus.Human || tk.Status != tasks.Active {
 		t.Fatalf("after take: assignee=%q status=%s", tk.Assignee, tk.Status)
@@ -228,5 +233,22 @@ func TestCommitFormStartsFromSubjectTemplate(t *testing.T) {
 	m.HandleKey("c")
 	if m.form.kind != fTaskCommit || m.form.values()[0] != "PROJ-7: " {
 		t.Fatalf("commit form = %v %q", m.form.kind, m.form.values())
+	}
+}
+
+// awaitAttach applies workspace events until the worktree attach, which
+// runs off the UI loop, reports back.
+func awaitAttach(t *testing.T, m *Model) {
+	t.Helper()
+	for {
+		select {
+		case ev := <-m.events:
+			m.Update(ev)
+			if ev.kind == evAttachDone {
+				return
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("the worktree attach never reported back")
+		}
 	}
 }

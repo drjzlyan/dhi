@@ -120,6 +120,10 @@ func TestSymbolPickerFilterAndJump(t *testing.T) {
 	feed(m, ":")
 	typeKeys(m, "sym")
 	feed(m, "enter")
+	if m.mode == modeSymbols || !strings.Contains(m.active().Message(), "asking the language server") {
+		t.Fatalf(":sym must not wait for the server: mode %v msg %q", m.mode, m.active().Message())
+	}
+	runQueued(m) // the server answers off the UI loop
 	if m.mode != modeSymbols {
 		t.Fatalf("mode = %v, msg=%q", m.mode, m.active().Message())
 	}

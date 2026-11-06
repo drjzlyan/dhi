@@ -79,7 +79,9 @@ type Model struct {
 	learned *conventions.Inference // pending learned conventions (F-082)
 	ident   *gitcore.Identity      // cached git identity (F-083); nil = not read yet
 	identOK bool
-	wantID  gitcore.Identity // the identity awaiting confirmation
+	// identLoading: the identity is being read off the UI thread.
+	identLoading bool
+	wantID       gitcore.Identity // the identity awaiting confirmation
 	// valueHint explains the value a CONFIG editor dialog wants (F-084).
 	valueHint string
 	// cfgKeys are the settings keys CONFIG rendered, in order (F-084:
@@ -112,6 +114,8 @@ type settingsEvent struct {
 	title string    // when lines is set: a display dialog title
 	lines []string  // when set: open a display dialog with these lines
 	ext   *extEvent // an install fetch finished (SKILLS / INTEGRATIONS)
+	ident *identEvent
+	skill *skillEvent
 }
 
 type sectionID uint8
@@ -363,8 +367,15 @@ func (m *Model) listen() tea.Cmd {
 
 func (m *Model) Update(msg tea.Msg) tea.Cmd {
 	if ev, ok := msg.(settingsEvent); ok {
-		if ev.ext != nil {
+		switch {
+		case ev.ext != nil:
 			m.onExtEvent(*ev.ext)
+			return m.listen()
+		case ev.ident != nil:
+			m.onIdentEvent(*ev.ident)
+			return m.listen()
+		case ev.skill != nil:
+			m.onSkillInstalled(*ev.skill)
 			return m.listen()
 		}
 		m.form.busy = false

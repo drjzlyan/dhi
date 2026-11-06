@@ -46,6 +46,10 @@ func TestSuggestedSkillReviewAndInstall(t *testing.T) {
 		t.Fatalf("review:\n%s", v)
 	}
 	feed(m, "esc", "y", "tab", "l", "enter") // this workspace; do not add to the (unknown) agent
+	if m.dform == nil || !m.dform.Busy {
+		t.Fatal("the install runs in the background with the form busy")
+	}
+	drainDialogEvent(t, m)
 	if _, err := os.Stat(filepath.Join(m.d.Ext.Workspace.SkillsDir, "tf", "SKILL.md")); err != nil {
 		t.Fatalf("not installed: %s", m.flash)
 	}

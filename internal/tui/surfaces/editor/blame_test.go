@@ -249,13 +249,41 @@ func TestBlameStaleResultDropped(t *testing.T) {
 
 func waitMsg(t *testing.T, m *Model) teaMsg {
 	t.Helper()
-	select {
-	case msg := <-m.termMsgs:
-		return msg
-	case <-time.After(10 * time.Second):
-		t.Fatal("no blame message")
+	for {
+		select {
+		case msg := <-m.termMsgs:
+			if msg.kind == treeGitMsgDone { // the tree's own background read
+				m.Update(msg)
+				continue
+			}
+			return msg
+		case <-time.After(10 * time.Second):
+			t.Fatal("no blame message")
+		}
+		return teaMsg{}
 	}
-	return teaMsg{}
+}
+
+// awaitTreeGit renders once (which starts the tree's git reads) and
+// applies messages until no read is in flight.
+func awaitTreeGit(t *testing.T, m *Model) {
+	t.Helper()
+	m.View()
+	for {
+		busy := false
+		for _, g := range m.treeGits {
+			busy = busy || g.loading
+		}
+		if !busy {
+			return
+		}
+		select {
+		case msg := <-m.termMsgs:
+			m.Update(msg)
+		case <-time.After(10 * time.Second):
+			t.Fatal("the tree's git status never arrived")
+		}
+	}
 }
 
 func TestBlameGolden(t *testing.T) {

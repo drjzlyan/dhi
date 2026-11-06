@@ -12,7 +12,6 @@ package ideator
 import (
 	"context"
 	"strings"
-	"time"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -23,9 +22,6 @@ import (
 	"github.com/drjzlyan/dhi/internal/tui/surfaces"
 	"github.com/drjzlyan/dhi/internal/workspace"
 )
-
-// opTimeout bounds every async service call.
-const opTimeout = 5 * time.Minute
 
 // roundTableMaxTurns caps automatic floor hand-offs so a pair of agents
 // addressing each other can never loop forever (F-033 Part A).

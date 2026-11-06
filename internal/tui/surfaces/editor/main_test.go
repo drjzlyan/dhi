@@ -13,5 +13,6 @@ func TestMain(m *testing.M) {
 	if editshim.IsShim(os.Args[0]) {
 		os.Exit(editshim.RunShim(os.Args[1:], os.Getenv, func(s string) { os.Stderr.WriteString(s + "\n") }))
 	}
+	syncHistory = true // no snapshot write outlives its test's temp dir
 	os.Exit(m.Run())
 }

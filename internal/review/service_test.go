@@ -14,6 +14,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 
+	"github.com/drjzlyan/dhi/internal/conventions"
 	"github.com/drjzlyan/dhi/internal/gitcore"
 	"github.com/drjzlyan/dhi/internal/workspace"
 )
@@ -605,5 +606,87 @@ func TestPRBodyTemplateIsReadWhenThePRIsOpened(t *testing.T) {
 	}
 	if fg.body != "edited Add feat" {
 		t.Fatalf("body = %q", fg.body)
+	}
+}
+
+// F-182: the PR title template applies to every PR the service opens
+// (the board and the reviewer, not only pr_open), with the branch's
+// symbols, and AI parts the agent wrote are put in place.
+func TestOpenPRAppliesTitleAndBodyTemplatesWithFill(t *testing.T) {
+	w, st, fg, memPath, head, _ := bareFixture(t)
+	svc := NewService(w, st, nil, fg)
+	svc.SetPRTitleFunc(func() string { return "[{ticket}] {title}" })
+	svc.SetPRBody("## Summary\n{ai:what changed}\n\nBy {assignee} on `{branch}`")
+	svc.SetPRVarsFunc(func(branch string) map[string]string {
+		return map[string]string{"ticket": "PROJ-4", "assignee": "forge", "slug": "feat-4"}
+	})
+	mr, _ := git.PlainOpen(memPath)
+	mr.Storer.SetReference(plumbing.NewHashReference(plumbing.ReferenceName("refs/heads/task/feat-4"), plumbing.NewHash(head)))
+	_, err := svc.OpenPR(context.Background(), PRRequest{Member: "api", Branch: "task/feat-4", Title: "Add search", Base: "master",
+		Fill: map[string]string{"What Changed": "adds search"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(fg.created[0], "|[PROJ-4] Add search|") {
+		t.Fatalf("title = %q", fg.created[0])
+	}
+	if fg.body != "## Summary\nadds search\n\nBy forge on `task/feat-4`" {
+		t.Fatalf("body = %q", fg.body)
+	}
+}
+
+// An agent's PR with AI parts it did not write is refused by name, and
+// nothing is pushed; a human's PR has them written by the generator.
+func TestOpenPRMissingAIPartsRefusedForAgentsWrittenForHumans(t *testing.T) {
+	w, st, fg, memPath, head, bare := bareFixture(t)
+	svc := NewService(w, st, nil, fg)
+	svc.SetPRBody("{ai:summary}")
+	mr, _ := git.PlainOpen(memPath)
+	mr.Storer.SetReference(plumbing.NewHashReference(plumbing.ReferenceName("refs/heads/task/feat-5"), plumbing.NewHash(head)))
+	_, err := svc.OpenPR(context.Background(), PRRequest{Member: "api", Branch: "task/feat-5", Title: "T", Base: "master"})
+	if _, ok := conventions.IsMissingAI(err); !ok {
+		t.Fatalf("err = %v, want a missing AI part", err)
+	}
+	origin, _ := git.PlainOpen(bare)
+	if _, rerr := origin.Reference(plumbing.ReferenceName("refs/heads/task/feat-5"), true); rerr == nil {
+		t.Fatal("the branch was pushed although the PR was refused")
+	}
+	// No generator: the human's PR is refused by name too.
+	if _, err := svc.CreatePRForBranch(context.Background(), "api", "task/feat-5", "T", "master"); err == nil ||
+		!strings.Contains(err.Error(), "no agent can write them") {
+		t.Fatalf("err = %v", err)
+	}
+	var asked conventions.GenRequest
+	svc.SetGenerator(func(_ context.Context, req conventions.GenRequest) (map[string]string, error) {
+		asked = req
+		return map[string]string{"summary": "written by the agent"}, nil
+	})
+	if _, err := svc.CreatePRForBranch(context.Background(), "api", "task/feat-5", "T", "master"); err != nil {
+		t.Fatal(err)
+	}
+	if fg.body != "written by the agent" || asked.What != "pull request" || len(asked.Slots) != 1 || !strings.Contains(asked.Context, "task/feat-5") {
+		t.Fatalf("body = %q, asked = %+v", fg.body, asked)
+	}
+}
+
+// A review whose worktree cannot be read opens its PR on the branch the
+// conventions name (branch.review may be anything), not review/<id>.
+func TestCreatePRUsesTheConventionReviewBranch(t *testing.T) {
+	w, st, fg, memPath, head, _ := bareFixture(t)
+	svc := NewService(w, st, nil, fg)
+	svc.SetReviewBranchFunc(func(id string) (string, error) { return "rv/dana/" + id, nil })
+	mr, _ := git.PlainOpen(memPath)
+	mr.Storer.SetReference(plumbing.NewHashReference(plumbing.ReferenceName("refs/heads/rv/dana/r1"), plumbing.NewHash(head)))
+	card := Review{ID: "r1", Title: "T", Target: Target{Kind: KindBranch, Member: "api", Base: "master", Head: head},
+		Status: Pending, Viewed: map[string]bool{}, Channel: "#r1", WorkRel: ".dhi/reviews/r1/api",
+		CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	if err := st.Create(card); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.CreatePR(context.Background(), "r1", "Review", "master"); err != nil {
+		t.Fatal(err)
+	}
+	if parts := strings.Split(fg.created[0], "|"); parts[3] != "rv/dana/r1" {
+		t.Fatalf("head = %q", fg.created[0])
 	}
 }

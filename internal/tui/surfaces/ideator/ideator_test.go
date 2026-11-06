@@ -17,10 +17,16 @@ import (
 )
 
 // fakeCrew records dispatched turns.
-type fakeCrew struct{ handled []bus.Message }
+type fakeCrew struct {
+	handled []bus.Message
+	ctxs    []context.Context // what each Handle was given
+}
 
-func (f *fakeCrew) Handle(_ context.Context, msg bus.Message) { f.handled = append(f.handled, msg) }
-func (f *fakeCrew) AgentIDs() []string                        { return []string{"scout", "mason"} }
+func (f *fakeCrew) Handle(ctx context.Context, msg bus.Message) {
+	f.handled = append(f.handled, msg)
+	f.ctxs = append(f.ctxs, ctx)
+}
+func (f *fakeCrew) AgentIDs() []string { return []string{"scout", "mason"} }
 
 // newSurface builds a fully-wired ideator over a temp workspace: member
 // "api" is an ordinary directory, the session store is real, the bus is
@@ -310,6 +316,11 @@ func TestRejectRoutesToAuthor(t *testing.T) {
 	}
 	if len(crew.handled) != 1 || crew.handled[0].ID != hist[0].ID {
 		t.Fatalf("crew dispatch = %+v", crew.handled)
+	}
+	// The runtime runs the turn in a goroutine after Handle returns: the
+	// context it got must outlive the dispatch, or the turn dies at once.
+	if err := crew.ctxs[0].Err(); err != nil {
+		t.Fatalf("the turn's context was already %v when dispatch returned", err)
 	}
 }
 

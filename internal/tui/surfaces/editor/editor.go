@@ -204,6 +204,21 @@ func WithUnread(us *unread.Store) Option {
 	}
 }
 
+// CommitConventions give the commit buffer the team's message shape
+// (F-182): Draft is the prefilled start for the repo at dir (its subject
+// and body format, AI parts as {ai:…} markers); Write fills markers left
+// in a message from the staged changes (it may take a minute, so it runs
+// off the UI). Either may be nil.
+type CommitConventions struct {
+	Draft func(dir string) string
+	Write func(ctx context.Context, dir, text string) (string, error)
+}
+
+// WithCommitConventions installs the commit buffer's conventions.
+func WithCommitConventions(c CommitConventions) Option {
+	return func(m *Model) { m.commitConv = c }
+}
+
 // WithIdentity installs the git identity resolver used by the git
 // panel's commit path (F-029). A nil resolver refuses by name.
 func WithIdentity(fn gitcore.IdentityFunc) Option {
@@ -212,6 +227,8 @@ func WithIdentity(fn gitcore.IdentityFunc) Option {
 
 // Model is the Editor surface.
 type Model struct {
+	commitConv    CommitConventions // F-182: the commit buffer's draft and AI writer
+	commitWriting bool              // a message's AI parts are being written
 	// start wires the start page (F-097); startZones are its click spans
 	// from the last render, startOX/OY where the page sat on screen.
 	start            StartDeps
@@ -227,10 +244,12 @@ type Model struct {
 	rows      []treeRow
 	list      kit.List
 	// treeGits caches each member's branch + changed paths for the
-	// file tree (F-064); nil means reload on the next render.
-	treeGits map[string]*treeGit
-	width    int
-	height   int
+	// file tree (F-064), read off the UI goroutine; treeGitGen drops a
+	// read that an invalidation overtook.
+	treeGits   map[string]*treeGit
+	treeGitGen int
+	width      int
+	height     int
 
 	mode      mode
 	query     []rune
@@ -337,6 +356,12 @@ type Model struct {
 	commitRepo    *gitcore.Repo        // the repo a COMMIT_EDITMSG buffer commits to
 	gitIdentity   gitcore.IdentityFunc // F-029 commit identity; nil refuses
 	gitEntries    []gitcore.FileStatus
+	gitLoading    bool // a panel read is in flight (refreshGitData)
+	committing    bool // a commit is running off the UI goroutine (startCommit)
+	gitWriting    bool // a stage or unstage is running off the UI goroutine (gitWrite)
+	undoLoading   bool // undo-turn is diffing the snapshots (openUndoTurn)
+	tasksLoading  bool // :task is running `just --list` (taskCommand)
+	gitDataGen    int  // drops a panel read that a newer one overtook
 	gitLog        []gitcore.CommitEntry
 	gitErr        string
 	gitInput      []rune
@@ -837,6 +862,13 @@ type teaMsg struct {
 	lang      string // toolMsgInstalled: the tool
 	installOK bool   // toolMsgInstalled: the tool is now found
 	blame     *blameResult
+	treeGit   *treeGitResult
+	gitData   *gitDataResult
+	commit    *commitResult
+	undoReady *undoReady
+	undoDone  *undoDone
+	tasks     *tasksFound
+	stashRes  *stashResult
 	sem       *semMsg // semMsgTick / semMsgDone (F-173)
 	testRep   *testrun.Report
 	dbgStart  *dbgStarted
@@ -876,11 +908,20 @@ const (
 	semMsgDone   // semantic tokens: the server answered (F-173)
 	dbgMsgStarted
 	dbgMsgUpdate
-	editMsgOpen    // a program asks for a file to be edited (F-165)
-	lspMsgGhostDue // the ghost-text debounce elapsed: send the request (F-181)
-	lspMsgGhost    // inline completion answered (F-181)
-	sugMsgTick     // :suggest spinner frame (F-181)
-	sugMsgDone     // :suggest answered (F-181)
+	editMsgOpen      // a program asks for a file to be edited (F-165)
+	lspMsgGhostDue   // the ghost-text debounce elapsed: send the request (F-181)
+	lspMsgGhost      // inline completion answered (F-181)
+	sugMsgTick       // :suggest spinner frame (F-181)
+	sugMsgDone       // :suggest answered (F-181)
+	commitMsgWritten // the AI parts of a commit message were written (F-182): note = message, hoverText = error
+	treeGitMsgDone   // a member's tree git status was read (treeGit)
+	gitDataMsgDone   // the git panel's status, log and conflicts were read (gitData)
+	commitMsgDone    // a commit finished (commit)
+	undoMsgReady     // undo-turn: the turn's diff is ready (undoReady)
+	undoMsgDone      // undo-turn: the restore finished (undoDone)
+	taskMsgFound     // :task: the task listing is ready (tasks)
+	stashMsgDone     // a stash command finished (stashRes)
+	gitOpMsgDone     // a panel stage/unstage finished: hoverText = error
 )
 
 func (m *Model) Resize(w, h int) {
@@ -934,6 +975,12 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 	case callsMsg:
 		m.onCalls(msg)
 		return m.TakeCmd()
+	case callsPrepMsg:
+		m.onCallsPrep(msg) // the root's load stays queued for the shell to drain
+		return nil
+	case symsMsg:
+		m.onSyms(msg)
+		return nil
 	case grepDoneMsg:
 		m.onGrepDone(msg)
 		return m.TakeCmd()
@@ -961,12 +1008,30 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 			m.applyLSPUpdate(msg)
 		case lspMsgGhostDue, lspMsgGhost, sugMsgTick, sugMsgDone:
 			m.applyGhostMsg(msg)
+		case commitMsgWritten:
+			m.onCommitWritten(msg)
 		case toolMsgInstalled:
 			m.applyToolInstalled(msg)
 		case testMsgDone:
 			m.applyTestDone(msg.testRep)
 		case blameMsgDone:
 			m.applyBlame(msg.blame)
+		case treeGitMsgDone:
+			m.applyTreeGit(msg.treeGit)
+		case gitDataMsgDone:
+			m.applyGitData(msg.gitData)
+		case commitMsgDone:
+			m.applyCommit(msg.commit)
+		case undoMsgReady:
+			m.applyUndoReady(msg.undoReady)
+		case undoMsgDone:
+			m.applyUndoDone(msg.undoDone)
+		case taskMsgFound:
+			m.applyTasksFound(msg.tasks)
+		case stashMsgDone:
+			m.applyStash(msg.stashRes)
+		case gitOpMsgDone:
+			m.applyGitWrite(msg)
 		case semMsgTick:
 			m.onSemanticTick(msg.sem)
 		case semMsgDone:

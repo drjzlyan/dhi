@@ -33,9 +33,18 @@ type Service struct {
 	// the built-in line.
 	prBody   string
 	prBodyFn func() string // live source; wins over prBody when set
-	// prVars adds a branch's task placeholders ({slug}, {ticket},
-	// {assignee} — F-075) to the PR body; nil = none.
+	// prTitleFn is the live PR title template (conventions.pr.title);
+	// nil or "" = the author's title as given.
+	prTitleFn func() string
+	// prVars gives a branch's symbols ({slug}, {ticket}, {assignee},
+	// {user}, {date} — F-075, F-182); nil = none.
 	prVars func(branch string) map[string]string
+	// generate writes AI slots for PRs a human opens (F-182); nil = such
+	// a PR is refused by name.
+	generate conventions.Generator
+	// reviewBranch names a review's branch by the conventions (nil =
+	// review/<id>, the default); the worktree's checkout wins over it.
+	reviewBranch func(id string) (string, error)
 }
 
 // NewService wires the orchestration layer. runner and gh may be nil;
@@ -63,6 +72,15 @@ func (s *Service) SetDiffForTest(fn func(ctx context.Context, dir string, args .
 // SetPRBodyFunc installs a source for the PR body template, read each time a
 // PR is opened, so an edit to the conventions applies without a restart.
 func (s *Service) SetPRBodyFunc(fn func() string) { s.prBodyFn = fn }
+
+// SetPRTitleFunc installs the live PR title template source.
+func (s *Service) SetPRTitleFunc(fn func() string) { s.prTitleFn = fn }
+
+// SetReviewBranchFunc installs how a review's branch is named.
+func (s *Service) SetReviewBranchFunc(fn func(id string) (string, error)) { s.reviewBranch = fn }
+
+// SetGenerator installs what writes AI slots when a human opens a PR.
+func (s *Service) SetGenerator(g conventions.Generator) { s.generate = g }
 
 // SetPRVarsFunc installs the source of a branch's task placeholders.
 func (s *Service) SetPRVarsFunc(fn func(branch string) map[string]string) { s.prVars = fn }
@@ -209,10 +227,29 @@ func (s *Service) pushBranch(ctx context.Context, memberPath, branch string) err
 	return nil
 }
 
+// PRRequest is one PR to open. Title is the author's title, placed as
+// {title} in the pr.title template. Fill holds AI-written slot text an
+// agent already wrote; Generate lets DHI write missing slots (a human
+// opened it), otherwise a missing slot is refused by name so the agent
+// writes it.
+type PRRequest struct {
+	Member, Branch, Title, Base string
+	Vars                        map[string]string // extra symbols (a review's id)
+	Fill                        map[string]string
+	Generate                    bool
+}
+
 // CreatePRForBranch pushes an existing branch of a member repo and opens
-// a PR against base. Used by both the Reviewer (review/<id> branches)
-// and task cards (task/<slug> branches).
+// a PR against base, DHI writing any AI slots. Used by the board and the
+// Reviewer; agents go through OpenPR with their own fill.
 func (s *Service) CreatePRForBranch(ctx context.Context, memberName, branch, title, base string) (PRMeta, error) {
+	return s.OpenPR(ctx, PRRequest{Member: memberName, Branch: branch, Title: title, Base: base, Generate: true})
+}
+
+// OpenPR renders the title and body from the conventions, then pushes
+// the branch and opens the PR. Nothing is pushed when rendering fails.
+func (s *Service) OpenPR(ctx context.Context, req PRRequest) (PRMeta, error) {
+	memberName, branch, base := req.Member, req.Branch, req.Base
 	if !s.HasGH() {
 		return PRMeta{}, fmt.Errorf("review: gh unavailable — install the GitHub CLI to create PRs")
 	}
@@ -235,31 +272,125 @@ func (s *Service) CreatePRForBranch(ctx context.Context, memberName, branch, tit
 	if repoURL == "" {
 		return PRMeta{}, fmt.Errorf("review: member %q has no origin remote", memberName)
 	}
+	title, body, err := s.RenderPR(ctx, req, mem.Path)
+	if err != nil {
+		return PRMeta{}, err
+	}
 	if err := s.pushBranch(ctx, mem.Path, branch); err != nil {
 		return PRMeta{}, err
 	}
-	// F-029: no DHI footer crosses to the outside; the branch line is
-	// context for the user's own PR.
-	tpl := s.prBody
-	if s.prBodyFn != nil {
-		tpl = s.prBodyFn()
-	}
-	if tpl == "" {
-		tpl = "Created from DHI worktree `{branch}`."
-	}
-	vars := map[string]string{}
-	if s.prVars != nil {
-		for k, v := range s.prVars(branch) {
-			vars[k] = v
-		}
-	}
-	vars["branch"], vars["member"], vars["title"] = branch, memberName, title
-	body := conventions.Render(tpl, vars)
 	meta, err := s.gh.CreatePR(ctx, repoURL, title, body, base, branch)
 	if err != nil {
 		return PRMeta{}, err
 	}
 	return meta, nil
+}
+
+// RenderPR is the PR title and body the conventions give for req: every
+// symbol filled, AI slots from req.Fill, then (Generate) from the
+// generator. memberPath feeds the generator the branch's commits.
+func (s *Service) RenderPR(ctx context.Context, req PRRequest, memberPath string) (title, body string, err error) {
+	// F-029: no DHI footer crosses to the outside; the branch line is
+	// context for the user's own PR.
+	bodyTpl := s.prBody
+	if s.prBodyFn != nil {
+		bodyTpl = s.prBodyFn()
+	}
+	if bodyTpl == "" {
+		bodyTpl = "Created from DHI worktree `{branch}`."
+	}
+	titleTpl := "{title}"
+	if s.prTitleFn != nil {
+		if t := strings.TrimSpace(s.prTitleFn()); t != "" {
+			titleTpl = t
+		}
+	}
+	vars := map[string]string{}
+	if s.prVars != nil {
+		for k, v := range s.prVars(req.Branch) {
+			vars[k] = v
+		}
+	}
+	for k, v := range req.Vars {
+		vars[k] = v
+	}
+	vars["branch"], vars["member"], vars["title"] = req.Branch, req.Member, strings.TrimSpace(req.Title)
+	fill := conventions.NormalizeFill(req.Fill)
+	if fill == nil {
+		fill = map[string]string{}
+	}
+	var missing []conventions.Slot
+	for _, tpl := range []string{titleTpl, bodyTpl} {
+		for _, sl := range conventions.Slots(tpl) {
+			if strings.TrimSpace(fill[sl.Key]) == "" {
+				missing = append(missing, sl)
+			}
+		}
+	}
+	if len(missing) > 0 && req.Generate {
+		if s.generate == nil {
+			return "", "", fmt.Errorf("review: the PR template has AI-written parts, but no agent can write them here")
+		}
+		got, gerr := s.generate(ctx, conventions.GenRequest{
+			What:    "pull request",
+			Shape:   "Title: " + conventions.Shape(titleTpl, vars) + "\n\n" + conventions.Shape(bodyTpl, vars),
+			Slots:   dedupe(missing),
+			Context: s.prContext(ctx, memberPath, req),
+		})
+		if gerr != nil {
+			return "", "", fmt.Errorf("review: writing the PR text: %w", gerr)
+		}
+		for k, v := range conventions.NormalizeFill(got) {
+			fill[k] = v
+		}
+	}
+	if title, err = conventions.Render(titleTpl, vars, fill); err != nil {
+		return "", "", fmt.Errorf("review: pr.title: %w", err)
+	}
+	if body, err = conventions.Render(bodyTpl, vars, fill); err != nil {
+		return "", "", fmt.Errorf("review: pr.body: %w", err)
+	}
+	title = strings.Join(strings.Fields(title), " ")
+	if title == "" {
+		return "", "", fmt.Errorf("review: the PR title is empty")
+	}
+	return title, body, nil
+}
+
+func dedupe(slots []conventions.Slot) []conventions.Slot {
+	var out []conventions.Slot
+	seen := map[string]bool{}
+	for _, sl := range slots {
+		if !seen[sl.Key] {
+			seen[sl.Key] = true
+			out = append(out, sl)
+		}
+	}
+	return out
+}
+
+// prContext is what the generator reads to write PR text: the title,
+// and the branch's commits and changed files against base (bounded).
+func (s *Service) prContext(ctx context.Context, memberPath string, req PRRequest) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "Title: %s\nBranch: %s (into %s)\n", req.Title, req.Branch, req.Base)
+	if s.diffFn != nil && memberPath != "" {
+		rng := req.Base + ".." + req.Branch
+		if log, err := s.diffFn(ctx, memberPath, "log", "--no-merges", "--format=- %s%n%b", rng); err == nil && strings.TrimSpace(log) != "" {
+			b.WriteString("\nCommits:\n" + clip(log, 6000))
+		}
+		if stat, err := s.diffFn(ctx, memberPath, "diff", "--stat", rng); err == nil && strings.TrimSpace(stat) != "" {
+			b.WriteString("\nChanged files:\n" + clip(stat, 3000))
+		}
+	}
+	return b.String()
+}
+
+func clip(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "\n…"
 }
 
 // worktreeFor finds a checked-out worktree dir for branch within this
@@ -295,7 +426,7 @@ func (s *Service) worktreeFor(memberName, branch string) string {
 }
 
 // CreatePR turns a started review into a full PR-backed review: pushes
-// its review/<id> branch, opens the PR and links it back onto the card
+// its review branch, opens the PR and links it back onto the card
 // so diffs, invites, posting and comment-sync light up.
 func (s *Service) CreatePR(ctx context.Context, id, title, base string) (Review, error) {
 	r, ok := s.store.Get(id)
@@ -308,7 +439,24 @@ func (s *Service) CreatePR(ctx context.Context, id, title, base string) (Review,
 	if r.Target.PRNumber > 0 {
 		return Review{}, fmt.Errorf("review: %s already backs PR #%d", id, r.Target.PRNumber)
 	}
-	meta, err := s.CreatePRForBranch(ctx, r.Target.Member, "review/"+id, title, base)
+	// The worktree's own branch (branch.review may name it anything),
+	// else the name the conventions give it.
+	branch := ""
+	if wt, oerr := gitcore.Open(filepath.Join(s.ws.Root, filepath.FromSlash(r.WorkRel))); oerr == nil {
+		branch, _ = wt.CurrentBranch()
+	}
+	if branch == "" {
+		branch = "review/" + id
+		if s.reviewBranch != nil {
+			b, berr := s.reviewBranch(id)
+			if berr != nil {
+				return Review{}, fmt.Errorf("review: %s: %w", id, berr)
+			}
+			branch = b
+		}
+	}
+	meta, err := s.OpenPR(ctx, PRRequest{Member: r.Target.Member, Branch: branch, Title: title, Base: base,
+		Vars: map[string]string{"id": id, "slug": id, "ticket": id}, Generate: true})
 	if err != nil {
 		return Review{}, err
 	}

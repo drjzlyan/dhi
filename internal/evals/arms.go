@@ -259,9 +259,11 @@ func RunDHI(c Config, t Task, root string) Result {
 		Spend:     budget.Open(ws.Root),
 		// The app's goal-loop seams (F-067): DHI provisions the task
 		// worktree and verifies the work itself.
-		Run:       execRunner{env: c.Env},
-		Tuning:    func() agentruntime.Tuning { return evalTuning(t) },
-		Provision: func(slug, member string) error { return st.Attach(slug, member, "task/"+slug, "") },
+		Run:    execRunner{env: c.Env},
+		Tuning: func() agentruntime.Tuning { return evalTuning(t) },
+		Provision: func(_ context.Context, slug, member string, _ map[string]string) error {
+			return st.Attach(slug, member, "task/"+slug, "")
+		},
 	}, []*manifest.Agent{m})
 	if err != nil {
 		return fail("runtime", err)

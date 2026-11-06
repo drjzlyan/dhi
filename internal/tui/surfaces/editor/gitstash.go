@@ -21,32 +21,76 @@ type stashView struct {
 	input   kit.Input // the message
 	confirm bool      // d pressed: y drops, anything else cancels
 	err     string
+	busy    string // git is running off the UI goroutine: what it is doing
 }
 
-func (m *Model) stashCtx() (context.Context, context.CancelFunc) {
-	return context.WithTimeout(context.Background(), 20*time.Second)
+// stashResult is a finished stash command and the fresh list.
+type stashResult struct {
+	done    string // the panel message on success ("" = a list reload only)
+	err     error
+	list    []gitcore.Stash
+	listErr error
+	tree    bool // the work tree changed: refresh what it touches
+	close   bool // close the dialog on success
+}
+
+// runStash runs op (nil: just list) and lists the stashes, off the UI
+// goroutine: stash push, apply and pop rewrite the work tree, seconds on a
+// big repo. Keys wait until stashMsgDone lands.
+func (m *Model) runStash(busy string, op func(ctx context.Context, r *gitcore.Runner, dir string) error, res stashResult) {
+	m.stash.busy = busy
+	r, dir, ch := m.gitCLI, m.gitRepo.Path(), m.termMsgs
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		if op != nil {
+			res.err = op(ctx, r, dir)
+		}
+		res.list, res.listErr = gitcore.Stashes(ctx, r, dir)
+		ch <- teaMsg{kind: stashMsgDone, stashRes: &res}
+	}()
 }
 
 func (m *Model) openStash() {
 	if m.gitRepo == nil || m.gitCLI == nil {
 		return
 	}
-	s := &stashView{input: kit.NewInput("", "message (optional)")}
-	m.stash = s
-	m.reloadStash()
+	m.stash = &stashView{input: kit.NewInput("", "message (optional)")}
+	m.runStash("reading the stash list…", nil, stashResult{})
 }
 
-func (m *Model) reloadStash() {
+// applyStash shows a finished stash command.
+func (m *Model) applyStash(r *stashResult) {
 	s := m.stash
-	ctx, cancel := m.stashCtx()
-	defer cancel()
-	list, err := gitcore.Stashes(ctx, m.gitCLI, m.gitRepo.Path())
-	if err != nil {
-		s.err = err.Error()
+	if r == nil || s == nil {
 		return
 	}
-	s.list = list
-	s.sel = min(s.sel, max(len(list)-1, 0))
+	s.busy = ""
+	if r.listErr == nil {
+		s.list = r.list
+		s.sel = min(s.sel, max(len(r.list)-1, 0))
+	} else {
+		s.err = r.listErr.Error()
+	}
+	if r.err != nil {
+		s.err = r.err.Error()
+		if r.tree { // conflicts keep the stash (pop) and the tree shows them
+			m.stashDone("")
+		}
+		return
+	}
+	if r.done == "" {
+		return
+	}
+	s.err = ""
+	if r.tree {
+		m.stashDone(r.done)
+	} else {
+		m.gitMessage = r.done
+	}
+	if r.close {
+		m.stash = nil
+	}
 }
 
 // stashDone refreshes everything a changed work tree touches.
@@ -62,23 +106,21 @@ func (m *Model) stashDone(msg string) {
 
 func (m *Model) stashKey(key string) bool {
 	s := m.stash
+	if s.busy != "" {
+		return true // git is running: wait for it
+	}
 	if s.naming {
 		switch key {
 		case "esc":
 			s.naming = false
 		case "enter":
-			ctx, cancel := m.stashCtx()
-			defer cancel()
-			if err := gitcore.StashPush(ctx, m.gitCLI, m.gitRepo.Path(), s.input.Value); err != nil {
-				s.err = err.Error()
-				s.naming = false
-				return true
-			}
-			s.naming, s.err = false, ""
+			msg := s.input.Value
+			s.naming = false
 			s.input = kit.NewInput("", "message (optional)")
-			m.stashDone("stashed changes")
 			s.sel = 0
-			m.reloadStash()
+			m.runStash("stashing…", func(ctx context.Context, r *gitcore.Runner, dir string) error {
+				return gitcore.StashPush(ctx, r, dir, msg)
+			}, stashResult{done: "stashed changes", tree: true})
 		default:
 			s.input.HandleKey(key)
 		}
@@ -88,15 +130,9 @@ func (m *Model) stashKey(key string) bool {
 		s.confirm = false
 		if key == "y" && len(s.list) > 0 {
 			ref := s.list[s.sel].Ref
-			ctx, cancel := m.stashCtx()
-			defer cancel()
-			if err := gitcore.StashDrop(ctx, m.gitCLI, m.gitRepo.Path(), ref); err != nil {
-				s.err = err.Error()
-			} else {
-				s.err = ""
-				m.gitMessage = "dropped " + ref
-				m.reloadStash()
-			}
+			m.runStash("dropping "+ref+"…", func(ctx context.Context, r *gitcore.Runner, dir string) error {
+				return gitcore.StashDrop(ctx, r, dir, ref)
+			}, stashResult{done: "dropped " + ref})
 		}
 		return true
 	}
@@ -119,26 +155,14 @@ func (m *Model) stashKey(key string) bool {
 		}
 		ref := s.list[s.sel].Ref
 		pop := key == "p"
-		ctx, cancel := m.stashCtx()
-		defer cancel()
-		var err error
-		if pop {
-			err = gitcore.StashPop(ctx, m.gitCLI, m.gitRepo.Path(), ref)
-		} else {
-			err = gitcore.StashApply(ctx, m.gitCLI, m.gitRepo.Path(), ref)
-		}
-		if err != nil { // conflicts keep the stash (pop) and the tree shows them
-			s.err = err.Error()
-			m.stashDone("")
-			m.reloadStash()
-			return true
-		}
-		verb := "applied "
-		if pop {
-			verb = "popped "
-		}
-		m.stash = nil
-		m.stashDone(verb + ref)
+		verb := map[bool]string{true: "popped ", false: "applied "}[pop]
+		m.runStash(map[bool]string{true: "popping ", false: "applying "}[pop]+ref+"…",
+			func(ctx context.Context, r *gitcore.Runner, dir string) error {
+				if pop {
+					return gitcore.StashPop(ctx, r, dir, ref)
+				}
+				return gitcore.StashApply(ctx, r, dir, ref)
+			}, stashResult{done: verb + ref, tree: true, close: true})
 	}
 	return true
 }
@@ -147,6 +171,8 @@ func (m *Model) stashViewOverlay(base string) string {
 	s := m.stash
 	var lines []string
 	switch {
+	case s.busy != "":
+		lines = append(lines, theme.TextMuted().Render(s.busy))
 	case s.naming:
 		lines = append(lines, theme.TextMuted().Render("stash tracked changes"))
 		lines = append(lines, s.input.View(56)...)

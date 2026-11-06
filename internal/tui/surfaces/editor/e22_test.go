@@ -108,6 +108,7 @@ func runCmd(m *Model, cmd string) {
 func TestCallsIncomingTreeExpandsAndJumps(t *testing.T) {
 	m, _, helper := openMainGoF173(t, nil)
 	runCmd(m, "calls")
+	runQueued(m) // the prepare step
 	if m.mode != modeCalls || m.calls == nil {
 		t.Fatalf("calls picker did not open (mode %v): %s", m.mode, m.active().CommandLine())
 	}
@@ -139,6 +140,7 @@ func TestCallsIncomingTreeExpandsAndJumps(t *testing.T) {
 func TestCallsOutgoing(t *testing.T) {
 	m, srv, _ := openMainGoF173(t, nil)
 	runCmd(m, "calls out")
+	runQueued(m) // the prepare step
 	if v := plainView(m); !strings.Contains(v, "outgoing calls of Helper") || !strings.Contains(v, "leaf") {
 		t.Fatalf("outgoing tree expected:\n%s", v)
 	}
@@ -160,6 +162,7 @@ func TestCallsNeedServerSupport(t *testing.T) {
 	feed(m, "enter", "down", "enter", "down", "down", "enter")
 	waitFor(t, m, func() bool { return strings.Contains(plainView(m), "✗1") }, "diagnostic chip")
 	runCmd(m, "calls")
+	runQueued(m) // the prepare step
 	if m.mode == modeCalls || !strings.Contains(m.active().CommandLine(), "does not offer call hierarchy") {
 		t.Fatalf("expected a named refusal, got mode %v %q", m.mode, m.active().CommandLine())
 	}

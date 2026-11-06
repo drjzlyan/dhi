@@ -216,14 +216,14 @@ func verifyBrief(cmd, tail string, iter, max int) string {
 // turnTools is the per-turn context the served IDE tools need beyond the
 // agent itself (F-067).
 type turnTools struct {
-	envelope, task string                                                                            // autonomy envelope (worktree) and bound card
-	plan           func([]dhitools.PlanStep) error                                                   // plan_update seam; nil = none
-	memberRoots    map[string]string                                                                 // member → task worktree for the file tools
-	lesson         func(text, scope string, tags []string) (string, error)                           // lesson_record seam; nil = none
-	workBranch     func(ctx context.Context, slug, title, member string, carry bool) (string, error) // work_branch seam (F-086); nil = none
-	access         func(ctx context.Context, kind, target, reason string) (string, error)            // permission_request seam (F-087); nil = none
-	readOnly       bool                                                                              // F-144: DHI's tools keep read scope only
-	hooks          *hooks.Runner                                                                     // F-179: plugin hooks around served tool calls; nil = none
+	envelope, task string                                                                                                    // autonomy envelope (worktree) and bound card
+	plan           func([]dhitools.PlanStep) error                                                                           // plan_update seam; nil = none
+	memberRoots    map[string]string                                                                                         // member → task worktree for the file tools
+	lesson         func(text, scope string, tags []string) (string, error)                                                   // lesson_record seam; nil = none
+	workBranch     func(ctx context.Context, slug, title, member string, carry bool, fill map[string]string) (string, error) // work_branch seam (F-086); nil = none
+	access         func(ctx context.Context, kind, target, reason string) (string, error)                                    // permission_request seam (F-087); nil = none
+	readOnly       bool                                                                                                      // F-144: DHI's tools keep read scope only
+	hooks          *hooks.Runner                                                                                             // F-179: plugin hooks around served tool calls; nil = none
 }
 
 // turnScopes is the capability set a turn's served tools run under: the
@@ -278,7 +278,7 @@ func (r *Runtime) humanNote(trigger bus.Message, author, text string) {
 // and later open a PR from it — an agent left to make its own lands it
 // somewhere DHI never learns about. Only an unambiguous case is
 // provisioned (one member); otherwise, and on failure, a named notice.
-func (r *Runtime) provisionWorktree(agentID string, trigger bus.Message, task tasks.Task) tasks.Task {
+func (r *Runtime) provisionWorktree(ctx context.Context, agentID string, trigger bus.Message, task tasks.Task) tasks.Task {
 	if len(task.ChangeSets) > 0 || r.cfg.Provision == nil || autopilotCard(task.Slug) || r.isTracking(task) {
 		return task
 	}
@@ -289,7 +289,9 @@ func (r *Runtime) provisionWorktree(agentID string, trigger bus.Message, task ta
 			task.Slug, len(members)))
 		return task
 	}
-	if err := r.cfg.Provision(task.Slug, members[0].Name); err != nil {
+	// A branch template with AI parts is written by the default agent
+	// (F-182): no fill here, the turn has not started yet.
+	if err := r.cfg.Provision(ctx, task.Slug, members[0].Name, nil); err != nil {
 		r.notice(trigger, agentID, "could not create the task worktree ("+err.Error()+"); working in the shared checkout")
 		return task
 	}

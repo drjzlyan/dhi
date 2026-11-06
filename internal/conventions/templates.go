@@ -24,6 +24,7 @@ type Template struct {
 		TicketPattern string `toml:"ticket_pattern,omitempty"`
 		Subject       string `toml:"subject,omitempty"`
 		Body          string `toml:"body,omitempty"`
+		BodyFormat    string `toml:"body_format,omitempty"`
 	} `toml:"commit"`
 	PR PR `toml:"pr"`
 }
@@ -62,7 +63,20 @@ func Builtins() []Builtin {
 			"## {ticket}: {title}\n\n### Changes\n\n### Testing\n\nBranch `{branch}`"),
 		mk("personal", "<user>/<slug> branches, free-form commits", "{user}/{slug}", DefaultWorktree,
 			FormatFree, "", "{title}", "Created from DHI worktree `{branch}`."),
+		described(),
 	}
+}
+
+// described shows the AI slots (F-182): the agent (or, for a human,
+// the default agent) writes the parts in {ai:…}; DHI writes the rest.
+func described() Builtin {
+	t := Template{Description: "AI-written commit bodies and PR descriptions around your fixed parts",
+		Branch: Branch{Task: "task/{slug}", Review: "review/{id}"}, Worktree: Worktree{Task: DefaultWorktree},
+		PR: PR{Title: "{title}", Body: "## Summary\n\n{ai:what changed and why}\n\n## Testing\n\n{ai:how it was tested}\n\nTask `{slug}` · branch `{branch}`"}}
+	t.Commit.Format, t.Commit.TicketPattern = FormatConventional, `[A-Z][A-Z0-9]+-\d+`
+	t.Commit.Subject = "{type}: {subject}"
+	t.Commit.BodyFormat = "{ai:why the change is needed, in one or two sentences}\n\nRefs: {ticket}"
+	return Builtin{Name: "described", Template: t}
 }
 
 // Lookup finds a template by name: a user template first, then a
@@ -109,6 +123,7 @@ func (c *Config) Apply(t Template) {
 	set(&c.Commit.TicketPattern, t.Commit.TicketPattern)
 	c.Commit.Subject = t.Commit.Subject // "" is a real choice: free subjects
 	c.Commit.Body = t.Commit.Body       // and "" a body that just explains why
+	c.Commit.BodyFormat = t.Commit.BodyFormat
 	set(&c.PR.Title, t.PR.Title)
 	set(&c.PR.Body, t.PR.Body)
 }
@@ -128,7 +143,7 @@ func (c *Config) Activate(name string) error {
 func (c Config) Snapshot() Template {
 	t := Template{Branch: c.Branch, Worktree: c.Worktree, PR: c.PR}
 	t.Commit.Format, t.Commit.TicketPattern, t.Commit.Subject = c.Commit.Format, c.Commit.TicketPattern, c.Commit.Subject
-	t.Commit.Body = c.Commit.Body
+	t.Commit.Body, t.Commit.BodyFormat = c.Commit.Body, c.Commit.BodyFormat
 	return t
 }
 
@@ -155,18 +170,14 @@ func ExpandWorktree(pattern string, vars map[string]string) (string, error) {
 	if !strings.Contains(pattern, "{member}") {
 		return "", fmt.Errorf("conventions: worktree pattern %q must contain {member}", pattern)
 	}
-	var bad string
-	out := placeholderRe.ReplaceAllStringFunc(pattern, func(m string) string {
-		k := m[1 : len(m)-1]
-		v, ok := vars[k]
-		if !ok {
-			bad = k
-			return m
-		}
+	if err := ValidateField(FieldWorktree, pattern); err != nil {
+		return "", fmt.Errorf("conventions: worktree pattern %q: %w", pattern, err)
+	}
+	out, err := render(pattern, vars, nil, func(v string) string {
 		return segmentBadRe.ReplaceAllString(strings.Trim(segmentBadRe.ReplaceAllString(v, "-"), "-"), "-")
 	})
-	if bad != "" {
-		return "", fmt.Errorf("conventions: worktree pattern %q: unknown placeholder {%s}", pattern, bad)
+	if err != nil {
+		return "", fmt.Errorf("conventions: worktree pattern %q: %w", pattern, err)
 	}
 	clean := path.Clean(out)
 	switch {
@@ -184,22 +195,30 @@ func ValidateWorktreePattern(pattern string) error {
 	return err
 }
 
-// SampleVars are the representative values previews and validation use.
+// SampleVars are the representative values previews and validation
+// use: one for every symbol.
 func SampleVars() map[string]string {
 	return map[string]string{
-		"slug": "login-timeout", "id": "42", "user": "dana", "date": "20261013",
-		"member": "api", "ticket": "PROJ-123", "title": "Fix login timeout", "type": "fix",
-		"subject": "retry the token refresh", "branch": "task/login-timeout", "assignee": "forge",
+		"slug": "login-timeout", "id": "login-timeout", "user": "dana", "date": "20261013",
+		"member": "api", "ticket": "PROJ-123", "title": "Fix login timeout",
+		"branch": "task/login-timeout", "assignee": "forge",
 	}
 }
 
 // Preview renders every rule of c for the sample task — what Settings
-// shows while a template is chosen or edited.
+// shows while a template is chosen or edited. AI-written parts show as
+// <hint>.
 func (c Config) Preview() []string {
 	v := SampleVars()
-	branch, err := ExpandBranch(c.Branch.Task, v)
+	branch, err := ExpandBranchFill(c.Branch.Task, v, sampleFill(c.Branch.Task))
 	if err != nil {
 		branch = "✗ " + err.Error()
+	} else if HasAI(c.Branch.Task) {
+		branch = Shape(c.Branch.Task, v)
+	}
+	review, err := ExpandBranch(c.Branch.Review, map[string]string{"id": "42", "slug": "42", "ticket": "42", "user": "dana", "date": "20261013"})
+	if err != nil {
+		review = "✗ " + err.Error()
 	}
 	v["branch"] = branch
 	wt, err := ExpandWorktree(c.Worktree.Task, v)
@@ -209,17 +228,24 @@ func (c Config) Preview() []string {
 	subject := "retry the token refresh"
 	switch {
 	case c.Commit.Subject != "":
-		subject = Render(c.Commit.Subject, v)
+		subject = Shape(c.Commit.Subject, v)
 	case c.Commit.Format == FormatConventional:
 		subject = "fix: retry the token refresh"
 	case c.Commit.Format == FormatTicket:
 		subject = "PROJ-123: retry the token refresh"
 	}
-	return []string{
+	out := []string{
 		"branch    " + branch,
+		"review    " + review,
 		"worktree  .dhi/tasks/" + wt,
 		"commit    " + subject,
-		"PR title  " + Render(c.PR.Title, v),
-		"PR body   " + strings.ReplaceAll(Render(c.PR.Body, v), "\n", " ⏎ "),
 	}
+	if f := strings.TrimSpace(c.Commit.BodyFormat); f != "" {
+		out = append(out, "body      "+oneLine(Shape(f, v)))
+	}
+	return append(out,
+		"PR title  "+Shape(c.PR.Title, v),
+		"PR body   "+oneLine(Shape(c.PR.Body, v)))
 }
+
+func oneLine(s string) string { return strings.ReplaceAll(s, "\n", " ⏎ ") }

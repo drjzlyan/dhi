@@ -15,27 +15,6 @@ import (
 // (UU, AA, ...), and once the last conflict marker of such a file is gone
 // and the buffer is saved, a y/n prompt offers `git add` on it.
 
-// loadConflicts refreshes the unmerged-path set from the user's git.
-func (m *Model) loadConflicts() {
-	m.gitConflicts = nil
-	if m.gitRepo == nil || m.gitCLI == nil {
-		return
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	list, err := gitcore.Conflicts(ctx, m.gitCLI, m.gitRepo.Path())
-	if err != nil {
-		m.gitErr = err.Error()
-		return
-	}
-	if len(list) > 0 {
-		m.gitConflicts = make(map[string]string, len(list))
-		for _, c := range list {
-			m.gitConflicts[c.Path] = c.Code
-		}
-	}
-}
-
 // relInRepo is path relative to the git root, "" when outside it.
 func (m *Model) relInRepo(root, abs string) string {
 	rel, err := filepath.Rel(root, abs)

@@ -219,9 +219,9 @@ func TestTrackingCardNotProvisioned(t *testing.T) {
 	}
 	_ = st.SetPlan("part", "epic", nil, false)
 	called := false
-	h.rt.cfg.Provision = func(string, string) error { called = true; return nil }
+	h.rt.cfg.Provision = func(context.Context, string, string, map[string]string) error { called = true; return nil }
 	epic, _ := st.Get("epic")
-	h.rt.provisionWorktree("scout", bus.Message{Channel: "#core"}, epic)
+	h.rt.provisionWorktree(context.Background(), "scout", bus.Message{Channel: "#core"}, epic)
 	if called {
 		t.Fatal("a tracking card must not get a worktree")
 	}

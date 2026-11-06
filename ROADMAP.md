@@ -1165,3 +1165,5 @@ Tracker: `docs/gaps.md` (one checkbox per gap; that file is the source of truth)
 - [x] P5 Editor depth (G-E9…E22)
 - [x] P6 Reliability, git, terminal, tasks (G-R*, G-T1, G-G*, G-M*, G-S1)
 - [x] P7 ADR-gated and research — G-X1 F-177, G-X3 F-178, G-C3 F-179, G-C5 F-180, G-X2 F-181 done; G-C6 and G-C10 dropped (ADR-0049/0050 rejected) (G-C3, G-C5, G-C6, G-C10, G-X*)
+- [x] Session 71: conventions review fixes + F-182 your own branch/commit/PR formats with `{ai:…}` parts (ADR-0052), F-183 onboarding CLI detection (gh copilot dir, tolerant version probe)
+- [x] Session 72: F-184 slow work off the UI thread (setup CLI detection, Settings identity/skill install, Reviewer plan, board attach, editor git/stash/undo-turn/:task/:sym/:calls); Ideator turn-context fix

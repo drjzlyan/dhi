@@ -20,6 +20,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -381,34 +382,55 @@ func (r *Registry) Names() []string {
 	return out
 }
 
-// Detect probes every registered CLI on PATH: name → detected version
-// ("" = not detected). A probe that fails or times out counts as not
-// detected — the doctor row names it, nothing is guessed (ADR-0011).
+// Probe is what detection found for one CLI: where its binary is and
+// the version it reports. Path set with Version "" means the binary is
+// there but its --version failed or printed no version (Err says which);
+// that is a CLI to fix, not a missing one.
+type Probe struct {
+	Path, Version string
+	Err           error
+}
+
+// versionProbeTimeout bounds one --version call. Node CLIs on a cold
+// cache (npm, nvm, volta shims) can take several seconds to start.
+const versionProbeTimeout = 20 * time.Second
+
+// Detect reports each registered CLI's version ("" when it is not
+// usable); DetectAll says why.
 func (r *Registry) Detect() map[string]string {
+	all := r.DetectAll()
+	out := make(map[string]string, len(all))
+	for n, p := range all {
+		out[n] = p.Version
+	}
+	return out
+}
+
+// DetectAll finds every registered CLI and asks it for its version.
+func (r *Registry) DetectAll() map[string]Probe {
 	// Each CLI answers --version on its own; asking them all at once makes
 	// detection as slow as the slowest one, not their sum (~2.5s live).
 	all := r.All()
-	vers := make([]string, len(all))
+	probes := make([]Probe, len(all))
 	var wg sync.WaitGroup
 	for i, c := range all {
 		path, err := r.look(c.Bin)
 		if err != nil {
 			continue
 		}
+		probes[i].Path = path
 		wg.Add(1)
 		go func(i int, c *CLI, path string) {
 			defer wg.Done()
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), versionProbeTimeout)
 			defer cancel()
-			if v, err := c.Version(ctx, path); err == nil {
-				vers[i] = v
-			}
+			probes[i].Version, probes[i].Err = c.Version(ctx, path)
 		}(i, c, path)
 	}
 	wg.Wait()
-	out := make(map[string]string, len(all))
+	out := make(map[string]Probe, len(all))
 	for i, c := range all {
-		out[c.Name] = vers[i]
+		out[c.Name] = probes[i]
 	}
 	return out
 }
@@ -499,30 +521,50 @@ func parseJSONLine(line string) (map[string]any, error) {
 	return m, nil
 }
 
-// probeVersion runs `path --version` (context-bounded) and returns the
-// combined output; adapters extract the version token.
+// probeVersion runs `path --version` (context-bounded) and returns its
+// stdout and stderr together, colour codes removed: some CLIs print the
+// banner on stderr, or exit non-zero after printing it (an update
+// notice). The output is kept whenever it holds a version.
 func probeVersion(ctx context.Context, path string) (string, error) {
 	cmd := exec.CommandContext(ctx, path, "--version")
-	out, err := cmd.Output()
+	out, err := cmd.CombinedOutput()
+	text := strings.TrimSpace(ansiRe.ReplaceAllString(string(out), ""))
 	if err != nil {
 		if ctx.Err() != nil {
-			return "", fmt.Errorf("clirun: version probe timed out")
+			return "", fmt.Errorf("clirun: %s --version timed out", filepath.Base(path))
 		}
-		return "", fmt.Errorf("clirun: version probe: %w", err)
+		if firstVersionToken(text) == "" {
+			return "", fmt.Errorf("clirun: %s --version: %w (%s)", filepath.Base(path), err, truncate(text, 80))
+		}
 	}
-	return strings.TrimSpace(string(out)), nil
+	return text, nil
 }
+
+var ansiRe = regexp.MustCompile(`\x1b\[[0-9;?]*[ -/]*[@-~]`)
 
 // firstVersionToken scans a `--version` banner for the first
 // version-shaped token ("2.1.177 (Claude Code)", "codex-cli 0.147.0",
-// "v1.2.3"): leading "v" and trailing commas tolerated.
+// "v1.2.3", "GitHub Copilot CLI 1.0.88.", "1.0.90-1"): a leading "v",
+// surrounding punctuation and a prerelease or build suffix are dropped,
+// so every adapter reads banners the same way.
 func firstVersionToken(out string) string {
 	for _, f := range strings.Fields(out) {
-		f = strings.TrimPrefix(f, "v")
-		f = strings.TrimSuffix(f, ",")
-		if isVersionLike(f) {
-			return f
+		if v := versionCore(f); v != "" {
+			return v
 		}
+	}
+	return ""
+}
+
+// versionCore is f's X.Y[.Z] core, or "" when f is not a version.
+func versionCore(f string) string {
+	f = strings.Trim(f, ".,;:()[]'\"")
+	f = strings.TrimPrefix(strings.TrimPrefix(f, "v"), "V")
+	if i := strings.IndexAny(f, "-+"); i > 0 {
+		f = f[:i]
+	}
+	if isVersionLike(f) {
+		return f
 	}
 	return ""
 }

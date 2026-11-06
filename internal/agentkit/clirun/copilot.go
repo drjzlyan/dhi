@@ -246,13 +246,8 @@ func copilotVersion(ctx context.Context, path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	// "GitHub Copilot CLI 1.0.88." — drop the trailing period.
-	for _, f := range strings.Fields(out) {
-		f = strings.TrimPrefix(f, "v")
-		f = strings.Trim(f, ".,")
-		if isVersionLike(f) {
-			return f, nil
-		}
+	if v := firstVersionToken(out); v != "" {
+		return v, nil
 	}
 	return "", fmt.Errorf("clirun/copilot: no version in %q", truncate(out, 60))
 }

@@ -30,7 +30,15 @@ func TestStashFromThePanel(t *testing.T) {
 	for _, r := range "wip one" {
 		feed(m, string(r))
 	}
-	feed(m, "enter")
+	m.HandleKey("enter") // git rewrites the work tree: off the UI goroutine
+	if m.stash.busy == "" || !strings.Contains(plainView(m), "stashing…") {
+		t.Fatalf("stash push should run in the background:\n%s", plainView(m))
+	}
+	m.HandleKey("esc") // keys wait while git runs
+	if m.stash == nil {
+		t.Fatal("esc closed the dialog mid-stash")
+	}
+	settleGitPanel(m)
 	if got, _ := os.ReadFile(file); string(got) != string(orig) {
 		t.Fatal("the work tree should be clean after stashing")
 	}

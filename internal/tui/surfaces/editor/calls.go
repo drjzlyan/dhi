@@ -77,17 +77,41 @@ func (m *Model) callsCommand(cmd string) (string, bool) {
 		return "calls: no identifier under cursor", true
 	}
 	path, line, col := e.Path(), cur.Line, u16(e, cur.Line, start)
-	items, err := withTimeout(func() ([]lsp.CallItem, error) { return c.PrepareCallHierarchy(path, line, col) })
-	if err != nil {
-		return "calls failed: " + err.Error(), true
+	// Off the UI loop (the server may still be indexing); callsPrepMsg
+	// opens the picker.
+	m.queue(func() tea.Msg {
+		items, err := withTimeout(func() ([]lsp.CallItem, error) { return c.PrepareCallHierarchy(path, line, col) })
+		return callsPrepMsg{path: path, word: word, out: out, c: c, items: items, err: err}
+	})
+	return "calls: asking the language server…", true
+}
+
+// callsPrepMsg is the server's answer to :calls' prepare step.
+type callsPrepMsg struct {
+	path, word string
+	out        bool
+	c          *lsp.Client
+	items      []lsp.CallItem
+	err        error
+}
+
+// onCallsPrep opens the picker if the file is still the one in front.
+func (m *Model) onCallsPrep(msg callsPrepMsg) {
+	e := m.active()
+	if e == nil || e.Path() != msg.path {
+		return
 	}
-	if len(items) == 0 {
-		return "calls: " + word + " is not a function or method", true
+	switch {
+	case msg.err != nil:
+		e.SetMessage("calls failed: " + msg.err.Error())
+	case len(msg.items) == 0:
+		e.SetMessage("calls: " + msg.word + " is not a function or method")
+	default:
+		e.SetMessage("")
+		p := &callPicker{out: msg.out, c: msg.c, root: &callNode{item: msg.items[0], open: true}}
+		m.calls, m.mode = p, modeCalls
+		m.queue(p.load(p.root))
 	}
-	p := &callPicker{out: out, c: c, root: &callNode{item: items[0], open: true}}
-	m.calls, m.mode = p, modeCalls
-	m.queue(p.load(p.root))
-	return "", true
 }
 
 // load asks the server for node's calls.

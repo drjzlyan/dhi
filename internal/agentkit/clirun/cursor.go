@@ -315,17 +315,8 @@ func cursorVersion(ctx context.Context, path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	// cursor reports "2026.09.26-dd393fe" (date + build hash): keep the
-	// numeric date token, drop the hash.
-	for _, f := range strings.Fields(out) {
-		f = strings.TrimPrefix(f, "v")
-		f = strings.TrimSuffix(f, ",")
-		if i := strings.IndexByte(f, '-'); i > 0 {
-			f = f[:i]
-		}
-		if isVersionLike(f) {
-			return f, nil
-		}
+	if v := firstVersionToken(out); v != "" {
+		return v, nil
 	}
 	return "", fmt.Errorf("clirun/cursor-agent: no version in %q", truncate(out, 60))
 }

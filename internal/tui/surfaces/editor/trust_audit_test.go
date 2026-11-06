@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/drjzlyan/dhi/internal/trust"
 )
@@ -81,5 +82,43 @@ func TestShutdownClosesRebaseServer(t *testing.T) {
 	m.Shutdown()
 	if m.rebase != nil {
 		t.Fatal("shim still running after Shutdown")
+	}
+}
+
+// `just --list` evaluates the justfile (backticks can take seconds): in a
+// trusted folder :task returns at once and opens the picker when the
+// listing lands; a second :task meanwhile waits.
+func TestTaskListThroughJustRunsOffTheUIGoroutine(t *testing.T) {
+	gate := filepath.Join(t.TempDir(), "go")
+	bin := filepath.Join(t.TempDir(), "just")
+	script := "#!/bin/sh\nwhile [ ! -e " + gate + " ]; do sleep 0.02; done\necho 'Available recipes:'\necho '    from-just'\n"
+	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	m, alpha := taskEditor(t, fakeJust{bin: bin})
+	if err := os.WriteFile(filepath.Join(alpha, "justfile"), []byte("hello:\n\techo hi\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m.trust = trust.New(filepath.Join(t.TempDir(), "trust.json"))
+	if err := m.trust.Trust(alpha); err != nil {
+		t.Fatal(err)
+	}
+	if msg, _ := m.taskCommand("task"); msg != "task: looking for tasks…" || m.taskPick != nil {
+		t.Fatalf("while just runs: %q picker=%v", msg, m.taskPick != nil)
+	}
+	if msg, _ := m.taskCommand("task"); !strings.Contains(msg, "still looking") {
+		t.Fatalf("second :task: %q", msg)
+	}
+	_ = os.WriteFile(gate, nil, 0o644)
+	for m.tasksLoading {
+		select {
+		case msg := <-m.termMsgs:
+			m.Update(msg)
+		case <-time.After(10 * time.Second):
+			t.Fatal("the listing never landed")
+		}
+	}
+	if m.taskPick == nil || m.mode != modeTasks {
+		t.Fatal("the picker should open when the listing lands")
 	}
 }

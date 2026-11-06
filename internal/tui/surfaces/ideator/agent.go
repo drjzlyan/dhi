@@ -46,9 +46,10 @@ func (m *Model) requestTurn(msg bus.Message) {
 	if m.crew == nil {
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), opTimeout)
-	defer cancel()
-	m.crew.Handle(ctx, msg)
+	// Handle starts each turn in a goroutine and returns: a context
+	// cancelled on return would kill the turn before it ran. The runtime
+	// bounds and cancels turns itself (Esc on the channel).
+	m.crew.Handle(context.Background(), msg)
 }
 
 // mirrorBus folds inbound session-channel traffic into the store: agent

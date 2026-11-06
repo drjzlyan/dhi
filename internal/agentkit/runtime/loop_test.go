@@ -177,7 +177,9 @@ func TestChatTurnNeverVerifies(t *testing.T) {
 // is told so.
 func TestProvisionWorktree(t *testing.T) {
 	h, _, st, trig := bareLoopHarness(t, "")
-	h.rt.cfg.Provision = func(slug, member string) error { return st.Attach(slug, member, "task/"+slug, "") }
+	h.rt.cfg.Provision = func(_ context.Context, slug, member string, _ map[string]string) error {
+		return st.Attach(slug, member, "task/"+slug, "")
+	}
 	h.rt.cfg.Workflows = true
 	if err := h.rt.Turn(context.Background(), "scout", trig); err != nil {
 		t.Fatal(err)
@@ -226,7 +228,7 @@ func TestProvisionAmbiguousIsNamed(t *testing.T) {
 		t.Fatal(err)
 	}
 	called := false
-	h.rt.cfg.Provision = func(string, string) error { called = true; return nil }
+	h.rt.cfg.Provision = func(context.Context, string, string, map[string]string) error { called = true; return nil }
 	_ = h.rt.Turn(context.Background(), "scout", trig)
 	_ = st
 	if called || hasPrefix(h.bus.History("#general", 0), "task fix-bug has no worktree and the workspace has 2 members") == nil {

@@ -259,9 +259,9 @@ func TestPROpenTool(t *testing.T) {
 	type prCall struct{ member, branch, title, base string }
 	var calls []prCall
 	h := Deps{Agent: m, Tasks: f.tasks, Approvals: f.approvals, Channel: "#general",
-		PR: func(_ context.Context, member, branch, title, base string) (string, error) {
-			calls = append(calls, prCall{member, branch, title, base})
-			return "PR #7 " + member, nil
+		PR: func(_ context.Context, r PRRequest) (string, error) {
+			calls = append(calls, prCall{r.Member, r.Branch, r.Title, r.Base})
+			return "PR #7 " + r.Member, nil
 		}}.Handler()
 
 	f.tasks.Create("feat", "Feature", "", "")
@@ -293,7 +293,7 @@ func TestPROpenRefusals(t *testing.T) {
 
 	// Workflow `pr` gate blocks before the seam is reached.
 	h2 := Deps{Agent: m, Tasks: f.tasks, Channel: "#general", Scopes: auto,
-		PR:   func(context.Context, string, string, string, string) (string, error) { return "x", nil },
+		PR:   func(context.Context, PRRequest) (string, error) { return "x", nil },
 		Gate: func(seam string) []string { return []string{"tests not passing"} }}.Handler()
 	if out, isErr := call(h2, t, "pr_open", `{"slug":"feat","title":"T"}`); !isErr ||
 		!strings.Contains(out, "workflow blocks PR") {
@@ -303,7 +303,7 @@ func TestPROpenRefusals(t *testing.T) {
 	// No changeset → named refusal.
 	f.tasks.Create("bare", "Bare", "", "")
 	h3 := Deps{Agent: m, Tasks: f.tasks, Channel: "#general", Scopes: auto,
-		PR: func(context.Context, string, string, string, string) (string, error) { return "x", nil }}.Handler()
+		PR: func(context.Context, PRRequest) (string, error) { return "x", nil }}.Handler()
 	if out, isErr := call(h3, t, "pr_open", `{"slug":"bare","title":"T"}`); !isErr ||
 		!strings.Contains(out, "no worktree") {
 		t.Fatalf("no changeset = %q isErr=%v", out, isErr)
@@ -433,23 +433,35 @@ func TestTaskCommentTool(t *testing.T) {
 	}
 }
 
-// conventions.pr.title is applied to the title an agent chooses (F-042).
-func TestPROpenAppliesTheTitleTemplate(t *testing.T) {
+// F-182: pr_open hands the review service the agent's title and fill;
+// the service applies pr.title and pr.body for every caller alike. A PR
+// template with AI parts the agent left out is refused before any
+// approval, naming each key.
+func TestPROpenPassesFillAndRefusesMissingAIParts(t *testing.T) {
 	f, m := newFixture(t, "pr_open")
-	var title string
+	var got PRRequest
 	conv := conventions.Defaults()
 	conv.PR.Title = "[{slug}] {title}"
+	conv.PR.Body = "## Summary\n{ai:what changed}\n\n## Testing\n{ai:how it was tested}"
 	h := Deps{Agent: m, Tasks: f.tasks, Approvals: f.approvals, Channel: "#general", Conventions: conventions.Static(conv),
-		PR: func(_ context.Context, _, _, tt, _ string) (string, error) { title = tt; return "PR #1", nil }}.Handler()
+		PR: func(_ context.Context, r PRRequest) (string, error) { got = r; return "PR #1", nil }}.Handler()
 	f.tasks.Create("feat-9", "Feature", "", "")
 	if err := f.tasks.RecordChangeSet("feat-9", tasks.ChangeSet{Member: "api", Branch: "task/feat-9", Path: "wt"}); err != nil {
 		t.Fatal(err)
 	}
-	if out, isErr := callAsync(h, "pr_open", `{"slug":"feat-9","title":"Add search","base":"main"}`, f)(t); isErr {
+	out, isErr := call(h, t, "pr_open", `{"slug":"feat-9","title":"Add search","fill":{"what changed":"x"}}`)
+	if !isErr || !strings.Contains(out, `"how it was tested"`) || strings.Contains(out, `"what changed": what`) {
+		t.Fatalf("missing part = %q isErr=%v", out, isErr)
+	}
+	if n := len(f.approvals.List()); n != 0 {
+		t.Fatalf("an approval was queued for a refused call: %d", n)
+	}
+	args := `{"slug":"feat-9","title":"Add search","base":"main","fill":{"What changed":"adds search","how it was tested":"go test"}}`
+	if out, isErr := callAsync(h, "pr_open", args, f)(t); isErr {
 		t.Fatalf("pr_open: %s", out)
 	}
-	if title != "[feat-9] Add search" {
-		t.Fatalf("title = %q", title)
+	if got.Title != "Add search" || got.Fill["What changed"] != "adds search" || got.Fill["how it was tested"] != "go test" {
+		t.Fatalf("seam got %+v", got)
 	}
 }
 

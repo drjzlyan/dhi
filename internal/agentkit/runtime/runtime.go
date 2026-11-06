@@ -118,6 +118,10 @@ type Config struct {
 	// PR opens a PR for a task's branch (the served `pr_open` tool; the
 	// review service in main). nil = pr_open refuses by name.
 	PR dhitools.PRSeam
+	// ConventionVars gives the template symbols for a branch ({ticket},
+	// {slug}, {title}, …): the guidance shows a task's own values and
+	// git_commit checks against them (F-182). nil = shapes only.
+	ConventionVars func(branch string) map[string]string
 	// Memory gives agents persistent context across turns (M14 P1):
 	// the journal tail and notes ride the system block. Nil = no
 	// memory injection (the block names it, never silent).
@@ -194,7 +198,7 @@ type Config struct {
 	// Provision creates the task's worktree for member on the convention
 	// branch and records it on the card (F-067; tasks.Store.Attach in the
 	// app). nil = DHI never provisions; the agent works where it is.
-	Provision func(slug, member string) error
+	Provision func(ctx context.Context, slug, member string, fill map[string]string) error
 
 	// Toolchain says whether the tools a project's checks need are on the
 	// user's system (F-110). nil = assume they are.

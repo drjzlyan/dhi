@@ -18,6 +18,11 @@ type CLIRow struct {
 	Why     string // clirun.Assess's explanation for an installed CLI
 	Tested  string // the version the adapter was verified against
 	Plan    clirun.InstallPlan
+	// Path is where the binary was found even when Version is "": then
+	// ProbeErr says why its --version gave no version, and the row is a
+	// CLI to repair, not one to install.
+	Path     string
+	ProbeErr string
 }
 
 type cliPhase uint8
@@ -34,6 +39,16 @@ type cliInstalledMsg struct {
 	err  error
 }
 
+// cliRowsMsg carries CLIStatus' answer: detection asks every CLI for its
+// version (seconds, live), so it never runs on the UI thread. installed
+// names a CLI whose install just finished, for the "still not on your
+// PATH" check.
+type cliRowsMsg struct {
+	gen       int
+	rows      []CLIRow
+	installed string
+}
+
 // cliStep lets the user see which coding CLIs are ready and install a
 // missing one (ADR-0044): the user's package manager installs it after
 // the exact command is shown and confirmed; the rest show the vendor's
@@ -46,6 +61,9 @@ type cliStep struct {
 	msg     string // last result, success
 	errText string // last failure
 	pending tea.Cmd
+	// loading: a CLIStatus call is out; gen drops replies to an older one.
+	loading bool
+	gen     int
 }
 
 func (*cliStep) ID() string    { return "cli" }
@@ -55,8 +73,7 @@ func (s *cliStep) Applies() bool { return s.env.CLIStatus != nil }
 
 func (s *cliStep) Enter() tea.Cmd {
 	s.phase, s.msg, s.errText = cliList, "", ""
-	s.refresh()
-	return nil
+	return s.refresh("")
 }
 
 // Busy blocks wizard navigation while an install runs.
@@ -68,11 +85,13 @@ func (s *cliStep) TakeCmd() tea.Cmd {
 	return c
 }
 
-func (s *cliStep) refresh() {
-	s.rows = s.env.CLIStatus()
-	if s.cur >= len(s.rows) {
-		s.cur = max(len(s.rows)-1, 0)
-	}
+// refresh asks for the CLI rows off the UI thread; the reply lands in
+// Update. installed is the CLI an install just finished for, or "".
+func (s *cliStep) refresh(installed string) tea.Cmd {
+	s.gen++
+	s.loading = true
+	gen, status := s.gen, s.env.CLIStatus
+	return func() tea.Msg { return cliRowsMsg{gen: gen, rows: status(), installed: installed} }
 }
 
 func (s *cliStep) selected() (CLIRow, bool) {
@@ -84,6 +103,14 @@ func (s *cliStep) selected() (CLIRow, bool) {
 
 func (s *cliStep) HandleKey(key string) Action {
 	row, ok := s.selected()
+	if s.loading {
+		// No rows yet: enter would save without a default engine; esc
+		// still leaves.
+		if key == "esc" {
+			return Skip
+		}
+		return Stay
+	}
 	switch s.phase {
 	case cliInstalling:
 		return Stay
@@ -112,7 +139,7 @@ func (s *cliStep) HandleKey(key string) Action {
 		}
 	case "r":
 		s.msg, s.errText = "", ""
-		s.refresh()
+		s.pending = s.refresh("")
 	case "i":
 		if !ok {
 			return Stay
@@ -121,6 +148,8 @@ func (s *cliStep) HandleKey(key string) Action {
 		switch {
 		case row.Version != "":
 			s.msg = row.Name + " is already installed"
+		case row.Path != "":
+			s.errText = row.Name + " is installed at " + row.Path + ": repair it (see above), then press r"
 		case s.installable(row.Name):
 			s.phase = cliConfirm
 		default:
@@ -198,32 +227,49 @@ func (s *cliStep) start(row CLIRow) {
 }
 
 func (s *cliStep) Update(msg tea.Msg) tea.Cmd {
-	m, ok := msg.(cliInstalledMsg)
-	if !ok {
-		return nil
-	}
-	s.phase = cliList
-	if m.err != nil {
-		s.errText = fmt.Sprintf("installing %s failed: %v", m.name, m.err)
-		return nil
-	}
-	s.refresh()
-	for _, r := range s.rows {
-		if r.Name == m.name && r.Version == "" {
-			s.errText = "the install finished but " + m.name + " is still not on your PATH — check your shell profile, then press r"
+	switch m := msg.(type) {
+	case cliInstalledMsg:
+		s.phase = cliList
+		if m.err != nil {
+			s.errText = fmt.Sprintf("installing %s failed: %v", m.name, m.err)
 			return nil
+		}
+		return s.refresh(m.name)
+	case cliRowsMsg:
+		if m.gen != s.gen {
+			return nil
+		}
+		s.loading = false
+		s.rows = m.rows
+		if s.cur >= len(s.rows) {
+			s.cur = max(len(s.rows)-1, 0)
+		}
+		if m.installed != "" {
+			s.installed(m.installed)
+		}
+	}
+	return nil
+}
+
+// installed reports an install that finished, now that the rows are fresh.
+func (s *cliStep) installed(name string) {
+	for _, r := range s.rows {
+		if r.Name == name && r.Version == "" {
+			s.errText = "the install finished but " + name + " is still not on your PATH — check your shell profile, then press r"
+			return
 		}
 	}
 	s.env.Changed = true // the runtime registry reads CLIs at launch
-	s.env.Applied = append(s.env.Applied, "installed "+m.name+" ("+s.installCmd(m.name)+")")
-	s.msg = m.name + " installed"
-	return nil
+	s.env.Applied = append(s.env.Applied, "installed "+name+" ("+s.installCmd(name)+")")
+	s.msg = name + " installed"
 }
 
 // status is a row's state as a badge (F-098): the glyph carries the
 // meaning, the hue repeats it.
 func (s *cliStep) status(r CLIRow) string {
 	switch {
+	case r.Version == "" && r.Path != "":
+		return kit.Badge(theme.BadgeError, "found, but --version failed")
 	case r.Version == "":
 		return kit.Badge(theme.BadgeNeutral, "not installed")
 	case r.Verdict == clirun.VerdictExact:
@@ -237,6 +283,9 @@ func (s *cliStep) status(r CLIRow) string {
 
 // Keys names the step's own keys for the status row, by phase.
 func (s *cliStep) Keys() []string {
+	if s.loading {
+		return nil
+	}
 	switch s.phase {
 	case cliConfirm:
 		return []string{"y install", "n cancel"}
@@ -246,7 +295,7 @@ func (s *cliStep) Keys() []string {
 		return []string{"r check again", "esc back"}
 	}
 	keys := []string{"↑/↓ select"}
-	if row, ok := s.selected(); ok && row.Version == "" {
+	if row, ok := s.selected(); ok && row.Version == "" && row.Path == "" {
 		if s.installable(row.Name) {
 			keys = append(keys, "i install")
 		} else {
@@ -260,6 +309,9 @@ func (s *cliStep) View(w, f int) []string {
 	out := []string{
 		theme.TextStyle().Render("Coding CLIs — the engines your employees think with"),
 		dim("DHI drives the CLI you already use; install one here if you have none."), "",
+	}
+	if s.loading {
+		return append(out, dim(kit.SpinnerGlyph(f)+" checking which coding CLIs are installed…"))
 	}
 	for i, r := range s.rows {
 		mark, name := "  ", theme.TextStyle().Render(fmt.Sprintf("%-13s", r.Name))
@@ -307,6 +359,14 @@ func (s *cliStep) View(w, f int) []string {
 		}
 		out = append(out, "", dim("Then press r to check again."))
 	default:
+		if hasRow && row.Version == "" && row.Path != "" {
+			// Found, but it would not say its version: name where and why.
+			out = append(out, "")
+			for _, l := range kit.WrapWords("found at "+row.Path+", but `"+row.Name+" --version` failed: "+row.ProbeErr+
+				". Often its runtime (node, for npm CLIs) is not on your shell's PATH. Fix that, then press r.", w) {
+				out = append(out, warn(l))
+			}
+		}
 		if hasRow && row.Plan.Auth != "" {
 			out = append(out, "")
 			for _, l := range kit.WrapWords("sign in: "+row.Plan.Auth, w) {

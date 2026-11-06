@@ -327,10 +327,8 @@ func claudeVersion(ctx context.Context, path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	for _, f := range strings.Fields(out) {
-		if isVersionLike(f) {
-			return f, nil
-		}
+	if v := firstVersionToken(out); v != "" {
+		return v, nil
 	}
 	return "", fmt.Errorf("clirun/claude: no version in %q", truncate(out, 60))
 }

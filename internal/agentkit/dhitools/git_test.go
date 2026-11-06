@@ -401,3 +401,75 @@ func TestGitPushAsksThenPushes(t *testing.T) {
 		t.Fatalf("origin has no task/x: %v", err)
 	}
 }
+
+// F-182: with fill, DHI writes the team's commit template and puts the
+// agent's text in its AI parts; the task's own symbols come from
+// ConvVars. A whole message is checked against the same symbols, so a
+// wrong ticket is refused before an approval is spent.
+func TestGitCommitFillComposesTheTemplateWithTheTasksSymbols(t *testing.T) {
+	f, m := newFixture(t, "git_commit")
+	api := memberDir(t, f.ws, "api")
+	initRepo(t, api)
+	onBranch(t, api, "task/v2")
+	writeFile(t, api, "a.go", "package a // v2\n")
+	conv := conventions.Defaults()
+	conv.Commit.Subject = "{ticket}: {subject}"
+	conv.Commit.BodyFormat = "Why: {ai:why}\n\nTask {slug}"
+	var asked string
+	h := Deps{Agent: m, WS: f.ws, Workdir: api, Identity: testIdentity(), Approvals: f.approvals,
+		Conventions: conventions.Static(conv),
+		ConvVars: func(branch string) map[string]string {
+			asked = branch
+			return map[string]string{"ticket": "PROJ-9", "slug": "v2"}
+		}}.Handler()
+
+	if out, isErr := call(h, t, "git_commit", `{"message":"PROJ-1: wrong ticket\n\nWhy: x\n\nTask v2"}`); !isErr ||
+		!strings.Contains(out, `"PROJ-9: <imperative summary of the change>"`) {
+		t.Fatalf("wrong ticket = %q isErr=%v", out, isErr)
+	}
+	if out, isErr := call(h, t, "git_commit", `{"fill":{"subject":"add v2"}}`); !isErr ||
+		!strings.Contains(out, `"why"`) || !strings.Contains(out, "pass fill with") {
+		t.Fatalf("missing part = %q isErr=%v", out, isErr)
+	}
+	if n := len(f.approvals.List()); n != 0 {
+		t.Fatalf("refusals spent approvals: %d", n)
+	}
+	// The advertised shape is a list of {key, text} (portable to every engine).
+	if out, isErr := callAsync(h, "git_commit", `{"fill":[{"key":"subject","text":"add v2"},{"key":"Why","text":"callers need it"}]}`, f)(t); isErr {
+		t.Fatalf("fill commit refused: %s", out)
+	}
+	if asked != "task/v2" {
+		t.Fatalf("ConvVars asked for %q, want the current branch", asked)
+	}
+	repo, _ := git.PlainOpen(api)
+	head, _ := repo.Head()
+	c, _ := repo.CommitObject(head.Hash())
+	if want := "PROJ-9: add v2\n\nWhy: callers need it\n\nTask v2\n"; c.Message != want {
+		t.Fatalf("message = %q, want %q", c.Message, want)
+	}
+}
+
+// F-182: no tool schema uses an open map (additionalProperties with a
+// schema), which some engines' tool calling cannot take.
+func TestFillSchemasArePortable(t *testing.T) {
+	f, _ := newFixture(t)
+	d := Deps{WS: f.ws, Tasks: f.tasks, WorkBranch: func(context.Context, string, string, string, bool, map[string]string) (string, error) { return "", nil },
+		PR: func(context.Context, PRRequest) (string, error) { return "", nil }}
+	var all []tool
+	all = append(append(append(all, d.gitTools()...), d.taskTools()...), d.workTools()...)
+	seen := map[string]bool{}
+	for _, ti := range all {
+		seen[ti.info.Name] = true
+		if strings.Contains(string(ti.info.InputSchema), `"additionalProperties":{`) {
+			t.Errorf("%s: open-map schema: %s", ti.info.Name, ti.info.InputSchema)
+		}
+		if !json.Valid(ti.info.InputSchema) {
+			t.Errorf("%s: invalid schema", ti.info.Name)
+		}
+	}
+	for _, n := range []string{"git_commit", "pr_open", "work_branch"} {
+		if !seen[n] {
+			t.Errorf("%s not checked", n)
+		}
+	}
+}
