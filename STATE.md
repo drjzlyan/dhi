@@ -1,5 +1,13 @@
 # STATE — current position
 
+### Session 73 (PR #19 review + live run, branch `m38`)
+
+- Reviewed PR #19 before merge: CI 4/4 green, `make verify` (race) green, `golangci-lint` 0 issues.
+- Live run (real binary, throwaway HOME/XDG, tmux): wizard workspace step, open/edit/`:w` (disk byte-checked), tree `M` marker, git panel stage + commit (commit visible in `git log`), Settings page, Coding-agent step (detection shows "checking…" then all six CLIs, no freeze), quit guard + `d`, clean exit 0. No defects found, so no fix commits.
+- Read `93c9c21`'s async closures for state read after return: they capture locals; `m.send` is a callback set at init.
+- Seen once, not reproduced in 3 replays (exit 0, lock released): an empty `.dhi/tmp/swap/instance-*.lock` left after quit in a session that also created the workspace mid-run. Harmless: `sweepStaleLocks` removes it on the next launch.
+- Gotcha: running copilot `--version` under a fresh HOME makes copilot unpack its package into `~/Library/Caches/copilot` (sandbox only).
+
 ### Session 71 (review + F-182 naming templates with AI parts + F-183 CLI detection, branch `m38`; uncommitted)
 
 - User asked: review the existing branch/commit/PR conventions; let users define their own branch, commit (title + body) and PR (title + description) formats from symbols and AI-written parts, consistent on every CLI; then (mid-session) fix onboarding CLI detection (Copilot present but not detected on one machine).
