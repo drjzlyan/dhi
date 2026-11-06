@@ -60,6 +60,9 @@ cat >"$WORK/cfg-demo/dhi/setup.json" <<'EOF'
 {"finished": true, "steps": {"identity": "2026-10-20T00:00:00Z", "you": "2026-10-20T00:00:00Z",
  "instructions": "2026-10-20T00:00:00Z", "conventions": "2026-10-20T00:00:00Z", "cli": "2026-10-20T00:00:00Z"}}
 EOF
+# …and the demo folder already trusted, so opening a file does not stop
+# on the trust card (F-148).
+printf '{"trusted": ["%s"]}\n' "$(cd "$WORK/acme" && pwd -P)" >"$WORK/cfg-demo/dhi/trust.json"
 cat >"$WORK/acme/.dhi/setup.json" <<'EOF'
 {"finished": true, "steps": {"workspace": "2026-10-20T00:00:00Z", "project": "2026-10-20T00:00:00Z",
  "team": "2026-10-20T00:00:00Z", "integrations": "2026-10-20T00:00:00Z"}}
@@ -87,6 +90,9 @@ for tape in "$ROOT"/scripts/tapes/*.tape; do
 	[ -z "$WANT" ] || [ "$WANT" = "$name" ] || continue
 	sed -e "s|{{OUT}}|$OUT|g" -e "s|{{WORK}}|$WORK|g" "$tape" >"$WORK/tapes/$name.tape"
 	echo "recording ${name}…"
+	# The previous tape's dhi is killed mid-edit: its swap would open this
+	# tape on the "Unsaved changes found" card.
+	rm -rf "$WORK/acme/.dhi/tmp/swap"
 	touch "$WORK/.before-$name"
 	(cd "$WORK" && vhs "tapes/$name.tape" >/dev/null)
 	# vhs can stop on a ttyd error ("error: EOF") and still exit 0: only a

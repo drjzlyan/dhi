@@ -12,7 +12,7 @@ a board, channels, an editor, a review screen, all in one terminal window.
 [![Go](https://img.shields.io/github/go-mod/go-version/drjzlyan/dhi)](go.mod)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-<img src="docs/assets/recordings/onboarding.gif" alt="First launch in a fresh project: DHI opens on the Editor's start page, creates a workspace from two repos, then works through a setup checklist — project brief, git identity, house rules, commit style and a team — one step at a time" width="100%">
+<img src="docs/assets/recordings/onboarding.gif" alt="First launch in a fresh project: DHI opens on the Editor's start page, creates a workspace from two repos, then works through a setup checklist — project brief, git identity, how you like to work, house rules, commit style and a team — one step at a time" width="100%">
 
 </div>
 
@@ -44,9 +44,9 @@ already work in:
 
 Recorded from the real app with [VHS](https://github.com/charmbracelet/vhs) (`make record`).
 
-**Every view.** The Editor opens first. Then the Workspace board and inbox, and the Reviewer's diff.
+**Every view.** The Editor opens first. Then the Workspace board, channels and inbox, the Ideator, and the Reviewer's diff.
 
-<img src="docs/assets/recordings/views.gif" alt="A tour of DHI's views: a file open in the Editor, the Workspace board with cards in each lane, the inbox, and the Reviewer listing changed files on a feature branch" width="100%">
+<img src="docs/assets/recordings/views.gif" alt="A tour of DHI's views: a file open in the Editor, the Workspace board with cards in each lane, the team channel and the inbox, an Ideator session, and the Reviewer's diff of a feature branch" width="100%">
 
 **The Editor.** Vim-style editing, split panes, find-a-file and a real terminal, one tab per repo.
 
