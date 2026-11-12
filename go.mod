@@ -18,7 +18,7 @@ require (
 	github.com/mattn/go-runewidth v0.0.31
 	github.com/yuin/goldmark v1.8.7
 	go.yaml.in/yaml/v3 v3.0.6
-	golang.org/x/sys v0.49.0
+	golang.org/x/sys v0.50.0
 )
 
 require (
